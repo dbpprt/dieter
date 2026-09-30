@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Button
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -19,11 +20,16 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTextInput
-import com.dbpprt.dieter.connection.ProjectReplica
+import com.dbpprt.dieter.core.composition.TaskDraftEditor
+import com.dbpprt.dieter.core.composition.TaskDrafts
+import com.dbpprt.dieter.core.composition.WorkspaceMode
+import com.dbpprt.dieter.core.selection.AgentControls
+import com.dbpprt.dieter.core.state.CaptureDraft
+import com.dbpprt.dieter.ui.ProjectReplica
 import com.dbpprt.dieter.ui.theme.DieterTheme
-import com.dbpprt.dieter.v1.Board
-import com.dbpprt.dieter.v1.Lane
-import com.dbpprt.dieter.v1.Project
+import com.dbpprt.dieter.api.v1.Board
+import com.dbpprt.dieter.api.v1.Lane
+import com.dbpprt.dieter.api.v1.Project
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -34,18 +40,11 @@ class QuickTaskAndTerminalCreationTest {
 
     @Test
     fun quickTaskDraftSurvivesClosingAndReopeningSheet() {
-        val draft = CardCreationDraft()
-        var story by draft::prompt
-        var open by draft::quickTaskOpen
-        open = true
+        val editor = TaskDraftEditor(CaptureDraft(id = "quick", project_id = "p1", board_id = "b1"))
+        var open by mutableStateOf(true)
         var options by mutableStateOf(false)
-        val project = Project.newBuilder().setId("p1").setName("Dieter").setPath("/Users/me/Development/dieter").build()
-        val board = Board.newBuilder()
-            .setId("b1")
-            .setProjectId(project.id)
-            .setName("Main")
-            .addLanes(Lane.newBuilder().setId("todo").setName("Todo"))
-            .build()
+        val project = Project(id = "p1", name = "Dieter", path = "/Users/me/Development/dieter")
+        val board = Board(id = "b1", project_id = project.id, name = "Main", lanes = listOf(Lane(id = "todo", name = "Todo")))
         val state = DieterUiState(
             projects = listOf(project),
             selectedProjectId = project.id,
@@ -54,35 +53,31 @@ class QuickTaskAndTerminalCreationTest {
         )
 
         compose.setContent {
+            val draft by editor.state.collectAsState()
             DieterTheme {
                 Box(Modifier.fillMaxSize()) {
                     Button(onClick = { open = true }) { Text("Open quick task") }
                     if (options) {
                         NewCardBody(
-                            state = state, title = draft.title, onTitleChange = { draft.title = it },
-                            prompt = draft.prompt, onPromptChange = { draft.prompt = it },
-                            provider = draft.provider, onProviderChange = {}, harness = null,
-                            model = draft.model, onModelChange = {}, effort = draft.effort, onEffortChange = {},
-                            providerOptions = draft.providerOptions, onProviderOptionChange = { _, _ -> },
-                            harnesses = emptyList(), lane = draft.lane, onLaneChange = { draft.lane = it },
-                            labelIds = draft.labelIds, workspaceMode = draft.workspaceMode,
-                            onWorkspaceModeChange = { draft.workspaceMode = it }, attachments = draft.attachments,
-                            onAttach = {}, onRemoveAttachment = { draft.attachments.removeAt(it) },
+                            state = state,
+                            draft = draft,
+                            onTitleChange = { value -> editor.edit { TaskDrafts.title(it, value) } },
+                            onPromptChange = { value -> editor.edit { TaskDrafts.prompt(it, value) } },
+                            controls = AgentControls(TaskDrafts.selection(draft), emptyList(), locked = false),
+                            onSelectionChange = { selection -> editor.edit { TaskDrafts.choose(it, selection) } },
+                            onLaneChange = { lane -> editor.edit { TaskDrafts.lane(it, lane) } },
+                            onToggleLabel = { label -> editor.edit { TaskDrafts.toggleLabel(it, label) } },
+                            onWorkspaceModeChange = { mode -> editor.edit { TaskDrafts.workspaceMode(it, mode) } },
+                            attachmentContent = {},
                         )
                     }
                     if (open) {
                         QuickTaskPopover(
                             state = state,
-                            defaults = ResolvedConversationCreationPreferences(
-                                provider = "",
-                                model = "",
-                                effort = "",
-                                workspaceMode = ConversationWorkspaceMode.PROJECT,
-                            ),
-                            story = story,
-                            onStoryChange = { story = it },
+                            draft = draft,
+                            onStoryChange = { value -> editor.edit { TaskDrafts.prompt(it, value) } },
                             onDismiss = { open = false },
-                            onOpenFull = { draft.openOptions(); options = true },
+                            onOpenFull = { open = false; options = true },
                             onCreate = {},
                         )
                     }
@@ -104,14 +99,13 @@ class QuickTaskAndTerminalCreationTest {
         compose.onNodeWithTag("quick-task-story").assertTextContains("Keep this unfinished task")
         compose.onNodeWithText("More options").performClick()
         compose.onNodeWithTag("conversation-title").assertTextContains("Keep this unfinished task edited")
-        compose.runOnIdle { assertEquals(ConversationWorkspaceMode.PROJECT, draft.workspaceMode) }
-
+        compose.runOnIdle { assertEquals(WorkspaceMode.PROJECT, TaskDrafts.workspaceMode(editor.state.value)) }
     }
 
     @Test
     fun terminalPickerShowsMachineForDuplicateProjectNames() {
-        val laptopProject = Project.newBuilder().setId("p1").setName("Dieter").setPath("/Users/me/Development/dieter").build()
-        val studioProject = Project.newBuilder().setId("p2").setName("Dieter").setPath("/Users/me/Development/dieter").build()
+        val laptopProject = Project(id = "p1", name = "Dieter", path = "/Users/me/Development/dieter")
+        val studioProject = Project(id = "p2", name = "Dieter", path = "/Users/me/Development/dieter")
         val hosts = mapOf(
             "p1" to ProjectReplica("endpoint-1", "daemon-1", "Laptop", online = true),
             "p2" to ProjectReplica("endpoint-2", "daemon-2", "Studio", online = true),

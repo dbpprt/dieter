@@ -1,128 +1,20 @@
 package com.dbpprt.dieter.ui
 
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.connection.EndpointConnection
-import com.dbpprt.dieter.connection.EndpointPhase
-import com.dbpprt.dieter.connection.MachineOutboxSummary
-import com.dbpprt.dieter.connection.ProjectReplica
-import com.dbpprt.dieter.v1.Project
+import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.machines.MachineLink
+import com.dbpprt.dieter.core.machines.MachineRow
+import com.dbpprt.dieter.core.outbox.MachineOutboxSummary
+import com.dbpprt.dieter.api.v1.Project
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/** The UI state applies the core's presence rules to its machines and project hosts. */
 class WorkspaceFreshnessPresentationTest {
     @Test
-    fun connectionPhasesDescribeRecoveryInsteadOfCollapsingToOffline() {
-        assertEquals("Connecting", connectionStatusPresentation(ConnectionPhase.CONNECTING).label)
-        assertEquals("Syncing", connectionStatusPresentation(ConnectionPhase.SYNCING).label)
-        assertEquals("Reconnecting", connectionStatusPresentation(ConnectionPhase.RECONNECTING).label)
-        assertEquals("Offline", connectionStatusPresentation(ConnectionPhase.STOPPED).label)
-        assertTrue(connectionStatusPresentation(ConnectionPhase.RECONNECTING).working)
-        assertFalse(connectionStatusPresentation(ConnectionPhase.STOPPED).working)
-    }
-
-    @Test
-    fun routineSyncDoesNotCoverCachedWorkspaceWhileUnavailableReadOnlySurfacesMute() {
-        listOf(ConnectionPhase.CONNECTING, ConnectionPhase.SYNCING).forEach { phase ->
-            val refreshing = workspaceSurfaceTreatment(
-                showsSynchronizedWorkspace = true,
-                hasCachedWorkspace = true,
-                phase = phase,
-            )
-            assertEquals(WorkspaceSurfaceTreatment.CURRENT, refreshing)
-            assertFalse(refreshing.showsNotice)
-            assertFalse(refreshing.blocksInteraction)
-        }
-
-        val unavailable = workspaceSurfaceTreatment(
-            showsSynchronizedWorkspace = true,
-            hasCachedWorkspace = true,
-            phase = ConnectionPhase.RECONNECTING,
-        )
-        assertEquals(WorkspaceSurfaceTreatment.UNAVAILABLE, unavailable)
-        assertTrue(unavailable.blocksInteraction)
-        assertFalse(workspaceInteractionBlocked(unavailable, supportsOfflineOutbox = true))
-        assertTrue(workspaceInteractionBlocked(unavailable, supportsOfflineOutbox = false))
-
-        assertEquals(
-            WorkspaceSurfaceTreatment.CURRENT,
-            workspaceSurfaceTreatment(true, hasCachedWorkspace = false, ConnectionPhase.SYNCING),
-        )
-        assertEquals(
-            WorkspaceSurfaceTreatment.CURRENT,
-            workspaceSurfaceTreatment(false, hasCachedWorkspace = true, ConnectionPhase.SYNCING),
-        )
-    }
-
-    @Test
-    fun firstSyncReplacesTheEmptyWorkspaceUntilLiveDataArrives() {
-        assertTrue(
-            shouldShowInitialWorkspaceSync(
-                showsSynchronizedWorkspace = true,
-                hasCachedWorkspace = false,
-                loading = true,
-                desiredConnected = true,
-                phase = ConnectionPhase.SYNCING,
-            ),
-        )
-        assertTrue(
-            shouldShowInitialWorkspaceSync(
-                true,
-                hasCachedWorkspace = false,
-                loading = false,
-                desiredConnected = true,
-                phase = ConnectionPhase.UNAVAILABLE,
-            ),
-        )
-        assertFalse(
-            shouldShowInitialWorkspaceSync(
-                true,
-                hasCachedWorkspace = true,
-                loading = true,
-                desiredConnected = true,
-                phase = ConnectionPhase.SYNCING,
-            ),
-        )
-        assertFalse(
-            shouldShowInitialWorkspaceSync(
-                true,
-                hasCachedWorkspace = false,
-                loading = false,
-                desiredConnected = true,
-                phase = ConnectionPhase.CONNECTED,
-            ),
-        )
-
-        val syncing = initialWorkspaceSyncPresentation(ConnectionPhase.SYNCING)
-        assertEquals("Syncing your workspace", syncing.title)
-        assertTrue(syncing.working)
-    }
-
-    @Test
-    fun workspaceNoticeMatchesTheQuietMacPresentation() {
-        val syncing = workspaceStatusPresentation(ConnectionPhase.SYNCING, showingCachedData = true)
-        assertEquals("Refreshing workspace", syncing.title)
-        assertEquals("Your current workspace stays available while changes load.", syncing.detail)
-        assertTrue(syncing.working)
-        assertFalse(syncing.usesOfflineAccent)
-
-        val offline = workspaceStatusPresentation(ConnectionPhase.UNAVAILABLE, showingCachedData = true)
-        assertEquals("Working from cached data", offline.title)
-        assertFalse(offline.working)
-        assertTrue(offline.usesOfflineAccent)
-
-        val queueable = workspaceStatusPresentation(
-            ConnectionPhase.UNAVAILABLE,
-            showingCachedData = true,
-            supportsOfflineOutbox = true,
-        )
-        assertTrue(queueable.detail.contains("messages and new conversations queue"))
-    }
-
-    @Test
     fun cachedMachinePresenceIsNotPresentedAsLiveDuringReconnect() {
-        val project = Project.newBuilder().setId("project-one").build()
+        val project = Project(id = "project-one")
         val state = DieterUiState(
             connectionPhase = ConnectionPhase.RECONNECTING,
             projects = listOf(project),
@@ -130,11 +22,11 @@ class WorkspaceFreshnessPresentationTest {
                 project.id to ProjectReplica("machine-one", "daemon-one", "Studio Mac", online = true),
             ),
             endpointConnections = listOf(
-                EndpointConnection(
+                MachineRow(
                     id = "machine-one",
                     label = "Studio Mac",
                     address = "https://example.test",
-                    phase = EndpointPhase.CONNECTED,
+                    phase = MachineLink.CONNECTED,
                     detail = "Gateway · 12 ms",
                     latencyMs = 12,
                     online = true,
@@ -145,20 +37,20 @@ class WorkspaceFreshnessPresentationTest {
 
         assertFalse(state.presentedProjectReplicas.getValue(project.id).online)
         assertFalse(state.presentedEndpointConnections.single().online)
-        assertEquals(EndpointPhase.PENDING, state.presentedEndpointConnections.single().phase)
-        assertFalse(projectScopedNavigationEnabled(state))
+        assertEquals(MachineLink.PENDING, state.presentedEndpointConnections.single().phase)
+        assertFalse(state.projectSurfacesEnabled)
 
         val live = state.copy(connectionPhase = ConnectionPhase.CONNECTED)
         assertTrue(live.presentedProjectReplicas.getValue(project.id).online)
-        assertEquals(EndpointPhase.CONNECTED, live.presentedEndpointConnections.single().phase)
-        assertTrue(projectScopedNavigationEnabled(live))
+        assertEquals(MachineLink.CONNECTED, live.presentedEndpointConnections.single().phase)
+        assertTrue(live.projectSurfacesEnabled)
     }
 
     @Test
     fun queuedMachineRemainsVisibleWhenGatewayDiscoveryIsUnavailable() {
         val state = DieterUiState(
             connectionPhase = ConnectionPhase.RECONNECTING,
-            endpointConnections = listOf(EndpointConnection("gateway", "Gateway", "https://example.test")),
+            endpointConnections = listOf(MachineRow("gateway", "Gateway", "https://example.test")),
             projectReplicas = mapOf(
                 "project-one" to ProjectReplica("gateway#machine-one", "machine-one", "Studio Mac", online = false),
             ),
@@ -170,6 +62,6 @@ class WorkspaceFreshnessPresentationTest {
         val machine = state.presentedEndpointConnections.single { it.id == "gateway#machine-one" }
         assertEquals("Studio Mac", machine.label)
         assertFalse(machine.online)
-        assertEquals(EndpointPhase.PENDING, machine.phase)
+        assertEquals(MachineLink.PENDING, machine.phase)
     }
 }

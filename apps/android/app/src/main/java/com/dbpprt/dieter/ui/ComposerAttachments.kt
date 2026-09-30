@@ -6,15 +6,13 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
-import com.dbpprt.dieter.v1.MessagePart
-import com.google.protobuf.ByteString
+import com.dbpprt.dieter.api.v1.MessagePart
+import okio.ByteString.Companion.toByteString
+import com.dbpprt.dieter.core.composition.Attachments
 import java.io.ByteArrayOutputStream
 import java.util.Base64
 import java.util.Locale
 
-internal const val MAX_COMPOSER_ATTACHMENTS = 4
-internal const val MAX_COMPOSER_ATTACHMENT_BYTES = 5 * 1024 * 1024
-internal const val MAX_COMPOSER_TOTAL_BYTES = 6 * 1024 * 1024
 
 internal fun readAttachmentPart(context: Context, uri: Uri, imagesOnly: Boolean): MessagePart {
     require(uri.scheme == "content") { "Choose a file shared by an Android content provider" }
@@ -50,12 +48,12 @@ internal fun readAttachmentPart(context: Context, uri: Uri, imagesOnly: Boolean)
         )
         ?: "application/octet-stream"
     require(!imagesOnly || mediaType.startsWith("image/")) { "Choose an image file" }
-    require(declaredSize <= MAX_COMPOSER_ATTACHMENT_BYTES || declaredSize < 0) {
+    require(declaredSize <= Attachments.MAX_FILE_BYTES || declaredSize < 0) {
         "Each attachment must be at most 5 MB"
     }
     val bytes = requireNotNull(resolver.openInputStream(uri)) { "Could not open attachment" }.use { input ->
         val output = ByteArrayOutputStream(
-            declaredSize.takeIf { it in 1..MAX_COMPOSER_ATTACHMENT_BYTES.toLong() }?.toInt() ?: 32 * 1024,
+            declaredSize.takeIf { it in 1..Attachments.MAX_FILE_BYTES }?.toInt() ?: 32 * 1024,
         )
         val buffer = ByteArray(16 * 1024)
         var total = 0
@@ -64,61 +62,19 @@ internal fun readAttachmentPart(context: Context, uri: Uri, imagesOnly: Boolean)
             val read = input.read(buffer)
             if (read < 0) break
             total += read
-            require(total <= MAX_COMPOSER_ATTACHMENT_BYTES) { "Each attachment must be at most 5 MB" }
+            require(total <= Attachments.MAX_FILE_BYTES) { "Each attachment must be at most 5 MB" }
             output.write(buffer, 0, read)
         }
         output.toByteArray()
     }
     require(bytes.isNotEmpty()) { "Attachment is empty" }
-    val fallbackName = if (mediaType.startsWith("image/")) "attached-image" else "attachment"
-    return MessagePart.newBuilder()
-        .setType("file")
-        .setMediaType(mediaType)
-        .setFilename(filename.trim().ifBlank { fallbackName })
-        .setData(ByteString.copyFrom(bytes))
-        .build()
-}
-
-internal fun attachmentLimitError(
-    existing: List<MessagePart>,
-    incoming: List<MessagePart>,
-): String? = when {
-    existing.size + incoming.size > MAX_COMPOSER_ATTACHMENTS ->
-        "You can attach up to 4 images or files"
-    incoming.any { attachmentSize(it) > MAX_COMPOSER_ATTACHMENT_BYTES } ->
-        "Each attachment must be at most 5 MB"
-    (existing + incoming).sumOf(::attachmentSize) > MAX_COMPOSER_TOTAL_BYTES ->
-        "Attachments must total at most 6 MB"
-    else -> null
-}
-
-internal fun attachmentSize(part: MessagePart): Int {
-    if (!part.data.isEmpty) return part.data.size()
-    val encoded = part.url.substringAfter(";base64,", "")
-    if (encoded.isEmpty()) return 0
-    val padding = encoded.takeLast(2).count { it == '=' }
-    return (encoded.length * 3 / 4 - padding).coerceAtLeast(0)
-}
-
-internal fun attachmentDetails(part: MessagePart): String {
-    val type = part.filename.substringAfterLast('.', "")
-        .takeIf(String::isNotBlank)
-        ?.uppercase(Locale.ROOT)
-        ?: part.mediaType.substringAfter('/', "file").substringBefore('+').uppercase(Locale.ROOT)
-    val bytes = attachmentSize(part)
-    return if (bytes > 0) "$type · ${formatAttachmentSize(bytes)}" else type
-}
-
-internal fun formatAttachmentSize(bytes: Int): String = when {
-    bytes >= 1024 * 1024 -> String.format(Locale.ROOT, "%.1f MB", bytes / (1024f * 1024f))
-    bytes >= 1024 -> String.format(Locale.ROOT, "%.0f KB", bytes / 1024f)
-    else -> "$bytes B"
+    return Attachments.part(filename, mediaType, bytes.toByteString())
 }
 
 internal fun decodeAttachmentBitmap(part: MessagePart, maxDimension: Int = 900): Bitmap? {
-    if (!part.mediaType.startsWith("image/")) return null
+    if (!part.media_type.startsWith("image/")) return null
     val bytes = when {
-        !part.data.isEmpty -> part.data.toByteArray()
+        part.data_.size > 0 -> part.data_.toByteArray()
         part.url.contains(";base64,") -> runCatching {
             Base64.getDecoder().decode(part.url.substringAfter(";base64,"))
         }.getOrNull()

@@ -19,3 +19,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "DieterAndroid"
 include(":app")
+// The shared Kotlin client core (apps/core), consumed from source.
+includeBuild("../core")

@@ -70,12 +70,3 @@ internal class ScreenDecoderFactory(
 
 data class ScreenDecoderStatus(val implementation: String, val hardware: Boolean,
     val lowLatencyRequested: Boolean, val lowLatencyAccepted: Boolean, val reason: String)
-
-/** The Android decoder API carries RTP time as floor(timestamp / 90) milliseconds.
- * Compare on the wrapping 32-bit RTP clock, allowing only its sub-ms quantization.
- */
-internal fun belongsToGeneration(timestampNs: Long, boundary: Int): Boolean {
-    val rtp = (timestampNs / 1_000_000L * 90L) and 0xffff_ffffL
-    val floorBoundary = (boundary.toLong() and 0xffff_ffffL) / 90L * 90L
-    return ((rtp - floorBoundary) and 0xffff_ffffL) < 0x8000_0000L
-}

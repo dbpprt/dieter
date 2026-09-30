@@ -64,6 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
@@ -118,7 +119,7 @@ fun FilesScreen(
             }
     }
     BackHandler(
-        enabled = state.projectFilesMode == ProjectFilesTab.CHANGES.wire && state.projectChanges.selectedPath.isNotEmpty() ||
+        enabled = state.projectFilesMode == ProjectFilesTab.CHANGES.wire && (state.projectChanges.selection != null) ||
             state.projectFilesMode == ProjectFilesTab.FILES.wire && state.fileDocument == null && state.filePath.isNotBlank(),
     ) {
         if (state.projectFilesMode == ProjectFilesTab.CHANGES.wire) model.closeProjectDiff()
@@ -132,13 +133,13 @@ fun FilesScreen(
         } else {
             ProjectFilesTabs(
                 selected = selectedTab,
-                changedFiles = state.projectChanges.changeset?.filesCount ?: 0,
+                changedFiles = state.projectChanges.changes?.files?.size ?: 0,
                 onSelect = ::openTab,
             )
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
-                userScrollEnabled = !state.fileDirty && state.fileDocument == null && state.projectChanges.selectedPath.isEmpty(),
+                userScrollEnabled = !state.fileDirty && state.fileDocument == null && state.projectChanges.selection == null,
                 beyondViewportPageCount = 1,
                 key = { tabs[it] },
             ) { page ->
@@ -309,9 +310,9 @@ internal fun FileList(state: DieterUiState, model: DieterViewModel, modifier: Mo
     }
     }
     if (showCreate) {
-        FileCreateDialog(state.filePath, onDismiss = { showCreate = false }) { path, directory ->
+        FileCreateDialog(state.filePath, onDismiss = { showCreate = false }) { name, directory ->
             showCreate = false
-            model.createFile(path, directory)
+            model.createFile(name, directory)
         }
     }
 }
@@ -346,13 +347,14 @@ internal fun FilePreview(
             if (!document.binary) {
                 IconButton(onClick = { showMove = true }) { Icon(Icons.AutoMirrored.Outlined.DriveFileMove, "Move or rename") }
                 IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Outlined.DeleteOutline, "Delete") }
+                if (state.fileConflict) TextButton(onClick = model::reloadFile, enabled = !state.working) { Text("Reload") }
                 Button(onClick = model::saveFile, enabled = state.fileDirty && !state.working) { Text("Save") }
             }
             if (!showBack) IconButton(onClick = ::close) { Icon(Icons.Outlined.Close, "Close") }
         }
         HorizontalDivider(color = DieterOutline)
         if (document.binary) {
-            EmptyList("Binary file", "${document.mimeType} · ${document.size} bytes", Icons.Outlined.Description)
+            EmptyList("Binary file", "${document.mime_type} · ${document.size} bytes", Icons.Outlined.Description)
         } else {
             OutlinedTextField(
                 value = state.fileDraft,

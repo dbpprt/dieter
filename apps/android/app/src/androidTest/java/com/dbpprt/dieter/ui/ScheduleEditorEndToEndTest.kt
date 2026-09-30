@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.Espresso.pressBack
 import androidx.test.espresso.assertion.ViewAssertions.matches
@@ -23,13 +24,12 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.data.DieterEndpoint
-import kotlinx.coroutines.flow.first
+import com.dbpprt.dieter.api.v1.ListSchedulesRequest
+import com.dbpprt.dieter.api.v1.ScheduleRef
+import com.dbpprt.dieter.e2e.IsolatedCore
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -54,30 +54,14 @@ class ScheduleEditorEndToEndTest {
         val arguments = InstrumentationRegistry.getArguments()
         val token = arguments.getString("isolatedGatewayToken").orEmpty()
         assumeTrue("Pass isolatedGatewayToken for the isolated gateway", token.isNotBlank())
-        val port = arguments.getString("isolatedGatewayPort")?.toIntOrNull() ?: 14243
-        val endpoint = DieterEndpoint(
-            id = "android_schedule_e2e",
-            label = "Isolated schedule gateway",
-            host = "127.0.0.1",
-            port = port,
-        )
         val application = composeRule.activity.application as DieterApplication
-        val manager = application.container.connectionManager
-        application.container.repository.setAccessToken(endpoint, token)
-        manager.updateEndpoints(listOf(endpoint), selectedGatewayId = endpoint.id)
-        manager.connect()
-        manager.onAppForegrounded()
-        val connected = runBlocking {
-            kotlinx.coroutines.withTimeoutOrNull(30_000) {
-                manager.state.first { state ->
-                    state.phase == ConnectionPhase.CONNECTED && state.projects.isNotEmpty() && state.boards.isNotEmpty() && state.harnesses.isNotEmpty() && state.harnessesEndpointId == state.endpoint?.id
-                }
-            }
-        }
-        assertNotNull("Connection failed: ${manager.state.value.phase} · ${manager.state.value.error}", connected)
-        requireNotNull(connected)
-        val project = connected.projects.first { candidate -> connected.boards.any { it.projectId == candidate.id } }
-        manager.onAppForegrounded(project.id)
+        val container = application.container
+        val connected = IsolatedCore.connect(container)
+        val daemonId = IsolatedCore.daemonId(container)
+        IsolatedCore.harnesses(container, daemonId)
+        val boards = connected.boards.values.flatten()
+        val project = connected.projects.first { candidate -> boards.any { it.project_id == candidate.id } }
+        composeRule.runOnIdle { ViewModelProvider(composeRule.activity)[DieterViewModel::class.java].selectProject(project.id) }
 
         composeRule.waitForIdle()
 
@@ -103,7 +87,7 @@ class ScheduleEditorEndToEndTest {
         )
         androidx.test.espresso.Espresso.closeSoftKeyboard()
         // Choose the actual board; a display fallback is not a saved selection.
-        val boardName = connected.boards.first { it.projectId == project.id }.name
+        val boardName = boards.first { it.project_id == project.id }.name
         composeRule.onNodeWithText(boardName).performScrollTo().performClick()
         composeRule.onAllNodesWithText(boardName).onLast().performClick()
         composeRule.onNodeWithTag("schedule-placement-running").performScrollTo().performClick()
@@ -134,14 +118,19 @@ class ScheduleEditorEndToEndTest {
 
         val persisted = runBlocking {
             withTimeout(10_000) {
-                application.container.repository.schedules(project.id).schedulesList.first { it.name == fixtureName }
+                container.core.onMachine(daemonId) { it.ListSchedules().execute(ListSchedulesRequest(project_id = project.id)) }
+                    .schedules.first { it.name == fixtureName }
             }
         }
-        assertEquals("run", persisted.action)
-        assertEquals("project", persisted.workspaceMode)
-        assertEquals("Scheduled work · {{date}}", persisted.titleTemplate)
-        assertTrue(persisted.promptTemplate.contains("{{project}}"))
-        assertTrue(persisted.promptTemplate.contains("{{scheduled_at}}"))
-        runBlocking { application.container.repository.deleteSchedule(persisted.id) }
+        try {
+            assertEquals("run", persisted.action)
+            assertEquals("project", persisted.workspace_mode)
+            assertEquals("Scheduled work · {{date}}", persisted.title_template)
+            assertTrue(persisted.prompt_template.contains("{{project}}"))
+            assertTrue(persisted.prompt_template.contains("{{scheduled_at}}"))
+        } finally {
+            runBlocking { container.core.onMachine(daemonId) { it.DeleteSchedule().execute(ScheduleRef(schedule_id = persisted.id)) } }
+            IsolatedCore.disconnect(container)
+        }
     }
 }

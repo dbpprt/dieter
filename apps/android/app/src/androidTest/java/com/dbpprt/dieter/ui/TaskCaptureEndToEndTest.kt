@@ -14,8 +14,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.data.DieterEndpoint
+import com.dbpprt.dieter.core.composition.task
+import com.dbpprt.dieter.core.navigation.Destination
+import com.dbpprt.dieter.e2e.IsolatedCore
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -37,19 +38,10 @@ class TaskCaptureEndToEndTest {
         val context = instrumentation.targetContext
         instrumentation.startActivitySync(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         val container = (context.applicationContext as DieterApplication).container
-        val manager = container.connectionManager
-        val endpoint = DieterEndpoint("task_capture_gateway", "Capture fixture",
-            arguments.getString("isolatedGatewayHost") ?: "10.0.2.2",
-            arguments.getString("isolatedGatewayPort")!!.toInt())
-        container.repository.setAccessToken(endpoint, arguments.getString("isolatedGatewayToken")!!)
-        manager.updateEndpoints(listOf(endpoint), selectedGatewayId = endpoint.id)
-        manager.connect(); manager.onAppForegrounded()
-        val connected = runBlocking { withTimeout(30_000) { manager.state.first {
-            it.phase == ConnectionPhase.CONNECTED && it.boards.isNotEmpty() && it.harnesses.any { h -> h.modelsCount > 0 }
-        } } }
-        val board = connected.boards.first()
-        val project = connected.projects.first { it.id == board.projectId }
-        runBlocking { manager.ensureCheckoutRoute(project.id, project.checkoutsList.first().id) }
+        val connected = IsolatedCore.connect(container)
+        val board = connected.boards.values.flatten().first()
+        val project = connected.projects.first { it.id == board.project_id }
+        IsolatedCore.harnesses(container, project.checkouts.first().daemon_id)
 
         val file = File(context.filesDir, "capture-fixture/screenshot.png").apply { parentFile!!.mkdirs() }
         Bitmap.createBitmap(80, 120, Bitmap.Config.ARGB_8888).apply {
@@ -92,7 +84,7 @@ class TaskCaptureEndToEndTest {
         compose.onNodeWithTag("capture-project-${project.id}").performClick()
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("conversation-prompt").fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty() }
         compose.onNodeWithTag("conversation-prompt").assertTextContains("Review this screenshot")
-        compose.waitUntil(15_000) { container.taskCaptures.drafts.any { it.attachments.size == 1 && !it.importing } }
+        compose.waitUntil(15_000) { container.taskCaptures.view.value.drafts.any { it.task.attachments.size == 1 && !it.importing } }
         compose.onNodeWithTag("composer-attachment-0").performScrollTo().assertIsDisplayed()
         capture("capture-shared-attachment.png")
         compose.onNodeWithText("Preview screenshot.png").performScrollTo().performClick()
@@ -108,16 +100,14 @@ class TaskCaptureEndToEndTest {
         instrumentation.runOnMainSync { currentActivity().recreate() }
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("conversation-title").fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty() }
         compose.onNodeWithTag("conversation-title").assertTextContains("Screenshot capture regression")
-        assertEquals(1, container.taskCaptures.drafts.single { it.title == "Screenshot capture regression" }.attachments.size)
+        assertEquals(1, container.taskCaptures.view.value.drafts.single { it.task.title == "Screenshot capture regression" }.task.attachments.size)
         compose.onAllNodesWithText("Save")[0].performClick()
-        val created = runBlocking { withTimeout(30_000) { manager.state.first { state ->
-            state.cards.count { it.title == "Screenshot capture regression" } == 1 &&
-                state.cards.any { it.title == "Screenshot capture regression" && it.ownerDaemonId.isNotBlank() }
-        }.cards.single { it.title == "Screenshot capture regression" } } }
-        val conversation = runBlocking { container.repository.conversation(created.id) }.conversation
-        assertArrayEquals(bytes, conversation.draftAttachmentsList.single().data.toByteArray())
-        assertEquals(project.id, created.projectId)
-        assertEquals(board.id, created.boardId)
+        val created = IsolatedCore.awaitCard(container) { it.title == "Screenshot capture regression" && it.owner_daemon_id.isNotBlank() }
+        assertEquals(1, container.core.workspace.state.value.allItems.count { it.title == "Screenshot capture regression" })
+        val conversation = requireNotNull(IsolatedCore.conversation(container, created.id, created.owner_daemon_id).conversation)
+        assertArrayEquals(bytes, conversation.draft_attachments.single().data_.toByteArray())
+        assertEquals(project.id, created.project_id)
+        assertEquals(board.id, created.board_id)
 
         compose.runOnIdle { ViewModelProvider(currentActivity())[DieterViewModel::class.java].navigate(Destination.ACTIVITY) }
         compose.onNodeWithTag("inbox-new-task").assertIsDisplayed().performClick()
@@ -126,10 +116,9 @@ class TaskCaptureEndToEndTest {
         compose.onNodeWithTag("conversation-title").performTextReplacement("Inbox capture regression")
         capture("capture-inbox-composer.png")
         compose.onAllNodesWithText("Save")[0].performClick()
-        runBlocking { withTimeout(30_000) { manager.state.first { state ->
-            state.cards.count { it.title == "Inbox capture regression" && it.ownerDaemonId.isNotBlank() } == 1
-        } } }
-        assertFalse(container.taskCaptures.drafts.any { it.title == "Inbox capture regression" })
+        IsolatedCore.awaitCard(container) { it.title == "Inbox capture regression" && it.owner_daemon_id.isNotBlank() }
+        assertEquals(1, container.core.workspace.state.value.allItems.count { it.title == "Inbox capture regression" })
+        assertFalse(container.taskCaptures.view.value.drafts.any { it.task.title == "Inbox capture regression" })
     }
 
     private fun currentActivity(): MainActivity = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()

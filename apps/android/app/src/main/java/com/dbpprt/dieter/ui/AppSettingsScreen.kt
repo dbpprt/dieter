@@ -72,13 +72,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.connection.isPermittedInsecureGatewayHost
-import com.dbpprt.dieter.data.DIETER_ENDPOINTS
-import com.dbpprt.dieter.data.DieterEndpoint
-import com.dbpprt.dieter.data.dieterEndpointFromAddress
+import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.identity.Gateway
+import com.dbpprt.dieter.core.identity.GatewayDraft
+import com.dbpprt.dieter.core.identity.GatewayEdits
 import com.dbpprt.dieter.settings.DieterPalette
-import com.dbpprt.dieter.settings.NotificationDisplayStyle
+import com.dbpprt.dieter.core.notifications.NotificationStyle
 import com.dbpprt.dieter.update.AppUpdateManager
 import com.dbpprt.dieter.update.AppUpdateState
 import com.dbpprt.dieter.ui.theme.DieterDivider
@@ -97,7 +96,8 @@ private const val DISPLAY_TAB = 2
 private const val QUOTAS_TAB = 3
 private const val UPDATES_TAB = 4
 
-private data class ConnectionDraft(val id: String, val label: String, val address: String)
+
+/** An editable row for a saved gateway; its origin identifies it until saved. */
 
 @Composable
 fun AppSettingsScreen(
@@ -106,13 +106,9 @@ fun AppSettingsScreen(
     updateManager: AppUpdateManager,
     contentPadding: PaddingValues,
 ) {
-    val endpointKey = state.configuredConnections.joinToString("|") { "${it.id}:${it.label}:${it.address}" }
+    val endpointKey = state.gateways.joinToString("|") { "${it.origin}:${it.name}" }
     var drafts by remember(endpointKey) {
-        mutableStateOf(
-            state.configuredConnections.distinctBy { it.address }.map { endpoint ->
-                ConnectionDraft(endpoint.id, endpoint.label, endpoint.address)
-            },
-        )
+        mutableStateOf(state.gateways.distinctBy { it.origin }.map(GatewayDraft::of))
     }
     var activeDraftId by remember(endpointKey, state.activeGatewayId) {
         mutableStateOf(state.activeGatewayId.takeIf { active -> drafts.any { it.id == active } } ?: drafts.firstOrNull()?.id.orEmpty())
@@ -120,16 +116,8 @@ fun AppSettingsScreen(
     var selectedTab by remember { mutableIntStateOf(CONNECTIONS_TAB) }
     var confirmation by remember { mutableStateOf<String?>(null) }
     var cleanSyncConfirmation by remember { mutableStateOf(false) }
-    val parsed = drafts.map { draft ->
-        runCatching { dieterEndpointFromAddress(draft.id, draft.label, draft.address) }
-    }
-    val validationError = when {
-        drafts.isEmpty() -> "Keep at least one connection."
-        parsed.any { it.isFailure } -> parsed.first { it.isFailure }.exceptionOrNull()?.message
-        parsed.mapNotNull { it.getOrNull() }.any { !it.secure && !isPermittedInsecureGatewayHost(it.host) } -> "Remote gateways must use HTTPS."
-        parsed.mapNotNull { it.getOrNull()?.address?.lowercase() }.distinct().size != drafts.size -> "Connection addresses must be unique."
-        else -> null
-    }
+    val edits = remember(drafts) { GatewayEdits(drafts) }
+    val validationError = edits.problem
 
     SettingsAdaptiveLayout(
         selectedTab = selectedTab,
@@ -171,16 +159,13 @@ fun AppSettingsScreen(
             SettingsActionBar(
                 validationError = validationError,
                 onDefaults = {
-                    drafts = DIETER_ENDPOINTS.map { ConnectionDraft(it.id, it.label, it.address) }
-                    activeDraftId = DIETER_ENDPOINTS.first().id
+                    drafts = listOf(GatewayDraft.of(Gateway.DEFAULT))
+                    activeDraftId = Gateway.DEFAULT.origin
                     model.resetConnectionTargets()
                     confirmation = "Default connections restored."
                 },
                 onSave = {
-                    val endpoints: List<DieterEndpoint> = parsed.mapNotNull { it.getOrNull() }
-                    val activeGatewayId = activeDraftId.takeIf { active -> endpoints.any { it.id == active } }
-                        ?: endpoints.first().id
-                    model.updateConnectionTargets(endpoints, activeGatewayId)
+                    edits.activeOrigin(activeDraftId)?.let { model.updateConnectionTargets(edits.gateways, it) }
                     confirmation = if (state.desiredConnected) {
                         "Saved. Reconnecting to the active gateway."
                     } else {
@@ -251,12 +236,12 @@ internal fun SettingsTab(label: String, selected: Boolean, onClick: () -> Unit) 
 private fun ConnectionsSettings(
     state: DieterUiState,
     model: DieterViewModel,
-    drafts: List<ConnectionDraft>,
+    drafts: List<GatewayDraft>,
     validationError: String?,
     confirmation: String?,
     activeGatewayId: String,
     onSelectGateway: (String) -> Unit,
-    onDraftsChanged: (List<ConnectionDraft>) -> Unit,
+    onDraftsChanged: (List<GatewayDraft>) -> Unit,
     onCleanSync: () -> Unit,
 ) {
     LazyColumn(
@@ -319,7 +304,7 @@ private fun ConnectionsSettings(
             Surface(
                 onClick = {
                     onDraftsChanged(
-                        drafts + ConnectionDraft(
+                        drafts + GatewayDraft(
                             id = "custom_${System.nanoTime()}",
                             label = "New connection",
                             address = "",
@@ -458,12 +443,12 @@ private fun ConnectionStatusCard(state: DieterUiState, model: DieterViewModel) {
 
 @Composable
 private fun ConnectionEditorCard(
-    draft: ConnectionDraft,
+    draft: GatewayDraft,
     index: Int,
     count: Int,
     active: Boolean,
     onSelect: () -> Unit,
-    onChange: (ConnectionDraft) -> Unit,
+    onChange: (GatewayDraft) -> Unit,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
     onDelete: () -> Unit,
@@ -552,11 +537,11 @@ private fun ConnectionTextField(
 @Composable
 private fun NotificationSettings(state: DieterUiState, model: DieterViewModel) {
     val settings = state.notificationSettings
-    val activityControlsEnabled = settings.activityNotificationsEnabled
+    val activityControlsEnabled = settings.enabled
     val boards = (state.spaceBoards + state.boards).distinctBy { it.id }.sortedWith(
         compareBy(
-            { board -> state.projects.firstOrNull { it.id == board.projectId }?.name.orEmpty().lowercase() },
-            { board -> state.projectReplicas[board.projectId]?.hostname.orEmpty().lowercase() },
+            { board -> state.projects.firstOrNull { it.id == board.project_id }?.name.orEmpty().lowercase() },
+            { board -> state.projectReplicas[board.project_id]?.hostname.orEmpty().lowercase() },
             { board -> board.name.lowercase() },
         ),
     )
@@ -577,9 +562,9 @@ private fun NotificationSettings(state: DieterUiState, model: DieterViewModel) {
         }
         item {
             NotificationMasterCard(
-                enabled = settings.activityNotificationsEnabled,
+                enabled = settings.enabled,
                 onToggle = { enabled ->
-                    model.setNotificationSettings(settings.copy(activityNotificationsEnabled = enabled))
+                    model.setNotificationSettings(settings.copy(enabled = enabled))
                 },
             )
         }
@@ -591,33 +576,33 @@ private fun NotificationSettings(state: DieterUiState, model: DieterViewModel) {
                 NotificationToggleRow(
                     title = "While a chat is running",
                     subtitle = "Keep a silent, dismissible progress notification for each active chat.",
-                    checked = settings.runningChatsEnabled,
+                    checked = settings.runningChats,
                     enabled = activityControlsEnabled,
                     testTag = "notifications-running-chats-toggle",
                     onToggle = { enabled ->
-                        model.setNotificationSettings(settings.copy(runningChatsEnabled = enabled))
+                        model.setNotificationSettings(settings.copy(runningChats = enabled))
                     },
                 )
                 HorizontalDivider(color = DieterDivider)
                 NotificationToggleRow(
                     title = "When a chat finishes",
                     subtitle = "Notify after a successful standalone chat completes.",
-                    checked = settings.successfulChatsEnabled,
+                    checked = settings.successfulChats,
                     enabled = activityControlsEnabled,
                     testTag = "notifications-successful-chats-toggle",
                     onToggle = { enabled ->
-                        model.setNotificationSettings(settings.copy(successfulChatsEnabled = enabled))
+                        model.setNotificationSettings(settings.copy(successfulChats = enabled))
                     },
                 )
                 HorizontalDivider(color = DieterDivider)
                 NotificationToggleRow(
                     title = "When a chat needs attention",
                     subtitle = "Notify for failures, stopped chats, and chats waiting for you.",
-                    checked = settings.attentionChatsEnabled,
+                    checked = settings.attentionChats,
                     enabled = activityControlsEnabled,
                     testTag = "notifications-attention-chats-toggle",
                     onToggle = { enabled ->
-                        model.setNotificationSettings(settings.copy(attentionChatsEnabled = enabled))
+                        model.setNotificationSettings(settings.copy(attentionChats = enabled))
                     },
                 )
             }
@@ -630,11 +615,11 @@ private fun NotificationSettings(state: DieterUiState, model: DieterViewModel) {
                 NotificationToggleRow(
                     title = "When a card is ready for review",
                     subtitle = "Includes Mark done and Open actions from the notification.",
-                    checked = settings.reviewCardsEnabled,
+                    checked = settings.reviewCards,
                     enabled = activityControlsEnabled,
                     testTag = "notifications-review-toggle",
                     onToggle = { enabled ->
-                        model.setNotificationSettings(settings.copy(reviewCardsEnabled = enabled))
+                        model.setNotificationSettings(settings.copy(reviewCards = enabled))
                     },
                 )
                 HorizontalDivider(color = DieterDivider)
@@ -652,12 +637,12 @@ private fun NotificationSettings(state: DieterUiState, model: DieterViewModel) {
                     }
                     TextButton(
                         onClick = { model.setNotificationBoardIds(state.notificationBoardIds + visibleBoardIds) },
-                        enabled = activityControlsEnabled && settings.reviewCardsEnabled && boards.isNotEmpty(),
+                        enabled = activityControlsEnabled && settings.reviewCards && boards.isNotEmpty(),
                         modifier = Modifier.testTag("notifications-all-boards"),
                     ) { Text("All") }
                     TextButton(
                         onClick = { model.setNotificationBoardIds(emptySet()) },
-                        enabled = activityControlsEnabled && settings.reviewCardsEnabled && state.notificationBoardIds.isNotEmpty(),
+                        enabled = activityControlsEnabled && settings.reviewCards && state.notificationBoardIds.isNotEmpty(),
                         modifier = Modifier.testTag("notifications-no-boards"),
                     ) { Text("None") }
                 }
@@ -671,14 +656,14 @@ private fun NotificationSettings(state: DieterUiState, model: DieterViewModel) {
                 } else {
                     boards.forEach { board ->
                         HorizontalDivider(color = DieterDivider)
-                        val projectName = state.projects.firstOrNull { it.id == board.projectId }?.name
+                        val projectName = state.projects.firstOrNull { it.id == board.project_id }?.name
                             ?.takeIf(String::isNotBlank) ?: "Workspace"
-                        val hostname = state.projectReplicas[board.projectId]?.hostname?.takeIf(String::isNotBlank)
+                        val hostname = state.projectReplicas[board.project_id]?.hostname?.takeIf(String::isNotBlank)
                         NotificationBoardRow(
                             boardName = board.name.ifBlank { "Untitled board" },
                             projectName = listOfNotNull(projectName, hostname).distinct().joinToString(" · "),
                             checked = board.id in state.notificationBoardIds,
-                            enabled = activityControlsEnabled && settings.reviewCardsEnabled,
+                            enabled = activityControlsEnabled && settings.reviewCards,
                             testTag = "notifications-board-${board.id}",
                             onToggle = { enabled -> model.setNotificationBoardEnabled(board.id, enabled) },
                         )
@@ -692,30 +677,30 @@ private fun NotificationSettings(state: DieterUiState, model: DieterViewModel) {
                 subtitle = "This also changes the persistent connection notification required for background sync.",
             ) {
                 NotificationStyleSelector(
-                    selected = settings.displayStyle,
+                    selected = settings.style,
                     onSelect = { style ->
-                        model.setNotificationSettings(settings.copy(displayStyle = style))
+                        model.setNotificationSettings(settings.copy(style = style))
                     },
                 )
                 HorizontalDivider(color = DieterDivider)
                 NotificationToggleRow(
                     title = "Include the agent result",
                     subtitle = "Show the closing assistant message in expanded completion notifications.",
-                    checked = settings.resultPreviewsEnabled,
-                    enabled = activityControlsEnabled && settings.displayStyle == NotificationDisplayStyle.DETAILED,
+                    checked = settings.resultPreviews,
+                    enabled = activityControlsEnabled && settings.style == NotificationStyle.DETAILED,
                     testTag = "notifications-result-previews-toggle",
                     onToggle = { enabled ->
-                        model.setNotificationSettings(settings.copy(resultPreviewsEnabled = enabled))
+                        model.setNotificationSettings(settings.copy(resultPreviews = enabled))
                     },
                 )
                 HorizontalDivider(color = DieterDivider)
                 NotificationToggleRow(
                     title = "Live work in connection status",
                     subtitle = "Show active cards, model activity, and subagents in the ongoing status.",
-                    checked = settings.liveStatusActivityEnabled,
+                    checked = settings.liveStatus,
                     testTag = "notifications-live-status-toggle",
                     onToggle = { enabled ->
-                        model.setNotificationSettings(settings.copy(liveStatusActivityEnabled = enabled))
+                        model.setNotificationSettings(settings.copy(liveStatus = enabled))
                     },
                 )
             }
@@ -876,8 +861,8 @@ private fun NotificationBoardRow(
 
 @Composable
 private fun NotificationStyleSelector(
-    selected: NotificationDisplayStyle,
-    onSelect: (NotificationDisplayStyle) -> Unit,
+    selected: NotificationStyle,
+    onSelect: (NotificationStyle) -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth().padding(12.dp),
@@ -886,16 +871,16 @@ private fun NotificationStyleSelector(
         NotificationStyleOption(
             title = "Detailed",
             subtitle = "Previews and live context",
-            selected = selected == NotificationDisplayStyle.DETAILED,
+            selected = selected == NotificationStyle.DETAILED,
             modifier = Modifier.weight(1f).testTag("notifications-style-detailed"),
-            onClick = { onSelect(NotificationDisplayStyle.DETAILED) },
+            onClick = { onSelect(NotificationStyle.DETAILED) },
         )
         NotificationStyleOption(
             title = "Compact",
             subtitle = "Short standard rows",
-            selected = selected == NotificationDisplayStyle.COMPACT,
+            selected = selected == NotificationStyle.COMPACT,
             modifier = Modifier.weight(1f).testTag("notifications-style-compact"),
-            onClick = { onSelect(NotificationDisplayStyle.COMPACT) },
+            onClick = { onSelect(NotificationStyle.COMPACT) },
         )
     }
 }

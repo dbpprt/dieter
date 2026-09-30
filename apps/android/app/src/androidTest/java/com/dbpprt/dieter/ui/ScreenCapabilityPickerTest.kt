@@ -17,9 +17,15 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.test.platform.app.InstrumentationRegistry
-import com.dbpprt.dieter.connection.EndpointConnection
-import com.dbpprt.dieter.screens.ScreenController
+import com.dbpprt.dieter.core.machines.MachineRow
+import com.dbpprt.dieter.core.CoreRuntime
+import com.dbpprt.dieter.core.screens.Point
 import com.dbpprt.dieter.screens.ScreenCanvasView
+import com.dbpprt.dieter.screens.ScreenHost
+import com.dbpprt.dieter.sharedcore.SharedCore
+import java.io.File
+import java.util.UUID
+import kotlinx.coroutines.runBlocking
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
@@ -32,19 +38,28 @@ import org.junit.Test
 class ScreenCapabilityPickerTest {
     @get:Rule
     val compose = createComposeRule()
+    private val cores = mutableListOf<CoreRuntime>()
+
+    /** A screen host over an isolated core whose routes never connect. */
+    private fun host(): ScreenHost {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val core = SharedCore.create(context, null, File(context.noBackupFilesDir, "screen-picker-${UUID.randomUUID()}")).also { cores += it }
+        return ScreenHost(context, core) { { awaitCancellation() } }
+    }
+
+    @org.junit.After fun shutdown() = runBlocking { cores.forEach { it.shutdown() } }
 
     @Test fun canvasControlsAndTouchEventsKeepZoomAnchoredAndFitRecoverable() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        lateinit var controller: ScreenController
+        val host = host()
         lateinit var canvas: ScreenCanvasView
         compose.setContent {
-            controller = remember { ScreenController(context) }
-            var zoom by remember { mutableFloatStateOf(1f) }
+            var zoom by remember { mutableDoubleStateOf(1.0) }
             var fitted by remember { mutableStateOf(true) }
-            DisposableEffect(Unit) { onDispose { canvas.release(); controller.close() } }
+            DisposableEffect(Unit) { onDispose { canvas.release(); host.close() } }
             DieterTheme {
                 Box(Modifier.fillMaxSize()) {
-                    AndroidView(factory = { ScreenCanvasView(it, controller).also { view ->
+                    AndroidView(factory = { ScreenCanvasView(it, host).also { view ->
                         canvas = view
                         view.onCanvasChanged = { zoom = view.canvasModel.zoom; fitted = view.canvasModel.isFitted }
                     } }, modifier = Modifier.fillMaxSize())
@@ -54,14 +69,14 @@ class ScreenCapabilityPickerTest {
             }
         }
         compose.onNodeWithTag("screen-zoom-in").performClick()
-        compose.waitUntil { canvas.canvasModel.zoom == 1.25f }
+        compose.waitUntil { canvas.canvasModel.zoom == 1.25 }
         compose.onNodeWithText("125%").assertIsDisplayed()
         compose.onNodeWithTag("screen-zoom-out").performClick()
         compose.waitUntil { canvas.canvasModel.isFitted }
         compose.onNodeWithText("Fit · 100%").assertIsDisplayed()
         // Rapid presses accumulate complete steps while the visual transition runs.
-        compose.runOnIdle { canvas.zoomCanvas(1.25f); canvas.zoomCanvas(1.25f) }
-        compose.waitUntil { canvas.canvasModel.zoom == 1.5625f }
+        compose.runOnIdle { canvas.zoomCanvas(1.25); canvas.zoomCanvas(1.25) }
+        compose.waitUntil { canvas.canvasModel.zoom == 1.5625 }
         compose.runOnIdle { canvas.resetCanvas() }
         compose.runOnIdle {
             val m = canvas.canvasModel
@@ -78,27 +93,28 @@ class ScreenCapabilityPickerTest {
             dispatch(MotionEvent.ACTION_POINTER_DOWN or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT),
                 listOf(cx - 100 to cy, cx + 100 to cy), 20)
             dispatch(MotionEvent.ACTION_MOVE, listOf(cx - 180 to cy + 40, cx + 220 to cy + 40), 40)
-            assertEquals(2f, m.zoom, .001f)
-            assertEquals(cx + 20, m.left + m.remoteWidth * m.scale / 2, .1f)
-            assertEquals(cy + 40, m.top + m.remoteHeight * m.scale / 2, .1f)
+            assertEquals(2.0, m.zoom, .001)
+            assertEquals(cx + 20.0, m.left + m.remoteWidth * m.scale / 2, .1)
+            assertEquals(cy + 40.0, m.top + m.remoteHeight * m.scale / 2, .1)
             dispatch(MotionEvent.ACTION_POINTER_UP or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT),
                 listOf(cx - 180 to cy + 40, cx + 220 to cy + 40), 60)
             dispatch(MotionEvent.ACTION_UP, listOf(cx - 180 to cy + 40), 80)
-            assertEquals(.5f, m.cursorX, 0f); assertEquals(.5f, m.cursorY, 0f)
+            assertEquals(Point(.5, .5), m.cursor)
         }
         compose.onNodeWithText("200%").assertIsDisplayed()
         compose.runOnIdle {
-            controller.disconnect()
+            // Ending a session restores the fitted view, as the Screens page does.
+            canvas.resetSession()
             assertTrue(canvas.canvasModel.isFitted)
             val matrix = (canvas.getChildAt(0) as android.view.TextureView).getTransform(null)
             val displayed = android.graphics.RectF(0f, 0f, canvas.width.toFloat(), canvas.height.toFloat())
             matrix.mapRect(displayed)
-            assertEquals(canvas.canvasModel.left, displayed.left, .01f)
-            assertEquals(canvas.canvasModel.top, displayed.top, .01f)
-            assertEquals(canvas.canvasModel.remoteWidth * canvas.canvasModel.scale, displayed.width(), .01f)
+            assertEquals(canvas.canvasModel.left, displayed.left.toDouble(), .01)
+            assertEquals(canvas.canvasModel.top, displayed.top.toDouble(), .01)
+            assertEquals(canvas.canvasModel.remoteWidth * canvas.canvasModel.scale, displayed.width().toDouble(), .01)
             // Also exercise Fit independently from the session-reset path.
-            canvas.canvasModel.transform(2f, 200f, 300f, 220f, 350f)
-            canvas.zoomCanvas(1f)
+            canvas.canvasModel.transform(2.0, Point(200.0, 300.0), Point(220.0, 350.0))
+            canvas.zoomCanvas(1.0)
         }
         compose.onNodeWithTag("screen-fit").performClick()
         compose.waitUntil { canvas.canvasModel.isFitted }
@@ -110,9 +126,9 @@ class ScreenCapabilityPickerTest {
         } finally { capture.recycle() }
         compose.onNodeWithText("Fit · 100%").assertIsDisplayed()
         repeat(7) {
-            val expected = (canvas.canvasModel.zoom / 1.25f).coerceAtLeast(.25f)
+            val expected = (canvas.canvasModel.zoom / 1.25).coerceAtLeast(.25)
             compose.onNodeWithTag("screen-zoom-out").performClick()
-            compose.waitUntil { kotlin.math.abs(canvas.canvasModel.zoom - expected) < .00001f }
+            compose.waitUntil { kotlin.math.abs(canvas.canvasModel.zoom - expected) < .00001 }
         }
         compose.onNodeWithTag("screen-zoom-out").assertIsNotEnabled()
         compose.onNodeWithText("25%").assertIsDisplayed()
@@ -125,7 +141,7 @@ class ScreenCapabilityPickerTest {
     fun unreadyHostCanBeSelectedForGuidanceAndRetryWhileOfflineHostsStayDisabled() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val machines = listOf(
-            EndpointConnection(
+            MachineRow(
                 id = "linux",
                 label = "Linux host",
                 address = "isolated",
@@ -134,7 +150,7 @@ class ScreenCapabilityPickerTest {
                 remoteDesktopReason = "No supported graphical login session is active",
                 remoteDesktopPlatform = "linux",
             ),
-            EndpointConnection(
+            MachineRow(
                 id = "mac",
                 label = "Mac host",
                 address = "isolated",
@@ -142,16 +158,12 @@ class ScreenCapabilityPickerTest {
                 remoteDesktopReady = true,
                 remoteDesktopPlatform = "darwin",
             ),
-            EndpointConnection(id = "offline", label = "Offline host", address = "isolated", online = false),
+            MachineRow(id = "offline", label = "Offline host", address = "isolated", online = false),
         )
+        val host = host()
         compose.setContent {
             DieterTheme {
-                ScreenWorkspace(
-                    machines = machines,
-                    padding = PaddingValues(),
-                    controller = androidx.compose.runtime.remember { ScreenController(context) },
-                    openConnection = { awaitCancellation() },
-                )
+                ScreenWorkspace(machines = machines, padding = PaddingValues(), host = host)
             }
         }
 

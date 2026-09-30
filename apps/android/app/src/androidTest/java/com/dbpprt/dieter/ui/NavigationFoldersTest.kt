@@ -20,22 +20,16 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.lifecycle.ViewModelStore
 import androidx.test.platform.app.InstrumentationRegistry
-import com.dbpprt.dieter.connection.DieterConnectionManager
-import com.dbpprt.dieter.data.DIETER_ENDPOINTS
-import com.dbpprt.dieter.data.DieterEndpoint
-import com.dbpprt.dieter.data.DieterRepository
-import com.dbpprt.dieter.settings.AppPreferences
-import com.dbpprt.dieter.settings.NavigationFolderScope
+import com.dbpprt.dieter.core.navigation.Destination
+import com.dbpprt.dieter.core.navigation.FolderScope
+import com.dbpprt.dieter.e2e.TestCore
 import com.dbpprt.dieter.ui.theme.DieterTheme
-import com.dbpprt.dieter.v1.Card
-import com.dbpprt.dieter.v1.Project
+import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.Project
 import java.io.File
-import java.lang.reflect.Proxy
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -43,47 +37,51 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 
-/** Runs real screens with local fixture data, never contacting an operator daemon. */
+/**
+ * Runs real screens over an isolated shared core with local fixture data; the
+ * navigation namespace is bound to a fixture account so edits queue offline.
+ * Never contacts an operator gateway or daemon.
+ */
 class NavigationFoldersTest {
     @get:Rule val compose = createComposeRule()
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val lifecycle = ViewModelStore()
-    private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private lateinit var core: TestCore
     private lateinit var model: DieterViewModel
-    private lateinit var preferences: AppPreferences
-    private val ownedPreferences = mutableListOf<AppPreferences>()
-    private fun newPreferences() = AppPreferences(context).also { ownedPreferences += it }
-    private val projects = listOf(Project.newBuilder().setId("p1").setName("Dieter").setPath("/work/dieter").build())
+    private val projects = listOf(Project(id = "p1", name = "Dieter", path = "/work/dieter"))
     private val chats = listOf(
-        Card.newBuilder().setId("c1").setTitle("Plan navigation").setProjectId("p1").setScope("chat").setPinned(true).build(),
-        Card.newBuilder().setId("c2").setTitle("Review Android layouts").setProjectId("p1").setScope("chat").build(),
+        Card(id = "c1", title = "Plan navigation", project_id = "p1", scope = "chat", pinned = true),
+        Card(id = "c2", title = "Review Android layouts", project_id = "p1", scope = "chat"),
     )
 
     @Before fun setup() {
         assumeTrue("Use the isolated E2E app", context.packageName.endsWith(".e2e"))
-        context.getSharedPreferences("dieter_shared_kv", Context.MODE_PRIVATE).edit().clear().putString("activeAccount", "navigation-fixture").commit()
-        var endpoints = DIETER_ENDPOINTS
-        val repository = Proxy.newProxyInstance(DieterRepository::class.java.classLoader, arrayOf(DieterRepository::class.java)) { _, method, args ->
-            when (method.name) {
-                "getEndpoints" -> endpoints
-                "getActiveEndpoint" -> endpoints.first()
-                "replaceEndpoints" -> { @Suppress("UNCHECKED_CAST") val replacement = args!![0] as List<DieterEndpoint>; endpoints = replacement; Unit }
-                "close", "reconnect" -> Unit
-                else -> error("Unexpected repository call in layout-only test: ${method.name}")
-            }
-        } as DieterRepository
+        core = TestCore(navigationAccount = "navigation-fixture")
         compose.runOnUiThread {
-            preferences = newPreferences()
-            model = DieterViewModel(DieterConnectionManager(context, repository, managerScope), preferences)
+            model = core.viewModel()
             lifecycle.put("folders", model)
         }
     }
 
     @After fun cleanup() {
         compose.runOnUiThread { lifecycle.clear() }
-        managerScope.cancel()
-        runBlocking {
-            ownedPreferences.forEach { it.sharedNavigation.awaitPendingWrites(); it.sharedNavigation.close() }
+        core.close()
+        core.delete()
+    }
+
+    /** Reads the shared navigation as a restarted app would, from the same state directory. */
+    private fun <T> afterRestart(read: suspend (com.dbpprt.dieter.core.navigation.NavigationLayout) -> T?): T {
+        val reopened = core.reopen()
+        try {
+            return runBlocking {
+                withTimeout(5_000) {
+                    var result: T? = null
+                    reopened.core.navigationLayout().first { layout -> read(layout).also { result = it } != null }
+                    result!!
+                }
+            }
+        } finally {
+            reopened.close()
         }
     }
 
@@ -99,7 +97,7 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("new-chats-folder").performClick()
         compose.onNodeWithTag("folder-name").performTextInput("Work")
         compose.onNodeWithTag("save-folder").performClick()
-        val id = folderID(NavigationFolderScope.CHATS)
+        val id = folderID(FolderScope.CHATS)
         compose.onNodeWithTag("chat-c1").performTouchInput { longClick() }
         compose.onNodeWithTag("chat-folder-c1").performClick()
         compose.onNodeWithTag("move-folder-$id").performClick()
@@ -119,17 +117,12 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("save-folder").performClick()
         compose.onNodeWithTag("folder-$id").assertTextContains("Reviews")
         compose.onAllNodesWithText("Reviews").assertCountEquals(2) // Header and pinned shortcut context.
-        runBlocking { preferences.sharedNavigation.awaitPendingWrites() }
-        val reloaded = newPreferences()
-        compose.waitUntil(5_000) { reloaded.navigationFolders.layouts.value.getValue(NavigationFolderScope.CHATS).folders.singleOrNull()?.name == "Reviews" }
-        compose.runOnIdle {
-            val restored = reloaded.navigationFolders.layouts.value.getValue(NavigationFolderScope.CHATS).folders.single()
-            assertEquals(id, restored.id)
-            assertEquals("Reviews", restored.name)
-            assertEquals(listOf("c1"), restored.itemIDs)
-            assertTrue(restored.isExpanded)
-            assertTrue(model.state.value.projectFolders.folders.isEmpty())
-        }
+        val restored = afterRestart { layout -> layout.folders(FolderScope.CHATS).singleOrNull()?.takeIf { it.name == "Reviews" } }
+        assertEquals(id, restored.id)
+        assertEquals("Reviews", restored.name)
+        assertEquals(listOf("c1"), restored.itemIds)
+        assertTrue(restored.expanded)
+        compose.runOnIdle { assertTrue(model.state.value.projectFolders.isEmpty()) }
         compose.onNodeWithTag("folder-options-$id").performClick()
         compose.onNodeWithText("Delete folder").performClick()
         compose.onNodeWithTag("delete-folder-confirm").performClick()
@@ -139,11 +132,9 @@ class NavigationFoldersTest {
     }
 
     @Test fun chatHierarchySearchRevealsCollapsedGroupsWithoutChangingPreferences() {
-        val otherProject = Project.newBuilder().setId("p2").setName("NewsOS").build()
+        val otherProject = Project(id = "p2", name = "NewsOS")
         fun chat(id: String, title: String, project: String = "p1", pinned: Boolean = false, running: Boolean = false) =
-            Card.newBuilder().setId(id).setTitle(title).setProjectId(project).setScope("chat")
-                .setOwnerDaemonId("mini-office").setPinned(pinned).setRuntime(if (running) "running" else "idle")
-                .setLastActivityAt("2026-09-23T10:00:00Z").build()
+            Card(id = id, title = title, project_id = project, scope = "chat", owner_daemon_id = "mini-office", pinned = pinned, runtime = if (running) "running" else "idle", last_activity_at = "2026-09-23T10:00:00Z")
         val fixtureChats = listOf(
             chat("pin", "Release checklist", pinned = true),
             chat("filed", "New Readerscore", "p2", running = true),
@@ -153,11 +144,13 @@ class NavigationFoldersTest {
             chat("project-3", "Write release notes"),
             chat("project-4", "Check keyboard shortcuts"),
         )
+        compose.runOnIdle { model.createFolder(FolderScope.CHATS, "Newsroom") }
+        val news = folderID(FolderScope.CHATS)
         compose.runOnIdle {
-            model.navigationFolders.update(NavigationFolderScope.CHATS) {
-                it.adding("Newsroom", "news").moving("filed", "news").moving("filed-idle", "news")
-            }
+            model.moveToFolder(FolderScope.CHATS, "filed", news)
+            model.moveToFolder(FolderScope.CHATS, "filed-idle", news)
         }
+        compose.waitUntil(5_000) { model.state.value.chatFolders.single().itemIds == listOf("filed", "filed-idle") }
         var dark by mutableStateOf(true)
         var fontScale by mutableStateOf(1f)
         compose.setContent {
@@ -174,7 +167,7 @@ class NavigationFoldersTest {
         }
         compose.onNodeWithText("Pinned").assertIsDisplayed()
         compose.onNodeWithText("Folders").assertIsDisplayed()
-        compose.onNodeWithTag("folder-news").assertIsDisplayed()
+        compose.onNodeWithTag("folder-$news").assertIsDisplayed()
         compose.onNodeWithTag("chat-runtime-filed", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("Not running").assertDoesNotExist()
         capture("all-chats-dark.png")
@@ -187,7 +180,7 @@ class NavigationFoldersTest {
         compose.onNodeWithText("Move to folder").assertIsDisplayed()
         androidx.test.espresso.Espresso.pressBack()
         compose.runOnIdle { fontScale = 1f }
-        compose.onNodeWithTag("folder-news").performClick()
+        compose.onNodeWithTag("folder-$news").performClick()
         compose.onNodeWithTag("chats-list").performScrollToNode(hasTestTag("project-chat-toggle-p1"))
         compose.onNodeWithTag("project-chat-toggle-p1").performClick()
         compose.waitUntil { "p1" in model.state.value.collapsedChatProjectIds }
@@ -208,7 +201,7 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("chat-filed").assertDoesNotExist()
         compose.runOnIdle {
             assertTrue("p1" in model.state.value.collapsedChatProjectIds)
-            assertFalse(model.navigationFolders.layouts.value.getValue(NavigationFolderScope.CHATS).folders.single().isExpanded)
+            assertFalse(model.state.value.chatFolders.single().expanded)
         }
         compose.onNode(hasSetTextAction()).performTextInput("nothing-matches-this")
         androidx.test.espresso.Espresso.closeSoftKeyboard()
@@ -230,7 +223,7 @@ class NavigationFoldersTest {
         compose.onNodeWithText("New folder").performClick()
         compose.onNodeWithTag("folder-name").performTextInput("Work")
         compose.onNodeWithTag("save-folder").performClick()
-        val id = folderID(NavigationFolderScope.PROJECTS)
+        val id = folderID(FolderScope.PROJECTS)
         compose.onNodeWithTag("space-project-p1").assertIsDisplayed()
         capture("project-folders.png")
         compose.onNodeWithTag("folder-$id").performClick()
@@ -247,7 +240,7 @@ class NavigationFoldersTest {
         compose.onNodeWithText("Delete folder").performClick()
         compose.onNodeWithTag("delete-folder-confirm").performClick()
         compose.onNodeWithTag("space-project-p1").assertIsDisplayed()
-        compose.runOnIdle { assertTrue(model.state.value.chatFolders.folders.isEmpty()) }
+        compose.runOnIdle { assertTrue(model.state.value.chatFolders.isEmpty()) }
     }
 
     @Test fun projectSyncStatusExplainsFailuresAndClearsAfterRecovery() {
@@ -287,18 +280,12 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("project-pin-p1").performClick()
         compose.onNodeWithText("PINNED").assertIsDisplayed()
         compose.onNodeWithTag("project-pinned-p1").assertIsDisplayed()
-        runBlocking { preferences.sharedNavigation.awaitPendingWrites() }
-        val pinnedReload = newPreferences()
-        compose.waitUntil(5_000) { pinnedReload.pinnedProjectOrder.value == listOf("p1") }
-        assertEquals(listOf("p1"), pinnedReload.pinnedProjectOrder.value)
+        assertEquals(listOf("p1"), afterRestart { layout -> layout.pinnedProjects(listOf("p1")).takeIf { it.isNotEmpty() } })
 
         compose.onNodeWithTag("project-unpin-p1").performClick()
         compose.onNodeWithTag("project-pinned-p1").assertDoesNotExist()
-        runBlocking { preferences.sharedNavigation.awaitPendingWrites() }
-        val unpinnedReload = newPreferences()
-        runBlocking { unpinnedReload.sharedNavigation.awaitPendingWrites() }
         compose.waitUntil(5_000) { model.state.value.pinnedProjectOrder.isEmpty() }
-        assertTrue(unpinnedReload.pinnedProjectOrder.value.isEmpty())
+        assertTrue(afterRestart { layout -> layout.pinnedProjects(listOf("p1")).takeIf { it.isEmpty() } }.isEmpty())
     }
 
     @Test fun boardlessProjectsExposeBoardCreationInsteadOfAnEmptyBoard() {
@@ -325,60 +312,34 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("new-card").assertDoesNotExist()
     }
 
-    @Test fun sharedRecordsPreserveBothScopesAndCollapsedMembership() {
-        val records = mapOf(
-            "projects-folder.mac-id.name" to "\"Research\"",
-            "projects-folder.mac-id.expanded" to "false",
-            "projects-item.offline-project.position" to """{"parent":"mac-id","rank":"a"}""",
-            "projects-item.p1.position" to """{"parent":"mac-id","rank":"b"}""",
-        )
-        val decoded = com.dbpprt.dieter.settings.SharedNavigation.folders(records, "projects")
-        assertEquals(listOf("offline-project", "p1"), decoded.folders.single().itemIDs)
-        assertFalse(decoded.folders.single().isExpanded)
-        val store = model.navigationFolders
-        store.update(NavigationFolderScope.PROJECTS) { decoded }
-        store.create(NavigationFolderScope.CHATS, "Research", "c1")
-        compose.waitUntil(5_000) { store.layouts.value.getValue(NavigationFolderScope.CHATS).folders.isNotEmpty() }
-        // A restored store reads one durable snapshot. Drain the source queue
-        // before constructing it so it cannot restore a partially written edit.
-        runBlocking { preferences.sharedNavigation.awaitPendingWrites() }
-        val restored = newPreferences().navigationFolders
-        compose.waitUntil(5_000) {
-            restored.layouts.value.getValue(NavigationFolderScope.PROJECTS) == decoded &&
-                restored.layouts.value.getValue(NavigationFolderScope.CHATS).folders.singleOrNull()?.itemIDs == listOf("c1")
-        }
-        assertEquals(decoded, restored.layouts.value.getValue(NavigationFolderScope.PROJECTS))
-        assertEquals(listOf("c1"), restored.layouts.value.getValue(NavigationFolderScope.CHATS).folders.single().itemIDs)
-    }
-
     @Test fun folderPickerScrollsWithLargeTextAndManyFolders() {
-        val store = model.navigationFolders
-        repeat(18) { store.create(NavigationFolderScope.PROJECTS, "Project group ${it + 1}") }
-        compose.waitUntil(5_000) { store.layouts.value.getValue(NavigationFolderScope.PROJECTS).folders.size == 18 }
-        val last = store.layouts.value.getValue(NavigationFolderScope.PROJECTS).folders.last().id
+        compose.runOnIdle { repeat(18) { model.createFolder(FolderScope.PROJECTS, "Project group ${it + 1}") } }
+        compose.waitUntil(5_000) { model.state.value.projectFolders.size == 18 }
+        val last = model.state.value.projectFolders.last().id
         var dismissed = false
         compose.setContent {
-            val layouts by store.layouts.collectAsState()
+            val state by model.state.collectAsState()
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 2f)) {
                 DieterTheme {
-                    MoveToNavigationFolderDialog("p1", NavigationFolderScope.PROJECTS,
-                        layouts.getValue(NavigationFolderScope.PROJECTS), store, onDismiss = { dismissed = true })
+                    MoveToNavigationFolderDialog("p1", FolderScope.PROJECTS, state.projectFolders, model, onDismiss = { dismissed = true })
                 }
             }
         }
         compose.onNodeWithTag("move-folder-$last").performScrollTo().assertIsDisplayed().performClick()
-        compose.waitUntil(5_000) { store.layouts.value.getValue(NavigationFolderScope.PROJECTS).folderContaining("p1")?.id == last }
+        compose.waitUntil(5_000) { model.state.value.projectFolders.folderContaining("p1")?.id == last }
         compose.runOnIdle {
             assertTrue(dismissed)
-            assertEquals(last, store.layouts.value.getValue(NavigationFolderScope.PROJECTS).folderContaining("p1")?.id)
+            assertEquals(last, model.state.value.projectFolders.folderContaining("p1")?.id)
         }
     }
 
-    private fun folderID(scope: NavigationFolderScope): String {
-        compose.waitUntil { model.navigationFolders.layouts.value.getValue(scope).folders.isNotEmpty() }
-        return model.navigationFolders.layouts.value.getValue(scope).folders.single().id
+    private fun folderID(scope: FolderScope): String {
+        compose.waitUntil { folders(scope).isNotEmpty() }
+        return folders(scope).single().id
     }
+
+    private fun folders(scope: FolderScope) = if (scope == FolderScope.CHATS) model.state.value.chatFolders else model.state.value.projectFolders
 
     private fun capture(name: String) {
         val file = File(context.getExternalFilesDir(null), name)

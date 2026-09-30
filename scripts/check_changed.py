@@ -12,7 +12,7 @@ import sys
 
 MAC_SMOKE_SUITES = ("core", "board", "conversation", "machine", "sidebar", "terminal", "island", "workspace", "inbox")
 MAC_SOURCE_ROOT = "apps/mac/Sources/DieterMac/"
-CI_COMPONENTS = ("core", "macos", "ios", "android")
+CI_COMPONENTS = ("core", "macos", "ios", "android", "kmp")
 IOS_POLICY_ROOTS = ("apps/mac/Sources/DieterIOS/", "apps/mac/Tests/DieterIOSTests/")
 IOS_ONLY_ROOTS = ("apps/ios/", *IOS_POLICY_ROOTS)
 SHARED_SWIFT_ROOTS = ("apps/mac/Sources/DieterCore/", "apps/mac/Sources/DieterClient/",
@@ -193,7 +193,10 @@ def plan_checks(root, paths, packages=None):
     ios = schema or fixture or brand or any(p.startswith(IOS_ONLY_ROOTS + SHARED_SWIFT_ROOTS)
                                             or p in SWIFT_PACKAGE_FILES | {"just/ios.just"} for p in code)
     e2e = any(p.startswith(("tools/e2e/", "tests/e2e/")) or p == "just/e2e.just" for p in code)
-    android = schema or fixture or brand or any(p.startswith(("apps/android/", "native/android-webrtc/")) or p == "just/android.just" for p in code)
+    # The shared Kotlin core compiles the API schema and tests against the isolated fixture.
+    kmp = schema or fixture or any(p.startswith("apps/core/") or p == "just/core.just" for p in code)
+    # The Android app compiles the core from source, so core changes rebuild it.
+    android = kmp or brand or any(p.startswith(("apps/android/", "native/android-webrtc/")) or p == "just/android.just" for p in code)
     mac_suites = affected_mac_smoke_suites(code)
     if any(p.startswith(("tools/e2e/", "tests/e2e/cases/mac/")) or p in {"tests/e2e/schema.json", "just/e2e.just"} for p in code):
         mac_suites = MAC_SMOKE_SUITES
@@ -252,6 +255,10 @@ def plan_checks(root, paths, packages=None):
         add("just", "mac", "test", "DieterIOSTests")
     if android:
         add("just", "android", "test")
+    if kmp:
+        add("just", "core", "test")
+        add("just", "core", "android-test")
+        add("just", "core", "apple-test")
     if ios:
         add("just", "ios", "build")
     if ios or any(p.startswith(("tools/e2e/", "tests/e2e/cases/ios/")) or p in {"tests/e2e/schema.json", "just/e2e.just"} for p in code):
@@ -301,12 +308,14 @@ def affected_ci_components(root, paths):
                 selected["ios" if "ios" in command else "macos" if "mac" in command else "android"] = True
         elif command[:2] == ["just", "android"]:
             selected["android"] = True
+        elif command[:2] == ["just", "core"]:
+            selected["kmp"] = True
         else:
             selected["core"] = True
 
     # Unknown non-documentation paths fail closed into the portable job. Known
     # native roots can select only their owning client jobs.
-    native_roots = ("apps/mac/", "apps/ios/", "apps/android/", "native/android-webrtc/")
+    native_roots = ("apps/mac/", "apps/ios/", "apps/android/", "apps/core/", "native/android-webrtc/")
     if includes_go_changes(code) or any(not path.startswith(native_roots) for path in code):
         selected["core"] = True
     return selected

@@ -1,8 +1,8 @@
 package com.dbpprt.dieter.ui
 
-import com.dbpprt.dieter.v1.Card
-import com.dbpprt.dieter.v1.PullRequestSummary
-import com.dbpprt.dieter.v1.WorkspaceSummary
+import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.PullRequestSummary
+import com.dbpprt.dieter.api.v1.WorkspaceSummary
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -12,7 +12,7 @@ import org.junit.Test
 class WorkspaceCardBadgeTest {
     @Test
     fun hidesCardsWithoutWorkspaceInformation() {
-        assertNull(workspaceCardBadgeInfo(Card.getDefaultInstance()))
+        assertNull(workspaceCardBadgeInfo(Card()))
     }
 
     @Test
@@ -33,12 +33,7 @@ class WorkspaceCardBadgeTest {
         val card = card(
             workspaceMode = "worktree",
             workspaceBranch = "stale-branch",
-            workspace = WorkspaceSummary.newBuilder()
-                .setMode("worktree")
-                .setBranch("feature/card-branches")
-                .setAhead(2)
-                .setBehind(1)
-                .build(),
+            workspace = WorkspaceSummary(mode = "worktree", branch = "feature/card-branches", ahead = 2, behind = 1),
         )
 
         val badge = workspaceCardBadgeInfo(card)!!
@@ -65,20 +60,10 @@ class WorkspaceCardBadgeTest {
     private fun card(
         workspaceMode: String = "worktree",
         workspaceBranch: String = "",
-        workspace: WorkspaceSummary = WorkspaceSummary.getDefaultInstance(),
+        workspace: WorkspaceSummary = WorkspaceSummary(),
         pullRequestNumber: Int = 0,
-    ): Card = Card.newBuilder()
-        .setWorkspaceMode(workspaceMode)
-        .setWorkspaceBranch(workspaceBranch)
-        .setWorkspace(workspace)
-        .setPullRequest(PullRequestSummary.newBuilder().setNumber(pullRequestNumber))
-        .build()
+    ): Card = Card(workspace_mode = workspaceMode, workspace_branch = workspaceBranch, workspace = workspace, pull_request = PullRequestSummary(number = pullRequestNumber))
 
     private fun workspace(state: String = "ready", changedFiles: Int = 0): WorkspaceSummary =
-        WorkspaceSummary.newBuilder()
-            .setMode("worktree")
-            .setBranch("feature/card-branches")
-            .setState(state)
-            .setChangedFiles(changedFiles)
-            .build()
+        WorkspaceSummary(mode = "worktree", branch = "feature/card-branches", state = state, changed_files = changedFiles)
 }

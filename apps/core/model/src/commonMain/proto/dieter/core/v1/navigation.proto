@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package dieter.core.v1;
+
+option java_package = "com.dbpprt.dieter.core.navigation";
+
+import "dieter/v1/dieter.proto";
+
+// One pending navigation edit. Once prepared, the exact request bytes are
+// retried on the accepting daemon until it answers; operation IDs make that
+// idempotent.
+message KvIntent {
+  string id = 1;
+  string key = 2;
+  oneof change {
+    KvPut put = 3;
+    KvDelete delete = 4;
+    KvMove move = 5;
+  }
+  bytes prepared = 6;
+  string daemon_id = 7;
+}
+
+message KvPut {
+  bytes value_json = 1;
+  // Drop the edit when another client deleted the key meanwhile.
+  bool requires_existing = 2;
+}
+
+message KvDelete {}
+
+message KvMove {
+  string parent = 1;
+  // Full keys of the neighbours; empty appends.
+  string after = 2;
+  string before = 3;
+}
+
+// One account's replicated namespace plus this device's undelivered edits.
+message KvCache {
+  string account = 1;
+  string daemon_id = 2;
+  repeated dieter.v1.KVEntry entries = 3;
+  repeated KvIntent pending = 4;
+}
+
+message KvActive {
+  string account = 1;
+  string daemon_id = 2;
+}

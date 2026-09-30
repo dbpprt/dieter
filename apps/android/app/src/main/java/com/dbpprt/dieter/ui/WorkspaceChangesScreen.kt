@@ -88,7 +88,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.dbpprt.dieter.connection.isServerConversationId
+import com.dbpprt.dieter.core.outbox.OutboxPolicy
+import com.dbpprt.dieter.core.workspace.ChangedFiles
+import com.dbpprt.dieter.core.workspace.GitOperationForm
+import com.dbpprt.dieter.core.workspace.GitOperationKinds
+import com.dbpprt.dieter.core.workspace.OperationStart
+import com.dbpprt.dieter.core.workspace.PullRequests
+import com.dbpprt.dieter.core.workspace.ReviewComments
+import com.dbpprt.dieter.core.workspace.StatusTone
 import com.dbpprt.dieter.ui.theme.DieterAmber
 import com.dbpprt.dieter.ui.theme.DieterBackground
 import com.dbpprt.dieter.ui.theme.DieterCoral
@@ -100,9 +107,18 @@ import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import com.dbpprt.dieter.ui.theme.DieterText
-import com.dbpprt.dieter.v1.ChangedFile
-import com.dbpprt.dieter.v1.PullRequestSummary
-import com.dbpprt.dieter.v1.WorkspaceCommit
+import com.dbpprt.dieter.core.composition.WorkspaceMode
+import com.dbpprt.dieter.core.workspace.DiffLine
+import com.dbpprt.dieter.core.workspace.DiffLineKind
+import com.dbpprt.dieter.core.workspace.GitOperations
+import com.dbpprt.dieter.core.workspace.MergeStep
+import com.dbpprt.dieter.core.workspace.MergeStrategy
+import com.dbpprt.dieter.core.workspace.WorkspaceAvailability
+import com.dbpprt.dieter.core.workspace.WorkspaceReviewView
+import com.dbpprt.dieter.core.workspace.WorkspaceStatus
+import com.dbpprt.dieter.api.v1.ChangedFile
+import com.dbpprt.dieter.api.v1.PullRequestSummary
+import com.dbpprt.dieter.api.v1.WorkspaceCommit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -127,7 +143,7 @@ internal fun WorkspaceChangesBody(
 ) {
     val review = state.workspaceReview
     val card = state.conversation?.detail?.card ?: state.selectedCard
-    if (card != null && ConversationWorkspaceMode.resolve(card.workspaceMode.ifBlank { card.workspace.mode }) == ConversationWorkspaceMode.PROJECT) {
+    if (card != null && WorkspaceMode.of(card) == WorkspaceMode.PROJECT) {
         WorkspaceEmptyState(
             icon = Icons.Outlined.Folder,
             title = "Changes belong to the project",
@@ -141,25 +157,13 @@ internal fun WorkspaceChangesBody(
         )
         return
     }
-    val latestState by rememberUpdatedState(state)
-
     LaunchedEffect(active, card?.id) {
+        // The core's review session keeps refreshing while the conversation is open; showing the tab reads at once.
         val cardId = card?.id ?: return@LaunchedEffect
-        if (!active || !isServerConversationId(cardId)) return@LaunchedEffect
-        model.loadWorkspaceSurface()
-        // A running agent turn or Git operation keeps the projection moving;
-        // refresh at the same conservative cadence as the Mac client.
-        while (isActive) {
-            delay(5_000)
-            val current = latestState
-            val busy = current.workspaceReview.operationActive ||
-                agentRuntimeActive(current.selectedCard?.runtime.orEmpty()) ||
-                current.workspaceReview.changeset?.volatile == true
-            if (busy) model.loadWorkspaceSurface()
-        }
+        if (active && OutboxPolicy.isServerBacked(cardId)) model.loadWorkspaceSurface()
     }
 
-    if (card == null || !isServerConversationId(card.id)) {
+    if (card == null || !OutboxPolicy.isServerBacked(card.id)) {
         WorkspaceEmptyState(
             icon = Icons.Outlined.AccountTree,
             title = "Not synced yet",
@@ -169,16 +173,16 @@ internal fun WorkspaceChangesBody(
         return
     }
 
-    val availability = workspaceActionAvailability(card, review)
-    val pullRequest = card.pullRequest.takeIf { it.number > 0 }
-    val baseBranch = (review.workspace?.baseBranch ?: card.workspace.baseBranch).ifBlank { "base" }
-    val workspaceUnlocked = card.initialPromptSentAt.isBlank()
+    val availability = WorkspaceAvailability.of(card, review.workspace, review.changeset, review.scm, review.operation, review.submitting)
+    val pullRequest = card.pull_request?.takeIf { it.number > 0 }
+    val baseBranch = (review.workspace?.base_branch ?: card.workspace?.base_branch).orEmpty().ifBlank { "base" }
+    val workspaceUnlocked = WorkspaceStatus.settingsEditable(card)
 
     var operationSheet by remember(card.id) { mutableStateOf<String?>(null) }
     var mergeSheetOpen by remember(card.id) { mutableStateOf(false) }
     var settingsSheetOpen by remember(card.id) { mutableStateOf(false) }
     var confirmAbort by remember(card.id) { mutableStateOf(false) }
-    var commentTarget by remember(card.id) { mutableStateOf<UnifiedDiffLine?>(null) }
+    var commentTarget by remember(card.id) { mutableStateOf<DiffLine?>(null) }
 
     Box(modifier) {
         when {
@@ -203,13 +207,13 @@ internal fun WorkspaceChangesBody(
             review.workspace == null && review.error != null -> WorkspaceEmptyState(
                 icon = Icons.Outlined.ErrorOutline,
                 title = "Workspace unavailable",
-                detail = review.error,
+                detail = review.error.orEmpty(),
                 action = { OutlinedButton(onClick = model::loadWorkspaceSurface) { Text("Retry") } },
             )
             review.workspace == null -> WorkspaceEmptyState(
                 icon = Icons.Outlined.AccountTree,
                 title = "No workspace yet",
-                detail = "This conversation runs in ${ConversationWorkspaceMode.resolve(card.workspaceMode).title.lowercase()} mode." +
+                detail = "This conversation runs in ${WorkspaceMode.parse(card.workspace_mode).title.lowercase()} mode." +
                     if (workspaceUnlocked) " You can change that until the first message is sent." else "",
                 action = {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -223,21 +227,22 @@ internal fun WorkspaceChangesBody(
             else -> Column(Modifier.fillMaxSize()) {
                 if (review.conflicted) {
                     WorkspaceConflictBanner(
-                        conflictCount = review.operation?.conflictsCount ?: 0,
+                        conflictCount = review.operation?.conflicts?.size ?: 0,
                         baseBranch = baseBranch,
                         onReview = { mergeSheetOpen = true },
                     )
                 }
-                review.operation?.takeIf { GitOperationStatuses.active(it.status) || it.status == "failed" }?.let { operation ->
+                review.operation?.takeIf { GitOperations.isActive(it) || it.status == "failed" }?.let { operation ->
                     WorkspaceOperationCard(
                         review = review,
                         onCancel = model::cancelWorkspaceGitOperation,
                     )
                 }
-                if (review.error != null && review.workspace != null) {
-                    WorkspaceErrorBanner(review.error, onRetry = model::loadWorkspaceSurface, onDismiss = model::clearWorkspaceError)
+                val error = review.error
+                if (error != null && review.workspace != null) {
+                    WorkspaceErrorBanner(error, onRetry = model::loadWorkspaceSurface, onDismiss = model::clearWorkspaceError)
                 }
-                val diffOpen = review.selectedPath.isNotEmpty() || review.selectedCommitSha.isNotEmpty()
+                val diffOpen = review.selectedPath != null || review.selectedCommit != null
                 AnimatedContent(
                     targetState = diffOpen,
                     label = "changes-pane",
@@ -265,11 +270,10 @@ internal fun WorkspaceChangesBody(
                             baseBranch = baseBranch,
                             workspaceUnlocked = workspaceUnlocked,
                             onOperation = { kind ->
-                                when (kind) {
-                                    GitOperationKinds.REFRESH_PR, GitOperationKinds.CONTINUE_CONFLICT ->
-                                        model.startWorkspaceGitOperation(kind)
-                                    GitOperationKinds.ABORT_CONFLICT -> confirmAbort = true
-                                    else -> operationSheet = kind
+                                when (GitOperations.start(kind)) {
+                                    OperationStart.IMMEDIATE -> model.startWorkspaceGitOperation(kind)
+                                    OperationStart.CONFIRM -> confirmAbort = true
+                                    OperationStart.FORM -> operationSheet = kind
                                 }
                             },
                             onMerge = { mergeSheetOpen = true },
@@ -303,7 +307,7 @@ internal fun WorkspaceChangesBody(
             kind = kind,
             state = state,
             baseBranch = baseBranch,
-            pullRequestHeadSha = pullRequest?.headSha.orEmpty(),
+            pullRequestHeadSha = pullRequest?.head_sha.orEmpty(),
             onDismiss = { operationSheet = null },
             onStart = { parameters ->
                 operationSheet = null
@@ -352,11 +356,11 @@ internal fun WorkspaceChangesBody(
     commentTarget?.let { line ->
         WorkspaceCommentDialog(
             line = line,
-            path = review.selectedPath,
+            path = review.selectedPath.orEmpty(),
             onDismiss = { commentTarget = null },
-            onSubmit = { side, lineNumber, body ->
+            onSubmit = { body ->
                 commentTarget = null
-                model.addWorkspaceChangeComment(review.selectedPath, side, lineNumber, body)
+                model.addWorkspaceChangeComment(line, body)
             },
         )
     }
@@ -368,7 +372,7 @@ internal fun WorkspaceChangesBody(
 private fun WorkspaceReviewList(
     state: DieterUiState,
     model: DieterViewModel,
-    availability: WorkspaceActionAvailability,
+    availability: WorkspaceAvailability,
     pullRequest: PullRequestSummary?,
     baseBranch: String,
     workspaceUnlocked: Boolean,
@@ -413,9 +417,9 @@ private fun WorkspaceReviewList(
                 onMerge = onMerge,
             )
         }
-        if (review.conflicted && (review.operation?.conflictsCount ?: 0) > 0) {
-            item(key = "conflicts-header") { WorkspaceSectionHeader("Conflicts", review.operation?.conflictsCount ?: 0) }
-            items(review.operation?.conflictsList.orEmpty(), key = { "conflict:${it.path}" }) { conflict ->
+        if (review.conflicted && (review.operation?.conflicts?.size ?: 0) > 0) {
+            item(key = "conflicts-header") { WorkspaceSectionHeader("Conflicts", review.operation?.conflicts?.size ?: 0) }
+            items(review.operation?.conflicts.orEmpty(), key = { "conflict:${it.path}" }) { conflict ->
                 Row(
                     Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -423,9 +427,9 @@ private fun WorkspaceReviewList(
                 ) {
                     ChangeStatusBadge("!", DieterCoral)
                     Column(Modifier.weight(1f)) {
-                        Text(WorkspaceChangePresentation.filename(conflict.path), fontSize = 13.sp, fontWeight = FontWeight.Medium, fontFamily = MonoFont)
+                        Text(ChangedFiles.filename(conflict.path), fontSize = 13.sp, fontWeight = FontWeight.Medium, fontFamily = MonoFont)
                         Text(
-                            "${conflict.hunkCount} conflicting hunk${if (conflict.hunkCount == 1) "" else "s"}",
+                            "${conflict.hunk_count} conflicting hunk${if (conflict.hunk_count == 1) "" else "s"}",
                             color = DieterMuted,
                             fontSize = 11.sp,
                         )
@@ -433,7 +437,7 @@ private fun WorkspaceReviewList(
                 }
             }
         }
-        val files = changes?.filesList.orEmpty()
+        val files = changes?.files.orEmpty()
         item(key = "files-header") { WorkspaceSectionHeader("Local changes", files.size) }
         if (files.isEmpty()) {
             item(key = "files-empty") {
@@ -452,14 +456,14 @@ private fun WorkspaceReviewList(
                 onClick = { model.selectWorkspaceChange(file.path) },
             )
         }
-        val commits = changes?.commitsList.orEmpty()
+        val commits = changes?.commits.orEmpty()
         if (commits.isNotEmpty()) {
             item(key = "commits-header") { WorkspaceSectionHeader("Commits", commits.size) }
             items(commits, key = { "commit:${it.sha}" }) { commit ->
                 WorkspaceCommitRow(commit) { model.selectWorkspaceChange("", commit.sha) }
             }
         }
-        review.scm?.takeIf { !it.authenticated && it.unavailableReason.isNotBlank() }?.let { scm ->
+        review.scm?.takeIf { !it.authenticated && it.unavailable_reason.isNotBlank() }?.let { scm ->
             item(key = "scm-notice") {
                 Surface(color = DieterSurface, shape = MaterialTheme.shapes.small) {
                     Row(
@@ -469,7 +473,7 @@ private fun WorkspaceReviewList(
                         Icon(Icons.Outlined.WarningAmber, null, tint = DieterAmber, modifier = Modifier.size(16.dp))
                         Column {
                             Text("Pull requests unavailable", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            Text(scm.unavailableReason, color = DieterMuted, fontSize = 11.sp)
+                            Text(scm.unavailable_reason, color = DieterMuted, fontSize = 11.sp)
                         }
                     }
                 }
@@ -479,10 +483,7 @@ private fun WorkspaceReviewList(
             item(key = "comments-header") { WorkspaceSectionHeader("Review comments", review.comments.size) }
             item(key = "comments-handoff") {
                 TextButton(onClick = {
-                    val summary = state.workspaceReview.comments.joinToString("\n") { comment ->
-                        "- ${comment.path}${if (comment.line > 0) ":${comment.line}" else ""} — ${comment.body}"
-                    }
-                    model.sendWorkspaceHandOffMessage("Please address these review comments:\n$summary")
+                    model.sendWorkspaceHandOffMessage(WorkspaceStatus.reviewPrompt(state.workspaceReview.comments))
                 }) {
                     Icon(Icons.Outlined.SmartToy, null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
@@ -498,7 +499,7 @@ private fun WorkspaceReviewList(
 private fun WorkspaceSummaryCard(
     state: DieterUiState,
     model: DieterViewModel,
-    availability: WorkspaceActionAvailability,
+    availability: WorkspaceAvailability,
     baseBranch: String,
     workspaceUnlocked: Boolean,
     onOperation: (String) -> Unit,
@@ -518,7 +519,7 @@ private fun WorkspaceSummaryCard(
                     modifier = Modifier.size(16.dp),
                 )
                 Text(
-                    workspace.branch.ifBlank { ConversationWorkspaceMode.resolve(workspace.mode).title },
+                    workspace.branch.ifBlank { WorkspaceMode.parse(workspace.mode).title },
                     fontFamily = MonoFont,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -550,7 +551,7 @@ private fun WorkspaceSummaryCard(
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "${ConversationWorkspaceMode.resolve(workspace.mode).shortTitle} · vs $baseBranch",
+                    "${WorkspaceMode.parse(workspace.mode).shortTitle} · vs $baseBranch",
                     color = DieterMuted,
                     fontSize = 11.sp,
                     maxLines = 1,
@@ -563,13 +564,13 @@ private fun WorkspaceSummaryCard(
                 if (changes != null) {
                     WorkspaceDeltaLabel(changes.additions, changes.deletions)
                     Text(
-                        "${changes.filesCount} file${if (changes.filesCount == 1) "" else "s"}",
+                        "${changes.files.size} file${if (changes.files.size == 1) "" else "s"}",
                         color = DieterMuted,
                         fontSize = 11.sp,
                     )
                 }
             }
-            val statusLine = workspaceStatusLine(workspace.state, workspace.dirty, changes?.volatile == true)
+            val statusLine = WorkspaceStatus.status(workspace, changes)?.let { (text, tone) -> text to tone.color }
             if (statusLine != null) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Surface(color = statusLine.second.copy(alpha = 0.14f), shape = CircleShape) {
@@ -587,21 +588,20 @@ private fun WorkspaceSummaryCard(
     }
 }
 
-private fun workspaceStatusLine(state: String, dirty: Boolean, volatile: Boolean): Pair<String, Color>? = when {
-    state == "conflicted" -> "Conflicted" to Color(0xFFE05B66)
-    state == "cleanup_pending" -> "Merged · cleanup pending" to Color(0xFF4CAF80)
-    state == "provisioning" || state == "reserved" -> "Provisioning" to Color(0xFF8E8E93)
-    state in setOf("orphaned", "recovery_required", "failed") -> "Needs attention · $state" to Color(0xFFE0A93B)
-    volatile -> "Agent is working — live view" to Color(0xFF4C9FE0)
-    dirty -> "Uncommitted changes" to Color(0xFFE0A93B)
-    else -> null
-}
+private val StatusTone.color: Color
+    get() = when (this) {
+        StatusTone.DANGER -> Color(0xFFE05B66)
+        StatusTone.SUCCESS -> Color(0xFF4CAF80)
+        StatusTone.NEUTRAL -> Color(0xFF8E8E93)
+        StatusTone.WARNING -> Color(0xFFE0A93B)
+        StatusTone.ACTIVE -> Color(0xFF4C9FE0)
+    }
 
 @Composable
 private fun WorkspaceOverflowMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
-    availability: WorkspaceActionAvailability,
+    availability: WorkspaceAvailability,
     workspaceMode: String,
     workspaceUnlocked: Boolean,
     onOperation: (String) -> Unit,
@@ -609,25 +609,25 @@ private fun WorkspaceOverflowMenu(
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
         DropdownMenuItem(
-            text = { Text(GitOperationKinds.title(GitOperationKinds.VALIDATE)) },
+            text = { Text(GitOperations.title(GitOperationKinds.VALIDATE)) },
             leadingIcon = { Icon(Icons.Outlined.CheckCircle, null) },
             enabled = availability.allows(GitOperationKinds.VALIDATE),
             onClick = { onOperation(GitOperationKinds.VALIDATE) },
         )
         DropdownMenuItem(
-            text = { Text(GitOperationKinds.title(GitOperationKinds.PUSH)) },
+            text = { Text(GitOperations.title(GitOperationKinds.PUSH)) },
             leadingIcon = { Icon(Icons.Outlined.CloudUpload, null) },
             enabled = availability.allows(GitOperationKinds.PUSH),
             onClick = { onOperation(GitOperationKinds.PUSH) },
         )
         DropdownMenuItem(
-            text = { Text(GitOperationKinds.title(GitOperationKinds.CLEANUP)) },
+            text = { Text(GitOperations.title(GitOperationKinds.CLEANUP)) },
             leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null) },
             enabled = availability.allows(GitOperationKinds.CLEANUP),
             onClick = { onOperation(GitOperationKinds.CLEANUP) },
         )
         DropdownMenuItem(
-            text = { Text(GitOperationKinds.title(GitOperationKinds.DISCARD), color = DieterCoral) },
+            text = { Text(GitOperations.title(GitOperationKinds.DISCARD), color = DieterCoral) },
             leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = DieterCoral) },
             enabled = availability.allows(GitOperationKinds.DISCARD),
             onClick = { onOperation(GitOperationKinds.DISCARD) },
@@ -645,7 +645,7 @@ private fun WorkspaceOverflowMenu(
 
 @Composable
 private fun WorkspaceActionRow(
-    availability: WorkspaceActionAvailability,
+    availability: WorkspaceAvailability,
     hasPullRequest: Boolean,
     baseBranch: String,
     onOperation: (String) -> Unit,
@@ -664,7 +664,7 @@ private fun WorkspaceActionRow(
             Spacer(Modifier.width(6.dp))
             Text("Commit")
         }
-        if (availability.workspaceMode == "worktree") {
+        if (availability.mode == WorkspaceMode.WORKTREE) {
             OutlinedButton(
                 onClick = onMerge,
                 enabled = availability.allowsMergeFlow,
@@ -739,7 +739,7 @@ private fun changeBadgeTint(badge: String): Color = when (badge) {
 
 @Composable
 private fun WorkspaceFileRow(file: ChangedFile, commentCount: Int, onClick: () -> Unit) {
-    val badge = WorkspaceChangePresentation.badge(file.status, file.conflicted, file.untracked)
+    val badge = ChangedFiles.badge(file.status, file.conflicted, file.untracked)
     Surface(color = Color.Transparent, shape = MaterialTheme.shapes.small, onClick = onClick) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 7.dp),
@@ -749,17 +749,17 @@ private fun WorkspaceFileRow(file: ChangedFile, commentCount: Int, onClick: () -
             ChangeStatusBadge(badge, changeBadgeTint(badge))
             Column(Modifier.weight(1f)) {
                 Text(
-                    WorkspaceChangePresentation.filename(file.path),
+                    ChangedFiles.filename(file.path),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     fontFamily = MonoFont,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                val directory = WorkspaceChangePresentation.directory(file.path)
+                val directory = ChangedFiles.directory(file.path)
                 val subtitle = buildString {
-                    if (file.oldPath.isNotBlank() && file.oldPath != file.path) {
-                        append("← ${file.oldPath}")
+                    if (file.old_path.isNotBlank() && file.old_path != file.path) {
+                        append("← ${file.old_path}")
                     } else if (directory.isNotEmpty()) {
                         append(directory)
                     }
@@ -797,7 +797,7 @@ private fun WorkspaceCommitRow(commit: WorkspaceCommit, onClick: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
-                commit.shortSha.ifBlank { commit.sha.take(7) },
+                commit.short_sha.ifBlank { commit.sha.take(7) },
                 color = DieterShell,
                 fontSize = 11.sp,
                 fontFamily = MonoFont,
@@ -806,7 +806,7 @@ private fun WorkspaceCommitRow(commit: WorkspaceCommit, onClick: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(commit.subject, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    listOf(commit.authorName, "${commit.changedFiles} file${if (commit.changedFiles == 1) "" else "s"}")
+                    listOf(commit.author_name, "${commit.changed_files} file${if (commit.changed_files == 1) "" else "s"}")
                         .filter(String::isNotBlank)
                         .joinToString(" · "),
                     color = DieterMuted,
@@ -823,7 +823,7 @@ private fun WorkspaceCommitRow(commit: WorkspaceCommit, onClick: () -> Unit) {
 @Composable
 private fun PullRequestCard(
     pullRequest: PullRequestSummary,
-    availability: WorkspaceActionAvailability,
+    availability: WorkspaceAvailability,
     onRefresh: () -> Unit,
     onMerge: () -> Unit,
 ) {
@@ -834,10 +834,7 @@ private fun PullRequestCard(
         pullRequest.draft -> DieterMuted
         else -> diffAdditionText
     }
-    val stateLabel = when {
-        pullRequest.draft && pullRequest.state == "open" -> "Draft"
-        else -> pullRequest.state.replaceFirstChar(Char::uppercase)
-    }
+    val stateLabel = PullRequests.stateLabel(pullRequest)
     Surface(color = DieterSurface, shape = MaterialTheme.shapes.medium) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -863,13 +860,13 @@ private fun PullRequestCard(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 PullRequestSignalChip(
-                    label = when (pullRequest.checksState) {
+                    label = when (pullRequest.checks_state) {
                         "passed" -> "Checks passed"
                         "failed" -> "Checks failed"
                         "running" -> "Checks running"
                         else -> "No checks"
                     },
-                    tint = when (pullRequest.checksState) {
+                    tint = when (pullRequest.checks_state) {
                         "passed" -> diffAdditionText
                         "failed" -> diffDeletionText
                         "running" -> DieterAmber
@@ -877,13 +874,13 @@ private fun PullRequestCard(
                     },
                 )
                 PullRequestSignalChip(
-                    label = when (pullRequest.reviewDecision) {
+                    label = when (pullRequest.review_decision) {
                         "approved" -> "Approved"
                         "changes_requested" -> "Changes requested"
                         "review_required" -> "Review required"
                         else -> "No review"
                     },
-                    tint = when (pullRequest.reviewDecision) {
+                    tint = when (pullRequest.review_decision) {
                         "approved" -> diffAdditionText
                         "changes_requested" -> diffDeletionText
                         else -> DieterMuted
@@ -903,7 +900,7 @@ private fun PullRequestCard(
                     ) { Text("Refresh") }
                     Button(
                         onClick = onMerge,
-                        enabled = availability.allows(GitOperationKinds.MERGE_PR) && pullRequest.mergeable && !pullRequest.draft,
+                        enabled = availability.allows(GitOperationKinds.MERGE_PR) && PullRequests.mergeBlockedReason(pullRequest) == null,
                         modifier = Modifier.weight(1f).testTag("workspace-merge-pr"),
                     ) { Text("Merge PR") }
                 }
@@ -972,26 +969,26 @@ private fun WorkspaceErrorBanner(error: String, onRetry: () -> Unit, onDismiss: 
 }
 
 @Composable
-private fun WorkspaceOperationCard(review: WorkspaceReviewState, onCancel: () -> Unit) {
+private fun WorkspaceOperationCard(review: WorkspaceReviewView, onCancel: () -> Unit) {
     val operation = review.operation ?: return
     var expanded by remember(operation.id) { mutableStateOf(operation.status == "failed") }
     LaunchedEffect(operation.status) { if (operation.status == "failed") expanded = true }
     Surface(color = DieterSurfaceHigh) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (GitOperationStatuses.active(operation.status)) {
+                if (GitOperations.isActive(operation)) {
                     CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
                 } else {
                     Icon(Icons.Outlined.ErrorOutline, null, tint = DieterCoral, modifier = Modifier.size(15.dp))
                 }
-                Text(GitOperationKinds.title(operation.kind), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(GitOperations.title(operation.kind), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 Text(
-                    operation.status.replace('_', ' ').replaceFirstChar(Char::uppercase),
+                    GitOperations.statusLabel(operation),
                     color = DieterMuted,
                     fontSize = 11.sp,
                 )
                 Spacer(Modifier.weight(1f))
-                if (GitOperationStatuses.active(operation.status) && operation.status != "waiting_for_resolution") {
+                if (GitOperations.cancelable(operation)) {
                     TextButton(onClick = onCancel) { Text("Cancel", color = DieterCoral, fontSize = 11.sp) }
                 }
                 IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(26.dp)) {
@@ -1012,21 +1009,21 @@ private fun WorkspaceOperationCard(review: WorkspaceReviewState, onCancel: () ->
                         .padding(10.dp),
                     verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
-                    if (review.operationLogs.isEmpty() && operation.error.isEmpty()) {
+                    if (review.logs.isEmpty() && operation.error.isEmpty()) {
                         Text("Waiting for output…", color = DieterMuted, fontSize = 10.sp, fontFamily = MonoFont)
                     }
-                    review.operationLogs.takeLast(60).forEach { entry ->
+                    review.logs.takeLast(60).forEach { entry ->
                         Text(entry.message, fontSize = 10.sp, fontFamily = MonoFont, color = DieterText)
                     }
-                    operation.validationResultsList.forEach { result ->
+                    operation.validation_results.forEach { result ->
                         Text(
-                            "${result.name} · exit ${result.exitCode}",
+                            "${result.name} · exit ${result.exit_code}",
                             fontSize = 10.sp,
                             fontFamily = MonoFont,
                             fontWeight = FontWeight.SemiBold,
-                            color = if (result.exitCode == 0) diffAdditionText else diffDeletionText,
+                            color = if (result.exit_code == 0) diffAdditionText else diffDeletionText,
                         )
-                        if (result.output.isNotBlank() && result.exitCode != 0) {
+                        if (result.output.isNotBlank() && result.exit_code != 0) {
                             Text(result.output.trim().takeLast(2000), fontSize = 10.sp, fontFamily = MonoFont, color = DieterMuted)
                         }
                     }
@@ -1047,29 +1044,27 @@ private fun WorkspaceOperationCard(review: WorkspaceReviewState, onCancel: () ->
 private fun WorkspaceDiffPane(
     state: DieterUiState,
     model: DieterViewModel,
-    onCommentLine: (UnifiedDiffLine) -> Unit,
+    onCommentLine: (DiffLine) -> Unit,
 ) {
     val review = state.workspaceReview
     val changes = review.changeset
-    val file = changes?.filesList?.firstOrNull { it.path == review.selectedPath }
-    val commit = changes?.commitsList?.firstOrNull { it.sha == review.selectedCommitSha }
-    val commentsByLine = remember(review.comments, review.selectedPath) {
-        review.comments.filter { it.path == review.selectedPath }.groupBy { it.side to it.line }
-    }
+    val file = changes?.files?.firstOrNull { it.path == review.selectedPath }
+    val commit = changes?.commits?.firstOrNull { it.sha == review.selectedCommit }
+    val commentsByLine = remember(review.comments, review.selectedPath) { ReviewComments.byLine(review.comments, review.selectedPath) }
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            IconButton(onClick = model::closeWorkspaceDiff, modifier = Modifier.testTag("workspace-diff-back")) {
+            IconButton(onClick = { model.selectWorkspaceChange(null) }, modifier = Modifier.testTag("workspace-diff-back")) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to changes")
             }
             Column(Modifier.weight(1f)) {
                 Text(
                     when {
                         commit != null -> commit.subject
-                        else -> WorkspaceChangePresentation.filename(review.selectedPath)
+                        else -> ChangedFiles.filename(review.selectedPath.orEmpty())
                     },
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -1079,9 +1074,9 @@ private fun WorkspaceDiffPane(
                 )
                 Text(
                     when {
-                        commit != null -> "${commit.shortSha.ifBlank { commit.sha.take(7) }} · ${commit.authorName}"
-                        file != null -> WorkspaceChangePresentation.title(file.status, file.conflicted, file.untracked) +
-                            WorkspaceChangePresentation.directory(review.selectedPath).let { if (it.isEmpty()) "" else " · $it" }
+                        commit != null -> "${commit.short_sha.ifBlank { commit.sha.take(7) }} · ${commit.author_name}"
+                        file != null -> ChangedFiles.title(file.status, file.conflicted, file.untracked) +
+                            ChangedFiles.directory(review.selectedPath.orEmpty()).let { if (it.isEmpty()) "" else " · $it" }
                         else -> ""
                     },
                     color = DieterMuted,
@@ -1106,9 +1101,9 @@ private fun WorkspaceDiffPane(
                 verticalArrangement = Arrangement.Center,
             ) { CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp) }
             else -> LazyColumn(Modifier.fillMaxSize().testTag("workspace-diff"), contentPadding = PaddingValues(bottom = 32.dp)) {
-                items(review.diffLines, key = UnifiedDiffLine::id) { line ->
+                items(review.diffLines, key = DiffLine::id) { line ->
                     when (line.kind) {
-                        UnifiedDiffLine.Kind.HEADER -> if (!line.text.startsWith("diff ")) {
+                        DiffLineKind.HEADER -> if (!line.text.startsWith("diff ")) {
                             Text(
                                 line.text,
                                 color = DieterMuted,
@@ -1121,7 +1116,7 @@ private fun WorkspaceDiffPane(
                         } else {
                             Spacer(Modifier.height(8.dp))
                         }
-                        UnifiedDiffLine.Kind.HUNK -> Surface(color = DieterShell.copy(alpha = 0.08f)) {
+                        DiffLineKind.HUNK -> Surface(color = DieterShell.copy(alpha = 0.08f)) {
                             Text(
                                 line.text,
                                 color = DieterShell,
@@ -1137,8 +1132,7 @@ private fun WorkspaceDiffPane(
                                 line = line,
                                 onLongPress = { onCommentLine(line) },
                             )
-                            val key = if (line.newLine != null) "new" to line.newLine else "old" to (line.oldLine ?: 0)
-                            commentsByLine[key]?.forEach { comment ->
+                            ReviewComments.anchor(line)?.let(commentsByLine::get)?.forEach { comment ->
                                 WorkspaceInlineComment(author = comment.author, body = comment.body)
                             }
                         }
@@ -1156,7 +1150,7 @@ private fun WorkspaceDiffPane(
                             } else {
                                 OutlinedButton(onClick = model::loadMoreWorkspaceDiff) {
                                     Text(
-                                        "Load more · ${diff.nextOffset / 1024} of ${diff.totalBytes / 1024} KB",
+                                        "Load more · ${diff.next_offset / 1024} of ${diff.total_bytes / 1024} KB",
                                         fontSize = 11.sp,
                                     )
                                 }
@@ -1171,15 +1165,15 @@ private fun WorkspaceDiffPane(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun WorkspaceDiffLineRow(line: UnifiedDiffLine, onLongPress: () -> Unit) {
+private fun WorkspaceDiffLineRow(line: DiffLine, onLongPress: () -> Unit) {
     val background = when (line.kind) {
-        UnifiedDiffLine.Kind.ADDITION -> diffAdditionBackground
-        UnifiedDiffLine.Kind.DELETION -> diffDeletionBackground
+        DiffLineKind.ADDITION -> diffAdditionBackground
+        DiffLineKind.DELETION -> diffDeletionBackground
         else -> Color.Transparent
     }
     val textColor = when (line.kind) {
-        UnifiedDiffLine.Kind.ADDITION -> diffAdditionText
-        UnifiedDiffLine.Kind.DELETION -> diffDeletionText
+        DiffLineKind.ADDITION -> diffAdditionText
+        DiffLineKind.DELETION -> diffDeletionText
         else -> DieterText
     }
     Row(
@@ -1232,21 +1226,20 @@ private fun WorkspaceInlineComment(author: String, body: String) {
 
 @Composable
 private fun WorkspaceCommentDialog(
-    line: UnifiedDiffLine,
+    line: DiffLine,
     path: String,
     onDismiss: () -> Unit,
-    onSubmit: (side: String, line: Int, body: String) -> Unit,
+    onSubmit: (body: String) -> Unit,
 ) {
     var body by remember { mutableStateOf("") }
-    val side = if (line.newLine != null) "new" else "old"
-    val lineNumber = line.newLine ?: line.oldLine ?: 0
+    val lineNumber = ReviewComments.anchor(line)?.second ?: 0
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add review comment") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    "${WorkspaceChangePresentation.filename(path)} · line $lineNumber",
+                    "${ChangedFiles.filename(path)} · line $lineNumber",
                     color = DieterMuted,
                     fontSize = 11.sp,
                     fontFamily = MonoFont,
@@ -1263,7 +1256,7 @@ private fun WorkspaceCommentDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onSubmit(side, lineNumber, body.trim()) },
+                onClick = { onSubmit(body.trim()) },
                 enabled = body.isNotBlank(),
             ) { Text("Add comment") }
         },
@@ -1283,12 +1276,7 @@ private fun GitOperationParameterSheet(
     onStart: (Map<String, String>) -> Unit,
 ) {
     val card = state.conversation?.detail?.card ?: state.selectedCard
-    var subject by remember(kind) { mutableStateOf(if (kind == GitOperationKinds.COMMIT) card?.title.orEmpty() else "") }
-    var body by remember(kind) { mutableStateOf("") }
-    var stageAll by remember(kind) { mutableStateOf(true) }
-    var validate by remember(kind) { mutableStateOf(true) }
-    var draft by remember(kind) { mutableStateOf(false) }
-    var strategy by remember(kind) { mutableStateOf("squash") }
+    var form by remember(kind) { mutableStateOf(GitOperationForm.initial(kind, card)) }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = DieterSurfaceHigh) {
         Column(
             Modifier
@@ -1298,124 +1286,78 @@ private fun GitOperationParameterSheet(
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(GitOperationKinds.title(kind), style = MaterialTheme.typography.titleMedium)
+            Text(GitOperations.title(kind), style = MaterialTheme.typography.titleMedium)
             when (kind) {
                 GitOperationKinds.COMMIT -> {
                     OutlinedTextField(
-                        value = subject,
-                        onValueChange = { subject = it },
+                        value = form.subject,
+                        onValueChange = { form = form.copy(subject = it) },
                         label = { Text("Commit message") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("commit-subject"),
                     )
                     OutlinedTextField(
-                        value = body,
-                        onValueChange = { body = it },
+                        value = form.body,
+                        onValueChange = { form = form.copy(body = it) },
                         label = { Text("Description (optional)") },
                         minLines = 2,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    WorkspaceSheetToggle("Stage all changes", stageAll) { stageAll = it }
+                    WorkspaceSheetToggle("Stage all changes", form.stageAll) { form = form.copy(stageAll = it) }
                 }
-                GitOperationKinds.UPDATE -> {
-                    Text(
-                        "Fast-forwards the project directory when it is on $baseBranch; otherwise rebases the checked-out review branch onto the latest $baseBranch.",
-                        color = DieterMuted,
-                        fontSize = 12.sp,
-                    )
-                    WorkspaceSheetToggle("Run validation after updating", validate) { validate = it }
-                }
-                GitOperationKinds.VALIDATE -> Text(
-                    "Runs the project's validation commands in order on the Dieter machine.",
-                    color = DieterMuted,
-                    fontSize = 12.sp,
-                )
-                GitOperationKinds.PUSH -> Text(
-                    "Pushes the conversation branch to the configured remote. Nothing is merged.",
-                    color = DieterMuted,
-                    fontSize = 12.sp,
-                )
+                GitOperationKinds.UPDATE -> WorkspaceSheetToggle("Run validation after updating", form.validate) { form = form.copy(validate = it) }
                 GitOperationKinds.CREATE_PR -> {
                     OutlinedTextField(
-                        value = subject,
-                        onValueChange = { subject = it },
+                        value = form.subject,
+                        onValueChange = { form = form.copy(subject = it) },
                         label = { Text("Title (optional)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
-                        value = body,
-                        onValueChange = { body = it },
+                        value = form.body,
+                        onValueChange = { form = form.copy(body = it) },
                         label = { Text("Description (optional)") },
                         minLines = 2,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    WorkspaceSheetToggle("Open as draft", draft) { draft = it }
-                    Text("The branch is pushed first; an existing open PR is reused.", color = DieterMuted, fontSize = 11.sp)
+                    WorkspaceSheetToggle("Open as draft", form.draft) { form = form.copy(draft = it) }
                 }
                 GitOperationKinds.MERGE_PR -> {
                     Text("Merge strategy", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("squash" to "Squash", "merge" to "Merge commit", "rebase" to "Rebase").forEach { (value, label) ->
-                            FilterChip(selected = strategy == value, onClick = { strategy = value }, label = { Text(label) })
+                        GitOperationForm.PULL_REQUEST_STRATEGIES.forEach { (value, label) ->
+                            FilterChip(selected = form.strategy == value, onClick = { form = form.copy(strategy = value) }, label = { Text(label) })
                         }
                     }
-                    Text(
-                        "The merge is rejected if the remote branch moved past the reviewed revision.",
-                        color = DieterMuted,
-                        fontSize = 11.sp,
-                    )
-                }
-                GitOperationKinds.CLEANUP -> Text(
-                    "Removes the workspace only when its work is clean and safely integrated. Dieter-managed branches are deleted.",
-                    color = DieterMuted,
-                    fontSize = 12.sp,
-                )
-                GitOperationKinds.DISCARD -> {
-                    Text(
-                        "Removes this workspace and its managed branch, including uncommitted work.",
-                        color = DieterCoral,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        "Recovery artifacts (branch bundle, patches, untracked archive) are kept on the Dieter machine.",
-                        color = DieterMuted,
-                        fontSize = 11.sp,
-                    )
                 }
             }
+            GitOperations.description(kind, baseBranch)?.let { description ->
+                Text(
+                    description,
+                    color = if (GitOperations.destructive(kind)) DieterCoral else DieterMuted,
+                    fontSize = 12.sp,
+                    fontWeight = if (GitOperations.destructive(kind)) FontWeight.Medium else FontWeight.Normal,
+                )
+            }
+            if (kind == GitOperationKinds.DISCARD) {
+                Text(
+                    "Recovery artifacts (branch bundle, patches, untracked archive) are kept on the Dieter machine.",
+                    color = DieterMuted,
+                    fontSize = 11.sp,
+                )
+            }
             Button(
-                onClick = {
-                    val parameters = when (kind) {
-                        GitOperationKinds.COMMIT -> mapOf(
-                            "subject" to subject.trim(),
-                            "body" to body.trim(),
-                            "stage_all" to if (stageAll) "true" else "false",
-                        )
-                        GitOperationKinds.UPDATE -> mapOf("validate" to if (validate) "true" else "false")
-                        GitOperationKinds.CREATE_PR -> buildMap {
-                            if (subject.isNotBlank()) put("title", subject.trim())
-                            if (body.isNotBlank()) put("body", body.trim())
-                            put("draft", if (draft) "true" else "false")
-                        }
-                        GitOperationKinds.MERGE_PR -> buildMap {
-                            put("strategy", strategy)
-                            if (pullRequestHeadSha.isNotBlank()) put("expected_head_sha", pullRequestHeadSha)
-                        }
-                        else -> emptyMap()
-                    }
-                    onStart(parameters)
-                },
-                enabled = kind != GitOperationKinds.COMMIT || subject.isNotBlank(),
-                colors = if (GitOperationKinds.destructive(kind)) {
+                onClick = { onStart(form.parameters(pullRequestHeadSha)) },
+                enabled = form.ready,
+                colors = if (GitOperations.destructive(kind)) {
                     androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = DieterCoral)
                 } else {
                     androidx.compose.material3.ButtonDefaults.buttonColors()
                 },
                 modifier = Modifier.fillMaxWidth().testTag("operation-start"),
             ) {
-                Text(GitOperationKinds.title(kind))
+                Text(GitOperations.title(kind))
             }
         }
     }
@@ -1438,21 +1380,21 @@ private fun WorkspaceSheetToggle(label: String, checked: Boolean, onChange: (Boo
 private fun WorkspaceMergeSheet(
     state: DieterUiState,
     model: DieterViewModel,
-    card: com.dbpprt.dieter.v1.Card,
-    availability: WorkspaceActionAvailability,
+    card: com.dbpprt.dieter.api.v1.Card,
+    availability: WorkspaceAvailability,
     baseBranch: String,
     onDismiss: () -> Unit,
     onCreatePullRequestInstead: () -> Unit,
 ) {
     val review = state.workspaceReview
     val changes = review.changeset
-    var strategy by remember { mutableStateOf("squash") }
+    var strategy by remember { mutableStateOf(MergeStrategy.SQUASH) }
     var subject by remember { mutableStateOf(card.title) }
     var body by remember { mutableStateOf("") }
     var validate by remember { mutableStateOf(true) }
     var removeWorkspace by remember { mutableStateOf(true) }
-    var moveToDone by remember { mutableStateOf(card.scope != "chat") }
-    val flowRunning = review.mergeFlowStep != null
+    var moveToDone by remember { mutableStateOf(WorkspaceStatus.movesToDone(card)) }
+    val flowRunning = review.mergeStep != null
     ModalBottomSheet(onDismissRequest = { if (!flowRunning) onDismiss() }, containerColor = DieterSurfaceHigh) {
         Column(
             Modifier
@@ -1465,8 +1407,7 @@ private fun WorkspaceMergeSheet(
             Text("Merge into $baseBranch", style = MaterialTheme.typography.titleMedium)
             changes?.let {
                 Text(
-                    "${it.filesCount} file${if (it.filesCount == 1) "" else "s"} · " +
-                        "${it.commitsCount} commit${if (it.commitsCount == 1) "" else "s"} · +${it.additions} −${it.deletions}",
+                    WorkspaceStatus.summary(it),
                     color = DieterMuted,
                     fontSize = 11.sp,
                 )
@@ -1475,9 +1416,9 @@ private fun WorkspaceMergeSheet(
                 Surface(color = DieterCoral.copy(alpha = 0.10f), shape = MaterialTheme.shapes.small) {
                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Merge is blocked until conflicts are resolved.", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        review.operation?.conflictsList.orEmpty().forEach { conflict ->
+                        review.operation?.conflicts.orEmpty().forEach { conflict ->
                             Text(
-                                "! ${conflict.path} · ${conflict.hunkCount} hunk${if (conflict.hunkCount == 1) "" else "s"}",
+                                "! ${WorkspaceStatus.conflict(conflict)}",
                                 fontSize = 11.sp,
                                 fontFamily = MonoFont,
                                 color = DieterCoral,
@@ -1492,10 +1433,7 @@ private fun WorkspaceMergeSheet(
                             OutlinedButton(
                                 onClick = {
                                     onDismiss()
-                                    val paths = review.operation?.conflictsList.orEmpty().joinToString("\n") { "- ${it.path}" }
-                                    model.sendWorkspaceHandOffMessage(
-                                        "Please resolve the merge conflicts in this workspace:\n$paths",
-                                    )
+                                    model.sendWorkspaceHandOffMessage(WorkspaceStatus.conflictPrompt(review.operation?.conflicts.orEmpty()))
                                 },
                                 modifier = Modifier.weight(1f),
                             ) {
@@ -1528,21 +1466,17 @@ private fun WorkspaceMergeSheet(
                 )
                 Text("Strategy", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(
-                        "squash" to "Squash",
-                        "merge_commit" to "Merge commit",
-                        "fast_forward" to "Fast-forward",
-                    ).forEach { (value, label) ->
+                    MergeStrategy.entries.forEach { value ->
                         FilterChip(
                             selected = strategy == value,
                             onClick = { if (!flowRunning) strategy = value },
-                            label = { Text(label) },
+                            label = { Text(value.title) },
                         )
                     }
                 }
                 WorkspaceSheetToggle("Run validation before merging", validate) { if (!flowRunning) validate = it }
                 WorkspaceSheetToggle("Remove workspace after merge", removeWorkspace) { if (!flowRunning) removeWorkspace = it }
-                if (card.scope != "chat") {
+                if (WorkspaceStatus.movesToDone(card)) {
                     WorkspaceSheetToggle("Move card to Done", moveToDone) { if (!flowRunning) moveToDone = it }
                 }
                 if (review.workspace?.dirty == true) {
@@ -1553,9 +1487,7 @@ private fun WorkspaceMergeSheet(
                     )
                 }
                 Text(
-                    if (availability.remotePublishMode == "push_base")
-                        "The validated result is pushed to the configured base remote."
-                    else "Runs locally on the Dieter machine · nothing is pushed.",
+                    availability.mergeDestination,
                     color = DieterMuted,
                     fontSize = 11.sp,
                 )
@@ -1575,11 +1507,11 @@ private fun WorkspaceMergeSheet(
                     modifier = Modifier.fillMaxWidth().testTag("merge-confirm"),
                 ) {
                     Text(
-                        when (review.mergeFlowStep) {
-                            "commit" -> "Committing…"
-                            "merge" -> "Merging…"
-                            "cleanup" -> "Cleaning up…"
-                            else -> "Merge into $baseBranch"
+                        when (review.mergeStep) {
+                            MergeStep.COMMIT -> "Committing…"
+                            MergeStep.MERGE -> "Merging…"
+                            MergeStep.CLEANUP -> "Cleaning up…"
+                            null -> "Merge into $baseBranch"
                         },
                     )
                 }
@@ -1597,13 +1529,13 @@ private fun WorkspaceMergeSheet(
 
 @Composable
 private fun ConversationWorkspaceSettingsSheet(
-    card: com.dbpprt.dieter.v1.Card,
+    card: com.dbpprt.dieter.api.v1.Card,
     onDismiss: () -> Unit,
-    onSave: (mode: String, branch: String, baseBranch: String) -> Unit,
+    onSave: (mode: WorkspaceMode, branch: String, baseBranch: String) -> Unit,
 ) {
-    var mode by remember { mutableStateOf(ConversationWorkspaceMode.resolve(card.workspaceMode)) }
-    var branch by remember { mutableStateOf(card.workspaceBranch) }
-    var baseBranch by remember { mutableStateOf(card.workspaceBaseBranch) }
+    var mode by remember { mutableStateOf(WorkspaceMode.parse(card.workspace_mode)) }
+    var branch by remember { mutableStateOf(card.workspace_branch) }
+    var baseBranch by remember { mutableStateOf(card.workspace_base_branch) }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = DieterSurfaceHigh) {
         Column(
             Modifier
@@ -1619,10 +1551,10 @@ private fun ConversationWorkspaceSettingsSheet(
                 color = DieterMuted,
                 fontSize = 12.sp,
             )
-            ConversationWorkspaceMode.entries.forEach { option ->
+            WorkspaceMode.choices.forEach { option ->
                 WorkspaceModeOption(option, selected = mode == option) { mode = option }
             }
-            if (mode == ConversationWorkspaceMode.WORKTREE) {
+            if (mode == WorkspaceMode.WORKTREE) {
                 OutlinedTextField(
                     value = branch,
                     onValueChange = { branch = it },
@@ -1641,13 +1573,7 @@ private fun ConversationWorkspaceSettingsSheet(
                 )
             }
             Button(
-                onClick = {
-                    onSave(
-                        mode.wire,
-                        branch.takeIf { mode == ConversationWorkspaceMode.WORKTREE }.orEmpty(),
-                        baseBranch.takeIf { mode == ConversationWorkspaceMode.WORKTREE }.orEmpty(),
-                    )
-                },
+                onClick = { onSave(mode, branch, baseBranch) },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Save workspace settings") }
         }
@@ -1656,7 +1582,7 @@ private fun ConversationWorkspaceSettingsSheet(
 
 @Composable
 internal fun WorkspaceModeOption(
-    option: ConversationWorkspaceMode,
+    option: WorkspaceMode,
     selected: Boolean,
     onSelect: () -> Unit,
 ) {
@@ -1675,7 +1601,7 @@ internal fun WorkspaceModeOption(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Icon(
-                if (option == ConversationWorkspaceMode.WORKTREE) Icons.Outlined.AccountTree else Icons.Outlined.Folder,
+                if (option == WorkspaceMode.WORKTREE) Icons.Outlined.AccountTree else Icons.Outlined.Folder,
                 null,
                 tint = if (selected) DieterShell else DieterMuted,
                 modifier = Modifier.size(18.dp),
@@ -1683,7 +1609,7 @@ internal fun WorkspaceModeOption(
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(option.title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    if (option == ConversationWorkspaceMode.WORKTREE) {
+                    if (option == WorkspaceMode.WORKTREE) {
                         Surface(color = DieterShell.copy(alpha = 0.14f), shape = CircleShape) {
                             Text(
                                 "Recommended",

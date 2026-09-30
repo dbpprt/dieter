@@ -65,19 +65,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dbpprt.dieter.api.v1.HarnessSelection
+import com.dbpprt.dieter.core.composition.Attachments
+import com.dbpprt.dieter.core.composition.ConversationDraft
+import com.dbpprt.dieter.core.presentation.ContextUsage
+import com.dbpprt.dieter.core.presentation.TokenCounts
+import com.dbpprt.dieter.core.selection.AgentControls
+import com.dbpprt.dieter.core.selection.Selections
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.ui.theme.DieterPane
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
-import com.dbpprt.dieter.v1.Card as BoardCard
-import com.dbpprt.dieter.v1.MessagePart
-import com.dbpprt.dieter.v1.Harness
-import com.dbpprt.dieter.v1.UiMessage
+import com.dbpprt.dieter.api.v1.MessagePart
 import kotlinx.coroutines.delay
-import org.json.JSONObject
-import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.util.Locale
 import com.dbpprt.dieter.ui.theme.DieterShellTint
@@ -117,7 +119,7 @@ internal fun AttachmentPickerSheet(
                 )
             }
             Text(
-                "Up to 4 attachments · 5 MB each · 6 MB total",
+                Attachments.LIMITS,
                 color = DieterMuted.copy(alpha = 0.78f),
                 fontSize = 11.sp,
             )
@@ -220,7 +222,7 @@ internal fun ComposerAttachmentPreview(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(attachmentDetails(part), color = DieterMuted, fontSize = 10.sp, maxLines = 1)
+                Text(Attachments.details(part), color = DieterMuted, fontSize = 10.sp, maxLines = 1)
             }
             IconButton(onClick = onRemove, enabled = enabled, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Outlined.Close, "Remove ${part.filename.ifBlank { "attachment" }}", Modifier.size(16.dp))
@@ -234,45 +236,18 @@ internal fun MessageComposer(
     value: String,
     placeholder: String,
     enabled: Boolean,
-    harnesses: List<Harness> = emptyList(),
-    card: BoardCard? = null,
-    contextUsage: ComposerContextUsage? = null,
-    lastResponseModelId: String? = null,
+    /** The agent pickers; null hides them (no catalog yet, or no conversation). */
+    controls: AgentControls? = null,
+    contextUsage: ContextUsage? = null,
+    respondingModel: String? = null,
     attachments: List<MessagePart> = emptyList(),
-    selection: ConversationComposerSelection? = null,
     error: String? = null,
     onValueChange: (String) -> Unit,
-    onSelectionChange: ((ConversationComposerSelection) -> Unit)? = null,
+    onSelectionChange: (HarnessSelection) -> Unit = {},
     onAttach: (() -> Unit)? = null,
     onRemoveAttachment: (Int) -> Unit = {},
-    onSend: (String, String, String, Map<String, String>) -> Unit,
+    onSend: () -> Unit,
 ) {
-    val locked = conversationSelectionLocked(card)
-    var localSelection by remember(card?.id) {
-        mutableStateOf(ConversationComposerSelection.initial(card, harnesses))
-    }
-    val currentSelection = selection ?: localSelection
-    fun setSelection(next: ConversationComposerSelection) {
-        if (onSelectionChange == null) localSelection = next else onSelectionChange(next)
-    }
-    LaunchedEffect(card?.id, harnesses, currentSelection) {
-        val filled = currentSelection.fillingMissingSelection(card, harnesses)
-        if (filled != currentSelection) setSelection(filled)
-    }
-    val provider = currentSelection.provider
-    val selectedModel = currentSelection.model
-    val effort = currentSelection.effort
-    val providerOptions = currentSelection.providerOptions
-    val selectedHarness = harnesses.firstOrNull { it.id == provider }
-    val selectedHarnessModel = selectedHarness?.modelsList?.firstOrNull { it.id == selectedModel }
-    val effortOptions = selectedHarness?.effortOptionsFor(selectedModel).orEmpty()
-    val modelEnabled = enabled && conversationSettingEnabled(selectedHarness, locked, "model-selection")
-    val effortEnabled = enabled && conversationSettingEnabled(selectedHarness, locked, "effort-selection")
-    val displayedEffort = effort.takeUnless { it.isBlank() || it == "default" }
-        ?: selectedHarnessModel?.defaultEffort.orEmpty()
-    val effortLabel = if (effort == "default") "Default" else effortOptions.firstOrNull { it.id == displayedEffort }?.name
-        ?: displayedEffort.replaceFirstChar { if (it.isLowerCase()) it.uppercaseChar().toString() else it.toString() }
-            .ifBlank { "Default" }
     var providerMenu by remember { mutableStateOf(false) }
     var modelMenu by remember { mutableStateOf(false) }
     var effortMenu by remember { mutableStateOf(false) }
@@ -297,7 +272,7 @@ internal fun MessageComposer(
             }
         }
         if (error != null) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-        if (harnesses.isNotEmpty() && card != null) {
+        if (controls != null) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Row(
                     Modifier.weight(1f).horizontalScroll(rememberScrollState()),
@@ -305,59 +280,57 @@ internal fun MessageComposer(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box {
-                        ComposerSettingPill(selectedHarness?.name ?: provider.ifBlank { "Agent" }, enabled = enabled && !locked) { providerMenu = true }
+                        ComposerSettingPill(controls.providerLabel, enabled = controls.providerEnabled) { providerMenu = true }
                         DropdownMenu(providerMenu, { providerMenu = false }) {
-                            harnesses.forEach { harness ->
-                                DropdownMenuItem(text = { Text(harness.name) }, enabled = enabled && !locked, onClick = {
+                            controls.harnesses.forEach { harness ->
+                                DropdownMenuItem(text = { Text(harness.name) }, enabled = controls.providerEnabled, onClick = {
                                     providerMenu = false
-                                    setSelection(ConversationComposerSelection.forProvider(harness))
+                                    onSelectionChange(controls.choosingProvider(harness))
                                 })
                             }
                         }
                     }
                     Box {
-                        ComposerSettingPill(selectedHarnessModel?.name ?: selectedModel.ifBlank { "Default model" }, enabled = modelEnabled) { modelMenu = true }
+                        ComposerSettingPill(controls.modelLabel, enabled = controls.modelEnabled) { modelMenu = true }
                         DropdownMenu(modelMenu, { modelMenu = false }) {
-                            selectedHarness?.modelsList.orEmpty().forEach { harnessModel ->
-                                DropdownMenuItem(text = { Text(harnessModel.name) }, enabled = modelEnabled, onClick = {
+                            controls.harness?.models.orEmpty().forEach { harnessModel ->
+                                DropdownMenuItem(text = { Text(harnessModel.name) }, enabled = controls.modelEnabled, onClick = {
                                     modelMenu = false
-                                    setSelection(currentSelection.selectingModel(harnessModel.id, selectedHarness))
+                                    onSelectionChange(controls.choosingModel(harnessModel.id))
                                 })
                             }
                         }
                     }
-                    if (effortOptions.isNotEmpty()) {
+                    if (controls.efforts.isNotEmpty()) {
                         Box {
-                            ComposerSettingPill(effortLabel, enabled = effortEnabled) { effortMenu = true }
+                            ComposerSettingPill(controls.effortLabel, enabled = controls.effortEnabled) { effortMenu = true }
                             DropdownMenu(effortMenu, { effortMenu = false }) {
-                                DropdownMenuItem(text = { Text("Default") }, enabled = effortEnabled, onClick = {
+                                DropdownMenuItem(text = { Text("Default") }, enabled = controls.effortEnabled, onClick = {
                                     effortMenu = false
-                                    setSelection(currentSelection.copy(effort = "default"))
+                                    onSelectionChange(controls.choosingEffort(Selections.DEFAULT_EFFORT))
                                 })
-                                effortOptions.forEach { option ->
-                                    DropdownMenuItem(text = { Text(option.name) }, enabled = effortEnabled, onClick = {
+                                controls.efforts.forEach { option ->
+                                    DropdownMenuItem(text = { Text(option.name) }, enabled = controls.effortEnabled, onClick = {
                                         effortMenu = false
-                                        setSelection(currentSelection.copy(effort = option.id))
+                                        onSelectionChange(controls.choosingEffort(option.id))
                                     })
                                 }
                             }
                         }
                     }
-                    providerOptionsForModel(selectedHarness, selectedModel).forEach { option ->
+                    controls.options.forEach { option ->
                         ProviderOptionControl(
                             option = option,
-                            values = providerOptions,
-                            enabled = enabled && providerOptionEnabled(option, locked),
-                            onValueChange = { id, next ->
-                                setSelection(currentSelection.copy(providerOptions = providerOptions + (id to next)))
-                            },
+                            value = controls.optionValue(option),
+                            enabled = controls.optionEnabled(option),
+                            onValueChange = { id, next -> onSelectionChange(controls.settingOption(id, next)) },
                         )
                     }
                 }
                 if (contextUsage != null) {
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        "${formatTokenCount(contextUsage.used)} · ${contextUsage.percent}%",
+                        "${TokenCounts.compact(contextUsage.usedTokens)} · ${contextUsage.percent}%",
                         color = DieterMuted.copy(alpha = 0.78f),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
@@ -365,7 +338,7 @@ internal fun MessageComposer(
                     )
                 }
             }
-            if (locked) {
+            if (controls.locked) {
                 Text(
                     "Settings apply to your next message. The current turn keeps its settings.",
                     color = DieterMuted,
@@ -374,9 +347,9 @@ internal fun MessageComposer(
                 )
             }
         }
-        if (lastResponseModelId != null) {
+        if (respondingModel != null) {
             Text(
-                "Last Claude response model: $lastResponseModelId",
+                "Last Claude response model: $respondingModel",
                 color = DieterMuted,
                 fontSize = 11.sp,
                 modifier = Modifier.fillMaxWidth().testTag("last-claude-response-model"),
@@ -424,11 +397,11 @@ internal fun MessageComposer(
                     },
                 )
             }
-            val canSend = enabled && (value.isNotBlank() || attachments.isNotEmpty())
+            val canSend = enabled && ConversationDraft(value, attachments).hasContent
             Box(
                 Modifier.size(54.dp).clip(RoundedCornerShape(20.dp))
                     .background(DieterPane)
-                    .clickable(enabled = canSend) { onSend(provider, selectedModel, effort, providerOptions) }
+                    .clickable(enabled = canSend, onClick = onSend)
                     .testTag("send-message"),
                 contentAlignment = Alignment.Center,
             ) {
@@ -455,42 +428,4 @@ internal fun ComposerSettingPill(label: String, enabled: Boolean, onClick: () ->
     ) {
         Text(label, color = DieterMuted, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
-}
-
-internal fun latestAssistantModelId(messages: List<UiMessage>): String? {
-    val message = messages.lastOrNull { it.role.equals("assistant", ignoreCase = true) } ?: return null
-    val raw = message.metadataJson.toString(StandardCharsets.UTF_8)
-    if (raw.isBlank()) return null
-    val metadata = runCatching { JSONObject(raw) }.getOrNull() ?: return null
-    return (metadata.opt("modelId") as? String)?.trim()?.takeIf(String::isNotBlank)
-}
-
-internal data class ComposerContextUsage(val used: Long, val percent: Int)
-
-internal fun latestContextUsage(messages: List<UiMessage>): ComposerContextUsage? {
-    messages.asReversed().forEach { message ->
-        val raw = message.metadataJson.toString(StandardCharsets.UTF_8)
-        if (raw.isBlank()) return@forEach
-        val metadata = runCatching { JSONObject(raw) }.getOrNull() ?: return@forEach
-        val usage = metadata.optJSONObject("usage") ?: return@forEach
-        val rawUsage = usage.optJSONObject("raw")
-        val used = rawUsage?.longOrNull("totalTokens")
-            ?: usage.longOrNull("totalTokens")
-            ?: ((usage.longOrNull("inputTokens") ?: 0L) + (usage.longOrNull("outputTokens") ?: 0L))
-        val available = metadata.longOrNull("contextWindowTokens")
-        if (used > 0 && available != null && available > 0) {
-            return ComposerContextUsage(used, ((used.toDouble() / available) * 100).toInt().coerceIn(0, 100))
-        }
-    }
-    return null
-}
-
-internal fun JSONObject.longOrNull(key: String): Long? =
-    if (has(key) && !isNull(key)) optLong(key) else null
-
-internal fun formatTokenCount(tokens: Long): String = when {
-    tokens >= 1_000_000 -> String.format(Locale.US, "%.1fM", tokens / 1_000_000.0)
-    tokens >= 100_000 -> "${tokens / 1_000}k"
-    tokens >= 1_000 -> String.format(Locale.US, "%.1fk", tokens / 1_000.0)
-    else -> tokens.toString()
 }

@@ -17,15 +17,11 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.data.DieterEndpoint
-import com.dbpprt.dieter.v1.CreateConversationRequest
+import com.dbpprt.dieter.api.v1.CreateConversationRequest
+import com.dbpprt.dieter.e2e.IsolatedCore
 import java.io.File
 import java.util.UUID
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -48,62 +44,23 @@ class ConversationJumpToLatestEndToEndTest {
         val arguments = InstrumentationRegistry.getArguments()
         val token = arguments.getString("isolatedGatewayToken").orEmpty()
         assumeTrue("Pass isolatedGatewayToken for the isolated gateway", token.isNotBlank())
-        val port = arguments.getString("isolatedGatewayPort")?.toIntOrNull() ?: 14243
-        val endpoint = DieterEndpoint(
-            id = "android_conversation_scroll_e2e",
-            label = "Isolated conversation gateway",
-            host = "127.0.0.1",
-            port = port,
-        )
         val application = composeRule.activity.application as DieterApplication
         val container = application.container
-        val manager = container.connectionManager
-        container.repository.setAccessToken(endpoint, token)
-        manager.updateEndpoints(listOf(endpoint), selectedGatewayId = endpoint.id)
-        manager.connect()
-        manager.onAppForegrounded()
-
-        val connected = runBlocking {
-            withTimeout(30_000) {
-                manager.state.first { state ->
-                    state.phase == ConnectionPhase.CONNECTED && state.projects.isNotEmpty() && state.boards.isNotEmpty()
-                }
-            }
+        val connected = IsolatedCore.connect(container)
+        val board = connected.boards.values.flatten().first { candidate ->
+            candidate.lanes.any { lane -> lane.id.equals("todo", true) || lane.name.equals("todo", true) }
         }
-        assertNotNull("Connection failed: ${manager.state.value.error}", connected)
-
-        val board = connected.boards.first { candidate ->
-            candidate.lanesList.any { lane -> lane.id.equals("todo", true) || lane.name.equals("todo", true) }
-        }
-        val todoLane = board.lanesList.first { lane ->
+        val todoLane = board.lanes.first { lane ->
             lane.id.equals("todo", true) || lane.name.equals("todo", true)
         }.id
-        val project = connected.projects.first { it.id == board.projectId }
-        val fixture = runBlocking {
-            container.repository.createConversation(
-                CreateConversationRequest.newBuilder()
-                    .setProjectId(project.id)
-                    .setBoardId(board.id)
-                    .setLane(todoLane)
-                    .setTitle("Android jump-to-latest E2E ${UUID.randomUUID().toString().take(8)}")
-                    .setPrompt((1..100).joinToString("\n") { "Unsent conversation fixture line $it." })
-                    .setProvider("mock")
-                    .setModel("mock")
-                    .setDeferStart(true)
-                    .setWorkspaceMode("project")
-                    .setClientId("android-conversation-scroll-test")
-                    .setCommandId(UUID.randomUUID().toString())
-                    .build(),
-                chat = false,
-            )
-        }
+        val project = connected.projects.first { it.id == board.project_id }
+        val fixture = IsolatedCore.createConversation(
+            container,
+            CreateConversationRequest(project_id = project.id, board_id = board.id, lane = todoLane, title = "Android jump-to-latest E2E ${UUID.randomUUID().toString().take(8)}", prompt = (1..100).joinToString("\n") { "Unsent conversation fixture line $it." }, provider = "mock", model = "mock", defer_start = true, workspace_mode = "project"),
+            chat = false,
+        )
 
         try {
-            runBlocking { manager.refreshMachineDirectory(includeArchivedChats = true) }
-            manager.onAppForegrounded(project.id)
-            runBlocking {
-                withTimeout(10_000) { manager.state.first { state -> state.cards.any { it.id == fixture.id } } }
-            }
             container.requestOpen(cardId = fixture.id)
             composeRule.waitUntil(20_000) {
                 composeRule.onAllNodesWithTag("conversation-list").fetchSemanticsNodes().isNotEmpty()
@@ -132,7 +89,8 @@ class ConversationJumpToLatestEndToEndTest {
             composeRule.waitForIdle()
             assertTrue(composeRule.onAllNodesWithTag("jump-to-latest").fetchSemanticsNodes().isEmpty())
         } finally {
-            runBlocking { container.repository.archiveCard(fixture.id, true) }
+            runBlocking { runCatching { container.core.onBoard { archive(fixture.id) } } }
+            IsolatedCore.disconnect(container)
         }
     }
 }

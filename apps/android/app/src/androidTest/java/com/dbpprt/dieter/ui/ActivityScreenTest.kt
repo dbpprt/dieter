@@ -13,15 +13,15 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.connection.EndpointConnection
-import com.dbpprt.dieter.gateway.v1.*
+import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.machines.MachineRow
+import com.dbpprt.dieter.api.gateway.v1.*
+import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.ui.theme.DieterTheme
-import com.dbpprt.dieter.v1.Board
-import com.dbpprt.dieter.v1.Card
-import com.dbpprt.dieter.v1.CardStateField
-import com.dbpprt.dieter.v1.CardStateVersion
-import com.dbpprt.dieter.v1.Project
+import com.dbpprt.dieter.api.v1.Board
+import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.core.activity.Activity
+import com.dbpprt.dieter.api.v1.Project
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -30,30 +30,26 @@ import java.time.Instant
 
 class ActivityScreenTest {
     @get:Rule val compose = createComposeRule()
+
+    /** The Inbox rows the ViewModel publishes: the core's projection of these cards. */
+    private fun DieterUiState.withActivity() = copy(activityItems = Activity.project(spaceCards + cards + chats, emptyMap(), projects, spaceBoards))
     private val now = Instant.parse("2026-09-21T12:00:00Z")
     private val provider = ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX
     private fun card(id: String, title: String, runtime: String, project: String = "dieter", chat: Boolean = false) =
-        Card.newBuilder().setId(id).setTitle(title).setProjectId(project).setBoardId(if (chat) "" else "main")
-            .setOwnerDaemonId(if (chat) "mac" else "linux")
-            .setScope(if (chat) "chat" else "card").setInitialPromptSentAt(now.minusSeconds(1800).toString()).setRuntime(runtime).setLane(if (runtime == "idle") "review" else "running")
-            .setRuntimeUpdatedAt(now.minusSeconds(1200).toString()).setUpdatedAt(now.minusSeconds(1200).toString()).build()
-    private val account = ProviderQuotaSnapshot.newBuilder().setAccountKey("account-one").setProvider(provider)
-        .setDisplayEmail("developer@example.com").setFreshUntil(now.plusSeconds(300).toString())
-        .setAvailability(ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_AVAILABLE)
-        .addWindows(ProviderQuotaWindow.newBuilder().setLabel("5-hour").setRemainingPercent(72).setResetsAt(now.plusSeconds(7200).toString()))
-        .addWindows(ProviderQuotaWindow.newBuilder().setLabel("Weekly").setRemainingPercent(41)).build()
+        Card(id = id, title = title, project_id = project, board_id = if (chat) "" else "main", owner_daemon_id = if (chat) "mac" else "linux", scope = if (chat) "chat" else "card", initial_prompt_sent_at = now.minusSeconds(1800).toString(), runtime = runtime, lane = if (runtime == "idle") "review" else "running", runtime_updated_at = now.minusSeconds(1200).toString(), updated_at = now.minusSeconds(1200).toString())
+    private val account = ProviderQuotaSnapshot(account_key = "account-one", provider = provider, display_email = "developer@example.com", fresh_until = now.plusSeconds(300).toString(), availability = ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_AVAILABLE, windows = listOf(ProviderQuotaWindow(label = "5-hour", remaining_percent = 72, resets_at = now.plusSeconds(7200).toString()), ProviderQuotaWindow(label = "Weekly", remaining_percent = 41)))
     private val state get() = DieterUiState(
         connectionPhase = ConnectionPhase.CONNECTED,
         endpointConnections = listOf(
-            EndpointConnection("linux", "garuda", "", daemonId = "linux"),
-            EndpointConnection("mac", "MacBook Pro", "", daemonId = "mac"),
+            MachineRow("linux", "garuda", "", daemonId = "linux"),
+            MachineRow("mac", "MacBook Pro", "", daemonId = "mac"),
         ),
-        projects = listOf(Project.newBuilder().setId("dieter").setName("dieter").build(), Project.newBuilder().setId("atlas").setName("atlas").build()),
-        spaceBoards = listOf(Board.newBuilder().setId("main").setName("Main").build()),
+        projects = listOf(Project(id = "dieter", name = "dieter"), Project(id = "atlas", name = "atlas")),
+        spaceBoards = listOf(Board(id = "main", name = "Main")),
         spaceCards = listOf(card("review", "Understand the code", "idle"), card("running", "Migrate schedule store", "running")),
         chats = listOf(card("answer", "Agent asked a question", "waiting_for_user", chat = true),
             card("chat-running", "Explore navigation", "running", "atlas", chat = true)),
-        providerQuotaGroups = listOf(ProviderQuotaGroup.newBuilder().setProvider(provider).addAccounts(account).build()),
+        providerQuotaGroups = listOf(ProviderQuotaGroup(provider = provider, accounts = listOf(account))),
     )
 
     @Test fun mixedActivityFiltersAndOpensBothConversationTypesAndAccount() {
@@ -61,7 +57,7 @@ class ActivityScreenTest {
         var openedAccount: String? = null
         compose.setContent {
             DieterTheme {
-                ActivityFeed(state, Modifier.fillMaxSize(), { opened = it }, {}, { openedAccount = it.accountKey }, {}, now)
+                ActivityFeed(state.withActivity(), Modifier.fillMaxSize(), { opened = it }, {}, { openedAccount = it.account_key }, {}, now)
             }
         }
         compose.onNodeWithTag("activity-range").performClick()
@@ -87,19 +83,16 @@ class ActivityScreenTest {
 
     @Test fun olderChatsRemainReachableBesideCardsInAllAndProjectFeeds() {
         val recentCards = (1..25).map { index ->
-            card("newer-$index", "Newer card $index", "idle").toBuilder()
-                .setLane("done")
-                .setRuntimeUpdatedAt(now.minusSeconds(index.toLong()).toString())
-                .build()
+            card("newer-$index", "Newer card $index", "idle").copy(lane = "done", runtime_updated_at = now.minusSeconds(index.toLong()).toString())
         }
         val olderChat = card("older-chat", "Older project chat", "idle", chat = true)
-            .toBuilder().setRuntimeUpdatedAt(now.minusSeconds(3600).toString()).build()
+            .copy(runtime_updated_at = now.minusSeconds(3600).toString())
         val otherChat = card("other-chat", "Other project chat", "idle", "atlas", chat = true)
-            .toBuilder().setRuntimeUpdatedAt(now.minusSeconds(7200).toString()).build()
+            .copy(runtime_updated_at = now.minusSeconds(7200).toString())
         val mixed = state.copy(spaceCards = recentCards, chats = listOf(olderChat, otherChat))
         var opened: Card? = null
         compose.setContent {
-            DieterTheme { ActivityFeed(mixed, onOpen = { opened = it }, onConnections = {},
+            DieterTheme { ActivityFeed(mixed.withActivity(), onOpen = { opened = it }, onConnections = {},
                 onAccount = {}, onRefreshAccounts = {}, clock = now) }
         }
         compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-other-chat"))
@@ -117,7 +110,7 @@ class ActivityScreenTest {
     }
 
     @Test fun searchAndEmptyResultsKeepAccountsAvailable() {
-        compose.setContent { DieterTheme { ActivityFeed(state, onOpen = {}, onConnections = {}, onAccount = {}, onRefreshAccounts = {}, clock = now) } }
+        compose.setContent { DieterTheme { ActivityFeed(state.withActivity(), onOpen = {}, onConnections = {}, onAccount = {}, onRefreshAccounts = {}, clock = now) } }
         compose.onNodeWithContentDescription("Search activity").performClick()
         compose.onNodeWithTag("activity-search").performTextInput("no such conversation")
         compose.onNodeWithTag("activity-feed").performScrollToNode(hasText("No matching activity"))
@@ -135,7 +128,7 @@ class ActivityScreenTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
                 DieterTheme(darkTheme = dark) {
                     Scaffold(bottomBar = { DieterBottomBar(Destination.ACTIVITY, {}, {}) }) { padding ->
-                        ActivityFeed(current, Modifier.fillMaxSize().padding(padding), {}, {}, {}, {}, now)
+                        ActivityFeed(current.withActivity(), Modifier.fillMaxSize().padding(padding), {}, {}, {}, {}, now)
                     }
                 }
             }
@@ -152,11 +145,11 @@ class ActivityScreenTest {
         compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-running"))
         capture("activity-cards-light-large-text.png")
         compose.runOnIdle {
-            current = state.copy(connectionPhase = ConnectionPhase.UNAVAILABLE,
+            current = state.copy(connectionPhase = ConnectionPhase.NO_MACHINE,
                 lastConnectedAtMillis = now.minusSeconds(60).toEpochMilli(),
-                providerQuotaGroups = listOf(ProviderQuotaGroup.newBuilder().setProvider(provider).addAccounts(
-                    account.toBuilder().clearWindows().setAvailability(ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_TEMPORARILY_UNAVAILABLE),
-                ).build()))
+                providerQuotaGroups = listOf(ProviderQuotaGroup(provider = provider, accounts = listOf(
+                    account.copy(windows = emptyList(), availability = ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_TEMPORARILY_UNAVAILABLE),
+                ))))
         }
         compose.onNodeWithTag("activity-feed").performScrollToNode(hasText("Usage windows unavailable"))
         compose.onNodeWithText("Usage windows unavailable").assertIsDisplayed()
@@ -166,13 +159,11 @@ class ActivityScreenTest {
     }
 
     @Test fun cardsShowLatestActivityAndOwningMachineAcrossUpdatesAndOffline() {
-        val running = card("running", "Polish the Inbox cards", "running").toBuilder()
-            .setRuntimeUpdatedAt(now.minusSeconds(7200).toString())
-            .setLastActivityAt(now.minusSeconds(120).toString()).build()
+        val running = card("running", "Polish the Inbox cards", "running").copy(runtime_updated_at = now.minusSeconds(7200).toString(), last_activity_at = now.minusSeconds(120).toString())
         var current by mutableStateOf(state.copy(spaceCards = listOf(running)))
         var clock by mutableStateOf(now)
         compose.setContent { DieterTheme {
-            ActivityFeed(current, onOpen = {}, onConnections = {}, onAccount = {}, onRefreshAccounts = {}, clock = clock)
+            ActivityFeed(current.withActivity(), onOpen = {}, onConnections = {}, onAccount = {}, onRefreshAccounts = {}, clock = clock)
         } }
         compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-running"))
         compose.onNodeWithTag("activity-age-running", useUnmergedTree = true)
@@ -180,12 +171,12 @@ class ActivityScreenTest {
         compose.onNodeWithTag("activity-machine-running", useUnmergedTree = true)
             .assertContentDescriptionEquals("Machine: garuda").assertIsDisplayed()
         compose.runOnIdle {
-            current = current.copy(spaceCards = listOf(running.toBuilder().setLastActivityAt(now.toString()).build()))
+            current = current.copy(spaceCards = listOf(running.copy(last_activity_at = now.toString())))
         }
         compose.onNodeWithTag("activity-age-running", useUnmergedTree = true)
             .assertContentDescriptionEquals("Last activity: Just now")
         compose.runOnIdle {
-            current = current.copy(connectionPhase = ConnectionPhase.UNAVAILABLE, lastConnectedAtMillis = now.toEpochMilli())
+            current = current.copy(connectionPhase = ConnectionPhase.NO_MACHINE, lastConnectedAtMillis = now.toEpochMilli())
             clock = now.plusSeconds(180)
         }
         compose.onNodeWithTag("activity-age-running", useUnmergedTree = true)
@@ -196,14 +187,12 @@ class ActivityScreenTest {
             .assertContentDescriptionEquals("Machine: MacBook Pro").assertIsDisplayed()
     }
 
-    @Test fun streamingRowsKeepTheirOrderAndStaleCopiesCannotRestoreRunning() {
-        val older = card("older", "Earlier turn", "running").toBuilder()
-            .setRuntimeUpdatedAt(now.minusSeconds(7200).toString()).build()
-        val newer = card("newer", "Later turn", "running", chat = true).toBuilder()
-            .setRuntimeUpdatedAt(now.minusSeconds(3600).toString()).build()
+    @Test fun streamingRowsKeepTheirOrder() {
+        val older = card("older", "Earlier turn", "running").copy(runtime_updated_at = now.minusSeconds(7200).toString())
+        val newer = card("newer", "Later turn", "running", chat = true).copy(runtime_updated_at = now.minusSeconds(3600).toString())
         var current by mutableStateOf(state.copy(spaceCards = listOf(older), chats = listOf(newer), providerQuotaGroups = emptyList()))
         compose.setContent { DieterTheme {
-            ActivityFeed(current, onOpen = {}, onConnections = {}, onAccount = {}, onRefreshAccounts = {}, clock = now)
+            ActivityFeed(current.withActivity(), onOpen = {}, onConnections = {}, onAccount = {}, onRefreshAccounts = {}, clock = now)
         } }
         fun assertOrder() {
             compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-newer"))
@@ -215,33 +204,21 @@ class ActivityScreenTest {
         for (id in listOf("older", "newer", "older")) {
             compose.runOnIdle {
                 current = current.copy(
-                    spaceCards = listOf(older.toBuilder().setLastActivityAt(now.minusSeconds(if (id == "older") 0 else 60).toString()).build()),
-                    chats = listOf(newer.toBuilder().setLastActivityAt(now.minusSeconds(if (id == "newer") 0 else 60).toString()).build()),
+                    spaceCards = listOf(older.copy(last_activity_at = now.minusSeconds(if (id == "older") 0 else 60).toString())),
+                    chats = listOf(newer.copy(last_activity_at = now.minusSeconds(if (id == "newer") 0 else 60).toString())),
                 )
             }
             assertOrder()
             compose.onNodeWithTag("activity-age-$id", useUnmergedTree = true)
                 .assertContentDescriptionEquals("Last activity: Just now")
         }
-        fun versioned(value: Card, sequence: Long) = value.toBuilder().apply {
-            for (name in listOf("summary", "placement")) {
-                addStateFields(CardStateField.newBuilder().setName(name).setRevision("$name-$sequence")
-                    .addVersions(CardStateVersion.newBuilder().putClock("owner", sequence)
-                        .setRank(sequence.toString()).setValue(value)))
-            }
-        }.build()
-        val complete = versioned(older.toBuilder().setRuntime("idle").setLane("review")
-            .setRuntimeUpdatedAt(now.toString()).build(), 2)
-        val stale = versioned(older, 1).toBuilder().setUpdatedAt(now.plusSeconds(60).toString()).build()
-        for (copies in listOf(listOf(complete, stale), listOf(stale, complete), listOf(complete, stale))) {
-            compose.runOnIdle { current = current.copy(spaceCards = listOf(copies[0]), cards = listOf(copies[1])) }
-            compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-older"))
-            compose.onNodeWithTag("activity-row-older").assertTextContains("Ready for review")
-        }
     }
 
     @Test fun narrowCardKeepsTimeAndMachineAccessibleWithLargeText() {
-        val entry = buildActivityEntries(listOf(card("narrow", "Make the Inbox feel thoughtful, clear, and a little more delightful", "waiting_for_user"))).single()
+        val entry = Activity.project(
+            listOf(card("narrow", "Make the Inbox feel thoughtful, clear, and a little more delightful", "waiting_for_user")), emptyMap(),
+            listOf(Project(id = "dieter", name = "A long project name")), listOf(Board(id = "main", project_id = "dieter", name = "Main")),
+        ).single()
         val machine = "Development workstation with a very long machine name"
         var dark by mutableStateOf(true)
         compose.setContent {
@@ -249,7 +226,7 @@ class ActivityScreenTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
                 DieterTheme(darkTheme = dark) {
                     Box(Modifier.width(320.dp).padding(12.dp)) {
-                        ActivityRow(entry, "A long project name", "Main", machine, now) {}
+                        ActivityRow(entry, machine, now) {}
                     }
                 }
             }
@@ -272,12 +249,12 @@ class ActivityScreenTest {
         val pinned = mutableListOf<String>()
         val moved = mutableListOf<String>()
         compose.setContent { DieterTheme {
-            ActivityFeed(current, onOpen = { opened += it.id }, onConnections = {}, onAccount = {},
+            ActivityFeed(current.withActivity(), onOpen = { opened += it.id }, onConnections = {}, onAccount = {},
                 onRefreshAccounts = {}, clock = now, actions = ActivityItemActions(
                     onRename = { card, title ->
                         renamed += card.id to title
                         current = current.copy(spaceCards = current.spaceCards.map {
-                            if (it.id == card.id) it.toBuilder().setTitle(title).build() else it
+                            if (it.id == card.id) it.copy(title = title) else it
                         })
                     },
                     onArchive = { archived += it.id }, onTogglePin = { pinned += it.id },
@@ -309,7 +286,7 @@ class ActivityScreenTest {
         compose.onNodeWithTag("activity-pin-answer").performClick()
         compose.runOnIdle {
             assertEquals(listOf("answer"), pinned)
-            current = current.copy(chats = current.chats.map { if (it.id == "answer") it.toBuilder().setPinned(true).build() else it })
+            current = current.copy(chats = current.chats.map { if (it.id == "answer") it.copy(pinned = true) else it })
         }
         longPress("answer")
         compose.onNodeWithText("Unpin").assertIsDisplayed()
@@ -326,7 +303,7 @@ class ActivityScreenTest {
         var online by mutableStateOf(true)
         var opened: String? = null
         compose.setContent { DieterTheme {
-            ActivityFeed(state, onOpen = { opened = it.id }, onConnections = {}, onAccount = {}, onRefreshAccounts = {},
+            ActivityFeed(state.withActivity(), onOpen = { opened = it.id }, onConnections = {}, onAccount = {}, onRefreshAccounts = {},
                 clock = now, actions = ActivityItemActions({ _, _ -> fail("Unexpected rename") },
                     { fail("Unexpected archive") }, { fail("Unexpected pin") }, enabled = online))
         } }

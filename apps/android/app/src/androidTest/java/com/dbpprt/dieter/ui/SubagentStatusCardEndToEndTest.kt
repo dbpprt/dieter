@@ -19,7 +19,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.ui.theme.DieterTheme
-import com.dbpprt.dieter.v1.Subagent
+import com.dbpprt.dieter.api.v1.Subagent
 import org.junit.Rule
 import org.junit.Test
 
@@ -29,31 +29,7 @@ class SubagentStatusCardEndToEndTest {
 
     @Test
     fun dedicatedCardShowsOverviewAndExpandsOperationalDetails() {
-        val subagent = Subagent.newBuilder()
-            .setId("route-auditor")
-            .setName("task")
-            .setAgentType("task")
-            .setAgentSource("delegate")
-            .setProvider("omp")
-            .setModel("tailscale/glm-5.3-flash-exl3")
-            .setTask("Read the remaining routes")
-            .setAssignment("Trace every remaining route and report the request flow back to the main agent.")
-            .setDescription("Inspect route registration, handlers, and their tests.")
-            .setStatus("running")
-            .setActivity("Reading the remaining route handlers")
-            .setCurrentTool("functions.exec")
-            .setCurrentToolArgs("{\"cmd\":\"rg -n 'route' internal\"}")
-            .setToolCount(7)
-            .setRequests(3)
-            .setTokens(1_288_847)
-            .setContextTokens(128_953)
-            .setContextWindow(1_000_000)
-            .setCost(0.423)
-            .setDurationMs(85_000)
-            .addRecentOutput("Found the route table in internal/server.")
-            .addRecentOutput("Mapping handlers to the request flow now.")
-            .setTranscriptAvailable(true)
-            .build()
+        val subagent = Subagent(id = "route-auditor", name = "task", agent_type = "task", agent_source = "delegate", provider = "omp", model = "tailscale/glm-5.3-flash-exl3", task = "Read the remaining routes", assignment = "Trace every remaining route and report the request flow back to the main agent.", description = "Inspect route registration, handlers, and their tests.", status = "running", activity = "Reading the remaining route handlers", current_tool = "functions.exec", current_tool_args = "{\"cmd\":\"rg -n 'route' internal\"}", tool_count = 7, requests = 3, tokens = 1_288_847, context_tokens = 128_953, context_window = 1_000_000, cost = 0.423, duration_ms = 85_000, recent_output = listOf("Found the route table in internal/server.", "Mapping handlers to the request flow now."), transcript_available = true)
 
         composeRule.setContent {
             DieterTheme(darkTheme = true) {

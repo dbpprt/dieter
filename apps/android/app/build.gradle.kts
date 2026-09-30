@@ -1,11 +1,8 @@
-import com.google.protobuf.gradle.id
-import com.google.protobuf.gradle.proto
 import java.security.MessageDigest
 
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
-    alias(libs.plugins.protobuf)
 }
 
 val releaseKeystorePath = providers.environmentVariable("DIETER_ANDROID_KEYSTORE_PATH")
@@ -82,14 +79,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    sourceSets {
-        getByName("main") {
-            proto {
-                srcDir(rootProject.file("../../api/proto"))
-            }
-        }
-    }
-
     packaging {
         // Dieter uses only Termux's pure-Java VT emulator and renderer. The
         // bundled local-process JNI bridge is unused and is not 16 KiB aligned.
@@ -103,38 +92,9 @@ android {
     }
 }
 
-protobuf {
-    protoc {
-        artifact = "com.google.protobuf:protoc:${libs.versions.protobuf.get()}"
-    }
-    plugins {
-        id("grpc") {
-            artifact = "io.grpc:protoc-gen-grpc-java:${libs.versions.grpc.get()}"
-        }
-        id("grpckt") {
-            artifact = "io.grpc:protoc-gen-grpc-kotlin:${libs.versions.grpcKotlin.get()}:jdk8@jar"
-        }
-    }
-    generateProtoTasks {
-        all().configureEach {
-            builtins {
-                create("java") {
-                    option("lite")
-                }
-            }
-            plugins {
-                id("grpc") {
-                    option("lite")
-                }
-                id("grpckt") {
-                    option("lite")
-                }
-            }
-        }
-    }
-}
-
 dependencies {
+    // All client logic: sign-in, routing, sync, delivery, conversations, and features.
+    implementation("com.dbpprt.dieter:shared")
     implementation(libs.bouncycastle)
     implementation(libs.bouncycastle.tls)
     implementation(libs.androidx.core.ktx)
@@ -157,15 +117,8 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
 
-    implementation(libs.grpc.android)
-    implementation(libs.grpc.okhttp)
-    implementation(libs.grpc.protobuf.lite)
-    implementation(libs.grpc.stub)
-    implementation(libs.grpc.kotlin.stub)
-    implementation(libs.protobuf.javalite)
-    compileOnly(libs.javax.annotation)
-
     testImplementation(libs.junit)
+    androidTestImplementation(libs.okhttp)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.rules)
     androidTestImplementation(libs.espresso.core)

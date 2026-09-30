@@ -96,10 +96,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import com.dbpprt.dieter.settings.NavigationFolderPreferences
-import com.dbpprt.dieter.settings.NavigationFolderScope
+import com.dbpprt.dieter.core.navigation.ChatLists
+import com.dbpprt.dieter.core.navigation.Destination
+import com.dbpprt.dieter.core.navigation.NavigationFolder
+import com.dbpprt.dieter.core.navigation.FolderScope
 import androidx.compose.material.icons.outlined.Folder
-import com.dbpprt.dieter.connection.isActiveRuntime
+import com.dbpprt.dieter.core.board.Runtimes
+import com.dbpprt.dieter.core.search.ListFilters
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterShellDeep
 import com.dbpprt.dieter.ui.theme.DieterMuted
@@ -109,8 +112,8 @@ import com.dbpprt.dieter.ui.theme.DieterPane
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import com.dbpprt.dieter.ui.theme.DieterRunning
-import com.dbpprt.dieter.v1.Card as BoardCard
-import com.dbpprt.dieter.v1.Project
+import com.dbpprt.dieter.api.v1.Card as BoardCard
+import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.ui.theme.DieterAbyss
 
 @Composable
@@ -161,39 +164,18 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
     val pinnedChatDragState = remember { PinnedChatDragState() }
     val haptic = LocalHapticFeedback.current
     val searchTerm = query.trim()
-    val chats = remember(state.chats, state.projects, state.chatFolders, searchTerm) {
-        chatsForQuery(state.chats, state.projects, state.chatFolders, searchTerm)
-            .sortedWith(compareByDescending<BoardCard> { it.pinned }.thenByDescending { it.lastActivityAt })
+    val sections = remember(state.chats, state.projects, state.chatFolders, state.pinnedChatOrder, searchTerm) {
+        ChatLists.sections(state.chats, state.projects, state.chatFolders, state.pinnedChatOrder, searchTerm)
     }
-    val pinned = remember(chats, state.pinnedChatOrder) {
-        orderedPinnedChats(chats.filter { it.pinned }, state.pinnedChatOrder)
-    }
-    val filedIDs = remember(state.chatFolders) { state.chatFolders.folders.flatMap { it.itemIDs }.toSet() }
-    val unfiledChats = remember(chats, filedIDs) { chats.filterNot { it.id in filedIDs } }
-    val unpinnedByProject = remember(unfiledChats) { unfiledChats.filterNot { it.pinned }.groupBy(BoardCard::getProjectId) }
-    val chatProjects = remember(state.projects, unfiledChats, searchTerm, state.chatFolders) {
-        chatProjectsForQuery(state.projects, unfiledChats, searchTerm).filter {
-            state.chatFolders.folders.isEmpty() || unpinnedByProject[it.id].orEmpty().isNotEmpty()
-        }
-    }
-    val visibleFolders = remember(state.chatFolders, chats, searchTerm) {
-        val matchingIDs = chats.mapTo(hashSetOf()) { it.id }
-        state.chatFolders.folders.filter { folder ->
-            searchTerm.isBlank() || folder.name.contains(searchTerm, ignoreCase = true) || folder.itemIDs.any { it in matchingIDs }
-        }
-    }
-    val chatsByID = remember(chats) { chats.associateBy { it.id } }
-    val projectIds = remember(state.projects) { state.projects.mapTo(hashSetOf(), Project::getId) }
-    val otherChats = remember(unfiledChats, projectIds) {
-        unfiledChats.filter { chat -> !chat.pinned && chat.projectId !in projectIds }
-    }
+    val chats = sections.chats.values
+    val pinned = sections.pinned
+    val visibleFolders = sections.folders
+    val chatsByID = sections.chats
+    val chatProjects = sections.projects
+    val unpinnedByProject = sections.projectChats
+    val otherChats = sections.other
     val projectLabels = remember(state.projects) {
         state.projects.associate { it.id to it.name.ifBlank { "Project" } }
-    }
-    LaunchedEffect(state.chats, state.pinnedChatOrder) {
-        if (state.pinnedChatOrder.isEmpty()) {
-            model.initializePinnedChatOrderIfNeeded(state.chats.filter { it.pinned }.map { it.id })
-        }
     }
     Box(modifier) {
         Column(Modifier.fillMaxSize()) {
@@ -202,7 +184,7 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                 "${state.chats.size} ${if (state.chats.size == 1) "conversation" else "conversations"} · " +
                     "${state.projects.size} ${if (state.projects.size == 1) "project" else "projects"}",
             ) {
-                NewNavigationFolderButton(NavigationFolderScope.CHATS, state.chatFolders, model.navigationFolders)
+                NewNavigationFolderButton(FolderScope.CHATS, state.chatFolders, model)
                 IconButton(onClick = { model.openSurface(AppSurface.APP_SETTINGS) }) {
                     Icon(Icons.Outlined.Settings, "App settings", tint = DieterMuted)
                 }
@@ -210,9 +192,9 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
             NavigationSyncStatus(state)
             SurfaceErrorBanner(state.error, model::clearError)
             CompactSearchField(query, { query = it }, "Search chats, projects, folders", clearable = true)
-            if (!state.connected && state.projects.isEmpty() && state.chatFolders.folders.isEmpty()) {
+            if (!state.connected && state.projects.isEmpty() && state.chatFolders.isEmpty()) {
                 ConnectionEmptyState(state, model)
-            } else if (state.chats.isEmpty() && state.projects.isEmpty() && state.chatFolders.folders.isEmpty()) {
+            } else if (state.chats.isEmpty() && state.projects.isEmpty() && state.chatFolders.isEmpty()) {
                 EmptyList("No chats yet", "Start a standalone conversation with a local agent.", Icons.Outlined.ChatBubbleOutline)
             } else if (searchTerm.isNotEmpty() && chats.isEmpty() && chatProjects.isEmpty() && visibleFolders.isEmpty()) {
                 EmptyList("No matching chats", "Try a chat title, project, or folder name.", Icons.Outlined.Search)
@@ -235,7 +217,7 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                                 folderPreferences = state.chatFolders,
                                 showPinnedDragHandle = true,
                                 folderLabel = state.chatFolders.folderContaining(chat.id)?.name,
-                                projectLabel = projectLabels[chat.projectId] ?: "Project unavailable",
+                                projectLabel = projectLabels[chat.project_id] ?: "Project unavailable",
                                 dropTarget = pinnedChatDragState.targetChatId == chat.id,
                                 dragged = dragged,
                                 modifier = Modifier
@@ -271,19 +253,19 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                         item(key = "folders-heading") { ChatSectionHeading("Folders", Icons.Outlined.FolderOpen, visibleFolders.size, DieterAmber) }
                     }
                     visibleFolders.forEach { folder ->
-                        val members = folder.itemIDs.mapNotNull(chatsByID::get)
+                        val members = folder.itemIds.mapNotNull(chatsByID::get)
                         if (searchTerm.isBlank() || members.isNotEmpty() || folder.name.contains(searchTerm, ignoreCase = true)) {
                             item(key = "chat-folder-${folder.id}") {
-                                NavigationFolderHeader(folder, members.size, NavigationFolderScope.CHATS,
-                                    state.chatFolders, model.navigationFolders, revealSearchResults = searchTerm.isNotBlank())
+                                NavigationFolderHeader(folder, members.size, FolderScope.CHATS,
+                                    state.chatFolders, model, revealSearchResults = searchTerm.isNotBlank())
                             }
-                            if (folder.isExpanded || searchTerm.isNotBlank()) {
+                            if (folder.expanded || searchTerm.isNotBlank()) {
                                 if (members.isEmpty()) item(key = "chat-folder-empty-${folder.id}") {
                                     Text("No chats in this folder", color = DieterMuted,
                                         modifier = Modifier.chatGroupRail(DieterAmber.copy(alpha = 0.3f)).padding(12.dp))
                                 }
                                 items(members, key = { "folder-${folder.id}-${it.id}" }) { chat ->
-                                    ChatRow(chat, model, projectLabels[chat.projectId] ?: "Project unavailable",
+                                    ChatRow(chat, model, projectLabels[chat.project_id] ?: "Project unavailable",
                                         modifier = Modifier.chatGroupRail(DieterAmber.copy(alpha = 0.3f)), folderPreferences = state.chatFolders)
                                 }
                             }
@@ -296,7 +278,8 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                         val projectChats = unpinnedByProject[project.id].orEmpty()
                         val collapsed = searchTerm.isBlank() && project.id in state.collapsedChatProjectIds
                         val expanded = searchTerm.isNotBlank() || project.id in state.expandedChatProjectIds
-                        val visibleProjectChats = if (expanded) projectChats else projectChats.take(PROJECT_CHAT_PREVIEW_COUNT)
+                        val visibleProjectChats = ChatLists.visible(projectChats, expanded, searchTerm)
+                        val hiddenChats = ChatLists.hidden(projectChats, searchTerm)
                         item(key = "project-chat-header-${project.id}") {
                             ChatProjectHeader(
                                 project, projectChats.size, collapsed,
@@ -316,18 +299,18 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                                 }
                             } else {
                                 items(visibleProjectChats, key = { it.id }) { chat ->
-                                    ChatRow(chat, model, projectLabels[chat.projectId] ?: project.name,
+                                    ChatRow(chat, model, projectLabels[chat.project_id] ?: project.name,
                                         modifier = Modifier.chatGroupRail(DieterDivider), showProjectLabel = false,
                                         folderPreferences = state.chatFolders)
                                 }
-                                if (searchTerm.isBlank() && projectChats.size > PROJECT_CHAT_PREVIEW_COUNT) {
+                                if (hiddenChats > 0) {
                                     item(key = "project-chat-more-${project.id}") {
                                         TextButton(
                                             onClick = { model.toggleChatProjectExpanded(project.id) },
                                             modifier = Modifier.fillMaxWidth().testTag("project-chat-more-${project.id}"),
                                         ) {
                                             Text(
-                                                if (expanded) "Show less" else "Show ${projectChats.size - PROJECT_CHAT_PREVIEW_COUNT} more",
+                                                if (expanded) "Show less" else "Show $hiddenChats more",
                                                 color = DieterShell,
                                                 fontWeight = FontWeight.SemiBold,
                                             )
@@ -348,7 +331,7 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                         item(key = "other-heading") { ChatSectionHeading("Other chats", Icons.Outlined.ChatBubbleOutline, otherChats.size) }
                     }
                     items(otherChats, key = { it.id }) { chat ->
-                        ChatRow(chat, model, projectLabels[chat.projectId] ?: "Project unavailable", folderPreferences = state.chatFolders)
+                        ChatRow(chat, model, projectLabels[chat.project_id] ?: "Project unavailable", folderPreferences = state.chatFolders)
                     }
                 }
             }
@@ -374,7 +357,7 @@ internal fun ChatRow(
     dropTarget: Boolean = false,
     dragged: Boolean = false,
     dragHandleModifier: Modifier = Modifier,
-    folderPreferences: NavigationFolderPreferences = NavigationFolderPreferences(),
+    folderPreferences: List<NavigationFolder> = emptyList(),
     showPinnedDragHandle: Boolean = false,
     showProjectLabel: Boolean = true,
     folderLabel: String? = null,
@@ -383,7 +366,7 @@ internal fun ChatRow(
     var actionsOpen by remember(chat.id) { mutableStateOf(false) }
     var renameOpen by remember(chat.id) { mutableStateOf(false) }
     var renameText by remember(chat.id, chat.title) { mutableStateOf(chat.title) }
-    val running = isActiveRuntime(chat.runtime)
+    val running = Runtimes.isActive(chat.runtime)
     Surface(
         color = when {
             chat.pinned && showPinnedDragHandle -> DieterSurface
@@ -423,7 +406,7 @@ internal fun ChatRow(
                     .padding(start = 12.dp, end = 0.dp, top = 11.dp, bottom = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val host = model.state.value.conversationHost(chat)?.hostname ?: chat.ownerDaemonId
+                val host = model.state.value.conversationHost(chat)?.hostname ?: chat.owner_daemon_id
                 ChatRowContent(
                     chat, running, projectLabel, dragHandleModifier, showPinnedDragHandle,
                     hostLabel = host, showProjectLabel = showProjectLabel, folderLabel = folderLabel,
@@ -465,8 +448,8 @@ internal fun ChatRow(
             }
         }
     }
-    if (moveOpen) MoveToNavigationFolderDialog(chat.id, NavigationFolderScope.CHATS,
-        folderPreferences, model.navigationFolders, onDismiss = { moveOpen = false })
+    if (moveOpen) MoveToNavigationFolderDialog(chat.id, FolderScope.CHATS,
+        folderPreferences, model, onDismiss = { moveOpen = false })
     if (renameOpen) {
         AlertDialog(
             onDismissRequest = { renameOpen = false },
@@ -531,7 +514,7 @@ internal fun RowScope.ChatRowContent(
                     modifier = Modifier.weight(1f, fill = false).testTag("chat-project-${chat.id}"))
                 Text(" · ", color = DieterMuted, fontSize = 11.sp)
             }
-            Text(shortTimestamp(chat.lastActivityAt.ifBlank { chat.updatedAt }), color = DieterMuted, fontSize = 11.sp)
+            Text(shortTimestamp(chat.last_activity_at.ifBlank { chat.updated_at }), color = DieterMuted, fontSize = 11.sp)
         }
         if (running || folderLabel != null) {
             Spacer(Modifier.height(6.dp))

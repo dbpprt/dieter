@@ -20,26 +20,23 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
 import androidx.test.platform.app.InstrumentationRegistry
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.connection.DieterConnectionManager
-import com.dbpprt.dieter.data.DIETER_ENDPOINTS
-import com.dbpprt.dieter.data.DieterEndpoint
-import com.dbpprt.dieter.data.DieterRepository
+import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.navigation.Destination
+import com.dbpprt.dieter.e2e.TestCore
 import com.dbpprt.dieter.settings.AppPreferences
 import com.dbpprt.dieter.settings.DieterPalette
-import com.dbpprt.dieter.v1.ConversationSnapshot
-import com.dbpprt.dieter.v1.Conversation
-import com.dbpprt.dieter.v1.CardDetail
-import com.dbpprt.dieter.v1.UiMessage
-import com.dbpprt.dieter.v1.MessagePart
-import com.dbpprt.dieter.settings.NavigationFolder
-import com.dbpprt.dieter.settings.NavigationFolderPreferences
+import com.dbpprt.dieter.api.v1.ConversationSnapshot
+import com.dbpprt.dieter.api.v1.Conversation
+import com.dbpprt.dieter.api.v1.CardDetail
+import com.dbpprt.dieter.api.v1.UiMessage
+import com.dbpprt.dieter.api.v1.MessagePart
+import com.dbpprt.dieter.core.navigation.NavigationFolder
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import com.dbpprt.dieter.ui.theme.DieterSurface
-import com.dbpprt.dieter.v1.Board
-import com.dbpprt.dieter.v1.Card
-import com.dbpprt.dieter.v1.Lane
-import com.dbpprt.dieter.v1.Project
+import com.dbpprt.dieter.api.v1.Board
+import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.Lane
+import com.dbpprt.dieter.api.v1.Project
 import java.io.File
 import java.lang.reflect.Proxy
 import java.time.Instant
@@ -58,12 +55,11 @@ class TabletWorkspaceTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val lifecycle = ViewModelStore()
-    private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private lateinit var core: TestCore
     private lateinit var model: DieterViewModel
     private val now = Instant.now()
     private val projects = listOf(project("dieter", "dieter"), project("infra", "Infrastructure"), project("atlas", "Atlas"))
-    private val board = Board.newBuilder().setId("main").setProjectId("dieter").setName("Main")
-        .addAllLanes(listOf("todo", "running", "review", "done").map { Lane.newBuilder().setId(it).setName(it.replaceFirstChar(Char::uppercase)).build() }).build()
+    private val board = Board(id = "main", project_id = "dieter", name = "Main", lanes = listOf("todo", "running", "review", "done").map { Lane(id = it, name = it.replaceFirstChar(Char::uppercase)) }.toList())
     private val cards = listOf(
         card("plan", "Plan the next release", "todo"),
         card("running", "Improve Android navigation", "running", "running"),
@@ -75,31 +71,22 @@ class TabletWorkspaceTest {
         projects = projects, boards = listOf(board), spaceBoards = listOf(board), cards = cards, spaceCards = cards,
         selectedProjectId = "dieter", selectedBoardId = "main", selectedLane = "todo", boardOverviewVisible = false,
         pinnedProjectOrder = listOf("dieter"),
-        projectFolders = NavigationFolderPreferences.from(listOf(NavigationFolder("work", "Work", listOf("infra", "atlas")))),
+        projectFolders = listOf(NavigationFolder("work", "Work", listOf("infra", "atlas"))),
     )
 
     @Before fun setup() {
         check(context.packageName.endsWith(".e2e")) { "Tablet tests require the isolated E2E package" }
-        context.getSharedPreferences("dieter_shared_kv", Context.MODE_PRIVATE).edit().clear().putString("activeAccount", "tablet-fixture").commit()
-        var endpoints = DIETER_ENDPOINTS
-        val repository = Proxy.newProxyInstance(DieterRepository::class.java.classLoader, arrayOf(DieterRepository::class.java)) { _, method, args ->
-            when (method.name) {
-                "getEndpoints" -> endpoints
-                "getActiveEndpoint" -> endpoints.first()
-                "replaceEndpoints" -> { @Suppress("UNCHECKED_CAST") val replacement = args!![0] as List<DieterEndpoint>; endpoints = replacement; Unit }
-                "close", "reconnect" -> Unit
-                else -> error("Unexpected repository call in tablet layout test: ${method.name}")
-            }
-        } as DieterRepository
+        core = TestCore(navigationAccount = "component-fixture")
         compose.runOnUiThread {
-            model = DieterViewModel(DieterConnectionManager(context, repository, managerScope), AppPreferences(context))
+            model = core.viewModel()
             lifecycle.put("tablet", model)
         }
     }
 
     @After fun cleanup() {
         compose.runOnUiThread { lifecycle.clear() }
-        managerScope.cancel()
+        core.close()
+        core.delete()
     }
 
     @Test fun sidebarBackgroundCoversSystemBarsWhileControlsStayInsideInsets() {
@@ -203,12 +190,12 @@ class TabletWorkspaceTest {
         val drops = mutableListOf<BoardCardLaneDrop>()
         compose.setContent { TabletTestSurface {
             DieterTheme {
-                BoardLanePager(current, model, board.lanesList, current.cards,
+                BoardLanePager(current, model, board.lanes, current.cards,
                     remember { BoardLabelDragState() }, Modifier.fillMaxSize(), showAllLanes = true,
                     onCardDrop = { drop ->
                         drops += drop
                         current = current.copy(cards = current.cards.map {
-                            if (it.id == drop.cardId) it.toBuilder().setLane(drop.laneId).build() else it
+                            if (it.id == drop.cardId) it.copy(lane = drop.laneId) else it
                         })
                     })
             }
@@ -246,7 +233,7 @@ class TabletWorkspaceTest {
         var dropped: BoardCardLaneDrop? = null
         compose.setContent { TabletTestSurface {
             DieterTheme {
-                BoardLanePager(fixture, model, board.lanesList, cards,
+                BoardLanePager(fixture, model, board.lanes, cards,
                     remember { BoardLabelDragState() }, Modifier.width(480.dp).fillMaxHeight(),
                     showAllLanes = true, onCardDrop = { dropped = it })
             }
@@ -603,23 +590,12 @@ class TabletWorkspaceTest {
     }
     private fun snapshot(id: String): ConversationSnapshot {
         val card = cards.first { it.id == id }
-        return ConversationSnapshot.newBuilder()
-            .setDetail(CardDetail.newBuilder().setCard(card).setProject(projects.first()).setBoard(board))
-            .setConversation(Conversation.newBuilder().setCardId(id).setStatus("idle")
-                .addMessages(UiMessage.newBuilder().setId("request").setRole("user")
-                    .addParts(MessagePart.newBuilder().setType("text").setText("Review the tablet layout and keep the Fold experience intact.")))
-                .addMessages(UiMessage.newBuilder().setId("response").setRole("assistant")
-                    .addParts(MessagePart.newBuilder().setType("text").setText(
-                        "The tablet workspace is ready for review.\n\n### What changed\n\n" +
+        return ConversationSnapshot(detail = CardDetail(card = card, project = projects.first(), board = board), conversation = Conversation(card_id = id, status = "idle", messages = listOf(UiMessage(id = "request", role = "user", parts = listOf(MessagePart(type = "text", text = "Review the tablet layout and keep the Fold experience intact."))), UiMessage(id = "response", role = "assistant", parts = listOf(MessagePart(type = "text", text = "The tablet workspace is ready for review.\n\n### What changed\n\n" +
                             "- Project navigation stays beside the board.\n- Workflow lanes use the available width.\n" +
                             "- Conversations open beside the list, so your context stays visible.\n\n" +
-                            "Phone and Fold windows keep their existing navigation. The layout uses the same conversations, files, and schedules."))))
-            .build()
+                            "Phone and Fold windows keep their existing navigation. The layout uses the same conversations, files, and schedules."))))))
     }
 
-    private fun project(id: String, name: String) = Project.newBuilder().setId(id).setName(name).setPath("/work/$id").build()
-    private fun card(id: String, title: String, lane: String, runtime: String = "idle") = Card.newBuilder()
-        .setId(id).setTitle(title).setProjectId("dieter").setBoardId("main").setLane(lane).setRuntime(runtime)
-        .setInitialPromptSentAt(now.minusSeconds(1200).toString()).setRuntimeUpdatedAt(now.minusSeconds(600).toString())
-        .setUpdatedAt(now.minusSeconds(600).toString()).build()
+    private fun project(id: String, name: String) = Project(id = id, name = name, path = "/work/$id")
+    private fun card(id: String, title: String, lane: String, runtime: String = "idle") = Card(id = id, title = title, project_id = "dieter", board_id = "main", lane = lane, runtime = runtime, initial_prompt_sent_at = now.minusSeconds(1200).toString(), runtime_updated_at = now.minusSeconds(600).toString(), updated_at = now.minusSeconds(600).toString())
 }

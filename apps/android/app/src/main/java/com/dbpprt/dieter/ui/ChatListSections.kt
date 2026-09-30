@@ -40,7 +40,7 @@ import com.dbpprt.dieter.ui.theme.DieterDivider
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
-import com.dbpprt.dieter.v1.Project
+import com.dbpprt.dieter.api.v1.Project
 
 @Composable
 internal fun ChatSectionHeading(title: String, icon: ImageVector, count: Int, tint: Color = DieterMuted) {

@@ -14,22 +14,15 @@ class NotificationActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != DieterSyncService.ACTION_MARK_CARD_DONE) return
         val cardId = intent.getStringExtra(DieterSyncService.EXTRA_CARD_ID).orEmpty()
-        val projectId = intent.getStringExtra(DieterSyncService.EXTRA_PROJECT_ID).orEmpty()
-        val notificationId = intent.getIntExtra(DieterSyncService.EXTRA_NOTIFICATION_ID, 0)
+        val tag = intent.getStringExtra(DieterSyncService.EXTRA_NOTIFICATION_TAG)
         if (cardId.isBlank()) return
-        val container = (context.applicationContext as DieterApplication).container
+        val core = (context.applicationContext as DieterApplication).container.core
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                if (projectId.isNotBlank()) {
-                    runCatching { container.connectionManager.ensureReplicaRoute(projectId) }
+                if (core.onBoard { finish(cardId) } && tag != null) {
+                    NotificationManagerCompat.from(context).cancel(tag, AndroidNotifications.idFor(tag))
                 }
-                val state = container.connectionManager.state.value
-                val card = state.cards.firstOrNull { it.id == cardId }
-                val doneLane = state.boards.firstOrNull { it.id == card?.boardId }
-                    ?.lanesList?.lastOrNull()?.id ?: "done"
-                container.repository.moveCard(cardId, doneLane)
-                if (notificationId != 0) NotificationManagerCompat.from(context).cancel(notificationId)
             } catch (_: Exception) {
                 // Leave the notification in place; the user can still open the card.
             } finally {

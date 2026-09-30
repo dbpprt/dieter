@@ -2,6 +2,12 @@
 
 package com.dbpprt.dieter.ui
 
+import androidx.compose.runtime.collectAsState
+import com.dbpprt.dieter.core.admin.Administration
+import com.dbpprt.dieter.core.composition.Attachments
+import com.dbpprt.dieter.core.composition.Creation
+import com.dbpprt.dieter.core.composition.CreationInput
+import com.dbpprt.dieter.api.v1.HarnessSelection
 import android.app.TimePickerDialog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -80,16 +86,31 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dbpprt.dieter.core.composition.TaskDraftEditor
+import com.dbpprt.dieter.core.composition.TaskDrafts
+import com.dbpprt.dieter.core.composition.WorkspaceMode
+import com.dbpprt.dieter.core.composition.frozen
+import com.dbpprt.dieter.core.composition.task
+import com.dbpprt.dieter.core.navigation.Destination
+import com.dbpprt.dieter.core.presentation.DisplayPaths
+import com.dbpprt.dieter.core.schedules.Cadence
+import com.dbpprt.dieter.core.schedules.CadenceKind
+import com.dbpprt.dieter.core.schedules.ScheduleDrafts
+import com.dbpprt.dieter.core.schedules.ScheduleTemplates
+import com.dbpprt.dieter.core.search.ListFilters
+import com.dbpprt.dieter.core.selection.AgentControls
+import com.dbpprt.dieter.core.selection.Selections
+import com.dbpprt.dieter.core.state.CaptureDraft
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import com.dbpprt.dieter.ui.theme.DieterText
-import com.dbpprt.dieter.v1.Harness
-import com.dbpprt.dieter.v1.MessagePart
-import com.dbpprt.dieter.v1.Schedule
-import com.dbpprt.dieter.v1.ScheduleDraft
+import com.dbpprt.dieter.api.v1.Harness
+import com.dbpprt.dieter.api.v1.MessagePart
+import com.dbpprt.dieter.api.v1.Schedule
+import com.dbpprt.dieter.api.v1.ScheduleDraft
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -108,43 +129,24 @@ fun NewConversationScreen(
     contentPadding: PaddingValues,
 ) {
     val chosenCheckout = state.creationCheckout
-    val catalogReady = if (chat) state.creationCatalogReady else state.taskCatalogAvailableForQueue
-    LaunchedEffect(chosenCheckout?.id, state.creationCheckoutId, state.harnessesEndpointId) {
-        if (chosenCheckout != null && state.creationMachine?.online == true && !catalogReady) {
-            model.prepareCreationCheckout(chosenCheckout.id)
-        }
+    val machineOnline = state.creationMachine?.online == true
+    LaunchedEffect(chosenCheckout?.id, machineOnline, state.catalogState) {
+        if (Creation.needsCatalog(chosenCheckout, machineOnline, state.catalogState)) model.prepareCreationCheckout(chosenCheckout!!.id)
     }
-    val destinationHarnesses = if (catalogReady) state.harnesses else emptyList()
-    val creationDefaults = remember(destinationHarnesses) {
-        resolveConversationCreationPreferences(model.conversationCreationPreferences, destinationHarnesses)
+    val catalog = state.creationCatalog(chat).orEmpty()
+    // A chat starts at once and is not journaled; a task edits the board's durable draft.
+    val chatEditor = remember(chat, state.selectedProjectId) { if (chat) TaskDraftEditor(CaptureDraft(id = "chat")) else null }
+    val editor = chatEditor ?: model.activeCapture
+    if (editor == null) {
+        LoadingState(Modifier.padding(contentPadding))
+        return
     }
-    // Card editors share ViewModel state. Keep standalone chat's existing
-    // composition-local defaults and lifecycle unchanged.
-    val draft = if (chat) null else model.cardCreationDraft()
-    draft?.markFullEditorOpened()
-    val titleState: MutableState<String> = draft?.titleState ?: remember { mutableStateOf("") }
-    var title by titleState
-    val promptState: MutableState<String> = draft?.promptState ?: remember { mutableStateOf("") }
-    var prompt by promptState
-    val providerState: MutableState<String> = draft?.providerState ?: remember(creationDefaults) { mutableStateOf(creationDefaults.provider) }
-    var provider by providerState
-    val harness = destinationHarnesses.firstOrNull { it.id == provider } ?: destinationHarnesses.firstOrNull()
-    val modelState: MutableState<String> = draft?.modelState ?: remember(creationDefaults) { mutableStateOf(creationDefaults.model) }
-    var selectedModel by modelState
-    val effortState: MutableState<String> = draft?.effortState ?: remember(creationDefaults) { mutableStateOf(creationDefaults.effort) }
-    var effort by effortState
-    val optionsState: MutableState<Map<String, String>> = draft?.providerOptionsState ?: remember(provider, harness, creationDefaults, selectedModel) {
-        mutableStateOf(providerOptionValues(harness, model = selectedModel))
+    val draft by editor.state.collectAsState(context = Dispatchers.Main.immediate)
+    val saveError by editor.error.collectAsState()
+    LaunchedEffect(editor.id, catalog) {
+        if (chat) model.initializeChat(editor) else model.initializeTask(editor, quick = false)
     }
-    var providerOptions by optionsState
-    val laneState: MutableState<String> = draft?.laneState ?: remember(state.selectedLane) {
-        mutableStateOf(state.selectedLane.ifBlank { state.board?.lanesList?.firstOrNull()?.id.orEmpty() })
-    }
-    var lane by laneState
-    val workspaceState: MutableState<ConversationWorkspaceMode> = draft?.workspaceModeState ?: remember(creationDefaults) { mutableStateOf(creationDefaults.workspaceMode) }
-    var workspaceMode by workspaceState
-    val labelIds = draft?.labelIds ?: remember { mutableStateListOf<String>() }
-    val attachments = draft?.attachments ?: remember { mutableStateListOf<MessagePart>() }
+    val controls = AgentControls(TaskDrafts.selection(draft), catalog)
     var attachmentPickerVisible by remember { mutableStateOf(false) }
     var attachmentError by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
@@ -157,26 +159,18 @@ fun NewConversationScreen(
                 uris.map { uri -> runCatching { readAttachmentPart(context, uri, imagesOnly) } }
             }
             val incoming = results.mapNotNull(Result<MessagePart>::getOrNull)
-            val limitError = attachmentLimitError(attachments, incoming)
-            if (limitError == null) attachments += incoming
+            val limitError = Attachments.limitError(draft.task.attachments + incoming)
+            if (limitError == null) incoming.forEach { part -> editor.edit { TaskDrafts.admit(it, part) } }
             attachmentError = limitError ?: results.firstNotNullOfOrNull { it.exceptionOrNull()?.message }
         }
     }
     val imagePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia(MAX_COMPOSER_ATTACHMENTS),
+        ActivityResultContracts.PickMultipleVisualMedia(Attachments.MAX_COUNT),
     ) { uris -> addPickedAttachments(uris, imagesOnly = true) }
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris -> addPickedAttachments(uris, imagesOnly = false) }
-    val canSubmit = catalogReady && harnessCatalogSupportsSelection(destinationHarnesses, provider, selectedModel) && canCreateConversation(
-        projectId = state.project?.id.orEmpty(),
-        provider = provider,
-        model = selectedModel,
-        prompt = prompt,
-        chat = chat,
-        title = title,
-        hasAttachments = attachments.isNotEmpty(),
-    )
+    val canSubmit = !state.working && model.creationProblem(draft, chat) == null
 
     Column(Modifier.fillMaxSize().padding(contentPadding)) {
         CreationHeader(
@@ -188,28 +182,24 @@ fun NewConversationScreen(
                 { NeutralPill("New") }
             } else {
                 {
-                    Button(
-                        onClick = {
-                            draft?.let { model.submitTask(it) }
-                        },
-                        enabled = draft?.let(model::canSubmitTask) == true,
-                    ) { Text(if (lane == "running") "Create & run" else "Save") }
+                    Button(onClick = { model.submitTask(editor) }, enabled = canSubmit) {
+                        Text(if (Creation.startsImmediately(draft.task.lane)) "Create & run" else "Save")
+                    }
                 }
             },
         )
         SurfaceErrorBanner(state.error, model::clearError)
         CreationDestinationPicker(state, model::selectCreationCheckout, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-        if (draft != null && state.board != null && !state.board!!.labelsList.map { it.id }.containsAll(draft.labelIds)) {
-            TextButton(onClick = { draft.labelIds.retainAll(state.board!!.labelsList.map { it.id }.toSet()) }) {
+        if (!chat && TaskDrafts.unavailableLabels(draft, state.board).isNotEmpty()) {
+            TextButton(onClick = { editor.edit { TaskDrafts.removeUnavailableLabels(it, state.board) } }) {
                 Text("Remove labels unavailable on this board")
             }
         }
-        if (!chat && state.creationMachine?.online != true) Text(
-            if (state.taskCatalogAvailableForQueue) "Offline · saved tasks queue on this device until the destination reconnects."
-            else "Reconnect to validate the destination. Your draft is kept on this device.",
+        if (!chat && !machineOnline) Text(
+            Creation.offlineHint(state.catalogState),
             modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall,
         )
-        attachmentError?.let { message ->
+        (attachmentError ?: saveError)?.let { message ->
             Text(
                 message,
                 color = MaterialTheme.colorScheme.error,
@@ -219,77 +209,39 @@ fun NewConversationScreen(
         }
         if (chat) {
             NewChatBody(
-                prompt = prompt,
-                onPromptChange = { prompt = it },
+                prompt = draft.task.prompt,
+                onPromptChange = { value -> editor.edit { TaskDrafts.prompt(it, value) } },
                 state = state,
                 onProjectChange = model::selectProject,
-                provider = provider,
-                onProviderChange = { next -> provider = next; selectedModel = destinationHarnesses.firstOrNull { it.id == next }?.defaultModel.orEmpty(); effort = "" },
-                harness = harness,
-                model = selectedModel,
-                onModelChange = { selectedModel = it; effort = "" },
-                effort = effort,
-                onEffortChange = { effort = it },
-                providerOptions = providerOptions,
-                onProviderOptionChange = { id, value -> providerOptions = providerOptions + (id to value) },
-                harnesses = destinationHarnesses,
-                canSubmit = canSubmit && !state.working,
-                workspaceMode = workspaceMode,
-                onWorkspaceModeChange = { workspaceMode = it },
-                attachments = attachments,
+                controls = controls,
+                onSelectionChange = { selection -> editor.edit { TaskDrafts.choose(it, selection) } },
+                canSubmit = canSubmit,
+                workspaceMode = TaskDrafts.workspaceMode(draft),
+                onWorkspaceModeChange = { mode -> editor.edit { TaskDrafts.workspaceMode(it, mode) } },
+                attachments = draft.task.attachments,
                 onAttach = { attachmentPickerVisible = true },
-                onRemoveAttachment = { attachments.removeAt(it) },
-                onSubmit = {
-                    val cleanPrompt = prompt.trim()
-                    model.createConversation(
-                        title = titleFromPrompt(cleanPrompt),
-                        prompt = cleanPrompt,
-                        chat = true,
-                        provider = provider,
-                        model = selectedModel,
-                        effort = effort,
-                        providerOptions = providerOptions,
-                        lane = "",
-                        labelIds = emptyList(),
-                        deferStart = shouldDeferConversationStart(chat = true, lane = ""),
-                        attachments = attachments.toList(),
-                        workspaceMode = workspaceMode.wire,
-                    )
-                },
+                onRemoveAttachment = { index -> editor.edit { TaskDrafts.removeAttachment(it, index) } },
+                onSubmit = { model.createChat(editor.state.value) },
             )
-        } else if (draft?.submittedRequest != null) {
+        } else if (draft.frozen) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(draft.submittedRequest!!.title, style = MaterialTheme.typography.titleMedium)
-                Text(draft.submittedRequest!!.prompt)
-                TaskAttachmentControls(draft, model.taskCaptures)
+                Text(TaskDrafts.creationTitle(draft), style = MaterialTheme.typography.titleMedium)
+                Text(draft.task.prompt)
+                TaskAttachmentControls(editor, model.taskCaptures)
             }
         } else {
             TextButton(onClick = model::returnToQuickTask) { Text("Quick task") }
             NewCardBody(
                 state = state,
-                title = title,
-                onTitleChange = { title = it },
-                prompt = prompt,
-                onPromptChange = { prompt = it },
-                provider = provider,
-                onProviderChange = { requireNotNull(draft).selectProvider(it, destinationHarnesses) },
-                harness = harness,
-                model = selectedModel,
-                onModelChange = { requireNotNull(draft).selectModel(it, destinationHarnesses) },
-                effort = effort,
-                onEffortChange = { effort = it },
-                providerOptions = providerOptions,
-                onProviderOptionChange = { id, value -> providerOptions = providerOptions + (id to value) },
-                harnesses = destinationHarnesses,
-                lane = lane,
-                onLaneChange = { lane = it },
-                labelIds = labelIds,
-                workspaceMode = workspaceMode,
-                onWorkspaceModeChange = { workspaceMode = it },
-                attachments = attachments,
-                onAttach = { attachmentPickerVisible = true },
-                onRemoveAttachment = { attachments.removeAt(it) },
-                attachmentContent = { TaskAttachmentControls(requireNotNull(draft), model.taskCaptures) { model.discardTaskDraft(draft) } },
+                draft = draft,
+                onTitleChange = { value -> editor.edit { TaskDrafts.title(it, value) } },
+                onPromptChange = { value -> editor.edit { TaskDrafts.prompt(it, value) } },
+                controls = controls,
+                onSelectionChange = { selection -> editor.edit { TaskDrafts.choose(it, selection) } },
+                onLaneChange = { lane -> editor.edit { TaskDrafts.lane(it, lane) } },
+                onToggleLabel = { id -> editor.edit { TaskDrafts.toggleLabel(it, id) } },
+                onWorkspaceModeChange = { mode -> editor.edit { TaskDrafts.workspaceMode(it, mode) } },
+                attachmentContent = { TaskAttachmentControls(editor, model.taskCaptures) { model.discardTaskDraft(editor) } },
             )
         }
     }
@@ -314,19 +266,11 @@ private fun NewChatBody(
     onPromptChange: (String) -> Unit,
     state: DieterUiState,
     onProjectChange: (String) -> Unit,
-    provider: String,
-    onProviderChange: (String) -> Unit,
-    harness: Harness?,
-    model: String,
-    onModelChange: (String) -> Unit,
-    effort: String,
-    onEffortChange: (String) -> Unit,
-    providerOptions: Map<String, String>,
-    onProviderOptionChange: (String, String) -> Unit,
-    harnesses: List<Harness>,
+    controls: AgentControls,
+    onSelectionChange: (HarnessSelection) -> Unit,
     canSubmit: Boolean,
-    workspaceMode: ConversationWorkspaceMode,
-    onWorkspaceModeChange: (ConversationWorkspaceMode) -> Unit,
+    workspaceMode: WorkspaceMode,
+    onWorkspaceModeChange: (WorkspaceMode) -> Unit,
     attachments: List<MessagePart>,
     onAttach: () -> Unit,
     onRemoveAttachment: (Int) -> Unit,
@@ -380,15 +324,12 @@ private fun NewChatBody(
         SelectorField(
             label = "Project",
             value = state.project?.name ?: "Select a project",
-            options = chatProjectOptions(state.projects, state.presentedProjectReplicas),
+            options = ListFilters.projectOptions(state.projects),
             onSelect = onProjectChange,
             modifier = Modifier.fillMaxWidth().testTag("chat-project-selector"),
         )
         Spacer(Modifier.height(8.dp))
-        ModelSelectors(
-            harnesses, provider, onProviderChange, harness, model, onModelChange, effort, onEffortChange,
-            providerOptions, onProviderOptionChange,
-        )
+        ModelSelectors(controls, onSelectionChange)
         Spacer(Modifier.height(8.dp))
         WorkspaceModeChips(workspaceMode, onWorkspaceModeChange)
         Spacer(Modifier.height(8.dp))
@@ -436,59 +377,30 @@ private fun NewChatBody(
 @Composable
 internal fun NewCardBody(
     state: DieterUiState,
-    title: String,
+    draft: CaptureDraft,
     onTitleChange: (String) -> Unit,
-    prompt: String,
     onPromptChange: (String) -> Unit,
-    provider: String,
-    onProviderChange: (String) -> Unit,
-    harness: Harness?,
-    model: String,
-    onModelChange: (String) -> Unit,
-    effort: String,
-    onEffortChange: (String) -> Unit,
-    providerOptions: Map<String, String>,
-    onProviderOptionChange: (String, String) -> Unit,
-    harnesses: List<Harness>,
-    lane: String,
+    controls: AgentControls,
+    onSelectionChange: (HarnessSelection) -> Unit,
     onLaneChange: (String) -> Unit,
-    labelIds: MutableList<String>,
-    workspaceMode: ConversationWorkspaceMode,
-    onWorkspaceModeChange: (ConversationWorkspaceMode) -> Unit,
-    attachments: List<MessagePart>,
-    onAttach: () -> Unit,
-    onRemoveAttachment: (Int) -> Unit,
-    attachmentContent: (@Composable () -> Unit)? = null,
+    onToggleLabel: (String) -> Unit,
+    onWorkspaceModeChange: (WorkspaceMode) -> Unit,
+    attachmentContent: @Composable () -> Unit,
 ) {
+    val task = draft.task
+    val workspaceMode = TaskDrafts.workspaceMode(draft)
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        OutlinedTextField(title, onTitleChange, label = { Text("Title (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("conversation-title"))
-        OutlinedTextField(prompt, onPromptChange, label = { Text("Agent task") }, minLines = 6, modifier = Modifier.fillMaxWidth().testTag("conversation-prompt"))
-        if (attachmentContent != null) FormSection(Icons.Outlined.AttachFile, "Attachments", modifier = Modifier.testTag("card-section-attachments")) { attachmentContent() } else FormSection(Icons.Outlined.AttachFile, "Attachments", modifier = Modifier.testTag("card-section-attachments")) {
-            TextButton(onClick = onAttach, modifier = Modifier.testTag("create-attach")) {
-                Icon(Icons.Outlined.AttachFile, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.size(8.dp))
-                Text("Add images or files")
-            }
-            if (attachments.isNotEmpty()) {
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    attachments.forEachIndexed { index, part ->
-                        ComposerAttachmentPreview(part, index, enabled = true) { onRemoveAttachment(index) }
-                    }
-                }
-            }
-            Text("Up to 4 attachments · 5 MB each · 6 MB total", color = DieterMuted, fontSize = 11.sp)
-        }
+        OutlinedTextField(task.title, onTitleChange, label = { Text("Title (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("conversation-title"))
+        OutlinedTextField(task.prompt, onPromptChange, label = { Text("Agent task") }, minLines = 6, modifier = Modifier.fillMaxWidth().testTag("conversation-prompt"))
+        FormSection(Icons.Outlined.AttachFile, "Attachments", modifier = Modifier.testTag("card-section-attachments")) { attachmentContent() }
         FormSection(Icons.Outlined.ViewKanban, "Start in", modifier = Modifier.testTag("card-section-lane")) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                state.board?.lanesList.orEmpty().filter { it.id == "todo" || it.id == "running" }.forEach { boardLane ->
+                Creation.startLanes(state.board).forEach { boardLane ->
                     FilterChip(
-                        selected = lane == boardLane.id,
+                        selected = task.lane == boardLane.id,
                         onClick = { onLaneChange(boardLane.id) },
                         label = { Text(boardLane.name) },
                         modifier = Modifier.testTag("create-lane-${boardLane.id}"),
@@ -496,13 +408,13 @@ internal fun NewCardBody(
                 }
             }
         }
-        if ((state.board?.labelsCount ?: 0) > 0) {
+        if (state.board?.labels.orEmpty().isNotEmpty()) {
             FormSection(Icons.Outlined.CreditCard, "Labels", modifier = Modifier.testTag("card-section-labels")) {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    state.board?.labelsList.orEmpty().forEach { label ->
+                    state.board?.labels.orEmpty().forEach { label ->
                         FilterChip(
-                            selected = label.id in labelIds,
-                            onClick = { if (label.id in labelIds) labelIds.remove(label.id) else labelIds += label.id },
+                            selected = label.id in task.label_ids,
+                            onClick = { onToggleLabel(label.id) },
                             label = { Text(label.name) },
                         )
                     }
@@ -514,13 +426,10 @@ internal fun NewCardBody(
             Text(workspaceMode.detail, color = DieterMuted, style = MaterialTheme.typography.bodySmall)
         }
         FormSection(Icons.Outlined.Bolt, "Agent", modifier = Modifier.testTag("card-section-agent")) {
-            ModelSelectors(
-                harnesses, provider, onProviderChange, harness, model, onModelChange, effort, onEffortChange,
-                providerOptions, onProviderOptionChange,
-            )
+            ModelSelectors(controls, onSelectionChange)
         }
         Text(
-            if (lane == "running") "The first message starts immediately." else "The card is saved as a draft in Todo.",
+            if (Creation.startsImmediately(task.lane)) "The first message starts immediately." else "The card is saved as a draft in Todo.",
             color = DieterMuted,
             style = MaterialTheme.typography.bodySmall,
         )
@@ -530,15 +439,15 @@ internal fun NewCardBody(
 
 @Composable
 private fun WorkspaceModeChips(
-    selected: ConversationWorkspaceMode,
-    onSelect: (ConversationWorkspaceMode) -> Unit,
+    selected: WorkspaceMode,
+    onSelect: (WorkspaceMode) -> Unit,
 ) {
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        ConversationWorkspaceMode.entries.forEach { mode ->
+        WorkspaceMode.choices.forEach { mode ->
             FilterChip(
                 selected = selected == mode,
                 onClick = { onSelect(mode) },
-                label = { Text(if (mode == ConversationWorkspaceMode.WORKTREE) "New worktree" else "Project directory") },
+                label = { Text(if (mode == WorkspaceMode.WORKTREE) "New worktree" else "Project directory") },
                 modifier = Modifier.testTag("workspace-mode-${mode.wire}"),
             )
         }
@@ -550,7 +459,7 @@ fun NewBoardScreen(state: DieterUiState, model: DieterViewModel, contentPadding:
     var name by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var workflow by remember { mutableStateOf("review") }
-    var baseRemote by remember(state.project?.id) { mutableStateOf(state.project?.baseRemote.orEmpty()) }
+    var baseRemote by remember(state.project?.id) { mutableStateOf(state.project?.base_remote.orEmpty()) }
     var remotePublishMode by remember { mutableStateOf("manual") }
     val canCreate = name.isNotBlank() && state.selectedProjectId.isNotBlank() && !state.working
 
@@ -558,7 +467,7 @@ fun NewBoardScreen(state: DieterUiState, model: DieterViewModel, contentPadding:
         CreationHeader(
             eyebrow = state.project?.name ?: "Project",
             title = "New board",
-            subtitle = compactBoardPath(state.project?.path.orEmpty()),
+            subtitle = DisplayPaths.compact(state.project?.path.orEmpty()),
             onClose = model::closeSurface,
             trailing = {
                 Button(
@@ -618,19 +527,14 @@ fun NewBoardScreen(state: DieterUiState, model: DieterViewModel, contentPadding:
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("manual" to "Manual", "pull_request" to "Pull request", "push_base" to "Push base").forEach { (value, label) ->
-                        FilterChip(selected = remotePublishMode == value, onClick = { remotePublishMode = value }, label = { Text(label) })
+                    Administration.PUBLISH_MODES.forEach { value ->
+                        FilterChip(selected = remotePublishMode == value, onClick = { remotePublishMode = value }, label = { Text(Administration.publishModeTitle(value)) })
                     }
                 }
             }
             Text("Completed conversations are kept until you change this board's retention setting.", color = DieterMuted, fontSize = 12.sp)
         }
     }
-}
-
-private fun compactBoardPath(path: String): String {
-    val marker = "/Development/"
-    return if (marker in path) "~$marker${path.substringAfter(marker)}" else path
 }
 
 @Composable
@@ -640,79 +544,25 @@ fun ScheduleEditorScreen(
     schedule: Schedule?,
     contentPadding: PaddingValues,
 ) {
-    var name by remember(schedule?.id) { mutableStateOf(schedule?.name.orEmpty()) }
-    var description by remember(schedule?.id) { mutableStateOf(schedule?.description.orEmpty()) }
-    var customCron by remember(schedule?.id) { mutableStateOf(schedule?.cron ?: "0 9 * * 1-5") }
-    var repeat by remember(schedule?.id) { mutableStateOf(scheduleRepeat(schedule?.cron)) }
-    var runAt by remember(schedule?.id) { mutableStateOf(scheduleTime(schedule?.cron)) }
-    var weeklyDay by remember(schedule?.id) { mutableStateOf(scheduleWeekday(schedule?.cron)) }
-    var timezone by remember(schedule?.id) { mutableStateOf(schedule?.timezone ?: ZoneId.systemDefault().id) }
-    var prompt by remember(schedule?.id) { mutableStateOf(schedule?.promptTemplate.orEmpty()) }
-    var titleTemplate by remember(schedule?.id) { mutableStateOf(schedule?.titleTemplate ?: "Scheduled work · {{date}}") }
-    var action by remember(schedule?.id) { mutableStateOf(schedule?.action ?: "draft") }
-    var enabled by remember(schedule?.id) { mutableStateOf(schedule?.enabled ?: true) }
-    var boardId by remember(schedule?.id) { mutableStateOf(schedule?.boardId ?: state.selectedBoardId) }
-    var provider by remember(schedule?.id, state.harnesses) { mutableStateOf(schedule?.provider ?: state.harnesses.firstOrNull()?.id.orEmpty()) }
-    val harness = state.harnesses.firstOrNull { it.id == provider } ?: state.harnesses.firstOrNull()
-    var selectedModel by remember(schedule?.id, provider, harness) { mutableStateOf(schedule?.model?.ifBlank { null } ?: harness?.defaultModel.orEmpty()) }
-    var effort by remember(schedule?.id, provider, selectedModel) { mutableStateOf(schedule?.effort.orEmpty()) }
-    var providerOptions by remember(schedule?.id, provider, harness, selectedModel) {
-        mutableStateOf(
-            providerOptionValues(
-                harness,
-                schedule?.providerOptionsMap?.takeIf { schedule.provider == provider }.orEmpty(),
-                selectedModel,
-            ),
-        )
+    var draft by remember(schedule?.id) {
+        mutableStateOf(ScheduleDrafts.make(schedule, state.selectedProjectId, ZoneId.systemDefault().id, state.boards, state.selectedBoardId, state.harnesses))
     }
-    val labelIds = remember(schedule?.id) { mutableStateListOf<String>().also { it += schedule?.labelIdsList.orEmpty() } }
-    var openPolicy by remember(schedule?.id) { mutableStateOf(schedule?.openCardPolicy ?: "skip_if_open") }
-    var workspaceMode by remember(schedule?.id) {
-        mutableStateOf(schedule?.let { ConversationWorkspaceMode.resolve(it.workspaceMode) } ?: ConversationWorkspaceMode.WORKTREE)
-    }
-    val cron = scheduleCron(repeat, runAt, weeklyDay, customCron)
-    val canSave = name.isNotBlank() && cron.isNotBlank() && timezone.isNotBlank() && titleTemplate.isNotBlank() &&
-        prompt.isNotBlank() && provider.isNotBlank() && boardId.isNotBlank()
+    var cadence by remember(schedule?.id) { mutableStateOf(Cadence.parse(draft.cron)) }
+    val cron = cadence.cron()
+    val controls = AgentControls(ScheduleDrafts.selection(draft), state.harnesses)
+    val board = state.boards.firstOrNull { it.id == draft.board_id }
+    val canSave = ScheduleDrafts.canSave(draft.copy(cron = cron))
 
-    LaunchedEffect(cron, timezone) {
-        delay(350)
-        if (cron.isNotBlank() && timezone.isNotBlank()) model.previewSchedule(cron, timezone)
-    }
-
-    fun save() {
-        model.saveSchedule(
-            schedule?.id.orEmpty(),
-            ScheduleDraft.newBuilder()
-                .setProjectId(state.selectedProjectId)
-                .setBoardId(boardId)
-                .setName(name.trim())
-                .setDescription(description.trim())
-                .setCron(cron.trim())
-                .setTimezone(timezone.trim())
-                .setEnabled(enabled)
-                .setAction(action)
-                .setTitleTemplate(titleTemplate.trim())
-                .setPromptTemplate(prompt.trim())
-                .setProvider(provider)
-                .setModel(selectedModel)
-                .setEffort(effort)
-                .putAllProviderOptions(providerOptions)
-                .setOpenCardPolicy(openPolicy)
-                .setMisfirePolicy("latest")
-                .setWorkspaceMode(workspaceMode.wire)
-                .addAllLabelIds(labelIds)
-                .build(),
-        )
-    }
+    LaunchedEffect(cron, draft.timezone) { model.previewSchedule(cron, draft.timezone) }
 
     Column(Modifier.fillMaxSize().padding(contentPadding)) {
         CreationHeader(
             eyebrow = if (schedule == null) "New automation" else "Edit automation",
             title = if (schedule == null) "New schedule" else "Edit schedule",
-            subtitle = "Runs on the selected checkout’s machine · $timezone",
+            subtitle = "Runs on the selected checkout’s machine · ${draft.timezone}",
             onClose = model::closeSurface,
             trailing = {
-                Button(onClick = ::save, enabled = canSave && !state.working) {
+                Button(onClick = { model.saveSchedule(schedule?.id.orEmpty(), draft.copy(cron = cron)) }, enabled = canSave && !state.working) {
                     Text("Save")
                 }
             },
@@ -723,47 +573,46 @@ fun ScheduleEditorScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             OutlinedTextField(
-                name,
-                { name = it },
+                draft.name,
+                { draft = draft.copy(name = it) },
                 label = { Text("Schedule name") },
                 placeholder = { Text("Morning project check") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("schedule-name"),
             )
             OutlinedTextField(
-                description,
-                { description = it },
+                draft.description,
+                { draft = draft.copy(description = it) },
                 label = { Text("Description") },
                 placeholder = { Text("What this automation is responsible for") },
                 minLines = 2,
                 modifier = Modifier.fillMaxWidth(),
             )
-            FormSection(Icons.Outlined.Schedule, "Timing", trailing = { Text(scheduleTimingSummary(repeat, runAt, weeklyDay), color = DieterMuted, fontSize = 11.sp) }) {
+            FormSection(Icons.Outlined.Schedule, "Timing", trailing = { Text(cadence.summary(), color = DieterMuted, fontSize = 11.sp) }) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     SelectorField(
                         label = "Repeats",
-                        value = repeat,
-                        options = listOf("Weekdays", "Daily", "Weekly", "Custom").map { it to it },
-                        onSelect = { repeat = it },
+                        value = cadence.kind.title,
+                        options = CadenceKind.entries.map { it.name to it.title },
+                        onSelect = { kind -> cadence = cadence.copy(kind = CadenceKind.valueOf(kind), custom = cadence.custom.ifBlank { cron }) },
                         modifier = Modifier.weight(1f),
                     )
-                    if (repeat == "Weekly") {
+                    if (cadence.kind == CadenceKind.WEEKLY) {
                         SelectorField(
                             label = "Day",
-                            value = scheduleWeekdays.firstOrNull { it.first == weeklyDay }?.second ?: "Monday",
-                            options = scheduleWeekdays,
-                            onSelect = { weeklyDay = it },
+                            value = Cadence.weekdayName(cadence.weekday),
+                            options = Cadence.WEEKDAYS.map { (day, name) -> day.toString() to name },
+                            onSelect = { day -> cadence = cadence.copy(weekday = day.toInt()) },
                             modifier = Modifier.weight(1f).testTag("schedule-weekday"),
                         )
                     }
                 }
-                if (repeat != "Custom") {
-                    ScheduleTimeField(runAt, { runAt = it }, Modifier.fillMaxWidth().testTag("schedule-time-picker"))
-                }
-                if (repeat == "Custom") {
+                if (cadence.kind != CadenceKind.CUSTOM) {
+                    ScheduleTimeField(cadence.time, { cadence = cadence.at(it) }, Modifier.fillMaxWidth().testTag("schedule-time-picker"))
+                } else {
                     OutlinedTextField(
-                        customCron,
-                        { customCron = it },
+                        cadence.custom,
+                        { cadence = cadence.copy(custom = it) },
                         label = { Text("Cron expression") },
                         supportingText = { Text("Five fields: minute, hour, day of month, month, day of week") },
                         singleLine = true,
@@ -772,61 +621,54 @@ fun ScheduleEditorScreen(
                 }
                 SelectorField(
                     label = "Timezone",
-                    value = timezone,
-                    options = scheduleTimezoneOptions(timezone).map { it to it },
-                    onSelect = { timezone = it },
+                    value = draft.timezone,
+                    options = ScheduleDrafts.timezoneOptions(draft.timezone, ZoneId.systemDefault().id, ZoneId.getAvailableZoneIds().toList()).map { it to it },
+                    onSelect = { draft = draft.copy(timezone = it) },
                     modifier = Modifier.fillMaxWidth().testTag("schedule-timezone"),
                 )
                 if (state.schedulePreview.isNotEmpty()) {
                     Text("Next five", color = DieterMuted, fontSize = 11.sp)
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        state.schedulePreview.take(5).forEach { timestamp -> NeutralPill(schedulePreviewLabel(timestamp, timezone)) }
+                        state.schedulePreview.take(5).forEach { timestamp -> NeutralPill(schedulePreviewLabel(timestamp, draft.timezone)) }
                     }
                 }
             }
             FormSection(Icons.Outlined.ViewKanban, "Destination") {
                 SelectorField(
                     label = "Board",
-                    value = state.boards.firstOrNull { it.id == boardId }?.name ?: "Select a board",
+                    value = board?.name ?: "Select a board",
                     options = state.boards.map { it.id to it.name },
-                    onSelect = { next ->
-                        boardId = next
-                        labelIds.retainAll(state.boards.firstOrNull { it.id == next }?.labelsList.orEmpty().map { it.id }.toSet())
-                    },
+                    onSelect = { next -> state.boards.firstOrNull { it.id == next }?.let { draft = ScheduleDrafts.onBoard(draft, it) } },
                     modifier = Modifier.fillMaxWidth().testTag("schedule-board"),
                 )
                 Text("Place each scheduled card in", color = DieterMuted, fontSize = 12.sp)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
-                        selected = action == "draft",
-                        onClick = { action = "draft" },
+                        selected = draft.action == ScheduleDrafts.DRAFT,
+                        onClick = { draft = draft.copy(action = ScheduleDrafts.DRAFT) },
                         label = { Text("Todo") },
                         modifier = Modifier.weight(1f).testTag("schedule-placement-todo"),
                     )
                     FilterChip(
-                        selected = action == "run",
-                        onClick = { action = "run" },
+                        selected = draft.action == ScheduleDrafts.RUN,
+                        onClick = { draft = draft.copy(action = ScheduleDrafts.RUN) },
                         label = { Text("Running") },
                         modifier = Modifier.weight(1f).testTag("schedule-placement-running"),
                     )
                 }
-                Text(
-                    if (action == "run") "The daemon creates the card and starts its agent turn when admission allows."
-                    else "The daemon creates a draft in Todo and waits for you to start it.",
-                    color = DieterMuted,
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                Text(ScheduleDrafts.placementDetail(draft.action), color = DieterMuted, style = MaterialTheme.typography.bodySmall)
                 Text("Workspace", color = DieterMuted, fontSize = 12.sp)
-                WorkspaceModeChips(workspaceMode) { workspaceMode = it }
+                val workspaceMode = WorkspaceMode.parse(draft.workspace_mode)
+                WorkspaceModeChips(workspaceMode) { draft = draft.copy(workspace_mode = it.wire) }
                 Text(workspaceMode.detail, color = DieterMuted, style = MaterialTheme.typography.bodySmall)
-                val labels = state.boards.firstOrNull { it.id == boardId }?.labelsList.orEmpty()
+                val labels = board?.labels.orEmpty()
                 if (labels.isNotEmpty()) {
                     Text("Labels", color = DieterMuted, fontSize = 12.sp)
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         labels.forEach { label ->
                             FilterChip(
-                                selected = label.id in labelIds,
-                                onClick = { if (label.id in labelIds) labelIds.remove(label.id) else labelIds += label.id },
+                                selected = label.id in draft.label_ids,
+                                onClick = { draft = ScheduleDrafts.toggleLabel(draft, label.id) },
                                 label = { Text(label.name) },
                             )
                         }
@@ -835,34 +677,32 @@ fun ScheduleEditorScreen(
             }
             FormSection(Icons.Outlined.CreditCard, "Card") {
                 OutlinedTextField(
-                    titleTemplate,
-                    { titleTemplate = it },
+                    draft.title_template,
+                    { draft = draft.copy(title_template = it) },
                     label = { Text("Title template") },
                     placeholder = { Text("Daily update · {{date}}") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("schedule-title-template"),
                 )
-                ScheduleVariableButtons { variable -> titleTemplate = appendScheduleVariable(titleTemplate, variable) }
+                ScheduleVariableButtons { variable -> draft = draft.copy(title_template = ScheduleTemplates.insert(draft.title_template, variable)) }
                 OutlinedTextField(
-                    prompt,
-                    { prompt = it },
+                    draft.prompt_template,
+                    { draft = draft.copy(prompt_template = it) },
                     label = { Text("Agent task template") },
                     placeholder = { Text("Review {{project}} for {{date}} and summarize what needs attention.") },
                     minLines = 5,
                     modifier = Modifier.fillMaxWidth().testTag("schedule-prompt"),
                 )
-                ScheduleVariableButtons { variable -> prompt = appendScheduleVariable(prompt, variable) }
+                ScheduleVariableButtons { variable -> draft = draft.copy(prompt_template = ScheduleTemplates.insert(draft.prompt_template, variable)) }
+                val example = scheduleExampleValues(state, draft.name, board?.name, draft.timezone)
                 Column(
                     Modifier.fillMaxWidth().background(DieterSurfaceHigh, RoundedCornerShape(12.dp)).padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text("EXAMPLE OUTPUT", color = DieterMuted, fontSize = 10.sp, letterSpacing = 1.2.sp)
+                    Text(ScheduleTemplates.render(draft.title_template, example), fontWeight = FontWeight.SemiBold)
                     Text(
-                        renderScheduleTemplate(titleTemplate, scheduleTemplateVariables(state, name, boardId, timezone)),
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        renderScheduleTemplate(prompt, scheduleTemplateVariables(state, name, boardId, timezone)),
+                        ScheduleTemplates.render(draft.prompt_template, example),
                         color = DieterMuted,
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 5,
@@ -871,21 +711,17 @@ fun ScheduleEditorScreen(
                 }
             }
             FormSection(Icons.Outlined.Bolt, "Agent") {
-                ModelSelectors(
-                    state.harnesses, provider,
-                    { next -> provider = next; selectedModel = state.harnesses.firstOrNull { it.id == next }?.defaultModel.orEmpty(); effort = "" },
-                    harness, selectedModel, { selectedModel = it; effort = "" }, effort, { effort = it },
-                    providerOptions, { id, value -> providerOptions = providerOptions + (id to value) },
-                )
+                ModelSelectors(controls) { selection -> draft = ScheduleDrafts.choose(draft, selection) }
             }
             FormSection(Icons.Outlined.CalendarMonth, "Delivery & safety") {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Schedule enabled", Modifier.weight(1f))
-                    Switch(enabled, { enabled = it })
+                    Switch(draft.enabled, { draft = draft.copy(enabled = it) })
                 }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = openPolicy == "skip_if_open", onClick = { openPolicy = "skip_if_open" }, label = { Text("Skip if open") })
-                    FilterChip(selected = openPolicy == "always", onClick = { openPolicy = "always" }, label = { Text("Always create") })
+                    ScheduleDrafts.OPEN_POLICIES.forEach { (policy, title) ->
+                        FilterChip(selected = draft.open_card_policy == policy, onClick = { draft = draft.copy(open_card_policy = policy) }, label = { Text(title) })
+                    }
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -943,46 +779,34 @@ private fun FormSection(
 }
 
 @Composable
-private fun ModelSelectors(
-    harnesses: List<Harness>,
-    provider: String,
-    onProviderChange: (String) -> Unit,
-    harness: Harness?,
-    model: String,
-    onModelChange: (String) -> Unit,
-    effort: String,
-    onEffortChange: (String) -> Unit,
-    providerOptions: Map<String, String>,
-    onProviderOptionChange: (String, String) -> Unit,
-) {
-    val effortOptions = harness?.effortOptionsFor(model).orEmpty()
+private fun ModelSelectors(controls: AgentControls, onSelectionChange: (HarnessSelection) -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         SelectorChip(
-            value = harness?.name ?: "Agent",
-            options = harnesses.map { it.id to it.name },
-            onSelect = onProviderChange,
+            value = controls.providerLabel,
+            options = controls.harnesses.map { it.id to it.name },
+            onSelect = { id -> controls.harnesses.firstOrNull { it.id == id }?.let { onSelectionChange(controls.choosingProvider(it)) } },
             modifier = Modifier.testTag("creation-provider"),
         )
         SelectorChip(
-            value = harness?.modelsList?.firstOrNull { it.id == model }?.name ?: model.ifBlank { "Model" },
-            options = harness?.modelsList.orEmpty().map { it.id to it.name },
-            onSelect = onModelChange,
+            value = controls.modelLabel,
+            options = controls.harness?.models.orEmpty().map { it.id to it.name },
+            onSelect = { onSelectionChange(controls.choosingModel(it)) },
             modifier = Modifier.testTag("creation-model"),
         )
-        if (effortOptions.isNotEmpty()) {
+        if (controls.efforts.isNotEmpty()) {
             SelectorChip(
-                value = effortOptions.firstOrNull { it.id == effort }?.name ?: effort.ifBlank { "Default effort" },
-                options = listOf("" to "Default effort") + effortOptions.map { it.id to it.name },
-                onSelect = onEffortChange,
+                value = controls.effortLabel,
+                options = listOf(Selections.DEFAULT_EFFORT to "Default effort") + controls.efforts.map { it.id to it.name },
+                onSelect = { onSelectionChange(controls.choosingEffort(it)) },
                 modifier = Modifier.testTag("creation-effort"),
             )
         }
-        providerOptionsForModel(harness, model).forEach { option ->
+        controls.options.forEach { option ->
             ProviderOptionControl(
                 option = option,
-                values = providerOptions,
-                enabled = true,
-                onValueChange = onProviderOptionChange,
+                value = controls.optionValue(option),
+                enabled = controls.optionEnabled(option),
+                onValueChange = { id, value -> onSelectionChange(controls.settingOption(id, value)) },
             )
         }
     }
@@ -1058,73 +882,10 @@ internal fun SurfaceErrorBanner(error: String?, onDismiss: () -> Unit) {
     }
 }
 
-private fun titleFromPrompt(prompt: String): String {
-    val firstLine = prompt.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty().ifBlank { "New chat" }
-    return if (firstLine.length <= 72) firstLine else firstLine.take(69) + "…"
-}
-
-internal fun scheduleRepeat(cron: String?): String = when (cron.orEmpty().trim()) {
-    "0 9 * * 1-5" -> "Weekdays"
-    "0 9 * * *" -> "Daily"
-    "0 9 * * 1" -> "Weekly"
-    "" -> "Weekdays"
-    else -> {
-        val parts = cron.orEmpty().trim().split(Regex("\\s+"))
-        when (val day = parts.getOrNull(4)) {
-            "1-5" -> "Weekdays"
-            "*" -> "Daily"
-            else -> if (day?.toIntOrNull()?.let { it in 0..6 } == true) "Weekly" else "Custom"
-        }
-    }
-}
-
-private fun scheduleTime(cron: String?): String {
-    val parts = cron.orEmpty().trim().split(Regex("\\s+"))
-    val minute = parts.getOrNull(0)?.toIntOrNull() ?: 0
-    val hour = parts.getOrNull(1)?.toIntOrNull() ?: 9
-    return "%02d:%02d".format(hour, minute)
-}
-
-private val scheduleWeekdays = listOf(
-    "1" to "Monday", "2" to "Tuesday", "3" to "Wednesday", "4" to "Thursday",
-    "5" to "Friday", "6" to "Saturday", "0" to "Sunday",
-)
-
-internal fun scheduleWeekday(cron: String?): String {
-    val day = cron.orEmpty().trim().split(Regex("\\s+")).getOrNull(4)
-    return day?.takeIf { candidate -> scheduleWeekdays.any { it.first == candidate } } ?: "1"
-}
-
-internal fun scheduleCron(repeat: String, runAt: String, weeklyDay: String, custom: String): String {
-    if (repeat == "Custom") return custom
-    val parts = runAt.split(':')
-    val hour = parts.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 23) ?: 9
-    val minute = parts.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 59) ?: 0
-    val days = when (repeat) {
-        "Weekdays" -> "1-5"
-        "Weekly" -> weeklyDay.takeIf { candidate -> scheduleWeekdays.any { it.first == candidate } } ?: "1"
-        else -> "*"
-    }
-    return "$minute $hour * * $days"
-}
-
-private fun scheduleTimingSummary(repeat: String, runAt: String, weeklyDay: String): String = when (repeat) {
-    "Weekly" -> "${scheduleWeekdays.firstOrNull { it.first == weeklyDay }?.second ?: "Monday"} · $runAt"
-    "Custom" -> "Custom cron"
-    else -> "$repeat · $runAt"
-}
-
 internal fun schedulePreviewLabel(timestamp: String, timezone: String): String = runCatching {
     DateTimeFormatter.ofPattern("MMM d, HH:mm", Locale.getDefault())
         .format(Instant.parse(timestamp).atZone(ZoneId.of(timezone)))
 }.getOrElse { timestamp.replace('T', ' ').substringBefore('+').substringBefore('Z').takeLast(11) }
-
-private fun scheduleTimezoneOptions(selected: String): List<String> {
-    val current = ZoneId.systemDefault().id
-    return (listOf(selected, current, "UTC") + ZoneId.getAvailableZoneIds().sorted())
-        .filter(String::isNotBlank)
-        .distinct()
-}
 
 @Composable
 private fun ScheduleTimeField(value: String, onValueChange: (String) -> Unit, modifier: Modifier = Modifier) {
@@ -1155,40 +916,18 @@ private fun ScheduleTimeField(value: String, onValueChange: (String) -> Unit, mo
     }
 }
 
-private val scheduleTemplateVariables = listOf("date", "scheduled_at", "project", "board", "schedule")
-
 @Composable
 private fun ScheduleVariableButtons(onInsert: (String) -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        scheduleTemplateVariables.forEach { variable ->
+        ScheduleTemplates.VARIABLES.forEach { variable ->
             AssistChip(onClick = { onInsert(variable) }, label = { Text("{{$variable}}", fontSize = 11.sp) })
         }
     }
 }
 
-internal fun appendScheduleVariable(value: String, variable: String): String {
-    val token = "{{$variable}}"
-    if (value.isEmpty()) return token
-    return if (value.last().isWhitespace()) value + token else "$value $token"
-}
-
-internal fun renderScheduleTemplate(template: String, variables: Map<String, String>): String =
-    variables.entries.fold(template) { rendered, (name, value) -> rendered.replace("{{$name}}", value) }
-
-private fun scheduleTemplateVariables(
-    state: DieterUiState,
-    scheduleName: String,
-    boardId: String,
-    timezone: String,
-): Map<String, String> {
+/** The example's values: the next occurrence (else now), its date in the schedule's zone, and the chosen names. */
+private fun scheduleExampleValues(state: DieterUiState, scheduleName: String, boardName: String?, timezone: String): Map<String, String> {
     val instant = state.schedulePreview.firstOrNull()?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: Instant.now()
     val zone = runCatching { ZoneId.of(timezone) }.getOrElse { ZoneId.systemDefault() }
-    val date = DateTimeFormatter.ISO_LOCAL_DATE.format(instant.atZone(zone))
-    return mapOf(
-        "date" to date,
-        "scheduled_at" to instant.toString(),
-        "project" to (state.project?.name ?: "Project"),
-        "board" to (state.boards.firstOrNull { it.id == boardId }?.name ?: "Board"),
-        "schedule" to scheduleName.ifBlank { "Schedule" },
-    )
+    return ScheduleTemplates.exampleValues(state.project?.name, boardName, scheduleName, instant.toString(), DateTimeFormatter.ISO_LOCAL_DATE.format(instant.atZone(zone)))
 }

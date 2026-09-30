@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package dieter.core.v1;
+
+option java_package = "com.dbpprt.dieter.core.state";
+
+import "dieter/v1/dieter.proto";
+
+// On-device state owned by the shared core. Never sent to a daemon.
+
+message GatewayRecord {
+  string name = 1;
+  string host = 2;
+  int32 port = 3;
+  bool secure = 4;
+}
+
+message AccountsState {
+  repeated GatewayRecord gateways = 1;
+  // Origin of the gateway the client is attached to.
+  string active_origin = 2;
+  // Per gateway origin: the machine whose feed the client attaches to.
+  map<string, string> preferred_machine = 3;
+  // Per gateway origin: whether the user wants to stay connected.
+  map<string, bool> desired_connected = 4;
+}
+
+message PendingSignIn {
+  string gateway_origin = 1;
+  GatewayRecord gateway = 2;
+  string verifier = 3;
+  string redirect_uri = 4;
+  int64 created_at_millis = 5;
+}
+
+// Composer text per conversation, newest first. Attachments and selections
+// are not persisted; they can be large and are cheap to choose again.
+message DraftTexts {
+  repeated DraftText drafts = 1;
+}
+
+message DraftText {
+  string daemon_id = 1;
+  string conversation_id = 2;
+  string text = 3;
+  int64 updated_at_millis = 4;
+}
+
+// A task being captured (quick task or share). Its request is frozen at the
+// first submit, and the submission ID becomes the outbox command ID, so a
+// retry after a crash can never create a second task.
+message CaptureDraft {
+  string id = 1;
+  string project_id = 2;
+  string board_id = 3;
+  string checkout_id = 4;
+  dieter.v1.CreateConversationRequest request = 5;
+  string submission_id = 6;
+  bool submitted = 7;
+  repeated CaptureFailure failures = 8;
+  int64 updated_at_millis = 9;
+  bool importing = 10;
+}
+
+message CaptureFailure {
+  string source = 1;
+  string message = 2;
+}
+
+// Creation choices remembered on this device.
+message CreationPreferences {
+  string provider = 1;
+  string model = 2;
+  string effort = 3;
+  string workspace_mode = 4;
+  map<string, string> provider_options = 5;
+  // Project ID → board last used for a quick task there.
+  map<string, string> boards = 6;
+  string project_id = 7;
+  map<string, bool> notification_boards = 8;
+}

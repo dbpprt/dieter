@@ -45,26 +45,34 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.dbpprt.dieter.settings.NavigationFolder
-import com.dbpprt.dieter.settings.NavigationFolderPreferences
-import com.dbpprt.dieter.settings.NavigationFolderScope
-import com.dbpprt.dieter.settings.NavigationFolderStore
+import com.dbpprt.dieter.core.navigation.FolderScope
+import com.dbpprt.dieter.core.navigation.NavigationEditor
+import com.dbpprt.dieter.core.navigation.NavigationFolder
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterAmber
 import com.dbpprt.dieter.ui.theme.DieterShell
 
+/** Shared folder edits; the core queues each one durably and syncs it across the account. */
+internal interface FolderEditor {
+    fun createFolder(scope: FolderScope, name: String, itemId: String? = null)
+    fun renameFolder(scope: FolderScope, id: String, name: String)
+    fun deleteFolder(scope: FolderScope, id: String)
+    fun setFolderExpanded(scope: FolderScope, id: String, expanded: Boolean)
+    fun moveToFolder(scope: FolderScope, itemId: String, folderId: String?)
+}
+
 @Composable
 internal fun NewNavigationFolderButton(
-    scope: NavigationFolderScope,
-    preferences: NavigationFolderPreferences,
-    store: NavigationFolderStore,
+    scope: FolderScope,
+    folders: List<NavigationFolder>,
+    editor: FolderEditor,
 ) {
     var open by rememberSaveable { mutableStateOf(false) }
     IconButton(onClick = { open = true }, modifier = Modifier.testTag("new-${scope.name.lowercase()}-folder")) {
-        Icon(Icons.Outlined.CreateNewFolder, if (scope == NavigationFolderScope.CHATS) "New chat folder" else "New project folder")
+        Icon(Icons.Outlined.CreateNewFolder, if (scope == FolderScope.CHATS) "New chat folder" else "New project folder")
     }
-    if (open) NavigationFolderNameDialog(scope, preferences, onDismiss = { open = false }) {
-        store.create(scope, it)
+    if (open) NavigationFolderNameDialog(scope, folders, onDismiss = { open = false }) {
+        editor.createFolder(scope, it)
         open = false
     }
 }
@@ -73,24 +81,24 @@ internal fun NewNavigationFolderButton(
 internal fun NavigationFolderHeader(
     folder: NavigationFolder,
     count: Int,
-    scope: NavigationFolderScope,
-    preferences: NavigationFolderPreferences,
-    store: NavigationFolderStore,
+    scope: FolderScope,
+    folders: List<NavigationFolder>,
+    editor: FolderEditor,
     revealSearchResults: Boolean = false,
     summary: String? = null,
 ) {
     var options by remember { mutableStateOf(false) }
     var rename by rememberSaveable { mutableStateOf(false) }
     var delete by rememberSaveable { mutableStateOf(false) }
-    val expanded = folder.isExpanded || revealSearchResults
-    val chatFolder = scope == NavigationFolderScope.CHATS
+    val expanded = folder.expanded || revealSearchResults
+    val chatFolder = scope == FolderScope.CHATS
     val folderTint = if (chatFolder) DieterAmber else DieterShell
     Row(Modifier.fillMaxWidth().then(if (chatFolder) Modifier.padding(top = 4.dp)
         .background(folderTint.copy(alpha = 0.07f), RoundedCornerShape(12.dp)) else Modifier),
         verticalAlignment = Alignment.CenterVertically) {
         Row(
             Modifier.weight(1f).heightIn(min = 48.dp)
-                .clickable { store.update(scope) { it.toggling(folder.id) } }
+                .clickable { editor.setFolderExpanded(scope, folder.id, !folder.expanded) }
                 .testTag("folder-${folder.id}")
                 .semantics { heading(); stateDescription = if (expanded) "Expanded" else "Collapsed" }
                 .padding(horizontal = 8.dp),
@@ -138,43 +146,41 @@ internal fun NavigationFolderHeader(
             }
         }
     }
-    if (rename) NavigationFolderNameDialog(scope, preferences, folder, { rename = false }) { name ->
-        store.update(scope) { it.renaming(folder.id, name) }
+    if (rename) NavigationFolderNameDialog(scope, folders, folder, { rename = false }) { name ->
+        editor.renameFolder(scope, folder.id, name)
         rename = false
     }
     if (delete) AlertDialog(
         onDismissRequest = { delete = false },
         title = { Text("Delete ${folder.name}?") },
-        text = { Text(if (scope == NavigationFolderScope.CHATS) "Chats in this folder will return to their project groups. No chats will be deleted."
+        text = { Text(if (scope == FolderScope.CHATS) "Chats in this folder will return to their project groups. No chats will be deleted."
             else "Projects in this folder will return to the unfiled list. No projects will be deleted.") },
         dismissButton = { TextButton(onClick = { delete = false }) { Text("Cancel") } },
-        confirmButton = { TextButton(onClick = { store.update(scope) { it.deleting(folder.id) }; delete = false },
+        confirmButton = { TextButton(onClick = { editor.deleteFolder(scope, folder.id); delete = false },
             modifier = Modifier.testTag("delete-folder-confirm")) { Text("Delete folder") } },
     )
 }
 
 @Composable
 internal fun NavigationFolderNameDialog(
-    scope: NavigationFolderScope,
-    preferences: NavigationFolderPreferences,
+    scope: FolderScope,
+    folders: List<NavigationFolder>,
     folder: NavigationFolder? = null,
     onDismiss: () -> Unit,
     onSave: (String) -> Unit,
 ) {
     var name by rememberSaveable(folder?.id) { mutableStateOf(folder?.name.orEmpty()) }
-    val available = preferences.nameIsAvailable(name, folder?.id)
+    val problem = NavigationEditor.nameProblem(name, folders, folder?.id)
+    val available = problem == null
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (folder != null) "Rename folder" else if (scope == NavigationFolderScope.CHATS) "New chat folder" else "New project folder") },
+        title = { Text(if (folder != null) "Rename folder" else if (scope == FolderScope.CHATS) "New chat folder" else "New project folder") },
         text = {
             OutlinedTextField(
                 value = name, onValueChange = { name = it }, singleLine = true,
                 label = { Text("Folder name") },
                 isError = name.isNotBlank() && !available,
-                supportingText = {
-                    if (name.trim().toByteArray(Charsets.UTF_8).size > 256) Text("Choose a shorter folder name.")
-                    else if (name.isNotBlank() && !available) Text("A folder with this name already exists.")
-                },
+                supportingText = { if (name.isNotBlank()) problem?.let { Text(it) } },
                 modifier = Modifier.fillMaxWidth().testTag("folder-name"),
             )
         },
@@ -187,30 +193,30 @@ internal fun NavigationFolderNameDialog(
 @Composable
 internal fun MoveToNavigationFolderDialog(
     itemID: String,
-    scope: NavigationFolderScope,
-    preferences: NavigationFolderPreferences,
-    store: NavigationFolderStore,
+    scope: FolderScope,
+    folders: List<NavigationFolder>,
+    editor: FolderEditor,
     onDismiss: () -> Unit,
 ) {
     var creating by rememberSaveable { mutableStateOf(false) }
     if (creating) {
-        NavigationFolderNameDialog(scope, preferences, onDismiss = { creating = false }) { name ->
-            store.create(scope, name, itemID)
+        NavigationFolderNameDialog(scope, folders, onDismiss = { creating = false }) { name ->
+            editor.createFolder(scope, name, itemID)
             onDismiss()
         }
     } else {
-        val selected = preferences.folderContaining(itemID)?.id
+        val selected = folders.firstOrNull { itemID in it.itemIds }?.id
         AlertDialog(
             onDismissRequest = onDismiss,
             title = { Text("Move to folder") },
             text = {
                 Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                     FolderDestination("No folder", selected == null, "move-no-folder") {
-                        store.update(scope) { it.moving(itemID, null) }; onDismiss()
+                        editor.moveToFolder(scope, itemID, null); onDismiss()
                     }
-                    preferences.folders.forEach { folder ->
+                    folders.forEach { folder ->
                         FolderDestination(folder.name, selected == folder.id, "move-folder-${folder.id}") {
-                            store.update(scope) { it.moving(itemID, folder.id) }; onDismiss()
+                            editor.moveToFolder(scope, itemID, folder.id); onDismiss()
                         }
                     }
                     TextButton(onClick = { creating = true }, modifier = Modifier.fillMaxWidth()) {
@@ -253,3 +259,5 @@ internal fun NavigationSyncStatus(state: DieterUiState) {
         )
     }
 }
+
+internal fun List<NavigationFolder>.folderContaining(itemId: String): NavigationFolder? = firstOrNull { itemId in it.itemIds }

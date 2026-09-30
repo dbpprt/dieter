@@ -1,26 +1,26 @@
 package com.dbpprt.dieter.data
 
-import android.os.SystemClock
 import android.os.Process
+import android.os.SystemClock
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.DieterApplication
-import com.dbpprt.dieter.connection.BackgroundSyncMode
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.settings.AppPreferences
-import com.dbpprt.dieter.ui.Destination
+import com.dbpprt.dieter.api.v1.CreateConversationRequest
+import com.dbpprt.dieter.api.v1.HarnessSelection
+import com.dbpprt.dieter.api.v1.MessagePart
+import com.dbpprt.dieter.core.admin.BackgroundMode
+import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.e2e.IsolatedCore
 import com.dbpprt.dieter.ui.DieterViewModel
-import com.dbpprt.dieter.v1.CreateConversationRequest
-import com.dbpprt.dieter.v1.MessagePart
-import com.dbpprt.dieter.v1.SendMessageRequest
-import com.dbpprt.dieter.v1.SyncFrame
-import kotlinx.coroutines.channels.Channel
+import com.dbpprt.dieter.core.navigation.Destination
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -28,210 +28,102 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.util.UUID
 
 /**
- * Explicitly gated end-to-end coverage for background transcript sync against
- * an isolated local gateway copy (scripts/isolated-gateway). Run with
- * `adb reverse tcp:14243 tcp:14243` so device loopback reaches the host.
+ * Transcripts reach the device through the shared core's global feed, and
+ * Live mode keeps them warm across backgrounding, against the isolated gateway
+ * the e2e runner reverses to the device's loopback.
  */
 @RunWith(AndroidJUnit4::class)
 class BackgroundTranscriptSyncIntegrationTest {
+    private val container get() = (InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as DieterApplication).container
+
     @Test
     fun transcriptsArriveThroughGlobalSyncWithoutOpeningTheChat() = runBlocking {
-        val token = argument("isolatedGatewayToken")
-        assumeTrue("Pass isolatedGatewayToken to run the isolated gateway test", token.isNotBlank())
-        val origin = isolatedOrigin()
-
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val repository = GrpcDieterRepository(context)
+        assumeTrue("Pass isolatedGatewayToken to run the isolated gateway test", argument("isolatedGatewayToken").isNotBlank())
+        val core = container.core
+        val workspace = IsolatedCore.connect(container)
+        val project = workspace.projects.first()
         var chatId: String? = null
         try {
-            repository.setAccessToken(origin, token)
-            repository.replaceEndpoints(listOf(origin))
-            repository.selectEndpoint(origin)
-            val daemon = repository.daemons().daemonsList.single { it.compatibility == com.dbpprt.dieter.gateway.v1.CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE }
-            val endpoint = origin.copy(
-                id = "${origin.credentialId}#${daemon.id}",
-                label = daemon.name.ifBlank { daemon.id },
-                daemonId = daemon.id,
-            )
-            repository.replaceEndpoints(listOf(endpoint))
-            repository.selectEndpoint(endpoint)
-            assertEquals("Gateway relay", repository.prepareDaemon())
-
-            val project = repository.state().projectsList.single()
-            val chat = repository.createConversation(
-                CreateConversationRequest.newBuilder()
-                    .setProjectId(project.id)
-                    .setTitle("Background sync E2E ${UUID.randomUUID().toString().take(8)}")
-                    .setPrompt("Reply with BG_SYNC_OK.")
-                    .setProvider("mock")
-                    .setModel("mock")
-                    .setDeferStart(true)
-                    .setWorkspaceMode("project")
-                    .setClientId("android-bg-sync-test")
-                    .setCommandId(UUID.randomUUID().toString())
-                    .build(),
+            val chat = IsolatedCore.createConversation(
+                container,
+                CreateConversationRequest(project_id = project.id, title = "Background sync E2E ${UUID.randomUUID().toString().take(8)}", prompt = "Reply with BG_SYNC_OK.", provider = "mock", model = "mock", defer_start = true, workspace_mode = "project"),
                 chat = true,
             )
             chatId = chat.id
-
-            val frames = Channel<SyncFrame>(Channel.UNLIMITED)
-            val syncJob = launch {
-                repository.watchSync(conversationLimit = 30, recentConversationLimit = 8).collect(frames::send)
-            }
-            val bootstrap = withTimeout(10_000) {
-                while (true) {
-                    val frame = frames.receive()
-                    if (frame.hasSnapshot()) return@withTimeout frame
-                }
-                @Suppress("UNREACHABLE_CODE")
-                error("unreachable")
-            }
-            assertTrue("Metadata must arrive before optional transcripts", bootstrap.snapshot.conversationsList.isEmpty())
-            withTimeout(10_000) {
-                while (true) {
-                    val frame = frames.receive()
-                    if (frame.delta.conversationsList.any { it.detail.card.id == chat.id }) break
-                }
-            }
-
-            val messageId = "msg_bg_sync_${UUID.randomUUID().toString().replace("-", "").take(12)}"
-            repository.sendMessage(
-                SendMessageRequest.newBuilder()
-                    .setCardId(chat.id)
-                    .addParts(MessagePart.newBuilder().setType("text").setText("Background delta please"))
-                    .setProvider("mock")
-                    .setModel("mock")
-                    .setClientId("android-bg-sync-test")
-                    .setCommandId(UUID.randomUUID().toString())
-                    .setMessageId(messageId)
-                    .build(),
-            )
+            // The chat is never opened: its transcript tail arrives with the account feed.
+            val messageId = core.sendMessage(chat.id, listOf(MessagePart(type = "text", text = "Background delta please")), HarnessSelection("mock", "mock"))
             withTimeout(15_000) {
-                while (true) {
-                    val frame = frames.receive()
-                    assertFalse("Live frames must stay deltas", frame.hasSnapshot() && !frame.reset)
-                    val arrived = frame.delta.conversationsList.any { conversation ->
-                        conversation.detail.card.id == chat.id &&
-                            conversation.conversation.messagesList.any { it.id == messageId }
-                    }
-                    if (arrived) return@withTimeout
-                }
+                core.workspace.state.first { view -> view.conversations[chat.id]?.conversation?.messages.orEmpty().any { it.id == messageId } }
             }
-            syncJob.cancel()
+            assertTrue("No transcript session was opened", core.onCore { core.conversations.session(chat.id) } == null)
         } finally {
             chatId?.let { id ->
-                runCatching { repository.cancelCard(id) }
-                runCatching { repository.archiveCard(id, true) }
+                runCatching { core.onBoard { cancel(id) } }
+                runCatching { core.onBoard { archive(id) } }
             }
-            repository.close()
+            IsolatedCore.disconnect(container)
         }
     }
 
     @Test
-    fun connectionManagerKeepsTranscriptsWarmInBackground() = runBlocking {
-        val token = argument("isolatedGatewayToken")
-        assumeTrue("Pass isolatedGatewayToken to run the isolated gateway test", token.isNotBlank())
-        val origin = isolatedOrigin()
-
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val application = context.applicationContext as DieterApplication
-        val manager = application.container.connectionManager
-        val originalConnection = SavedConnectionConfiguration(manager)
-        val fixture = GrpcDieterRepository(context)
-        var chatId: String? = null
-        var secondChatId: String? = null
+    fun liveSyncKeepsTranscriptsWarmInBackground() = runBlocking {
+        assumeTrue("Pass isolatedGatewayToken to run the isolated gateway test", argument("isolatedGatewayToken").isNotBlank())
+        val container = container
+        val core = container.core
+        val policy = container.policy
+        val originalMode = policy.mode.value
+        val chatIds = mutableListOf<String>()
         var model: DieterViewModel? = null
         var phaseObserver: kotlinx.coroutines.Job? = null
-        val lostConnection = java.util.concurrent.atomic.AtomicBoolean(false)
+        val lostConnection = AtomicBoolean(false)
         try {
-            fixture.setAccessToken(origin, token)
-            fixture.replaceEndpoints(listOf(origin))
-            fixture.selectEndpoint(origin)
-            val daemon = fixture.daemons().daemonsList.single { it.compatibility == com.dbpprt.dieter.gateway.v1.CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE }
-            val routed = origin.copy(
-                id = "${origin.credentialId}#${daemon.id}",
-                label = daemon.name.ifBlank { daemon.id },
-                daemonId = daemon.id,
-            )
-            fixture.replaceEndpoints(listOf(routed))
-            fixture.selectEndpoint(routed)
-            fixture.prepareDaemon()
-            val project = fixture.state().projectsList.single()
-            val chat = fixture.createConversation(
-                CreateConversationRequest.newBuilder()
-                    .setProjectId(project.id)
-                    .setTitle("Warm cache E2E ${UUID.randomUUID().toString().take(8)}")
-                    .setPrompt("Reply with WARM_OK.")
-                    .setProvider("mock")
-                    .setModel("mock")
-                    .setWorkspaceMode("project")
-                    .setClientId("android-bg-sync-test")
-                    .setCommandId(UUID.randomUUID().toString())
-                    .build(),
+            withContext(kotlinx.coroutines.Dispatchers.Main) { policy.setMode(BackgroundMode.LIVE) }
+            val workspace = IsolatedCore.connect(container)
+            val project = workspace.projects.first()
+            val daemonId = IsolatedCore.daemonId(container)
+            val chat = IsolatedCore.createConversation(
+                container,
+                CreateConversationRequest(project_id = project.id, title = "Warm cache E2E ${UUID.randomUUID().toString().take(8)}", prompt = "Reply with WARM_OK.", provider = "mock", model = "mock", workspace_mode = "project"),
                 chat = true,
             )
-            chatId = chat.id
-
-            val secondChat = fixture.createConversation(
-                CreateConversationRequest.newBuilder()
-                    .setProjectId(project.id)
-                    .setTitle("Second warm cache E2E")
-                    .setPrompt("Reply with SECOND_WARM_OK.")
-                    .setProvider("mock").setModel("mock").setWorkspaceMode("project")
-                    .setClientId("android-bg-sync-test").setCommandId(UUID.randomUUID().toString())
-                    .build(), chat = true,
+            val secondChat = IsolatedCore.createConversation(
+                container,
+                CreateConversationRequest(project_id = project.id, title = "Second warm cache E2E", prompt = "Reply with SECOND_WARM_OK.", provider = "mock", model = "mock", workspace_mode = "project"),
+                chat = true,
             )
-            secondChatId = secondChat.id
-
-            manager.repository.setAccessToken(origin, token)
-            manager.updateEndpoints(listOf(origin))
-            manager.setBackgroundSyncMode(BackgroundSyncMode.LIVE)
-            manager.connect()
-            manager.onAppForegrounded(project.id)
-            val warmed = withTimeout(30_000) {
-                manager.state.first { state ->
-                    state.phase == ConnectionPhase.CONNECTED &&
-                        (state.activeConversations[chat.id]?.conversation?.messagesCount ?: 0) > 0 &&
-                        (state.activeConversations[secondChat.id]?.conversation?.messagesCount ?: 0) > 0
-                }
+            chatIds += listOf(chat.id, secondChat.id)
+            withTimeout(30_000) {
+                core.workspace.state.first { view -> chatIds.all { view.conversations[it]?.conversation?.messages.orEmpty().isNotEmpty() } }
             }
-            val transcript = warmed.activeConversations.getValue(chat.id)
-            assertTrue(
-                "Warm transcript must contain the initial prompt turn",
-                transcript.conversation.messagesList.isNotEmpty(),
-            )
-            assertTrue("The healthy Live projection must own the warmed chat", manager.liveSyncCoversConversation(chat.id))
 
-            model = DieterViewModel(manager, AppPreferences(context))
-            model.start()
+            model = withContext(kotlinx.coroutines.Dispatchers.Main) {
+                DieterViewModel(core, container.appPreferences, policy, container, container.taskCaptures).also { it.start() }
+            }
             withTimeout(5_000) { model.state.first { state -> state.chats.any { it.id == chat.id } } }
             val openedAt = SystemClock.elapsedRealtime()
-            model.openCard(chat, Destination.CHATS)
+            withContext(kotlinx.coroutines.Dispatchers.Main) { model.openCard(chat, Destination.CHATS) }
             val opened = withTimeout(1_000) {
-                model.state.first { state ->
-                    state.selectedCardId == chat.id && state.conversation?.detail?.card?.id == chat.id
-                }
+                model.state.first { state -> state.selectedCardId == chat.id && state.conversation?.detail?.card?.id == chat.id }
             }
             val initialOpenMs = SystemClock.elapsedRealtime() - openedAt
             assertTrue("Warm transcript open took ${initialOpenMs}ms", initialOpenMs < 250)
-            assertFalse("Opening a Live-projected chat must not show a redundant sync", opened.conversationSyncing)
+            assertFalse("Opening a feed-covered chat must not show a redundant sync", opened.conversationSyncing)
 
             phaseObserver = launch {
-                manager.state.collect {
+                core.connection.state.collect {
                     if (it.phase !in setOf(ConnectionPhase.CONNECTED, ConnectionPhase.SYNCING)) lostConnection.set(true)
                 }
             }
             val switchTimes = mutableListOf<Long>()
             repeat(25) {
-                manager.onAppBackgrounded()
+                withContext(kotlinx.coroutines.Dispatchers.Main) { policy.setForeground(false) }
                 delay(150)
-                manager.onAppForegrounded(project.id)
+                withContext(kotlinx.coroutines.Dispatchers.Main) { policy.setForeground(true) }
                 for (selected in listOf(secondChat, chat)) {
                     val switchedAt = SystemClock.elapsedRealtime()
-                    model.openCard(selected, Destination.CHATS)
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { model.openCard(selected, Destination.CHATS) }
                     val switched = withTimeout(1_000) {
                         model.state.first { it.selectedCardId == selected.id && it.conversation?.detail?.card?.id == selected.id }
                     }
@@ -239,29 +131,23 @@ class BackgroundTranscriptSyncIntegrationTest {
                     assertFalse("Switching warmed chats must keep the workspace live", switched.conversationSyncing)
                 }
             }
-
             val sortedSwitches = switchTimes.sorted()
             val switchP95 = sortedSwitches[(sortedSwitches.size * 0.95).toInt().coerceAtMost(sortedSwitches.lastIndex)]
             Log.i("DieterPerformance", "liveChatOpen initialMs=$initialOpenMs switches=${switchTimes.size} p95Ms=$switchP95 maxMs=${sortedSwitches.last()}")
             assertTrue("Warm chat-switch p95 was ${switchP95}ms", switchP95 < 250)
 
-            // The old implementation treated a correctly silent resumed
-            // stream as dead after 4.5 seconds and rebuilt the connection.
-            // Initial prompts can reach the cache before the mock worker has
-            // started. Require both replies and terminal state before calling
-            // this idle; worker startup and streaming belong to active cost.
+            // Require both replies and terminal state before measuring idle;
+            // worker startup and streaming belong to active cost.
             withTimeout(60_000) {
-                manager.state.first { state ->
-                    listOf(chat.id, secondChat.id).all { id ->
-                        state.activeConversations[id]?.let { snapshot ->
-                            snapshot.detail.card.runtime == "idle" &&
-                                snapshot.conversation.status == "idle" &&
-                                snapshot.conversation.messagesList.any { it.role == "assistant" }
+                core.workspace.state.first { view ->
+                    chatIds.all { id ->
+                        view.conversations[id]?.let { snapshot ->
+                            snapshot.detail?.card?.runtime == "idle" && snapshot.conversation?.status == "idle" &&
+                                snapshot.conversation?.messages.orEmpty().any { it.role == "assistant" }
                         } == true
                     }
                 }
             }
-            // Exclude pending cache/transport cleanup from the 50 switches.
             delay(2_000)
             val idleSampleMillis = argument("idleSampleMillis").toLongOrNull()?.coerceIn(6_000, 60_000) ?: 6_000
             repeat(argument("idleSampleWindows").toIntOrNull()?.coerceIn(1, 2) ?: 1) { window ->
@@ -279,20 +165,18 @@ class BackgroundTranscriptSyncIntegrationTest {
                 Log.i("DieterPerformance", "liveIdle window=${window + 1} cpuMs=$cpuMillis wallMs=$wallMillis threads=$threadCosts")
             }
             assertFalse(model.state.value.conversationSyncing)
-            assertEquals(ConnectionPhase.CONNECTED, manager.state.value.phase)
-            assertEquals(daemon.id, manager.state.value.projectReplicas[project.id]?.daemonId)
+            assertEquals(ConnectionPhase.CONNECTED, core.connection.state.value.phase)
+            assertEquals(daemonId, core.workspace.state.value.projectReplicas[project.id])
             assertFalse("Activation and chat switches must preserve the shared connection", lostConnection.get())
         } finally {
             phaseObserver?.cancel()
-            model?.stop()
-            listOfNotNull(chatId, secondChatId).forEach { id ->
-                runCatching { fixture.cancelCard(id) }
-                runCatching { fixture.archiveCard(id, true) }
+            model?.let { withContext(kotlinx.coroutines.Dispatchers.Main) { it.stop() } }
+            chatIds.forEach { id ->
+                runCatching { core.onBoard { cancel(id) } }
+                runCatching { core.onBoard { archive(id) } }
             }
-            fixture.close()
-            runCatching {
-                originalConnection.restore()
-            }
+            withContext(kotlinx.coroutines.Dispatchers.Main) { policy.setMode(originalMode) }
+            IsolatedCore.disconnect(container)
         }
     }
 
@@ -306,14 +190,5 @@ class BackgroundTranscriptSyncIntegrationTest {
             }.getOrNull()
         }.toMap()
 
-    private fun isolatedOrigin(): DieterEndpoint = DieterEndpoint(
-        id = "isolated_gateway_bg_sync_${UUID.randomUUID()}",
-        label = "Isolated Gateway BG Sync",
-        host = argument("isolatedGatewayHost").ifBlank { "127.0.0.1" },
-        port = argument("isolatedGatewayPort").toIntOrNull() ?: 14243,
-        secure = false,
-    )
-
-    private fun argument(name: String): String =
-        InstrumentationRegistry.getArguments().getString(name).orEmpty()
+    private fun argument(name: String): String = InstrumentationRegistry.getArguments().getString(name).orEmpty()
 }

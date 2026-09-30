@@ -2,6 +2,16 @@
 
 package com.dbpprt.dieter.ui
 
+import androidx.compose.runtime.staticCompositionLocalOf
+import com.dbpprt.dieter.core.composition.Attachments
+import com.dbpprt.dieter.core.presentation.ActivitySummary
+import com.dbpprt.dieter.core.presentation.DetectedLinks
+import com.dbpprt.dieter.core.presentation.Durations
+import com.dbpprt.dieter.core.presentation.Markdown
+import com.dbpprt.dieter.core.presentation.MarkdownBlock
+import com.dbpprt.dieter.core.presentation.Parts
+import com.dbpprt.dieter.core.presentation.StepKind
+import com.dbpprt.dieter.core.presentation.SubagentPresentation
 import android.graphics.BitmapFactory
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
@@ -88,81 +98,60 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.dbpprt.dieter.core.presentation.TableAlignment
+import com.dbpprt.dieter.core.presentation.TaskPlans
+import com.dbpprt.dieter.core.presentation.TimelineBuilder
+import com.dbpprt.dieter.core.presentation.TimelineItem
+import com.dbpprt.dieter.core.presentation.TimelineStep
+import com.dbpprt.dieter.core.presentation.ToolStatus
+import com.dbpprt.dieter.core.presentation.Tools
+import com.dbpprt.dieter.core.presentation.WorkspaceImages
 import com.dbpprt.dieter.ui.theme.DieterEyes
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.ui.theme.DieterShellTint
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
-import com.dbpprt.dieter.v1.MessagePart
-import com.dbpprt.dieter.v1.Schedule
-import com.dbpprt.dieter.v1.Subagent
-import com.dbpprt.dieter.v1.TaskPlan
-import com.dbpprt.dieter.v1.UiMessage
-import com.dbpprt.dieter.v1.ToolOutput
+import com.dbpprt.dieter.api.v1.MessagePart
+import com.dbpprt.dieter.api.v1.Schedule
+import com.dbpprt.dieter.api.v1.Subagent
+import com.dbpprt.dieter.api.v1.TaskPlan
+import com.dbpprt.dieter.api.v1.UiMessage
+import com.dbpprt.dieter.api.v1.ToolOutput
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.net.URI
-import java.nio.charset.StandardCharsets
+
+/** The conversation's workspace root, for resolving image links an agent wrote as absolute paths. */
+internal val LocalWorkspaceRoot = staticCompositionLocalOf<String?> { null }
 
 @Composable
-internal fun MessageParts(
-    message: UiMessage,
-    model: DieterViewModel,
-    compact: Boolean = false,
-    showReasoningTraces: Boolean,
-    plan: TaskPlan? = null,
-    subagents: List<Subagent> = emptyList(),
-) {
-    var previewPath by remember(message.id) { mutableStateOf<String?>(null) }
-    val timeline = remember(message, subagents, plan, showReasoningTraces) {
-        buildConversationTimeline(
-            parts = message.partsList,
-            subagents = subagents,
-            hasTaskPlan = plan != null,
-            showReasoning = showReasoningTraces,
-        )
-    }
-    var retainedStart by remember(message.id, showReasoningTraces) { mutableStateOf<Int?>(null) }
-    val start = if (message.role == "user") 0 else conversationMessageStart(timeline.size, retainedStart)
-    LaunchedEffect(message.id, showReasoningTraces, start, timeline.isEmpty()) {
+internal fun MessageParts(item: TimelineItem.Message, model: DieterViewModel, compact: Boolean = false) {
+    var previewPath by remember(item.id) { mutableStateOf<String?>(null) }
+    val groups = item.groups
+    var retainedFrom by remember(item.id) { mutableStateOf<String?>(null) }
+    val start = if (item.user) 0 else TimelineBuilder.visibleStart(groups, retainedFrom)
+    LaunchedEffect(item.id, groups.isEmpty()) {
         // New streamed parts append to the mounted window; they never evict
         // already-visible prose or reset an expanded tool group.
-        if (timeline.isNotEmpty() && retainedStart != start) retainedStart = start
+        if (groups.isNotEmpty() && retainedFrom == null) retainedFrom = groups.getOrNull(start)?.id
     }
-    if (plan != null) TaskPlanBlock(plan)
+    item.plans.forEach { plan -> TaskPlanBlock(plan) }
     if (start > 0) {
         TextButton(
-            onClick = { retainedStart = (start - INITIAL_MESSAGE_ITEMS).coerceAtLeast(0) },
-            modifier = Modifier.testTag("message-earlier-${message.id}"),
+            onClick = { retainedFrom = groups[(start - TimelineBuilder.INITIAL_GROUPS).coerceAtLeast(0)].id },
+            modifier = Modifier.testTag("message-earlier-${item.message.id}"),
         ) { Text("Show earlier in this message") }
     }
-    timeline.drop(start).forEachIndexed { offset, item ->
-        val index = start + offset
-        key(message.id, index) {
-            when (item) {
-                is ConversationTimelineItem.Tools -> ToolGroup(
-                    messageId = message.id,
-                    groupKey = item.parts.firstOrNull()?.toolCallId.orEmpty().ifBlank { index.toString() },
-                    parts = item.parts,
-                    model = model,
-                )
-                ConversationTimelineItem.Subagents -> SubagentBlock(subagents)
-                is ConversationTimelineItem.Part -> when (
-                    item.part.conversationPartPresentation(showReasoningTraces)
-                ) {
-                    ConversationPartPresentation.TEXT -> SelectionContainer {
-                        MessageMarkdown(item.part.text, compact) { previewPath = it }
-                    }
-                    ConversationPartPresentation.REASONING -> ReasoningPart(item.part.text)
-                    ConversationPartPresentation.FILE -> AttachmentPart(item.part)
-                    ConversationPartPresentation.FALLBACK_TEXT -> MessageMarkdown(item.part.text, compact) {
-                        previewPath = it
-                    }
-                    ConversationPartPresentation.TOOL -> ToolItem(message.id, item.part, model, attention = true)
-                    ConversationPartPresentation.HIDDEN -> Unit
+    groups.drop(start).forEach { group ->
+        key(group.id) {
+            if (group.activity) {
+                ActivityGroup(group.id, ActivitySummary.of(group.steps).english(), group.steps, model)
+            } else {
+                group.steps.forEach { step ->
+                    TimelineStepContent(step, item.subagents, model, compact) { previewPath = it }
                 }
             }
         }
@@ -172,137 +161,35 @@ internal fun MessageParts(
     }
 }
 
-internal data class MessageMarkdownBlock(
-    val text: String = "",
-    val code: Boolean = false,
-    val headingLevel: Int = 0,
-    val table: MessageMarkdownTable? = null,
-)
-
-internal enum class MessageMarkdownAlignment { START, CENTER, END }
-
-internal data class MessageMarkdownTable(
-    val headers: List<String>,
-    val alignments: List<MessageMarkdownAlignment>,
-    val rows: List<List<String>>,
-)
-
-internal fun parseMessageMarkdown(value: String): List<MessageMarkdownBlock> {
-    val blocks = mutableListOf<MessageMarkdownBlock>()
-    val pending = mutableListOf<String>()
-    var inCode = false
-
-    fun flush() {
-        if (pending.isEmpty()) return
-        val raw = pending.joinToString("\n").trimEnd()
-        pending.clear()
-        if (raw.isBlank()) return
-        val heading = if (!inCode) raw.takeWhile { it == '#' }.length.takeIf { it in 1..4 } ?: 0 else 0
-        val text = if (heading > 0 && raw.getOrNull(heading) == ' ') raw.drop(heading + 1) else raw
-        blocks += MessageMarkdownBlock(text = text, code = inCode, headingLevel = heading)
-    }
-
-    val lines = value.lines()
-    var index = 0
-    while (index < lines.size) {
-        val line = lines[index]
-        if (line.trimStart().startsWith("```")) {
-            flush()
-            inCode = !inCode
-            index += 1
-            continue
-        }
-        if (!inCode && index + 1 < lines.size) {
-            val headers = markdownTableCells(line)
-            val alignments = markdownTableDelimiter(lines[index + 1])
-            if (headers != null && alignments != null && headers.size == alignments.size) {
-                flush()
-                index += 2
-                val rows = mutableListOf<List<String>>()
-                while (index < lines.size) {
-                    val cells = markdownTableCells(lines[index]) ?: break
-                    rows += List(headers.size) { column -> cells.getOrElse(column) { "" } }
-                    index += 1
-                }
-                blocks += MessageMarkdownBlock(
-                    table = MessageMarkdownTable(headers, alignments, rows),
-                )
-                continue
-            }
-        }
-        if (!inCode && line.isBlank()) {
-            flush()
-            index += 1
-        } else if (!inCode && line.trimStart().matches(Regex("^[-*]\\s+.*"))) {
-            flush()
-            blocks += MessageMarkdownBlock("• " + line.trimStart().drop(2))
-            index += 1
-        } else {
-            pending += line
-            index += 1
-        }
-    }
-    flush()
-    return blocks
-}
-
-/** Parses a GFM pipe row without treating escaped pipes or pipes in code spans as separators. */
-internal fun markdownTableCells(value: String): List<String>? {
-    val trimmed = value.trim()
-    if ('|' !in trimmed) return null
-    val content = trimmed
-        .removePrefix("|")
-        .let { if (it.endsWith('|') && !it.endsWith("\\|")) it.dropLast(1) else it }
-    val cells = mutableListOf<String>()
-    val current = StringBuilder()
-    var escaped = false
-    var inCode = false
-    content.forEach { character ->
-        when {
-            escaped -> {
-                current.append(character)
-                escaped = false
-            }
-            character == '\\' -> escaped = true
-            character == '`' -> {
-                inCode = !inCode
-                current.append(character)
-            }
-            character == '|' && !inCode -> {
-                cells += current.toString().trim()
-                current.clear()
-            }
-            else -> current.append(character)
-        }
-    }
-    if (escaped) current.append('\\')
-    cells += current.toString().trim()
-    return cells.takeIf { it.isNotEmpty() }
-}
-
-private fun markdownTableDelimiter(value: String): List<MessageMarkdownAlignment>? {
-    val cells = markdownTableCells(value) ?: return null
-    return cells.map { cell ->
-        val marker = cell.trim()
-        val dashes = marker.trim(':')
-        if (dashes.length < 3 || dashes.any { it != '-' }) return null
-        when {
-            marker.startsWith(':') && marker.endsWith(':') -> MessageMarkdownAlignment.CENTER
-            marker.endsWith(':') -> MessageMarkdownAlignment.END
-            else -> MessageMarkdownAlignment.START
+@Composable
+private fun TimelineStepContent(
+    step: TimelineStep,
+    subagents: List<Subagent>,
+    model: DieterViewModel,
+    compact: Boolean,
+    onImageLink: (String) -> Unit,
+) {
+    when (step.kind) {
+        StepKind.TEXT -> SelectionContainer { MessageMarkdown(step.text, compact, onImageLink) }
+        StepKind.REASONING -> ReasoningPart(step.text)
+        StepKind.ATTACHMENT -> AttachmentPart(step.part)
+        StepKind.TOOL -> ToolItem(step.messageId, step.part, model, attention = Parts.isApprovalTool(step.part))
+        StepKind.SUBAGENTS -> SubagentBlock(subagents)
+        StepKind.ATTENTION, StepKind.OTHER -> step.text.ifBlank { step.part.error_text }.takeIf(String::isNotBlank)?.let { text ->
+            MessageMarkdown(text, compact, onImageLink)
         }
     }
 }
 
 @Composable
 internal fun MessageMarkdown(value: String, compact: Boolean, onImageLink: ((String) -> Unit)? = null) {
-    val blocks = remember(value) { parseMessageMarkdown(value) }
+    val blocks = remember(value) { Markdown.parse(value) }
+    val workspaceRoot = LocalWorkspaceRoot.current
     Column(verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 7.dp)) {
         blocks.forEach { block ->
-            if (block.table != null) {
-                MessageMarkdownTable(block.table)
-            } else if (block.code) {
-                Surface(color = DieterSurfaceHigh, shape = RoundedCornerShape(9.dp), modifier = Modifier.fillMaxWidth()) {
+            when (block) {
+                is MarkdownBlock.Table -> MessageMarkdownTable(block)
+                is MarkdownBlock.Code -> Surface(color = DieterSurfaceHigh, shape = RoundedCornerShape(9.dp), modifier = Modifier.fillMaxWidth()) {
                     Text(
                         block.text,
                         color = DieterMuted,
@@ -312,24 +199,30 @@ internal fun MessageMarkdown(value: String, compact: Boolean, onImageLink: ((Str
                         modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
                     )
                 }
-            } else {
-                val inline = remember(block.text, onImageLink) { markdownInlineText(block.text, onImageLink) }
-                Text(
-                    inline,
-                    fontSize = if (block.headingLevel > 0) 15.sp else 14.sp,
-                    fontWeight = if (block.headingLevel > 0) FontWeight.SemiBold else FontWeight.Normal,
-                    lineHeight = if (compact) 20.sp else 21.sp,
-                )
+                is MarkdownBlock.Heading -> MarkdownText(block.text, compact, heading = true, workspaceRoot, onImageLink)
+                is MarkdownBlock.Bullet -> MarkdownText("• " + block.text, compact, heading = false, workspaceRoot, onImageLink)
+                is MarkdownBlock.Paragraph -> MarkdownText(block.text, compact, heading = false, workspaceRoot, onImageLink)
             }
         }
     }
 }
 
 @Composable
-private fun MessageMarkdownTable(table: MessageMarkdownTable) {
+private fun MarkdownText(text: String, compact: Boolean, heading: Boolean, workspaceRoot: String?, onImageLink: ((String) -> Unit)?) {
+    val inline = remember(text, workspaceRoot, onImageLink) { markdownInlineText(text, workspaceRoot, onImageLink) }
+    Text(
+        inline,
+        fontSize = if (heading) 15.sp else 14.sp,
+        fontWeight = if (heading) FontWeight.SemiBold else FontWeight.Normal,
+        lineHeight = if (compact) 20.sp else 21.sp,
+    )
+}
+
+@Composable
+private fun MessageMarkdownTable(table: MarkdownBlock.Table) {
     val columnWidths = remember(table) {
-        table.headers.indices.map { column ->
-            val longest = (listOf(table.headers[column]) + table.rows.map { it.getOrElse(column) { "" } })
+        table.header.indices.map { column ->
+            val longest = (listOf(table.header[column]) + table.rows.map { it.getOrElse(column) { "" } })
                 .maxOf { it.length }
             (longest.coerceIn(8, 24) * 7 + 24).dp
         }
@@ -341,7 +234,7 @@ private fun MessageMarkdownTable(table: MessageMarkdownTable) {
             .border(1.dp, DieterOutline, RoundedCornerShape(9.dp)),
     ) {
         Column(Modifier.horizontalScroll(rememberScrollState())) {
-            MarkdownTableRow(table.headers, table.alignments, columnWidths, header = true)
+            MarkdownTableRow(table.header, table.alignments, columnWidths, header = true)
             table.rows.forEach { row ->
                 MarkdownTableRow(row, table.alignments, columnWidths, header = false)
             }
@@ -352,7 +245,7 @@ private fun MessageMarkdownTable(table: MessageMarkdownTable) {
 @Composable
 private fun MarkdownTableRow(
     values: List<String>,
-    alignments: List<MessageMarkdownAlignment>,
+    alignments: List<TableAlignment>,
     widths: List<androidx.compose.ui.unit.Dp>,
     header: Boolean,
 ) {
@@ -365,16 +258,16 @@ private fun MarkdownTableRow(
         verticalAlignment = Alignment.Top,
     ) {
         widths.indices.forEach { column ->
-            val alignment = alignments.getOrElse(column) { MessageMarkdownAlignment.START }
+            val alignment = alignments.getOrElse(column) { TableAlignment.START }
             Text(
                 markdownInlineText(values.getOrElse(column) { "" }),
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
                 fontWeight = if (header) FontWeight.SemiBold else FontWeight.Normal,
                 textAlign = when (alignment) {
-                    MessageMarkdownAlignment.START -> TextAlign.Start
-                    MessageMarkdownAlignment.CENTER -> TextAlign.Center
-                    MessageMarkdownAlignment.END -> TextAlign.End
+                    TableAlignment.START -> TextAlign.Start
+                    TableAlignment.CENTER -> TextAlign.Center
+                    TableAlignment.END -> TextAlign.End
                 },
                 modifier = Modifier.width(widths[column]).padding(horizontal = 10.dp, vertical = 8.dp),
             )
@@ -384,66 +277,24 @@ private fun MarkdownTableRow(
 
 internal val inlineMarkdownPattern = Regex("(\\*\\*([^*]+)\\*\\*|`([^`]+)`|\\[([^]]+)]\\(([^)]+)\\))")
 
-private val conversationImageExtensions = setOf(
-    "apng", "avif", "bmp", "gif", "heic", "heif", "ico", "jpeg", "jpg", "png", "tif", "tiff", "webp",
-)
-
-internal fun conversationImagePath(destination: String): String? {
-    return conversationImagePath(destination, workspaceRoot = null)
-}
-
-internal fun conversationImagePath(destination: String, workspaceRoot: String?): String? {
-    val uri = conversationImageURI(destination) ?: return null
-    val rawPath = uri.rawPath ?: return null
-    if (uri.scheme != null && !uri.scheme.equals("file", ignoreCase = true)) return null
-    if (uri.host != null && uri.host.isNotEmpty() && !uri.host.equals("localhost", ignoreCase = true)) return null
-    val decoded = uri.path ?: return null
-    if (decoded.isBlank() || '\\' in decoded || decoded.any(Char::isISOControl)) return null
-    if (decoded.substringAfterLast('.', "").lowercase() !in conversationImageExtensions) return null
-    if (!rawPath.startsWith('/')) {
-        val components = decoded.split('/').filter { it.isNotEmpty() && it != "." }
-        if (components.isEmpty() || components.any { it == ".." }) return null
-        return components.joinToString("/")
-    }
-    val root = workspaceRoot?.let(::normalizedAbsoluteRemotePath) ?: return null
-    val candidate = normalizedAbsoluteRemotePath(decoded) ?: return null
-    if (candidate.size <= root.size || candidate.take(root.size) != root) return null
-    return candidate.drop(root.size).joinToString("/")
-}
-
-private fun normalizedAbsoluteRemotePath(value: String): List<String>? {
-    if (!value.startsWith('/') || '\\' in value || value.any(Char::isISOControl)) return null
-    val components = mutableListOf<String>()
-    value.split('/').filter(String::isNotEmpty).forEach { component ->
-        when (component) {
-            "." -> Unit
-            ".." -> if (components.isEmpty()) return null else components.removeAt(components.lastIndex)
-            else -> components += component
+/**
+ * Inline styling (bold, code, links) is the platform's; which links open an
+ * image and which bare addresses become web links is the core's.
+ */
+internal fun markdownInlineText(value: String, workspaceRoot: String? = null, onImageLink: ((String) -> Unit)? = null): AnnotatedString = buildAnnotatedString {
+    val linkStyle = SpanStyle(color = DieterShell, textDecoration = TextDecoration.Underline)
+    fun plain(text: String) {
+        var cursor = 0
+        DetectedLinks.find(text).forEach { match ->
+            append(text.substring(cursor, match.range.first))
+            withLink(LinkAnnotation.Url(match.url, TextLinkStyles(style = linkStyle))) { append(text.substring(match.range)) }
+            cursor = match.range.last + 1
         }
+        append(text.substring(cursor))
     }
-    return components.takeIf { it.isNotEmpty() }
-}
-
-internal fun conversationImageDestination(destination: String): String? {
-    val uri = conversationImageURI(destination) ?: return null
-    if (uri.scheme != null && !uri.scheme.equals("file", ignoreCase = true)) return null
-    if (uri.host != null && uri.host.isNotEmpty() && !uri.host.equals("localhost", ignoreCase = true)) return null
-    val path = uri.path ?: return null
-    return uri.toASCIIString().takeIf { path.substringAfterLast('.', "").lowercase() in conversationImageExtensions }
-}
-
-private fun conversationImageURI(destination: String): URI? {
-    val trimmed = destination.trim()
-    val value = if (trimmed.startsWith('<') && trimmed.endsWith('>')) trimmed.drop(1).dropLast(1) else trimmed
-    return runCatching { URI(value) }.getOrElse {
-        if ("://" in value) null else runCatching { URI(null, null, value, null) }.getOrNull()
-    }
-}
-
-internal fun markdownInlineText(value: String, onImageLink: ((String) -> Unit)? = null): AnnotatedString = buildAnnotatedString {
     var cursor = 0
     inlineMarkdownPattern.findAll(value).forEach { match ->
-        append(value.substring(cursor, match.range.first))
+        plain(value.substring(cursor, match.range.first))
         when {
             match.groupValues[2].isNotEmpty() -> withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) {
                 append(match.groupValues[2])
@@ -453,35 +304,34 @@ internal fun markdownInlineText(value: String, onImageLink: ((String) -> Unit)? 
             ) { append(match.groupValues[3]) }
             else -> {
                 val label = match.groupValues[4]
-                val destination = conversationImageDestination(match.groupValues[5])
-                val style = SpanStyle(color = DieterShell, textDecoration = TextDecoration.Underline)
-                if (destination != null && onImageLink != null) {
+                val image = WorkspaceImages.path(match.groupValues[5], workspaceRoot)
+                if (image != null && onImageLink != null) {
                     withLink(
                         LinkAnnotation.Clickable(
-                            tag = destination,
-                            styles = TextLinkStyles(style = style),
-                            linkInteractionListener = { onImageLink(destination) },
+                            tag = image,
+                            styles = TextLinkStyles(style = linkStyle),
+                            linkInteractionListener = { onImageLink(image) },
                         ),
                     ) { append(label) }
                 } else {
-                    withStyle(style) { append(label) }
+                    withStyle(linkStyle) { append(label) }
                 }
             }
         }
         cursor = match.range.last + 1
     }
-    append(value.substring(cursor))
+    plain(value.substring(cursor))
 }
 
 @Composable
 private fun ConversationImageLightbox(path: String, model: DieterViewModel, onDismiss: () -> Unit) {
-    var document by remember(path) { mutableStateOf<com.dbpprt.dieter.v1.FileDocument?>(null) }
+    var document by remember(path) { mutableStateOf<com.dbpprt.dieter.api.v1.FileDocument?>(null) }
     var loaded by remember(path) { mutableStateOf(false) }
     var bitmap by remember(path) { mutableStateOf<ImageBitmap?>(null) }
     LaunchedEffect(path) {
         document = model.readConversationImage(path)
         bitmap = document?.let { value ->
-            val bytes = if (value.binary) value.data.toByteArray() else value.content.toByteArray()
+            val bytes = if (value.binary) value.data_.toByteArray() else value.content.toByteArray()
             withContext(Dispatchers.Default) { decodeConversationImage(bytes) }?.asImageBitmap()
         }
         loaded = true
@@ -550,10 +400,9 @@ private fun decodeConversationImage(bytes: ByteArray, maxDimension: Int = 2400):
 
 @Composable
 internal fun TaskPlanBlock(plan: TaskPlan) {
-    val tasks = plan.phasesList.flatMap { it.tasksList }
-    val active = plan.state == "active" && tasks.any { it.status == "in_progress" }
+    val progress = TaskPlans.progress(plan)
+    val active = progress.active
     var expanded by remember(plan.id, plan.revision) { mutableStateOf(active) }
-    val completed = tasks.count { it.status == "completed" || it.status == "abandoned" }
     Surface(
         shape = RoundedCornerShape(9.dp),
         color = DieterSurfaceHigh,
@@ -571,14 +420,14 @@ internal fun TaskPlanBlock(plan: TaskPlan) {
                 else Icon(Icons.Outlined.CheckCircle, null, tint = DieterEyes, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(7.dp))
                 Text("Task progress", Modifier.weight(1f), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                Text("$completed/${tasks.size}", color = DieterMuted, fontSize = 10.sp)
+                Text("${progress.completed}/${progress.total}", color = DieterMuted, fontSize = 10.sp)
             }
             if (expanded) {
                 Column(Modifier.padding(start = 31.dp, end = 9.dp, bottom = 9.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     if (plan.explanation.isNotBlank()) Text(plan.explanation, color = DieterMuted, fontSize = 10.sp, lineHeight = 14.sp)
-                    plan.phasesList.forEach { phase ->
+                    plan.phases.forEach { phase ->
                         if (phase.name.isNotBlank()) Text(phase.name.uppercase(), color = DieterMuted, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
-                        phase.tasksList.forEach { task ->
+                        phase.tasks.forEach { task ->
                             Row(verticalAlignment = Alignment.Top) {
                                 when (task.status) {
                                     "in_progress" -> CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp, color = DieterShell)
@@ -589,8 +438,8 @@ internal fun TaskPlanBlock(plan: TaskPlan) {
                                 Spacer(Modifier.width(7.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(
-                                        if (task.status == "in_progress" && task.activeForm.isNotBlank()) task.activeForm else task.content,
-                                        color = if (task.status == "completed" || task.status == "abandoned") DieterMuted else MaterialTheme.colorScheme.onSurface,
+                                        TaskPlans.text(task),
+                                        color = if (TaskPlans.finished(task)) DieterMuted else MaterialTheme.colorScheme.onSurface,
                                         fontSize = 10.sp,
                                         lineHeight = 14.sp,
                                     )
@@ -607,7 +456,7 @@ internal fun TaskPlanBlock(plan: TaskPlan) {
 
 @Composable
 internal fun SubagentBlock(subagents: List<Subagent>) {
-    val active = subagents.any { it.status == "running" || it.status == "pending" }
+    val active = SubagentPresentation.active(subagents) > 0
     var expanded by remember(subagents.map { "${it.id}:${it.status}" }) { mutableStateOf(active) }
     Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
         Row(
@@ -627,6 +476,7 @@ internal fun SubagentBlock(subagents: List<Subagent>) {
         if (expanded) {
             Column(Modifier.padding(start = 20.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 subagents.forEach { subagent ->
+                    val presented = SubagentPresentation(subagent, kotlin.time.Clock.System.now())
                     Surface(shape = RoundedCornerShape(8.dp), color = DieterSurfaceHigh, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(horizontal = 9.dp, vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -634,7 +484,7 @@ internal fun SubagentBlock(subagents: List<Subagent>) {
                                 else Icon(if (subagent.status == "completed") Icons.Outlined.CheckCircle else Icons.Outlined.Cancel, null, tint = if (subagent.status == "completed") DieterEyes else DieterMuted, modifier = Modifier.size(12.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text(
-                                    cleanSubagentTitle(subagent.task.ifBlank { subagent.name.ifBlank { subagent.agentType } }),
+                                    presented.title,
                                     Modifier.weight(1f),
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold,
@@ -643,12 +493,8 @@ internal fun SubagentBlock(subagents: List<Subagent>) {
                                 )
                                 Text(subagent.status, color = DieterMuted, fontSize = 8.sp)
                             }
-                            val activity = subagent.activity.ifBlank { subagent.description }
-                            if (activity.isNotBlank()) Text(activity, color = DieterMuted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            val metrics = listOfNotNull(
-                                subagent.model.takeIf(String::isNotBlank),
-                                subagent.toolCount.takeIf { it > 0 }?.let { "$it tools" },
-                            ) + subagentUsageMetrics(subagent.tokens, subagent.contextTokens, subagent.contextWindow)
+                            presented.statusLine?.let { Text(it, color = DieterMuted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            val metrics = presented.summaryMetrics
                             if (metrics.isNotEmpty()) Text(metrics.joinToString(" · "), color = DieterMuted, fontSize = 8.sp)
                             if (subagent.error.isNotBlank()) Text(subagent.error, color = MaterialTheme.colorScheme.error, fontSize = 9.sp)
                         }
@@ -776,7 +622,7 @@ internal fun AgentWorkingIndicator(label: String, startedAtMillis: Long?) {
             )
             startedAtMillis?.let { startedAt ->
                 Text(
-                    elapsedActivityLabel(startedAt, nowMillis),
+                    Durations.clock((nowMillis - startedAt).milliseconds),
                     color = DieterMuted,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
@@ -795,7 +641,7 @@ internal fun rememberAttachmentBitmap(
 ): ImageBitmap? = produceState<ImageBitmap?>(
     initialValue = null,
     key1 = part.url,
-    key2 = part.data,
+    key2 = part.data_,
     key3 = maxDimension,
 ) {
     value = withContext(Dispatchers.Default) {
@@ -851,62 +697,17 @@ internal fun AttachmentPart(part: MessagePart) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(attachmentDetails(part), color = DieterMuted, fontSize = 10.sp, maxLines = 1)
+                Text(Attachments.details(part), color = DieterMuted, fontSize = 10.sp, maxLines = 1)
             }
         }
     }
 }
 
-internal data class ToolCategory(val key: String, val singular: String, val plural: String)
-
-internal fun toolCategory(part: MessagePart): ToolCategory {
-    val name = part.toolName.ifBlank { part.type }.lowercase()
-    return when {
-        Regex("bash|shell|terminal|exec|command").containsMatchIn(name) -> ToolCategory("command", "command", "commands")
-        Regex("apply.?patch|edit|replace").containsMatchIn(name) -> ToolCategory("edit", "edit", "edits")
-        Regex("write|create.?file").containsMatchIn(name) -> ToolCategory("write", "write", "writes")
-        Regex("read|view.?file").containsMatchIn(name) -> ToolCategory("read", "read", "reads")
-        Regex("grep|glob|search|find").containsMatchIn(name) -> ToolCategory("search", "search", "searches")
-        Regex("browser|navigate|click|screenshot").containsMatchIn(name) -> ToolCategory("browser", "browser action", "browser actions")
-        else -> ToolCategory("tool", "tool call", "tool calls")
-    }
-}
-
-internal fun toolGroupLabel(parts: List<MessagePart>): String {
-    val counts = linkedMapOf<String, Pair<ToolCategory, Int>>()
-    parts.forEach { part ->
-        val category = toolCategory(part)
-        counts[category.key] = category to ((counts[category.key]?.second ?: 0) + 1)
-    }
-    return counts.values.joinToString(", ") { (category, count) ->
-        "$count ${if (count == 1) category.singular else category.plural}"
-    }
-}
-
-internal fun displayToolName(name: String): String = name
-    .removePrefix("tool-")
-    .replace('_', ' ')
-    .replace('-', ' ')
-    .trim()
-    .ifBlank { "Tool" }
-
-internal fun toolFailed(part: MessagePart): Boolean =
-    part.state.equals("output-error", ignoreCase = true) ||
-        part.state.equals("error", ignoreCase = true) ||
-        part.state.equals("failed", ignoreCase = true) ||
-        part.errorText.isNotBlank()
-
-internal fun toolPreview(part: MessagePart): String {
-    val value = part.inputPreview.ifBlank {
-        part.inputJson.toString(StandardCharsets.UTF_8).trim().replace(Regex("\\s+"), " ")
-    }.ifBlank { if (toolFailed(part)) "" else part.outputPreview }
-    return if (value.length > 140) value.take(137) + "…" else value
-}
-
+/** A run of routine steps (tool calls, reasoning) folded behind its summary, e.g. "Reasoning · 2 commands". */
 @Composable
-internal fun ToolGroup(messageId: String, groupKey: String, parts: List<MessagePart>, model: DieterViewModel) {
-    if (parts.isEmpty()) return
-    var expanded by remember(messageId, groupKey) { mutableStateOf(false) }
+internal fun ActivityGroup(id: String, label: String, steps: List<TimelineStep>, model: DieterViewModel) {
+    if (steps.isEmpty()) return
+    var expanded by remember(id) { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
         Row(
             Modifier.clip(RoundedCornerShape(6.dp)).clickable { expanded = !expanded }
@@ -920,7 +721,7 @@ internal fun ToolGroup(messageId: String, groupKey: String, parts: List<MessageP
                 modifier = Modifier.size(15.dp).rotate(if (expanded) 90f else 0f),
             )
             Spacer(Modifier.width(5.dp))
-            Text(toolGroupLabel(parts), color = DieterMuted, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+            Text(label, color = DieterMuted, fontSize = 11.sp, fontWeight = FontWeight.Medium)
         }
         if (expanded) {
             Column(
@@ -936,7 +737,11 @@ internal fun ToolGroup(messageId: String, groupKey: String, parts: List<MessageP
                     .padding(start = 11.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                parts.forEach { part -> ToolItem(messageId, part, model) }
+                steps.forEach { step ->
+                    key(step.id) {
+                        if (step.kind == StepKind.REASONING) ReasoningPart(step.text) else ToolItem(step.messageId, step.part, model)
+                    }
+                }
             }
         }
     }
@@ -944,19 +749,19 @@ internal fun ToolGroup(messageId: String, groupKey: String, parts: List<MessageP
 
 @Composable
 internal fun ToolItem(messageId: String, part: MessagePart, model: DieterViewModel, attention: Boolean = false) {
-    var expanded by remember(part.toolCallId, part.payloadRevision) { mutableStateOf(false) }
-    var payload by remember(part.toolCallId, part.payloadRevision) { mutableStateOf<ToolOutput?>(null) }
-    var loading by remember(part.toolCallId, part.payloadRevision) { mutableStateOf(false) }
-    var error by remember(part.toolCallId, part.payloadRevision) { mutableStateOf<String?>(null) }
+    var expanded by remember(part.tool_call_id, part.payload_revision) { mutableStateOf(false) }
+    var payload by remember(part.tool_call_id, part.payload_revision) { mutableStateOf<ToolOutput?>(null) }
+    var loading by remember(part.tool_call_id, part.payload_revision) { mutableStateOf(false) }
+    var error by remember(part.tool_call_id, part.payload_revision) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val input = (payload?.inputJson ?: part.inputJson).toString(StandardCharsets.UTF_8).trim()
-    val output = (payload?.outputJson ?: part.outputJson).toString(StandardCharsets.UTF_8).trim()
-    val failed = toolFailed(part)
-    val attentionLabel = if (part.state.contains("denied", ignoreCase = true) ||
-        part.state.contains("rejected", ignoreCase = true)) "Tool denied" else "Approval requested"
+    val input = (payload?.input_json ?: part.input_json).utf8().trim()
+    val output = (payload?.output_json ?: part.output_json).utf8().trim()
+    val status = Tools.status(part)
+    val failed = status == ToolStatus.FAILED
+    val attentionLabel = if (status == ToolStatus.DENIED) "Tool denied" else "Approval requested"
     fun toggle() {
         expanded = !expanded
-        if (expanded && payload == null && !loading && (part.hasInput || part.hasOutput)) {
+        if (expanded && payload == null && !loading && (part.has_input || part.has_output)) {
             loading = true
             scope.launch {
                 runCatching { model.loadToolOutput(messageId, part) }
@@ -997,7 +802,7 @@ internal fun ToolItem(messageId: String, part: MessagePart, model: DieterViewMod
             )
             Spacer(Modifier.width(6.dp))
             Text(
-                displayToolName(part.toolName.ifBlank { part.type }),
+                Tools.displayName(part),
                 color = DieterMuted,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -1006,7 +811,7 @@ internal fun ToolItem(messageId: String, part: MessagePart, model: DieterViewMod
                 Spacer(Modifier.width(7.dp))
                 Text(attentionLabel, color = MaterialTheme.colorScheme.primary, fontSize = 10.sp)
             }
-            val preview = toolPreview(part)
+            val preview = Tools.preview(part)
             if (preview.isNotBlank()) {
                 Spacer(Modifier.width(7.dp))
                 Text(
@@ -1027,7 +832,7 @@ internal fun ToolItem(messageId: String, part: MessagePart, model: DieterViewMod
             )
         }
         if (expanded) {
-            val payloadError = payload?.errorText.orEmpty().ifBlank { part.errorText }
+            val payloadError = payload?.error_text.orEmpty().ifBlank { part.error_text }
             if (loading) {
                 Row(
                     Modifier.padding(start = 25.dp, top = 5.dp, bottom = 7.dp),

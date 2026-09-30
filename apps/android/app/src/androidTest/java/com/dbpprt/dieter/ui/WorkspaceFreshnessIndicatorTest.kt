@@ -20,7 +20,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
-import com.dbpprt.dieter.connection.ConnectionPhase
+import com.dbpprt.dieter.core.connection.Availability
+import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import java.io.File
 import org.junit.Assert.assertTrue
@@ -33,11 +35,7 @@ class WorkspaceFreshnessIndicatorTest {
 
     @Test
     fun routineSyncKeepsCachedWorkspaceUncovered() {
-        val treatment = workspaceSurfaceTreatment(
-            showsSynchronizedWorkspace = true,
-            hasCachedWorkspace = true,
-            phase = ConnectionPhase.SYNCING,
-        )
+        val treatment = Availability.treatment(Destination.BOARD, hasCache = true, ConnectionPhase.SYNCING)
         composeRule.setContent {
             DieterTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {

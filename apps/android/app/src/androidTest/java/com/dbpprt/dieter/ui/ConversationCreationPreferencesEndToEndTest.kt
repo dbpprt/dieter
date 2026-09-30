@@ -21,16 +21,19 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performTextInput
 import androidx.lifecycle.ViewModelProvider
-import com.dbpprt.dieter.v1.MessagePart
-import com.google.protobuf.ByteString
+import com.dbpprt.dieter.api.v1.MessagePart
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.data.DieterEndpoint
-import com.dbpprt.dieter.settings.ConversationCreationPreferences
+import com.dbpprt.dieter.api.v1.HarnessSelection
+import com.dbpprt.dieter.core.composition.TaskDrafts
+import com.dbpprt.dieter.core.composition.WorkspaceMode
+import com.dbpprt.dieter.core.selection.AgentControls
+import com.dbpprt.dieter.core.selection.Selections
+import com.dbpprt.dieter.e2e.IsolatedCore
+import okio.ByteString.Companion.encodeUtf8
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.first
@@ -59,63 +62,35 @@ class ConversationCreationPreferencesEndToEndTest {
         val arguments = InstrumentationRegistry.getArguments()
         val token = arguments.getString("isolatedGatewayToken").orEmpty()
         assumeTrue("Pass isolatedGatewayToken for the isolated gateway", token.isNotBlank())
-        val endpoint = DieterEndpoint(
-            id = "android_creation_preferences_e2e",
-            label = "Isolated creation preferences gateway",
-            host = arguments.getString("isolatedGatewayHost")?.takeIf(String::isNotBlank) ?: "10.0.2.2",
-            port = arguments.getString("isolatedGatewayPort")?.toIntOrNull() ?: 14243,
-        )
         val application = composeRule.activity.application as DieterApplication
         val container = application.container
-        val manager = container.connectionManager
-        container.repository.setAccessToken(endpoint, token)
-        manager.updateEndpoints(listOf(endpoint), selectedGatewayId = endpoint.id)
-        manager.connect()
-        manager.onAppForegrounded()
-
-        val connected = runBlocking {
-            withTimeout(30_000) {
-                manager.state.first { state ->
-                    state.phase == ConnectionPhase.CONNECTED && state.projects.isNotEmpty() &&
-                        state.boards.isNotEmpty() && state.harnesses.any { it.modelsCount > 0 } &&
-                        state.harnessesEndpointId == state.endpoint?.id
-                }
-            }
-        }
-        assertNotNull("Connection failed: ${manager.state.value.error}", connected)
-        val board = connected.boards.first()
-        val project = connected.projects.first { it.id == board.projectId }
-        val targetHarness = connected.harnesses.first { harness -> harness.modelsList.any { model ->
-            providerOptionsForModel(harness, model.id).any { it.type == "boolean" }
+        val core = container.core
+        val connected = IsolatedCore.connect(container)
+        val board = connected.boards.values.flatten().first()
+        val project = connected.projects.first { it.id == board.project_id }
+        val checkout = requireNotNull(project.checkouts.firstOrNull())
+        val harnesses = IsolatedCore.harnesses(container, checkout.daemon_id)
+        val targetHarness = harnesses.first { harness -> harness.models.any { model ->
+            Selections.options(harness, model.id).any { it.type == "boolean" }
         } }
-        val targetModel = targetHarness.modelsList.last { model ->
-            providerOptionsForModel(targetHarness, model.id).any { it.type == "boolean" }
+        val targetModel = targetHarness.models.last { model ->
+            Selections.options(targetHarness, model.id).any { it.type == "boolean" }
         }
-        val targetOption = providerOptionsForModel(targetHarness, targetModel.id).first { it.type == "boolean" }
-        val optionValue = (!targetOption.defaultValue.equals("true", ignoreCase = true)).toString()
-        val targetEffort = targetHarness.effortOptionsFor(targetModel.id).lastOrNull()
-        val preferences = container.appPreferences
-        val original = preferences.conversationCreation.value
-        val attachment = MessagePart.newBuilder().setType("file").setFilename("draft.txt")
-            .setMediaType("text/plain").setData(ByteString.copyFromUtf8("Draft attachment")).build()
+        val targetOption = Selections.options(targetHarness, targetModel.id).first { it.type == "boolean" }
+        val optionValue = (!targetOption.default_value.equals("true", ignoreCase = true)).toString()
+        val targetEffort = AgentControls(HarnessSelection(targetHarness.id, targetModel.id), listOf(targetHarness)).efforts.lastOrNull()
+        val original = runBlocking { core.onCore { core.creation.state.value } }
+        val attachment = MessagePart(type = "file", filename = "draft.txt", media_type = "text/plain", data_ = "Draft attachment".encodeUtf8())
         val fixtureTitle = "Android creation defaults ${UUID.randomUUID().toString().take(8)}"
+        fun model() = ViewModelProvider(composeRule.activity)[DieterViewModel::class.java]
 
         try {
             runBlocking {
-                manager.ensureCheckoutRoute(project.id, requireNotNull(project.checkoutsList.firstOrNull()).id)
+                core.onCore {
+                    core.creation.remember(HarnessSelection(targetHarness.id, targetModel.id, targetEffort?.id.orEmpty()), WorkspaceMode.WORKTREE)
+                }
             }
-            preferences.setConversationCreationPreferences(
-                ConversationCreationPreferences(
-                    provider = targetHarness.id,
-                    model = targetModel.id,
-                    effort = targetEffort?.id.orEmpty(),
-                    workspaceMode = "worktree",
-                ),
-            )
-            val label = runBlocking {
-                container.repository.createBoardLabel(board.id, "Draft regression", "#5588aa").labelsList.last()
-            }
-            manager.onAppForegrounded(project.id)
+            val label = runBlocking { core.admin.createLabel(board.id, "Draft regression", "#5588aa").labels.last() }
             composeRule.waitForIdle()
 
             composeRule.onNodeWithTag("nav-board").performClick()
@@ -155,8 +130,7 @@ class ConversationCreationPreferencesEndToEndTest {
             // Supply the same MessagePart produced by the Android file picker;
             // the actual editor, recreation and daemon submission remain real.
             composeRule.runOnIdle {
-                ViewModelProvider(composeRule.activity)[DieterViewModel::class.java]
-                    .cardCreationDraft().attachments += attachment
+                model().activeCapture!!.edit { TaskDrafts.admit(it, attachment) }
             }
             // Both toolbar Back and system Back dispose the full editor. The
             // shared board draft must still own the text and selected settings.
@@ -189,35 +163,27 @@ class ConversationCreationPreferencesEndToEndTest {
             composeRule.waitUntil(15_000) {
                 composeRule.onAllNodesWithTag("new-card").fetchSemanticsNodes().isNotEmpty()
             }
-            val created = runBlocking {
-                withTimeout(30_000) {
-                    manager.state.first { value -> value.cards.any {
-                        it.title == fixtureTitle && it.ownerDaemonId.isNotBlank()
-                    } }.cards.single { it.title == fixtureTitle && it.ownerDaemonId.isNotBlank() }
-                }
-            }
-            assertEquals("Edited task\nKeep every line", created.initialPrompt)
+            val created = IsolatedCore.awaitCard(container) { it.title == fixtureTitle && it.owner_daemon_id.isNotBlank() }
+            assertEquals("Edited task\nKeep every line", created.initial_prompt)
             assertEquals(targetHarness.id, created.provider)
             assertEquals(targetModel.id, created.model)
             assertEquals(targetEffort?.id.orEmpty(), created.effort)
-            assertEquals("project", created.workspaceMode)
-            assertEquals(optionValue, created.providerOptionsMap[targetOption.id])
+            assertEquals("project", created.workspace_mode)
+            assertEquals(optionValue, created.provider_options[targetOption.id])
             assertEquals("todo", created.lane)
-            assertEquals(project.checkoutsList.first().id, created.checkoutId)
-            assertEquals(listOf(label.id), created.labelIdsList)
-            val snapshot = runBlocking { container.repository.conversation(created.id) }
-            assertEquals(listOf(attachment), snapshot.conversation.draftAttachmentsList)
+            assertEquals(project.checkouts.first().id, created.checkout_id)
+            assertEquals(listOf(label.id), created.label_ids)
+            val snapshot = IsolatedCore.conversation(container, created.id, created.owner_daemon_id)
+            assertEquals(listOf(attachment), snapshot.conversation?.draft_attachments)
             composeRule.onNodeWithTag("new-card").performClick()
             assertEquals("", composeRule.onNodeWithTag("quick-task-story").fetchSemanticsNode()
                 .config[androidx.compose.ui.semantics.SemanticsProperties.EditableText].text)
             composeRule.onNodeWithContentDescription("Close quick task").performClick()
-            val expected = ConversationCreationPreferences(
-                provider = targetHarness.id,
-                model = targetModel.id,
-                effort = targetEffort?.id.orEmpty(),
-                workspaceMode = "project",
-            )
-            assertEquals(expected, preferences.conversationCreation.value)
+            val remembered = runBlocking { core.onCore { core.creation.state.value } }
+            assertEquals(targetHarness.id, remembered.provider)
+            assertEquals(targetModel.id, remembered.model)
+            assertEquals(targetEffort?.id.orEmpty(), remembered.effort)
+            assertEquals("project", remembered.workspace_mode)
 
             // A user may return from More options and use Add task instead
             // of Save. That path must submit the same expanded draft fields.
@@ -229,60 +195,41 @@ class ConversationCreationPreferencesEndToEndTest {
             cardNode("agent", hasTestTag("provider-option-${targetOption.id}")).performClick()
             cardNode("labels", hasText(label.name)).performClick()
             composeRule.runOnIdle {
-                ViewModelProvider(composeRule.activity)[DieterViewModel::class.java]
-                    .cardCreationDraft().attachments += attachment
+                model().activeCapture!!.edit { TaskDrafts.admit(it, attachment) }
             }
             composeRule.onNodeWithContentDescription("Back").performClick()
             composeRule.onNodeWithTag("new-card").performClick()
             composeRule.onNodeWithTag("quick-task-create").performClick()
-            val quickCreated = runBlocking {
-                withTimeout(30_000) {
-                    manager.state.first { value -> value.cards.any {
-                        it.title == quickTitle && it.ownerDaemonId.isNotBlank()
-                    } }.cards.single { it.title == quickTitle && it.ownerDaemonId.isNotBlank() }
-                }
-            }
-            assertEquals("Second task body", quickCreated.initialPrompt)
-            assertEquals(listOf(label.id), quickCreated.labelIdsList)
+            val quickCreated = IsolatedCore.awaitCard(container) { it.title == quickTitle && it.owner_daemon_id.isNotBlank() }
+            assertEquals("Second task body", quickCreated.initial_prompt)
+            assertEquals(listOf(label.id), quickCreated.label_ids)
             assertEquals(targetHarness.id, quickCreated.provider)
             assertEquals(targetModel.id, quickCreated.model)
             assertEquals(targetEffort?.id.orEmpty(), quickCreated.effort)
-            assertEquals("project", quickCreated.workspaceMode)
-            assertEquals(optionValue, quickCreated.providerOptionsMap[targetOption.id])
+            assertEquals("project", quickCreated.workspace_mode)
+            assertEquals(optionValue, quickCreated.provider_options[targetOption.id])
             assertEquals("todo", quickCreated.lane)
-            assertEquals(listOf(attachment), runBlocking {
-                container.repository.conversation(quickCreated.id).conversation.draftAttachmentsList
-            })
+            assertEquals(listOf(attachment), IsolatedCore.conversation(container, quickCreated.id, quickCreated.owner_daemon_id).conversation?.draft_attachments)
 
             // Reproduce opening a project chat while the app is currently
             // routed to a different machine. The creation screen must route
             // back to this project's checkout before exposing its catalog.
             val expectedAlternateDaemon = arguments.getString("isolatedSecondDaemon").orEmpty()
-            val otherMachine = if (expectedAlternateDaemon.isBlank()) {
-                connected.endpointConnections.firstOrNull { candidate ->
-                    candidate.online && candidate.daemonId != null &&
-                        candidate.daemonId != project.checkoutsList.firstOrNull()?.daemonId
-                }
-            } else {
-                runBlocking {
-                    withTimeout(20_000) {
-                        manager.state.first { state ->
-                            state.endpointConnections.any { candidate ->
-                                candidate.online && candidate.daemonId == expectedAlternateDaemon
-                            }
-                        }.endpointConnections.first { it.online && it.daemonId == expectedAlternateDaemon }
+            val otherDaemon = runBlocking {
+                withTimeout(20_000) {
+                    core.connection.machines.first { directory ->
+                        expectedAlternateDaemon.isBlank() || directory.all.any { it.id == expectedAlternateDaemon && it.online(directory.evaluatedAt) }
                     }
+                }.let { directory ->
+                    directory.all.firstOrNull { candidate ->
+                        candidate.online(directory.evaluatedAt) && candidate.id != checkout.daemon_id &&
+                            (expectedAlternateDaemon.isBlank() || candidate.id == expectedAlternateDaemon)
+                    }?.id
                 }
             }
-            otherMachine?.let {
-                runBlocking { manager.ensureMachineRoute(otherMachine.id) }
-                runBlocking {
-                    withTimeout(20_000) {
-                        manager.state.first { state ->
-                            state.harnessesEndpointId == otherMachine.id && state.harnesses.any { it.modelsCount > 0 }
-                        }
-                    }
-                }
+            otherDaemon?.let {
+                runBlocking { core.attachMachine(it) }
+                IsolatedCore.harnesses(container, it)
             }
 
             composeRule.onNodeWithTag("nav-chats").performClick()
@@ -291,10 +238,7 @@ class ConversationCreationPreferencesEndToEndTest {
             }
             composeRule.onNodeWithTag("new-chat").performClick()
             composeRule.waitUntil(20_000) {
-                manager.state.value.harnessesEndpointId ==
-                    manager.state.value.endpointConnections.firstOrNull {
-                        it.daemonId == project.checkoutsList.firstOrNull()?.daemonId
-                    }?.id &&
+                model().state.value.harnessesEndpointId == checkout.daemon_id &&
                     composeRule.onAllNodesWithTag("creation-model").fetchSemanticsNodes().isNotEmpty() &&
                     composeRule.onAllNodesWithTag("conversation-prompt").fetchSemanticsNodes().isNotEmpty()
             }
@@ -305,7 +249,14 @@ class ConversationCreationPreferencesEndToEndTest {
             composeRule.onNodeWithTag("workspace-mode-project").assertIsSelected()
             capture("creation-preferences-chat-restored.png")
         } finally {
-            preferences.setConversationCreationPreferences(original)
+            runBlocking {
+                core.onCore {
+                    core.creation.remember(
+                        HarnessSelection(original.provider, original.model, original.effort, original.provider_options),
+                        WorkspaceMode.parse(original.workspace_mode),
+                    )
+                }
+            }
         }
     }
 

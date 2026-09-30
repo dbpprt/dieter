@@ -22,10 +22,13 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.data.DIETER_ENDPOINTS
-import com.dbpprt.dieter.data.DieterEndpoint
-import com.dbpprt.dieter.v1.CreateConversationRequest
+import androidx.lifecycle.ViewModelProvider
+import com.dbpprt.dieter.api.v1.ConversationRef
+import com.dbpprt.dieter.api.v1.CreateConversationRequest
+import com.dbpprt.dieter.api.v1.ProjectRef
+import com.dbpprt.dieter.api.v1.UpdateProjectWorkspaceSettingsRequest
+import com.dbpprt.dieter.core.store.WorkspaceView
+import com.dbpprt.dieter.e2e.IsolatedCore
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.first
@@ -54,33 +57,18 @@ class ProjectWorkspaceAdministrationEndToEndTest {
         val arguments = InstrumentationRegistry.getArguments()
         val token = arguments.getString("isolatedGatewayToken").orEmpty()
         assumeTrue("Pass isolatedGatewayToken for the isolated gateway", token.isNotBlank())
-        val origin = DieterEndpoint(
-            id = "android_project_admin_e2e_${UUID.randomUUID()}",
-            label = "Isolated project gateway",
-            host = arguments.getString("isolatedGatewayHost")?.takeIf(String::isNotBlank) ?: "10.0.2.2",
-            port = arguments.getString("isolatedGatewayPort")?.toIntOrNull() ?: 14243,
-            secure = false,
-        )
         val application = composeRule.activity.application as DieterApplication
         val container = application.container
-        val manager = container.connectionManager
-        val repository = container.repository
-        repository.setAccessToken(origin, token)
-        manager.updateEndpoints(listOf(origin), selectedGatewayId = origin.id)
-        manager.connect()
-        manager.onAppForegrounded()
-
-        val initial = runBlocking {
-            withTimeout(30_000) {
-                manager.state.first { state ->
-                    state.phase == ConnectionPhase.CONNECTED && state.projects.isNotEmpty() && state.boards.isNotEmpty()
-                }
-            }
+        val core = container.core
+        val initial = IsolatedCore.connect(container)
+        val initialBoard = initial.boards.values.flatten().first()
+        val initialProject = initial.projects.first { it.id == initialBoard.project_id }
+        val checkout = initialProject.checkouts.single { !it.detached }
+        val compatibleHost = requireNotNull(initial.projectReplicas[initialProject.id])
+        fun model() = ViewModelProvider(composeRule.activity)[DieterViewModel::class.java]
+        fun awaitWorkspace(predicate: (WorkspaceView) -> Boolean): WorkspaceView = runBlocking {
+            withTimeout(45_000) { core.workspace.state.first(predicate) }
         }
-        val initialBoard = initial.boards.first()
-        val initialProject = initial.projects.first { it.id == initialBoard.projectId }
-        val compatibleHostEndpointId = requireNotNull(initial.projectReplicas[initialProject.id]).endpointId
-        manager.onAppForegrounded(initialProject.id)
         val nonce = UUID.randomUUID().toString().take(8)
         val projectName = "Android host project $nonce"
         var projectId: String? = null
@@ -110,46 +98,24 @@ class ProjectWorkspaceAdministrationEndToEndTest {
             composeRule.onNodeWithTag("validation-executable-0").performScrollTo().performTextInput("git")
             composeRule.onNodeWithTag("new-project-submit").performScrollTo().performClick()
 
-            val createdState = runBlocking {
-                withTimeout(45_000) {
-                    manager.state.first { state ->
-                        state.phase == ConnectionPhase.CONNECTED && state.projects.any { it.name == projectName }
-                    }
-                }
-            }
+            val createdState = awaitWorkspace { state -> state.projects.any { it.name == projectName } }
             val project = createdState.projects.first { it.name == projectName }
             projectId = project.id
-            assertEquals("main", project.baseBranch)
-            assertEquals("git", project.validationCommandsList.single().executable)
-            assertEquals(compatibleHostEndpointId, createdState.projectReplicas[project.id]?.endpointId)
+            assertEquals("main", project.base_branch)
+            assertEquals("git", project.validation_commands.single().executable)
+            assertEquals(compatibleHost, createdState.projectReplicas[project.id])
             capture("project-created-on-selected-host-e2e.png")
 
-            manager.selectProject(initialProject.id)
-            val fixtureState = runBlocking {
-                withTimeout(30_000) {
-                    manager.state.first { state ->
-                        state.phase == ConnectionPhase.CONNECTED && state.selectedState?.project?.id == initialProject.id
-                    }
-                }
-            }
-            val board = fixtureState.boards.first { it.projectId == initialProject.id }
-            val card = runBlocking {
-                repository.createConversation(
-                    CreateConversationRequest.newBuilder()
-                        .setProjectId(initialProject.id)
-                        .setBoardId(board.id)
-                        .setLane("todo")
-                        .setTitle("Managed workspace $nonce")
-                        .setPrompt("Deferred workspace administration fixture")
-                        .setProvider("mock")
-                        .setModel("mock")
-                        .setDeferStart(true)
-                        .setWorkspaceMode("worktree")
-                        .setWorkspaceBaseBranch("main")
-                        .build(),
-                    chat = false,
-                ).also { repository.workspace(it.id) }
-            }
+            composeRule.runOnIdle { model().selectProject(initialProject.id) }
+            composeRule.waitUntil(30_000) { model().state.value.selectedProjectId == initialProject.id }
+            val board = initial.boards.getValue(initialProject.id).first()
+            val card = IsolatedCore.createConversation(
+                container,
+                CreateConversationRequest(project_id = initialProject.id, board_id = board.id, lane = "todo", title = "Managed workspace $nonce", prompt = "Deferred workspace administration fixture", provider = "mock", model = "mock", defer_start = true, workspace_mode = "worktree", workspace_base_branch = "main"),
+                chat = false,
+            )
+            // Provision the conversation's worktree before administering it.
+            runBlocking { core.onMachine(card.owner_daemon_id) { it.GetWorkspace().execute(ConversationRef(card_id = card.id)) } }
             cardId = card.id
 
             composeRule.waitUntil(20_000) {
@@ -168,7 +134,9 @@ class ProjectWorkspaceAdministrationEndToEndTest {
             composeRule.waitUntil(30_000) {
                 composeRule.onAllNodesWithTag("project-workspace-${card.id}").fetchSemanticsNodes().isEmpty()
             }
-            assertFalse(runBlocking { repository.projectWorkspaces(initialProject.id).workspacesList.any { it.cardId == card.id } })
+            assertFalse(runBlocking {
+                core.onMachine(checkout.daemon_id) { it.ListProjectWorkspaces().execute(ProjectRef(project_id = initialProject.id, checkout_id = checkout.id)) }
+            }.workspaces.any { it.card_id == card.id })
 
             androidx.test.espresso.Espresso.pressBack()
             composeRule.onNodeWithTag("add-validation-command").performScrollTo().performClick()
@@ -178,39 +146,27 @@ class ProjectWorkspaceAdministrationEndToEndTest {
             composeRule.onNodeWithTag("project-base-branch").performTextInput("trunk")
             androidx.test.espresso.Espresso.closeSoftKeyboard()
             composeRule.onNodeWithTag("save-project-settings").performScrollTo().performClick()
-            val updatedState = runBlocking {
-                withTimeout(20_000) {
-                    manager.state.first { state ->
-                        state.projects.firstOrNull { it.id == initialProject.id }?.let { project ->
-                            project.baseBranch == "trunk" && project.validationCommandsList.singleOrNull()?.executable == "git"
-                        } == true
-                    }
-                }
+            val updatedState = awaitWorkspace { state ->
+                state.projects.firstOrNull { it.id == initialProject.id }?.let { project ->
+                    project.base_branch == "trunk" && project.validation_commands.singleOrNull()?.executable == "git"
+                } == true
             }
             val updated = updatedState.projects.first { it.id == initialProject.id }
-            assertEquals("trunk", updated.baseBranch)
-            assertTrue(updated.validationCommandsList.single().executable == "git")
+            assertEquals("trunk", updated.base_branch)
+            assertTrue(updated.validation_commands.single().executable == "git")
             capture("project-workspace-settings-saved-e2e.png")
         } finally {
             // Each journey shares the disposable fixture, so restore its checkout defaults.
             runBlocking {
-                val checkout = initialProject.checkoutsList.single { !it.detached }
-                manager.ensureCheckoutRoute(initialProject.id, checkout.id)
-                repository.updateProjectWorkspaceSettings(
-                    com.dbpprt.dieter.v1.UpdateProjectWorkspaceSettingsRequest.newBuilder()
-                        .setProjectId(initialProject.id).setCheckoutId(checkout.id)
-                        .setBaseRemote(initialProject.baseRemote).setBaseBranch(initialProject.baseBranch)
-                        .addAllValidationCommands(checkout.validationCommandsList).build(),
-                )
+                core.onMachine(checkout.daemon_id) {
+                    it.UpdateProjectWorkspaceSettings().execute(
+                        UpdateProjectWorkspaceSettingsRequest(project_id = initialProject.id, checkout_id = checkout.id, base_remote = initialProject.base_remote, base_branch = initialProject.base_branch, validation_commands = checkout.validation_commands.toList()),
+                    )
+                }
             }
-            cardId?.let {
-                runBlocking { runCatching { manager.ensureReplicaRoute(initialProject.id); repository.archiveCard(it, true) } }
-            }
-            projectId?.let { id ->
-                runBlocking { runCatching { manager.ensureReplicaRoute(id); repository.archiveProject(id, true) } }
-            }
-            manager.updateEndpoints(DIETER_ENDPOINTS)
-            manager.connect()
+            cardId?.let { runBlocking { runCatching { core.onBoard { archive(it) } } } }
+            projectId?.let { id -> runBlocking { runCatching { core.admin.setProjectArchived(id, true) } } }
+            IsolatedCore.disconnect(container)
         }
     }
 

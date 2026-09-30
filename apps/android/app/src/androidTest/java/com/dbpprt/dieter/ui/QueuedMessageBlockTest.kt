@@ -6,8 +6,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.dbpprt.dieter.ui.theme.DieterTheme
-import com.dbpprt.dieter.v1.MessagePart
-import com.dbpprt.dieter.v1.QueuedMessage
+import com.dbpprt.dieter.api.v1.MessagePart
+import com.dbpprt.dieter.api.v1.QueuedMessage
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -21,10 +21,7 @@ class QueuedMessageBlockTest {
         var interrupts = 0
         var edits = 0
         var removals = 0
-        val queued = QueuedMessage.newBuilder()
-            .setId("queued-test")
-            .addParts(MessagePart.newBuilder().setType("text").setText("Queued emulator follow-up"))
-            .build()
+        val queued = QueuedMessage(id = "queued-test", parts = listOf(MessagePart(type = "text", text = "Queued emulator follow-up")))
 
         composeRule.setContent {
             DieterTheme {

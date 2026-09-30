@@ -2,6 +2,14 @@
 
 package com.dbpprt.dieter.ui
 
+import com.dbpprt.dieter.core.admin.Administration
+import com.dbpprt.dieter.core.admin.Labels
+import com.dbpprt.dieter.core.composition.WorkspaceMode
+import com.dbpprt.dieter.core.machines.MachineRow
+import com.dbpprt.dieter.core.machines.MachineRows
+import com.dbpprt.dieter.core.presentation.ByteSizes
+import com.dbpprt.dieter.core.workspace.GitOperationKinds
+import com.dbpprt.dieter.core.workspace.ValidationCommandDraft
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -67,41 +75,16 @@ import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
-import com.dbpprt.dieter.v1.Settings
+import com.dbpprt.dieter.api.v1.Settings
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import kotlin.random.Random
 import com.dbpprt.dieter.ui.theme.DieterAbyss
-import com.dbpprt.dieter.connection.EndpointConnection
-import com.dbpprt.dieter.connection.EndpointPhase
-import com.dbpprt.dieter.connection.isCompatible
-import com.dbpprt.dieter.v1.Workspace
+import com.dbpprt.dieter.api.v1.Workspace
 
 private enum class ManagementSection(val label: String) {
     PROJECT("Project"),
     BOARD("Board"),
     ARCHIVES("Archives"),
-}
-
-internal data class LabelColorOption(val name: String, val value: String)
-
-internal val LabelColorPalette = listOf(
-    LabelColorOption("Ruby", "#d95c68"),
-    LabelColorOption("Coral", "#df7650"),
-    LabelColorOption("Amber", "#c9952f"),
-    LabelColorOption("Lime", "#7d9e45"),
-    LabelColorOption("Emerald", "#3e9970"),
-    LabelColorOption("Teal", "#379799"),
-    LabelColorOption("Sky", "#478dc5"),
-    LabelColorOption("Indigo", "#626fd0"),
-    LabelColorOption("Violet", "#8a62c3"),
-    LabelColorOption("Rose", "#c65f98"),
-)
-
-internal fun randomLabelColor(exclude: String = "", random: Random = Random.Default): String {
-    val choices = LabelColorPalette.filterNot { it.value.equals(exclude, ignoreCase = true) }
-    val available = choices.ifEmpty { LabelColorPalette }
-    return available[random.nextInt(available.size)].value
 }
 
 @Composable
@@ -137,7 +120,7 @@ fun WorkspaceManagementScreen(
         )
         SurfaceErrorBanner(state.error, model::clearError)
         SharedConflicts(state, model)
-        val conflicts = state.project?.conflictKeysList.orEmpty() + state.board?.conflictKeysList.orEmpty()
+        val conflicts = state.project?.conflict_keys.orEmpty() + state.board?.conflict_keys.orEmpty()
         if (conflicts.isNotEmpty()) TextButton(onClick = { model.loadSharedConflicts(conflicts) }) { Text("Resolve shared edits (${conflicts.size})") }
         PrimaryTabRow(
             selectedTabIndex = pagerState.currentPage,
@@ -197,15 +180,15 @@ private fun ProjectManagement(state: DieterUiState, model: DieterViewModel) {
     var name by remember(project?.id, project?.name) { mutableStateOf(project?.name.orEmpty()) }
     var summary by remember(project?.id, project?.summary) { mutableStateOf(project?.summary.orEmpty()) }
     var prompt by remember(project?.id, project?.prompt) { mutableStateOf(project?.prompt.orEmpty()) }
-    var baseRemote by remember(project?.id, project?.baseRemote) {
-        mutableStateOf(project?.baseRemote?.ifBlank { "origin" }.orEmpty())
+    var baseRemote by remember(project?.id, project?.base_remote) {
+        mutableStateOf(project?.base_remote?.ifBlank { "origin" }.orEmpty())
     }
-    var baseBranch by remember(project?.id, project?.baseBranch) {
-        mutableStateOf(project?.baseBranch?.ifBlank { "main" }.orEmpty())
+    var baseBranch by remember(project?.id, project?.base_branch) {
+        mutableStateOf(project?.base_branch?.ifBlank { "main" }.orEmpty())
     }
-    val checkout = project?.checkoutsList?.filterNot { it.detached }?.let { list -> list.firstOrNull { it.id == state.creationCheckoutId } ?: list.singleOrNull() }
-    var validationCommands by remember(checkout?.id, checkout?.validationCommandsList) {
-        mutableStateOf(checkout?.validationCommandsList.orEmpty().map(::ValidationCommandDraft))
+    val checkout = project?.checkouts?.filterNot { it.detached }?.let { list -> list.firstOrNull { it.id == state.creationCheckoutId } ?: list.singleOrNull() }
+    var validationCommands by remember(checkout?.id, checkout?.validation_commands) {
+        mutableStateOf(checkout?.validation_commands.orEmpty().map(ValidationCommandDraft::from))
     }
     var showWorkspaces by remember(project?.id) { mutableStateOf(false) }
     var confirmArchive by remember { mutableStateOf(false) }
@@ -227,10 +210,10 @@ private fun ProjectManagement(state: DieterUiState, model: DieterViewModel) {
     )
     SectionTitle("Checkouts & machines")
     ProjectCheckoutSelector(state, model)
-    project.checkoutsList.filterNot { it.detached }.forEach { checkout ->
-        val owner = state.presentedEndpointConnections.firstOrNull { it.daemonId == checkout.daemonId }
+    project.checkouts.filterNot { it.detached }.forEach { checkout ->
+        val owner = state.presentedEndpointConnections.firstOrNull { it.daemonId == checkout.daemon_id }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("${owner?.label ?: checkout.daemonId} · ${checkout.name}", modifier = Modifier.weight(1f))
+            Text("${owner?.label ?: checkout.daemon_id} · ${checkout.name}", modifier = Modifier.weight(1f))
             TextButton(onClick = { model.detachCheckout(checkout.id) }, enabled = owner?.online == true) { Text("Detach") }
         }
     }
@@ -277,7 +260,7 @@ private fun ProjectManagement(state: DieterUiState, model: DieterViewModel) {
     ) { Text("Manage existing workspaces…") }
     SectionTitle("Validation commands")
     ValidationCommandsEditor(validationCommands, onChange = { validationCommands = it }, enabled = !state.working)
-    val validationError = validationCommandsError(validationCommands)
+    val validationError = ValidationCommandDraft.problem(validationCommands)
     validationError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 10.dp)) {
         Button(
@@ -288,7 +271,7 @@ private fun ProjectManagement(state: DieterUiState, model: DieterViewModel) {
                     prompt,
                     baseRemote,
                     baseBranch,
-                    validationCommands.map(ValidationCommandDraft::value),
+                    validationCommands,
                 )
             },
             enabled = name.isNotBlank() && baseBranch.isNotBlank() && validationError == null && !state.working,
@@ -332,12 +315,12 @@ private fun ValidationCommandsEditor(
                             modifier = Modifier.weight(1f),
                         )
                         TextButton(
-                            onClick = { onChange(values.filterNot { it.id == command.id }) },
+                            onClick = { onChange(values.filterIndexed { position, _ -> position != index }) },
                             enabled = enabled,
                         ) { Text("Remove", color = MaterialTheme.colorScheme.error) }
                     }
                     fun update(transform: (ValidationCommandDraft) -> ValidationCommandDraft) {
-                        onChange(values.map { if (it.id == command.id) transform(it) else it })
+                        onChange(values.mapIndexed { position, item -> if (position == index) transform(item) else item })
                     }
                     OutlinedTextField(
                         command.name,
@@ -445,19 +428,19 @@ internal fun ProjectWorkspacesContent(state: DieterUiState, model: DieterViewMod
             )
         }
         state.projectWorkspaces.forEach { workspace ->
-            val pending = workspace.cardId in state.projectWorkspaceOperations
+            val pending = workspace.card_id in state.projectWorkspaceOperations
             Surface(
                 color = DieterSurfaceHigh,
                 shape = RoundedCornerShape(14.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, DieterOutline),
-                modifier = Modifier.fillMaxWidth().testTag("project-workspace-${workspace.cardId}"),
+                modifier = Modifier.fillMaxWidth().testTag("project-workspace-${workspace.card_id}"),
             ) {
                 Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             val title = (state.cards + state.chats + state.spaceCards)
-                                .firstOrNull { it.id == workspace.cardId }?.title
-                                .orEmpty().ifBlank { workspace.branch.ifBlank { workspace.cardId } }
+                                .firstOrNull { it.id == workspace.card_id }?.title
+                                .orEmpty().ifBlank { workspace.branch.ifBlank { workspace.card_id } }
                             Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1)
                             Text(
                                 "${workspace.mode.replace('_', ' ')} · ${workspace.state.replace('_', ' ')}",
@@ -469,24 +452,24 @@ internal fun ProjectWorkspacesContent(state: DieterUiState, model: DieterViewMod
                     }
                     Text(workspace.path, color = DieterMuted, fontSize = 10.sp, maxLines = 1)
                     Text(
-                        "${workspace.changedFiles} files · +${workspace.additions} −${workspace.deletions} · ${formatWorkspaceBytes(workspace.sizeBytes)}",
+                        "${workspace.changed_files} files · +${workspace.additions} −${workspace.deletions} · ${ByteSizes.format(workspace.size_bytes)}",
                         color = DieterMuted,
                         fontSize = 11.sp,
                     )
-                    state.projectWorkspaceErrors[workspace.cardId]?.let {
+                    state.projectWorkspaceErrors[workspace.card_id]?.let {
                         Text(it, color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
                     }
-                    if (workspace.mode == ConversationWorkspaceMode.WORKTREE.wire) {
+                    if (workspace.mode == WorkspaceMode.WORKTREE.wire) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(
                                 onClick = { candidate = workspace; candidateKind = GitOperationKinds.CLEANUP },
-                                enabled = state.connected && !pending && workspace.changedFiles == 0,
-                                modifier = Modifier.testTag("cleanup-workspace-${workspace.cardId}"),
+                                enabled = state.connected && !pending && workspace.changed_files == 0,
+                                modifier = Modifier.testTag("cleanup-workspace-${workspace.card_id}"),
                             ) { Text("Clean up") }
                             TextButton(
                                 onClick = { candidate = workspace; candidateKind = GitOperationKinds.DISCARD },
                                 enabled = state.connected && !pending,
-                                modifier = Modifier.testTag("discard-workspace-${workspace.cardId}"),
+                                modifier = Modifier.testTag("discard-workspace-${workspace.card_id}"),
                             ) { Text("Discard", color = MaterialTheme.colorScheme.error) }
                         }
                     }
@@ -508,7 +491,7 @@ internal fun ProjectWorkspacesContent(state: DieterUiState, model: DieterViewMod
             confirmButton = {
                 Button(
                     onClick = {
-                        model.runProjectWorkspaceOperation(workspace, candidateKind)
+                        model.removeProjectWorkspace(workspace, discard)
                         candidate = null
                     },
                     modifier = Modifier.testTag("confirm-workspace-operation"),
@@ -519,13 +502,6 @@ internal fun ProjectWorkspacesContent(state: DieterUiState, model: DieterViewMod
     }
 }
 
-private fun formatWorkspaceBytes(value: Long): String = when {
-    value >= 1_073_741_824L -> String.format("%.1f GB", value / 1_073_741_824.0)
-    value >= 1_048_576L -> String.format("%.1f MB", value / 1_048_576.0)
-    value >= 1_024L -> String.format("%.1f KB", value / 1_024.0)
-    else -> "$value B"
-}
-
 @Composable
 private fun BoardManagement(state: DieterUiState, model: DieterViewModel) {
     val board = state.board
@@ -533,9 +509,9 @@ private fun BoardManagement(state: DieterUiState, model: DieterViewModel) {
     var workflow by remember { mutableStateOf("review") }
     var description by remember { mutableStateOf("") }
     var labelName by remember { mutableStateOf("") }
-    var labelColor by remember(board?.id) { mutableStateOf(randomLabelColor()) }
-    var baseRemote by remember(board?.id) { mutableStateOf(board?.baseRemote?.ifBlank { state.project?.baseRemote.orEmpty() }.orEmpty()) }
-    var remotePublishMode by remember(board?.id) { mutableStateOf(board?.remotePublishMode?.ifBlank { "manual" } ?: "manual") }
+    var labelColor by remember(board?.id) { mutableStateOf(Labels.randomColor()) }
+    var baseRemote by remember(board?.id) { mutableStateOf(board?.base_remote?.ifBlank { state.project?.base_remote.orEmpty() }.orEmpty()) }
+    var remotePublishMode by remember(board?.id) { mutableStateOf(board?.remote_publish_mode?.ifBlank { "manual" } ?: "manual") }
     SectionTitle("Current board")
     if (board != null) {
         Text(board.name, fontWeight = FontWeight.SemiBold)
@@ -549,8 +525,8 @@ private fun BoardManagement(state: DieterUiState, model: DieterViewModel) {
         )
         Text("Remote publishing", color = DieterMuted, modifier = Modifier.padding(top = 8.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("manual" to "Manual", "pull_request" to "Pull request", "push_base" to "Push base").forEach { (value, label) ->
-                FilterChip(selected = remotePublishMode == value, onClick = { remotePublishMode = value }, label = { Text(label) })
+            Administration.PUBLISH_MODES.forEach { value ->
+                FilterChip(selected = remotePublishMode == value, onClick = { remotePublishMode = value }, label = { Text(Administration.publishModeTitle(value)) })
             }
         }
         Button(
@@ -559,16 +535,16 @@ private fun BoardManagement(state: DieterUiState, model: DieterViewModel) {
         ) { Text("Save Git defaults") }
         Text("Archive completed cards", color = DieterMuted, modifier = Modifier.padding(top = 8.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("never", "immediately", "after_1_day", "after_7_days", "after_30_days", "after_90_days").forEach { policy ->
+            Administration.ARCHIVE_POLICIES.forEach { policy ->
                 FilterChip(
-                    selected = board.doneArchivePolicy == policy,
+                    selected = board.done_archive_policy == policy,
                     onClick = { model.setBoardArchivePolicy(policy) },
-                    label = { Text(policy.replace('_', ' ')) },
+                    label = { Text(Administration.archivePolicyTitle(policy)) },
                 )
             }
         }
         SectionTitle("Labels")
-        board.labelsList.forEach { label ->
+        board.labels.forEach { label ->
             Row(
                 Modifier.fillMaxWidth().padding(vertical = 3.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -585,7 +561,7 @@ private fun BoardManagement(state: DieterUiState, model: DieterViewModel) {
                 val previousColor = labelColor
                 model.createBoardLabel(labelName, labelColor)
                 labelName = ""
-                labelColor = randomLabelColor(previousColor)
+                labelColor = Labels.randomColor(previousColor)
             },
             enabled = labelName.isNotBlank() && !state.working,
             modifier = Modifier.padding(top = 8.dp),
@@ -607,8 +583,7 @@ private fun BoardManagement(state: DieterUiState, model: DieterViewModel) {
 
 @Composable
 private fun LabelColorPicker(selectedColor: String, onSelected: (String) -> Unit, enabled: Boolean) {
-    val selected = LabelColorPalette.firstOrNull { it.value.equals(selectedColor, ignoreCase = true) }
-        ?: LabelColorPalette.first()
+    val selected = Labels.named(selectedColor)
     Column(
         Modifier.padding(top = 10.dp).widthIn(max = 340.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp),
@@ -617,7 +592,7 @@ private fun LabelColorPicker(selectedColor: String, onSelected: (String) -> Unit
             Text("Color", fontWeight = FontWeight.Medium)
             Text(selected.name, color = DieterMuted, fontSize = 12.sp)
         }
-        LabelColorPalette.chunked(5).forEach { colors ->
+        Labels.COLORS.chunked(5).forEach { colors ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 colors.forEach { option ->
                     val color = Color(option.value.toColorInt())
@@ -690,12 +665,9 @@ private fun ArchivesManagement(state: DieterUiState, model: DieterViewModel) {
     }
 }
 
-internal fun EndpointConnection.usableForProjectCreation(): Boolean = online &&
-    daemonId != null && isCompatible
-
 @Composable
 internal fun ProjectReplicaPicker(
-    machines: List<EndpointConnection>,
+    machines: List<MachineRow>,
     selectedId: String,
     onSelected: (String) -> Unit,
 ) {
@@ -709,13 +681,7 @@ internal fun ProjectReplicaPicker(
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
                 Text(selected?.label ?: "Choose a machine", fontWeight = FontWeight.SemiBold)
                 Text(
-                    when {
-                        selected == null -> "No machine selected"
-                        !selected.online -> "Offline"
-                        !selected.isCompatible ->
-                            "Requires Dieter ${selected.minimumReleaseVersion.ifBlank { "update" }}"
-                        else -> "Online · repository and agents run here"
-                    },
+                    selected?.hostSummary ?: "No machine selected",
                     color = DieterMuted,
                     fontSize = 11.sp,
                 )
@@ -729,18 +695,13 @@ internal fun ProjectReplicaPicker(
                         Column {
                             Text(machine.label)
                             Text(
-                                when {
-                                    !machine.online -> "Offline"
-                                    !machine.isCompatible ->
-                                        "Update required · ${machine.minimumReleaseVersion.ifBlank { "newer Dieter release" }}"
-                                    else -> machine.detail
-                                },
+                                machine.hostDetail,
                                 color = DieterMuted,
                                 fontSize = 11.sp,
                             )
                         }
                     },
-                    enabled = machine.usableForProjectCreation(),
+                    enabled = machine.hostsProjects,
                     modifier = Modifier.testTag("new-project-machine-${machine.id}"),
                     onClick = { menuOpen = false; onSelected(machine.id) },
                 )
@@ -775,11 +736,7 @@ private fun AddProjectManagement(state: DieterUiState, model: DieterViewModel) {
     val selectedMachine = machines.firstOrNull { it.id == endpointId }
     val listing = state.directoryListing.takeIf { state.directoryListingEndpointId == endpointId }
     LaunchedEffect(machines, endpointId) {
-        if (machines.none { it.id == endpointId && it.usableForProjectCreation() }) {
-            endpointId = machines.firstOrNull {
-                it.phase == EndpointPhase.CONNECTED && it.usableForProjectCreation()
-            }?.id ?: machines.firstOrNull { it.usableForProjectCreation() }?.id.orEmpty()
-        }
+        endpointId = MachineRows.defaultHost(machines, endpointId)
     }
     LaunchedEffect(showBrowser, listing?.path) {
         if (!showBrowser) return@LaunchedEffect
@@ -826,7 +783,7 @@ private fun AddProjectManagement(state: DieterUiState, model: DieterViewModel) {
         )
         OutlinedButton(
             onClick = { showBrowser = true; model.listDirectories(endpointId, path) },
-            enabled = selectedMachine?.usableForProjectCreation() == true && !state.directoryListingLoading,
+            enabled = selectedMachine?.hostsProjects == true && !state.directoryListingLoading,
             modifier = Modifier.height(56.dp),
         ) { Text("Browse") }
     }
@@ -838,9 +795,9 @@ private fun AddProjectManagement(state: DieterUiState, model: DieterViewModel) {
             TextButton(onClick = { showBrowser = false }) { Text("Close browser") }
             if (state.directoryListingLoading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
         }
-        if ((listing?.locationsCount ?: 0) > 0) {
+        if (listing?.locations.orEmpty().isNotEmpty()) {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listing?.locationsList.orEmpty().forEach { location ->
+                listing?.locations.orEmpty().forEach { location ->
                     FilterChip(
                         selected = path == location.path,
                         onClick = { path = location.path; model.listDirectories(endpointId, location.path) },
@@ -849,16 +806,16 @@ private fun AddProjectManagement(state: DieterUiState, model: DieterViewModel) {
                 }
             }
         }
-        listing?.entriesList.orEmpty().filterNot { it.name.startsWith('.') }.take(20).forEach { entry ->
+        listing?.entries.orEmpty().filterNot { it.name.startsWith('.') }.take(20).forEach { entry ->
             TextButton(onClick = { path = entry.path; model.listDirectories(endpointId, entry.path) }, modifier = Modifier.fillMaxWidth()) {
-                Text("${if (entry.gitRepository) "Git · " else ""}${entry.name}", modifier = Modifier.fillMaxWidth())
+                Text("${if (entry.git_repository) "Git · " else ""}${entry.name}", modifier = Modifier.fillMaxWidth())
             }
         }
     }
     Spacer(Modifier.height(10.dp))
     OutlinedTextField(name, { name = it }, label = { Text(if (existingProjectId.isBlank()) "Project name" else "Checkout name") }, modifier = Modifier.fillMaxWidth().testTag("new-project-name"))
     Text("Optional; the directory name is used by default.", color = DieterMuted, style = MaterialTheme.typography.bodySmall)
-    val validationError = validationCommandsError(validationCommands)
+    val validationError = ValidationCommandDraft.problem(validationCommands)
     if (existingProjectId.isBlank()) {
         OutlinedTextField(summary, { summary = it }, label = { Text("Summary") }, modifier = Modifier.fillMaxWidth().testTag("new-project-summary"))
         Spacer(Modifier.height(14.dp))
@@ -913,8 +870,8 @@ private fun AddProjectManagement(state: DieterUiState, model: DieterViewModel) {
                 if (existingProjectId.isNotBlank()) {
                     model.attachCheckout(existingProjectId, endpointId, path, name)
                 } else model.createProject(
-                    endpointId = endpointId,
-                    mode = mode,
+                    daemonId = selectedMachine?.daemonId ?: endpointId,
+                    create = mode == "create",
                     path = path,
                     name = name,
                     summary = summary,
@@ -923,10 +880,10 @@ private fun AddProjectManagement(state: DieterUiState, model: DieterViewModel) {
                     workflow = workflow,
                     baseRemote = baseRemote,
                     baseBranch = baseBranch,
-                    validationCommands = validationCommands.map(ValidationCommandDraft::value),
+                    validationCommands = validationCommands.map(ValidationCommandDraft::toCommand),
                 )
             },
-            enabled = selectedMachine?.usableForProjectCreation() == true && path.isNotBlank() &&
+            enabled = selectedMachine?.hostsProjects == true && path.isNotBlank() &&
                 (existingProjectId.isNotBlank() || boardName.isNotBlank() && baseBranch.isNotBlank() && validationError == null) && !state.working,
             modifier = Modifier.testTag("new-project-submit"),
         ) { Text(if (existingProjectId.isBlank()) "＋ Add project" else "Attach checkout") }
@@ -941,17 +898,17 @@ private fun SectionTitle(value: String) {
 @Composable
 fun ProjectCheckoutSelector(state: DieterUiState, model: DieterViewModel) {
     var expanded by remember { mutableStateOf(false) }
-    val checkouts = state.project?.checkoutsList.orEmpty().filterNot { it.detached }
+    val checkouts = state.project?.checkouts.orEmpty().filterNot { it.detached }
     val selected = checkouts.firstOrNull { it.id == state.creationCheckoutId } ?: checkouts.singleOrNull()
-    val owner = state.presentedEndpointConnections.firstOrNull { it.daemonId == selected?.daemonId }
+    val owner = state.presentedEndpointConnections.firstOrNull { it.daemonId == selected?.daemon_id }
     Box(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
         OutlinedButton(onClick = { expanded = true }, modifier = Modifier.testTag("project-checkout-selector")) {
-            Text(selected?.let { "${owner?.label ?: it.daemonId} · ${it.name}" } ?: "Choose machine & checkout")
+            Text(selected?.let { "${owner?.label ?: it.daemon_id} · ${it.name}" } ?: "Choose machine & checkout")
         }
         DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
             checkouts.forEach { checkout ->
-                val machine = state.presentedEndpointConnections.firstOrNull { it.daemonId == checkout.daemonId }
-                DropdownMenuItem(text = { Text("${machine?.label ?: checkout.daemonId} · ${checkout.name}${if (machine?.online == true) "" else " · Offline"}") },
+                val machine = state.presentedEndpointConnections.firstOrNull { it.daemonId == checkout.daemon_id }
+                DropdownMenuItem(text = { Text("${machine?.label ?: checkout.daemon_id} · ${checkout.name}${if (machine?.online == true) "" else " · Offline"}") },
                     onClick = { expanded = false; model.selectCreationCheckout(checkout.id) }, enabled = machine?.online == true)
             }
         }

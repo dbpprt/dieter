@@ -64,12 +64,29 @@ class CheckChangedTests(unittest.TestCase):
                 self.assertEqual(self.components(*paths), expected)
 
     def test_ci_shared_contract_changes_run_every_component(self):
-        expected = {"core", "macos", "ios", "android"}
+        clients = {"core", "macos", "ios", "android"}
         for path in ("api/proto/dieter/v1/dieter.proto", "assets/brand/icon.png", "justfile",
                      ".github/workflows/ci.yml", "scripts/check_changed.py",
                      "scripts/check_changed_test.py"):
             with self.subTest(path=path):
-                self.assertEqual(self.components(path), expected)
+                # Branding is the only shared input the Kotlin core does not consume.
+                self.assertEqual(self.components(path), clients if path.startswith("assets/") else clients | {"kmp"})
+
+    def test_shared_kotlin_core_runs_only_its_own_checks(self):
+        core = [["just", "core", "test"], ["just", "core", "android-test"], ["just", "core", "apple-test"]]
+        for path in ("apps/core/shared/src/commonMain/kotlin/com/dbpprt/dieter/core/CoreRuntime.kt",
+                     "apps/core/harness/apple/Sources/CoreBridge/CoreStore.swift", "just/core.just"):
+            with self.subTest(path=path):
+                plan = self.plan(path)
+                for command in core:
+                    self.assertIn(command, plan)
+                # The Android app compiles the core from source; no device suite runs.
+                self.assertIn(["just", "android", "test"], plan)
+                self.assertFalse(any(command[:2] in (["just", "mac"], ["just", "ios"], ["just", "e2e"]) for command in plan))
+        self.assertEqual(self.components("apps/core/model/src/commonMain/proto/dieter/client/v1/client.proto"), {"kmp", "android"})
+        for path in ("api/proto/dieter/v1/dieter.proto", "scripts/isolated-gateway/main.go"):
+            with self.subTest(path=path):
+                self.assertIn(["just", "core", "test"], self.plan(path))
 
     def test_release_packaging_changes_run_signing_and_installer_regressions(self):
         for path in ("scripts/macos_daemon_installer.py", "scripts/macos_daemon_installer_test.py",
@@ -358,7 +375,7 @@ class CheckChangedTests(unittest.TestCase):
                 self.assertEqual(main(), 0)
             changed.assert_called_once_with(self.root, "base-sha")
             self.assertEqual(github_output.read_text().splitlines(), [
-                "core=false", "macos=false", "ios=true", "android=false",
+                "core=false", "macos=false", "ios=true", "android=false", "kmp=false",
             ])
 
     def test_ci_mode_forces_full_qualification_without_a_comparison_base(self):
@@ -376,7 +393,7 @@ class CheckChangedTests(unittest.TestCase):
                  patch("sys.argv", ["check_changed.py", "--ci"]):
                 self.assertEqual(main(), 0)
             self.assertEqual(github_output.read_text().splitlines(), [
-                "core=true", "macos=true", "ios=true", "android=true",
+                "core=true", "macos=true", "ios=true", "android=true", "kmp=true",
             ])
 
     def test_running_mac_app_blocks_integration_before_packaging(self):

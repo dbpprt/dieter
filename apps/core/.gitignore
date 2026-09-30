@@ -1,0 +1,10 @@
+.gradle/
+.kotlin/
+build/
+local.properties
+# Harness outputs: the XCFramework is copied from apple/build, and SwiftPM
+# pins are copied from apps/mac/Package.resolved before resolving.
+harness/apple/.build/
+harness/apple/.swiftpm/
+harness/apple/DieterShared.xcframework/
+harness/apple/Package.resolved

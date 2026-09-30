@@ -24,6 +24,7 @@ jobs:
       macos: ${{ steps.select.outputs.macos }}
       ios: ${{ steps.select.outputs.ios }}
       android: ${{ steps.select.outputs.android }}
+      kmp: ${{ steps.select.outputs.kmp }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -86,6 +87,74 @@ jobs:
         run: just daemon vulncheck
       - name: Check bundled Markdown renderer
         run: just mac markdown-check
+
+  kmp:
+    name: Shared Kotlin core
+    needs: changes
+    if: needs.changes.outputs.kmp == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: internal/harness/runtime/package-lock.json
+      - uses: extractions/setup-just@v3
+        with:
+          just-version: "1.58.0"
+      - name: Install isolated fixture runtime
+        run: just harness install
+      - name: Test the core against isolated gateways and daemons
+        run: just core test
+      - name: Test the Android variant against an isolated gateway
+        run: just core android-test
+
+  kmp-apple:
+    name: Shared Kotlin core on Apple
+    needs: changes
+    if: needs.changes.outputs.kmp == 'true'
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: extractions/setup-just@v3
+        with:
+          just-version: "1.58.0"
+      - name: Select Xcode 26.5
+        run: just release select-xcode
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: internal/harness/runtime/package-lock.json
+      - name: Install isolated fixture runtime
+        run: just harness install
+      - name: Test natively and drive DieterShared from Swift
+        run: just core apple-test
 
   macos:
     name: macOS client

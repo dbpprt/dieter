@@ -66,7 +66,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.dbpprt.dieter.connection.ProjectReplica
+import com.dbpprt.dieter.core.terminals.NewTerminal
+import com.dbpprt.dieter.core.terminals.running
 import com.dbpprt.dieter.ui.theme.DieterAbyss
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterCoral
@@ -78,8 +79,8 @@ import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import com.dbpprt.dieter.ui.theme.DieterText
 import com.dbpprt.dieter.ui.theme.DieterTerminalBar
 import com.dbpprt.dieter.ui.theme.DieterTerminalCanvas
-import com.dbpprt.dieter.v1.Project
-import com.dbpprt.dieter.v1.Terminal
+import com.dbpprt.dieter.api.v1.Project
+import com.dbpprt.dieter.api.v1.Terminal
 
 private val TerminalCanvas get() = DieterTerminalCanvas
 private val TerminalBar get() = DieterTerminalBar
@@ -144,8 +145,8 @@ fun TerminalsScreen(
                 onCreate = model::showTerminalCreate,
             )
         } else {
-            val screen = state.terminalScreens[selected.id] ?: TerminalScreenState()
-            val running = selected.status == "running"
+            val screen = state.terminalWorkspace.screen(selected.id)
+            val running = selected.running
             Surface(
                 color = TerminalCanvas,
                 border = BorderStroke(1.dp, DieterOutline.copy(alpha = 0.72f)),
@@ -158,15 +159,15 @@ fun TerminalsScreen(
                         factory = { context ->
                             RemoteTerminalView(context, state.palette).also { view ->
                                 terminalView = view
-                                view.onInput = { bytes -> if (running) model.sendTerminalInput(selected.id, bytes) }
-                                view.onResize = { columns, rows -> model.resizeTerminal(selected.id, columns, rows) }
+                                view.onInput = model::sendTerminalInput
+                                view.onResize = { columns, rows -> model.resizeTerminal(columns, rows) }
                                 view.onControlChanged = { controlArmed = it }
                             }
                         },
                         update = { view ->
                             terminalView = view
-                            view.onInput = { bytes -> if (running) model.sendTerminalInput(selected.id, bytes) }
-                            view.onResize = { columns, rows -> model.resizeTerminal(selected.id, columns, rows) }
+                            view.onInput = model::sendTerminalInput
+                            view.onResize = { columns, rows -> model.resizeTerminal(columns, rows) }
                             view.applyScreen(screen)
                         },
                         modifier = Modifier.fillMaxSize().testTag("terminal-canvas")
@@ -186,8 +187,8 @@ fun TerminalsScreen(
             )
             TerminalStatusBar(
                 terminal = selected,
-                project = state.projects.firstOrNull { it.id == selected.projectId },
-                hostname = state.presentedProjectReplicas[selected.projectId]?.hostname.orEmpty(),
+                project = state.projects.firstOrNull { it.id == selected.project_id },
+                hostname = state.presentedProjectReplicas[selected.project_id]?.hostname.orEmpty(),
                 connected = state.terminalStreamConnected,
             )
         }
@@ -300,7 +301,7 @@ private fun TerminalTabs(
                 Row(Modifier.padding(start = 11.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         Modifier.size(7.dp).background(
-                            if (terminal.status == "running") DieterEyes else DieterCoral,
+                            if (terminal.running) DieterEyes else DieterCoral,
                             CircleShape,
                         ),
                     )
@@ -423,7 +424,7 @@ private fun TerminalStatusBar(terminal: Terminal, project: Project?, hostname: S
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
         )
-        Text("  ${terminal.workingDirectory}", color = DieterMuted.copy(alpha = 0.72f), fontSize = 9.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Text("  ${terminal.working_directory}", color = DieterMuted.copy(alpha = 0.72f), fontSize = 9.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         Text("${terminal.columns}×${terminal.rows}", color = DieterMuted, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
     }
 }
@@ -432,15 +433,7 @@ private fun TerminalStatusBar(terminal: Terminal, project: Project?, hostname: S
 @Composable
 private fun NewTerminalSheet(state: DieterUiState, model: DieterViewModel) {
     val initialProject = state.projects.firstOrNull { it.id == state.selectedProjectId } ?: state.projects.firstOrNull()
-    var projectId by remember(state.terminalCreateVisible) { mutableStateOf(initialProject?.id.orEmpty()) }
-    var name by remember(state.terminalCreateVisible) { mutableStateOf("android") }
-    var shell by remember(state.terminalCreateVisible) { mutableStateOf("zsh") }
-    var workingDirectory by remember(state.terminalCreateVisible) { mutableStateOf(initialProject?.path.orEmpty()) }
-    val project = state.projects.firstOrNull { it.id == projectId }
-
-    LaunchedEffect(projectId) {
-        project?.let { workingDirectory = it.path }
-    }
+    var form by remember(state.terminalCreateVisible) { mutableStateOf(NewTerminal.initial(initialProject, "android")) }
     ModalBottomSheet(
         onDismissRequest = model::dismissTerminalCreate,
         containerColor = DieterSurface,
@@ -463,19 +456,19 @@ private fun NewTerminalSheet(state: DieterUiState, model: DieterViewModel) {
             TerminalProjectPicker(
                 projects = state.projects,
                 projectReplicas = state.presentedProjectReplicas,
-                selectedProjectId = projectId,
-                onProjectChange = { projectId = it },
+                selectedProjectId = form.projectId,
+                onProjectChange = { id -> state.projects.firstOrNull { it.id == id }?.let { form = form.project(it) } },
             )
             OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
+                value = form.name,
+                onValueChange = { form = form.copy(name = it) },
                 label = { Text("Session name") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("terminal-name"),
             )
             OutlinedTextField(
-                value = workingDirectory,
-                onValueChange = { workingDirectory = it },
+                value = form.workingDirectory,
+                onValueChange = { form = form.copy(workingDirectory = it) },
                 label = { Text("Start in") },
                 supportingText = { Text("Must be inside the selected project") },
                 singleLine = true,
@@ -485,10 +478,10 @@ private fun NewTerminalSheet(state: DieterUiState, model: DieterViewModel) {
             Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Text("Shell", color = DieterMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    listOf("zsh", "bash", "fish", "sh").forEach { candidate ->
+                    NewTerminal.SHELLS.forEach { candidate ->
                         FilterChip(
-                            selected = shell == candidate,
-                            onClick = { shell = candidate },
+                            selected = form.shell == candidate,
+                            onClick = { form = form.copy(shell = candidate) },
                             label = { Text(candidate, fontFamily = FontFamily.Monospace) },
                             modifier = Modifier.testTag("terminal-shell-$candidate"),
                         )
@@ -498,8 +491,8 @@ private fun NewTerminalSheet(state: DieterUiState, model: DieterViewModel) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(onClick = model::dismissTerminalCreate, modifier = Modifier.weight(1f)) { Text("Cancel") }
                 Button(
-                    onClick = { model.createTerminal(projectId, name, shell, workingDirectory) },
-                    enabled = projectId.isNotBlank() && name.isNotBlank() && workingDirectory.isNotBlank() && !state.terminalLoading,
+                    onClick = { model.createTerminal(form) },
+                    enabled = form.ready && !state.terminalLoading,
                     modifier = Modifier.weight(1f).testTag("create-terminal"),
                 ) { Text(if (state.terminalLoading) "Starting…" else "Start terminal") }
             }
@@ -561,13 +554,8 @@ internal fun TerminalProjectPicker(
     }
 }
 
-internal fun terminalProjectDetails(project: Project, host: ProjectReplica?): String {
-    val machine = host?.hostname?.takeIf(String::isNotBlank) ?: "Unknown machine"
-    val availability = if (host?.online == false) "$machine (offline)" else machine
-    return listOf(availability, compactProjectPath(project.path).takeIf(String::isNotBlank))
-        .filterNotNull()
-        .joinToString(" · ")
-}
+internal fun terminalProjectDetails(project: Project, host: ProjectReplica?): String =
+    NewTerminal.projectDetails(project, host?.hostname, host?.online)
 
 @Composable
 private fun RenameTerminalDialog(terminal: Terminal, onDismiss: () -> Unit, onRename: (String) -> Unit) {

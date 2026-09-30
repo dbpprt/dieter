@@ -58,8 +58,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?, container: DieterContainer) {
-        intent?.let { container.taskCaptures.receive(it, container.connectionManager.state.value.activeGatewayId.orEmpty()) }
-        intent?.data?.let(container.connectionManager::completeAuthentication)
+        intent?.let(container.taskCaptures::receive)
+        intent?.data?.takeIf { it.scheme == "dieter-android" && it.host == "oauth" }?.let(container::completeSignIn)
         container.requestOpen(
             cardId = intent?.getStringExtra(DieterSyncService.EXTRA_CARD_ID).orEmpty(),
             showInbox = intent?.getBooleanExtra(com.dbpprt.dieter.widget.DieterActivityWidgetProvider.EXTRA_OPEN_INBOX, false) == true,

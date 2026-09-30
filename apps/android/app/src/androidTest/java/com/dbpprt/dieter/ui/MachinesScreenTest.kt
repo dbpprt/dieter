@@ -15,20 +15,22 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.connection.EndpointConnection
-import com.dbpprt.dieter.gateway.v1.CompatibilityStatus
+import com.dbpprt.dieter.core.admin.MachineOperations
+import com.dbpprt.dieter.core.admin.MachineSnapshot
+import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.machines.MachineRow
+import com.dbpprt.dieter.api.gateway.v1.CompatibilityStatus
 import com.dbpprt.dieter.ui.theme.DieterTheme
-import com.dbpprt.dieter.v1.BuildInformation
-import com.dbpprt.dieter.v1.GPUDevice
-import com.dbpprt.dieter.v1.GPUMemoryKind
-import com.dbpprt.dieter.v1.GPUTelemetry
-import com.dbpprt.dieter.v1.GPUTelemetryState
-import com.dbpprt.dieter.v1.GPUVendor
-import com.dbpprt.dieter.v1.MachineInformation
-import com.dbpprt.dieter.v1.MachineOperationAction
-import com.dbpprt.dieter.v1.MachineOperationCapability
-import com.dbpprt.dieter.v1.MachineProcess
+import com.dbpprt.dieter.api.v1.BuildInformation
+import com.dbpprt.dieter.api.v1.GPUDevice
+import com.dbpprt.dieter.api.v1.GPUMemoryKind
+import com.dbpprt.dieter.api.v1.GPUTelemetry
+import com.dbpprt.dieter.api.v1.GPUTelemetryState
+import com.dbpprt.dieter.api.v1.GPUVendor
+import com.dbpprt.dieter.api.v1.MachineInformation
+import com.dbpprt.dieter.api.v1.MachineOperationAction
+import com.dbpprt.dieter.api.v1.MachineOperationCapability
+import com.dbpprt.dieter.api.v1.MachineProcess
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -45,7 +47,7 @@ class MachinesScreenTest {
                         connectionPhase = ConnectionPhase.CONNECTED,
                         endpointConnections = listOf(machine),
                         selectedMachineId = machine.id,
-                        machineInformation = mapOf(machine.id to fixtureInformation()),
+                        machineSnapshots = mapOf(machine.id to MachineSnapshot(information = fixtureInformation())),
                     ),
                     expanded = true,
                     contentPadding = PaddingValues(),
@@ -53,7 +55,7 @@ class MachinesScreenTest {
                     onClose = {},
                     onRefreshMachines = {},
                     onRefreshSelected = {},
-                    onOperation = { _, _ -> },
+                    onOperation = {},
                     onOpenTerminals = {},
                     onDismissOperationMessage = {},
                 )
@@ -78,7 +80,7 @@ class MachinesScreenTest {
                     DieterUiState(
                         connectionPhase = ConnectionPhase.CONNECTED,
                         endpointConnections = listOf(machine),
-                        machineInformation = mapOf(machine.id to information),
+                        machineSnapshots = mapOf(machine.id to MachineSnapshot(information = information)),
                     ),
                 )
             }
@@ -91,7 +93,7 @@ class MachinesScreenTest {
                     onClose = { state = state.copy(selectedMachineId = null) },
                     onRefreshMachines = {},
                     onRefreshSelected = {},
-                    onOperation = { action, confirmation -> operation = action to confirmation },
+                    onOperation = { action -> operation = action to MachineOperations.confirmation(action) },
                     onOpenTerminals = { terminalMachine = it },
                     onDismissOperationMessage = {},
                 )
@@ -117,7 +119,7 @@ class MachinesScreenTest {
         compose.runOnIdle { assertEquals(machine.id, terminalMachine) }
     }
 
-    private fun fixtureMachine() = EndpointConnection(
+    private fun fixtureMachine() = MachineRow(
         id = "gateway#fixture",
         label = "Fixture workstation",
         address = "https://gateway.example",
@@ -128,61 +130,5 @@ class MachinesScreenTest {
         compatibility = CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE,
     )
 
-    private fun fixtureInformation(): MachineInformation = MachineInformation.newBuilder()
-        .setHostname("fixture")
-        .setOsName("Linux")
-        .setOsVersion("6.10")
-        .setArchitecture("arm64")
-        .setHardwareModel("Test host")
-        .setProcessor("Fixture CPU")
-        .setUptimeSeconds(7_200)
-        .setCpuUsagePercent(37.6)
-        .setLogicalCpuCount(8)
-        .addAllCpuCoreUsagePercent(listOf(11.0, 27.0, 39.0, 74.0))
-        .setLoad1(0.4)
-        .setLoad5(0.6)
-        .setLoad15(0.7)
-        .setMemoryTotalBytes(16L * 1_073_741_824L)
-        .setMemoryUsedBytes(5L * 1_073_741_824L)
-        .setMemoryCachedBytes(3L * 1_073_741_824L)
-        .setDiskFreeBytes(120L * 1_073_741_824L)
-        .setNetworkReceiveBytesPerSecond(1_250_000.0)
-        .setNetworkSendBytesPerSecond(420_000.0)
-        .setTemperatureCelsius(44.0)
-        .setActiveAgentCount(1)
-        .setDaemonBuild(
-            BuildInformation.newBuilder()
-                .setReleaseVersion("v1.2.3")
-                .setSourceRevision("0123456789abcdef"),
-        )
-        .setGpu(
-            GPUTelemetry.newBuilder()
-                .setState(GPUTelemetryState.GPU_TELEMETRY_STATE_AVAILABLE)
-                .addDevices(
-                    GPUDevice.newBuilder()
-                        .setId("gpu-0")
-                        .setVendor(GPUVendor.GPU_VENDOR_AMD)
-                        .setName("Fixture GPU")
-                        .setMemoryKind(GPUMemoryKind.GPU_MEMORY_KIND_DEDICATED)
-                        .setUtilizationPercent(21.0)
-                        .setMemoryUsedBytes(512L * 1_048_576L)
-                        .setMemoryTotalBytes(4L * 1_073_741_824L),
-                ),
-        )
-        .addProcesses(
-            MachineProcess.newBuilder()
-                .setPid(42)
-                .setKind("daemon")
-                .setName("Dieter daemon")
-                .setDetail("machine data plane")
-                .setCpuUsagePercent(2.0)
-                .setMemoryBytes(128L * 1_048_576L),
-        )
-        .addOperationCapabilities(
-            MachineOperationCapability.newBuilder()
-                .setAction(MachineOperationAction.MACHINE_OPERATION_ACTION_UPDATE_DAEMON)
-                .setSupported(true)
-                .setAuthorized(true),
-        )
-        .build()
+    private fun fixtureInformation(): MachineInformation = MachineInformation(hostname = "fixture", os_name = "Linux", os_version = "6.10", architecture = "arm64", hardware_model = "Test host", processor = "Fixture CPU", uptime_seconds = 7_200, cpu_usage_percent = 37.6, logical_cpu_count = 8, cpu_core_usage_percent = listOf(11.0, 27.0, 39.0, 74.0).toList(), load_1 = 0.4, load_5 = 0.6, load_15 = 0.7, memory_total_bytes = 16L * 1_073_741_824L, memory_used_bytes = 5L * 1_073_741_824L, memory_cached_bytes = 3L * 1_073_741_824L, disk_free_bytes = 120L * 1_073_741_824L, network_receive_bytes_per_second = 1_250_000.0, network_send_bytes_per_second = 420_000.0, temperature_celsius = 44.0, active_agent_count = 1, daemon_build = BuildInformation(release_version = "v1.2.3", source_revision = "0123456789abcdef"), gpu = GPUTelemetry(state = GPUTelemetryState.GPU_TELEMETRY_STATE_AVAILABLE, devices = listOf(GPUDevice(id = "gpu-0", vendor = GPUVendor.GPU_VENDOR_AMD, name = "Fixture GPU", memory_kind = GPUMemoryKind.GPU_MEMORY_KIND_DEDICATED, utilization_percent = 21.0, memory_used_bytes = 512L * 1_048_576L, memory_total_bytes = 4L * 1_073_741_824L),)), processes = listOf(MachineProcess(pid = 42, kind = "daemon", name = "Dieter daemon", detail = "machine data plane", cpu_usage_percent = 2.0, memory_bytes = 128L * 1_048_576L),), operation_capabilities = listOf(MachineOperationCapability(action = MachineOperationAction.MACHINE_OPERATION_ACTION_UPDATE_DAEMON, supported = true, authorized = true),))
 }

@@ -19,8 +19,10 @@ import androidx.test.rule.GrantPermissionRule
 import androidx.lifecycle.ViewModelProvider
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.data.DieterEndpoint
+import com.dbpprt.dieter.api.v1.ListTerminalsRequest
+import com.dbpprt.dieter.api.v1.Terminal
+import com.dbpprt.dieter.api.v1.TerminalRef
+import com.dbpprt.dieter.e2e.IsolatedCore
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.flow.first
@@ -47,24 +49,16 @@ class TerminalInputEndToEndTest {
     fun visibleTerminalDeliversChunkedInputAndEditingBytes() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val arguments = InstrumentationRegistry.getArguments()
-        val endpoint = DieterEndpoint(
-            id = "terminal_input_e2e", label = "Isolated terminal gateway", host = "127.0.0.1",
-            port = requireNotNull(arguments.getString("isolatedGatewayPort")).toInt(),
-        )
-        val application = compose.activity.application as DieterApplication
-        val repository = application.container.repository
-        val manager = application.container.connectionManager
-        repository.setAccessToken(endpoint, requireNotNull(arguments.getString("isolatedGatewayToken")))
-        manager.updateEndpoints(listOf(endpoint), selectedGatewayId = endpoint.id)
-        manager.connect()
-        manager.onAppForegrounded()
-        val connected = runBlocking {
-            withTimeout(30_000) {
-                manager.state.first { it.phase == ConnectionPhase.CONNECTED && it.projects.isNotEmpty() && it.boards.isNotEmpty() }
+        val container = (compose.activity.application as DieterApplication).container
+        val connected = IsolatedCore.connect(container)
+        val project = connected.projects.first { candidate -> connected.boards[candidate.id].orEmpty().isNotEmpty() }
+        val daemonId = IsolatedCore.daemonId(container)
+        fun terminals(): List<Terminal> = runBlocking {
+            container.core.onMachine(daemonId) { client ->
+                (client.ListTerminals().execute(ListTerminalsRequest()).terminals +
+                    client.ListTerminals().execute(ListTerminalsRequest(project_id = project.id)).terminals).distinctBy { it.id }
             }
         }
-        val project = connected.projects.first { candidate -> connected.boards.any { it.projectId == candidate.id } }
-        manager.onAppForegrounded(project.id)
         val name = "android-input-e2e"
         try {
             compose.onNodeWithTag("nav-tools").performClick()
@@ -113,7 +107,7 @@ class TerminalInputEndToEndTest {
             assertFalse(text.contains("ANDROID_INPUT_EDIT_OKx"))
             assertEquals(1, Regex("ANDROID_INPUT_BURST_OK").findAll(text).count())
 
-            val terminals = runBlocking { repository.terminals(project.id) }.terminalsList.filter { it.name == name }
+            val terminals = terminals().filter { it.name == name }
             assertEquals(1, terminals.size)
             assertEquals("running", terminals.single().status)
             val directory = arguments.getString("additionalTestOutputDir")?.let(::File)
@@ -123,8 +117,8 @@ class TerminalInputEndToEndTest {
                 instrumentation.uiAutomation.takeScreenshot().compress(Bitmap.CompressFormat.PNG, 100, it)
             }
         } finally {
-            runBlocking {
-                repository.terminals(project.id).terminalsList.filter { it.name == name }.forEach { repository.closeTerminal(it.id) }
+            terminals().filter { it.name == name }.forEach { terminal ->
+                runBlocking { container.core.onMachine(daemonId) { it.CloseTerminal().execute(TerminalRef(terminal_id = terminal.id)) } }
             }
         }
     }

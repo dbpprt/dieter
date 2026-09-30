@@ -8,6 +8,7 @@ import android.widget.RemoteViews
 import android.widget.RemoteViewsService
 import com.dbpprt.dieter.R
 import com.dbpprt.dieter.connection.DieterSyncService
+import com.dbpprt.dieter.core.activity.WidgetModel
 import com.dbpprt.dieter.settings.AppPreferences
 
 class DieterWidgetService : RemoteViewsService() {
@@ -21,7 +22,7 @@ internal class ActivityRemoteViewsFactory(
     private val context: Context,
     private val appWidgetId: Int,
 ) : RemoteViewsService.RemoteViewsFactory {
-    private var rows: List<WidgetRow> = emptyList()
+    private var rows: List<WidgetModel.Row> = emptyList()
     private var compact = false
 
     override fun onCreate() = Unit
@@ -29,17 +30,9 @@ internal class ActivityRemoteViewsFactory(
     override fun onDataSetChanged() {
         val config = DieterWidgetPrefs.config(context, appWidgetId)
         val options = AppWidgetManager.getInstance(context)?.getAppWidgetOptions(appWidgetId)
-        compact = DieterActivityWidgetProvider.isCompact(config.style, options)
-        val state = DieterActivityWidgetProvider.connectionState(context)
-        rows = buildWidgetModel(
-            cards = state.cards + state.chats,
-            conversations = state.activeConversations,
-            projects = state.projects,
-            lastSyncAtMs = state.lastConnectedAtMs ?: 0L,
-            connected = state.phase == com.dbpprt.dieter.connection.ConnectionPhase.CONNECTED,
-            config = config,
-            compact = compact,
-        ).rows
+        val model = DieterActivityWidgetProvider.model(DieterActivityWidgetProvider.snapshot(context), config, options)
+        compact = model.compact
+        rows = model.rows
     }
 
     override fun getCount(): Int = rows.size
@@ -64,17 +57,17 @@ internal class WidgetRowRenderer(private val context: Context, private val compa
     private val colors get() = palette.tokens
     private val darkColors get() = palette.widgetUsesDarkColors(context)
 
-    fun view(row: WidgetRow): RemoteViews {
+    fun view(row: WidgetModel.Row): RemoteViews {
         return when (row) {
-            is WidgetRow.Section -> RemoteViews(context.packageName, R.layout.widget_row_section).apply {
+            is WidgetModel.Row.Header -> RemoteViews(context.packageName, R.layout.widget_row_section).apply {
                 setTextViewText(R.id.widget_section_title, row.title)
                 setTextColor(R.id.widget_section_title, colors.tertiaryForAppearanceInt(darkColors))
             }
-            is WidgetRow.Item -> itemView(row)
+            is WidgetModel.Row.Item -> itemView(row)
         }
     }
 
-    private fun itemView(row: WidgetRow.Item): RemoteViews {
+    private fun itemView(row: WidgetModel.Row.Item): RemoteViews {
         val layout = if (compact) R.layout.widget_row_compact else R.layout.widget_row_item
         val views = RemoteViews(context.packageName, layout)
         views.setTextViewText(R.id.widget_row_title, row.title)
@@ -85,8 +78,7 @@ internal class WidgetRowRenderer(private val context: Context, private val compa
         views.setInt(R.id.widget_row_icon, "setBackgroundResource", iconBgRes(row.kind))
         views.setTextColor(R.id.widget_row_trailing, trailingColor(row.kind))
         views.setViewVisibility(R.id.widget_row_trailing, if (compact) View.GONE else View.VISIBLE)
-        views.setTextViewText(R.id.widget_row_subtitle, if (compact) listOf(row.detail,
-            row.trailing.takeUnless { it == "Just now" }.orEmpty()).filter(String::isNotBlank).joinToString(" · ") else row.subtitle)
+        views.setTextViewText(R.id.widget_row_subtitle, row.subtitle)
         views.setTextColor(R.id.widget_row_subtitle, colors.mutedForAppearanceInt(darkColors))
         if (!compact) {
             views.setTextViewText(R.id.widget_row_detail, row.detail)
@@ -101,37 +93,37 @@ internal class WidgetRowRenderer(private val context: Context, private val compa
         views.setContentDescription(R.id.widget_row_root, listOf(row.title, row.subtitle, row.detail, row.trailing).filter(String::isNotBlank).joinToString(", "))
         views.setOnClickFillInIntent(
             R.id.widget_row_root,
-            Intent().putExtra(DieterSyncService.EXTRA_CARD_ID, row.cardId),
+            Intent().putExtra(DieterSyncService.EXTRA_CARD_ID, row.id),
         )
         return views
     }
 
-    private fun iconRes(kind: WidgetRowKind): Int = when (kind) {
-        WidgetRowKind.WAITING -> R.drawable.ic_widget_eye
-        WidgetRowKind.RUNNING -> R.drawable.ic_widget_running
-        WidgetRowKind.CHAT -> R.drawable.ic_widget_chat
-        WidgetRowKind.FAILED -> R.drawable.ic_widget_error
-        WidgetRowKind.REVIEW -> R.drawable.ic_widget_check
+    private fun iconRes(kind: WidgetModel.RowKind): Int = when (kind) {
+        WidgetModel.RowKind.WAITING -> R.drawable.ic_widget_eye
+        WidgetModel.RowKind.RUNNING -> R.drawable.ic_widget_running
+        WidgetModel.RowKind.CHAT -> R.drawable.ic_widget_chat
+        WidgetModel.RowKind.FAILED -> R.drawable.ic_widget_error
+        WidgetModel.RowKind.REVIEW -> R.drawable.ic_widget_check
     }
 
-    private fun iconColor(kind: WidgetRowKind): Int = when (kind) {
-        WidgetRowKind.WAITING, WidgetRowKind.REVIEW -> if (darkColors) 0xFFE2BE6A.toInt() else 0xFF805500.toInt()
-        WidgetRowKind.RUNNING -> colors.liveForAppearanceInt(darkColors)
-        WidgetRowKind.FAILED -> if (darkColors) 0xFFF1868E.toInt() else 0xFFBA1A1A.toInt()
-        WidgetRowKind.CHAT -> colors.mutedForAppearanceInt(darkColors)
+    private fun iconColor(kind: WidgetModel.RowKind): Int = when (kind) {
+        WidgetModel.RowKind.WAITING, WidgetModel.RowKind.REVIEW -> if (darkColors) 0xFFE2BE6A.toInt() else 0xFF805500.toInt()
+        WidgetModel.RowKind.RUNNING -> colors.liveForAppearanceInt(darkColors)
+        WidgetModel.RowKind.FAILED -> if (darkColors) 0xFFF1868E.toInt() else 0xFFBA1A1A.toInt()
+        WidgetModel.RowKind.CHAT -> colors.mutedForAppearanceInt(darkColors)
     }
 
-    private fun iconBgRes(kind: WidgetRowKind): Int = when (kind) {
-        WidgetRowKind.WAITING, WidgetRowKind.REVIEW -> if (darkColors) palette.widgetIconBackground() else R.drawable.bg_widget_icon_amber
-        WidgetRowKind.RUNNING -> palette.widgetIconBackground()
-        WidgetRowKind.FAILED -> if (darkColors) palette.widgetIconBackground() else R.drawable.bg_widget_icon_coral
-        WidgetRowKind.CHAT -> palette.widgetIconBackground()
+    private fun iconBgRes(kind: WidgetModel.RowKind): Int = when (kind) {
+        WidgetModel.RowKind.WAITING, WidgetModel.RowKind.REVIEW -> if (darkColors) palette.widgetIconBackground() else R.drawable.bg_widget_icon_amber
+        WidgetModel.RowKind.RUNNING -> palette.widgetIconBackground()
+        WidgetModel.RowKind.FAILED -> if (darkColors) palette.widgetIconBackground() else R.drawable.bg_widget_icon_coral
+        WidgetModel.RowKind.CHAT -> palette.widgetIconBackground()
     }
 
-    private fun trailingColor(kind: WidgetRowKind): Int = when (kind) {
-        WidgetRowKind.WAITING, WidgetRowKind.REVIEW -> if (darkColors) 0xFFE2BE6A.toInt() else 0xFF805500.toInt()
-        WidgetRowKind.RUNNING -> colors.liveForAppearanceInt(darkColors)
-        WidgetRowKind.FAILED -> if (darkColors) 0xFFF1868E.toInt() else 0xFFBA1A1A.toInt()
+    private fun trailingColor(kind: WidgetModel.RowKind): Int = when (kind) {
+        WidgetModel.RowKind.WAITING, WidgetModel.RowKind.REVIEW -> if (darkColors) 0xFFE2BE6A.toInt() else 0xFF805500.toInt()
+        WidgetModel.RowKind.RUNNING -> colors.liveForAppearanceInt(darkColors)
+        WidgetModel.RowKind.FAILED -> if (darkColors) 0xFFF1868E.toInt() else 0xFFBA1A1A.toInt()
         else -> colors.mutedForAppearanceInt(darkColors)
     }
 

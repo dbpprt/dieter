@@ -8,9 +8,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.data.DieterEndpoint
-import com.dbpprt.dieter.v1.CreateConversationRequest
+import com.dbpprt.dieter.api.v1.CreateConversationRequest
+import com.dbpprt.dieter.api.v1.GetCardRequest
+import com.dbpprt.dieter.e2e.IsolatedCore
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -31,36 +31,18 @@ class ActivityActionsEndToEndTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         check(instrumentation.targetContext.packageName == "com.dbpprt.dieter.e2e")
         val args = InstrumentationRegistry.getArguments()
-        val endpoint = DieterEndpoint("activity-actions", "Activity actions fixture", "127.0.0.1",
-            requireNotNull(args.getString("isolatedGatewayPort")).toInt(), false)
         val container = (compose.activity.application as DieterApplication).container
-        val manager = container.connectionManager
-        val repository = container.repository
-        repository.setAccessToken(endpoint, requireNotNull(args.getString("isolatedGatewayToken")))
-        manager.updateEndpoints(listOf(endpoint), selectedGatewayId = endpoint.id)
-        manager.connect()
-        manager.onAppForegrounded()
+        val core = container.core
+        fun serverCard(id: String) = runBlocking {
+            core.onMachine(IsolatedCore.daemonId(container)) { it.GetCard().execute(GetCardRequest(card_id = id)) }
+        }.card!!
         try {
-            val connected = runBlocking { withTimeout(30_000) { manager.state.first {
-                it.phase == ConnectionPhase.CONNECTED && it.boards.isNotEmpty() &&
-                    it.endpointConnections.any { machine -> machine.daemonId == args.getString("isolatedMachineId") && machine.online }
-            } } }
-            val board = connected.boards.first { it.id == args.getString("isolatedBoardId") }
-            val cards = runBlocking {
-                listOf(false, true).map { chat ->
-                    repository.createConversation(CreateConversationRequest.newBuilder()
-                        .setProjectId(board.projectId).setBoardId(if (chat) "" else board.id)
-                        .setTitle("Activity actions ${if (chat) "chat" else "card"}")
-                        .setLane("running").setPrompt("mock-activity-reply")
-                        .setProvider("mock").setModel("mock").setWorkspaceMode("project").build(), chat)
-                }
+            val connected = IsolatedCore.connect(container)
+            val board = connected.boards.values.flatten().first { it.id == args.getString("isolatedBoardId") }
+            val cards = listOf(false, true).map { chat ->
+                IsolatedCore.createConversation(container, CreateConversationRequest(project_id = board.project_id, board_id = if (chat) "" else board.id, title = "Activity actions ${if (chat) "chat" else "card"}", lane = "running", prompt = "mock-activity-reply", provider = "mock", model = "mock", workspace_mode = "project"), chat)
             }
-            runBlocking {
-                manager.refreshMachineDirectory(includeArchivedChats = true)
-                withTimeout(30_000) { manager.state.first { current -> cards.all { expected ->
-                    (current.cards + current.chats).any { it.id == expected.id && it.runtime == "idle" }
-                } } }
-            }
+            cards.forEach { expected -> IsolatedCore.awaitCard(container) { it.id == expected.id && it.runtime == "idle" } }
             compose.onNodeWithTag("nav-activity").performClick()
             compose.onNodeWithContentDescription("Search activity").performClick()
             compose.onNodeWithTag("activity-search").performTextInput("Activity actions")
@@ -81,31 +63,31 @@ class ActivityActionsEndToEndTest {
                 compose.waitUntil(15_000) {
                     compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty()
                 }
-                assertEquals(title, runBlocking { repository.card(card.id).card.title })
+                assertEquals(title, serverCard(card.id).title)
                 // A context action must not navigate into or acknowledge a transcript.
                 compose.onNodeWithTag("nav-activity").assertIsSelected()
                 compose.onNodeWithTag("message-input").assertDoesNotExist()
                 if (card.scope == "chat") {
                     longPress(card.id)
                     compose.onNodeWithTag("activity-pin-${card.id}").performClick()
-                    compose.waitUntil(15_000) { manager.state.value.chats.any { it.id == card.id && it.pinned } }
-                    assertTrue(runBlocking { repository.card(card.id).card.pinned })
+                    compose.waitUntil(15_000) { core.workspace.state.value.chats.any { it.id == card.id && it.pinned } }
+                    assertTrue(serverCard(card.id).pinned)
                     longPress(card.id)
                     compose.onNodeWithText("Unpin").assertIsDisplayed()
                     compose.onNodeWithTag("activity-pin-${card.id}").performClick()
-                    compose.waitUntil(15_000) { manager.state.value.chats.any { it.id == card.id && !it.pinned } }
+                    compose.waitUntil(15_000) { core.workspace.state.value.chats.any { it.id == card.id && !it.pinned } }
                 }
                 longPress(card.id)
                 compose.onNodeWithTag("activity-archive-${card.id}").performClick()
                 compose.waitUntil(15_000) {
                     compose.onAllNodesWithTag("activity-row-${card.id}").fetchSemanticsNodes().isEmpty()
                 }
-                assertTrue(runBlocking { repository.card(card.id).card.archived })
+                assertTrue(serverCard(card.id).archived)
             }
             compose.onNodeWithText("All quiet here").assertDoesNotExist() // The search remains active.
             compose.onNodeWithText("No matching activity").assertIsDisplayed()
         } finally {
-            manager.disconnect()
+            IsolatedCore.disconnect(container)
         }
     }
 

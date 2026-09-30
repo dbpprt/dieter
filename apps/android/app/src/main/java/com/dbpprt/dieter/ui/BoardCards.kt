@@ -2,6 +2,15 @@
 
 package com.dbpprt.dieter.ui
 
+import com.dbpprt.dieter.core.board.BoardFilters
+import com.dbpprt.dieter.core.board.CardAges
+import com.dbpprt.dieter.core.board.CardPolicy
+import com.dbpprt.dieter.core.board.Lanes
+import com.dbpprt.dieter.core.board.Runtimes
+import com.dbpprt.dieter.core.composition.Attachments
+import com.dbpprt.dieter.core.presentation.TokenCounts
+import com.dbpprt.dieter.core.presentation.TokenUsagePresentation
+import com.dbpprt.dieter.core.board.CardOperation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -101,12 +110,13 @@ import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
-import com.dbpprt.dieter.v1.Board
-import com.dbpprt.dieter.v1.Card as BoardCard
+import com.dbpprt.dieter.api.v1.Board
+import com.dbpprt.dieter.api.v1.Card as BoardCard
 import java.time.Duration
 import java.time.Instant
 import com.dbpprt.dieter.ui.theme.DieterShellTintDeep
 import com.dbpprt.dieter.ui.theme.DieterShellTint
+import kotlin.time.toKotlinInstant
 
 @Composable
 internal fun BoardLabelFilters(
@@ -119,9 +129,8 @@ internal fun BoardLabelFilters(
     onDrop: (cardId: String, labelId: String) -> Unit,
 ) {
     val board = state.board ?: return
-    val allCards = state.cards.filter { it.boardId == board.id }
-    val machineIds = allCards.map { it.ownerDaemonId }.distinct().sortedBy { state.machineLabel(it) }
-    val boardCards = allCards.filter { selectedMachineId == null || it.ownerDaemonId == selectedMachineId }
+    val machineIds = BoardFilters.machines(state.cards, board.id, state::machineLabel)
+    val boardCards = BoardFilters.cards(state.cards, board.id, selectedMachineId, labelId = "", query = "")
     val haptic = LocalHapticFeedback.current
     val currentOnDrop by rememberUpdatedState(onDrop)
     Row(
@@ -131,11 +140,11 @@ internal fun BoardLabelFilters(
         if (machineIds.size > 1 || selectedMachineId != null) {
             BoardMachineFilter(state, machineIds, selectedMachineId, onMachineSelect)
         }
-        val filters = listOf("" to "All cards") + board.labelsList.map { it.id to it.name }
+        val filters = listOf("" to "All cards") + board.labels.map { it.id to it.name }
         filters.forEach { (labelId, name) ->
             val selected = labelId == selectedLabelId
-            val count = if (labelId.isBlank()) boardCards.size else boardCards.count { labelId in it.labelIdsList }
-            val boardLabel = board.labelsList.firstOrNull { it.id == labelId }
+            val count = BoardFilters.labelCount(boardCards, labelId)
+            val boardLabel = board.labels.firstOrNull { it.id == labelId }
             val tint = boardLabel?.color?.let { value ->
                 runCatching { Color(value.toColorInt()) }.getOrNull()
             }
@@ -194,8 +203,8 @@ internal fun BoardLabelFilters(
 @Composable
 internal fun LaneTabs(state: DieterUiState, model: DieterViewModel, visibleCards: List<BoardCard>) {
     val board = state.board ?: return
-    if (board.lanesCount == 0) return
-    val selectedIndex = board.lanesList.indexOfFirst { it.id == state.selectedLane }.coerceAtLeast(0)
+    if (board.lanes.size == 0) return
+    val selectedIndex = board.lanes.indexOfFirst { it.id == state.selectedLane }.coerceAtLeast(0)
     PrimaryScrollableTabRow(
         selectedTabIndex = selectedIndex,
         containerColor = MaterialTheme.colorScheme.background,
@@ -203,7 +212,7 @@ internal fun LaneTabs(state: DieterUiState, model: DieterViewModel, visibleCards
         edgePadding = 0.dp,
         divider = { HorizontalDivider(color = DieterOutline.copy(alpha = 0.72f)) },
     ) {
-        board.lanesList.forEach { lane ->
+        board.lanes.forEach { lane ->
             val count = visibleCards.count { it.lane == lane.id }
             val selected = state.selectedLane == lane.id
             Tab(
@@ -385,7 +394,7 @@ internal fun SwipeableWorkCard(
                         }
                     },
                 ),
-            onStart = onStart.takeIf { card.startLane(board) != null },
+            onStart = onStart.takeIf { CardPolicy.startLane(card, board) != null },
             onClick = if (revealed) onCloseActions else onClick,
         )
     }
@@ -423,7 +432,7 @@ internal fun SwipeCardAction(
 @Composable
 internal fun MoveCardSheet(
     card: BoardCard,
-    lanes: List<com.dbpprt.dieter.v1.Lane>,
+    lanes: List<com.dbpprt.dieter.api.v1.Lane>,
     onDismiss: () -> Unit,
     onMove: (String) -> Unit,
 ) {
@@ -467,8 +476,8 @@ internal fun EditCardSheet(
     onSave: (String, String) -> Unit,
 ) {
     var title by remember(card.id) { mutableStateOf(card.title) }
-    var task by remember(card.id) { mutableStateOf(card.initialPrompt) }
-    val taskEditable = card.canEditInitialTask()
+    var task by remember(card.id) { mutableStateOf(card.initial_prompt) }
+    val taskEditable = CardPolicy.canEditDraft(card)
     val canSave = title.isNotBlank() && task.isNotBlank() && !working
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = DieterSurfaceHigh) {
         Column(
@@ -538,14 +547,14 @@ internal fun WorkCard(
     onStart: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
-    val labels = board?.labelsList.orEmpty().filter { card.labelIdsList.contains(it.id) }
+    val labels = board?.labels.orEmpty().filter { card.label_ids.contains(it.id) }
     val starting = operation == CardOperation.STARTING || card.runtime.equals("starting", ignoreCase = true)
-    val activityAge = boardCardActivityText(card.updatedAt, card.lastActivityAt, activityNow)
+    val activityAge = CardAges.compact(card, activityNow.toKotlinInstant())
     val hasStartAction = starting || onStart != null
-    val runtimeBadge = boardCardRuntimeBadge(card.runtime, operation)
+    val runtimeBadge = Runtimes.badge(card.runtime, operation)
     val runtimeTint = DieterRunning.takeIf { colorContrastRatio(it, DieterSurfaceHigh) >= 4.5f }
         ?: MaterialTheme.colorScheme.onSurface
-    val isDone = card.lane.contains("done", ignoreCase = true) && runtimeBadge == null
+    val isDone = Lanes.isDone(card.lane) && runtimeBadge == null
     val startContentColor = MaterialTheme.colorScheme.onPrimary
     Card(
         onClick = onClick,
@@ -606,7 +615,7 @@ internal fun WorkCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
-                    MachineCardBadge(machineName.ifBlank { card.ownerDaemonId.ifBlank { "Unassigned" } }, card.id)
+                    MachineCardBadge(machineName.ifBlank { card.owner_daemon_id.ifBlank { "Unassigned" } }, card.id)
                     WorkspaceCardBadge(card, Modifier.widthIn(max = 160.dp))
                 }
                 if (!operationError.isNullOrBlank()) {
@@ -624,9 +633,9 @@ internal fun WorkCard(
                         listOf(card.provider.ifBlank { "agent" }, card.model).filter { it.isNotBlank() }.joinToString(" · "),
                         color = DieterMuted, fontSize = 11.sp, lineHeight = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
-                    if (card.hasTokenUsage() && card.tokenUsage.reportedMessages > 0) {
-                        Text(taskTokenUsageLabel(card.tokenUsage), color = DieterMuted, fontSize = 10.sp, lineHeight = 13.sp,
-                            modifier = Modifier.semantics { contentDescription = taskTokenUsageDetail(card.tokenUsage) })
+                    card.token_usage?.takeIf { it.reported_messages > 0 }?.let { usage ->
+                        Text(TokenUsagePresentation(usage).label(), color = DieterMuted, fontSize = 10.sp, lineHeight = 13.sp,
+                            modifier = Modifier.semantics { contentDescription = TokenCounts.detail(usage) })
                     }
                 }
                 if (runtimeBadge != null && !hasStartAction) {
@@ -719,25 +728,6 @@ internal fun WorkspaceCardBadge(card: BoardCard, modifier: Modifier = Modifier) 
     }
 }
 
-internal fun boardCardActivityText(
-    updatedAt: String,
-    lastActivityAt: String,
-    now: Instant = Instant.now(),
-): String {
-    val activity = listOfNotNull(
-        updatedAt.takeIf { it.isNotBlank() }?.let { runCatching { Instant.parse(it) }.getOrNull() },
-        lastActivityAt.takeIf { it.isNotBlank() }?.let { runCatching { Instant.parse(it) }.getOrNull() },
-    ).maxOrNull() ?: return ""
-    val age = Duration.between(activity, now).coerceAtLeast(Duration.ZERO)
-    return when {
-        age.seconds < 60 -> "now"
-        age.toMinutes() < 60 -> "${age.toMinutes()}min"
-        age.toHours() < 24 -> "${age.toHours()}h"
-        age.toDays() < 7 -> "${age.toDays()}d"
-        else -> "${age.toDays() / 7}w"
-    }
-}
-
 @Composable
 internal fun LabelPill(name: String, color: String, compact: Boolean = false) {
     val tint = runCatching { Color(color.toColorInt()) }.getOrDefault(DieterShell)
@@ -792,7 +782,7 @@ internal fun MoreLabelsPill(count: Int) {
 
 @Composable
 internal fun StatusPill(status: String) {
-    val active = isActiveCardRuntime(status)
+    val active = Runtimes.isActive(status)
     Row(
         Modifier.clip(RoundedCornerShape(20.dp))
             .border(1.dp, DieterOutline.copy(alpha = 0.82f), RoundedCornerShape(20.dp))

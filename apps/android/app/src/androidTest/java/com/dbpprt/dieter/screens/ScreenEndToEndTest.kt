@@ -1,45 +1,46 @@
 package com.dbpprt.dieter.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.graphics.Bitmap
 import android.os.SystemClock
-import android.view.inspector.WindowInspector
-import android.view.View
-import android.view.ViewGroup
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.ui.test.*
-import com.dbpprt.dieter.ui.ScreenWorkspace
-import com.dbpprt.dieter.connection.EndpointConnection
 import android.view.InputDevice
 import android.view.MotionEvent
+import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.Modifier
+import android.view.inspector.WindowInspector
+import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.test.platform.app.InstrumentationRegistry
-import com.dbpprt.dieter.gateway.v1.RTCConfiguration
+import com.dbpprt.dieter.api.v1.RemoteDesktopClipboardItem
+import com.dbpprt.dieter.api.v1.RemoteDesktopClipboardRequest
+import com.dbpprt.dieter.api.v1.RemoteDesktopControlRequest
+import com.dbpprt.dieter.api.v1.RemoteDesktopQuality
+import com.dbpprt.dieter.api.v1.RemoteDesktopRenderMeasurement
+import com.dbpprt.dieter.api.v1.RemoteDesktopSessionState
+import com.dbpprt.dieter.core.screens.ScreenChannels
+import com.dbpprt.dieter.core.screens.ScreenPhase
+import com.dbpprt.dieter.core.machines.MachineRow
+import com.dbpprt.dieter.ui.ScreenWorkspace
 import com.dbpprt.dieter.ui.theme.DieterTheme
-import com.dbpprt.dieter.v1.DieterServiceGrpcKt
-import com.dbpprt.dieter.v1.RemoteDesktopQuality
-import io.grpc.Metadata
-import io.grpc.CallOptions
-import io.grpc.Channel
-import io.grpc.ClientCall
-import io.grpc.ClientInterceptor
-import io.grpc.MethodDescriptor
-import io.grpc.Status
-import io.grpc.okhttp.OkHttpChannelBuilder
-import io.grpc.stub.MetadataUtils
+import com.squareup.wire.GrpcException
+import com.squareup.wire.GrpcStatus
+import java.io.File
+import java.util.Base64
+import java.util.UUID
+import kotlinx.coroutines.runBlocking
+import okio.ByteString.Companion.toByteString
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
-import java.io.File
-import java.util.Base64
-import java.util.concurrent.atomic.AtomicReference
 
-/** Runs only with just e2e run --suite screens with its disposable native service.
+/**
+ * Runs only with `just e2e run --suite screens` and its disposable native
+ * service: the app's canvas, gestures, keyboard, clipboard, and the shared
+ * core's session lifecycle and recovery over the real WebRTC engine.
  * No production credential or endpoint is read or replaced by this test.
  */
 class ScreenEndToEndTest {
@@ -58,47 +59,27 @@ class ScreenEndToEndTest {
 
     @Test fun nativeVideoCanvasGesturesKeyboardAndSessionLifecycle() {
         val arguments = InstrumentationRegistry.getArguments()
-        val encoded = arguments.getString("screenFixture")
-        assumeTrue("Run just e2e run --suite screens for native screen integration", encoded != null)
-        val fixture = JSONObject(String(Base64.getDecoder().decode(encoded)))
+        val fixture = ScreenFixture.fromArguments()
+        assumeTrue("Run just e2e run --suite screens for native screen integration", fixture != null)
+        fixture!!
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        lateinit var controller: ScreenController
+        val host = fixture.host(context) {
+            lowLatencyDecoding = arguments.getString("screenLowLatency") != "0"
+            surfacePresentation = arguments.getString("screenSurface") == "1"
+            directSurfacePresentation = arguments.getString("screenDirectSurface") == "1"
+        }
         lateinit var canvas: ScreenCanvasView
-        val opened = java.util.concurrent.atomic.AtomicInteger()
-        val configurations = java.util.concurrent.atomic.AtomicInteger()
-        val unavailableRoutes = java.util.concurrent.atomic.AtomicInteger()
-        val nextConfigurationFailure = AtomicReference<Status?>()
-        val faults = object : ClientInterceptor {
-            override fun <ReqT : Any?, RespT : Any?> interceptCall(method: MethodDescriptor<ReqT, RespT>, options: CallOptions, next: Channel): ClientCall<ReqT, RespT> {
-                if (method.bareMethodName == "UpdateRemoteDesktopSession") configurations.incrementAndGet()
-                val failure = if (method.bareMethodName == "UpdateRemoteDesktopSession") nextConfigurationFailure.getAndSet(null) else null
-                if (failure == null) return next.newCall(method, options)
-                return object : ClientCall<ReqT, RespT>() {
-                    override fun start(listener: Listener<RespT>, headers: Metadata) { listener.onClose(failure, Metadata()) }
-                    override fun request(count: Int) = Unit
-                    override fun cancel(message: String?, cause: Throwable?) = Unit
-                    override fun halfClose() = Unit
-                    override fun sendMessage(message: ReqT) = Unit
-                }
-            }
-        }
-        suspend fun open(): ScreenConnection {
-            if (unavailableRoutes.getAndUpdate { maxOf(0, it - 1) } > 0) throw Status.UNAVAILABLE.withDescription("Injected sleeping laptop network").asException()
-            val channel = OkHttpChannelBuilder.forAddress("127.0.0.1", fixture.getInt("port")).usePlaintext().build()
-            val headers = Metadata().apply { put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER), "Bearer ${fixture.getString("token")}") }
-            return ScreenConnection(DieterServiceGrpcKt.DieterServiceCoroutineStub(channel).withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers), faults),
-                Base64.getDecoder().decode(fixture.getString("certificate")), RTCConfiguration.parseFrom(Base64.getDecoder().decode(fixture.getString("rtc"))), "Isolated native fixture", if (opened.incrementAndGet() == 1) System.currentTimeMillis() + 3000 else null) { channel.shutdownNow() }
-        }
+        fun view() = host.view.value
+        fun state() = view().state ?: RemoteDesktopSessionState()
+        fun failure() = (view().phase as? ScreenPhase.Failed)?.message
+        fun streaming() = view().phase == ScreenPhase.Streaming
+        fun settled() = streaming() || view().phase is ScreenPhase.Failed
+        fun sent(label: String) = host.media.sentMessages(label)
+        fun remoteInput() = sent(ScreenChannels.POINTER) + sent(ScreenChannels.INPUT)
         compose.setContent {
-            controller = androidx.compose.runtime.remember { ScreenController(context).apply {
-                lowLatencyDecoding = InstrumentationRegistry.getArguments().getString("screenLowLatency") != "0"
-                surfacePresentation = InstrumentationRegistry.getArguments().getString("screenSurface") == "1"
-                directSurfacePresentation = InstrumentationRegistry.getArguments().getString("screenDirectSurface") == "1"
-            } }
             DieterTheme {
                 androidx.compose.material3.Scaffold { padding ->
-                    ScreenWorkspace(listOf(EndpointConnection("fixture", "Native test Mac", "isolated", daemonId = "d_screens_fixture")),
-                        padding, controller) { open() }
+                    ScreenWorkspace(listOf(MachineRow("d_screens_fixture", "Native test Mac", "isolated", daemonId = "d_screens_fixture")), padding, host) {}
                 }
             }
         }
@@ -111,118 +92,125 @@ class ScreenEndToEndTest {
         }
         compose.runOnIdle { canvas = requireNotNull(WindowInspector.getGlobalWindowViews().firstNotNullOfOrNull(::findCanvas)) }
         fun connect() { compose.onNodeWithTag("screen-connect").performClick() }
+        fun awaitInputAck(after: Long) {
+            compose.runOnIdle { host.key(41, true); host.key(41, false) }
+            compose.waitUntil(5_000) { state().last_input_ordinal > after }
+        }
         try {
             connect()
-            compose.waitUntil(45_000) { controller.state.value.phase == "streaming" || controller.state.value.phase == "failed" }
-            assertEquals(controller.state.value.error, "streaming", controller.state.value.phase)
-            compose.waitUntil(10_000) { controller.state.value.control }
-            compose.waitUntil(15_000) { opened.get() >= 2 && controller.state.value.control }
-            compose.waitUntil(10_000) { controller.state.value.receivedFps > 5 }
-            assertTrue(controller.state.value.session.width >= 640)
+            compose.waitUntil(45_000) { settled() }
+            assertEquals(failure(), ScreenPhase.Streaming, view().phase)
+            compose.waitUntil(10_000) { view().controlActive }
+            compose.waitUntil(10_000) { host.stats.value.fps > 5 }
+            assertTrue(state().width >= 640)
+            // The first pointer move after a pause is sent at once; later ones coalesce.
+            val pointerBefore = sent(ScreenChannels.POINTER)
+            compose.runOnIdle { host.pointer(0.2, 0.2) }
+            compose.waitUntil(1_000) { sent(ScreenChannels.POINTER) == pointerBefore + 1 }
             compose.runOnIdle {
-                val before = controller.pointerSequence
-                controller.pointer(0.2f, 0.2f)
-                assertEquals("First pointer movement must dispatch immediately", before + 1, controller.pointerSequence)
-                controller.pointer(0.3f, 0.3f)
-                controller.releaseInput()
+                host.pointer(0.3, 0.3)
+                host.releaseInput()
             }
-            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+
+            val clipboard = context.getSystemService(ClipboardManager::class.java)
             val originalClip = clipboard.primaryClip
-            val clipboardRoute = kotlinx.coroutines.runBlocking { open() }
+            val (hostClient, hostHttp) = fixture.client()
+            fun request(action: RemoteDesktopClipboardRequest.Action, value: String = "") = RemoteDesktopClipboardRequest(
+                session_id = view().sessionId, control_generation = state().control_generation,
+                operation_id = UUID.randomUUID().toString(), action = action, text = value,
+            )
+            fun awaitClipboard(before: Int, timeout: Long = 15_000) {
+                compose.waitUntil(timeout) { view().clipboardOperations > before || (!view().clipboardBusy && view().clipboardError != null) }
+                assertNull(view().clipboardError)
+            }
             try {
                 val text = "Android clipboard é漢字🙂\n  keep whitespace\n"
-                compose.runOnIdle { clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Screen fixture", text)) }
-                val completed = controller.clipboard.completedOperations
+                compose.runOnIdle { clipboard.setPrimaryClip(ClipData.newPlainText("Screen fixture", text)) }
+                val pasted = view().clipboardOperations
                 compose.onNodeWithTag("screens.clipboard.paste").performClick()
-                compose.waitUntil(7000) { controller.clipboard.completedOperations > completed || (!controller.clipboard.operationPending && controller.state.value.clipboardError.isNotEmpty()) }
-                assertEquals("", controller.state.value.clipboardError)
-                fun request(action: com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action, value: String = "") =
-                    com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.newBuilder().setSessionId(controller.id)
-                        .setControlGeneration(controller.state.value.session.controlGeneration).setOperationId(java.util.UUID.randomUUID().toString())
-                        .setAction(action).setText(value).build()
-                val copied = kotlinx.coroutines.runBlocking { clipboardRoute.rpc.exchangeRemoteDesktopClipboard(request(com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action.READ)) }
+                awaitClipboard(pasted, 7_000)
+                val copied = runBlocking { hostClient.ExchangeRemoteDesktopClipboard().execute(request(RemoteDesktopClipboardRequest.Action.READ)) }
                 assertEquals(text, copied.text)
                 val binary = ByteArray(2 * 1024 * 1024) { (it % 253).toByte() }
                 val png = Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aCWQAAAAASUVORK5CYII=")
                 for (image in listOf(true, false)) {
-                    val item = com.dbpprt.dieter.v1.RemoteDesktopClipboardItem.newBuilder()
-                        .setName(if (image) "pixel.png" else "payload.bin")
-                        .setMimeType(if (image) "image/png" else "application/octet-stream")
-                        .setKind(if (image) com.dbpprt.dieter.v1.RemoteDesktopClipboardItem.Kind.IMAGE else com.dbpprt.dieter.v1.RemoteDesktopClipboardItem.Kind.FILE)
-                        .setData(com.google.protobuf.ByteString.copyFrom(if (image) png else binary)).build()
-                    val items = if (image) listOf(item) else listOf(item, com.dbpprt.dieter.v1.RemoteDesktopClipboardItem.newBuilder().setName("empty.txt").setMimeType("text/plain").build())
-                    val clip = requireNotNull(ScreenClipboardContent(items = items).clip(context))
-                    compose.runOnIdle { clipboard.setPrimaryClip(clip) }
-                    val before = controller.clipboard.completedOperations
+                    val item = RemoteDesktopClipboardItem(
+                        name = if (image) "pixel.png" else "payload.bin", mime_type = if (image) "image/png" else "application/octet-stream",
+                        kind = if (image) RemoteDesktopClipboardItem.Kind.IMAGE else RemoteDesktopClipboardItem.Kind.FILE,
+                        data_ = (if (image) png else binary).toByteString(),
+                    )
+                    val items = if (image) listOf(item) else listOf(item, RemoteDesktopClipboardItem(name = "empty.txt", mime_type = "text/plain"))
+                    // Stage the files exactly as a remote copy would, then paste them back.
+                    compose.runOnIdle { AndroidClipboard(context).apply("", items) }
+                    val before = view().clipboardOperations
                     compose.onNodeWithTag("screens.clipboard.paste").performClick()
-                    compose.waitUntil(15_000) { controller.clipboard.completedOperations > before || (!controller.clipboard.operationPending && controller.state.value.clipboardError.isNotEmpty()) }
-                    assertEquals("", controller.state.value.clipboardError)
-                    val received = kotlinx.coroutines.runBlocking { clipboardRoute.rpc.exchangeRemoteDesktopClipboard(request(com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action.READ).toBuilder().setAcceptBinary(true).build()) }
-                    assertArrayEquals(if (image) png else binary, received.itemsList.first().data.toByteArray())
-                    if (!image) { assertEquals(2, received.itemsCount); assertEquals(0, received.itemsList[1].data.size()) }
-                    compose.runOnIdle { controller.clipboard.enabled = false; clipboard.clearPrimaryClip(); controller.clipboard.enabled = true }
-                    val copyBefore = controller.clipboard.completedOperations
+                    awaitClipboard(before)
+                    val received = runBlocking {
+                        hostClient.ExchangeRemoteDesktopClipboard().execute(request(RemoteDesktopClipboardRequest.Action.READ).copy(accept_binary = true))
+                    }
+                    assertArrayEquals(if (image) png else binary, received.items.first().data_.toByteArray())
+                    if (!image) {
+                        assertEquals(2, received.items.size)
+                        assertEquals(0, received.items[1].data_.size)
+                    }
+                    compose.runOnIdle { clipboard.clearPrimaryClip() }
+                    val copyBefore = view().clipboardOperations
                     compose.onNodeWithTag("screens.clipboard.copy").performClick()
-                    compose.waitUntil(15_000) { controller.clipboard.completedOperations > copyBefore || (!controller.clipboard.operationPending && controller.state.value.clipboardError.isNotEmpty()) }
-                    assertEquals("", controller.state.value.clipboardError)
+                    awaitClipboard(copyBefore)
                     val local = requireNotNull(clipboard.primaryClip)
                     assertEquals(if (image) 1 else 2, local.itemCount)
                     assertArrayEquals(if (image) png else binary, context.contentResolver.openInputStream(requireNotNull(local.getItemAt(0).uri))!!.use { it.readBytes() })
                 }
                 val remoteText = "Remote host → Android clipboard 🦊"
-                kotlinx.coroutines.runBlocking { clipboardRoute.rpc.exchangeRemoteDesktopClipboard(request(com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action.WRITE, remoteText)) }
-                compose.waitUntil(7000) { clipboard.primaryClip?.getItemAt(0)?.text?.toString() == remoteText }
-                val large = "x".repeat(1024 * 1024)
-                val result = kotlinx.coroutines.runBlocking { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    controller.clipboard.exchange(com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action.WRITE, large)
-                } }
-                assertEquals("", result.error)
-                // Clear the large host payload before Android's system clipboard observes it.
-                kotlinx.coroutines.runBlocking { clipboardRoute.rpc.exchangeRemoteDesktopClipboard(request(com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action.WRITE, remoteText)) }
+                runBlocking { hostClient.ExchangeRemoteDesktopClipboard().execute(request(RemoteDesktopClipboardRequest.Action.WRITE, remoteText)) }
+                compose.waitUntil(7_000) { clipboard.primaryClip?.getItemAt(0)?.text?.toString() == remoteText }
                 compose.onNodeWithTag("screens.clipboard.toggle").performClick()
-                SystemClock.sleep(400)
-                kotlinx.coroutines.runBlocking {
-                    try { clipboardRoute.rpc.exchangeRemoteDesktopClipboard(request(com.dbpprt.dieter.v1.RemoteDesktopClipboardRequest.Action.READ)); fail("Disabled sharing accepted clipboard read") }
-                    catch (_: io.grpc.StatusException) { }
+                compose.waitUntil(5_000) { !view().clipboardEnabled }
+                runBlocking {
+                    try {
+                        hostClient.ExchangeRemoteDesktopClipboard().execute(request(RemoteDesktopClipboardRequest.Action.READ))
+                        fail("Disabled sharing accepted clipboard read")
+                    } catch (_: GrpcException) {
+                    }
                 }
                 compose.onNodeWithTag("screens.clipboard.toggle").performClick()
-                SystemClock.sleep(400)
-                assertTrue(controller.state.value.control)
+                compose.waitUntil(5_000) { view().clipboardEnabled }
+                assertTrue(view().controlActive)
             } finally {
-                clipboardRoute.close()
+                hostHttp.connectionPool.evictAll()
                 compose.runOnIdle { if (originalClip != null) clipboard.setPrimaryClip(originalClip) else clipboard.clearPrimaryClip() }
             }
-            if (fixture.optBoolean("multi")) {
-                compose.waitUntil(10_000) { controller.state.value.session.connectedClients >= 2 }
-                val route = kotlinx.coroutines.runBlocking { open() }
+            if (fixture.multi) {
+                compose.waitUntil(10_000) { state().connected_clients >= 2 }
+                val (client, http) = fixture.client()
                 try {
-                    val peers = kotlinx.coroutines.runBlocking { route.rpc.listRemoteDesktopSessions(com.google.protobuf.Empty.getDefaultInstance()) }
-                    val mac = peers.sessionsList.first { it.clientName == "Mac" }
-                    assertEquals(1, peers.captureStreams)
+                    val peers = runBlocking { client.ListRemoteDesktopSessions().execute(Unit) }
+                    val mac = peers.sessions.first { it.client_name == "Mac" }
+                    assertEquals(1, peers.capture_streams)
                     assertTrue(peers.encoders in 1..2)
                     // Hold a key, then transfer via the same authenticated API the UI uses.
                     // The owned target receives its release before the new grant.
-                    compose.runOnIdle { controller.key(4, true) }
-                    kotlinx.coroutines.runBlocking { route.rpc.setRemoteDesktopControl(com.dbpprt.dieter.v1.RemoteDesktopControlRequest.newBuilder()
-                        .setSessionId(mac.sessionId).setTakeControl(true).build()) }
-                    compose.waitUntil(10_000) { !controller.state.value.session.controlActive && !controller.state.value.control }
-                    compose.waitUntil(10_000) { controller.state.value.session.controllerName.isEmpty() }
+                    compose.runOnIdle { host.key(4, true) }
+                    runBlocking { client.SetRemoteDesktopControl().execute(RemoteDesktopControlRequest(session_id = mac.session_id, take_control = true)) }
+                    compose.waitUntil(10_000) { !state().control_active && !view().controlActive }
+                    compose.waitUntil(10_000) { state().controller_name.isEmpty() }
                     compose.onNodeWithTag("screens.control").performClick()
-                    compose.waitUntil(10_000) { controller.state.value.control }
+                    compose.waitUntil(10_000) { view().controlActive }
                     // Both controls in the Android toolbar exercise real daemon grants.
                     compose.onNodeWithTag("screens.control").performClick()
-                    compose.waitUntil(10_000) { !controller.state.value.session.controlActive }
+                    compose.waitUntil(10_000) { !state().control_active }
                     compose.onNodeWithTag("screens.control").performClick()
-                    compose.waitUntil(10_000) { controller.state.value.control }
-                } finally { route.close() }
+                    compose.waitUntil(10_000) { view().controlActive }
+                } finally {
+                    http.connectionPool.evictAll()
+                }
             }
 
             // Capture the actual GPU output, not only a composable placeholder.
             val screenshot = captureScreenFixture()
-            assertNotNull(screenshot)
             val samples = mutableSetOf<Int>()
             for (x in 0 until screenshot.width step 37) for (y in 0 until screenshot.height step 37) samples.add(screenshot.getPixel(x, y))
-            if (fixture.getBoolean("real")) assertTrue("Video should contain actual screen pixels", samples.size > 50)
+            if (fixture.real) assertTrue("Video should contain actual screen pixels", samples.size > 50)
             else {
                 SystemClock.sleep(350)
                 val next = captureScreenFixture()
@@ -234,17 +222,18 @@ class ScreenEndToEndTest {
             // Put the cursor inside the owned native target. Gesture positions are deliberately
             // elsewhere on Android: a touch must move this cursor relatively, never teleport it.
             compose.runOnIdle {
-                canvas.canvasModel.cursor(fixture.getDouble("targetX").toFloat(), fixture.getDouble("targetY").toFloat())
-                controller.pointer(canvas.canvasModel.cursorX, canvas.canvasModel.cursorY)
+                canvas.canvasModel.setCursor(fixture.double("targetX"), fixture.double("targetY"))
+                host.pointer(canvas.canvasModel.cursor.x, canvas.canvasModel.cursor.y)
             }
             SystemClock.sleep(100)
-            val startX = canvas.canvasModel.cursorX
-            val startY = canvas.canvasModel.cursorY
+            val startX = canvas.canvasModel.cursor.x
+            val startY = canvas.canvasModel.cursor.y
             val cx = canvas.width * .5f; val cy = canvas.height * .55f
             val travel = android.view.ViewConfiguration.get(canvas.context).scaledTouchSlop * 1.5f
             gesture(canvas, listOf(listOf(cx to cy), listOf(cx + travel / 2 to cy + travel / 2), listOf(cx + travel to cy + travel)))
-            assertTrue("Relative X: $startX -> ${canvas.canvasModel.cursorX}; canvas ${canvas.width}x${canvas.height}, scale ${canvas.canvasModel.scale}", canvas.canvasModel.cursorX > startX && canvas.canvasModel.cursorX < startX + .1)
-            assertTrue(canvas.canvasModel.cursorY > startY && canvas.canvasModel.cursorY < startY + .1)
+            assertTrue("Relative X: $startX -> ${canvas.canvasModel.cursor.x}; canvas ${canvas.width}x${canvas.height}, scale ${canvas.canvasModel.scale}",
+                canvas.canvasModel.cursor.x > startX && canvas.canvasModel.cursor.x < startX + .1)
+            assertTrue(canvas.canvasModel.cursor.y > startY && canvas.canvasModel.cursor.y < startY + .1)
             gesture(canvas, listOf(listOf(40f to 100f), listOf(40f to 100f)))
             gesture(canvas, listOf(listOf(cx to cy), listOf(cx + 8 to cy + 8)), holdStartMillis = 600)
             SystemClock.sleep(200)
@@ -255,7 +244,7 @@ class ScreenEndToEndTest {
                 ime.finishComposingText()
                 canvas.pressKey(43); canvas.pressKey(80)
             }
-            compose.waitUntil(15_000) { controller.state.value.control && canvas.hasWindowFocus() }
+            compose.waitUntil(15_000) { view().controlActive && canvas.hasWindowFocus() }
             compose.onNodeWithContentDescription("Special keys").performClick()
             compose.onNodeWithText("Ctrl").performClick()
             compose.onNodeWithText("Ctrl").performClick()
@@ -264,36 +253,32 @@ class ScreenEndToEndTest {
             SystemClock.sleep(400)
             compose.onNodeWithContentDescription("Toggle keyboard").performClick()
             // Wait for the IME window transition before dispatching remote gestures.
-            compose.waitUntil(15_000) { controller.state.value.control && canvas.hasWindowFocus() }
+            compose.waitUntil(15_000) { view().controlActive && canvas.hasWindowFocus() }
             // Two fingers change only the local canvas; they must never generate mouse input.
             SystemClock.sleep(200)
-            val beforeZoom = controller.lastPointerOrdinal
-            val beforeCanvasConfigurations = configurations.get()
+            val inputBeforeZoom = remoteInput()
+            val configurationsBeforeZoom = fixture.configurations.get()
             compose.runOnIdle { canvas.resetCanvas() }
             fun canvasEvidence(name: String) {
                 SystemClock.sleep(80)
                 val bitmap = captureScreenFixture()
-                File(context.getExternalFilesDir(null), "screen-canvas-$name.png").outputStream().use {
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
-                }
+                File(context.getExternalFilesDir(null), "screen-canvas-$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
                 bitmap.recycle()
             }
             val gx = canvas.width * .5f; val gy = canvas.height * .5f
             canvasEvidence("fit")
             val fitLeft = canvas.canvasModel.left; val fitTop = canvas.canvasModel.top
-            gesture(canvas, listOf(listOf(gx - 70 to gy, gx + 70 to gy),
-                listOf(gx - 10 to gy + 80, gx + 130 to gy + 80)))
+            gesture(canvas, listOf(listOf(gx - 70 to gy, gx + 70 to gy), listOf(gx - 10 to gy + 80, gx + 130 to gy + 80)))
             canvasEvidence("pan")
-            assertEquals("Fit must allow horizontal canvas movement", fitLeft + 60, canvas.canvasModel.left, .1f)
-            assertEquals("Letterboxing must not lock vertical panning", fitTop + 80, canvas.canvasModel.top, .1f)
+            assertEquals("Fit must allow horizontal canvas movement", fitLeft + 60, canvas.canvasModel.left, .1)
+            assertEquals("Letterboxing must not lock vertical panning", fitTop + 80, canvas.canvasModel.top, .1)
 
             val anchorX = (gx - canvas.canvasModel.left) / (canvas.canvasModel.remoteWidth * canvas.canvasModel.scale)
             val anchorY = (gy - canvas.canvasModel.top) / (canvas.canvasModel.remoteHeight * canvas.canvasModel.scale)
-            gesture(canvas, listOf(listOf(gx - 100 to gy, gx + 100 to gy),
-                listOf(gx - 60 to gy + 30, gx + 100 to gy + 30)))
-            assertEquals(.8f, canvas.canvasModel.zoom, .001f)
-            assertEquals(gx + 20, canvas.canvasModel.left + anchorX * canvas.canvasModel.remoteWidth * canvas.canvasModel.scale, .1f)
-            assertEquals(gy + 30, canvas.canvasModel.top + anchorY * canvas.canvasModel.remoteHeight * canvas.canvasModel.scale, .1f)
+            gesture(canvas, listOf(listOf(gx - 100 to gy, gx + 100 to gy), listOf(gx - 60 to gy + 30, gx + 100 to gy + 30)))
+            assertEquals(.8, canvas.canvasModel.zoom, .001)
+            assertEquals(gx + 20.0, canvas.canvasModel.left + anchorX * canvas.canvasModel.remoteWidth * canvas.canvasModel.scale, .1)
+            assertEquals(gy + 30.0, canvas.canvasModel.top + anchorY * canvas.canvasModel.remoteHeight * canvas.canvasModel.scale, .1)
             canvasEvidence("pinch")
 
             val continuous = (0..12).map { step ->
@@ -301,7 +286,7 @@ class ScreenEndToEndTest {
                 listOf(gx + step * 2 - radius to gy + step * 3, gx + step * 2 + radius to gy + step * 3)
             }
             gesture(canvas, continuous)
-            assertEquals(.8f * Math.pow(1.017, 12.0).toFloat(), canvas.canvasModel.zoom, .001f)
+            assertEquals(.8 * Math.pow(1.017, 12.0), canvas.canvasModel.zoom, .001)
             val recontactLeft = canvas.canvasModel.left; val recontactTop = canvas.canvasModel.top
             // Keep one finger down while lifting/replacing the other: rebase
             // the pinch without turning the remaining finger into mouse input.
@@ -310,169 +295,151 @@ class ScreenEndToEndTest {
                 listOf(gx - 55 to gy + 20),
                 listOf(gx - 55 to gy + 20, gx + 85 to gy + 20),
                 listOf(gx - 30 to gy + 50, gx + 110 to gy + 50)))
-            assertEquals(recontactLeft + 40, canvas.canvasModel.left, .1f)
-            assertEquals(recontactTop + 50, canvas.canvasModel.top, .1f)
-            assertEquals(beforeCanvasConfigurations, configurations.get())
-            assertEquals(beforeZoom, controller.lastPointerOrdinal)
+            assertEquals(recontactLeft + 40, canvas.canvasModel.left, .1)
+            assertEquals(recontactTop + 50, canvas.canvasModel.top, .1)
+            assertEquals(configurationsBeforeZoom, fixture.configurations.get())
+            assertEquals("Local zoom and pan must not send remote input", inputBeforeZoom, remoteInput())
             compose.runOnIdle { canvas.resetCanvas() }
             gesture(canvas, listOf(listOf(cx - 70 to cy, cx + 70 to cy), listOf(cx - 120 to cy + 30, cx + 120 to cy + 30)))
-            assertTrue(canvas.canvasModel.zoom > 1.4f)
-            assertEquals(beforeZoom, controller.lastPointerOrdinal)
+            assertTrue(canvas.canvasModel.zoom > 1.4)
+            assertEquals(inputBeforeZoom, remoteInput())
             // Three fingers create a bounded remote scroll gesture, not a zoom or click.
             val zoom = canvas.canvasModel.zoom
-            gesture(canvas, listOf(listOf(cx - 80 to cy, cx to cy, cx + 80 to cy),
-                listOf(cx - 80 to cy + 60, cx to cy + 60, cx + 80 to cy + 60)))
-            assertEquals(zoom, canvas.canvasModel.zoom, 0f)
-            if (fixture.getBoolean("real")) {
-                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            gesture(canvas, listOf(listOf(cx - 80 to cy, cx to cy, cx + 80 to cy), listOf(cx - 80 to cy + 60, cx to cy + 60, cx + 80 to cy + 60)))
+            assertEquals(zoom, canvas.canvasModel.zoom, 0.0)
+            if (fixture.real) {
                 val originalClip = clipboard.primaryClip
                 try {
-                    val beforeCopy = controller.clipboard.completedOperations
+                    val beforeCopy = view().clipboardOperations
                     compose.onNodeWithTag("screens.clipboard.copy").performClick()
-                    compose.waitUntil(7000) { controller.clipboard.completedOperations > beforeCopy || (!controller.clipboard.operationPending && controller.state.value.clipboardError.isNotEmpty()) }
-                    assertEquals("", controller.state.value.clipboardError)
+                    awaitClipboard(beforeCopy, 7_000)
                     assertTrue(clipboard.primaryClip?.getItemAt(0)?.text?.toString()?.contains("Android écran 世界") == true)
-                    compose.runOnIdle { clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Fixture paste", "Android native paste marker")) }
-                    val beforePaste = controller.clipboard.completedOperations
+                    compose.runOnIdle { clipboard.setPrimaryClip(ClipData.newPlainText("Fixture paste", "Android native paste marker")) }
+                    val beforePaste = view().clipboardOperations
                     compose.onNodeWithTag("screens.clipboard.paste").performClick()
-                    compose.waitUntil(7000) { controller.clipboard.completedOperations > beforePaste || (!controller.clipboard.operationPending && controller.state.value.clipboardError.isNotEmpty()) }
-                    assertEquals("", controller.state.value.clipboardError)
+                    awaitClipboard(beforePaste, 7_000)
                 } finally {
-                    compose.runOnIdle {
-                        controller.clipboard.enabled = false
-                        if (originalClip != null) clipboard.setPrimaryClip(originalClip) else clipboard.clearPrimaryClip()
-                        controller.clipboard.enabled = true
-                    }
+                    compose.runOnIdle { if (originalClip != null) clipboard.setPrimaryClip(originalClip) else clipboard.clearPrimaryClip() }
                 }
             }
             // Held keys are released when focus is lost and control stays disabled until restored.
-            compose.runOnIdle { controller.key(4, true); controller.focus(false) }
-            assertFalse(controller.state.value.control)
+            val ackBeforeFocus = state().last_input_ordinal
+            compose.runOnIdle { host.key(4, true); host.focus(false) }
+            compose.waitUntil(5_000) { !view().controlActive }
             SystemClock.sleep(300)
-            compose.runOnIdle { controller.focus(true); canvas.resetCanvas() }
-            assertEquals(1f, canvas.canvasModel.zoom, 0f)
-            compose.waitUntil(5000) { controller.state.value.control && controller.state.value.session.lastInputOrdinal > beforeZoom }
-            compose.waitUntil(10_000) { opened.get() >= 2 && controller.state.value.control }
-            compose.runOnIdle { controller.configure(quality = RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_MOTION, maxFPS = 120, refresh = true) }
-            compose.waitUntil(10_000) { controller.state.value.session.configuration.maxFps == 120 }
-            assertTrue(controller.state.value.session.configuration.maxWidth <= 1920)
-            compose.runOnIdle { controller.configure(maxFPS = 60) }
-            compose.waitUntil(10_000) { controller.state.value.session.configuration.maxFps == 60 }
-            compose.waitUntil(10_000) { controller.state.value.session.configuration.quality == RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_MOTION }
-            if (controller.state.value.capabilities.displaysCount > 1) {
-                val primary = controller.state.value.session.displayId
-                val secondary = controller.state.value.capabilities.displaysList.first { it.id != primary }.id
-                val generation = controller.state.value.session.displayGeneration
-                compose.runOnIdle { controller.configure(display = secondary) }
-                compose.waitUntil(15_000) { controller.state.value.session.displayId == secondary && controller.state.value.control }
-                assertTrue(controller.state.value.session.displayGeneration > generation)
-                compose.runOnIdle { controller.configure(display = primary) }
-                compose.waitUntil(15_000) { controller.state.value.session.displayId == primary && controller.state.value.control }
+            compose.runOnIdle { host.focus(true); canvas.resetCanvas() }
+            assertEquals(1.0, canvas.canvasModel.zoom, 0.0)
+            compose.waitUntil(5_000) { view().controlActive }
+            awaitInputAck(ackBeforeFocus)
+            compose.runOnIdle {
+                host.selectQuality(RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_MOTION)
+                host.selectMaxFps(120)
+                host.refresh()
             }
-            val measuredEndpoint = if (controller.directSurfacePresentation)
-                com.dbpprt.dieter.v1.RemoteDesktopRenderMeasurement.REMOTE_DESKTOP_RENDER_MEASUREMENT_ANDROID_FRAME_RENDERED
-                else com.dbpprt.dieter.v1.RemoteDesktopRenderMeasurement.REMOTE_DESKTOP_RENDER_MEASUREMENT_EGL_SUBMITTED
-            compose.waitUntil(5_000) { controller.state.value.session.renderMeasurement == measuredEndpoint && controller.state.value.decodedFrames > 0 }
-            if (arguments.getString("forceTURN") == "1") {
-                assertEquals("Relayed media", controller.state.value.mediaRoute)
+            compose.waitUntil(10_000) { state().configuration?.max_fps == 120 }
+            assertTrue((state().configuration?.max_width ?: 0) <= 1920)
+            compose.runOnIdle { host.selectMaxFps(60) }
+            compose.waitUntil(10_000) { state().configuration?.max_fps == 60 }
+            compose.waitUntil(10_000) { state().configuration?.quality == RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_MOTION }
+            val displays = view().capabilities?.displays.orEmpty()
+            if (displays.size > 1) {
+                val primary = state().display_id
+                val secondary = displays.first { it.id != primary }.id
+                val generation = state().display_generation
+                compose.runOnIdle { host.selectDisplay(secondary) }
+                compose.waitUntil(15_000) { state().display_id == secondary && view().controlActive }
+                assertTrue(state().display_generation > generation)
+                compose.runOnIdle { host.selectDisplay(primary) }
+                compose.waitUntil(15_000) { state().display_id == primary && view().controlActive }
             }
+            val measuredEndpoint = if (host.media.directSurfacePresentation) RemoteDesktopRenderMeasurement.REMOTE_DESKTOP_RENDER_MEASUREMENT_ANDROID_FRAME_RENDERED
+                else RemoteDesktopRenderMeasurement.REMOTE_DESKTOP_RENDER_MEASUREMENT_EGL_SUBMITTED
+            compose.waitUntil(5_000) { state().render_measurement == measuredEndpoint && host.stats.value.decodedFrames > 0 }
+            if (arguments.getString("forceTURN") == "1") assertEquals("Relayed media", host.stats.value.route)
+            val decoder = host.media.decoderStatus
             File(context.getExternalFilesDir(null), "screen-e2e-stats.json").writeText(JSONObject(mapOf(
-                "schemaVersion" to 1, "sessionId" to controller.id, "nativeFramesDecoded" to controller.state.value.decodedFrames,
-                "width" to controller.state.value.session.width, "height" to controller.state.value.session.height,
-                "fps" to controller.state.value.receivedFps, "inputAck" to controller.state.value.session.lastInputOrdinal,
-                "mediaRoute" to controller.state.value.mediaRoute,
-                "encodeMs" to controller.state.value.session.encodeMs, "captureToSendMs" to controller.state.value.session.captureToSendMs,
-                "jitterBufferMs" to controller.state.value.session.jitterBufferMs,
-                "renderMs" to controller.state.value.session.renderMs,
-                "renderEndpoint" to controller.state.value.session.renderMeasurement.name,
-                "decoder" to controller.decoderStatus?.implementation,
-                "decoderHardware" to controller.decoderStatus?.hardware,
-                "decoderLowLatencyAccepted" to controller.decoderStatus?.lowLatencyAccepted,
+                "schemaVersion" to 1, "sessionId" to view().sessionId, "nativeFramesDecoded" to host.stats.value.decodedFrames,
+                "width" to state().width, "height" to state().height,
+                "fps" to host.stats.value.fps, "inputAck" to state().last_input_ordinal,
+                "mediaRoute" to host.stats.value.route,
+                "encodeMs" to state().encode_ms, "captureToSendMs" to state().capture_to_send_ms,
+                "jitterBufferMs" to state().jitter_buffer_ms,
+                "renderMs" to state().render_ms,
+                "renderEndpoint" to state().render_measurement.name,
+                "decoder" to decoder?.implementation,
+                "decoderHardware" to decoder?.hardware,
+                "decoderLowLatencyAccepted" to decoder?.lowLatencyAccepted,
             )).toString())
             compose.onNodeWithTag("screen-disconnect").performClick()
-            assertEquals("idle", controller.state.value.phase)
+            compose.waitUntil(5_000) { view().phase == ScreenPhase.Idle }
             // Drive Compose's test clock through the phase change and canvas-clear effect.
             compose.onNodeWithTag("screen-connect").assertIsDisplayed()
             compose.waitForIdle()
             SystemClock.sleep(200)
             val cleared = captureScreenFixture()
-            assertEquals("Disconnect must clear remote pixels", android.graphics.Color.rgb(12, 15, 20),
-                cleared.getPixel(cleared.width / 2, cleared.height / 2))
+            assertEquals("Disconnect must clear remote pixels", android.graphics.Color.rgb(12, 15, 20), cleared.getPixel(cleared.width / 2, cleared.height / 2))
             connect()
-            compose.waitUntil(30_000) { controller.state.value.phase == "streaming" || controller.state.value.phase == "failed" }
-            assertEquals(controller.state.value.error, "streaming", controller.state.value.phase)
-            compose.waitUntil(10000) { controller.state.value.control }
+            compose.waitUntil(30_000) { settled() }
+            assertEquals(failure(), ScreenPhase.Streaming, view().phase)
+            compose.waitUntil(10_000) { view().controlActive }
 
             // NOT_FOUND and a broken route must create a new signed session/peer, not reuse
             // the old offer or leave Retry pointing at an obsolete connection.
-            for (failure in listOf(Status.NOT_FOUND.withDescription("remote desktop session not found"), Status.UNAVAILABLE)) {
-                val oldId = controller.id
-                val oldRoutes = opened.get()
-                nextConfigurationFailure.set(failure)
-                compose.runOnIdle { controller.configure(quality = RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_MOTION, refresh = true) }
-                compose.waitUntil(30_000) { (controller.id != oldId && controller.state.value.control) || controller.state.value.phase == "failed" }
-                assertEquals(controller.state.value.error, "streaming", controller.state.value.phase)
-                assertNotEquals(oldId, controller.id)
-                assertTrue("Recovery must discover and authenticate a fresh route", opened.get() > oldRoutes)
-                assertEquals(RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_MOTION, controller.state.value.session.configuration.quality)
-                compose.runOnIdle { controller.key(41, true); controller.key(41, false) }
-                compose.waitUntil(5_000) { controller.state.value.session.lastInputOrdinal >= 2 }
+            for (status in listOf(GrpcStatus.NOT_FOUND, GrpcStatus.UNAVAILABLE)) {
+                val oldId = view().sessionId
+                val oldRoutes = fixture.routesOpened.get()
+                fixture.nextConfigurationFailure.set(status)
+                compose.runOnIdle { host.refresh() }
+                compose.waitUntil(30_000) { (view().sessionId.isNotEmpty() && view().sessionId != oldId && view().controlActive) || view().phase is ScreenPhase.Failed }
+                assertEquals(failure(), ScreenPhase.Streaming, view().phase)
+                assertNotEquals(oldId, view().sessionId)
+                assertTrue("Recovery must discover and authenticate a fresh route", fixture.routesOpened.get() > oldRoutes)
+                assertEquals(RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_MOTION, state().configuration?.quality)
+                awaitInputAck(0)
             }
 
             // Also expire the actual daemon-side session. Its close signal and the peer
             // disconnect can race; only one replacement is allowed and input must resume.
-            unavailableRoutes.set(5)
-            val expiredId = controller.id
-            val expiry = java.net.URL("http://127.0.0.1:${fixture.getInt("port")}/test/expire-screen?session=$expiredId").openConnection() as java.net.HttpURLConnection
-            try {
-                expiry.requestMethod = "POST"
-                expiry.connectTimeout = 5_000; expiry.readTimeout = 5_000
-                expiry.setRequestProperty("Authorization", "Bearer ${fixture.getString("token")}")
-                assertEquals(204, expiry.responseCode)
-            } finally { expiry.disconnect() }
-            compose.waitUntil(30_000) { (controller.id != expiredId && controller.state.value.control) || controller.state.value.phase == "failed" }
-            assertEquals(controller.state.value.error, "streaming", controller.state.value.phase)
-            assertNotEquals(expiredId, controller.id)
+            fixture.unavailableRoutes.set(5)
+            val expiredId = view().sessionId
+            assertEquals(204, fixture.control("expire-screen?session=$expiredId"))
+            compose.waitUntil(30_000) { (view().sessionId.isNotEmpty() && view().sessionId != expiredId && view().controlActive) || view().phase is ScreenPhase.Failed }
+            assertEquals(failure(), ScreenPhase.Streaming, view().phase)
+            assertNotEquals(expiredId, view().sessionId)
 
-            val beforeResume = controller.id
-            compose.runOnIdle { controller.focus(false); controller.resumeConnection() }
-            compose.waitUntil(30_000) { controller.id != beforeResume && controller.state.value.control }
-            assertEquals("streaming", controller.state.value.phase)
+            val beforeResume = view().sessionId
+            compose.runOnIdle { host.focus(false); host.resume() }
+            compose.waitUntil(30_000) { view().sessionId.isNotEmpty() && view().sessionId != beforeResume && view().controlActive }
+            assertEquals(ScreenPhase.Streaming, view().phase)
             // A user disconnect during backoff cancels recovery, even after its timer fires.
             compose.onNodeWithTag("screen-disconnect").performClick()
             connect()
-            compose.waitUntil(30_000) { controller.state.value.control }
-            if (!fixture.optBoolean("real") && !fixture.optBoolean("multi")) {
-                val oldCaptureId = controller.id
-                val oldCaptureRoutes = opened.get()
-                val stopCapture = java.net.URL("http://127.0.0.1:${fixture.getInt("port")}/test/stop-capture").openConnection() as java.net.HttpURLConnection
-                try {
-                    stopCapture.requestMethod = "POST"
-                    stopCapture.connectTimeout = 5_000; stopCapture.readTimeout = 5_000
-                    stopCapture.setRequestProperty("Authorization", "Bearer ${fixture.getString("token")}")
-                    assertEquals(204, stopCapture.responseCode)
-                } finally { stopCapture.disconnect() }
-                compose.waitUntil(30_000) { (controller.id != oldCaptureId && controller.state.value.control) || controller.state.value.phase == "failed" }
-                assertEquals(controller.state.value.error, "streaming", controller.state.value.phase)
-                assertNotEquals(oldCaptureId, controller.id)
-                assertEquals("One helper failure must open exactly one new route", oldCaptureRoutes + 1, opened.get())
-                compose.runOnIdle { controller.key(41, true); controller.key(41, false) }
-                compose.waitUntil(5_000) { controller.state.value.session.lastInputOrdinal >= 2 }
+            compose.waitUntil(30_000) { view().controlActive }
+            if (!fixture.real && !fixture.multi) {
+                val oldCaptureId = view().sessionId
+                val oldCaptureRoutes = fixture.routesOpened.get()
+                assertEquals(204, fixture.control("stop-capture"))
+                compose.waitUntil(30_000) { (view().sessionId.isNotEmpty() && view().sessionId != oldCaptureId && view().controlActive) || view().phase is ScreenPhase.Failed }
+                assertEquals(failure(), ScreenPhase.Streaming, view().phase)
+                assertNotEquals(oldCaptureId, view().sessionId)
+                assertEquals("One helper failure must open exactly one new route", oldCaptureRoutes + 1, fixture.routesOpened.get())
+                awaitInputAck(0)
             }
-            nextConfigurationFailure.set(Status.NOT_FOUND)
-            compose.runOnIdle { controller.configure(refresh = true) }
-            compose.waitUntil(5_000) { controller.state.value.phase == "reconnecting" }
-            compose.runOnIdle { controller.disconnect() }
-            val stoppedRoutes = opened.get()
+            fixture.nextConfigurationFailure.set(GrpcStatus.NOT_FOUND)
+            compose.runOnIdle { host.refresh() }
+            compose.waitUntil(5_000) { view().phase is ScreenPhase.Reconnecting }
+            compose.runOnIdle { host.disconnect() }
+            compose.waitUntil(5_000) { view().phase == ScreenPhase.Idle }
+            val stoppedRoutes = fixture.routesOpened.get()
             SystemClock.sleep(4_500)
-            assertEquals("idle", controller.state.value.phase)
-            assertEquals(stoppedRoutes, opened.get())
+            assertEquals(ScreenPhase.Idle, view().phase)
+            assertEquals(stoppedRoutes, fixture.routesOpened.get())
 
             // Repeated immediate disconnect/connect exercises completion of the old Close RPC.
             repeat(3) {
                 connect()
-                compose.waitUntil(30_000) { controller.state.value.control || controller.state.value.phase == "failed" }
-                assertEquals(controller.state.value.error, "streaming", controller.state.value.phase)
+                compose.waitUntil(30_000) { view().controlActive || view().phase is ScreenPhase.Failed }
+                assertEquals(failure(), ScreenPhase.Streaming, view().phase)
                 if (it < 2) compose.onNodeWithTag("screen-disconnect").performClick()
             }
         } catch (failure: Throwable) {
@@ -481,9 +448,10 @@ class ScreenEndToEndTest {
                 File(context.getExternalFilesDir(null), "screen-failure.png").outputStream().use { capture.compress(Bitmap.CompressFormat.PNG, 100, it) }
                 capture.recycle()
             }.onFailure { failure.addSuppressed(it) }
-            throw AssertionError("Screen state: ${controller.state.value}; pointer ordinal=${controller.lastPointerOrdinal}; window focus=${canvas.hasWindowFocus()}", failure)
+            throw AssertionError("Screen view: ${view().copy(cursorImage = null)}; pointer=${sent(ScreenChannels.POINTER)}; window focus=${canvas.hasWindowFocus()}", failure)
         } finally {
-            compose.runOnIdle { canvas.release(); controller.close() }
+            compose.runOnIdle { canvas.release(); host.close() }
+            fixture.close()
         }
     }
 

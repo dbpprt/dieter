@@ -2,12 +2,12 @@ package com.dbpprt.dieter.ui
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import com.dbpprt.dieter.v1.Card
+import com.dbpprt.dieter.api.v1.Card
 import org.junit.Assert.*
 import org.junit.Test
 
 class BoardCardDragTest {
-    private val card = Card.newBuilder().setId("card").setLane("running").build()
+    private val card = Card(id = "card", lane = "running")
     private fun dragState() = BoardCardDragState().apply {
         registerLane("running", Rect(0f, 0f, 100f, 500f))
         registerLane("review", Rect(110f, 0f, 210f, 500f))
@@ -52,18 +52,5 @@ class BoardCardDragTest {
         assertEquals(0.5f, boardDragScrollDelta(180f, 0f, 200f, 40f))
         assertEquals(0f, boardDragScrollDelta(100f, 0f, 200f, 40f))
         assertEquals(0f, boardDragScrollDelta(210f, 0f, 200f, 40f))
-    }
-
-    @Test fun runtimeBadgeUsesAgentStateAndPendingOperations() {
-        listOf("running", "working", "streaming", " Running ").forEach {
-            assertEquals("Running", boardCardRuntimeBadge(it))
-        }
-        listOf("idle", "completed", "failed", "cancelled", "").forEach {
-            assertNull(boardCardRuntimeBadge(it))
-        }
-        assertEquals("Starting…", boardCardRuntimeBadge("starting"))
-        assertEquals("Starting…", boardCardRuntimeBadge("idle", CardOperation.STARTING))
-        assertEquals("Stopping…", boardCardRuntimeBadge("running", CardOperation.CANCELLING))
-        assertEquals("Running", boardCardRuntimeBadge("running", CardOperation.MOVING))
     }
 }

@@ -18,14 +18,13 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
 import androidx.test.platform.app.InstrumentationRegistry
-import com.dbpprt.dieter.connection.DieterConnectionManager
-import com.dbpprt.dieter.data.DIETER_ENDPOINTS
-import com.dbpprt.dieter.data.DieterEndpoint
-import com.dbpprt.dieter.data.DieterRepository
+import com.dbpprt.dieter.core.presentation.TimelineBuilder
+import com.dbpprt.dieter.core.presentation.TimelineItem
+import com.dbpprt.dieter.e2e.TestCore
 import com.dbpprt.dieter.settings.AppPreferences
 import com.dbpprt.dieter.ui.theme.DieterTheme
-import com.dbpprt.dieter.v1.MessagePart
-import com.dbpprt.dieter.v1.UiMessage
+import com.dbpprt.dieter.api.v1.MessagePart
+import com.dbpprt.dieter.api.v1.UiMessage
 import java.io.File
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.CoroutineScope
@@ -44,45 +43,35 @@ class LongConversationMessageTest {
     @get:Rule val compose = createComposeRule()
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val lifecycle = ViewModelStore()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private lateinit var core: TestCore
     private lateinit var model: DieterViewModel
 
     @Before fun setup() {
         assumeTrue("Use the isolated screen fixture app", (context.packageName.endsWith(".e2e")))
-        var endpoints = DIETER_ENDPOINTS
-        val repository = Proxy.newProxyInstance(DieterRepository::class.java.classLoader, arrayOf(DieterRepository::class.java)) { _, method, args ->
-            when (method.name) {
-                "getEndpoints" -> endpoints
-                "getActiveEndpoint" -> endpoints.first()
-                "replaceEndpoints" -> { @Suppress("UNCHECKED_CAST") val values = args!![0] as List<DieterEndpoint>; endpoints = values; Unit }
-                "close", "reconnect" -> Unit
-                else -> error("Unexpected RPC during message rendering: ${method.name}")
-            }
-        } as DieterRepository
+        core = TestCore(navigationAccount = "component-fixture")
         compose.runOnUiThread {
-            model = DieterViewModel(DieterConnectionManager(context, repository, scope), AppPreferences(context))
+            model = core.viewModel()
             lifecycle.put("long-message", model)
         }
     }
 
     @After fun cleanup() {
         compose.runOnUiThread { lifecycle.clear() }
-        scope.cancel()
+        core.close()
+        core.delete()
     }
 
     @Test fun largeTurnShowsLatestAndRevealsEarlierProseWithNativeInput() {
-        val message = UiMessage.newBuilder().setId("long").setRole("assistant")
-            .addAllParts((0 until 340).flatMap { index -> listOf(
-                MessagePart.newBuilder().setType("text").setText("Step $index").build(),
-                MessagePart.newBuilder().setType("dynamic-tool").setToolName("exec").setToolCallId("tool-$index")
-                    .setState("output-available").build(),
-            ) }).build()
+        val message = UiMessage(id = "long", role = "assistant", parts = (0 until 340).flatMap { index -> listOf(
+                MessagePart(type = "text", text = "Step $index"),
+                MessagePart(type = "dynamic-tool", tool_name = "exec", tool_call_id = "tool-$index", state = "output-available"),
+            ) }.toList())
         var presentedMessage by mutableStateOf(message)
         compose.setContent {
             DieterTheme {
                 Surface(Modifier.fillMaxSize()) {
                     Column(Modifier.safeDrawingPadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
-                        MessageParts(presentedMessage, model, showReasoningTraces = false)
+                        MessageParts(TimelineBuilder.build(listOf(presentedMessage)).items.filterIsInstance<TimelineItem.Message>().single(), model)
                     }
                 }
             }
@@ -98,9 +87,7 @@ class LongConversationMessageTest {
         compose.onNodeWithText("Step 0").assertDoesNotExist()
         capture("long-message-earlier.png")
         compose.runOnUiThread {
-            presentedMessage = message.toBuilder().clearParts()
-                .addParts(MessagePart.newBuilder().setType("text").setText("Refreshed shorter message"))
-                .build()
+            presentedMessage = message.copy(parts = listOf(MessagePart(type = "text", text = "Refreshed shorter message")))
         }
         compose.onNodeWithText("Refreshed shorter message").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("message-earlier-long").assertDoesNotExist()

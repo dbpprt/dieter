@@ -7,6 +7,7 @@ import android.provider.Settings
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import com.dbpprt.dieter.BuildConfig
+import com.dbpprt.dieter.core.runtime.ReleaseVersion
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -68,7 +69,7 @@ class AppUpdateManager(context: Context) {
             _state.value = AppUpdateState.Checking
             try {
                 val release = releaseClient.latestRelease()
-                if (!isNewerAppVersion(currentVersion, release.version)) {
+                if (!ReleaseVersion.isNewer(currentVersion, release.version)) {
                     clearCachedUpdates()
                     _state.value = AppUpdateState.UpToDate(currentVersion)
                     return@launch
@@ -226,7 +227,7 @@ private class GitHubReleaseClient {
             val release = JSONObject(body)
             val tag = release.getString("tag_name")
             val version = tag.removePrefix("v")
-            require(AppVersion.parse(version) != null) { "GitHub returned an invalid release version." }
+            require(ReleaseVersion.parse(version) != null) { "GitHub returned an invalid release version." }
             val assets = release.getJSONArray("assets")
             val apkAsset = (0 until assets.length())
                 .asSequence()

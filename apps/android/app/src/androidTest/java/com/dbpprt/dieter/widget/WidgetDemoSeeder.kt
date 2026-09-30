@@ -5,13 +5,13 @@ import android.content.ComponentName
 import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.dbpprt.dieter.data.CachedProjectReplica
-import com.dbpprt.dieter.data.DieterSyncStore
-import com.dbpprt.dieter.v1.Board
-import com.dbpprt.dieter.v1.Card
-import com.dbpprt.dieter.v1.GlobalSnapshot
-import com.dbpprt.dieter.v1.Project
-import com.dbpprt.dieter.v1.State
+import com.dbpprt.dieter.api.v1.Board
+import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.Project
+import com.dbpprt.dieter.api.v1.State
+import com.dbpprt.dieter.core.sync.DirectoryPoller
+import com.dbpprt.dieter.sharedcore.SharedCore
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.time.Duration
@@ -28,7 +28,7 @@ import java.time.ZoneId
  */
 @RunWith(AndroidJUnit4::class)
 class WidgetDemoSeeder {
-    private val endpointId = "gateway#demo"
+    private val daemonId = "d_demo"
 
     @Test
     fun seed() {
@@ -38,11 +38,11 @@ class WidgetDemoSeeder {
         val yesterday = LocalDate.now(zone).minusDays(1)
 
         val projects = listOf(
-            Project.newBuilder().setId("p1").setName("Agent workspace").build(),
-            Project.newBuilder().setId("p2").setName("kannacli").build(),
+            Project(id = "p1", name = "Agent workspace"),
+            Project(id = "p2", name = "kannacli"),
         )
         val boards = listOf(
-            Board.newBuilder().setId("b1").setProjectId("p1").setName("Main").build(),
+            Board(id = "b1", project_id = "p1", name = "Main"),
         )
         val cards = listOf(
             card("w1", "p1", "Lets understand the code", lane = "running", runtime = "waiting_for_user", runtimeAt = now.minus(Duration.ofHours(18)), activityAt = now.minus(Duration.ofHours(18))),
@@ -54,29 +54,13 @@ class WidgetDemoSeeder {
             card("c1", "p2", "we dont need kanna cli anylonger", scope = "chat", runtime = "completed", runtimeAt = now.minus(Duration.ofMinutes(48))),
             card("c2", "p2", "hi", scope = "chat", runtime = "completed", runtimeAt = yesterday.atTime(LocalTime.of(14, 5)).atZone(zone).toInstant()),
         )
-        val state = State.newBuilder()
-            .addAllProjects(projects)
-            .addAllBoards(boards)
-            .addAllCards(cards)
-            .addAllChats(chats)
-            .build()
-        val snapshot = GlobalSnapshot.newBuilder().setState(state).build()
+        val state = State(projects = projects.toList(), boards = boards.toList(), cards = cards.toList(), chats = chats.toList())
 
-        val store = DieterSyncStore(context)
-        store.saveProjection(endpointId, snapshot, null)
-        store.saveMachineDirectory(
-            "gateway",
-            state,
-            mapOf(
-                "p1" to CachedProjectReplica(endpointId, "demo", "mac-mini"),
-                "p2" to CachedProjectReplica(endpointId, "demo", "mac-mini"),
-            ),
-        )
-
-        context.getSharedPreferences("dieter_connection", Context.MODE_PRIVATE).edit()
-            .putString("preferred_endpoint", endpointId)
-            .putBoolean("desired_connected", false)
-            .commit()
+        // The app's own core state, seeded as one machine's cached view. The
+        // app is not running in this process; it restores the view on launch.
+        val core = SharedCore.create(context, null)
+        core.storageFor(core.accounts.state.value.active).write(DirectoryPoller.cacheName(daemonId), State.ADAPTER.encode(state))
+        runBlocking { core.setConnected(false) }
         context.getSharedPreferences("dieter_widget", Context.MODE_PRIVATE).edit()
             .putLong("last_sync_at", now.toEpochMilli())
             .commit()
@@ -109,22 +93,12 @@ class WidgetDemoSeeder {
         phaseAt: Instant? = null,
         activityAt: Instant? = null,
     ): Card {
-        val builder = Card.newBuilder()
-            .setId(id)
-            .setScope(scope)
-            .setProjectId(projectId)
-            .setBoardId(if (scope == "board") "b1" else "")
-            .setLane(lane)
-            .setTitle(title)
-            .setRuntime(runtime)
-            .setSummary(summary)
-        runtimeAt?.let { builder.setRuntimeUpdatedAt(it.toString()) }
-        phaseAt?.let { builder.setPhaseChangedAt(it.toString()) }
-        val activity = activityAt ?: runtimeAt ?: phaseAt
-        activity?.let {
-            builder.setLastActivityAt(it.toString())
-            builder.setUpdatedAt(it.toString())
-        }
-        return builder.build()
+        val activity = (activityAt ?: runtimeAt ?: phaseAt)?.toString().orEmpty()
+        return Card(
+            id = id, scope = scope, project_id = projectId, board_id = if (scope == "board") "b1" else "", lane = lane, title = title,
+            runtime = runtime, summary = summary, owner_daemon_id = daemonId,
+            runtime_updated_at = runtimeAt?.toString().orEmpty(), phase_changed_at = phaseAt?.toString().orEmpty(),
+            last_activity_at = activity, updated_at = activity,
+        )
     }
 }

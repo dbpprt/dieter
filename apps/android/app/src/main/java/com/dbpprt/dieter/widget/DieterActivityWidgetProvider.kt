@@ -14,8 +14,11 @@ import android.widget.RemoteViews
 import com.dbpprt.dieter.MainActivity
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.R
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.connection.DieterConnectionState
+import com.dbpprt.dieter.core.activity.WidgetModel
+import com.dbpprt.dieter.core.connection.ConnectionPhase
+import kotlin.time.Clock
+import kotlinx.coroutines.flow.first
+import kotlin.time.Duration.Companion.seconds
 import com.dbpprt.dieter.settings.AppPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,13 +46,16 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 updateAll(appContext)
-                val success = runCatching {
-                    withTimeout(8_000) {
-                        (appContext as DieterApplication).container.connectionManager.refreshForWidget()
-                    }
-                }.getOrDefault(false)
+                val container = (appContext as DieterApplication).container
+                // A widget refresh connects briefly even when the app and service are not running.
+                container.policy.setWidgetRefresh(true)
+                val success = try {
+                    runCatching { container.core.connection.refreshForWidget(8.seconds) }.getOrDefault(false)
+                } finally {
+                    container.policy.setWidgetRefresh(false)
+                }
                 failedRefreshAt = if (success) 0 else System.currentTimeMillis()
-                failedRefreshGateway = connectionState(appContext).activeGatewayId
+                failedRefreshGateway = snapshot(appContext).gateway
             } finally {
                 refreshing.set(false)
                 try { updateAll(appContext) } finally { pending.finish() }
@@ -70,21 +76,36 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
                 .forEach { render(context, manager, it) }
         }
 
-        internal fun model(state: DieterConnectionState, config: WidgetConfig, compact: Boolean) = buildWidgetModel(
-            cards = state.cards + state.chats,
-            conversations = state.activeConversations,
-            projects = state.projects,
-            lastSyncAtMs = state.lastConnectedAtMs ?: 0L,
-            connected = state.phase == ConnectionPhase.CONNECTED,
-            config = config,
-            compact = compact,
+        /** What the widget shows, read from the shared core's current state. */
+        internal data class Snapshot(
+            val items: List<com.dbpprt.dieter.core.activity.ActivityItem>,
+            val lastSyncAtMs: Long,
+            val connected: Boolean,
+            val gateway: String,
+        )
+
+        internal fun snapshot(context: Context): Snapshot {
+            val core = (context.applicationContext as DieterApplication).container.core
+            val connection = core.connection.state.value
+            return Snapshot(
+                items = core.currentActivity(),
+                lastSyncAtMs = core.connection.feedStatus.value.lastAppliedAt?.toEpochMilliseconds() ?: 0L,
+                connected = connection.phase == ConnectionPhase.CONNECTED,
+                gateway = connection.gateway?.origin.orEmpty(),
+            )
+        }
+
+        internal fun model(snapshot: Snapshot, config: WidgetConfig, options: Bundle?): WidgetModel = WidgetModel.build(
+            snapshot.items, Clock.System.now(), config.maxItems, config.showSections, config.style.core,
+            widthDp = options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0) ?: 0,
+            heightDp = options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0) ?: 0,
         )
 
         fun render(context: Context, manager: AppWidgetManager, appWidgetId: Int) {
             val config = DieterWidgetPrefs.config(context, appWidgetId)
-            val compact = isCompact(config.style, manager.getAppWidgetOptions(appWidgetId))
-            val state = connectionState(context)
-            val model = model(state, config, compact)
+            val state = snapshot(context)
+            val model = model(state, config, manager.getAppWidgetOptions(appWidgetId))
+            val compact = model.compact
             val views = RemoteViews(context.packageName, R.layout.widget_activity)
             val palette = AppPreferences.selectedPalette(context)
             val colors = palette.tokens
@@ -100,18 +121,18 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
             views.setTextColor(R.id.widget_status, mutedColor)
             views.setTextColor(R.id.widget_empty_title, textColor)
             views.setTextColor(R.id.widget_empty_body, mutedColor)
-            views.setTextViewText(R.id.widget_header_title, model.headerTitle)
+            views.setTextViewText(R.id.widget_header_title, WidgetModel.TITLE)
             views.setTextViewText(R.id.widget_summary, model.summary)
             views.setViewVisibility(R.id.widget_app_icon, if (compact) View.GONE else View.VISIBLE)
             views.setBoolean(R.id.widget_summary, "setSingleLine", !compact)
             views.setInt(R.id.widget_summary, "setMaxLines", if (compact) 2 else 1)
             views.setTextViewText(R.id.widget_status, when {
                 refreshing.get() -> "Refreshing…"
-                failedRefreshGateway == state.activeGatewayId && failedRefreshAt > (state.lastConnectedAtMs ?: 0) -> "Couldn’t refresh"
-                else -> model.statusText
+                failedRefreshGateway == state.gateway && failedRefreshAt > state.lastSyncAtMs -> "Couldn’t refresh"
+                else -> widgetStatusText(state.lastSyncAtMs, state.connected)
             })
-            views.setTextViewText(R.id.widget_empty_title, model.emptyTitle)
-            views.setTextViewText(R.id.widget_empty_body, model.emptyBody)
+            views.setTextViewText(R.id.widget_empty_title, WidgetModel.emptyTitle(state.lastSyncAtMs > 0, state.connected))
+            views.setTextViewText(R.id.widget_empty_body, WidgetModel.EMPTY_BODY)
             views.setBoolean(R.id.widget_refresh, "setEnabled", !refreshing.get())
             views.setContentDescription(R.id.widget_header, "Open Inbox. ${model.summary}")
 
@@ -141,16 +162,6 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
             if (Build.VERSION.SDK_INT < 31) manager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.widget_list)
         }
 
-        internal fun isCompact(style: WidgetStyle, options: Bundle?): Boolean = when (style) {
-            WidgetStyle.ACTIVITY -> false
-            WidgetStyle.LAST_FINISHED -> true
-            WidgetStyle.AUTO -> (options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 0) ?: 0) in 1 until 240 ||
-                (options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0) ?: 0) in 1 until 200
-        }
-
-        internal fun connectionState(context: Context): DieterConnectionState =
-            (context.applicationContext as DieterApplication).container.connectionManager.state.value
-
         private fun inboxIntent(context: Context) = Intent(context, MainActivity::class.java)
             .putExtra(EXTRA_OPEN_INBOX, true)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -158,7 +169,7 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
 }
 
 /** Stable across reordering, including section rows; independent of a list position. */
-private fun WidgetRow.stableId(): Long {
-    val key = when (this) { is WidgetRow.Item -> "item:$cardId"; is WidgetRow.Section -> "section:${title.substringBefore(" ·")}" }
+private fun WidgetModel.Row.stableId(): Long {
+    val key = when (this) { is WidgetModel.Row.Item -> "item:$id"; is WidgetModel.Row.Header -> "section:${title.substringBefore(" ·")}" }
     return key.fold(-3750763034362895579L) { hash, char -> (hash xor char.code.toLong()) * 1099511628211L }
 }

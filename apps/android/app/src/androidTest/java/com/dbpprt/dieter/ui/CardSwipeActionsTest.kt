@@ -19,9 +19,9 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.unit.dp
 import com.dbpprt.dieter.ui.theme.DieterTheme
-import com.dbpprt.dieter.v1.Board
-import com.dbpprt.dieter.v1.Card
-import com.dbpprt.dieter.v1.Lane
+import com.dbpprt.dieter.api.v1.Board
+import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.Lane
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -35,21 +35,8 @@ class CardSwipeActionsTest {
         val revealed = mutableStateOf(false)
         val invokedActions = mutableListOf<String>()
         val status = mutableStateOf("Ready")
-        val card = Card.newBuilder()
-            .setId("card-1")
-            .setBoardId("board-1")
-            .setLane("running")
-            .setScope("board")
-            .setTitle("Check the Android swipe actions")
-            .setInitialPrompt("Exercise every action without mutating server data.")
-            .setCreatedAt("2026-09-09T10:00:00Z")
-            .build()
-        val board = Board.newBuilder()
-            .setId("board-1")
-            .addLanes(Lane.newBuilder().setId("todo").setName("Todo"))
-            .addLanes(Lane.newBuilder().setId("running").setName("Running"))
-            .addLanes(Lane.newBuilder().setId("review").setName("Review"))
-            .build()
+        val card = Card(id = "card-1", board_id = "board-1", lane = "running", scope = "board", title = "Check the Android swipe actions", initial_prompt = "Exercise every action without mutating server data.", created_at = "2026-09-09T10:00:00Z")
+        val board = Board(id = "board-1", lanes = listOf(Lane(id = "todo", name = "Todo"), Lane(id = "running", name = "Running"), Lane(id = "review", name = "Review")))
 
         compose.setContent {
             DieterTheme(darkTheme = true) {

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Remote endpoints are HTTPS-only in DieterConnectionManager. Plaintext is
-         retained solely for an explicitly configured emulator/loopback daemon. -->
+    <!-- The shared core permits only HTTPS gateways (Gateway.permitted). Plaintext
+         is retained solely for an explicitly configured loopback development gateway. -->
     <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">localhost</domain>

@@ -22,7 +22,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.dbpprt.dieter.ui.theme.DieterSurface
-import com.dbpprt.dieter.v1.Card
+import com.dbpprt.dieter.api.v1.Card
 
 internal data class ActivityItemActions(
     val onRename: (Card, String) -> Unit,

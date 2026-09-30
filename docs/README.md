@@ -42,6 +42,8 @@ These are dated engineering records, not the current installation manual or a
 list of promised features. Their observations, benchmarks, and validation limits
 are retained. Paths are stable so existing issue and PR links continue to work.
 
+- [KMP core implementation plan](kmp-core-implementation-plan-2026-09-30.md) — work packages, cutover, test gates, and sequencing for moving all client logic into the shared core.
+- [Kotlin Multiplatform shared client core](kmp-shared-core-plan-2026-09-29.md) — deep dive, native-extension boundaries, feasibility results, and migration phases.
 - [Product assessment](product-assessment-2026-09-28.md) — commercial product review, prioritized gaps, Now/Next/Later roadmap, and research questions.
 - [Code structure, native clients, helpers, and build audit](code-structure-audit-2026-09-26.md)
 - [Lean native test framework proposal](native-test-framework-plan-2026-09-25.md)

@@ -3,14 +3,27 @@ package com.dbpprt.dieter.fixtures
 import android.app.Service
 import android.content.Intent
 import android.os.*
+import com.dbpprt.dieter.core.CoreRuntime
+import com.dbpprt.dieter.core.composition.TaskDrafts
+import com.dbpprt.dieter.core.composition.task
+import com.dbpprt.dieter.sharedcore.SharedCore
 import com.dbpprt.dieter.ui.TaskCaptureStore
+import java.io.File
 import kotlinx.coroutines.*
 
-/** Separate fixture process lets instrumentation kill/recreate the real draft store. */
+/**
+ * Separate fixture process lets instrumentation kill/recreate the real draft
+ * store over its own shared core; the journal lives in a private test directory.
+ */
 class CaptureRecoveryService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private lateinit var core: CoreRuntime
     private lateinit var store: TaskCaptureStore
-    override fun onCreate() { super.onCreate(); store = TaskCaptureStore(this) }
+    override fun onCreate() {
+        super.onCreate()
+        core = SharedCore.create(this, null, File(noBackupFilesDir, "capture-recovery-core")).also { it.start() }
+        store = TaskCaptureStore(this, core)
+    }
     private val messenger = Messenger(object : Handler(Looper.getMainLooper()) {
         override fun handleMessage(message: Message) {
             val reply = message.replyTo
@@ -18,18 +31,22 @@ class CaptureRecoveryService : Service() {
             val id = message.data.getString("id").orEmpty()
             val uri = message.data.getString("uri").orEmpty()
             scope.launch {
-                while (!store.loaded) delay(10)
+                while (!store.view.value.bound) delay(10)
                 val result = runCatching {
-                    val draft = if (operation == 1) store.create("process-recovery").also {
-                        it.prompt = "Persist through actual process death"
-                        store.import(it, listOf(android.net.Uri.parse(uri)))
-                        while (it.importing) delay(10)
-                        check(it.attachments.size == 1) { "Import failed: ${it.importFailures.map { failure -> failure.message }}; ${it.persistenceError}" }
-                        store.flush(it)
-                    } else store.drafts.single { it.id == id }
+                    val draft = if (operation == 1) {
+                        val editor = store.begin()
+                        editor.edit { TaskDrafts.prompt(it, "Persist through actual process death") }
+                        store.import(editor, listOf(android.net.Uri.parse(uri)))
+                        while (editor.state.value.importing) delay(10)
+                        check(editor.state.value.task.attachments.size == 1) {
+                            "Import failed: ${editor.state.value.failures.map { failure -> failure.message }}; ${editor.error.value}"
+                        }
+                        store.flush(editor)
+                        editor.state.value
+                    } else store.view.value.drafts.single { it.id == id }
                     Bundle().apply {
-                        putString("id", draft.id); putString("prompt", draft.prompt)
-                        putByteArray("bytes", draft.attachments.single().data.toByteArray())
+                        putString("id", draft.id); putString("prompt", draft.task.prompt)
+                        putByteArray("bytes", draft.task.attachments.single().data_.toByteArray())
                         putInt("pid", Process.myPid())
                     }
                 }
@@ -39,5 +56,5 @@ class CaptureRecoveryService : Service() {
         }
     })
     override fun onBind(intent: Intent) = messenger.binder
-    override fun onDestroy() { scope.cancel(); store.close(); super.onDestroy() }
+    override fun onDestroy() { scope.cancel(); store.close(); runBlocking { core.shutdown() }; super.onDestroy() }
 }

@@ -6,9 +6,9 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import com.dbpprt.dieter.connection.EndpointConnection
-import com.dbpprt.dieter.connection.EndpointPhase
-import com.dbpprt.dieter.gateway.v1.CompatibilityStatus
+import com.dbpprt.dieter.core.machines.MachineRow
+import com.dbpprt.dieter.core.machines.MachineLink
+import com.dbpprt.dieter.api.gateway.v1.CompatibilityStatus
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -22,16 +22,16 @@ class ProjectReplicaPickerTest {
     fun pickerSelectsOnlyOnlineCompatibleDaemonHosts() {
         var selected = "machine-a"
         val machines = listOf(
-            EndpointConnection(
+            MachineRow(
                 id = "machine-a",
                 label = "Studio",
                 address = "https://gateway.test",
-                phase = EndpointPhase.CONNECTED,
+                phase = MachineLink.CONNECTED,
                 online = true,
                 daemonId = "daemon-a",
                 compatibility = CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE,
             ),
-            EndpointConnection(
+            MachineRow(
                 id = "machine-b",
                 label = "Laptop",
                 address = "https://gateway.test",
@@ -39,7 +39,7 @@ class ProjectReplicaPickerTest {
                 daemonId = "daemon-b",
                 compatibility = CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE,
             ),
-            EndpointConnection(
+            MachineRow(
                 id = "machine-old",
                 label = "Old machine",
                 address = "https://gateway.test",

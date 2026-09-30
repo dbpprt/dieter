@@ -25,24 +25,27 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.dbpprt.dieter.core.activity.Activity
+import com.dbpprt.dieter.core.activity.ActivityItem
+import com.dbpprt.dieter.core.activity.ActivityKind
+import com.dbpprt.dieter.core.activity.ActivitySection
 import com.dbpprt.dieter.ui.theme.*
 import java.time.Instant
+import kotlin.time.toKotlinInstant
 
 @Composable
 internal fun ActivityRow(
-    entry: ActivityEntry, project: String?, board: String?, machine: String, now: Instant,
+    entry: ActivityItem, machine: String, now: Instant,
     isSelected: Boolean = false, actions: ActivityItemActions? = null, onClick: () -> Unit,
 ) {
-    val accent = stableAccent(entry.card.projectId)
+    val accent = stableAccent(entry.card.project_id)
     val statusColor = when {
-        entry.needsYou -> DieterAmber
+        entry.kind.needsYou -> DieterAmber
         entry.kind == ActivityKind.FAILED -> DieterCoral
         entry.running -> DieterEyes
         else -> DieterMuted
     }
-    val age = activityAge(entry.at, now).let {
-        if (entry.at == null || it == "Just now") it else "$it ago"
-    }
+    val age = Activity.age(entry.at, now.toKotlinInstant(), suffix = true)
     ActivityItem(
         card = entry.card, onOpen = { onClick() }, actions = actions,
         color = if (isSelected) DieterShellTint else DieterSurface,
@@ -73,7 +76,7 @@ internal fun ActivityRow(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.size(6.dp).background(accent, CircleShape))
                 Text(
-                    listOfNotNull(project, board?.takeIf { entry.card.scope != "chat" },
+                    listOfNotNull(entry.projectName, entry.boardName?.takeIf { entry.card.scope != "chat" },
                         "Chat".takeIf { entry.card.scope == "chat" }).joinToString(" · "),
                     color = DieterMuted, style = MaterialTheme.typography.labelSmall,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
@@ -95,7 +98,7 @@ internal fun ActivityRow(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(when {
                     entry.running -> Icons.Outlined.PlayCircleOutline
-                    entry.needsYou || entry.kind == ActivityKind.FAILED -> Icons.Outlined.ErrorOutline
+                    entry.kind.needsYou || entry.kind == ActivityKind.FAILED -> Icons.Outlined.ErrorOutline
                     else -> Icons.Outlined.CheckCircle
                 }, null, Modifier.size(15.dp), tint = statusColor)
                 Text(entry.detail, color = statusColor, style = MaterialTheme.typography.bodySmall,

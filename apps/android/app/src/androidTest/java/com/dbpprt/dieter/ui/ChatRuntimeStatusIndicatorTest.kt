@@ -25,7 +25,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.ui.theme.DieterTheme
-import com.dbpprt.dieter.v1.Card
+import com.dbpprt.dieter.api.v1.Card
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -107,13 +107,7 @@ class ChatRuntimeStatusIndicatorTest {
     }
 
     private fun card(id: String, title: String, running: Boolean, pinned: Boolean = false): Card =
-        Card.newBuilder()
-            .setId(id)
-            .setTitle(title)
-            .setRuntime(if (running) "running" else "idle")
-            .setPinned(pinned)
-            .setLastActivityAt("2026-09-05T20:40:00Z")
-            .build()
+        Card(id = id, title = title, runtime = if (running) "running" else "idle", pinned = pinned, last_activity_at = "2026-09-05T20:40:00Z")
 
     private fun capture(name: String) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

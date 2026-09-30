@@ -59,7 +59,7 @@ import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.ui.theme.DieterPane
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
-import com.dbpprt.dieter.v1.Schedule
+import com.dbpprt.dieter.api.v1.Schedule
 import com.dbpprt.dieter.ui.theme.DieterShellTint
 import com.dbpprt.dieter.ui.theme.DieterAbyss
 
@@ -236,8 +236,8 @@ internal fun ScheduleCard(
                     Text("Edit")
                 }
             }
-            if (schedule.nextRunAt.isNotBlank()) {
-                Text("Next · ${shortTimestamp(schedule.nextRunAt)}", color = DieterShell, fontSize = 12.sp)
+            if (schedule.next_run_at.isNotBlank()) {
+                Text("Next · ${shortTimestamp(schedule.next_run_at)}", color = DieterShell, fontSize = 12.sp)
             }
         }
     }
@@ -250,10 +250,10 @@ internal fun ScheduleCard(
 }
 
 @Composable
-internal fun ScheduleRunRow(run: com.dbpprt.dieter.v1.ScheduleRun) {
+internal fun ScheduleRunRow(run: com.dbpprt.dieter.api.v1.ScheduleRun) {
     Surface(color = DieterSurfaceHigh, shape = RoundedCornerShape(14.dp)) {
         Text(
-            "${run.status.ifBlank { "unknown" }} · ${shortTimestamp(run.scheduledFor.ifBlank { run.createdAt })}${run.message.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}",
+            "${run.status.ifBlank { "unknown" }} · ${shortTimestamp(run.scheduled_for.ifBlank { run.created_at })}${run.message.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()}",
             color = if (run.status == "failed") MaterialTheme.colorScheme.error else DieterMuted,
             fontSize = 12.sp,
             maxLines = 3,

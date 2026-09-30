@@ -27,12 +27,13 @@ import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
 import com.dbpprt.dieter.R
-import com.dbpprt.dieter.connection.BackgroundSyncMode
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.data.DieterEndpoint
-import com.dbpprt.dieter.data.GrpcDieterRepository
+import com.dbpprt.dieter.api.v1.GetCardRequest
+import com.dbpprt.dieter.core.admin.BackgroundMode
+import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.e2e.IsolatedCore
+import com.dbpprt.dieter.e2e.TestCore
 import com.dbpprt.dieter.settings.DieterPalette
-import com.dbpprt.dieter.v1.CreateConversationRequest
+import com.dbpprt.dieter.api.v1.CreateConversationRequest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -57,41 +58,38 @@ class WidgetInboxEndToEndTest {
     @Test fun widgetTracksInboxAndRefreshesWhileAppOnlySyncIsSleeping() {
         check(context.packageName == "com.dbpprt.dieter.e2e")
         val args = InstrumentationRegistry.getArguments()
-        val endpoint = DieterEndpoint("widget-fixture", "Widget fixture", "127.0.0.1",
-            requireNotNull(args.getString("isolatedGatewayPort")).toInt(), false)
         val container = (compose.activity.application as DieterApplication).container
-        val manager = container.connectionManager
-        val repository = container.repository
-        val otherDevice = GrpcDieterRepository(context)
-        repository.setAccessToken(endpoint, requireNotNull(args.getString("isolatedGatewayToken")))
-        manager.updateEndpoints(listOf(endpoint), selectedGatewayId = endpoint.id)
-        manager.connect()
-        manager.onAppForegrounded()
+        val core = container.core
+        val originalMode = container.policy.mode.value
+        // Another signed-in device: it keeps receiving while APP_ONLY closes this app's route.
+        val otherDevice = TestCore()
         val userId = shell("am get-current-user").trim().toInt()
         shell("appwidget grantbind --package ${context.packageName} --user $userId")
+        fun cards() = core.workspace.state.value.allItems
         try {
-            val connected = runBlocking { withTimeout(30_000) { manager.state.first {
-                it.phase == ConnectionPhase.CONNECTED && it.boards.any { board -> board.id == args.getString("isolatedBoardId") } &&
-                    it.endpointConnections.any { machine -> machine.daemonId == args.getString("isolatedMachineId") && machine.online }
-            } } }
-            val board = connected.boards.first { it.id == args.getString("isolatedBoardId") }
-            // This client remains connected when APP_ONLY intentionally closes the app's route.
-            val fixtureRoute = repository.activeEndpoint
-            otherDevice.setAccessToken(fixtureRoute, requireNotNull(args.getString("isolatedGatewayToken")))
-            otherDevice.replaceEndpoints(listOf(fixtureRoute))
-            otherDevice.selectEndpoint(fixtureRoute)
-            fun create(title: String, chat: Boolean = false, prompt: String = "mock-activity-reply") = runBlocking {
-                repository.createConversation(CreateConversationRequest.newBuilder().setProjectId(board.projectId)
-                    .setBoardId(if (chat) "" else board.id).setTitle(title).setLane("running").setPrompt(prompt)
-                    .setProvider("mock").setModel("mock").setWorkspaceMode("project").build(), chat)
+            val connected = IsolatedCore.connect(container)
+            runBlocking {
+                withTimeout(30_000) {
+                    core.connection.machines.first { directory -> directory.all.any { it.id == args.getString("isolatedMachineId") && it.online(directory.evaluatedAt) } }
+                }
             }
+            val board = connected.boards.values.flatten().first { it.id == args.getString("isolatedBoardId") }
+            runBlocking {
+                otherDevice.core.adoptSession(IsolatedCore.gateway, IsolatedCore.token)
+                otherDevice.core.setActive(true)
+            }
+            fun create(title: String, chat: Boolean = false, prompt: String = "mock-activity-reply") = IsolatedCore.createConversation(
+                container,
+                CreateConversationRequest(project_id = board.project_id, board_id = if (chat) "" else board.id, title = title, lane = "running", prompt = prompt, provider = "mock", model = "mock", workspace_mode = "project"),
+                chat,
+            )
             val card = create("Review tablet spacing")
             val chat = create("Summarize release notes", chat = true)
             val running = create("Polish the home widget", prompt = "mock-queue-hold")
             compose.waitUntil(30_000) {
-                val state = manager.state.value
-                listOf(card, chat).all { expected -> (state.cards + state.chats).any { it.id == expected.id && it.responseSeq > it.seenResponseSeq } } &&
-                    state.cards.any { it.id == running.id && it.runtime in setOf("starting", "running") }
+                val items = cards()
+                listOf(card, chat).all { expected -> items.any { it.id == expected.id && it.response_seq > it.seen_response_seq } } &&
+                    items.any { it.id == running.id && it.runtime in setOf("starting", "running") }
             }
             val widgets = AppWidgetManager.getInstance(context)
             instrumentation.runOnMainSync {
@@ -125,45 +123,55 @@ class WidgetInboxEndToEndTest {
             capture("widget-inbox-compact-monochrome")
             onView(withText(chat.title)).perform(click())
             compose.waitUntil(15_000) { compose.onAllNodesWithTag("message-input").fetchSemanticsNodes().isNotEmpty() }
-            compose.waitUntil(15_000) { manager.state.value.chats.any { it.id == chat.id && it.seenResponseSeq >= it.responseSeq } }
-            assertTrue(runBlocking { repository.card(chat.id).card.let { it.seenResponseSeq >= it.responseSeq } })
+            compose.waitUntil(15_000) { cards().any { it.id == chat.id && it.seen_response_seq >= it.response_seq } }
+            assertTrue(runBlocking {
+                core.onMachine(chat.owner_daemon_id) { it.GetCard().execute(GetCardRequest(card_id = chat.id)) }
+            }.card!!.let { it.seen_response_seq >= it.response_seq })
             showWidget(360, 480)
             awaitText("Needs attention · 1")
             onView(withText(card.title)).perform(click())
             compose.waitUntil(15_000) { compose.onAllNodesWithTag("message-input").fetchSemanticsNodes().isNotEmpty() }
-            compose.waitUntil(15_000) { manager.state.value.cards.any { it.id == card.id && it.seenResponseSeq >= it.responseSeq } }
+            compose.waitUntil(15_000) { cards().any { it.id == card.id && it.seen_response_seq >= it.response_seq } }
             showWidget(360, 480)
             awaitText("Recent · 2")
             awaitText("Finished")
 
-            runBlocking { repository.renameCard(chat.id, "Release notes are ready") }
+            runBlocking { core.onBoard { rename(chat.id, "Release notes are ready") } }
             awaitText("Release notes are ready") // Live push, no refresh tap.
-            runBlocking { repository.archiveCard(chat.id, true) }
+            runBlocking { core.onBoard { archive(chat.id) } }
             awaitAbsent("Release notes are ready")
-            runBlocking { repository.cancelCard(running.id) }
+            runBlocking { core.onBoard { cancel(running.id) } }
 
-            manager.setBackgroundSyncMode(BackgroundSyncMode.APP_ONLY)
-            runBlocking { withTimeout(10_000) { manager.state.first { it.phase == ConnectionPhase.STOPPED } } }
-            runBlocking { otherDevice.renameCard(card.id, "Spacing approved from another device") }
+            instrumentation.runOnMainSync {
+                container.policy.setMode(BackgroundMode.APP_ONLY)
+                // The widget host is in front; this app is backgrounded.
+                container.policy.setForeground(false)
+            }
+            runBlocking { withTimeout(10_000) { core.connection.state.first { it.phase == ConnectionPhase.DISCONNECTED } } }
+            runBlocking {
+                withTimeout(30_000) { otherDevice.core.workspace.state.first { it.card(card.id) != null } }
+                otherDevice.core.onBoard { rename(card.id, "Spacing approved from another device") }
+            }
             assertFalse(widgetTexts().contains("Spacing approved from another device"))
             onView(withId(R.id.widget_refresh)).perform(click())
             awaitText("Spacing approved from another device")
-            runBlocking { withTimeout(12_000) { manager.state.first { it.phase == ConnectionPhase.STOPPED } } }
-            assertEquals(BackgroundSyncMode.APP_ONLY, manager.state.value.backgroundSyncMode)
-            assertTrue(manager.state.value.desiredConnected)
+            runBlocking { withTimeout(12_000) { core.connection.state.first { it.phase == ConnectionPhase.DISCONNECTED } } }
+            assertEquals(BackgroundMode.APP_ONLY, container.policy.mode.value)
+            assertTrue(container.policy.desired.value)
             capture("widget-inbox-refreshed-offline")
             onView(withId(R.id.widget_header)).perform(click())
             compose.onNodeWithTag("nav-activity").assertIsSelected()
             compose.onNodeWithTag("activity-feed").assertIsDisplayed()
         } catch (failure: Throwable) {
             File(context.getExternalFilesDir(null), "widget-failure-state.txt").writeText(
-                "phase=${manager.state.value.phase}\n" + (manager.state.value.cards + manager.state.value.chats).joinToString("\n") {
-                    "${it.title}: runtime=${it.runtime}, response=${it.responseSeq}, seen=${it.seenResponseSeq}"
+                "phase=${core.connection.state.value.phase}\n" + cards().joinToString("\n") {
+                    "${it.title}: runtime=${it.runtime}, response=${it.response_seq}, seen=${it.seen_response_seq}"
                 })
             if (::widgetView.isInitialized) runCatching { capture("widget-failure") }.onFailure(failure::addSuppressed)
             throw failure
         } finally {
             otherDevice.close()
+            otherDevice.delete()
             hostScreen?.close()
             if (::host.isInitialized) instrumentation.runOnMainSync {
                 host.stopListening()
@@ -171,7 +179,8 @@ class WidgetInboxEndToEndTest {
                 host.deleteHost()
             }
             shell("appwidget revokebind --package ${context.packageName} --user $userId")
-            manager.disconnect()
+            instrumentation.runOnMainSync { container.policy.setMode(originalMode) }
+            IsolatedCore.disconnect(container)
         }
     }
 

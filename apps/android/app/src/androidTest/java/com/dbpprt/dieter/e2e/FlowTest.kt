@@ -11,11 +11,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.data.DieterEndpoint
-import com.dbpprt.dieter.v1.CreateConversationRequest
-import com.dbpprt.dieter.ui.ActivityKind
-import com.dbpprt.dieter.ui.buildActivityEntries
+import com.dbpprt.dieter.api.v1.CreateConversationRequest
+import com.dbpprt.dieter.core.activity.ActivityItem
+import com.dbpprt.dieter.core.activity.ActivityKind
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -84,7 +82,7 @@ class FlowTest {
             runCatching { capture("failure") }
             throw error
         } finally {
-            container.connectionManager.disconnect()
+            IsolatedCore.disconnect(container)
         }
     }
 
@@ -144,62 +142,54 @@ class FlowTest {
 
     private fun bindFixture(recipe: String) {
         val args = InstrumentationRegistry.getArguments()
-        val token = requireNotNull(args.getString("isolatedGatewayToken")) { "Isolated gateway required" }
-        val origin = DieterEndpoint("e2e", "Isolated E2E", "127.0.0.1", args.getString("isolatedGatewayPort")!!.toInt(), false)
-        val repository = container.repository
-        val manager = container.connectionManager
-        repository.setAccessToken(origin, token)
-        manager.updateEndpoints(listOf(origin), selectedGatewayId = origin.id)
-        manager.connect()
-        manager.onAppForegrounded()
-        val state = runBlocking { withTimeout(30_000) { manager.state.first {
-            it.phase == ConnectionPhase.CONNECTED && it.boards.isNotEmpty() &&
-                it.endpointConnections.any { endpoint -> endpoint.daemonId == args.getString("isolatedMachineId") && endpoint.online }
-        } } }
-        variables["fixture.endpointId"] = state.endpointConnections.first { it.daemonId == args.getString("isolatedMachineId") }.id
+        val connected = IsolatedCore.connect(container)
+        val machineId = requireNotNull(args.getString("isolatedMachineId"))
+        runBlocking {
+            withTimeout(30_000) {
+                container.core.connection.machines.first { directory -> directory.all.any { it.id == machineId && it.online(directory.evaluatedAt) } }
+            }
+        }
+        // Machine rows are keyed by daemon ID.
+        variables["fixture.endpointId"] = machineId
         if (recipe == "activity") {
-            val board = state.boards.first { it.id == args.getString("isolatedBoardId") }
+            val board = connected.boards.values.flatten().first { it.id == args.getString("isolatedBoardId") }
             val prefix = "Activity journey"
             variables["fixture.activityPrefix"] = prefix
-            val cards = runBlocking {
-                listOf(false, true).map { chat ->
-                    repository.createConversation(CreateConversationRequest.newBuilder()
-                        .setProjectId(board.projectId).setBoardId(if (chat) "" else board.id)
-                        .setTitle("$prefix ${if (chat) "chat" else "card"}")
-                        .setLane("running").setPrompt("mock-activity-reply")
-                        .setProvider("mock").setModel("mock").setWorkspaceMode("project").build(), chat)
-                }
+            val cards = listOf(false, true).map { chat ->
+                IsolatedCore.createConversation(container, CreateConversationRequest(project_id = board.project_id, board_id = if (chat) "" else board.id, title = "$prefix ${if (chat) "chat" else "card"}", lane = "running", prompt = "mock-activity-reply", provider = "mock", model = "mock", workspace_mode = "project"), chat)
             }
             variables["fixture.cardId"] = cards[0].id
             variables["fixture.chatId"] = cards[1].id
             runBlocking {
-                manager.refreshMachineDirectory(includeArchivedChats = true)
-                withTimeout(30_000) { manager.state.first { current -> cards.all { expected ->
-                    (current.cards + current.chats).any { it.id == expected.id && it.runtime.isNotBlank() && it.runtimeUpdatedAt.isNotBlank() }
-                } } }
+                withTimeout(30_000) {
+                    container.core.workspace.state.first { view ->
+                        cards.all { expected -> view.card(expected.id)?.let { it.runtime.isNotBlank() && it.runtime_updated_at.isNotBlank() } == true }
+                    }
+                }
             }
         }
     }
+    private fun activity(): List<ActivityItem> = runBlocking { container.core.activity().first() }
     private fun probe(name: String) {
         when (name) {
             "machine-telemetry" -> {
-                val information = runBlocking { container.repository.machineInformationOn(variables.getValue("fixture.endpointId")) }
-                check(information.hostname.isNotBlank() && information.osName.isNotBlank())
-                check(information.logicalCpuCount > 0 && information.memoryTotalBytes > 0)
-                check(information.processesList.any { it.kind == "daemon" })
+                val information = runBlocking {
+                    container.core.onMachine(variables.getValue("fixture.endpointId")) { it.GetMachineInformation().execute(Unit) }
+                }
+                check(information.hostname.isNotBlank() && information.os_name.isNotBlank())
+                check(information.logical_cpu_count > 0 && information.memory_total_bytes > 0)
+                check(information.processes.any { it.kind == "daemon" })
             }
             "activity-replies-unread" -> compose.waitUntil(15_000) {
-                val state = container.connectionManager.state.value
-                val entries = buildActivityEntries(state.cards + state.chats)
+                val entries = activity()
                 listOf("fixture.cardId", "fixture.chatId").all { key ->
-                    entries.any { it.card.id == variables.getValue(key) && it.kind == ActivityKind.UNREAD && it.needsYou }
+                    entries.any { it.card.id == variables.getValue(key) && it.kind == ActivityKind.UNREAD && it.kind.needsYou }
                 }
             }
             "activity-card-seen", "activity-chat-seen" -> compose.waitUntil(15_000) {
                 val id = variables.getValue(if (name == "activity-card-seen") "fixture.cardId" else "fixture.chatId")
-                val state = container.connectionManager.state.value
-                buildActivityEntries(state.cards + state.chats).any {
-                    it.card.id == id && it.card.responseSeq > 0 && it.card.seenResponseSeq == it.card.responseSeq && !it.needsYou
+                activity().any {
+                    it.card.id == id && it.card.response_seq > 0 && it.card.seen_response_seq == it.card.response_seq && !it.kind.needsYou
                 }
             }
             else -> error("Unsupported probe $name")

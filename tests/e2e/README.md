@@ -139,9 +139,10 @@ All device execution uses `just e2e run`; the five old Android test aliases are 
 `Pixel_9_API_37_1` AVD already available. It does not create, cold boot, or replace
 an emulator. The Mac job uses a provisioned desktop; the iOS job uses the hosted macOS iPhone/iPad matrix. No runner provisioning or GitHub execution is implied by the file.
 
-Coverage exceptions are explicit: `RealDieterIntegrationTest` requires an operator
-account and stays manual; `webRTCControlCarriesRPCAndReportsICEPath` needs a
-separately provisioned reachable ICE/TURN fixture (see the native TURN guide).
+Android client logic (sign-in, routing, sync, the outbox, navigation,
+terminals, workspace review) lives in the shared KMP core and is covered by its
+JVM end-to-end tests against the same isolated gateway (`just core test`). The
+Android cases exercise the app's native surfaces and platform bindings on top.
 The obsolete production-gateway restoration test was removed; owned fixture
 teardown replaces its cleanup role.
 `FlowTest.runFlow` is invoked by each YAML journey, not as an independent case.

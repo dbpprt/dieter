@@ -2,6 +2,10 @@
 
 package com.dbpprt.dieter.ui
 
+import androidx.compose.runtime.collectAsState
+import com.dbpprt.dieter.core.admin.Labels
+import com.dbpprt.dieter.core.board.BoardFilters
+import com.dbpprt.dieter.core.board.CardOperation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
@@ -29,7 +33,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyListScope
-import com.dbpprt.dieter.settings.NavigationFolderScope
+import com.dbpprt.dieter.core.board.LaneKind
+import com.dbpprt.dieter.core.board.Lanes
+import com.dbpprt.dieter.core.board.ProjectOverview
+import com.dbpprt.dieter.core.board.ProjectSort
+import com.dbpprt.dieter.core.board.ProjectTap
+import com.dbpprt.dieter.core.composition.Creation
+import com.dbpprt.dieter.core.composition.TaskDrafts
+import com.dbpprt.dieter.core.composition.frozen
+import com.dbpprt.dieter.core.composition.task
+import com.dbpprt.dieter.core.navigation.Destination
+import com.dbpprt.dieter.core.navigation.FolderScope
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -116,9 +130,11 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
-import com.dbpprt.dieter.connection.ProjectReplica
 import androidx.compose.ui.zIndex
 import androidx.core.graphics.toColorInt
+import com.dbpprt.dieter.core.navigation.NavigationLayout
+import com.dbpprt.dieter.core.presentation.Ages
+import com.dbpprt.dieter.core.state.CaptureDraft
 import com.dbpprt.dieter.ui.theme.DieterAmber
 import com.dbpprt.dieter.ui.theme.DieterEyes
 import com.dbpprt.dieter.ui.theme.DieterShell
@@ -128,9 +144,10 @@ import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.ui.theme.DieterPane
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
-import com.dbpprt.dieter.v1.Board
-import com.dbpprt.dieter.v1.Card as BoardCard
-import com.dbpprt.dieter.v1.Project
+import com.dbpprt.dieter.api.v1.Board
+import com.dbpprt.dieter.api.v1.Card as BoardCard
+import com.dbpprt.dieter.api.v1.Project
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import java.time.Instant
@@ -231,27 +248,16 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
     var moveProjectID by rememberSaveable { mutableStateOf<String?>(null) }
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
-    var sort by rememberSaveable { mutableStateOf(ProjectOverviewSort.MANUAL) }
+    var sort by rememberSaveable { mutableStateOf(ProjectSort.MANUAL) }
     var sortMenuOpen by remember { mutableStateOf(false) }
     var topSortMenuOpen by remember { mutableStateOf(false) }
     var expandedProjectIDs by remember { mutableStateOf(emptySet<String>()) }
     val projectDragState = remember { ProjectDragState() }
     val haptic = LocalHapticFeedback.current
-    val boardsByProject = remember(state.spaceBoards) { state.spaceBoards.groupBy(Board::getProjectId) }
-    val cardsByProject = remember(state.spaceCards) { state.spaceCards.groupBy(BoardCard::getProjectId) }
+    val boardsByProject = remember(state.spaceBoards) { state.spaceBoards.groupBy(Board::project_id) }
+    val cardsByProject = remember(state.spaceCards) { state.spaceCards.groupBy(BoardCard::project_id) }
     val visibleProjects = remember(state.projects, boardsByProject, cardsByProject, query, sort) {
-        val filtered = state.projects.filter { project ->
-            query.isBlank() || project.name.contains(query, true) || project.path.contains(query, true) ||
-                boardsByProject[project.id].orEmpty().any { it.name.contains(query, true) }
-        }
-        when (sort) {
-            ProjectOverviewSort.MANUAL -> filtered
-            ProjectOverviewSort.ATTENTION -> filtered.sortedWith(
-                compareByDescending<Project> { projectAttentionCount(cardsByProject[it.id].orEmpty()) }
-                    .thenBy { it.name.lowercase() },
-            )
-            ProjectOverviewSort.NAME -> filtered.sortedBy { it.name.lowercase() }
-        }
+        ProjectOverview.visible(state.projects, boardsByProject, cardsByProject, query, sort)
     }
     val pinnedProjects = remember(state.projects, state.pinnedProjectOrder) {
         orderedPinnedProjects(state.projects, state.pinnedProjectOrder)
@@ -271,7 +277,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                 IconButton(onClick = { topSortMenuOpen = true }) {
                     Icon(Icons.Outlined.Tune, "Sort projects", tint = DieterMuted)
                 }
-                ProjectOverviewSortMenu(
+                ProjectSortMenu(
                     expanded = topSortMenuOpen,
                     selected = sort,
                     onSelect = { sort = it; topSortMenuOpen = false },
@@ -284,7 +290,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
         if (searchOpen) CompactSearchField(query, { query = it }, "Search projects and boards")
         if (state.spacesLoading) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = DieterShell)
         SurfaceErrorBanner(state.error, model::clearError)
-        if (!state.connected && state.projects.isEmpty() && state.projectFolders.folders.isEmpty()) {
+        if (!state.connected && state.projects.isEmpty() && state.projectFolders.isEmpty()) {
             ConnectionEmptyState(state, model)
         } else if (state.loading && state.projects.isEmpty()) {
             LoadingState()
@@ -310,7 +316,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                                     checkoutLabel = state.projectCheckoutLabel(project),
                                     boards = boardsByProject[project.id].orEmpty(),
                                     cards = cardsByProject[project.id].orEmpty(),
-                                    chatCount = state.chats.count { it.projectId == project.id && !it.archived },
+                                    chatCount = state.chats.count { it.project_id == project.id && !it.archived },
                                     selected = project.id == state.selectedProjectId,
                                     onUnpin = { model.setProjectPinned(project.id, false) },
                                     onOpenBoard = { model.openBoard(project.id, it.id) },
@@ -332,13 +338,13 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "ALL PROJECTS  ·  ${state.projectFolders.folders.size} ${plural(state.projectFolders.folders.size, "folder")}".uppercase(),
+                            "ALL PROJECTS  ·  ${state.projectFolders.size} ${plural(state.projectFolders.size, "folder")}".uppercase(),
                             color = DieterMuted,
                             fontSize = 10.sp,
                             letterSpacing = 1.15.sp,
                             modifier = Modifier.weight(1f),
                         )
-                        NewNavigationFolderButton(NavigationFolderScope.PROJECTS, state.projectFolders, model.navigationFolders)
+                        NewNavigationFolderButton(FolderScope.PROJECTS, state.projectFolders, model)
                         Box {
                             Surface(
                                 onClick = { sortMenuOpen = true },
@@ -354,7 +360,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                                     Icon(Icons.Outlined.KeyboardArrowDown, null, Modifier.size(14.dp), tint = DieterMuted)
                                 }
                             }
-                            ProjectOverviewSortMenu(
+                            ProjectSortMenu(
                                 expanded = sortMenuOpen,
                                 selected = sort,
                                 onSelect = { sort = it; sortMenuOpen = false },
@@ -388,10 +394,10 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                             onOpenBoard = { board -> model.openBoard(project.id, board.id) },
                             onCreateBoard = { model.openNewBoard(project.id) },
                             onToggle = {
-                                when (projectBoards.size) {
-                                    0 -> model.openNewBoard(project.id)
-                                    1 -> model.openBoard(project.id, projectBoards.single().id)
-                                    else -> expandedProjectIDs = if (project.id in expandedProjectIDs) {
+                                when (ProjectOverview.tap(projectBoards.size)) {
+                                    ProjectTap.CREATE_BOARD -> model.openNewBoard(project.id)
+                                    ProjectTap.OPEN_BOARD -> model.openBoard(project.id, projectBoards.single().id)
+                                    ProjectTap.EXPAND -> expandedProjectIDs = if (project.id in expandedProjectIDs) {
                                         expandedProjectIDs - project.id
                                     } else {
                                         expandedProjectIDs + project.id
@@ -432,14 +438,12 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                     }
                 }
                 val projectsByID = visibleProjects.associateBy { it.id }
-                state.projectFolders.folders.forEach { folder ->
-                    val members = sortProjects(folder.itemIDs.mapNotNull(projectsByID::get), sort, cardsByProject)
+                state.projectFolders.forEach { folder ->
+                    val members = ProjectOverview.visible(folder.itemIds.mapNotNull(projectsByID::get), boardsByProject, cardsByProject, "", sort)
                     if (query.isBlank() || members.isNotEmpty()) {
                         item(key = "project-folder-${folder.id}") {
                             val folderBoards = members.flatMap { boardsByProject[it.id].orEmpty() }
-                            val attentionBoards = folderBoards.count { board ->
-                                cardsByProject[board.projectId].orEmpty().any { it.boardId == board.id && it.lane.contains("review", true) }
-                            }
+                            val attentionBoards = ProjectOverview.boardsInReview(folderBoards, members.flatMap { cardsByProject[it.id].orEmpty() })
                             Surface(
                                 color = DieterSurface,
                                 shape = RoundedCornerShape(11.dp),
@@ -448,9 +452,9 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                                 NavigationFolderHeader(
                                     folder,
                                     attentionBoards.takeIf { it > 0 } ?: members.size,
-                                    NavigationFolderScope.PROJECTS,
+                                    FolderScope.PROJECTS,
                                     state.projectFolders,
-                                    model.navigationFolders,
+                                    model,
                                     revealSearchResults = query.isNotBlank(),
                                     summary = buildString {
                                         append(members.size).append(" ").append(plural(members.size, "project"))
@@ -460,7 +464,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                                 )
                             }
                         }
-                        if (folder.isExpanded || query.isNotBlank()) {
+                        if (folder.expanded || query.isNotBlank()) {
                             if (members.isEmpty()) item(key = "project-folder-empty-${folder.id}") {
                                 Text("No projects in this folder", color = DieterMuted, modifier = Modifier.padding(horizontal = 32.dp, vertical = 6.dp))
                             }
@@ -468,7 +472,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                         }
                     }
                 }
-                val unfiled = state.projectFolders.unfiledIDs(visibleProjects.map { it.id }).mapNotNull(projectsByID::get)
+                val unfiled = NavigationLayout.unfiled(state.projectFolders, visibleProjects.map { it.id }).mapNotNull(projectsByID::get)
                 projectItems(unfiled)
                 item {
                     Surface(
@@ -494,21 +498,21 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
         }
     }
     moveProjectID?.let { projectID ->
-        MoveToNavigationFolderDialog(projectID, NavigationFolderScope.PROJECTS, state.projectFolders,
-            model.navigationFolders, onDismiss = { moveProjectID = null })
+        MoveToNavigationFolderDialog(projectID, FolderScope.PROJECTS, state.projectFolders,
+            model, onDismiss = { moveProjectID = null })
     }
 }
 
 @Composable
-private fun ProjectOverviewSortMenu(
+private fun ProjectSortMenu(
     expanded: Boolean,
-    selected: ProjectOverviewSort,
-    onSelect: (ProjectOverviewSort) -> Unit,
+    selected: ProjectSort,
+    onSelect: (ProjectSort) -> Unit,
     onDismiss: () -> Unit,
     onSettings: (() -> Unit)? = null,
 ) {
     DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        ProjectOverviewSort.entries.forEach { option ->
+        ProjectSort.entries.forEach { option ->
             DropdownMenuItem(
                 text = { Text(option.label) },
                 trailingIcon = { if (selected == option) Icon(Icons.Default.Check, "Selected") },
@@ -525,27 +529,6 @@ private fun ProjectOverviewSortMenu(
     }
 }
 
-internal enum class ProjectOverviewSort(val label: String) {
-    MANUAL("Manual"),
-    ATTENTION("Needs you"),
-    NAME("Name"),
-}
-
-internal fun projectAttentionCount(cards: List<BoardCard>): Int = cards.count {
-    it.lane.contains("review", true) || it.runtime.contains("running", true)
-}
-
-internal fun sortProjects(
-    projects: List<Project>,
-    sort: ProjectOverviewSort,
-    cardsByProject: Map<String, List<BoardCard>>,
-): List<Project> = when (sort) {
-    ProjectOverviewSort.MANUAL -> projects
-    ProjectOverviewSort.ATTENTION -> projects.sortedWith(
-        compareByDescending<Project> { projectAttentionCount(cardsByProject[it.id].orEmpty()) }.thenBy { it.name.lowercase() },
-    )
-    ProjectOverviewSort.NAME -> projects.sortedBy { it.name.lowercase() }
-}
 
 @Composable
 private fun ProjectOverviewStatus(state: DieterUiState) {
@@ -558,7 +541,7 @@ private fun ProjectOverviewStatus(state: DieterUiState) {
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
-            "${state.projects.size} ${plural(state.projects.size, "project")} · ${state.projectFolders.folders.size} ${plural(state.projectFolders.folders.size, "folder")} · ",
+            "${state.projects.size} ${plural(state.projects.size, "project")} · ${state.projectFolders.size} ${plural(state.projectFolders.size, "folder")} · ",
             color = DieterMuted,
             fontSize = 11.sp,
         )
@@ -570,20 +553,9 @@ private fun ProjectOverviewStatus(state: DieterUiState) {
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
         )
-        compactSyncAge(state.lastConnectedAtMillis, now)?.let {
+        Ages.compact(state.lastConnectedAtMillis?.let(kotlin.time.Instant::fromEpochMilliseconds), kotlin.time.Instant.fromEpochMilliseconds(now))?.let {
             Text("  ·  $it", color = DieterMuted, fontSize = 11.sp)
         }
-    }
-}
-
-internal fun compactSyncAge(lastConnectedAtMillis: Long?, nowMillis: Long): String? {
-    if (lastConnectedAtMillis == null || lastConnectedAtMillis <= 0L) return null
-    val elapsedSeconds = ((nowMillis - lastConnectedAtMillis).coerceAtLeast(0L) / 1_000L)
-    return when {
-        elapsedSeconds < 60L -> "now"
-        elapsedSeconds < 3_600L -> "${elapsedSeconds / 60L}m"
-        elapsedSeconds < 86_400L -> "${elapsedSeconds / 3_600L}h"
-        else -> "${elapsedSeconds / 86_400L}d"
     }
 }
 
@@ -600,7 +572,7 @@ internal fun PinnedProjectCard(
     onCreateBoard: () -> Unit,
 ) {
     val accent = stableAccent(project.id)
-    val reviewCount = cards.count { it.lane.contains("review", true) }
+    val reviewCount = ProjectOverview.reviews(cards)
     Card(
         colors = CardDefaults.cardColors(containerColor = DieterSurface),
         border = androidx.compose.foundation.BorderStroke(
@@ -653,7 +625,7 @@ internal fun PinnedProjectCard(
                 }
             }
             boards.take(2).forEach { board ->
-                val boardCards = cards.filter { it.boardId == board.id }
+                val boardCards = cards.filter { it.board_id == board.id }
                 ProjectBoardRow(board, boardCards, onOpenBoard)
             }
             if (boards.size > 2 || chatCount > 0) {
@@ -690,7 +662,7 @@ internal fun CompactProjectRow(
     modifier: Modifier = Modifier,
 ) {
     val accent = stableAccent(project.id)
-    val attention = projectAttentionCount(cards)
+    val attention = ProjectOverview.attention(cards)
     var actionsOpen by remember { mutableStateOf(false) }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         if (nested) {
@@ -771,7 +743,7 @@ internal fun CompactProjectRow(
                         Modifier.fillMaxWidth().padding(start = 46.dp, end = 8.dp, bottom = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
-                        boards.forEach { board -> ProjectBoardRow(board, cards.filter { it.boardId == board.id }, onOpenBoard) }
+                        boards.forEach { board -> ProjectBoardRow(board, cards.filter { it.board_id == board.id }, onOpenBoard) }
                     }
                 } else if (expanded && boards.isEmpty()) {
                     TextButton(onClick = onCreateBoard, modifier = Modifier.align(Alignment.End).padding(end = 8.dp, bottom = 5.dp)) {
@@ -785,8 +757,8 @@ internal fun CompactProjectRow(
 
 @Composable
 private fun ProjectBoardRow(board: Board, cards: List<BoardCard>, onOpenBoard: (Board) -> Unit) {
-    val review = cards.count { it.lane.contains("review", true) }
-    val running = cards.count { it.runtime.contains("running", true) || it.lane.contains("running", true) }
+    val review = ProjectOverview.reviews(cards)
+    val running = ProjectOverview.running(cards)
     Surface(
         onClick = { onOpenBoard(board) },
         color = MaterialTheme.colorScheme.background.copy(alpha = 0.62f),
@@ -810,7 +782,7 @@ private fun ProjectBoardRow(board: Board, cards: List<BoardCard>, onOpenBoard: (
 
 @Composable
 private fun ProjectActivityBars(cards: List<BoardCard>) {
-    val active = cards.any { it.runtime.contains("running", true) || it.lane.contains("running", true) }
+    val active = ProjectOverview.running(cards) > 0
     val color = if (active) DieterShell else DieterMuted.copy(alpha = 0.48f)
     Row(
         Modifier.width(32.dp).height(18.dp),
@@ -952,7 +924,7 @@ internal fun ProjectReplicaBadge(host: ProjectReplica) {
 
 @Composable
 internal fun BoardProgress(board: Board, cards: List<BoardCard>) {
-    val counts = board.lanesList.map { lane -> lane.id to cards.count { it.lane == lane.id } }
+    val counts = board.lanes.map { lane -> lane.id to cards.count { it.lane == lane.id } }
     val nonZero = counts.filter { it.second > 0 }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.weight(1f).height(5.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -986,8 +958,8 @@ internal fun BoardDetailHeader(
 ) {
     val board = state.board
     var menuOpen by remember { mutableStateOf(false) }
-    val boardCards = state.cards.filter { it.boardId == state.selectedBoardId }
-    val reviews = boardCards.count { it.lane.contains("review", true) }
+    val boardCards = state.cards.filter { it.board_id == state.selectedBoardId }
+    val reviews = ProjectOverview.reviews(boardCards)
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(
@@ -1074,7 +1046,7 @@ internal fun BoardQuickSwitcher(state: DieterUiState, model: DieterViewModel, on
                 }
             }
             state.projects.forEach { project ->
-                val boards = state.spaceBoards.filter { it.projectId == project.id }
+                val boards = state.spaceBoards.filter { it.project_id == project.id }
                 if (boards.isNotEmpty()) {
                     Text(
                         buildString {
@@ -1089,8 +1061,7 @@ internal fun BoardQuickSwitcher(state: DieterUiState, model: DieterViewModel, on
                     )
                     boards.forEach { board ->
                         val selected = board.id == state.selectedBoardId && project.id == state.selectedProjectId
-                        val cards = state.spaceCards.filter { it.boardId == board.id }
-                        val reviews = cards.count { it.lane.contains("review", true) }
+                        val cards = state.spaceCards.filter { it.board_id == board.id }
                         Row(
                             Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
                                 .then(
@@ -1113,7 +1084,7 @@ internal fun BoardQuickSwitcher(state: DieterUiState, model: DieterViewModel, on
                             Column(Modifier.weight(1f)) {
                                 Text(board.name, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
                                 Text(
-                                    "${cards.size} ${plural(cards.size, "card")} · ${if (reviews > 0) "$reviews ${if (reviews == 1) "needs" else "need"} review" else boardQuietSummary(cards)}",
+                                    ProjectOverview.boardSummary(cards),
                                     color = DieterMuted,
                                     fontSize = 11.sp,
                                 )
@@ -1213,26 +1184,14 @@ internal fun BoardMark(color: Color, modifier: Modifier = Modifier) {
 }
 
 internal fun stableAccent(id: String): Color {
-    val option = LabelColorPalette[Math.floorMod(id.hashCode(), LabelColorPalette.size)]
-    return runCatching { Color(option.value.toColorInt()) }.getOrDefault(DieterShellDeep)
+    return runCatching { Color(Labels.stable(id).toColorInt()) }.getOrDefault(DieterShellDeep)
 }
 
-internal fun laneColor(lane: String): Color = when {
-    lane.contains("review", true) -> DieterAmber
-    lane.contains("done", true) -> DieterEyes
-    lane.contains("running", true) -> DieterRunning
-    else -> DieterMuted.copy(alpha = 0.58f)
-}
-
-internal fun compactProjectPath(path: String): String {
-    val marker = "/Development/"
-    return if (marker in path) "~$marker${path.substringAfter(marker)}" else path
-}
-
-internal fun boardQuietSummary(cards: List<BoardCard>): String = when {
-    cards.any { it.runtime.contains("running", true) || it.lane.contains("running", true) } -> "${cards.count { it.runtime.contains("running", true) || it.lane.contains("running", true) }} running"
-    cards.isEmpty() -> "empty"
-    else -> "quiet"
+internal fun laneColor(lane: String): Color = when (Lanes.kind(lane)) {
+    LaneKind.REVIEW -> DieterAmber
+    LaneKind.DONE -> DieterEyes
+    LaneKind.RUNNING -> DieterRunning
+    LaneKind.OTHER -> DieterMuted.copy(alpha = 0.58f)
 }
 
 internal fun plural(count: Int, word: String): String = if (count == 1) word else "${word}s"
@@ -1240,9 +1199,6 @@ internal fun plural(count: Int, word: String): String = if (count == 1) word els
 @Composable
 internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier, showAllLanes: Boolean = false) {
     var switcherOpen by remember { mutableStateOf(false) }
-    val draft = model.cardCreationDraft(initialize = false)
-    var quickTaskOpen by draft::quickTaskOpen
-    var quickTaskStory by draft::prompt
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember(state.selectedBoardId) { mutableStateOf("") }
     var selectedLabelId by remember(state.selectedBoardId) { mutableStateOf("") }
@@ -1251,12 +1207,7 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
     var boardListOrigin by remember { mutableStateOf(Offset.Zero) }
     val dragPreviewOffsetPx = with(LocalDensity.current) { 18.dp.roundToPx() }
     val boardCards = remember(state.cards, state.selectedBoardId, selectedLabelId, selectedMachineId, query) {
-        state.cards.filter { card ->
-            card.boardId == state.selectedBoardId &&
-                (selectedMachineId == null || selectedMachineId == card.ownerDaemonId) &&
-                (selectedLabelId.isBlank() || selectedLabelId in card.labelIdsList) &&
-                (query.isBlank() || card.title.contains(query, ignoreCase = true) || card.summary.contains(query, ignoreCase = true))
-        }
+        BoardFilters.cards(state.cards, state.selectedBoardId, selectedMachineId, selectedLabelId, query)
     }
     val retiredBoard = state.board?.takeIf { it.retired }
     if (retiredBoard != null) {
@@ -1285,7 +1236,7 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
     Box(modifier.onGloballyPositioned { boardListOrigin = it.positionInRoot() }) {
         Column(Modifier.fillMaxSize()) {
             NavigationSyncStatus(state)
-            if (state.board?.retirementBlocked == true) {
+            if (state.board?.retirement_blocked == true) {
                 Text("This board remains available because it has references or a conflicting retirement change.",
                     modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.labelSmall)
             }
@@ -1306,7 +1257,7 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
             if (searchOpen) CompactSearchField(query, { query = it }, "Search this board")
             if (!showAllLanes) filters()
             if (!showAllLanes) LaneTabs(state, model, boardCards)
-            val lanes = state.board?.lanesList.orEmpty()
+            val lanes = state.board?.lanes.orEmpty()
             if (state.loading && lanes.isEmpty()) {
                 LoadingState()
             } else if (lanes.isEmpty()) {
@@ -1316,7 +1267,7 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
             }
         }
         FloatingActionButton(
-            onClick = { model.activeCapture = draft; quickTaskOpen = !quickTaskOpen },
+            onClick = { if (model.quickTaskOpen) model.closeQuickTask() else model.openQuickTask() },
             modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp).testTag("new-card"),
             containerColor = DieterPane,
             contentColor = DieterAbyss,
@@ -1357,29 +1308,19 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
             onDismiss = { switcherOpen = false },
         )
     }
-    if (quickTaskOpen) {
-        model.cardCreationDraft(quick = true)
+    val editor = model.activeCapture.takeIf { model.quickTaskOpen }
+    if (editor != null) {
+        val draft by editor.state.collectAsState(context = Dispatchers.Main.immediate)
+        LaunchedEffect(editor.id, state.catalogState) { model.initializeTask(editor, quick = true) }
         QuickTaskPopover(
             state = state,
-            defaults = draft.preferences(),
-            laneId = draft.lane,
+            draft = draft,
             onSelectCheckout = model::selectCreationCheckout,
-            story = quickTaskStory,
-            onStoryChange = { quickTaskStory = it },
-            onDismiss = { quickTaskOpen = false },
-            onOpenFull = {
-                draft.openOptions()
-                model.openSurface(AppSurface.NEW_CARD)
-            },
-            attachmentContent = { TaskAttachmentControls(draft, model.taskCaptures) { model.discardTaskDraft(draft) } },
-            canSubmit = model.canSubmitTask(draft),
-            readOnly = draft.submissionId.isNotBlank(),
-            onCreate = { story ->
-                model.createQuickTask(story) {
-                    quickTaskOpen = false
-                    quickTaskStory = ""
-                }
-            },
+            onStoryChange = { story -> editor.edit { TaskDrafts.prompt(it, story) } },
+            onDismiss = model::closeQuickTask,
+            onOpenFull = model::openTaskOptions,
+            attachmentContent = { TaskAttachmentControls(editor, model.taskCaptures) { model.discardTaskDraft(editor) } },
+            onCreate = { model.submitTask(editor) },
         )
     }
 }
@@ -1418,28 +1359,19 @@ private fun BoardlessProjectState(state: DieterUiState, model: DieterViewModel, 
 @Composable
 internal fun QuickTaskPopover(
     state: DieterUiState,
-    defaults: ResolvedConversationCreationPreferences,
-    story: String,
+    draft: CaptureDraft,
     onStoryChange: (String) -> Unit,
     onDismiss: () -> Unit,
     onOpenFull: () -> Unit,
-    onCreate: (String) -> Unit,
+    onCreate: () -> Unit,
     onSelectCheckout: (String) -> Unit = {},
-    laneId: String = "",
     attachmentContent: (@Composable () -> Unit)? = null,
-    canSubmit: Boolean? = null,
-    readOnly: Boolean = false,
 ) {
     val checkout = state.creationCheckout
-    LaunchedEffect(checkout?.id) {
-        if (checkout != null && state.creationMachine?.online == true && !state.creationCatalogReady) {
-            onSelectCheckout(checkout.id)
-        }
+    val machineOnline = state.creationMachine?.online == true
+    LaunchedEffect(checkout?.id, machineOnline, state.catalogState) {
+        if (Creation.needsCatalog(checkout, machineOnline, state.catalogState)) onSelectCheckout(checkout!!.id)
     }
-    val cleanStory = story.trim()
-    val harness = state.harnesses.firstOrNull { it.id == defaults.provider }
-    val selectedModel = harness?.modelsList?.firstOrNull { it.id == defaults.model }
-    val lane = state.board?.lanesList?.firstOrNull { it.id == laneId } ?: state.board?.lanesList?.firstOrNull()
     val density = LocalDensity.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -1457,15 +1389,7 @@ internal fun QuickTaskPopover(
             }
         },
     )
-    val summary = buildString {
-        append(lane?.name ?: "Todo")
-        append(" · ").append(defaults.workspaceMode.title)
-        if (harness != null && selectedModel != null) {
-            append(" · ").append(harness.name).append(" / ").append(selectedModel.name)
-        } else {
-            append(" · Agent defaults")
-        }
-    }
+    val summary = TaskDrafts.summary(draft, state.board, state.creationCatalog(chat = false).orEmpty())
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1505,9 +1429,9 @@ internal fun QuickTaskPopover(
             CreationDestinationPicker(state, onSelectCheckout)
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
             OutlinedTextField(
-                value = story,
+                value = draft.task.prompt,
                 onValueChange = onStoryChange,
-                readOnly = readOnly,
+                readOnly = draft.frozen,
                 label = { Text("Task story") },
                 placeholder = { Text("What should the agent accomplish?") },
                 minLines = 3,
@@ -1520,9 +1444,8 @@ internal fun QuickTaskPopover(
                 TextButton(onClick = onOpenFull) { Text("More options") }
                 Spacer(Modifier.weight(1f))
                 Button(
-                    onClick = { onCreate(cleanStory) },
-                    enabled = canSubmit ?: (cleanStory.isNotEmpty() && !state.working && state.creationCatalogReady &&
-                        harnessCatalogSupportsSelection(state.harnesses, defaults.provider, defaults.model) && state.board != null),
+                    onClick = onCreate,
+                    enabled = state.canSubmitTask(draft),
                     modifier = Modifier.testTag("quick-task-create"),
                 ) {
                     Icon(Icons.Outlined.Bolt, contentDescription = null, modifier = Modifier.size(17.dp))
@@ -1538,7 +1461,7 @@ internal fun QuickTaskPopover(
 internal fun BoardLanePager(
     state: DieterUiState,
     model: DieterViewModel,
-    lanes: List<com.dbpprt.dieter.v1.Lane>,
+    lanes: List<com.dbpprt.dieter.api.v1.Lane>,
     boardCards: List<BoardCard>,
     labelDragState: BoardLabelDragState,
     modifier: Modifier = Modifier,
@@ -1591,13 +1514,9 @@ internal fun BoardLanePager(
 
     val laneContent: @Composable (Int) -> Unit = { page ->
         val lane = lanes[page]
-        val sortDirection = if (state.sharedLaneSortDirections["lane.${state.selectedBoardId}.${lane.id}.sort"] == "ascending") CardPlacementSortDirection.ASCENDING else CardPlacementSortDirection.DESCENDING
-        val visible = remember(boardCards, lane.id, sortDirection, state.pendingCardMoves) {
-            cardsByPlacement(
-                boardCards.filter { card -> card.lane == lane.id },
-                direction = sortDirection,
-                moves = state.pendingCardMoves,
-            )
+        val descending = state.navigationLayout.laneDescending(state.selectedBoardId, lane.id)
+        val visible = remember(boardCards, lane.id, descending, state.pendingCardMoves) {
+            Lanes.ordered(boardCards.filter { card -> card.lane == lane.id }, state.pendingCardMoves, descending)
         }
         DisposableEffect(cardDragState, lane.id) {
             onDispose { cardDragState.unregisterLane(lane.id) }
@@ -1614,12 +1533,12 @@ internal fun BoardLanePager(
                     Box(Modifier.size(7.dp).background(laneColor(lane.id), CircleShape))
                     Text(lane.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f).padding(start = 8.dp))
                     Text(visible.size.toString(), style = MaterialTheme.typography.labelMedium, color = DieterMuted)
-                    LaneSortButton(lane.name, sortDirection, { model.toggleLaneSort(state.selectedBoardId, lane.id) }, compact = true)
+                    LaneSortButton(lane.name, descending, { model.toggleLaneSort(state.selectedBoardId, lane.id) }, compact = true)
                 }
             }
             if (!showAllLanes) LaneSortButton(
                 laneName = lane.name,
-                direction = sortDirection,
+                descending = descending,
                 onToggle = { model.toggleLaneSort(state.selectedBoardId, lane.id) },
                 modifier = Modifier.align(Alignment.End),
             )
@@ -1641,7 +1560,7 @@ internal fun BoardLanePager(
                     items(visible, key = { it.id }) { card ->
                         SwipeableWorkCard(
                             card = card,
-                            machineName = state.machineLabel(card.ownerDaemonId),
+                            machineName = state.machineLabel(card.owner_daemon_id),
                             board = state.board,
                             selected = card.id == state.selectedCardId,
                             pending = card.id in state.pendingCardIds ||
@@ -1742,12 +1661,11 @@ internal fun BoardLanePager(
 @Composable
 internal fun LaneSortButton(
     laneName: String,
-    direction: CardPlacementSortDirection,
+    descending: Boolean,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
 ) {
-    val descending = direction == CardPlacementSortDirection.DESCENDING
     val currentLabel = if (descending) "reverse board order" else "board order"
     val nextLabel = if (descending) "board order" else "reverse board order"
     val sortModifier = modifier

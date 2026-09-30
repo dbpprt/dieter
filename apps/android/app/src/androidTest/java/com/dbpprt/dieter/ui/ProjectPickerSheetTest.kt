@@ -5,8 +5,9 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.ui.theme.DieterTheme
-import com.dbpprt.dieter.v1.Project
+import com.dbpprt.dieter.api.v1.Project
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -17,8 +18,8 @@ class ProjectPickerSheetTest {
 
     private val twoProjects = DieterUiState(
         projects = listOf(
-            Project.newBuilder().setId("p1").setName("Dieter").setPath("/Users/me/Development/dieter").build(),
-            Project.newBuilder().setId("p2").setName("Kannacli").setPath("/Users/me/Development/kannacli").build(),
+            Project(id = "p1", name = "Dieter", path = "/Users/me/Development/dieter"),
+            Project(id = "p2", name = "Kannacli", path = "/Users/me/Development/kannacli"),
         ),
         selectedProjectId = "p1",
     )

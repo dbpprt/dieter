@@ -1,1606 +1,618 @@
 package com.dbpprt.dieter.ui
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import android.util.Log
-import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.dbpprt.dieter.connection.DieterConnectionManager
-import com.dbpprt.dieter.connection.DieterConnectionState
-import com.dbpprt.dieter.connection.BackgroundSyncMode
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.connection.EndpointConnection
-import com.dbpprt.dieter.connection.EndpointPhase
-import com.dbpprt.dieter.connection.MachineOutboxSummary
-import com.dbpprt.dieter.connection.ProjectReplica
-import com.dbpprt.dieter.connection.isServerConversationId
-import com.dbpprt.dieter.connection.resolveConversationId
-import com.dbpprt.dieter.connection.rpcReadFailureIsTransient
-import com.dbpprt.dieter.connection.isCompatible
-import com.dbpprt.dieter.data.DIETER_ENDPOINTS
-import com.dbpprt.dieter.data.DIETER_LOCAL_ENDPOINT
-import com.dbpprt.dieter.data.DieterEndpoint
-import com.dbpprt.dieter.data.DieterRepository
-import com.dbpprt.dieter.gateway.v1.ProviderQuotaGroup
-import com.dbpprt.dieter.gateway.v1.ProviderQuotaProvider
-import com.dbpprt.dieter.settings.NavigationFolderPreferences
-import com.dbpprt.dieter.settings.NavigationFolderScope
+import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaProvider
+import com.dbpprt.dieter.api.v1.Board
+import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.FileDocument
+import com.dbpprt.dieter.api.v1.HarnessSelection
+import com.dbpprt.dieter.api.v1.MachineOperationAction
+import com.dbpprt.dieter.api.v1.MessagePart
+import com.dbpprt.dieter.api.v1.PeerRecord
+import com.dbpprt.dieter.api.v1.PeerVersion
+import com.dbpprt.dieter.api.v1.Project
+import com.dbpprt.dieter.api.v1.QueuedMessage
+import com.dbpprt.dieter.api.v1.ReadFileRequest
+import com.dbpprt.dieter.api.v1.Schedule
+import com.dbpprt.dieter.api.v1.ScheduleDraft
+import com.dbpprt.dieter.api.v1.Settings
+import com.dbpprt.dieter.api.v1.ToolOutput
+import com.dbpprt.dieter.api.v1.ValidationCommand
+import com.dbpprt.dieter.api.v1.Workspace
+import com.dbpprt.dieter.core.CoreRuntime
+import com.dbpprt.dieter.core.admin.BackgroundMode
+import com.dbpprt.dieter.core.board.DropAnchors
+import com.dbpprt.dieter.core.board.Lanes
+import com.dbpprt.dieter.core.composition.ConversationDraft
+import com.dbpprt.dieter.core.composition.Creation
+import com.dbpprt.dieter.core.composition.CreationInput
+import com.dbpprt.dieter.core.composition.DraftKey
+import com.dbpprt.dieter.core.composition.TaskDraftEditor
+import com.dbpprt.dieter.core.composition.TaskDrafts
+import com.dbpprt.dieter.core.composition.WorkspaceMode
+import com.dbpprt.dieter.core.composition.ready
+import com.dbpprt.dieter.core.composition.task
+import com.dbpprt.dieter.core.connection.Availability
+import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.connection.ConnectionPrompt
+import com.dbpprt.dieter.core.conversation.ConversationSession
+import com.dbpprt.dieter.core.conversation.ConversationView
+import com.dbpprt.dieter.core.files.Files
+import com.dbpprt.dieter.core.files.FilesTarget
+import com.dbpprt.dieter.core.identity.Gateway
+import com.dbpprt.dieter.core.machines.MachineRow
+import com.dbpprt.dieter.core.machines.MachineRows
+import com.dbpprt.dieter.core.navigation.BoardSelection
+import com.dbpprt.dieter.core.navigation.BoardSelections
+import com.dbpprt.dieter.core.navigation.Destination
+import com.dbpprt.dieter.core.navigation.FolderScope
+import com.dbpprt.dieter.core.navigation.NavigationLayout
+import com.dbpprt.dieter.core.notifications.NotificationSettings
+import com.dbpprt.dieter.core.outbox.OutboxPolicy
+import com.dbpprt.dieter.core.presentation.ConversationPresentation
+import com.dbpprt.dieter.core.presentation.ConversationPresenter
+import com.dbpprt.dieter.core.runtime.Failures
+import com.dbpprt.dieter.core.state.CaptureDraft
+import com.dbpprt.dieter.core.terminals.NewTerminal
+import com.dbpprt.dieter.core.terminals.TerminalScope
+import com.dbpprt.dieter.core.terminals.TerminalScopeKind
+import com.dbpprt.dieter.core.terminals.Terminals
+import com.dbpprt.dieter.core.workspace.ChangeSection
+import com.dbpprt.dieter.core.workspace.DiffLine
+import com.dbpprt.dieter.core.workspace.MergeStrategy
+import com.dbpprt.dieter.core.workspace.ProjectChanges
+import com.dbpprt.dieter.core.workspace.ProjectWorkspaceSettings
+import com.dbpprt.dieter.core.workspace.ValidationCommandDraft
+import com.dbpprt.dieter.core.workspace.WorkspaceReview
 import com.dbpprt.dieter.settings.AppPreferences
-import com.dbpprt.dieter.settings.ConversationCreationPreferences
-import com.dbpprt.dieter.settings.DEFAULT_PANE_LEADING_FRACTION
-import com.dbpprt.dieter.settings.DEFAULT_SIDEBAR_LEADING_FRACTION
 import com.dbpprt.dieter.settings.DieterPalette
-import com.dbpprt.dieter.settings.DieterNotificationSettings
-import com.dbpprt.dieter.v1.AddChangeCommentRequest
-import com.dbpprt.dieter.v1.Board
-import com.dbpprt.dieter.v1.Card
-import com.dbpprt.dieter.v1.ConversationSnapshot
-import com.dbpprt.dieter.v1.GetDiffRequest
-import com.dbpprt.dieter.v1.GitOperationFrame
-import com.dbpprt.dieter.v1.CreateBoardRequest
-import com.dbpprt.dieter.v1.CreateConversationRequest
-import com.dbpprt.dieter.v1.CreateProjectRequest
-import com.dbpprt.dieter.v1.CreateTerminalRequest
-import com.dbpprt.dieter.v1.DirectoryListing
-import com.dbpprt.dieter.v1.FileDocument
-import com.dbpprt.dieter.v1.FileEntry
-import com.dbpprt.dieter.v1.GetStateRequest
-import com.dbpprt.dieter.v1.Harness
-import com.dbpprt.dieter.v1.MessagePart
-import com.dbpprt.dieter.v1.MachineInformation
-import com.dbpprt.dieter.v1.MachineOperationAction
-import com.dbpprt.dieter.v1.MachineOperationRequest
-import com.dbpprt.dieter.v1.Project
-import com.dbpprt.dieter.v1.QueuedMessage
-import com.dbpprt.dieter.v1.RuntimeStatus
-import com.dbpprt.dieter.v1.SaveScheduleRequest
-import com.dbpprt.dieter.v1.Schedule
-import com.dbpprt.dieter.v1.ScheduleDraft
-import com.dbpprt.dieter.v1.ScheduleRun
-import com.dbpprt.dieter.v1.ScheduleRunsResponse
-import com.dbpprt.dieter.v1.SchedulesResponse
-import com.dbpprt.dieter.v1.Settings
-import com.dbpprt.dieter.v1.SettingsOptions
-import com.dbpprt.dieter.v1.State
-import com.dbpprt.dieter.v1.UiMessage
-import com.dbpprt.dieter.v1.UpdateProjectRequest
-import com.dbpprt.dieter.v1.ToolOutput
-import com.dbpprt.dieter.v1.Terminal
-import com.dbpprt.dieter.v1.TerminalFrame
-import com.dbpprt.dieter.v1.UpdateProjectWorkspaceSettingsRequest
-import com.dbpprt.dieter.v1.ValidationCommand
-import com.dbpprt.dieter.v1.Workspace
-import io.grpc.Status
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
+import com.dbpprt.dieter.sharedcore.ConnectionPolicy
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Clock
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.retryWhen
-import kotlinx.coroutines.flow.update as updateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withContext
-import java.time.ZoneId
-import java.util.UUID
-import java.util.concurrent.atomic.AtomicBoolean
 
-private const val CONVERSATION_PAGE_SIZE = 30
-private const val SCHEDULE_PAGE_SIZE = 50
-private const val HEDGE_FETCH_TIMEOUT_MS = 3_500L
-private const val POST_SEND_INITIAL_REFRESH_DELAY_MS = 750L
-private const val POST_SEND_REFRESH_INTERVAL_MS = 2_000L
-internal const val CONNECTION_DIALOG_GRACE_MS = 60_000L
-private const val CONNECTION_DIALOG_NO_INTERRUPTION_KEY = Long.MIN_VALUE
-
-internal class ConversationCreationGate {
-    private val active = AtomicBoolean(false)
-
-    fun tryAcquire(): Boolean = active.compareAndSet(false, true)
-    fun release() = active.set(false)
+/** Platform services the view model needs from the app. */
+interface AppHost {
+    fun openUrl(url: String)
 }
-
-internal fun connectionDialogDelayMs(
-    desiredConnected: Boolean,
-    phase: ConnectionPhase,
-    interruptedAtMs: Long?,
-    nowMs: Long,
-    hasCachedWorkspace: Boolean = false,
-): Long? {
-    // Transport recovery is routine and already represented by the inline
-    // workspace status. Only interrupt the user for a failure that requires
-    // an explicit action from them.
-    val requiresUserAction = phase == ConnectionPhase.AUTH_REQUIRED ||
-        phase == ConnectionPhase.INCOMPATIBLE ||
-        (phase == ConnectionPhase.UNAVAILABLE && !hasCachedWorkspace)
-    if (!desiredConnected || !requiresUserAction) return null
-    val elapsed = (nowMs - (interruptedAtMs ?: nowMs)).coerceAtLeast(0L)
-    return (CONNECTION_DIALOG_GRACE_MS - elapsed).coerceAtLeast(0L)
-}
-
-internal fun connectionDialogShouldOpenFromNotification(
-    desiredConnected: Boolean,
-    phase: ConnectionPhase,
-    hasCachedWorkspace: Boolean,
-): Boolean = !desiredConnected || phase == ConnectionPhase.AUTH_REQUIRED ||
-    phase == ConnectionPhase.INCOMPATIBLE ||
-    (phase == ConnectionPhase.UNAVAILABLE && !hasCachedWorkspace)
-
-internal fun connectionDialogDismissalApplies(
-    dismissedInterruptionKey: Long?,
-    desiredConnected: Boolean,
-    phase: ConnectionPhase,
-    interruptedAtMs: Long?,
-): Boolean = (!desiredConnected || phase != ConnectionPhase.CONNECTED) &&
-    dismissedInterruptionKey != null &&
-    dismissedInterruptionKey == (interruptedAtMs ?: CONNECTION_DIALOG_NO_INTERRUPTION_KEY)
 
 /**
- * Content streams can remain healthy while the workspace stream is still
- * syncing or reconnecting. Keep transport presentation owned by the
- * connection manager so transcript and snapshot frames cannot make the UI
- * oscillate between CONNECTED and the authoritative connection phase.
+ * The Android presentation of the shared core. Every decision about
+ * connectivity, sync, delivery, conversations, and features is the core's;
+ * this class maps core state into [DieterUiState] and keeps UI-local state
+ * (destination, open surfaces, selection, the connection sheet).
  */
-internal fun DieterUiState.preserveConnectionPresentation(previous: DieterUiState): DieterUiState = copy(
-    connectionPhase = previous.connectionPhase,
-    connectionError = previous.connectionError,
-)
-
-enum class Destination { ACTIVITY, CHATS, BOARD, MACHINES, TERMINALS, SCREENS, FILES, SCHEDULES }
-
-enum class AppSurface { NEW_CHAT, NEW_CARD, NEW_BOARD, SCHEDULE_EDITOR, WORKSPACE, NEW_PROJECT, APP_SETTINGS }
-
-enum class CardOperation { STARTING, MOVING, CANCELLING }
-
-@Immutable
-data class DieterUiState(
-    val sharedConflicts: List<com.dbpprt.dieter.v1.PeerRecord> = emptyList(),
-    val creationCheckoutId: String = "",
-    val destination: Destination = Destination.ACTIVITY,
-    val appSurface: AppSurface? = null,
-    val editingScheduleId: String? = null,
-    val endpoint: String = DIETER_LOCAL_ENDPOINT,
-    val connectionPhase: ConnectionPhase = ConnectionPhase.STOPPED,
-    val lastConnectedAtMillis: Long? = null,
-    val connectionDialogVisible: Boolean = false,
-    val connectionError: String? = null,
-    val desiredConnected: Boolean = true,
-    val backgroundSyncMode: BackgroundSyncMode = BackgroundSyncMode.LIVE,
-    val palette: DieterPalette = DieterPalette.DEFAULT,
-    val showReasoningTraces: Boolean = false,
-    val notificationBoardIds: Set<String> = emptySet(),
-    val notificationSettings: DieterNotificationSettings = DieterNotificationSettings(),
-    val endpointConnections: List<EndpointConnection> = DIETER_ENDPOINTS.map {
-        EndpointConnection(it.id, it.label, it.address)
-    },
-    val configuredConnections: List<EndpointConnection> = DIETER_ENDPOINTS.map {
-        EndpointConnection(it.id, it.label, it.address)
-    },
-    val activeGatewayId: String = DIETER_ENDPOINTS.first().id,
-    val loading: Boolean = true,
-    val working: Boolean = false,
-    val error: String? = null,
-    val runtimeStatus: RuntimeStatus? = null,
-    val harnesses: List<Harness> = emptyList(),
-    val harnessesEndpointId: String? = null,
-    val providerQuotaGroups: List<ProviderQuotaGroup> = emptyList(),
-    val providerQuotasLoading: Boolean = false,
-    val providerQuotaError: String? = null,
-    val providerQuotaMutatingAccounts: Set<String> = emptySet(),
-    val projects: List<Project> = emptyList(),
-    val projectOrder: List<String> = emptyList(),
-    val pinnedProjectOrder: List<String> = emptyList(),
-    val sharedLaneSortDirections: Map<String, String> = emptyMap(),
-    val navigationPendingCount: Int = 0,
-    val navigationSyncError: String? = null,
-    val peerSyncWarnings: List<String> = emptyList(),
-    val retiredBoards: List<Board> = emptyList(),
-    val projectFolders: NavigationFolderPreferences = NavigationFolderPreferences(),
-    val chatFolders: NavigationFolderPreferences = NavigationFolderPreferences(),
-    val collapsedChatProjectIds: Set<String> = emptySet(),
-    val expandedChatProjectIds: Set<String> = emptySet(),
-    val pinnedChatOrder: List<String> = emptyList(),
-    val chatsPaneLeadingFraction: Float = DEFAULT_PANE_LEADING_FRACTION,
-    val activityPaneLeadingFraction: Float = DEFAULT_SIDEBAR_LEADING_FRACTION,
-    val projectsPaneLeadingFraction: Float = DEFAULT_SIDEBAR_LEADING_FRACTION,
-    val boardPaneLeadingFraction: Float = DEFAULT_PANE_LEADING_FRACTION,
-    val projectReplicas: Map<String, ProjectReplica> = emptyMap(),
-    val boards: List<Board> = emptyList(),
-    val cards: List<Card> = emptyList(),
-    val spaceBoards: List<Board> = emptyList(),
-    val spaceCards: List<Card> = emptyList(),
-    val activityDetails: Map<String, ActivityDetail> = emptyMap(),
-    val spacesLoading: Boolean = false,
-    val boardOverviewVisible: Boolean = true,
-    val chats: List<Card> = emptyList(),
-    val selectedProjectId: String = "",
-    val selectedBoardId: String = "",
-    val selectedLane: String = "",
-    val selectedCardId: String? = null,
-    val conversation: ConversationSnapshot? = null,
-    val olderMessages: List<UiMessage> = emptyList(),
-    val historyStart: Int = 0,
-    val historyTotal: Int = 0,
-    val historyHasMore: Boolean = false,
-    val historyLoading: Boolean = false,
-    val conversationRefreshing: Boolean = false,
-    /** True while the open transcript is served from cache pending a live frame. */
-    val conversationSyncing: Boolean = false,
-    val conversationLastRefreshedAtMillis: Long? = null,
-    val conversationScrollRequest: Long = 0,
-    val detailTab: Int = 0,
-    val filePath: String = "",
-    val files: List<FileEntry> = emptyList(),
-    val showHiddenFiles: Boolean = false,
-    val fileDocument: FileDocument? = null,
-    val fileDraft: String = "",
-    val fileDirty: Boolean = false,
-    val projectFilesMode: String = "browse",
-    val projectChanges: ProjectChangesState = ProjectChangesState(),
-    val terminalWorkspace: TerminalWorkspaceState = TerminalWorkspaceState(),
-    val scheduleWorkspace: ScheduleWorkspaceState = ScheduleWorkspaceState(),
-    val administration: AdministrationState = AdministrationState(),
-    val directoryListing: DirectoryListing? = null,
-    val directoryListingEndpointId: String = "",
-    val directoryListingLoading: Boolean = false,
-    val composerDraft: ConversationComposerDraft = ConversationComposerDraft(),
-    val projectWorkspaces: List<Workspace> = emptyList(),
-    val projectWorkspacesLoading: Boolean = false,
-    val projectWorkspaceOperations: Set<String> = emptySet(),
-    val projectWorkspaceErrors: Map<String, String> = emptyMap(),
-    val pendingCardIds: Set<String> = emptySet(),
-    val pendingMessageIds: Set<String> = emptySet(),
-    val acceptedOutboxIds: Set<String> = emptySet(),
-    val failedOutboxIds: Set<String> = emptySet(),
-    val machineOutboxSummaries: Map<String, MachineOutboxSummary> = emptyMap(),
-    val selectedMachineId: String? = null,
-    val machineInformation: Map<String, MachineInformation> = emptyMap(),
-    val machineInformationLoading: Set<String> = emptySet(),
-    val machineInformationErrors: Map<String, String> = emptyMap(),
-    val machineCpuHistory: Map<String, List<Double>> = emptyMap(),
-    val machineGpuHistory: Map<String, Map<String, List<Double>>> = emptyMap(),
-    val machineOperationInFlight: Boolean = false,
-    val machineOperationMessage: String? = null,
-    val cardOperations: Map<String, CardOperation> = emptyMap(),
-    val cardOperationErrors: Map<String, String> = emptyMap(),
-    val pendingCardMoves: Map<String, OptimisticCardMove> = emptyMap(),
-    val workspaceReview: WorkspaceReviewState = WorkspaceReviewState(),
-) {
-    fun conversationHost(card: Card): ProjectReplica? = presentedEndpointConnections.firstOrNull { it.daemonId == card.ownerDaemonId }?.let {
-        ProjectReplica(it.id, it.daemonId.orEmpty(), it.label, it.online)
-    }
-    val connected: Boolean get() = connectionPhase == ConnectionPhase.CONNECTED
-    val backgroundSyncEnabled: Boolean get() = backgroundSyncMode.usesBackgroundService
-    val hasCachedWorkspace: Boolean
-        get() = projects.isNotEmpty() || boards.isNotEmpty() || cards.isNotEmpty() || chats.isNotEmpty()
-    val presentedProjectReplicas: Map<String, ProjectReplica>
-        get() = if (connected) projectReplicas else projectReplicas.mapValues { (_, host) -> host.copy(online = false) }
-    val presentedEndpointConnections: List<EndpointConnection>
-        get() {
-            val presented = if (connected) endpointConnections else endpointConnections.map { endpoint ->
-                if (endpoint.daemonId == null) endpoint else endpoint.copy(
-                    phase = EndpointPhase.PENDING,
-                    detail = if (connectionPhase == ConnectionPhase.SYNCING) "Synchronizing" else "Unavailable",
-                    latencyMs = null,
-                    online = false,
-                )
-            }
-            val existingIds = presented.mapTo(hashSetOf(), EndpointConnection::id)
-            val hostsByEndpoint = projectReplicas.values.associateBy(ProjectReplica::endpointId)
-            val queuedMachines = machineOutboxSummaries.keys
-                .filterNot(existingIds::contains)
-                .map { endpointId ->
-                    val host = hostsByEndpoint[endpointId]
-                    EndpointConnection(
-                        id = endpointId,
-                        label = host?.hostname ?: "Dieter machine",
-                        address = host?.daemonId ?: "Known machine route",
-                        phase = EndpointPhase.PENDING,
-                        detail = "Unavailable",
-                        online = false,
-                        daemonId = host?.daemonId,
-                    )
-                }
-            return presented + queuedMachines
-        }
-    val project: Project? get() = projects.firstOrNull { it.id == selectedProjectId }
-    val board: Board? get() = boards.firstOrNull { it.id == selectedBoardId } ?: retiredBoards.firstOrNull { it.id == selectedBoardId } ?: boards.firstOrNull()
-    val boardNotificationsEnabled: Boolean get() = selectedBoardId in notificationBoardIds
-    val selectedCard: Card?
-        get() = conversation?.detail?.card
-            ?: cards.firstOrNull { it.id == selectedCardId }
-            ?: chats.firstOrNull { it.id == selectedCardId }
-            ?: spaceCards.firstOrNull { it.id == selectedCardId }
-    val schedules: List<Schedule> get() = scheduleWorkspace.schedules
-    val schedulesTotalCount: Int get() = scheduleWorkspace.schedulesTotalCount
-    val schedulesNextPageToken: String get() = scheduleWorkspace.schedulesNextPageToken
-    val schedulesLoading: Boolean get() = scheduleWorkspace.schedulesLoading
-    val schedulesLoadingMore: Boolean get() = scheduleWorkspace.schedulesLoadingMore
-    val selectedScheduleId: String? get() = scheduleWorkspace.selectedScheduleId
-    val scheduleRuns: List<ScheduleRun> get() = scheduleWorkspace.scheduleRuns
-    val scheduleRunsNextPageToken: String get() = scheduleWorkspace.scheduleRunsNextPageToken
-    val scheduleRunsLoading: Boolean get() = scheduleWorkspace.scheduleRunsLoading
-    val scheduleRunsLoadingMore: Boolean get() = scheduleWorkspace.scheduleRunsLoadingMore
-    val schedulePreview: List<String> get() = scheduleWorkspace.schedulePreview
-    val settings: Settings? get() = administration.settings
-    val settingsOptions: SettingsOptions? get() = administration.settingsOptions
-    val archivedProjects: List<Project> get() = administration.archivedProjects
-    val archivedCards: List<Card> get() = administration.archivedCards
-    val selectedSchedule: Schedule? get() = schedules.firstOrNull { it.id == selectedScheduleId }
-    val terminals: List<Terminal> get() = terminalWorkspace.terminals
-    val selectedTerminalId: String? get() = terminalWorkspace.selectedTerminalId
-    val terminalScreens: Map<String, TerminalScreenState> get() = terminalWorkspace.terminalScreens
-    val terminalLoading: Boolean get() = terminalWorkspace.terminalLoading
-    val terminalStreamConnected: Boolean get() = terminalWorkspace.terminalStreamConnected
-    val terminalCreateVisible: Boolean get() = terminalWorkspace.terminalCreateVisible
-    val selectedTerminal: Terminal? get() = terminals.firstOrNull { it.id == selectedTerminalId }
-    val conversationMessages: List<UiMessage>
-        get() = mergedConversationMessages(olderMessages, conversation?.conversation?.messagesList.orEmpty())
-}
-
-internal fun mergedConversationMessages(older: List<UiMessage>, live: List<UiMessage>): List<UiMessage> {
-    val liveIds = live.mapNotNullTo(mutableSetOf()) { it.id.takeIf(String::isNotBlank) }
-    val seen = mutableSetOf<String>()
-    val history = older.filter { it.id.isBlank() || it.id !in liveIds }
-    return (history + live).filter { message ->
-        val key = message.id.ifBlank { "anonymous:${message.hashCode()}" }
-        seen.add(key)
-    }
-}
-
-internal fun conversationStreamNeedsRestart(
-    activeCardId: String?,
-    selectedCardId: String?,
-    streamActive: Boolean = true,
-): Boolean = selectedCardId != null && (activeCardId != selectedCardId || !streamActive)
-
-internal data class ConversationOpenSyncPlan(
-    val cacheIsCurrent: Boolean,
-    val afterSeq: Long,
-) {
-    val needsFreshFrame: Boolean get() = !cacheIsCurrent
-}
-
-internal fun conversationOpenSyncPlan(
-    cachedLastSeq: Long?,
-    coveredByHealthyLiveSync: Boolean,
-): ConversationOpenSyncPlan {
-    val cacheIsCurrent = cachedLastSeq != null && coveredByHealthyLiveSync
-    return ConversationOpenSyncPlan(
-        cacheIsCurrent = cacheIsCurrent,
-        // Cold, Smart, and App-only opens ask the server for its bounded latest
-        // tail immediately. History remains paged backwards on demand.
-        afterSeq = if (cacheIsCurrent) requireNotNull(cachedLastSeq) else 0L,
-    )
-}
-
 class DieterViewModel internal constructor(
-    private val connectionManager: DieterConnectionManager,
+    internal val core: CoreRuntime,
     private val appPreferences: AppPreferences,
-    private val conversationDrafts: ConversationDraftStore = ConversationDraftStore(),
+    private val policy: ConnectionPolicy,
+    private val host: AppHost,
     internal val taskCaptures: TaskCaptureStore? = null,
-) : ViewModel() {
-    private val repository: DieterRepository = connectionManager.repository
+) : ViewModel(), FolderEditor {
     private val _state = MutableStateFlow(DieterUiState())
     val state: StateFlow<DieterUiState> = _state.asStateFlow()
-    // All selection transitions (including daemon-driven ones) retire the same feature owners.
-    private fun MutableStateFlow<DieterUiState>.update(transform: (DieterUiState) -> DieterUiState) {
-        val before = value
-        updateFlow { current ->
-            var next = transform(current)
-            val projectChanged = current.activeGatewayId != next.activeGatewayId || current.selectedProjectId != next.selectedProjectId
-            val boardChanged = projectChanged || current.selectedBoardId != next.selectedBoardId
-            if (projectChanged) next = next.copy(scheduleWorkspace = ScheduleWorkspaceState())
-            if (boardChanged) next = next.copy(administration = AdministrationState())
-            next
-        }
-        val projectChanged = before.activeGatewayId != value.activeGatewayId || before.selectedProjectId != value.selectedProjectId
-        if (projectChanged) schedules.reset()
-        if (projectChanged || before.selectedBoardId != value.selectedBoardId) administration.reset()
-    }
 
-    internal val conversationCreationPreferences: ConversationCreationPreferences
-        get() = appPreferences.conversationCreation.value
+    private val terminals: Terminals = core.terminals()
+    private val review: WorkspaceReview = core.workspaceReview()
+    private val projectChangesController: ProjectChanges = core.projectChanges()
+    private val files: Files = core.files()
 
-    internal val navigationFolders get() = appPreferences.navigationFolders
-
-    internal var captureChooserVisible by androidx.compose.runtime.mutableStateOf(false)
-    internal var activeCapture by androidx.compose.runtime.mutableStateOf<CardCreationDraft?>(null)
-
-    internal fun beginCapture(draft: CardCreationDraft? = null) {
-        runCatching {
-            activeCapture = draft ?: taskCaptures?.drafts?.firstOrNull { it.accountId == _state.value.activeGatewayId && !it.hasContent } ?: taskCaptures?.drafts?.takeIf { it.size >= 20 }?.lastOrNull { it.accountId == _state.value.activeGatewayId } ?: taskCaptures?.create(_state.value.activeGatewayId.orEmpty()) ?: CardCreationDraft()
-            captureChooserVisible = true
-        }.onFailure { failure -> _state.update { it.copy(error = failure.message) } }
-    }
-
-    internal fun captureProject(id: String) {
-        activeCapture?.let {
-            if (it.projectId != id) { it.boardId = ""; it.checkoutId = "" }
-            it.projectId = id
-        }
-        selectProject(id)
-        val boards = (_state.value.spaceBoards + _state.value.boards).distinctBy { it.id }.filter { it.projectId == id && !it.retired }
-        if (boards.size == 1) openCaptureBoard(boards.single().id)
-    }
-
-    internal fun openCaptureBoard(id: String) {
-        val draft = activeCapture ?: return
-        selectBoard(id)
-        draft.boardId = id
-        if (draft.checkoutId.isNotBlank()) _state.update { it.copy(creationCheckoutId = draft.checkoutId) }
-        check(draft.accountId.isBlank() || draft.accountId == _state.value.activeGatewayId) { "This draft belongs to another account" }
-        draft.accountId = _state.value.activeGatewayId.orEmpty()
-        captureChooserVisible = false
-        openSurface(AppSurface.NEW_CARD)
-    }
-
-    internal fun discardTaskDraft(draft: CardCreationDraft) {
-        draft.quickTaskOpen = false
-        acceptCardCreationDraft(draft)
-        closeSurface()
-    }
-
-    internal fun returnToQuickTask() {
-        val draft = cardCreationDraft()
-        closeSurface()
-        openBoard(draft.projectId, draft.boardId)
-        draft.quickTaskOpen = true
-    }
-
-    private val cardCreationDrafts = mutableMapOf<Triple<String, String, String>, CardCreationDraft>()
-
-    internal fun cardCreationDraft(quick: Boolean = false, initialize: Boolean = true): CardCreationDraft {
-        val current = _state.value
-        val key = Triple(current.activeGatewayId.orEmpty(), current.selectedProjectId, current.selectedBoardId)
-        val active = activeCapture?.takeIf { it.accountId == key.first && it.projectId == key.second && it.boardId == key.third }
-        return (active ?: cardCreationDrafts.getOrPut(key) {
-            taskCaptures?.drafts?.firstOrNull { it.accountId == key.first && it.projectId == key.second && it.boardId == key.third }
-                ?: CardCreationDraft().also {
-                    it.accountId = key.first; it.projectId = key.second; it.boardId = key.third
-                }
-        }).also { draft ->
-            if (quick || draft.hasContent || current.appSurface == AppSurface.NEW_CARD) taskCaptures?.retain(draft)
-            if (initialize) {
-                val harnesses = if (current.taskCatalogAvailableForQueue) current.harnesses else emptyList()
-                draft.initialize(
-                    resolveConversationCreationPreferences(conversationCreationPreferences, harnesses),
-                    harnesses,
-                    (if (quick) "" else current.selectedLane).ifBlank {
-                        current.board?.lanesList?.firstOrNull()?.id.orEmpty().ifBlank { "todo" }
-                    },
-                )
-            }
-        }
-    }
-
-    internal fun acceptCardCreationDraft(draft: CardCreationDraft) {
-        cardCreationDrafts.entries.removeAll { it.value === draft }
-        if (activeCapture === draft) activeCapture = null
-        taskCaptures?.discard(draft)
-    }
-
-    private val mutationMutex = Mutex()
-    private val conversationCreationGate = ConversationCreationGate()
-    private var pendingProjectCreation: Pair<CreateProjectRequest, String>? = null
     private var foreground = false
-    private var stateJob: Job? = null
-    private var providerQuotaWatchJob: Job? = null
+    private var session: ConversationSession? = null
     private var conversationJob: Job? = null
-    private var postSendRefreshJob: Job? = null
-    private var postSendRefreshCardId: String? = null
-    private var postSendRefreshGeneration = 0L
-    private var machineListRefreshJob: Job? = null
-    private var machineTelemetryJob: Job? = null
-    private var conversationStreamCardId: String? = null
-    private var terminalEndpointId: String? = null
-    private val terminals = TerminalController(
-        viewModelScope,
-        captureClient = {
-            check(repository.activeEndpoint.id == terminalEndpointId) { "The terminal machine changed. Refresh terminals." }
-            repository.captureTerminalClient()
-        },
-        canWatch = { foreground && _state.value.destination == Destination.TERMINALS },
-        publish = { snapshot -> _state.update { it.copy(terminalWorkspace = snapshot) } },
-        reportError = { message -> _state.update { it.copy(error = message) } },
-    )
-    private val schedules = ScheduleController(
-        viewModelScope, { _state.value.activeGatewayId to _state.value.selectedProjectId },
-        replica = { project -> connectionManager.ensureReplicaRoute(project); repository.captureScheduleClient() },
-        owner = { machine -> connectionManager.ensureScheduleRoute(machine); repository.captureScheduleClient() },
-        checkout = { draft ->
-            val checkout = connectionManager.ensureCheckoutRoute(draft.projectId, draft.checkoutId)
-            repository.captureScheduleClient() to checkout
-        },
-        publish = { snapshot -> _state.update { it.copy(scheduleWorkspace = snapshot) } },
-        reportError = { error -> _state.update { it.copy(error = readableError(error)) } },
-    )
-    private val administration = AdministrationController(
-        viewModelScope, { Triple(_state.value.activeGatewayId, _state.value.selectedProjectId, _state.value.selectedBoardId) },
-        route = { project -> connectionManager.ensureReplicaRoute(project); repository.captureAdministrationClient() },
-        publish = { snapshot -> _state.update { it.copy(administration = snapshot) } },
-        reportError = { error -> _state.update { it.copy(error = readableError(error)) } },
-    )
-    private var conversationHistoryRequestGeneration = 0L
-    private var workspaceSurfaceJob: Job? = null
-    private var workspaceSurfaceRefreshAgain = false
-    private var workspaceDiffJob: Job? = null
-    private var gitOperationJob: Job? = null
-    private var gitOperationWatchId: String? = null
-    private var gitOperationLastSequence = 0L
-    private var mergeFlowJob: Job? = null
-    private var workspaceToastJob: Job? = null
-    private var projectChangesJob: Job? = null
-    private var projectChangesRefreshAgain = false
-    private var projectDiffJob: Job? = null
-    private var projectGitOperationJob: Job? = null
-    private var projectGitOperationId: String? = null
-    private var spacesJob: Job? = null
-    private var connectionDialogGraceJob: Job? = null
-    private var connectionDialogManuallyRequested = false
-    private var connectionDialogDismissedInterruptionKey: Long? = null
-    private var lastRemoteState: State? = null
-    private val activityProjection = ActivityDetailsProjection()
-    private val projectOrderProjection = ProjectOrderProjection()
-    private val conversationCache = ConversationUiCache()
-    private val projectWorkspaceJobs = mutableMapOf<String, Job>()
-    private var directoryListingGeneration = 0L
+    private var machineListJob: Job? = null
+    private var connectionDialogJob: Job? = null
+    private val connectionPrompt = ConnectionPrompt()
+    private var layout = NavigationLayout(emptyMap())
+    private var pendingProjectCreation: String? = null
+
+    internal var captureChooserVisible by mutableStateOf(false)
+
+    /** The task draft being written: a share or capture, or the open board's quick task and editor. */
+    internal var activeCapture by mutableStateOf<TaskDraftEditor?>(null)
+    internal var quickTaskOpen by mutableStateOf(false)
 
     init {
-        viewModelScope.launch { appPreferences.sharedNavigation.values.collectLatest { values ->
-            _state.update { it.copy(sharedLaneSortDirections = values.filterKeys { key -> key.startsWith("lane.") }.mapValues { entry -> entry.value.trim('"') }) }
-        } }
-        viewModelScope.launch { appPreferences.sharedNavigation.status.collectLatest { status ->
-            _state.update { it.copy(navigationPendingCount = status.pending, navigationSyncError = status.error) }
-        } }
-        viewModelScope.launch {
-            navigationFolders.layouts.collectLatest { layouts ->
-                _state.update { it.copy(
-                    projectFolders = layouts.getValue(NavigationFolderScope.PROJECTS),
-                    chatFolders = layouts.getValue(NavigationFolderScope.CHATS),
-                ) }
-            }
+        collect(appPreferences.palette) { palette -> copy(palette = palette) }
+        collect(appPreferences.showReasoningTraces) { copy(showReasoningTraces = it) }
+        collect(appPreferences.chatsPaneLeadingFraction) { copy(chatsPaneLeadingFraction = it) }
+        collect(appPreferences.activityPaneLeadingFraction) { copy(activityPaneLeadingFraction = it) }
+        collect(appPreferences.projectsPaneLeadingFraction) { copy(projectsPaneLeadingFraction = it) }
+        collect(appPreferences.boardPaneLeadingFraction) { copy(boardPaneLeadingFraction = it) }
+        collect(policy.mode) { copy(backgroundSyncMode = it) }
+        collect(core.accounts.state) { accounts ->
+            copy(
+                gateways = accounts.gateways,
+                activeGatewayId = accounts.active.origin,
+                endpoint = accounts.active.httpBase,
+                desiredConnected = accounts.wantsConnection,
+                signedIn = core.credentials.token(accounts.active) != null,
+            )
         }
         viewModelScope.launch {
-            appPreferences.palette.collectLatest { palette ->
-                _state.update { it.copy(palette = palette) }
-            }
-        }
-        viewModelScope.launch {
-            appPreferences.showReasoningTraces.collectLatest { show ->
-                _state.update { it.copy(showReasoningTraces = show) }
-            }
-        }
-        viewModelScope.launch {
-            appPreferences.notificationBoardIds.collectLatest { boardIds ->
-                _state.update { it.copy(notificationBoardIds = boardIds) }
-            }
-        }
-        viewModelScope.launch {
-            appPreferences.notificationSettings.collectLatest { settings ->
-                _state.update { it.copy(notificationSettings = settings) }
-            }
-        }
-        viewModelScope.launch {
-            appPreferences.projectOrder.collectLatest { projectOrder ->
+            core.connection.state.collect { connection ->
+                val previous = _state.value.connectionPhase
+                connectionPrompt.phaseChanged(previous, connection.phase, Clock.System.now())
                 _state.update {
                     it.copy(
-                        projects = orderedProjects(it.projects, projectOrder),
-                        projectOrder = projectOrder,
+                        connectionPhase = connection.phase,
+                        connectionError = connection.error,
+                        signedIn = core.credentials.token(core.accounts.state.value.active) != null,
+                    )
+                }
+                reconcileConnectionDialog()
+                if (connection.phase == ConnectionPhase.CONNECTED && previous != ConnectionPhase.CONNECTED) onConnected()
+            }
+        }
+        collect(core.connection.feedStatus) { feed -> copy(lastConnectedAtMillis = feed.lastAppliedAt?.toEpochMilliseconds()) }
+        viewModelScope.launch {
+            combine(core.connection.machines, core.sessions.routes, core.connection.state, core.workspace.state, core.connection.freshness) { machines, routes, connection, workspace, freshness ->
+                val now = machines.evaluatedAt
+                val endpoints = machines.all.map { machine -> MachineRows.of(machine, machine.online(now), routes[machine.id], connection.attachedMachineId) }
+                val byId = endpoints.associateBy { it.id }
+                val replicas = workspace.projectReplicas.mapValues { (_, daemonId) ->
+                    val machine = byId[daemonId]
+                    ProjectReplica(daemonId, daemonId, machine?.label ?: daemonId, machine?.online == true)
+                }
+                val warnings = MachineRows.syncWarnings(endpoints, freshness, connection.phase == ConnectionPhase.CONNECTED, Clock.System.now())
+                Triple(endpoints, replicas, warnings)
+            }.collect { (endpoints, replicas, warnings) ->
+                _state.update { it.copy(endpointConnections = endpoints, projectReplicas = replicas, peerSyncWarnings = warnings) }
+                refreshHarnesses()
+            }
+        }
+        viewModelScope.launch {
+            combine(core.workspace.state, core.navigationLayout()) { view, layout -> view to layout }.collect { (view, layout) ->
+                this@DieterViewModel.layout = layout
+                _state.update { current ->
+                    val projects = layout.orderedProjects(view.projects)
+                    val selection = BoardSelections.resolve(
+                        projects, view.boards, view.retiredBoards,
+                        BoardSelection(current.selectedProjectId, current.selectedBoardId, current.selectedLane),
+                    )
+                    val projectId = selection.projectId
+                    val boards = view.boards[projectId].orEmpty()
+                    current.copy(
+                        projects = projects,
+                        spaceBoards = view.boards.values.flatten(),
+                        spaceCards = view.cards.values.flatten(),
+                        chats = view.chats,
+                        retiredBoards = view.retiredBoards,
+                        boards = boards,
+                        cards = view.cards[projectId].orEmpty(),
+                        selectedProjectId = projectId,
+                        selectedBoardId = selection.boardId,
+                        selectedLane = selection.lane,
+                        loading = Availability.loading(current.desiredConnected, view.loaded, current.connectionPhase),
+                        pinnedProjectOrder = layout.pinnedProjects(projects.map(Project::id)),
+                        projectFolders = layout.folders(FolderScope.PROJECTS),
+                        chatFolders = layout.folders(FolderScope.CHATS),
+                        collapsedChatProjectIds = projects.map(Project::id).filterTo(mutableSetOf(), layout::chatSectionCollapsed),
+                        expandedChatProjectIds = projects.map(Project::id).filterTo(mutableSetOf(), layout::chatsShowAll),
+                        pinnedChatOrder = layout.pinnedChats(view.chats.filter(Card::pinned)).map(Card::id),
+                        navigationLayout = layout,
                     )
                 }
             }
         }
-        viewModelScope.launch {
-            appPreferences.pinnedProjectOrder.collectLatest { pinnedProjectOrder ->
-                _state.update { it.copy(pinnedProjectOrder = pinnedProjectOrder) }
-            }
+        collect(core.navigationKv.status) { status ->
+            copy(navigationPendingCount = status.pending, navigationSyncError = status.localError ?: status.deliveryError ?: status.watchError)
         }
         viewModelScope.launch {
-            appPreferences.collapsedChatProjectIds.collectLatest { projectIds ->
-                _state.update { it.copy(collapsedChatProjectIds = projectIds) }
+            core.outbox.view.collect { outbox ->
+                val selected = _state.value.selectedCardId
+                val resolved = selected?.let(outbox::resolve)
+                _state.update {
+                    it.copy(
+                        pendingCardIds = outbox.pendingCardIds,
+                        pendingMessageIds = outbox.pendingMessageIds,
+                        acceptedOutboxIds = outbox.acceptedIds,
+                        failedOutboxIds = outbox.failedIds,
+                        machineOutboxSummaries = outbox.machines,
+                        selectedCardId = resolved ?: it.selectedCardId,
+                    )
+                }
             }
         }
-        viewModelScope.launch {
-            appPreferences.expandedChatProjectIds.collectLatest { projectIds ->
-                _state.update { it.copy(expandedChatProjectIds = projectIds) }
-            }
+        collect(core.board.view) { board ->
+            copy(cardOperations = board.operations, cardOperationErrors = board.errors, pendingCardMoves = board.moves)
+        }
+        collect(core.quotas.view) { quotas ->
+            copy(
+                providerQuotaGroups = quotas.groups,
+                providerQuotasLoading = quotas.loading,
+                providerQuotaError = quotas.error,
+                providerQuotaMutatingAccounts = quotas.mutating,
+            )
+        }
+        viewModelScope.launch { core.activity().collect { items -> _state.update { it.copy(activityItems = items) } } }
+        viewModelScope.launch { core.metadata.machines.collect { refreshHarnesses() } }
+        collect(core.schedules.view) { copy(scheduleWorkspace = it) }
+        collect(terminals.view) { copy(terminalWorkspace = it) }
+        collect(review.view) { copy(workspaceReview = it) }
+        collect(projectChangesController.view) { copy(projectChanges = it) }
+        collect(core.projectWorkspaces.view) { workspaces ->
+            copy(
+                projectWorkspaces = workspaces.workspaces,
+                projectWorkspacesLoading = workspaces.loading,
+                projectWorkspaceOperations = workspaces.pending,
+                projectWorkspaceErrors = workspaces.errors,
+            )
         }
         viewModelScope.launch {
-            appPreferences.pinnedChatOrder.collectLatest { pinnedChatOrder ->
-                _state.update { it.copy(pinnedChatOrder = pinnedChatOrder) }
+            files.view.collect { view ->
+                _state.update { current ->
+                    current.copy(
+                        filePath = view.directory,
+                        files = view.entries,
+                        showHiddenFiles = view.showHidden,
+                        fileDocument = view.document,
+                        fileDraft = view.draft,
+                        fileDirty = view.dirty,
+                        fileConflict = view.conflict,
+                        error = view.listingError ?: view.documentError ?: current.error,
+                    )
+                }
             }
         }
-        viewModelScope.launch {
-            appPreferences.chatsPaneLeadingFraction.collectLatest { fraction ->
-                _state.update { it.copy(chatsPaneLeadingFraction = fraction) }
-            }
+        collect(core.telemetry.view) { telemetry ->
+            copy(
+                machineSnapshots = telemetry.machines,
+                machineOperationInFlight = telemetry.operationPending,
+                machineOperationMessage = telemetry.operationResult ?: machineOperationMessage,
+            )
         }
-        viewModelScope.launch {
-            appPreferences.activityPaneLeadingFraction.collectLatest { fraction ->
-                _state.update { it.copy(activityPaneLeadingFraction = fraction) }
-            }
-        }
-        viewModelScope.launch {
-            appPreferences.projectsPaneLeadingFraction.collectLatest { fraction ->
-                _state.update { it.copy(projectsPaneLeadingFraction = fraction) }
-            }
-        }
-        viewModelScope.launch {
-            appPreferences.boardPaneLeadingFraction.collectLatest { fraction ->
-                _state.update { it.copy(boardPaneLeadingFraction = fraction) }
-            }
+        _state.update { it.copy(notificationSettings = NotificationSettings.load(core.platform.settings)) }
+        _state.update { it.copy(notificationBoardIds = it.notificationSettings.boardIds) }
+    }
+
+    private fun <T> collect(flow: StateFlow<T>, apply: DieterUiState.(T) -> DieterUiState) {
+        viewModelScope.launch { flow.collect { value -> _state.update { it.apply(value) } } }
+    }
+
+    // --- Core calls ---------------------------------------------------------------------
+
+    /** Runs [block] on the core dispatcher; failures surface as the screen error. */
+    private fun launchCore(report: Boolean = true, block: suspend CoroutineScope.() -> Unit): Job = viewModelScope.launch {
+        try {
+            core.onCore(block)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            if (report) _state.update { it.copy(error = Failures.message(error)) }
         }
     }
+
+    /** A user action: shows progress, serializes nothing, and reports its failure. */
+    private fun action(onFinished: () -> Unit = {}, block: suspend CoroutineScope.() -> Unit): Job = viewModelScope.launch {
+        _state.update { it.copy(working = true, error = null) }
+        try {
+            core.onCore(block)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            _state.update { it.copy(error = Failures.message(error)) }
+        } finally {
+            _state.update { it.copy(working = false) }
+            onFinished()
+        }
+    }
+
+    // --- Lifecycle ------------------------------------------------------------------------
 
     fun start() {
         if (foreground) return
         foreground = true
-        stateJob?.cancel()
-        stateJob = viewModelScope.launch {
-            connectionManager.state.collectLatest(::applyConnectionState)
+        policy.setForeground(true)
+        launchCore(report = false) {
+            core.quotas.load(refresh = false)
+            terminals.setActive(_state.value.destination == Destination.TERMINALS)
+            review.setActive(_state.value.selectedCardId != null)
+            projectChangesController.setActive(_state.value.destination == Destination.FILES && _state.value.projectFilesMode == "changes")
         }
-        startProviderQuotaWatch()
-        connectionManager.onAppForegrounded(_state.value.selectedProjectId)
-        startStateStream()
-        refreshProviderQuotas(requestRefresh = false)
-        if (_state.value.destination == Destination.TERMINALS) loadTerminals()
-        if (_state.value.destination == Destination.MACHINES) {
-            refreshMachines()
-            _state.value.selectedMachineId?.let(::startMachineTelemetry)
+        when (_state.value.destination) {
+            Destination.TERMINALS -> loadTerminals()
+            Destination.MACHINES -> {
+                refreshMachines()
+                _state.value.selectedMachineId?.let { launchCore { core.telemetry.select(it, active = true) } }
+            }
+            else -> Unit
         }
+        reconcileConnectionDialog()
     }
 
     fun stop() {
-        rememberConversation()
+        taskCaptures?.flushAll()
         foreground = false
-        terminals.cancel()
-        schedules.cancel()
-        administration.cancel()
-        stateJob?.cancel()
-        providerQuotaWatchJob?.cancel()
-        providerQuotaWatchJob = null
-        cancelConversationStream()
-        cancelPostSendRefresh()
-        stopTerminalWatch()
-        stopMachineTelemetry()
-        machineListRefreshJob?.cancel()
-        machineListRefreshJob = null
-        // Backgrounding cancels only the local watch tasks; the durable Git
-        // operation keeps running on the daemon and is resumed by sequence.
-        workspaceSurfaceJob?.cancel()
-        workspaceSurfaceRefreshAgain = false
-        workspaceDiffJob?.cancel()
-        gitOperationJob?.cancel()
-        projectChangesJob?.cancel()
-        projectChangesRefreshAgain = false
-        projectDiffJob?.cancel()
-        projectGitOperationJob?.cancel()
-        spacesJob?.cancel()
-        connectionDialogGraceJob?.cancel()
-        connectionDialogGraceJob = null
-        connectionManager.onAppBackgrounded()
-        _state.update { it.copy(loading = false, spacesLoading = false) }
-    }
-
-    fun refresh() {
-        if (connectionManager.state.value.desiredConnected) connectionManager.reconnect() else connectionManager.connect()
-    }
-
-    fun connect() {
-        connectionDialogManuallyRequested = false
-        connectionDialogDismissedInterruptionKey = null
-        connectionManager.connect()
-    }
-
-    fun signIn() = connectionManager.signIn()
-
-    fun disconnect() {
-        appPreferences.sharedNavigation.bind(null)
-        cancelConversationStream()
-        connectionDialogGraceJob?.cancel()
-        connectionDialogGraceJob = null
-        connectionDialogManuallyRequested = false
-        connectionDialogDismissedInterruptionKey = null
-        connectionManager.disconnect()
-        _state.update {
-            it.copy(
-                connectionDialogVisible = true,
-                connectionPhase = ConnectionPhase.STOPPED,
-                desiredConnected = false,
-                loading = false,
-            )
+        policy.setForeground(false)
+        machineListJob?.cancel()
+        connectionDialogJob?.cancel()
+        launchCore(report = false) {
+            terminals.setActive(false)
+            review.setActive(false)
+            projectChangesController.setActive(false)
+            core.telemetry.select(core.telemetry.view.value.daemonId, active = false)
+            core.quotas.pause()
         }
     }
 
-    fun setBackgroundSyncMode(mode: BackgroundSyncMode) {
-        connectionManager.setBackgroundSyncMode(mode)
-    }
-
-    fun setPalette(palette: DieterPalette) {
-        appPreferences.setPalette(palette)
-    }
-
-    fun setShowReasoningTraces(show: Boolean) {
-        appPreferences.setShowReasoningTraces(show)
-    }
-
-    fun setSelectedBoardNotificationsEnabled(enabled: Boolean) {
-        appPreferences.setBoardNotificationsEnabled(_state.value.selectedBoardId, enabled)
-    }
-
-    fun setNotificationBoardEnabled(boardId: String, enabled: Boolean) {
-        appPreferences.setBoardNotificationsEnabled(boardId, enabled)
-    }
-
-    fun setNotificationBoardIds(boardIds: Set<String>) {
-        appPreferences.setNotificationBoardIds(boardIds)
-    }
-
-    fun setNotificationSettings(settings: DieterNotificationSettings) {
-        appPreferences.setNotificationSettings(settings)
-    }
-
-    fun updateConnectionTargets(endpoints: List<DieterEndpoint>, activeGatewayId: String) {
-        try {
-            connectionManager.updateEndpoints(endpoints, activeGatewayId)
-            _state.update {
-                it.copy(
-                    configuredConnections = endpoints.map { endpoint ->
-                        EndpointConnection(endpoint.id, endpoint.label, endpoint.address)
-                    },
-                    activeGatewayId = activeGatewayId,
-                    error = null,
-                )
-            }
-        } catch (error: IllegalArgumentException) {
-            _state.update { it.copy(error = error.message ?: "Invalid connection settings") }
-        }
-    }
-
-    fun resetConnectionTargets() {
-        connectionManager.resetEndpoints()
-        _state.update {
-            it.copy(
-                configuredConnections = DIETER_ENDPOINTS.map { endpoint ->
-                    EndpointConnection(endpoint.id, endpoint.label, endpoint.address)
-                },
-                activeGatewayId = DIETER_ENDPOINTS.first().id,
-                error = null,
-            )
-        }
-    }
-
-    fun cleanSync() = connectionManager.cleanSync()
-
-    fun selectGateway(id: String) = connectionManager.selectGateway(id)
-
-    fun showConnectionDialog() {
-        connectionDialogManuallyRequested = true
-        _state.update { it.copy(connectionDialogVisible = true) }
-    }
-
-    fun showConnectionDialogIfNeeded() {
-        val connection = connectionManager.state.value
-        if (connectionDialogShouldOpenFromNotification(
-                desiredConnected = connection.desiredConnected,
-                phase = connection.phase,
-                hasCachedWorkspace = connection.selectedState != null,
-            )
-        ) {
-            // Opening a status notification is navigation, not a request to
-            // pin the connection sheet through a successful recovery.
-            connectionDialogManuallyRequested = false
-            _state.update { it.copy(connectionDialogVisible = true) }
-        }
-    }
-
-    fun openAppSettingsFromConnection() {
-        connectionDialogManuallyRequested = false
-        rememberConnectionDialogDismissal()
-        _state.update {
-            it.copy(
-                appSurface = AppSurface.APP_SETTINGS,
-                connectionDialogVisible = false,
-                error = null,
-            )
-        }
-    }
-
-    fun dismissConnectionDialog() {
-        connectionDialogManuallyRequested = false
-        rememberConnectionDialogDismissal()
-        _state.update { it.copy(connectionDialogVisible = false) }
-    }
-
-    private fun rememberConnectionDialogDismissal() {
-        val connection = connectionManager.state.value
-        connectionDialogDismissedInterruptionKey = if (
-            connection.desiredConnected && connection.phase == ConnectionPhase.CONNECTED
-        ) {
-            null
-        } else {
-            connection.connectionInterruptedAtMs ?: CONNECTION_DIALOG_NO_INTERRUPTION_KEY
-        }
-    }
-
-    private fun startStateStream() {
-        if (!foreground) return
-        connectionManager.selectProject(_state.value.selectedProjectId)
-    }
-
-    private fun applyConnectionState(connection: DieterConnectionState) {
-        val wasConnected = _state.value.connected
-        val gatewayChanged = connection.activeGatewayId != _state.value.activeGatewayId
-        if (gatewayChanged) {
-            schedules.reset()
-            administration.reset()
-            providerQuotaWatchJob?.cancel()
-            providerQuotaWatchJob = null
-            stopMachineTelemetry()
-            machineListRefreshJob?.cancel()
-            machineListRefreshJob = null
-        }
-        val connectedEndpointId = connection.endpoint?.id
-        val endpointChanged = connectedEndpointId != terminalEndpointId
-        terminalEndpointId = connectedEndpointId
-        terminals.bind(connection.activeGatewayId to connectedEndpointId)
-        val remote = connection.selectedState
-        _state.update { current ->
-            val liveMachineIds = connection.endpointConnections.mapTo(hashSetOf(), EndpointConnection::id)
-            val selectedCardId = resolveConversationId(current.selectedCardId, connection.resolvedConversationIds)
-            conversationDrafts.retarget(current.selectedCardId, selectedCardId)
-            val liveConversation = selectedCardId?.takeIf { cardId ->
-                connection.activeConversations.containsKey(cardId) && connectionManager.liveSyncCoversConversation(cardId)
-            }
-            val cardProjection = projectCardsDuringOperations(
-                remoteCards = connection.cards,
-                localCards = if (current.cardOperations.isEmpty() && current.pendingCardMoves.isEmpty()) emptyList() else current.spaceCards + current.cards,
-                operations = current.cardOperations,
-                pendingMoves = current.pendingCardMoves,
-            )
-            val confirmedMoveIds = current.pendingCardMoves.keys - cardProjection.pendingMoves.keys
-            current.copy(
-                endpoint = connection.endpoint?.address
-                    ?: connection.configuredConnections.firstOrNull { it.id == connection.activeGatewayId }?.address
-                    ?: current.endpoint,
-                connectionPhase = connection.phase,
-                lastConnectedAtMillis = connection.lastConnectedAtMs,
-                connectionDialogVisible = when {
-                    !connection.desiredConnected && !connectionDialogDismissalApplies(
-                        connectionDialogDismissedInterruptionKey,
-                        connection.desiredConnected,
-                        connection.phase,
-                        connection.connectionInterruptedAtMs,
-                    ) -> true
-                    connection.phase == ConnectionPhase.CONNECTED && !connectionDialogManuallyRequested -> false
-                    else -> current.connectionDialogVisible
-                },
-                connectionError = connection.error,
-                peerSyncWarnings = com.dbpprt.dieter.connection.peerSyncWarnings(connection),
-                desiredConnected = connection.desiredConnected,
-                backgroundSyncMode = connection.backgroundSyncMode,
-                configuredConnections = connection.configuredConnections,
-                activeGatewayId = connection.activeGatewayId,
-                endpointConnections = connection.endpointConnections,
-                loading = connection.desiredConnected && remote == null && connection.phase != ConnectionPhase.UNAVAILABLE,
-                runtimeStatus = connection.runtimeStatus,
-                harnesses = connection.harnesses,
-                harnessesEndpointId = connection.harnessesEndpointId,
-                providerQuotaGroups = if (gatewayChanged) emptyList() else current.providerQuotaGroups,
-                providerQuotasLoading = if (gatewayChanged) false else current.providerQuotasLoading,
-                providerQuotaError = if (gatewayChanged) null else current.providerQuotaError,
-                providerQuotaMutatingAccounts = if (gatewayChanged) emptySet() else current.providerQuotaMutatingAccounts,
-                activityDetails = activityProjection.apply(connection.activeConversations),
-                chats = connection.chats,
-                projects = projectOrderProjection.apply(connection.projects, current.projectOrder),
-                projectReplicas = connection.projectReplicas,
-                spaceBoards = connection.boards,
-                spaceCards = cardProjection.cards,
-                selectedCardId = selectedCardId,
-                composerDraft = conversationDrafts.draft(selectedCardId),
-                conversation = selectedCardId?.let(connection.activeConversations::get) ?: current.conversation,
-                conversationLastRefreshedAtMillis = if (liveConversation != null) {
-                    connection.lastConnectedAtMs
-                        ?: connection.conversationRefreshedAtMillis[liveConversation]
-                        ?: current.conversationLastRefreshedAtMillis
-                } else {
-                    selectedCardId?.let(connection.conversationRefreshedAtMillis::get)
-                        ?: current.conversationLastRefreshedAtMillis
-                },
-                conversationSyncing = if (liveConversation != null) false else current.conversationSyncing,
-                pendingCardIds = connection.pendingCardIds,
-                pendingMessageIds = connection.pendingMessageIds,
-                acceptedOutboxIds = connection.acceptedOutboxIds,
-                failedOutboxIds = connection.failedOutboxIds,
-                machineOutboxSummaries = connection.machineOutboxSummaries,
-                selectedMachineId = if (gatewayChanged) null else current.selectedMachineId?.takeIf(liveMachineIds::contains),
-                machineInformation = if (gatewayChanged) emptyMap() else current.machineInformation.filterKeys(liveMachineIds::contains),
-                machineInformationLoading = if (gatewayChanged) emptySet() else current.machineInformationLoading.intersect(liveMachineIds),
-                machineInformationErrors = if (gatewayChanged) emptyMap() else current.machineInformationErrors.filterKeys(liveMachineIds::contains),
-                machineCpuHistory = if (gatewayChanged) emptyMap() else current.machineCpuHistory.filterKeys(liveMachineIds::contains),
-                machineGpuHistory = if (gatewayChanged) emptyMap() else current.machineGpuHistory.filterKeys(liveMachineIds::contains),
-                pendingCardMoves = cardProjection.pendingMoves,
-                cardOperations = current.cardOperations - confirmedMoveIds,
-            )
-        }
-        val resolvedSelectedCardId = _state.value.selectedCardId
-        if (foreground && conversationStreamNeedsRestart(
-                conversationStreamCardId,
-                resolvedSelectedCardId,
-                conversationJob?.isActive == true,
-            )
-        ) {
-            startConversationStream(requireNotNull(resolvedSelectedCardId))
-        }
-        resolvedSelectedCardId?.let(::ensureConversationRecovery)
-        if (gatewayChanged && foreground) startProviderQuotaWatch()
-        if (gatewayChanged) appPreferences.sharedNavigation.clearAccount()
-        if (connection.phase == ConnectionPhase.CONNECTED) {
-            if (gatewayChanged || endpointChanged || !wasConnected) appPreferences.sharedNavigation.bind(repository)
-        } else if (wasConnected || gatewayChanged || endpointChanged) {
-            // Route replacement and deliberate background pauses cancel this
-            // subscription too; they are not independent navigation failures.
-            appPreferences.sharedNavigation.bind(null)
-        }
-        if (connection.phase == ConnectionPhase.AUTH_REQUIRED) appPreferences.sharedNavigation.clearAccount()
-        if ((gatewayChanged || !wasConnected) && connection.phase == ConnectionPhase.CONNECTED) {
-            refreshProviderQuotas(requestRefresh = false)
-        }
-        reconcileConnectionDialog(connection)
-        if (remote != null && remote !== lastRemoteState) {
-            lastRemoteState = remote
-            applyRemoteState(remote)
-        }
-        if (endpointChanged && foreground && connection.phase == ConnectionPhase.CONNECTED &&
-            _state.value.destination == Destination.TERMINALS
-        ) {
-            loadTerminals()
-        }
-    }
-
-    fun toggleLaneSort(boardId: String, laneId: String) {
-        val key = "lane.$boardId.$laneId.sort"
-        appPreferences.sharedNavigation.put(key, if (_state.value.sharedLaneSortDirections[key] == "ascending") "descending" else "ascending")
-    }
-
-    fun refreshProviderQuotas(requestRefresh: Boolean = true) {
-        if (_state.value.providerQuotasLoading) return
-        val gatewayId = _state.value.activeGatewayId
-        viewModelScope.launch {
-            if (_state.value.activeGatewayId != gatewayId) return@launch
-            _state.update { it.copy(providerQuotasLoading = true, providerQuotaError = null) }
-            runCatching {
-                if (requestRefresh) repository.refreshProviderQuotas().groupsList
-                else repository.providerQuotas().groupsList
-            }.onSuccess { groups ->
-                if (_state.value.activeGatewayId != gatewayId) return@onSuccess
-                _state.update {
-                    it.copy(
-                        providerQuotaGroups = groups,
-                        providerQuotasLoading = false,
-                        providerQuotaError = null,
-                    )
-                }
-            }.onFailure { error ->
-                if (error is CancellationException) throw error
-                if (_state.value.activeGatewayId != gatewayId) return@onFailure
-                _state.update {
-                    it.copy(
-                        providerQuotasLoading = false,
-                        providerQuotaError = error.message ?: "Provider quotas are unavailable.",
-                    )
-                }
-            }
-        }
-    }
-
-    fun setProviderQuotaSummaryInclusion(
-        provider: ProviderQuotaProvider,
-        accountKey: String,
-        included: Boolean,
-    ) {
-        mutateProviderQuotaAccount(accountKey) {
-            repository.setProviderQuotaSummaryInclusion(provider, accountKey, included).groupsList
-        }
-    }
-
-    fun consumeProviderQuotaReset(accountKey: String) {
-        mutateProviderQuotaAccount(accountKey) {
-            val response = repository.consumeProviderQuotaReset(accountKey, UUID.randomUUID().toString())
-            check(response.accepted) { "No online machine with access to this OpenAI account accepted the reset." }
-            response.groupsList
-        }
-    }
-
-    private fun mutateProviderQuotaAccount(
-        accountKey: String,
-        operation: suspend () -> List<ProviderQuotaGroup>,
-    ) {
-        if (accountKey in _state.value.providerQuotaMutatingAccounts) return
-        val gatewayId = _state.value.activeGatewayId
-        _state.update {
-            it.copy(
-                providerQuotaMutatingAccounts = it.providerQuotaMutatingAccounts + accountKey,
-                providerQuotaError = null,
-            )
-        }
-        viewModelScope.launch {
-            runCatching { operation() }
-                .onSuccess { groups ->
-                    if (_state.value.activeGatewayId != gatewayId) return@onSuccess
-                    val providers = groups.map { it.provider }.toSet()
-                    _state.update { current ->
-                        current.copy(
-                            providerQuotaGroups = (
-                                current.providerQuotaGroups.filterNot { it.provider in providers } + groups
-                            ).sortedBy { it.providerValue },
-                            providerQuotaMutatingAccounts = current.providerQuotaMutatingAccounts - accountKey,
-                            providerQuotaError = null,
-                        )
-                    }
-                }
-                .onFailure { error ->
-                    if (error is CancellationException) throw error
-                    if (_state.value.activeGatewayId != gatewayId) return@onFailure
-                    _state.update {
-                        it.copy(
-                            providerQuotaMutatingAccounts = it.providerQuotaMutatingAccounts - accountKey,
-                            providerQuotaError = error.message ?: "Provider quota operation failed.",
-                        )
-                    }
-                }
-        }
-    }
-
-    private fun startProviderQuotaWatch() {
-        providerQuotaWatchJob?.cancel()
-        val gatewayId = _state.value.activeGatewayId
-        providerQuotaWatchJob = viewModelScope.launch {
-            var attempt = 0
-            while (true) {
-                try {
-                    repository.watchProviderQuotas().collect { update ->
-                        attempt = 0
-                        if (_state.value.activeGatewayId != gatewayId) return@collect
-                        _state.update {
-                            it.copy(providerQuotaGroups = update.groupsList, providerQuotaError = null)
-                        }
-                    }
-                    delay(250)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Throwable) {
-                    delay((750L shl attempt.coerceAtMost(4)).coerceAtMost(10_000L))
-                    attempt++
-                }
-            }
-        }
-    }
-
-    private fun reconcileConnectionDialog(connection: DieterConnectionState) {
-        connectionDialogGraceJob?.cancel()
-        connectionDialogGraceJob = null
-        when {
-            connection.desiredConnected && connection.phase == ConnectionPhase.CONNECTED -> {
-                connectionDialogDismissedInterruptionKey = null
-                if (!connectionDialogManuallyRequested) {
-                    _state.update { it.copy(connectionDialogVisible = false) }
-                }
-            }
-            connectionDialogDismissalApplies(
-                connectionDialogDismissedInterruptionKey,
-                connection.desiredConnected,
-                connection.phase,
-                connection.connectionInterruptedAtMs,
-            ) -> _state.update { it.copy(connectionDialogVisible = false) }
-            !connection.desiredConnected -> {
-                connectionDialogManuallyRequested = false
-                _state.update { it.copy(connectionDialogVisible = true) }
-            }
-            !foreground || connection.phase == ConnectionPhase.STOPPED || _state.value.connectionDialogVisible -> Unit
-            else -> {
-                val waitMs = connectionDialogDelayMs(
-                    connection.desiredConnected,
-                    connection.phase,
-                    connection.connectionInterruptedAtMs,
-                    System.currentTimeMillis(),
-                    hasCachedWorkspace = connection.selectedState != null,
-                ) ?: return
-                connectionDialogGraceJob = viewModelScope.launch {
-                    delay(waitMs)
-                    val latest = connectionManager.state.value
-                    if (
-                        foreground &&
-                        connectionDialogDelayMs(
-                            latest.desiredConnected,
-                            latest.phase,
-                            latest.connectionInterruptedAtMs,
-                            System.currentTimeMillis(),
-                            hasCachedWorkspace = latest.selectedState != null,
-                        ) == 0L
-                    ) {
-                        connectionDialogManuallyRequested = false
-                        _state.update {
-                            it.copy(
-                                connectionDialogVisible = true,
-                                connectionError = latest.error,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private suspend fun retryStream(cause: Throwable, attempt: Long, label: String): Boolean {
-        val transient = foreground && rpcReadFailureIsTransient(cause)
-        if (!transient) return false
-        _state.update {
-            val selectedCardId = it.selectedCardId
-            it.copy(
-                connectionPhase = ConnectionPhase.RECONNECTING,
-                loading = false,
-                conversationSyncing = selectedCardId != null &&
-                    !connectionManager.liveSyncCoversConversation(selectedCardId),
-                connectionError = "$label connection interrupted; reconnecting…",
-            )
-        }
-        delay((500L shl attempt.coerceAtMost(4).toInt()).coerceAtMost(8_000L))
-        return true
-    }
-
-    private fun applyRemoteState(remote: State) {
-        val previous = _state.value
-        val projectId = remote.project.id.ifBlank {
-            previous.selectedProjectId.takeIf { id -> remote.projectsList.any { it.id == id } }
-                ?: remote.projectsList.firstOrNull()?.id.orEmpty()
-        }
-        val boardId = previous.selectedBoardId.takeIf { id -> (remote.boardsList + remote.archives.retiredBoardsList).any { it.id == id && it.projectId == projectId } }
-            ?: remote.boardsList.firstOrNull()?.id.orEmpty()
-        val board = remote.boardsList.firstOrNull { it.id == boardId }
-        val lane = previous.selectedLane.takeIf { id -> board?.lanesList?.any { it.id == id } == true }
-            ?: board?.lanesList?.firstOrNull()?.id.orEmpty()
-        _state.update { current ->
-            val cardProjection = projectCardsDuringOperations(
-                remoteCards = remote.cardsList,
-                localCards = current.cards,
-                operations = current.cardOperations,
-                pendingMoves = current.pendingCardMoves,
-            )
-            val confirmedMoveIds = current.pendingCardMoves.keys - cardProjection.pendingMoves.keys
-            current.copy(
-                loading = false,
-                error = null,
-                boards = remote.boardsList,
-                retiredBoards = remote.archives.retiredBoardsList,
-                cards = cardProjection.cards,
-                selectedProjectId = projectId,
-                selectedBoardId = boardId,
-                selectedLane = lane,
-                pendingCardMoves = cardProjection.pendingMoves,
-                cardOperations = current.cardOperations - confirmedMoveIds,
-            ).preserveConnectionPresentation(current)
-        }
+    private fun onConnected() {
+        launchCore(report = false) { core.quotas.load(refresh = false) }
         when (_state.value.destination) {
-            Destination.FILES -> if (_state.value.projectFilesMode == "changes") loadProjectChanges() else viewModelScope.launch { loadFiles() }
-            Destination.SCHEDULES -> viewModelScope.launch { loadSchedules() }
             Destination.TERMINALS -> if (_state.value.terminals.isEmpty()) loadTerminals()
+            Destination.FILES -> if (_state.value.projectFilesMode == "changes") loadProjectChanges() else loadFiles()
+            Destination.SCHEDULES -> refreshSchedules()
+            Destination.MACHINES -> refreshMachines()
             else -> Unit
         }
     }
 
-    suspend fun openScreenConnection(endpointId: String) = repository.openScreenConnection(endpointId)
+    override fun onCleared() {
+        conversationJob?.cancel()
+        session?.cardId?.let { id -> viewModelScope.launch { runCatching { core.closeConversation(id) } } }
+    }
 
-    fun navigate(destination: Destination) {
-        rememberConversation()
-        if (destination != Destination.TERMINALS) stopTerminalWatch()
-        if (destination != Destination.MACHINES) {
-            stopMachineTelemetry()
-            machineListRefreshJob?.cancel()
-            machineListRefreshJob = null
+    fun clearError() = _state.update { it.copy(error = null) }
+
+    // --- Connection and gateways ---------------------------------------------------------
+
+    fun refresh() {
+        if (_state.value.desiredConnected) launchCore { core.connection.restart() } else connect()
+    }
+
+    fun connect() {
+        connectionPrompt.connecting()
+        launchCore { core.setConnected(true) }
+    }
+
+    fun signIn() = action {
+        val url = core.beginSignIn(core.accounts.state.value.active)
+        host.openUrl(url)
+    }
+
+    fun signOut() = action { core.signOut() }
+
+    fun disconnect() {
+        connectionDialogJob?.cancel()
+        connectionPrompt.disconnected()
+        closeDetail()
+        launchCore { core.setConnected(false) }
+        _state.update { it.copy(connectionDialogVisible = true, desiredConnected = false, loading = false) }
+    }
+
+    fun setBackgroundSyncMode(mode: BackgroundMode) = policy.setMode(mode)
+
+    fun setPalette(palette: DieterPalette) = appPreferences.setPalette(palette)
+
+    fun setShowReasoningTraces(show: Boolean) = appPreferences.setShowReasoningTraces(show)
+
+    private fun updateNotificationSettings(change: (NotificationSettings) -> NotificationSettings) {
+        val next = change(_state.value.notificationSettings)
+        next.save(core.platform.settings)
+        _state.update { it.copy(notificationSettings = next, notificationBoardIds = next.boardIds) }
+    }
+
+    fun setSelectedBoardNotificationsEnabled(enabled: Boolean) = setNotificationBoardEnabled(_state.value.selectedBoardId, enabled)
+
+    fun setNotificationBoardEnabled(boardId: String, enabled: Boolean) {
+        if (boardId.isBlank()) return
+        updateNotificationSettings { it.copy(boardIds = if (enabled) it.boardIds + boardId else it.boardIds - boardId) }
+    }
+
+    fun setNotificationBoardIds(boardIds: Set<String>) = updateNotificationSettings { it.copy(boardIds = boardIds.filterTo(mutableSetOf(), String::isNotBlank)) }
+
+    fun setNotificationSettings(settings: NotificationSettings) = updateNotificationSettings { settings.copy(boardIds = it.boardIds) }
+
+    /** Replaces the gateway list; plaintext is only allowed on loopback. */
+    fun updateConnectionTargets(gateways: List<Gateway>, activeGatewayId: String) = action {
+        core.setGateways(gateways, activeGatewayId)
+    }
+
+    fun resetConnectionTargets() = action { core.setGateways(listOf(Gateway.DEFAULT), Gateway.DEFAULT.origin) }
+
+    fun selectGateway(origin: String) = launchCore { core.selectGateway(origin) }
+
+    fun cleanSync() = action { core.resync() }
+
+    fun showConnectionDialog() {
+        connectionPrompt.show()
+        _state.update { it.copy(connectionDialogVisible = true) }
+    }
+
+    fun showConnectionDialogIfNeeded() {
+        val current = _state.value
+        connectionPrompt.showIfNeeded(current.desiredConnected, current.connectionPhase, current.hasCachedWorkspace)
+        _state.update { it.copy(connectionDialogVisible = connectionPrompt.visible) }
+    }
+
+    fun openAppSettingsFromConnection() {
+        connectionPrompt.leaveForSettings(_state.value.connectionPhase)
+        _state.update { it.copy(appSurface = AppSurface.APP_SETTINGS, connectionDialogVisible = false, error = null) }
+    }
+
+    fun dismissConnectionDialog() {
+        connectionPrompt.dismiss(_state.value.desiredConnected, _state.value.connectionPhase)
+        _state.update { it.copy(connectionDialogVisible = false) }
+    }
+
+    private fun reconcileConnectionDialog() {
+        connectionDialogJob?.cancel()
+        val current = _state.value
+        val wait = connectionPrompt.reconcile(current.desiredConnected, current.connectionPhase, current.hasCachedWorkspace, foreground, Clock.System.now())
+        _state.update { it.copy(connectionDialogVisible = connectionPrompt.visible) }
+        if (wait != null) {
+            connectionDialogJob = viewModelScope.launch {
+                delay(wait)
+                reconcileConnectionDialog()
+            }
         }
-        resetWorkspaceReview(null)
+    }
+
+    // --- Machines ------------------------------------------------------------------------
+
+    /** Reads every online machine's information for the machine list, four at a time. */
+    fun refreshMachines() {
+        val machineIds = _state.value.presentedEndpointConnections.filter { it.unavailableMessage == null }.map(MachineRow::id)
+        machineListJob?.cancel()
+        if (machineIds.isEmpty()) return
+        machineListJob = launchCore(report = false) { core.telemetry.refreshAll(machineIds) }
+    }
+
+    /** Why [machineId] cannot be read or operated now, or null. */
+    private fun machineUnavailable(machineId: String): String? {
+        val machine = _state.value.presentedEndpointConnections.firstOrNull { it.id == machineId } ?: return "This machine is no longer enrolled."
+        return machine.unavailableMessage
+    }
+
+    fun selectMachine(machineId: String) {
+        if (_state.value.presentedEndpointConnections.none { it.id == machineId }) return
+        val unavailable = machineUnavailable(machineId)
+        _state.update { it.copy(selectedMachineId = machineId, machineOperationMessage = null) }
+        launchCore {
+            core.telemetry.select(machineId, active = foreground && unavailable == null)
+            if (unavailable != null) core.telemetry.unavailable(machineId, unavailable)
+        }
+    }
+
+    fun closeMachine() {
+        _state.update { it.copy(selectedMachineId = null, machineOperationMessage = null) }
+        launchCore(report = false) { core.telemetry.select(null, active = false) }
+    }
+
+    fun refreshSelectedMachineInformation() {
+        val machineId = _state.value.selectedMachineId ?: return
+        val unavailable = machineUnavailable(machineId)
+        launchCore(report = false) {
+            if (unavailable != null) core.telemetry.unavailable(machineId, unavailable) else core.telemetry.refreshAll(listOf(machineId))
+        }
+    }
+
+    fun performMachineOperation(action: MachineOperationAction) {
+        if (_state.value.selectedMachineId == null || _state.value.machineOperationInFlight) return
+        _state.update { it.copy(machineOperationMessage = null) }
+        launchCore {
+            val response = core.telemetry.perform(action)
+            _state.update { it.copy(machineOperationMessage = response?.message?.ifBlank { null } ?: "Machine operation accepted.") }
+        }
+    }
+
+    fun dismissMachineOperationMessage() = _state.update { it.copy(machineOperationMessage = null) }
+
+    fun renameMachine(daemonId: String, name: String) = action { core.renameMachine(daemonId, name) }
+
+    fun revokeMachine(daemonId: String) = action { core.revokeMachine(daemonId) }
+
+    fun openMachineTerminals(machineId: String) {
+        machineUnavailable(machineId)?.let { unavailable ->
+            _state.update { it.copy(machineOperationMessage = unavailable) }
+            return
+        }
+        navigate(Destination.TERMINALS, terminalMachine = machineId)
+    }
+
+    // --- Navigation and selection ------------------------------------------------------------
+
+    private var terminalMachineId: String? = null
+
+    fun navigate(destination: Destination) = navigate(destination, terminalMachine = null)
+
+    private fun navigate(destination: Destination, terminalMachine: String?) {
+        closeConversation()
+        if (destination != Destination.MACHINES) {
+            machineListJob?.cancel()
+            launchCore(report = false) { core.telemetry.select(null, active = false) }
+        }
         _state.update {
             it.copy(
                 destination = destination,
                 appSurface = null,
                 editingScheduleId = null,
-                selectedCardId = null,
-                composerDraft = ConversationComposerDraft(),
-                conversation = null,
-                olderMessages = emptyList(),
-                fileDocument = null,
                 selectedMachineId = if (destination == Destination.MACHINES) it.selectedMachineId else null,
                 projectFilesMode = if (destination == Destination.FILES) "browse" else it.projectFilesMode,
                 boardOverviewVisible = if (destination == Destination.BOARD) true else it.boardOverviewVisible,
             )
         }
-        cancelConversationStream()
+        launchCore(report = false) { terminals.setActive(foreground && destination == Destination.TERMINALS) }
         when (destination) {
-            Destination.CHATS -> viewModelScope.launch { loadChats() }
-            Destination.FILES -> viewModelScope.launch { loadFiles() }
-            Destination.SCHEDULES -> viewModelScope.launch { loadSchedules() }
-            Destination.SCREENS -> Unit
+            Destination.FILES -> loadFiles()
+            Destination.SCHEDULES -> refreshSchedules()
             Destination.MACHINES -> refreshMachines()
-            Destination.TERMINALS -> loadTerminals()
-            Destination.ACTIVITY, Destination.BOARD -> refreshSpaces()
-        }
-    }
-
-    fun refreshMachines() {
-        connectionManager.refreshProjectDirectory()
-        val machineIds = _state.value.presentedEndpointConnections
-            .filter { it.daemonId != null && it.online && it.isCompatible }
-            .map(EndpointConnection::id)
-        machineListRefreshJob?.cancel()
-        if (machineIds.isEmpty()) return
-        machineListRefreshJob = viewModelScope.launch {
-            val permits = Semaphore(4)
-            coroutineScope {
-                machineIds.map { machineId ->
-                    async { permits.withPermit { fetchMachineInformation(machineId) } }
-                }.forEach { it.await() }
+            Destination.TERMINALS -> {
+                if (terminalMachine != null) terminalMachineId = terminalMachine
+                loadTerminals()
             }
+            else -> Unit
         }
-    }
-
-    fun selectMachine(machineId: String) {
-        val machine = _state.value.presentedEndpointConnections.firstOrNull { it.id == machineId } ?: return
-        val unavailable = machineUnavailableMessage(machine)
-        _state.update {
-            it.copy(
-                selectedMachineId = machineId,
-                machineInformationErrors = if (unavailable == null) {
-                    it.machineInformationErrors - machineId
-                } else {
-                    it.machineInformationErrors + (machineId to unavailable)
-                },
-                machineOperationMessage = null,
-            )
-        }
-        stopMachineTelemetry()
-        if (unavailable == null) {
-            viewModelScope.launch { fetchMachineInformation(machineId) }
-            startMachineTelemetry(machineId)
-        }
-    }
-
-    fun closeMachine() {
-        stopMachineTelemetry()
-        _state.update { it.copy(selectedMachineId = null, machineOperationMessage = null) }
-    }
-
-    fun refreshSelectedMachineInformation() {
-        val machineId = _state.value.selectedMachineId ?: return
-        val machine = _state.value.presentedEndpointConnections.firstOrNull { it.id == machineId }
-        if (machine == null) {
-            _state.update {
-                it.copy(machineInformationErrors = it.machineInformationErrors + (machineId to "This machine is no longer enrolled."))
-            }
-            return
-        }
-        val unavailable = machineUnavailableMessage(machine)
-        if (unavailable != null) {
-            _state.update {
-                it.copy(machineInformationErrors = it.machineInformationErrors + (machineId to unavailable))
-            }
-            return
-        }
-        viewModelScope.launch { fetchMachineInformation(machineId) }
-    }
-
-    fun performMachineOperation(action: MachineOperationAction, confirmation: String) {
-        val machineId = _state.value.selectedMachineId ?: return
-        if (_state.value.machineOperationInFlight) return
-        _state.update { it.copy(machineOperationInFlight = true, machineOperationMessage = null) }
-        viewModelScope.launch {
-            try {
-                val response = repository.performMachineOperationOn(
-                    machineId,
-                    MachineOperationRequest.newBuilder()
-                        .setAction(action)
-                        .setConfirmation(confirmation)
-                        .setIdempotencyKey(UUID.randomUUID().toString())
-                        .build(),
-                )
-                _state.update {
-                    it.copy(
-                        machineOperationInFlight = false,
-                        machineOperationMessage = response.message.ifBlank { "Machine operation accepted." },
-                    )
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                _state.update {
-                    it.copy(
-                        machineOperationInFlight = false,
-                        machineOperationMessage = readableError(error),
-                    )
-                }
-            }
-        }
-    }
-
-    fun dismissMachineOperationMessage() {
-        _state.update { it.copy(machineOperationMessage = null) }
-    }
-
-    fun openMachineTerminals(machineId: String) {
-        val machine = _state.value.presentedEndpointConnections.firstOrNull { it.id == machineId }
-        if (machine == null) {
-            _state.update { it.copy(machineOperationMessage = "This machine is no longer enrolled.") }
-            return
-        }
-        val unavailable = machineUnavailableMessage(machine)
-        if (unavailable != null) {
-            _state.update {
-                it.copy(machineOperationMessage = unavailable)
-            }
-            return
-        }
-        viewModelScope.launch {
-            try {
-                connectionManager.ensureMachineRoute(machineId)
-                navigate(Destination.TERMINALS)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                _state.update { it.copy(machineOperationMessage = readableError(error)) }
-            }
-        }
-    }
-
-    private fun startMachineTelemetry(machineId: String) {
-        machineTelemetryJob?.cancel()
-        if (!foreground) return
-        machineTelemetryJob = viewModelScope.launch {
-            while (_state.value.destination == Destination.MACHINES && _state.value.selectedMachineId == machineId) {
-                delay(2_000)
-                val machine = _state.value.presentedEndpointConnections.firstOrNull { it.id == machineId }
-                if (machine?.online == true && machine.isCompatible) {
-                    fetchMachineInformation(machineId)
-                }
-            }
-        }
-    }
-
-    private fun stopMachineTelemetry() {
-        machineTelemetryJob?.cancel()
-        machineTelemetryJob = null
-    }
-
-    private fun machineUnavailableMessage(machine: EndpointConnection): String? = when {
-        !machine.online -> "${machine.label} is offline."
-        !machine.isCompatible ->
-            "Dieter ${machine.releaseVersion.ifBlank { "unknown" }} needs an update to ${machine.minimumReleaseVersion.ifBlank { "the required release" }}."
-        else -> null
-    }
-
-    private suspend fun fetchMachineInformation(machineId: String) {
-        if (_state.value.machineInformationLoading.contains(machineId)) return
-        _state.update {
-            it.copy(
-                machineInformationLoading = it.machineInformationLoading + machineId,
-                machineInformationErrors = it.machineInformationErrors - machineId,
-            )
-        }
-        try {
-            val information = repository.machineInformationOn(machineId)
-            _state.update { current ->
-                val cpuHistory = (current.machineCpuHistory[machineId].orEmpty() + information.cpuUsagePercent).takeLast(12)
-                val gpuHistory = current.machineGpuHistory[machineId].orEmpty().toMutableMap()
-                val liveGpuIds = information.gpu.devicesList.mapTo(hashSetOf()) { it.id }
-                gpuHistory.keys.retainAll(liveGpuIds)
-                information.gpu.devicesList.filter { it.hasUtilizationPercent() }.forEach { gpu ->
-                    gpuHistory[gpu.id] = (gpuHistory[gpu.id].orEmpty() + gpu.utilizationPercent).takeLast(12)
-                }
-                current.copy(
-                    machineInformation = current.machineInformation + (machineId to information),
-                    machineInformationLoading = current.machineInformationLoading - machineId,
-                    machineInformationErrors = current.machineInformationErrors - machineId,
-                    machineCpuHistory = current.machineCpuHistory + (machineId to cpuHistory),
-                    machineGpuHistory = current.machineGpuHistory + (machineId to gpuHistory),
-                )
-            }
-        } catch (cancelled: CancellationException) {
-            _state.update { it.copy(machineInformationLoading = it.machineInformationLoading - machineId) }
-            throw cancelled
-        } catch (error: Throwable) {
-            _state.update {
-                it.copy(
-                    machineInformationLoading = it.machineInformationLoading - machineId,
-                    machineInformationErrors = it.machineInformationErrors + (machineId to readableError(error)),
-                )
-            }
-        }
-    }
-
-    fun moveProject(projectId: String, targetProjectId: String) {
-        val folders = navigationFolders.layouts.value.getValue(NavigationFolderScope.PROJECTS)
-        val sourceFolder = folders.folderContaining(projectId)
-        if (sourceFolder?.id != folders.folderContaining(targetProjectId)?.id) return
-        if (sourceFolder != null) {
-            navigationFolders.update(NavigationFolderScope.PROJECTS) { it.reordering(projectId, targetProjectId) }
-            return
-        }
-        var updatedOrder: List<String>? = null
-        _state.update { current ->
-            val currentOrder = current.projects.map(Project::getId)
-            val nextOrder = moveProjectToTarget(currentOrder, projectId, targetProjectId)
-            if (nextOrder == currentOrder) {
-                current
-            } else {
-                updatedOrder = nextOrder
-                current.copy(
-                    projects = orderedProjects(current.projects, nextOrder),
-                    projectOrder = nextOrder,
-                )
-            }
-        }
-        updatedOrder?.let(appPreferences::setProjectOrder)
-    }
-
-    fun setProjectPinned(projectId: String, pinned: Boolean) {
-        if (projectId.isBlank()) return
-        val current = appPreferences.pinnedProjectOrder.value
-        val next = if (pinned) {
-            if (projectId in current) current else current + projectId
-        } else {
-            current.filterNot { it == projectId }
-        }
-        if (next != current) appPreferences.setPinnedProjectOrder(next)
-    }
-
-    fun toggleChatProjectCollapsed(projectId: String) {
-        val collapsed = projectId in appPreferences.collapsedChatProjectIds.value
-        appPreferences.setChatProjectCollapsed(projectId, !collapsed)
-    }
-
-    fun toggleChatProjectExpanded(projectId: String) {
-        val expanded = projectId in appPreferences.expandedChatProjectIds.value
-        appPreferences.setChatProjectExpanded(projectId, !expanded)
-    }
-
-    fun movePinnedChat(chatId: String, targetChatId: String) {
-        var updatedOrder: List<String>? = null
-        _state.update { current ->
-            val currentOrder = orderedPinnedChats(
-                current.chats.filter(Card::getPinned),
-                current.pinnedChatOrder,
-            ).map(Card::getId)
-            val nextOrder = movePinnedChatToTarget(currentOrder, chatId, targetChatId)
-            if (nextOrder == currentOrder) {
-                current
-            } else {
-                updatedOrder = nextOrder
-                current.copy(pinnedChatOrder = nextOrder)
-            }
-        }
-        updatedOrder?.let(appPreferences::setPinnedChatOrder)
-    }
-
-    fun initializePinnedChatOrderIfNeeded(chatIds: List<String>) {
-        val initialOrder = chatIds.filter(String::isNotBlank).distinct()
-        if (initialOrder.isEmpty()) return
-        var persist = false
-        _state.update { current ->
-            if (current.pinnedChatOrder.isNotEmpty()) {
-                current
-            } else {
-                persist = true
-                current.copy(pinnedChatOrder = initialOrder)
-            }
-        }
-        if (persist) appPreferences.setPinnedChatOrder(initialOrder)
-    }
-
-    fun setChatsPaneLeadingFraction(fraction: Float) {
-        appPreferences.setChatsPaneLeadingFraction(fraction)
-    }
-
-    fun setActivityPaneLeadingFraction(fraction: Float) {
-        appPreferences.setActivityPaneLeadingFraction(fraction)
-    }
-
-    fun setProjectsPaneLeadingFraction(fraction: Float) {
-        appPreferences.setProjectsPaneLeadingFraction(fraction)
-    }
-
-    fun setBoardPaneLeadingFraction(fraction: Float) {
-        appPreferences.setBoardPaneLeadingFraction(fraction)
     }
 
     fun selectProject(id: String) {
-        rememberConversation()
-        cancelConversationStream()
-        stopTerminalWatch()
-        resetWorkspaceReview(null)
-        resetProjectChangesJobs()
+        closeConversation()
         _state.update {
             it.copy(
                 selectedProjectId = id,
-                creationCheckoutId = it.creationCheckoutId.takeIf { selected -> it.projects.firstOrNull { p -> p.id == id }?.checkoutsList?.any { c -> c.id == selected && !c.detached } == true }.orEmpty(),
+                creationCheckoutId = it.creationCheckoutId.takeIf { selected ->
+                    it.projects.firstOrNull { p -> p.id == id }?.checkouts?.any { c -> c.id == selected && !c.detached } == true
+                }.orEmpty(),
                 selectedBoardId = "",
                 selectedLane = "",
-                selectedCardId = null,
-                composerDraft = ConversationComposerDraft(),
-                conversation = null,
-                olderMessages = emptyList(),
-                filePath = "",
+                boards = emptyList(),
+                cards = emptyList(),
                 fileDocument = null,
                 projectFilesMode = "browse",
-                projectChanges = ProjectChangesState(projectId = id),
-                projectWorkspaces = emptyList(),
-                projectWorkspacesLoading = false,
-                projectWorkspaceOperations = emptySet(),
-                projectWorkspaceErrors = emptyMap(),
-                loading = true,
             )
         }
-        startStateStream()
+        reselectFromWorkspace()
+        when (_state.value.destination) {
+            Destination.FILES -> loadFiles("")
+            Destination.SCHEDULES -> refreshSchedules()
+            else -> Unit
+        }
+        refreshHarnesses()
+    }
+
+    /** Recomputes the selected project's boards, cards, board, and lane from the workspace. */
+    private fun reselectFromWorkspace() {
+        val view = core.workspace.state.value
+        _state.update { current ->
+            val boards = view.boards[current.selectedProjectId].orEmpty()
+            val boardId = current.selectedBoardId.takeIf { id -> boards.any { it.id == id } } ?: boards.firstOrNull()?.id.orEmpty()
+            val lane = current.selectedLane.takeIf { id -> boards.firstOrNull { it.id == boardId }?.lanes?.any { it.id == id } == true }
+                ?: boards.firstOrNull { it.id == boardId }?.lanes?.firstOrNull()?.id.orEmpty()
+            current.copy(boards = boards, cards = view.cards[current.selectedProjectId].orEmpty(), selectedBoardId = boardId, selectedLane = lane)
+        }
     }
 
     fun selectBoard(id: String) {
-        rememberConversation()
+        closeConversation()
         val board = _state.value.boards.firstOrNull { it.id == id }
-        _state.update {
-            it.copy(
-                selectedBoardId = id,
-                selectedLane = board?.lanesList?.firstOrNull()?.id.orEmpty(),
-                selectedCardId = null,
-                composerDraft = ConversationComposerDraft(),
-                conversation = null,
-                olderMessages = emptyList(),
-                historyStart = 0,
-                historyTotal = 0,
-                historyHasMore = false,
-                historyLoading = false,
-            )
-        }
-        cancelConversationStream()
+        _state.update { it.copy(selectedBoardId = id, selectedLane = board?.lanes?.firstOrNull()?.id.orEmpty()) }
     }
 
     fun openBoard(projectId: String, boardId: String) {
-        rememberConversation()
-        cancelConversationStream()
-        stopTerminalWatch()
+        closeConversation()
+        if (projectId != _state.value.selectedProjectId) selectProject(projectId)
         val board = _state.value.spaceBoards.firstOrNull { it.id == boardId }
-        val changingProject = projectId != _state.value.selectedProjectId
         _state.update {
             it.copy(
                 destination = Destination.BOARD,
                 boardOverviewVisible = false,
-                selectedProjectId = projectId,
                 selectedBoardId = boardId,
-                selectedLane = board?.lanesList?.firstOrNull()?.id.orEmpty(),
-                selectedCardId = null,
-                composerDraft = ConversationComposerDraft(),
-                conversation = null,
-                olderMessages = emptyList(),
-                historyStart = 0,
-                historyTotal = 0,
-                historyHasMore = false,
-                historyLoading = false,
-                filePath = if (changingProject) "" else it.filePath,
-                fileDocument = null,
-                loading = changingProject,
+                selectedLane = board?.lanes?.firstOrNull()?.id.orEmpty(),
             )
         }
-        if (changingProject) startStateStream()
     }
 
     fun openNewBoard(projectId: String) {
@@ -1609,162 +621,254 @@ class DieterViewModel internal constructor(
     }
 
     fun showBoardOverview() {
-        rememberConversation()
-        cancelConversationStream()
-        stopTerminalWatch()
-        _state.update {
-            it.copy(
-                destination = Destination.BOARD,
-                boardOverviewVisible = true,
-                selectedCardId = null,
-                composerDraft = ConversationComposerDraft(),
-                conversation = null,
-                olderMessages = emptyList(),
-            )
-        }
-        refreshSpaces()
+        closeConversation()
+        _state.update { it.copy(destination = Destination.BOARD, boardOverviewVisible = true) }
     }
 
-    fun refreshSpaces() {
-        if (!foreground) return
-        spacesJob?.cancel()
-        spacesJob = viewModelScope.launch {
-            _state.update { it.copy(spacesLoading = true) }
-            val connection = connectionManager.state.value
-            _state.update { current ->
-                val cardProjection = projectCardsDuringOperations(
-                    remoteCards = connection.cards,
-                    localCards = if (current.cardOperations.isEmpty() && current.pendingCardMoves.isEmpty()) emptyList() else current.spaceCards + current.cards,
-                    operations = current.cardOperations,
-                    pendingMoves = current.pendingCardMoves,
-                )
-                val confirmedMoveIds = current.pendingCardMoves.keys - cardProjection.pendingMoves.keys
-                current.copy(
-                    spaceBoards = connection.boards,
-                    spaceCards = cardProjection.cards,
-                    spacesLoading = false,
-                    pendingCardMoves = cardProjection.pendingMoves,
-                    cardOperations = current.cardOperations - confirmedMoveIds,
-                )
-            }
-        }
-    }
+    /** Board and activity data is live from the core; this only clears a stale error. */
+    fun refreshSpaces() = _state.update { it.copy(spacesLoading = false) }
 
     fun selectLane(id: String) = _state.update { it.copy(selectedLane = id) }
+
+    fun selectDetailTab(index: Int) = _state.update { it.copy(detailTab = index) }
+
+    fun openSurface(surface: AppSurface, schedule: Schedule? = null) {
+        launchCore(report = false) { core.schedules.closeEditor() }
+        if (schedule != null) {
+            action {
+                val detail = core.schedules.details(schedule.id)
+                _state.update { it.copy(appSurface = surface, editingScheduleId = detail.id) }
+            }
+            return
+        }
+        if (surface == AppSurface.NEW_CARD) {
+            withCaptures {
+                boardTask()
+                showSurface(surface)
+            }
+            return
+        }
+        showSurface(surface)
+    }
+
+    private fun showSurface(surface: AppSurface) {
+        _state.update { it.copy(appSurface = surface, editingScheduleId = null, error = null) }
+        if (surface == AppSurface.WORKSPACE) loadAdministration()
+    }
+
+    fun closeSurface() {
+        taskCaptures?.flushAll()
+        launchCore(report = false) { core.schedules.closeEditor() }
+        _state.update { it.copy(appSurface = null, editingScheduleId = null) }
+    }
+
+    // --- Folders and ordering (shared navigation) -------------------------------------------
+
+    private fun editNavigation(block: com.dbpprt.dieter.core.navigation.NavigationEditor.() -> Unit) =
+        launchCore { core.editNavigation(block) }
+
+    fun toggleLaneSort(boardId: String, laneId: String) = editNavigation {
+        setLaneDescending(boardId, laneId, !layout.laneDescending(boardId, laneId))
+    }
+
+    fun moveProject(projectId: String, targetProjectId: String) {
+        val displayed = _state.value.projects.map(Project::id)
+        editNavigation { moveProject(projectId, targetProjectId, displayed) }
+    }
+
+    fun setProjectPinned(projectId: String, pinned: Boolean) {
+        if (projectId.isNotBlank()) editNavigation { pinProject(projectId, pinned) }
+    }
+
+    fun toggleChatProjectCollapsed(projectId: String) = editNavigation {
+        setChatSectionCollapsed(projectId, !layout.chatSectionCollapsed(projectId))
+    }
+
+    fun toggleChatProjectExpanded(projectId: String) = editNavigation {
+        setChatsShowAll(projectId, !layout.chatsShowAll(projectId))
+    }
+
+    fun movePinnedChat(chatId: String, targetChatId: String) {
+        val displayed = _state.value.pinnedChatOrder
+        editNavigation { movePinnedChat(chatId, targetChatId, displayed) }
+    }
+
+    override fun createFolder(scope: FolderScope, name: String, itemId: String?) {
+        editNavigation {
+            val id = createFolder(scope, name)
+            if (itemId != null) moveToFolder(scope, itemId, id)
+        }
+    }
+
+    override fun renameFolder(scope: FolderScope, id: String, name: String) { editNavigation { renameFolder(scope, id, name) } }
+
+    override fun deleteFolder(scope: FolderScope, id: String) { editNavigation { deleteFolder(scope, id) } }
+
+    override fun setFolderExpanded(scope: FolderScope, id: String, expanded: Boolean) { editNavigation { setFolderExpanded(scope, id, expanded) } }
+
+    override fun moveToFolder(scope: FolderScope, itemId: String, folderId: String?) { editNavigation { moveToFolder(scope, itemId, folderId) } }
+
+    fun reorderFolders(scope: FolderScope, order: List<String>) = editNavigation { reorderFolders(scope, order) }
+
+    fun reorderFolderItems(scope: FolderScope, folderId: String, order: List<String>) = editNavigation { reorderFolderItems(scope, folderId, order) }
+
+    fun setChatsPaneLeadingFraction(fraction: Float) = appPreferences.setChatsPaneLeadingFraction(fraction)
+    fun setActivityPaneLeadingFraction(fraction: Float) = appPreferences.setActivityPaneLeadingFraction(fraction)
+    fun setProjectsPaneLeadingFraction(fraction: Float) = appPreferences.setProjectsPaneLeadingFraction(fraction)
+    fun setBoardPaneLeadingFraction(fraction: Float) = appPreferences.setBoardPaneLeadingFraction(fraction)
+
+    // --- Outbox -----------------------------------------------------------------------------
 
     fun isPendingCard(id: String): Boolean = id in _state.value.pendingCardIds
     fun isPendingMessage(id: String): Boolean = id in _state.value.pendingMessageIds
     fun isAcceptedOutboxItem(id: String): Boolean = id in _state.value.acceptedOutboxIds
     fun isFailedOutboxItem(id: String): Boolean = id in _state.value.failedOutboxIds
-    fun conversationCreationFailure(id: String): String? = connectionManager.conversationCreationFailure(id)
+    fun conversationCreationFailure(id: String): String? = core.outbox.view.value.failure(id)
 
     fun retryOutboxItem(id: String) {
-        connectionManager.retryOutboxItem(id)
         _state.update { it.copy(error = null) }
+        launchCore { core.retryPending(id) }
     }
 
-    fun retryOutboxForEndpoint(endpointId: String) {
-        connectionManager.retryOutboxForEndpoint(endpointId)
+    fun retryOutboxForEndpoint(daemonId: String) {
         _state.update { it.copy(error = null) }
+        launchCore { core.retryPendingOn(daemonId) }
     }
 
     fun discardOutboxItem(id: String) {
-        connectionManager.discardOutboxItem(id)
-        _state.update { current ->
-            val conversation = current.conversation?.toBuilder()?.setConversation(
-                current.conversation.conversation.toBuilder()
-                    .clearMessages()
-                    .addAllMessages(current.conversation.conversation.messagesList.filterNot { it.id == id }),
-            )?.build()
-            current.copy(
-                conversation = conversation,
-                olderMessages = current.olderMessages.filterNot { it.id == id },
-            )
-        }
-        _state.value.selectedCardId?.let(::rememberConversation)
+        launchCore { core.discardPending(id) }
         if (_state.value.selectedCardId == id) closeDetail()
     }
 
-    fun selectDetailTab(index: Int) = _state.update { it.copy(detailTab = index) }
+    // --- Card mutations ---------------------------------------------------------------------
 
-    fun openSurface(surface: AppSurface, schedule: Schedule? = null) {
-        schedules.clearPreview()
-        if (schedule != null) {
-            schedules.details(schedule) { detail ->
-                _state.update { it.copy(appSurface = surface, editingScheduleId = detail.id, error = null) }
-            }
-            return
-        }
-        if (surface == AppSurface.NEW_CARD) activeCapture = cardCreationDraft()
-        _state.update { it.copy(appSurface = surface, editingScheduleId = null, error = null) }
-        when (surface) {
-            AppSurface.WORKSPACE -> loadAdministration()
-            AppSurface.NEW_CHAT -> connectionManager.refreshProjectDirectory()
-            else -> Unit
+    private fun board(block: suspend com.dbpprt.dieter.core.board.BoardOperations.() -> Unit) = launchCore { core.onBoard(block) }
+
+    fun moveBoardCard(cardId: String, lane: String, afterCardId: String = "", beforeCardId: String = "") =
+        board { move(cardId, lane, DropAnchors(afterCardId, beforeCardId)) }
+
+    fun startBoardCard(cardId: String) = launchCore { core.startCard(cardId) }
+
+    fun startSelectedCard() {
+        val id = _state.value.selectedCardId ?: return
+        launchCore { core.startCard(id, hasDraftAttachments = _state.value.composerDraft.attachments.isNotEmpty()) }
+    }
+
+    fun markDone() {
+        val id = _state.value.selectedCardId ?: return
+        board { finish(id) }
+    }
+
+    fun setSelectedCardLabels(labelIds: List<String>) {
+        val id = _state.value.selectedCardId ?: return
+        board { setLabels(id, labelIds) }
+    }
+
+    fun assignLabelToBoardCard(cardId: String, labelId: String) = board { addLabel(cardId, labelId) }
+
+    fun cancelSelected() {
+        val id = _state.value.selectedCardId ?: return
+        board { cancel(id) }
+    }
+
+    fun renameSelected(title: String) {
+        val id = _state.value.selectedCardId ?: return
+        board { rename(id, title) }
+    }
+
+    fun forkSelected(messageId: String = "") {
+        val id = _state.value.selectedCardId ?: return
+        action {
+            val fork = core.board.fork(id, messageId)
+            viewModelScope.launch { openCard(fork, Destination.CHATS) }
         }
     }
 
-    fun closeSurface() {
-        taskCaptures?.flushAll()
-        schedules.clearPreview()
-        administration.cancel()
-        _state.update { it.copy(appSurface = null, editingScheduleId = null) }
+    fun editBoardCard(cardId: String, title: String, initialPrompt: String) = board { updateDraft(cardId, title, initialPrompt) }
+
+    fun archiveSelected() {
+        val card = _state.value.selectedCard ?: return
+        if (card.archived) board { restore(card) } else board { archive(card.id) }
+        closeDetail()
     }
+
+    fun archiveBoardCard(cardId: String) = board { archive(cardId) }
+
+    fun archiveConversation(card: Card) {
+        board { archive(card.id) }
+        if (_state.value.selectedCardId == card.id) closeDetail()
+    }
+
+    fun renameConversation(card: Card, title: String) = board { rename(card.id, title) }
+
+    fun togglePin(card: Card) = board { setPinned(card.id, !card.pinned) }
+
+    fun restoreCard(card: Card) = action {
+        core.board.restore(card)
+        loadAdministrationNow()
+    }
+
+    // --- Conversation -----------------------------------------------------------------------
 
     fun openCard(card: Card, destination: Destination = _state.value.destination) {
-        cancelPostSendRefresh()
-        rememberConversation()
-        stopTerminalWatch()
-        val connection = connectionManager.state.value
-        val cardId = resolveConversationId(card.id, connection.resolvedConversationIds) ?: card.id
-        val resolvedCard = (connection.cards + connection.chats).firstOrNull { it.id == cardId }
-            ?: if (card.id == cardId) card else card.toBuilder().setId(cardId).build()
-        val cached = connection.activeConversations[cardId]?.let {
-            CachedConversationUi(
-                it,
-                emptyList(),
-                it.page.start,
-                it.page.total,
-                it.page.hasMore,
-                connection.conversationRefreshedAtMillis[cardId],
-            )
-        } ?: conversationCache[cardId]
-        val liveCache = cached != null && connectionManager.liveSyncCoversConversation(cardId)
-        Log.i(
-            DieterConnectionManager.SYNC_LOG_TAG,
-            "chatOpen cache=${cached != null} liveCache=$liveCache frameAgeMs=${connection.conversationRefreshedAtMillis[cardId]?.let { System.currentTimeMillis() - it } ?: -1}",
-        )
-        val projectId = resolvedCard.projectId.ifBlank { _state.value.selectedProjectId }
-        if (_state.value.workspaceReview.cardId != cardId) resetWorkspaceReview(cardId)
+        val cardId = core.outbox.view.value.resolve(card.id)
+        if (_state.value.selectedCardId == cardId && session != null) {
+            _state.update { it.copy(destination = destination, boardOverviewVisible = if (destination == Destination.BOARD) false else it.boardOverviewVisible) }
+            return
+        }
+        closeConversation()
+        val projectId = card.project_id.ifBlank { _state.value.selectedProjectId }
+        if (projectId != _state.value.selectedProjectId && projectId.isNotBlank()) {
+            _state.update { it.copy(selectedProjectId = projectId) }
+            reselectFromWorkspace()
+        }
         _state.update {
             it.copy(
                 destination = destination,
                 boardOverviewVisible = if (destination == Destination.BOARD) false else it.boardOverviewVisible,
                 selectedCardId = cardId,
-                composerDraft = conversationDrafts.draft(cardId),
-                selectedProjectId = projectId,
-                conversation = cached?.snapshot,
-                olderMessages = cached?.olderMessages.orEmpty(),
-                historyStart = cached?.historyStart ?: 0,
-                historyTotal = cached?.historyTotal ?: 0,
-                historyHasMore = cached?.historyHasMore ?: false,
-                historyLoading = false,
-                conversationRefreshing = false,
-                conversationSyncing = isServerConversationId(cardId) && !liveCache,
-                conversationLastRefreshedAtMillis = if (liveCache) {
-                    connection.lastConnectedAtMs ?: cached.refreshedAtMillis
-                } else {
-                    cached?.refreshedAtMillis
-                },
+                conversation = core.workspace.state.value.conversations[cardId],
                 conversationScrollRequest = it.conversationScrollRequest + 1,
+                conversationSyncing = OutboxPolicy.isServerBacked(cardId),
                 detailTab = 0,
-                error = connectionManager.outboxFailure(cardId),
+                error = core.outbox.view.value.failure(cardId),
             )
         }
-        connectionManager.selectProject(projectId)
-        if (isServerConversationId(cardId)) {
-            startConversationStream(cardId)
-            ensureConversationRecovery(cardId)
+        conversationJob = viewModelScope.launch {
+            val opened = core.openConversation(cardId)
+            session = opened
+            core.onCore { core.visibleConversationId = opened.cardId }
+            combine(opened.view, core.drafts.state) { view, drafts ->
+                view to (view.daemonId?.let { drafts[DraftKey(it, view.cardId)] } ?: ConversationDraft())
+            }.collect { (view, draft) -> applyConversation(view, draft) }
+        }
+    }
+
+    private fun applyConversation(view: ConversationView, draft: ConversationDraft) {
+        _state.update { current ->
+            if (current.selectedCardId != view.cardId && core.outbox.view.value.resolve(current.selectedCardId.orEmpty()) != view.cardId) return@update current
+            current.copy(
+                selectedCardId = view.cardId,
+                conversation = view.presented ?: current.conversation,
+                conversationView = view,
+                historyStart = view.transcript.history.start,
+                historyTotal = view.transcript.history.total,
+                historyHasMore = view.transcript.history.hasMore,
+                historyLoading = view.transcript.history.loading,
+                conversationSyncing = view.syncing || (view.loading && OutboxPolicy.isServerBacked(view.cardId)),
+                conversationRefreshing = view.loading && view.presented == null,
+                conversationLastRefreshedAtMillis = view.refreshedAt?.toEpochMilliseconds() ?: current.conversationLastRefreshedAtMillis,
+                composerDraft = draft,
+                error = view.error ?: current.error,
+            )
+        }
+        val daemonId = view.daemonId
+        val cardId = view.cardId
+        if (daemonId != null && _state.value.workspaceReview.cardId != cardId) {
+            launchCore(report = false) {
+                review.bind(cardId, daemonId)
+                review.setActive(foreground)
+            }
         }
     }
 
@@ -1773,1689 +877,486 @@ class DieterViewModel internal constructor(
         openCard(card, if (card.scope == "chat") Destination.CHATS else Destination.BOARD)
     }
 
-    private fun startConversationStream(cardId: String) {
-        if (!foreground) return
-        cancelConversationStream()
-        conversationStreamCardId = cardId
-        conversationJob = viewModelScope.launch {
-            val projectId = (_state.value.cards + _state.value.chats + _state.value.spaceCards)
-                .firstOrNull { it.id == cardId }
-                ?.projectId
-                .orEmpty()
-            try {
-                connectionManager.ensureConversationRoute(cardId)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                if (_state.value.selectedCardId == cardId) {
-                    _state.update { it.copy(conversationSyncing = false, error = readableError(error)) }
-                }
-                return@launch
-            }
-            val openedAt = System.currentTimeMillis()
-            val initial = _state.value.conversation?.takeIf { it.detail.card.id == cardId }
-            val plan = conversationOpenSyncPlan(
-                cachedLastSeq = initial?.conversation?.lastSeq,
-                coveredByHealthyLiveSync = connectionManager.liveSyncCoversConversation(cardId),
-            )
-            if (_state.value.selectedCardId == cardId) {
-                _state.update { it.copy(conversationSyncing = plan.needsFreshFrame) }
-            }
-            if (plan.cacheIsCurrent) {
-                Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatReady source=live-cache elapsedMs=${System.currentTimeMillis() - openedAt}")
-            }
-            var firstFrame = true
-            try {
-                collectConversationWithHedge(
-                    updates = repository.watchConversation(
-                        cardId, CONVERSATION_PAGE_SIZE, initial = initial, afterSeq = plan.afterSeq,
-                    ).retryWhen { cause, attempt -> retryStream(cause, attempt, "Conversation") },
-                    needsFreshFrame = plan.needsFreshFrame,
-                    fetch = { repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE) },
-                    accept = { snapshot ->
-                        if (_state.value.selectedCardId == cardId) {
-                            if (firstFrame) {
-                                firstFrame = false
-                                Log.i(DieterConnectionManager.SYNC_LOG_TAG, "chatFrame elapsedMs=${System.currentTimeMillis() - openedAt}")
-                            }
-                            applyLiveConversation(cardId, snapshot)
-                        }
-                    },
-                    onReadFailure = { error ->
-                        if (_state.value.selectedCardId == cardId) {
-                            _state.update { it.copy(conversationSyncing = false, error = "Could not refresh conversation: ${readableError(error)}") }
-                        }
-                    },
-                )
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                if (_state.value.selectedCardId == cardId) {
-                    _state.update { it.copy(conversationSyncing = false, error = readableError(error)) }
-                }
-            }
+    private fun closeConversation() {
+        conversationJob?.cancel()
+        conversationJob = null
+        val closing = session
+        session = null
+        launchCore(report = false) {
+            core.visibleConversationId = null
+            review.bind(null, null)
+            closing?.let { core.closeConversation(it.cardId) }
         }
-    }
-
-    private suspend fun applyLiveConversation(cardId: String, snapshot: ConversationSnapshot) {
-        if (_state.value.selectedCardId != cardId) return
-        val accepted = connectionManager.acceptConversation(snapshot)
-        val connection = connectionManager.state.value
-        _state.update { current ->
-            current.copy(
-                conversation = accepted,
-                conversationSyncing = false,
-                conversationLastRefreshedAtMillis = connection.conversationRefreshedAtMillis[cardId],
-                error = null,
-                // A foreground transcript frame is also the durable delivery
-                // acknowledgement. Apply its reconciled presentation in the
-                // same UI update so a conflated background state emission
-                // cannot leave the bubble showing the old local receipt.
-                pendingMessageIds = connection.pendingMessageIds,
-                acceptedOutboxIds = connection.acceptedOutboxIds,
-                failedOutboxIds = connection.failedOutboxIds,
-                historyStart = if (current.historyTotal == 0) accepted.page.start else current.historyStart,
-                historyTotal = maxOf(current.historyTotal, accepted.page.total),
-                historyHasMore = if (current.olderMessages.isEmpty()) accepted.page.hasMore else current.historyHasMore,
-            ).preserveConnectionPresentation(current)
-        }
-        rememberConversation(cardId)
-        ensureConversationRecovery(cardId)
-    }
-
-    fun forceRefreshConversation() {
-        val cardId = _state.value.selectedCardId ?: return
-        viewModelScope.launch {
-            mutationMutex.withLock {
-                cancelConversationStream()
-                _state.update { it.copy(conversationRefreshing = true, error = null) }
-                try {
-                    connectionManager.ensureConversationRoute(cardId)
-                    val snapshot = connectionManager.acceptConversation(
-                        repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE),
-                    )
-                    val connection = connectionManager.state.value
-                    if (_state.value.selectedCardId != cardId) return@withLock
-                    _state.update { current ->
-                        val liveIds = snapshot.conversation.messagesList.mapTo(mutableSetOf()) { it.id }
-                        val older = current.olderMessages.filterNot { it.id in liveIds }
-                        current.copy(
-                            conversation = snapshot,
-                            olderMessages = older,
-                            historyStart = if (older.isEmpty()) snapshot.page.start else current.historyStart,
-                            historyTotal = snapshot.page.total,
-                            historyHasMore = if (older.isEmpty()) snapshot.page.hasMore else current.historyHasMore,
-                            conversationRefreshing = false,
-                            conversationSyncing = false,
-                            conversationLastRefreshedAtMillis = connection.conversationRefreshedAtMillis[cardId],
-                            pendingMessageIds = connection.pendingMessageIds,
-                            acceptedOutboxIds = connection.acceptedOutboxIds,
-                            failedOutboxIds = connection.failedOutboxIds,
-                            conversationScrollRequest = current.conversationScrollRequest + 1,
-                            error = null,
-                        ).preserveConnectionPresentation(current)
-                    }
-                    refreshStateOnce()
-                    rememberConversation(cardId)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Throwable) {
-                    _state.update { it.copy(error = readableError(error)) }
-                } finally {
-                    _state.update { it.copy(conversationRefreshing = false) }
-                    if (foreground && _state.value.selectedCardId == cardId) startConversationStream(cardId)
-                }
-            }
-        }
-    }
-
-    fun loadOlderMessages() {
-        val current = _state.value
-        val cardId = current.selectedCardId ?: return
-        if (!current.historyHasMore || current.historyLoading || current.historyStart <= 0) return
-        val requestGeneration = ++conversationHistoryRequestGeneration
-        viewModelScope.launch {
-            if (_state.value.selectedCardId != cardId) return@launch
-            _state.update { it.copy(historyLoading = true) }
-            try {
-                connectionManager.ensureConversationRoute(cardId)
-                val page = repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE, before = current.historyStart)
-                _state.update { latest ->
-                    if (conversationHistoryRequestGeneration != requestGeneration ||
-                        latest.selectedCardId != cardId ||
-                        !latest.historyLoading
-                    ) return@update latest
-                    val liveIds = latest.conversation?.conversation?.messagesList.orEmpty().mapTo(mutableSetOf()) { it.id }
-                    val older = (page.conversation.messagesList + latest.olderMessages)
-                        .filterNot { it.id in liveIds }
-                        .distinctBy { it.id }
-                    latest.copy(
-                        olderMessages = older,
-                        historyStart = page.page.start,
-                        historyTotal = page.page.total,
-                        historyHasMore = page.page.hasMore,
-                        historyLoading = false,
-                    )
-                }
-                if (conversationHistoryRequestGeneration == requestGeneration) rememberConversation(cardId)
-            } catch (error: Throwable) {
-                _state.update { latest ->
-                    if (conversationHistoryRequestGeneration != requestGeneration || latest.selectedCardId != cardId) latest
-                    else latest.copy(historyLoading = false, error = readableError(error))
-                }
-            }
-        }
-    }
-
-    suspend fun loadToolOutput(messageId: String, part: MessagePart): ToolOutput {
-        val cardId = _state.value.selectedCardId ?: error("No conversation is selected")
-        connectionManager.ensureConversationRoute(cardId)
-        return repository.toolOutput(cardId, messageId, part.toolCallId, part.payloadRevision)
-    }
-
-    fun closeDetail() {
-        rememberConversation()
-        cancelConversationStream()
-        cancelPostSendRefresh()
-        resetWorkspaceReview(null)
         _state.update {
             it.copy(
                 selectedCardId = null,
-                composerDraft = ConversationComposerDraft(),
+                composerDraft = ConversationDraft(),
                 conversation = null,
-                olderMessages = emptyList(),
+                conversationView = null,
+                historyStart = 0,
+                historyTotal = 0,
+                historyHasMore = false,
+                historyLoading = false,
                 conversationLastRefreshedAtMillis = null,
+                conversationSyncing = false,
+                conversationRefreshing = false,
             )
         }
     }
 
-    private fun cancelConversationStream() {
-        conversationJob?.cancel()
-        conversationJob = null
-        conversationStreamCardId = null
+    fun closeDetail() = closeConversation()
+
+    private fun conversation(block: suspend ConversationSession.() -> Unit) {
+        val current = session ?: return
+        launchCore { current.block() }
     }
 
-    private fun cancelPostSendRefresh() {
-        postSendRefreshGeneration += 1
-        postSendRefreshJob?.cancel()
-        postSendRefreshJob = null
-        postSendRefreshCardId = null
+    private fun draftKey(): DraftKey? {
+        val daemonId = session?.view?.value?.daemonId ?: return null
+        return DraftKey(daemonId, session?.cardId ?: return null)
     }
 
-    private fun ensureConversationRecovery(cardId: String) {
-        val current = _state.value
-        if (!foregroundConversationRecoveryShouldStart(
-                foreground = foreground,
-                selectedCardId = current.selectedCardId,
-                recoveryCardId = postSendRefreshCardId,
-                recoveryActive = postSendRefreshJob?.isActive == true,
-                snapshot = current.conversation,
-                pendingMessageIds = current.pendingMessageIds,
-            )
-        ) return
+    fun forceRefreshConversation() = conversation { refresh() }
 
-        cancelPostSendRefresh()
-        val recoveryGeneration = postSendRefreshGeneration
-        postSendRefreshCardId = cardId
-        postSendRefreshJob = viewModelScope.launch {
-            try {
-                delay(POST_SEND_INITIAL_REFRESH_DELAY_MS)
-                while (foreground && _state.value.selectedCardId == cardId) {
-                    val projectId = (_state.value.cards + _state.value.chats + _state.value.spaceCards)
-                        .firstOrNull { it.id == cardId }
-                        ?.projectId
-                        .orEmpty()
-                    val snapshot = runCatching {
-                        connectionManager.ensureConversationRoute(cardId)
-                        withTimeout(HEDGE_FETCH_TIMEOUT_MS) {
-                            repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE)
-                        }
-                    }.getOrNull()
-                    if (!foreground || _state.value.selectedCardId != cardId) return@launch
-                    if (snapshot != null) applyLiveConversation(cardId, snapshot)
+    fun loadOlderMessages() = conversation { loadEarlier() }
 
-                    val current = _state.value
-                    if (snapshot != null && !conversationNeedsPostSendRefresh(current.conversation, current.pendingMessageIds)) {
-                        return@launch
-                    }
-                    delay(POST_SEND_REFRESH_INTERVAL_MS)
-                }
-            } finally {
-                if (postSendRefreshGeneration == recoveryGeneration) {
-                    postSendRefreshJob = null
-                    postSendRefreshCardId = null
-                }
-            }
+    fun returnToLatest() = conversation { returnToLatest() }
+
+    suspend fun loadToolOutput(messageId: String, part: MessagePart): ToolOutput {
+        val current = session ?: error("No conversation is selected")
+        return core.onConversation(current) { toolOutput(messageId, part.tool_call_id, part.payload_revision) }
+    }
+
+    /** An image a message links to, read from the conversation's workspace. */
+    suspend fun readConversationImage(destination: String): FileDocument? {
+        val current = session?.view?.value ?: return null
+        val daemonId = current.daemonId ?: return null
+        val card = current.card ?: return null
+        return core.onMachine(daemonId) {
+            it.ReadFile().execute(ReadFileRequest(project_id = card.project_id, path = destination, card_id = card.id))
         }
     }
 
-    private fun rememberConversation(cardId: String? = _state.value.selectedCardId) {
-        val id = cardId ?: return
-        val current = _state.value
-        val snapshot = current.conversation ?: return
-        conversationCache.put(
-            id,
-            CachedConversationUi(
-                snapshot = snapshot,
-                olderMessages = current.olderMessages,
-                historyStart = current.historyStart,
-                historyTotal = current.historyTotal,
-                historyHasMore = current.historyHasMore,
-                refreshedAtMillis = current.conversationLastRefreshedAtMillis,
-            ),
+    /** The open conversation as the screen shows it; computed by the core from the latest view and outbox. */
+    fun presentConversation(state: DieterUiState): ConversationPresentation? {
+        val cardId = state.selectedCardId ?: return null
+        val view = state.conversationView ?: ConversationView(cardId)
+        val card = view.card ?: state.selectedCard
+        return ConversationPresenter.present(
+            view,
+            core.outbox.view.value,
+            card?.let { core.workspace.state.value.board(it.board_id) } ?: state.board,
+            card?.id?.let(state.cardOperations::get),
+            state.showReasoningTraces,
+            fallbackCard = state.selectedCard,
         )
     }
 
-    fun selectCreationCheckout(id: String) = action(ensureReplicaRoute = false) {
-        val checkout = _state.value.projects.flatMap { it.checkoutsList }.firstOrNull { it.id == id }
-            ?: error("Checkout is unavailable")
-        val machine = _state.value.presentedEndpointConnections.firstOrNull { it.daemonId == checkout.daemonId }
-            ?: error("Machine is unavailable")
-        connectionManager.ensureCheckoutRoute(checkout.projectId, checkout.id)
-        _state.update { it.copy(creationCheckoutId = id, fileDocument = null, filePath = "") }
-        activeCapture?.takeIf { it.projectId == checkout.projectId }?.checkoutId = id
-        refreshStateOnce()
-        if (_state.value.destination == Destination.FILES) loadFiles("")
+    /** Sends the composer draft; the core clears exactly what was sent. */
+    fun sendDraft() = conversation { sendDraft() }
+
+    /** Sends [text] outside the composer draft, e.g. from the subagents tab. */
+    fun sendMessage(text: String, selection: HarnessSelection) {
+        if (text.isBlank()) return
+        conversation { send(listOf(textPart(text.trim())), selection) }
     }
 
-    fun prepareCreationCheckout(id: String) = action(ensureReplicaRoute = false) {
-        val checkout = _state.value.projects.flatMap { it.checkoutsList }.firstOrNull { it.id == id }
-            ?: error("Checkout is unavailable")
-        val machine = _state.value.presentedEndpointConnections.firstOrNull { it.daemonId == checkout.daemonId }
-            ?: error("Machine is unavailable")
-        connectionManager.ensureCheckoutRoute(checkout.projectId, checkout.id)
-        _state.update { it.copy(creationCheckoutId = id, fileDocument = null, filePath = "") }
+    private fun updateDraft(change: com.dbpprt.dieter.core.composition.ConversationDrafts.(DraftKey) -> Unit) {
+        launchCore { draftKey()?.let { core.drafts.change(it) } }
     }
 
-    fun detachCheckout(id: String) = action(ensureReplicaRoute = false) {
-        val checkout = _state.value.projects.flatMap { it.checkoutsList }.first { it.id == id }
-        connectionManager.ensureCheckoutRoute(checkout.projectId, checkout.id)
-        repository.detachCheckout(id)
-        _state.update { it.copy(creationCheckoutId = "") }
-        refreshStateOnce()
-        connectionManager.refreshProjectDirectory()
-    }
+    fun updateComposerText(value: String) = updateDraft { setText(it, value) }
 
-    fun consolidateProject(destination: String) = action {
-        repository.consolidateProject(_state.value.selectedProjectId, destination)
-        connectionManager.refreshProjectDirectory()
-        selectProject(destination)
-    }
-
-    internal fun createConversation(
-        title: String,
-        prompt: String,
-        chat: Boolean,
-        provider: String,
-        model: String,
-        effort: String,
-        providerOptions: Map<String, String>,
-        lane: String,
-        labelIds: List<String>,
-        deferStart: Boolean,
-        attachments: List<MessagePart> = emptyList(),
-        workspaceMode: String = ConversationWorkspaceMode.WORKTREE.wire,
-        workspaceBranch: String = "",
-        workspaceBaseBranch: String = "",
-        autoGenerateTitle: Boolean = false,
-        creationDraft: CardCreationDraft? = null,
-        onCreated: () -> Unit = {},
-    ) {
-        // Compose does not publish working=true until the launched action gets
-        // CPU time. Admit synchronously so a rapid second tap cannot create a
-        // second command with a different idempotency identity.
-        if (!conversationCreationGate.tryAcquire()) return
-        action(
-            ensureReplicaRoute = false,
-            onFinished = conversationCreationGate::release,
-        ) {
-            val current = _state.value
-            if (creationDraft != null) {
-                check(creationDraft.ready) { "Finish importing or remove failed attachments before saving." }
-            }
-            check(current.project != null) { "Select a project before creating a conversation." }
-            val checkoutId = if (creationDraft != null && current.creationMachine?.online != true && current.taskCatalogAvailableForQueue) {
-                creationDraft.submittedRequest?.checkoutId ?: requireNotNull(current.creationCheckout).id
-            } else connectionManager.ensureCheckoutRoute(
-                creationDraft?.submittedRequest?.projectId ?: current.selectedProjectId,
-                creationDraft?.submittedRequest?.checkoutId ?: current.creationCheckout?.id ?: current.creationCheckoutId,
-            )
-            val selectedWorkspaceMode = ConversationWorkspaceMode.resolve(workspaceMode)
-            val request = CreateConversationRequest.newBuilder()
-                .setCheckoutId(checkoutId)
-                .setProjectId(current.selectedProjectId)
-                .setBoardId(if (chat) "" else current.selectedBoardId)
-                .setLane(if (chat) "" else lane)
-                .setTitle(title)
-                .setPrompt(prompt)
-                .setProvider(provider)
-                .setModel(model)
-                .setEffort(effort)
-                .putAllProviderOptions(providerOptions)
-                .setWorkspaceMode(selectedWorkspaceMode.wire)
-                .setWorkspaceBranch(workspaceBranch.trim().takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty())
-                .setWorkspaceBaseBranch(workspaceBaseBranch.trim().takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty())
-                .setAutoGenerateTitle(autoGenerateTitle)
-                .addAllLabelIds(if (chat) emptyList() else labelIds)
-                .setDeferStart(deferStart)
-                .addAllAttachments(attachments)
-                .build()
-            appPreferences.setConversationCreationPreferences(
-                ConversationCreationPreferences(
-                    provider = provider,
-                    model = model,
-                    effort = effort,
-                    workspaceMode = selectedWorkspaceMode.wire,
-                ),
-            )
-            if (creationDraft != null && creationDraft.submittedRequest == null) {
-                creationDraft.submissionId = UUID.randomUUID().toString()
-                creationDraft.submittedRequest = request
-            }
-            if (creationDraft != null) taskCaptures?.flush(creationDraft)
-            val card = connectionManager.enqueueConversation(creationDraft?.submittedRequest ?: request, chat, creationDraft?.submissionId.orEmpty())
-            onCreated()
-            _state.update { it.copy(appSurface = null, editingScheduleId = null) }
-            if (shouldOpenCreatedConversation(chat, lane)) {
-                openCard(card, if (chat) Destination.CHATS else Destination.BOARD)
-            }
-        }
-    }
-
-    fun createQuickTask(story: String, onCreated: () -> Unit = {}) {
-        val draft = cardCreationDraft(quick = true)
-        draft.prompt = story
-        submitTask(draft, onCreated)
-    }
-
-    internal fun canSubmitTask(draft: CardCreationDraft): Boolean {
-        val current = _state.value
-        return draft.ready && !current.working && current.board?.retired == false && current.taskCatalogAvailableForQueue &&
-            harnessCatalogSupportsSelection(current.harnesses, draft.provider, draft.model) &&
-            canCreateConversation(current.selectedProjectId, draft.provider, draft.model, draft.prompt, false, draft.title, draft.attachments.isNotEmpty()) &&
-            attachmentLimitError(emptyList(), draft.attachments) == null &&
-            current.board?.lanesList?.any { it.id == draft.lane } == true &&
-            current.board?.labelsList.orEmpty().map { it.id }.containsAll(draft.labelIds)
-    }
-
-    internal fun submitTask(draft: CardCreationDraft, onCreated: () -> Unit = {}) {
-        if (!canSubmitTask(draft)) return
-        val current = _state.value
-        draft.checkoutId = current.creationCheckout?.id.orEmpty()
-        createConversation(
-            title = draft.creationTitle,
-            prompt = draft.prompt.trim().ifBlank { draft.title.trim() },
-            chat = false, provider = draft.provider, model = draft.model, effort = draft.effort,
-            providerOptions = draft.providerOptions, lane = draft.lane, labelIds = draft.labelIds.toList(),
-            attachments = draft.attachments.toList(), deferStart = shouldDeferConversationStart(false, draft.lane),
-            workspaceMode = draft.workspaceMode.wire, workspaceBaseBranch = current.project?.baseBranch.orEmpty(),
-            autoGenerateTitle = draft.generatesTitle, creationDraft = draft,
-            onCreated = { acceptCardCreationDraft(draft); onCreated() },
-        )
-    }
-
-    fun sendMessage(
-        text: String,
-        attachments: List<MessagePart>,
-        provider: String,
-        model: String,
-        effort: String,
-        providerOptions: Map<String, String>,
-        onSent: () -> Unit = {},
-    ) = action(ensureReplicaRoute = false) {
-        val id = _state.value.selectedCardId ?: return@action
-        val parts = buildList {
-            if (text.isNotBlank()) add(textPart(text))
-            addAll(attachments)
-        }
-        connectionManager.enqueueMessage(id, parts, provider, model, effort, providerOptions)
-        onSent()
-        ensureConversationRecovery(id)
-    }
-
-    fun updateComposerText(value: String) = updateSelectedComposerDraft { it.copy(text = value) }
-
-    fun updateComposerSelection(value: ConversationComposerSelection) =
-        updateSelectedComposerDraft { it.copy(selection = value) }
+    fun updateComposerSelection(value: HarnessSelection) = updateDraft { setSelection(it, value) }
 
     fun addComposerAttachments(values: List<MessagePart>) {
         if (values.isEmpty()) return
-        updateSelectedComposerDraft { it.copy(attachments = it.attachments + values) }
+        launchCore { draftKey()?.let { core.drafts.addAttachments(it, values).getOrThrow() } }
     }
 
-    fun removeComposerAttachment(index: Int) = updateSelectedComposerDraft { draft ->
-        if (index !in draft.attachments.indices) draft
-        else draft.copy(attachments = draft.attachments.filterIndexed { itemIndex, _ -> itemIndex != index })
+    fun removeComposerAttachment(index: Int) = updateDraft { removeAttachment(it, index) }
+
+    fun removeQueuedMessage(message: QueuedMessage, edit: Boolean) = conversation { removeQueued(message.id, edit) }
+
+    fun steerQueuedMessage(message: QueuedMessage) = conversation { steer(message.id) }
+
+    fun retryFailedTurn() = conversation { retryFailedTurn() }
+
+    suspend fun markResponseSeen(cardId: String) {
+        val current = session ?: return
+        if (current.cardId != cardId) return
+        runCatching { core.onConversation(current) { markReadIfVisible() } }
     }
 
-    fun acceptComposerSend(expectedText: String, expectedAttachments: List<MessagePart>) {
-        val cardId = _state.value.selectedCardId ?: return
-        publishComposerDraft(cardId, conversationDrafts.acceptSend(cardId, expectedText, expectedAttachments))
-    }
+    // --- Creation and capture ---------------------------------------------------------------
 
-    fun removeQueuedMessage(message: QueuedMessage, edit: Boolean) {
-        val cardId = _state.value.selectedCardId ?: return
-        val pending = conversationDrafts.beginQueueMutation(cardId, message.id) ?: return
-        publishComposerDraft(cardId, pending)
+    private fun withCaptures(block: suspend TaskCaptureStore.() -> Unit) {
+        val store = taskCaptures ?: return
         viewModelScope.launch {
             try {
-                connectionManager.ensureConversationRoute(cardId)
-                val removed = repository.removeQueuedMessage(cardId, message.id)
-                publishComposerDraft(
-                    cardId,
-                    conversationDrafts.finishQueueMutation(cardId, message.id, removed, edit),
-                )
-                val refreshed = repository.conversation(cardId, limit = CONVERSATION_PAGE_SIZE)
-                applyLiveConversation(cardId, refreshed)
+                store.block()
             } catch (cancelled: CancellationException) {
-                publishComposerDraft(
-                    cardId,
-                    conversationDrafts.finishQueueMutation(cardId, message.id, null, false),
-                )
                 throw cancelled
-            } catch (error: Throwable) {
-                publishComposerDraft(
-                    cardId,
-                    conversationDrafts.finishQueueMutation(cardId, message.id, null, false),
-                )
-                _state.update { it.copy(error = readableError(error)) }
+            } catch (failure: Throwable) {
+                _state.update { it.copy(error = Failures.message(failure)) }
             }
         }
     }
 
-    private fun updateSelectedComposerDraft(
-        transform: (ConversationComposerDraft) -> ConversationComposerDraft,
-    ) {
-        val cardId = _state.value.selectedCardId ?: return
-        publishComposerDraft(cardId, conversationDrafts.update(cardId, transform))
+    /** Opens the capture chooser for [editor], else for an empty or new draft. */
+    internal fun beginCapture(editor: TaskDraftEditor? = null) = withCaptures {
+        activeCapture = editor ?: begin()
+        captureChooserVisible = true
     }
 
-    private fun publishComposerDraft(cardId: String, draft: ConversationComposerDraft) {
-        _state.update { current ->
-            if (current.selectedCardId == cardId) current.copy(composerDraft = draft) else current
-        }
+    internal fun captureProject(id: String) {
+        activeCapture?.edit { TaskDrafts.project(it, id) }
+        selectProject(id)
+        val boards = _state.value.spaceBoards.filter { it.project_id == id && !it.retired }
+        if (boards.size == 1) openCaptureBoard(boards.single().id)
     }
 
-    fun retryFailedTurn(parts: List<MessagePart>) = action(ensureReplicaRoute = false) {
+    internal fun openCaptureBoard(id: String) {
+        val editor = activeCapture ?: return
+        val board = _state.value.spaceBoards.firstOrNull { it.id == id } ?: return
+        selectBoard(id)
+        val draft = editor.edit { TaskDrafts.board(it, board) }
+        if (draft.checkout_id.isNotBlank()) _state.update { it.copy(creationCheckoutId = draft.checkout_id) }
+        captureChooserVisible = false
+        showSurface(AppSurface.NEW_CARD)
+    }
+
+    /** The open board's task draft (quick task and full editor), unless a capture for it is already open. */
+    private suspend fun TaskCaptureStore.boardTask(): TaskDraftEditor {
         val current = _state.value
-        val id = current.selectedCardId ?: return@action
-        val card = current.conversation?.detail?.card ?: current.selectedCard ?: return@action
-        if (parts.isEmpty()) return@action
-        connectionManager.enqueueMessage(id, parts, card.provider, card.model, card.effort, card.providerOptionsMap)
-        ensureConversationRecovery(id)
+        activeCapture?.takeIf { it.state.value.project_id == current.selectedProjectId && it.state.value.board_id == current.selectedBoardId }
+            ?.let { return it }
+        return forBoard(current.selectedProjectId, current.selectedBoardId).also { activeCapture = it }
     }
 
-    suspend fun markResponseSeen(cardId: String, responseSeq: Long) {
-        val snapshot = _state.value.conversation ?: return
-        val card = snapshot.detail.card
-        if (_state.value.selectedCardId != cardId || card.id != cardId ||
-            card.responseSeq != responseSeq || responseSeq <= card.seenResponseSeq ||
-            snapshot.conversation.lastSeq < responseSeq ||
-            snapshot.conversation.messagesList.none { it.id == card.responseMessageId }) return
-        runCatching {
-            connectionManager.ensureConversationRoute(cardId)
-            repository.markConversationRead(cardId, responseSeq)
-        }.onSuccess { updated ->
-            val current = _state.value
-            val latest = (current.spaceCards + current.cards + current.chats +
-                listOfNotNull(current.conversation?.detail?.card))
-                .filter { it.id == cardId }.maxByOrNull { it.updatedAt }
-            // A receipt response may arrive after the next turn's sync frame.
-            if (latest == null || (latest.responseSeq <= updated.responseSeq && latest.updatedAt <= updated.updatedAt)) {
-                connectionManager.acceptCardMutation(updated)
-            }
-        }
+    internal fun openQuickTask() = withCaptures {
+        boardTask()
+        quickTaskOpen = true
     }
 
-    fun moveCard(lane: String, position: Long? = null) {
-        val id = _state.value.selectedCardId ?: return
-        moveCardOptimistically(id, lane, position)
+    internal fun closeQuickTask() {
+        quickTaskOpen = false
     }
 
-    fun moveBoardCard(cardId: String, lane: String) {
-        moveCardOptimistically(cardId, lane)
+    internal fun openTaskOptions() {
+        quickTaskOpen = false
+        openSurface(AppSurface.NEW_CARD)
     }
 
-    private fun moveCardOptimistically(cardId: String, lane: String, position: Long? = null) {
-        val snapshot = _state.value
-        val gatewayId = snapshot.activeGatewayId
-        if (snapshot.cardOperations.containsKey(cardId)) return
-        val original = (snapshot.cards + snapshot.spaceCards).firstOrNull { it.id == cardId }
-            ?: snapshot.selectedCard?.takeIf { it.id == cardId }
-            ?: return
-        val peers = (snapshot.cards + snapshot.spaceCards)
-            .distinctBy(Card::getId)
-            .filter { it.id != cardId && it.boardId == original.boardId && it.lane == lane }
-            .sortedBy { it.position }
-        val optimisticPosition = position ?: ((peers.maxOfOrNull(Card::getPosition) ?: 0L) + 1_024L)
-        val after = position?.let { target -> peers.lastOrNull { it.position < target }?.id }.orEmpty()
-        val before = position?.let { target -> peers.firstOrNull { it.position >= target }?.id }.orEmpty()
-        val operationId = UUID.randomUUID().toString()
-        val pending = OptimisticCardMove(
-            operationId = operationId,
-            lane = lane,
-            position = optimisticPosition,
-            afterCardId = after,
-            beforeCardId = before,
-        )
-        val optimistic = pending.applyingTo(original)
-        _state.update { current ->
-            current.replacingCard(optimistic).copy(
-                pendingCardMoves = current.pendingCardMoves + (cardId to pending),
-                cardOperations = current.cardOperations + (cardId to CardOperation.MOVING),
-                cardOperationErrors = current.cardOperationErrors - cardId,
-                error = null,
-            )
-        }
-        viewModelScope.launch {
-            try {
-                if (lane == "running") connectionManager.ensureConversationRoute(cardId)
-                else connectionManager.ensureReplicaRoute(original.projectId)
-                if (connectionManager.state.value.activeGatewayId != gatewayId || _state.value.pendingCardMoves[cardId]?.operationId != operationId) return@launch
-                val moved = repository.moveCard(
-                    cardId,
-                    lane,
-                    after,
-                    before,
-                    original.placementRevision,
-                )
-                if (connectionManager.state.value.activeGatewayId != gatewayId) return@launch
-                connectionManager.acceptCardMutation(moved)
-                val accepted = connectionManager.state.value.cards.firstOrNull { it.id == cardId } ?: moved
-                _state.update { current ->
-                    val active = current.pendingCardMoves[cardId]
-                    if (active != null && active.operationId != operationId) current
-                    else current.replacingCard(accepted).copy(
-                        pendingCardMoves = current.pendingCardMoves - cardId,
-                        cardOperations = current.cardOperations - cardId,
-                    )
-                }
-            } catch (cancelled: CancellationException) {
-                if (connectionManager.state.value.activeGatewayId == gatewayId) rollbackCardMove(cardId, operationId, original)
-                throw cancelled
-            } catch (error: Throwable) {
-                if (connectionManager.state.value.activeGatewayId == gatewayId) rollbackCardMove(cardId, operationId, original, readableError(error))
-            }
-        }
-    }
-
-    private fun rollbackCardMove(
-        cardId: String,
-        operationId: String,
-        original: Card,
-        message: String? = null,
-    ) {
-        _state.update { current ->
-            if (current.pendingCardMoves[cardId]?.operationId != operationId) return@update current
-            val authoritative = connectionManager.state.value.cards.firstOrNull { it.id == cardId } ?: original
-            current.replacingCard(authoritative).copy(
-                pendingCardMoves = current.pendingCardMoves - cardId,
-                cardOperations = current.cardOperations - cardId,
-                cardOperationErrors = if (message == null) current.cardOperationErrors
-                    else current.cardOperationErrors + (cardId to message),
-                error = message ?: current.error,
-            )
-        }
-    }
-
-    fun startBoardCard(cardId: String) {
+    /** Applies the remembered agent, workspace, and lane once; never over the user's edits. */
+    internal fun initializeTask(editor: TaskDraftEditor, quick: Boolean) {
         val current = _state.value
-        val card = current.cards.firstOrNull { it.id == cardId } ?: return
-        val board = current.board?.takeIf { it.id == card.boardId }
-            ?: current.boards.firstOrNull { it.id == card.boardId }
-        startCard(card, board)
+        val harnesses = current.creationCatalog(chat = false).orEmpty()
+        val lane = (if (quick) "" else current.selectedLane).ifBlank { Creation.defaultLane(current.board) }
+        editor.edit { TaskDrafts.initialize(it, core.creation.selection(harnesses), core.creation.workspaceMode, lane, harnesses) }
     }
 
-    fun startSelectedCard() {
+    /** A new chat's defaults: the remembered agent and workspace, when the destination's catalog is live. */
+    internal fun initializeChat(editor: TaskDraftEditor) {
+        val harnesses = _state.value.creationCatalog(chat = true) ?: return
+        editor.edit { TaskDrafts.initialize(it, core.creation.selection(harnesses), core.creation.workspaceMode, Lanes.TODO, harnesses) }
+    }
+
+    internal fun discardTaskDraft(editor: TaskDraftEditor) {
+        quickTaskOpen = false
+        if (activeCapture?.id == editor.id) activeCapture = null
+        taskCaptures?.discard(editor.id)
+        closeSurface()
+    }
+
+    internal fun returnToQuickTask() {
+        val draft = activeCapture?.state?.value
+        closeSurface()
+        if (draft != null) openBoard(draft.project_id, draft.board_id)
+        quickTaskOpen = true
+    }
+
+    fun selectCreationCheckout(id: String) {
+        val checkout = _state.value.projects.flatMap { it.checkouts }.firstOrNull { it.id == id } ?: return
+        _state.update { it.copy(creationCheckoutId = id, fileDocument = null) }
+        activeCapture?.takeIf { it.state.value.project_id == checkout.project_id }?.edit { TaskDrafts.checkout(it, id) }
+        refreshHarnesses()
+        if (_state.value.destination == Destination.FILES) loadFiles("")
+    }
+
+    fun prepareCreationCheckout(id: String) = selectCreationCheckout(id)
+
+    /** Loads the agent catalog of the machine a new conversation would run on. */
+    private fun refreshHarnesses() {
         val current = _state.value
-        val card = current.selectedCard ?: return
-        val board = current.conversation?.detail?.board ?: current.board
-        startCard(card, board)
+        val daemonId = Creation.catalogMachine(
+            current.creationCheckout,
+            current.projectReplicas[current.selectedProjectId]?.daemonId,
+            core.connection.state.value.attachedMachineId,
+        ) ?: return
+        val metadata = core.metadata.machines.value[daemonId]
+        _state.update { it.copy(harnesses = metadata?.harnesses?.harnesses.orEmpty(), harnessesEndpointId = daemonId.takeIf { metadata?.loaded == true }) }
+        if (metadata == null) launchCore(report = false) { core.metadata.ensure(daemonId) }
     }
 
-    fun markDone() {
-        val doneLane = _state.value.board?.lanesList?.lastOrNull()?.id ?: "done"
-        moveCard(doneLane)
-    }
+    internal fun creationProblem(draft: CaptureDraft, chat: Boolean): String? = _state.value.creationProblem(draft, chat)
 
-    fun setSelectedCardLabels(labelIds: List<String>) = action {
-        val id = _state.value.selectedCardId ?: return@action
-        updateCard(repository.setCardLabels(id, labelIds))
-    }
+    internal fun canSubmitTask(draft: CaptureDraft): Boolean = _state.value.canSubmitTask(draft)
 
-    fun assignLabelToBoardCard(cardId: String, labelId: String) {
-        val snapshot = _state.value
-        val board = snapshot.board ?: return
-        val card = snapshot.cards.firstOrNull { it.id == cardId && it.boardId == board.id } ?: return
-        if (board.labelsList.none { it.id == labelId }) return
-        val existingLabelIds = card.labelIdsList
-        val labelIds = assignCardLabel(existingLabelIds, labelId)
-        if (labelIds === existingLabelIds) return
-        action { updateCard(repository.setCardLabels(cardId, labelIds)) }
-    }
+    /** Queues the task in [editor]; its capture is submitted at most once, even across retries and restarts. */
+    internal fun submitTask(editor: TaskDraftEditor, onCreated: () -> Unit = {}) = create(editor.state.value, chat = false, editor, onCreated)
 
-    fun cancelSelected() {
-        val id = _state.value.selectedCardId ?: return
-        cardAction(id, CardOperation.CANCELLING) { repository.cancelCard(id) }
-    }
+    /** Starts a chat; its editor belongs to the chat screen and is not journaled. */
+    internal fun createChat(draft: CaptureDraft) = create(draft, chat = true, editor = null)
 
-    fun renameSelected(title: String) = action {
-        val id = _state.value.selectedCardId ?: return@action
-        updateCard(repository.renameCard(id, title))
-    }
-
-    fun forkSelected(messageId: String = "") = action {
-        val source = _state.value.selectedCard ?: return@action
-        connectionManager.ensureConversationRoute(source.id)
-        val fork = repository.forkChat(source.id, messageId)
-        _state.update { current -> current.copy(chats = listOf(fork) + current.chats.filterNot { it.id == fork.id }) }
-        openCard(fork, Destination.CHATS)
-    }
-
-    fun editBoardCard(cardId: String, title: String, initialPrompt: String) = action {
-        connectionManager.ensureConversationRoute(cardId)
-        updateCard(repository.updateCard(cardId, title, initialPrompt))
-    }
-
-    fun archiveSelected() = action {
-        val card = _state.value.selectedCard ?: return@action
-        applyCardMutation(repository.archiveCard(card.id, !card.archived))
-        closeDetail()
-    }
-
-    fun archiveBoardCard(cardId: String) = action {
-        applyCardMutation(repository.archiveCard(cardId, true))
-        refreshStateOnce()
-    }
-
-    fun archiveConversation(card: Card) = action(ensureReplicaRoute = false) {
-        connectionManager.ensureReplicaRoute(card.projectId)
-        applyCardMutation(repository.archiveCard(card.id, true))
-        if (_state.value.selectedCardId == card.id) closeDetail()
-    }
-
-    fun renameConversation(card: Card, title: String) = action(ensureReplicaRoute = false) {
-        val normalized = title.trim()
-        if (normalized.isBlank() || normalized == card.title) return@action
-        connectionManager.ensureReplicaRoute(card.projectId)
-        applyCardMutation(repository.renameCard(card.id, normalized))
-    }
-
-    private fun startCard(card: Card, board: Board?) {
-        val optimistic = card.optimisticStart(board) ?: return
-        cardAction(
-            cardId = card.id,
-            operation = CardOperation.STARTING,
-            prepare = { current ->
-                current.replacingCard(optimistic).copy(selectedLane = optimistic.lane)
-            },
-            rollback = { current ->
-                current.replacingCard(card).copy(
-                    selectedLane = card.lane.takeIf { current.selectedLane == optimistic.lane }
-                        ?: current.selectedLane,
-                )
-            },
-        ) {
-            updateCard(connectionManager.enqueueCardStart(card.id))
+    private fun create(draft: CaptureDraft, chat: Boolean, editor: TaskDraftEditor?, onCreated: () -> Unit = {}) {
+        val current = _state.value
+        if (current.working) return
+        val project = current.project ?: return _state.update { it.copy(error = "Select a project before creating a conversation.") }
+        current.creationProblem(draft, chat)?.let { problem -> return _state.update { it.copy(error = problem) } }
+        val input = current.creationInput(draft, project, chat)
+        action {
+            val request = Creation.request(input)
+            core.creation.remember(input.selection, input.workspaceMode, project.id, input.board?.id)
+            val card = if (editor != null) core.submitCapture(editor.id, request, chat) else core.createConversation(request, chat)
+            viewModelScope.launch {
+                if (editor != null && activeCapture?.id == editor.id) activeCapture = null
+                quickTaskOpen = false
+                onCreated()
+                _state.update { it.copy(appSurface = null, editingScheduleId = null) }
+                if (Creation.opensAfterCreate(chat, input.lane)) openCard(card, if (chat) Destination.CHATS else Destination.BOARD)
+            }
         }
     }
 
-    fun togglePin(card: Card) = action(ensureReplicaRoute = false) {
-        connectionManager.ensureReplicaRoute(card.projectId)
-        applyCardMutation(repository.pinChat(card.id, !card.pinned))
-    }
+    // --- Schedules --------------------------------------------------------------------------
 
-    private fun applyCardMutation(card: Card) {
-        connectionManager.acceptCardMutation(card)
-        if (card.archived) {
-            _state.update { current ->
-                current.copy(
-                    cards = current.cards.filterNot { it.id == card.id },
-                    spaceCards = current.spaceCards.filterNot { it.id == card.id },
-                    chats = current.chats.filterNot { it.id == card.id },
-                )
-            }
-        } else {
-            updateCard(card)
+    private fun schedules(block: suspend com.dbpprt.dieter.core.schedules.Schedules.() -> Unit) = launchCore { core.schedules.block() }
+
+    fun refreshSchedules() {
+        val projectId = _state.value.selectedProjectId.ifBlank { return }
+        schedules {
+            bind(projectId)
+            load()
         }
     }
 
-    private fun updateCard(card: Card) {
-        _state.update { it.replacingCard(card) }
+    fun loadMoreSchedules() = schedules { loadMore() }
+
+    fun previewSchedule(cron: String, timezone: String) = schedules { preview(cron, timezone) }
+
+    fun selectSchedule(schedule: Schedule?) {
+        if (schedule != null) schedules { select(schedule.id) }
     }
 
-    private fun DieterUiState.replacingCard(card: Card): DieterUiState = copy(
-        cards = cards.map { if (it.id == card.id) card else it },
-        spaceCards = spaceCards.map { if (it.id == card.id) card else it },
-        chats = chats.map { if (it.id == card.id) card else it },
-        conversation = conversation?.takeIf { it.detail.card.id == card.id }?.toBuilder()
-            ?.setDetail(conversation.detail.toBuilder().setCard(card))
-            ?.build() ?: conversation,
-    )
+    fun loadMoreScheduleRuns() = schedules { loadMoreRuns() }
 
-    private suspend fun loadChats() {
-        _state.update { it.copy(chats = connectionManager.state.value.chats, error = null) }
+    fun saveSchedule(scheduleId: String, draft: ScheduleDraft) = action {
+        core.schedules.save(draft, scheduleId.ifBlank { null }, _state.value.creationCheckout?.id)
+        viewModelScope.launch { closeSurface() }
     }
 
-    fun openDirectory(path: String) = action { loadFiles(path) }
+    fun toggleSchedule(schedule: Schedule) = schedules { setEnabled(schedule.id, !schedule.enabled) }
 
-    fun openParentDirectory() {
-        val path = _state.value.filePath.substringBeforeLast('/', "")
-        openDirectory(path)
-    }
+    fun runSchedule(schedule: Schedule) = schedules { runNow(schedule.id) }
 
-    fun setShowHiddenFiles(show: Boolean) {
-        _state.update { it.copy(showHiddenFiles = show) }
-        viewModelScope.launch { loadFiles() }
-    }
+    fun deleteSchedule(schedule: Schedule) = schedules { delete(schedule.id) }
 
-    private suspend fun loadFiles(path: String = _state.value.filePath) {
-        val projectId = _state.value.selectedProjectId
-        if (projectId.isBlank()) return
-        connectionManager.ensureCheckoutRoute(projectId)
-        val list = repository.files(projectId, path, _state.value.showHiddenFiles)
-        _state.update { it.copy(filePath = list.path, files = list.entriesList, fileDocument = null, fileDraft = "", fileDirty = false) }
-    }
+    // --- Terminals --------------------------------------------------------------------------
 
-    fun openFile(path: String) = action {
-        connectionManager.ensureCheckoutRoute(_state.value.selectedProjectId)
-        val document = repository.readFile(_state.value.selectedProjectId, path)
-        _state.update { it.copy(fileDocument = document, fileDraft = document.content, fileDirty = false) }
-    }
-
-    suspend fun readConversationImage(destination: String): FileDocument? {
-        val initial = _state.value
-        val projectId = initial.selectedProjectId
-        val cardId = initial.selectedCardId ?: return null
-        if (projectId.isBlank()) return null
-        return try {
-            connectionManager.ensureConversationRoute(cardId)
-            val path = conversationImagePath(destination) ?: run {
-                val workspace = repository.workspace(cardId)
-                conversationImagePath(destination, workspace.path)
-            } ?: return null
-            val document = repository.readFile(projectId, path, cardId)
-            document.takeIf {
-                val current = _state.value
-                current.selectedProjectId == projectId && current.selectedCardId == cardId
-            }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Throwable) {
-            val current = _state.value
-            if (current.selectedProjectId == projectId && current.selectedCardId == cardId) {
-                _state.update { it.copy(error = readableError(error)) }
-            }
-            null
+    fun loadTerminals() {
+        if (!foreground) return
+        val daemonId = terminalMachineId ?: core.connection.state.value.attachedMachineId ?: return
+        launchCore {
+            terminals.bind(TerminalScope(daemonId, TerminalScopeKind.MACHINE))
+            terminals.setActive(foreground && _state.value.destination == Destination.TERMINALS)
+            terminals.load()
         }
     }
 
-    fun updateFileDraft(content: String) = _state.update { state ->
-        state.copy(fileDraft = content, fileDirty = content != state.fileDocument?.content)
+    fun showTerminalCreate() = _state.update { it.copy(terminalCreateVisible = true) }
+
+    fun dismissTerminalCreate() = _state.update { it.copy(terminalCreateVisible = false) }
+
+    fun selectTerminal(terminalId: String) = launchCore { terminals.select(terminalId) }
+
+    fun sendTerminalInput(data: ByteArray) = launchCore { terminals.input(data) }
+
+    fun resizeTerminal(columns: Int, rows: Int) = launchCore(report = false) { terminals.gridChanged(columns, rows) }
+
+    fun renameTerminal(terminalId: String, name: String) = launchCore { terminals.rename(terminalId, name) }
+
+    fun closeTerminal(terminalId: String) = launchCore { terminals.close(terminalId) }
+
+    fun createTerminal(form: NewTerminal, onCreated: () -> Unit = {}) = action {
+        val machine = terminalMachineId ?: core.connection.state.value.attachedMachineId ?: error("No machine is attached.")
+        val scope = TerminalScope.forCreation(machine, _state.value.projects.firstOrNull { it.id == form.projectId })
+        if (terminals.view.value.scope != scope) {
+            terminals.bind(scope)
+            terminals.load()
+        }
+        terminals.create(name = form.name, shell = form.shell, workingDirectory = form.workingDirectory.ifBlank { null }, columns = PHONE_COLUMNS, rows = PHONE_ROWS)
+        _state.update { it.copy(terminalCreateVisible = false) }
+        viewModelScope.launch { onCreated() }
     }
 
-    fun saveFile() = action {
-        connectionManager.ensureCheckoutRoute(_state.value.selectedProjectId)
+    // --- Files ------------------------------------------------------------------------------
+
+    private fun filesTarget(): FilesTarget? {
         val current = _state.value
-        val document = current.fileDocument ?: return@action
-        val saved = repository.saveFile(current.selectedProjectId, document.path, current.fileDraft, document.revision)
-        _state.update { it.copy(fileDocument = saved, fileDraft = saved.content, fileDirty = false) }
+        val project = current.project ?: return null
+        val checkout = current.creationCheckout ?: return null
+        return FilesTarget(checkout.daemon_id, project.id, checkout.id)
     }
 
-    fun createFile(path: String, directory: Boolean) = action {
-        connectionManager.ensureCheckoutRoute(_state.value.selectedProjectId)
-        val current = _state.value
-        repository.createFile(current.selectedProjectId, path, if (directory) "directory" else "file")
-        loadFiles()
+    private fun loadFiles(path: String? = null) {
+        val target = filesTarget() ?: return
+        launchCore {
+            files.bind(target)
+            if (path != null) files.navigate(path) else files.load()
+        }
     }
 
-    fun moveFile(source: String, destination: String) = action {
-        connectionManager.ensureCheckoutRoute(_state.value.selectedProjectId)
-        repository.moveFile(_state.value.selectedProjectId, source, destination)
-        _state.update { it.copy(fileDocument = null, fileDraft = "", fileDirty = false) }
-        loadFiles()
-    }
+    fun openDirectory(path: String) = launchCore { files.navigate(path) }
 
-    fun deleteFile(path: String, recursive: Boolean) = action {
-        connectionManager.ensureCheckoutRoute(_state.value.selectedProjectId)
-        repository.deleteFile(_state.value.selectedProjectId, path, recursive)
-        _state.update { it.copy(fileDocument = null, fileDraft = "", fileDirty = false) }
-        loadFiles()
-    }
+    fun openParentDirectory() = launchCore { files.parent() }
+
+    fun setShowHiddenFiles(show: Boolean) = launchCore { files.setShowHidden(show) }
+
+    fun openFile(path: String) = launchCore { files.open(path) }
+
+    fun updateFileDraft(content: String) = files.edit(content)
+
+    fun saveFile() = action { files.save() }
+
+    /** Replaces the draft with the version on disk after a save conflict. */
+    fun reloadFile() = launchCore { files.reload() }
+
+    /** Creates [name] in the open folder. */
+    fun createFile(name: String, directory: Boolean) = action { files.create(name, directory) }
+
+    fun moveFile(source: String, destination: String) = action { files.move(source, destination) }
+
+    fun deleteFile(path: String, recursive: Boolean) = action { files.delete(path, recursive) }
 
     fun closeFile(force: Boolean = false): Boolean {
         if (_state.value.fileDirty && !force) return false
-        _state.update { it.copy(fileDocument = null, fileDraft = "", fileDirty = false) }
+        launchCore(report = false) { files.close() }
         return true
     }
 
     fun setProjectFilesMode(mode: String) {
-        val normalized = if (mode == "changes") "changes" else "browse"
-        _state.update { current ->
-            current.copy(
-                projectFilesMode = normalized,
-                fileDocument = if (normalized == "changes") null else current.fileDocument,
-                projectChanges = if (current.projectChanges.projectId == current.selectedProjectId) {
-                    current.projectChanges
-                } else {
-                    ProjectChangesState(projectId = current.selectedProjectId)
-                },
-            )
-        }
-        if (normalized == "changes") loadProjectChanges() else viewModelScope.launch { loadFiles() }
+        _state.update { it.copy(projectFilesMode = mode) }
+        if (mode == "changes") loadProjectChanges() else launchCore(report = false) { projectChangesController.setActive(false) }
     }
 
+    // --- Project changes --------------------------------------------------------------------
+
     fun openProjectChanges() {
-        val current = _state.value
-        val projectId = current.selectedCard?.projectId?.ifBlank { null }
-            ?: current.conversation?.detail?.card?.projectId?.ifBlank { null }
-            ?: current.selectedProjectId
-        if (projectId.isBlank()) return
-        rememberConversation()
-        cancelConversationStream()
-        resetWorkspaceReview(null)
-        resetProjectChangesJobs()
-        _state.update {
-            it.copy(
-                destination = Destination.FILES,
-                selectedProjectId = projectId,
-                selectedCardId = null,
-                conversation = null,
-                olderMessages = emptyList(),
-                detailTab = 0,
-                filePath = "",
-                fileDocument = null,
-                projectFilesMode = "changes",
-                projectChanges = ProjectChangesState(projectId = projectId),
-            )
-        }
-        connectionManager.selectProject(projectId)
+        _state.update { it.copy(destination = Destination.FILES, projectFilesMode = "changes") }
         loadProjectChanges()
     }
 
     fun loadProjectChanges() {
-        val projectId = _state.value.selectedProjectId
-        if (projectId.isBlank()) return
-        if (projectChangesJob?.isActive == true) {
-            projectChangesRefreshAgain = true
-            return
-        }
-        projectChangesJob = viewModelScope.launch {
-            do {
-                projectChangesRefreshAgain = false
-                refreshProjectChanges(projectId)
-            } while (projectChangesRefreshAgain && _state.value.selectedProjectId == projectId)
-        }
-    }
-
-    private suspend fun refreshProjectChanges(projectId: String) {
-        _state.update { current ->
-            if (current.selectedProjectId != projectId) current
-            else current.copy(projectChanges = current.projectChanges.copy(projectId = projectId, loading = true, error = null))
-        }
-        try {
-            connectionManager.ensureCheckoutRoute(projectId)
-            val changes = repository.projectChangeset(projectId)
-            if (_state.value.selectedProjectId != projectId) return
-            val previous = _state.value.projectChanges
-            val selectionValid = changes.filesList.any { file ->
-                file.path == previous.selectedPath &&
-                    ((previous.selectedSection == "staged" && file.staged) || (previous.selectedSection == "unstaged" && file.unstaged))
-            }
-            val selected = if (selectionValid) {
-                previous.selectedPath to previous.selectedSection
-            } else {
-                "" to ""
-            }
-            _state.update { current ->
-                if (current.selectedProjectId != projectId) current
-                else current.copy(
-                    projectChanges = current.projectChanges.copy(
-                        projectId = projectId,
-                        changeset = changes,
-                        selectedPath = selected.first,
-                        selectedSection = selected.second,
-                        diff = if (selectionValid && previous.changeset?.revision == changes.revision) previous.diff else null,
-                        diffLines = if (selectionValid && previous.changeset?.revision == changes.revision) previous.diffLines else emptyList(),
-                        loading = false,
-                        error = null,
-                    ),
-                )
-            }
-            if (selected.first.isNotEmpty() && (!selectionValid || previous.changeset?.revision != changes.revision)) {
-                loadProjectDiff(false)
-            }
-            if (changes.currentOperationId.isNotEmpty()) {
-                val operation = runCatching { repository.gitOperation(changes.currentOperationId) }.getOrNull()
-                if (operation != null) {
-                    _state.update { current -> current.copy(projectChanges = current.projectChanges.copy(operation = operation)) }
-                    if (GitOperationStatuses.active(operation.status)) monitorProjectGitOperation(projectId, operation.id)
-                }
-            }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Throwable) {
-            _state.update { current ->
-                if (current.selectedProjectId != projectId) current
-                else current.copy(projectChanges = current.projectChanges.copy(loading = false, error = readableError(error)))
-            }
-        } finally {
-            _state.update { current ->
-                if (current.selectedProjectId != projectId) current
-                else current.copy(projectChanges = current.projectChanges.copy(loading = false))
-            }
-        }
-    }
-
-    fun selectProjectChange(path: String, section: String) {
-        val projectId = _state.value.selectedProjectId
-        projectDiffJob?.cancel()
-        _state.update { current ->
-            current.copy(projectChanges = current.projectChanges.copy(
-                selectedPath = path,
-                selectedSection = section,
-                diff = null,
-                diffLines = emptyList(),
-            ))
-        }
-        if (projectId.isNotEmpty() && path.isNotEmpty()) loadProjectDiff(false)
-    }
-
-    fun closeProjectDiff() = selectProjectChange("", "")
-
-    fun loadMoreProjectDiff() = loadProjectDiff(true)
-
-    private fun loadProjectDiff(append: Boolean) {
         val current = _state.value
-        val projectId = current.selectedProjectId
-        val review = current.projectChanges
-        val changes = review.changeset ?: return
-        if (review.selectedPath.isEmpty() || review.selectedSection.isEmpty()) return
-        val path = review.selectedPath
-        val section = review.selectedSection
-        projectDiffJob?.cancel()
-        projectDiffJob = viewModelScope.launch {
-            _state.update { it.copy(projectChanges = it.projectChanges.copy(diffLoading = true)) }
-            try {
-                connectionManager.ensureCheckoutRoute(projectId)
-                val request = GetDiffRequest.newBuilder()
-                    .setProjectId(projectId)
-                    .setPath(path)
-                    .setSection(section)
-                    .setExpectedRevision(changes.revision)
-                    .setLimit(1_048_576)
-                    .setOffset(if (append) review.diff?.nextOffset ?: 0 else 0)
-                    .build()
-                val page = repository.fileDiff(request)
-                val latest = _state.value.projectChanges
-                if (latest.selectedPath != path || latest.selectedSection != section) return@launch
-                val merged = if (append && latest.diff != null) {
-                    latest.diff.toBuilder()
-                        .setPatch(latest.diff.patch + page.patch)
-                        .setTruncated(page.truncated)
-                        .setNextOffset(page.nextOffset)
-                        .setTotalBytes(page.totalBytes)
-                        .build()
-                } else page
-                val lines = withContext(Dispatchers.Default) { UnifiedDiffParser.parse(merged.patch) }
-                _state.update { state ->
-                    state.copy(projectChanges = state.projectChanges.copy(diff = merged, diffLines = lines, diffLoading = false))
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                _state.update { state ->
-                    state.copy(projectChanges = state.projectChanges.copy(diffLoading = false, error = readableError(error)))
-                }
-                if (Status.fromThrowable(error).code == Status.Code.ABORTED) loadProjectChanges()
-            }
+        val checkout = current.creationCheckout ?: return
+        launchCore {
+            projectChangesController.bind(current.selectedProjectId, checkout.id, checkout.daemon_id)
+            projectChangesController.setActive(foreground)
+            projectChangesController.refresh()
         }
     }
 
-    fun startProjectGitOperation(kind: String, path: String = "", parameters: Map<String, String> = emptyMap()) {
-        val current = _state.value
-        val projectId = current.selectedProjectId
-        val changes = current.projectChanges.changeset ?: return
-        if (projectId.isBlank() || current.projectChanges.operationActive) return
-        viewModelScope.launch {
-            try {
-                connectionManager.ensureCheckoutRoute(projectId)
-                val operation = repository.startProjectGitOperation(
-                    projectId,
-                    kind,
-                    changes.revision,
-                    if (path.isBlank()) parameters else parameters + ("path" to path),
-                )
-                _state.update { state -> state.copy(projectChanges = state.projectChanges.copy(operation = operation, error = null)) }
-                monitorProjectGitOperation(projectId, operation.id)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                _state.update { state -> state.copy(projectChanges = state.projectChanges.copy(error = readableError(error))) }
-                loadProjectChanges()
-            }
-        }
+    fun selectProjectChange(path: String, section: ChangeSection) = launchCore { projectChangesController.select(path, section) }
+
+    fun loadMoreProjectDiff() = launchCore { projectChangesController.loadMoreDiff() }
+
+    /** Runs a checkout operation; [path] narrows stage, unstage, and discard to one file. */
+    fun startProjectGitOperation(kind: String, path: String = "", parameters: Map<String, String> = emptyMap()) = launchCore {
+        projectChangesController.run(kind, if (path.isBlank()) parameters else parameters + ("path" to path))
     }
 
-    private fun monitorProjectGitOperation(projectId: String, operationId: String) {
-        if (projectGitOperationId == operationId && projectGitOperationJob?.isActive == true) return
-        projectGitOperationJob?.cancel()
-        projectGitOperationId = operationId
-        projectGitOperationJob = viewModelScope.launch {
-            try {
-                while (true) {
-                    val operation = repository.gitOperation(operationId)
-                    _state.update { current ->
-                        if (current.selectedProjectId != projectId) current
-                        else current.copy(projectChanges = current.projectChanges.copy(operation = operation))
-                    }
-                    if (!GitOperationStatuses.active(operation.status)) {
-                        if (operation.status != "succeeded") {
-                            _state.update { current ->
-                                current.copy(projectChanges = current.projectChanges.copy(error = operation.error))
-                            }
-                        }
-                        refreshProjectChanges(projectId)
-                        return@launch
-                    }
-                    delay(300)
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                _state.update { current -> current.copy(projectChanges = current.projectChanges.copy(error = readableError(error))) }
-            } finally {
-                if (projectGitOperationId == operationId) projectGitOperationId = null
-            }
-        }
-    }
+    fun closeProjectDiff() = launchCore { projectChangesController.deselect() }
 
-    fun clearProjectChangesError() {
-        _state.update { it.copy(projectChanges = it.projectChanges.copy(error = null)) }
-    }
+    fun clearProjectChangesError() = launchCore { projectChangesController.dismissMessages() }
 
-    fun loadTerminals() {
-        if (foreground && _state.value.connectionPhase == ConnectionPhase.CONNECTED) terminals.load()
-    }
+    // --- Workspace review -------------------------------------------------------------------
 
-    fun showTerminalCreate() = terminals.showCreate(true)
-    fun dismissTerminalCreate() = terminals.showCreate(false)
-    fun selectTerminal(terminalId: String) = terminals.select(terminalId)
-    fun sendTerminalInput(terminalId: String, data: ByteArray) = terminals.send(terminalId, data)
-    fun resizeTerminal(terminalId: String, columns: Int, rows: Int) = terminals.resize(terminalId, columns, rows)
-    fun renameTerminal(terminalId: String, name: String) = terminals.rename(terminalId, name)
-    fun closeTerminal(terminalId: String) { terminals.close(terminalId) }
-    private fun stopTerminalWatch() = terminals.stopWatch()
-    private fun cancelTerminalIO() = terminals.cancel()
+    private fun review(block: suspend WorkspaceReview.() -> Unit) = launchCore { review.block() }
 
-    fun createTerminal(projectId: String, name: String, shell: String, workingDirectory: String, onCreated: () -> Unit = {}) {
-        val surface = _state.value.appSurface
-        viewModelScope.launch {
-            try {
-                connectionManager.ensureCheckoutRoute(projectId)
-                if (_state.value.appSurface != surface) return@launch
-                terminals.create(CreateTerminalRequest.newBuilder().setProjectId(projectId).setName(name.trim())
-                    .setShell(shell).setWorkingDirectory(workingDirectory.trim()).setColumns(80).setRows(28).build()) {
-                    _state.update { it.copy(destination = Destination.TERMINALS) }
-                    onCreated()
-                }
-            } catch (cancelled: CancellationException) { throw cancelled
-            } catch (error: Throwable) { _state.update { it.copy(error = readableError(error)) } }
-        }
-    }
+    fun loadWorkspaceSurface() = review { refresh() }
 
-    private suspend fun loadSchedules() { schedules.load(_state.value.selectedProjectId)?.join() }
-    fun refreshSchedules() { schedules.load(_state.value.selectedProjectId) }
-    fun loadMoreSchedules() { schedules.load(_state.value.selectedProjectId, more = true) }
-    fun previewSchedule(cron: String, timezone: String) { schedules.preview(_state.value.selectedProjectId, cron, timezone) }
-    fun selectSchedule(schedule: Schedule?) = schedules.select(schedule)
-    fun loadMoreScheduleRuns() = schedules.moreRuns()
-    fun saveSchedule(scheduleId: String, draft: ScheduleDraft) = action(ensureReplicaRoute = false) {
-        schedules.save(scheduleId, draft, ::closeSurface).join()
-    }
-    fun toggleSchedule(schedule: Schedule) = action(ensureReplicaRoute = false) { schedules.toggle(schedule).join() }
-    fun runSchedule(schedule: Schedule) = action(ensureReplicaRoute = false) { schedules.run(schedule).join() }
-    fun deleteSchedule(schedule: Schedule) = action(ensureReplicaRoute = false) {
-        schedules.delete(schedule, _state.value.selectedProjectId).join()
-    }
+    fun selectWorkspaceChange(path: String?, commitSha: String? = null) = review { select(path, commitSha) }
 
-    // MARK: Conversation workspace review surface
+    fun loadMoreWorkspaceDiff() = review { loadMoreDiff() }
 
-    private fun resetProjectChangesJobs() {
-        projectChangesJob?.cancel()
-        projectChangesJob = null
-        projectChangesRefreshAgain = false
-        projectDiffJob?.cancel()
-        projectDiffJob = null
-        projectGitOperationJob?.cancel()
-        projectGitOperationJob = null
-        projectGitOperationId = null
-    }
+    fun startWorkspaceGitOperation(kind: String, parameters: Map<String, String> = emptyMap()) = review { start(kind, parameters) }
 
-    private fun resetWorkspaceReview(cardId: String?) {
-        workspaceSurfaceJob?.cancel()
-        workspaceSurfaceJob = null
-        workspaceSurfaceRefreshAgain = false
-        workspaceDiffJob?.cancel()
-        workspaceDiffJob = null
-        gitOperationJob?.cancel()
-        gitOperationJob = null
-        gitOperationWatchId = null
-        gitOperationLastSequence = 0
-        mergeFlowJob?.cancel()
-        mergeFlowJob = null
-        workspaceToastJob?.cancel()
-        workspaceToastJob = null
-        _state.update { it.copy(workspaceReview = WorkspaceReviewState(cardId = cardId.orEmpty())) }
-    }
+    fun cancelWorkspaceGitOperation() = review { cancelOperation() }
 
-    private fun updateWorkspaceReview(cardId: String, transform: (WorkspaceReviewState) -> WorkspaceReviewState) {
-        _state.update { current ->
-            if (current.workspaceReview.cardId != cardId) current
-            else current.copy(workspaceReview = transform(current.workspaceReview))
-        }
-    }
+    fun addWorkspaceChangeComment(line: DiffLine, body: String) = review { addComment(line, body, "Android") }
 
-    private fun conversationProjectId(cardId: String): String =
-        (_state.value.cards + _state.value.chats + _state.value.spaceCards)
-            .firstOrNull { it.id == cardId }?.projectId
-            ?.ifBlank { null }
-            ?: _state.value.selectedProjectId
+    fun updateConversationWorkspace(mode: WorkspaceMode, branch: String, baseBranch: String) = review { updateSettings(mode, branch, baseBranch) }
 
-    fun loadWorkspaceSurface() {
-        val cardId = _state.value.selectedCardId ?: return
-        if (!isServerConversationId(cardId)) return
-        if (workspaceSurfaceJob?.isActive == true) {
-            workspaceSurfaceRefreshAgain = true
-            return
-        }
-        workspaceSurfaceJob = viewModelScope.launch {
-            do {
-                workspaceSurfaceRefreshAgain = false
-                refreshWorkspaceSurface(cardId)
-            } while (workspaceSurfaceRefreshAgain && _state.value.selectedCardId == cardId)
-        }
-    }
+    fun runWorkspaceMergeFlow(strategy: MergeStrategy, subject: String, body: String, validate: Boolean, removeWorkspace: Boolean, moveCardToDone: Boolean) =
+        review { mergeFlow(strategy, subject, body, validate, removeWorkspace, moveCardToDone) }
 
-    private suspend fun refreshWorkspaceSurface(cardId: String) {
-        updateWorkspaceReview(cardId) { it.copy(loading = true, error = null) }
-        try {
-            connectionManager.ensureConversationRoute(cardId)
-            val (workspace, changes, scm) = coroutineScope {
-                val workspace = async { repository.workspace(cardId) }
-                val changes = async { repository.changeset(cardId) }
-                val scm = async { runCatching { repository.scmCapabilities(cardId) }.getOrNull() }
-                Triple(workspace.await(), changes.await(), scm.await())
-            }
-            val comments = runCatching { repository.changeComments(cardId, changes.revision).commentsList }
-                .getOrDefault(emptyList())
-            if (_state.value.selectedCardId != cardId) return
-            val previous = _state.value.workspaceReview
-            val selectionValid = (previous.selectedPath.isNotEmpty() && changes.filesList.any { it.path == previous.selectedPath }) ||
-                (previous.selectedCommitSha.isNotEmpty() && changes.commitsList.any { it.sha == previous.selectedCommitSha })
-            val revisionChanged = previous.changeset?.revision != changes.revision
-            updateWorkspaceReview(cardId) {
-                it.copy(
-                    workspace = workspace,
-                    changeset = changes,
-                    scm = scm,
-                    comments = comments,
-                    loading = false,
-                    error = null,
-                    surfaceRemoved = false,
-                    selectedPath = if (selectionValid) it.selectedPath else "",
-                    selectedCommitSha = if (selectionValid) it.selectedCommitSha else "",
-                    diff = if (selectionValid && !revisionChanged) it.diff else null,
-                    diffLines = if (selectionValid && !revisionChanged) it.diffLines else emptyList(),
-                )
-            }
-            if (selectionValid && revisionChanged) loadWorkspaceDiff(append = false)
-            val observed = _state.value.workspaceReview.operation?.takeIf { it.cardId == cardId }
-            val operationId = gitOperationReconciliationId(
-                workspaceOperationId = workspace.currentOperationId,
-                observedOperationId = observed?.id,
-                observedStatus = observed?.status,
-            )
-            if (operationId != null) resumeGitOperation(cardId, operationId)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Throwable) {
-            if (_state.value.selectedCardId != cardId) return
-            updateWorkspaceReview(cardId) { it.copy(loading = false, error = readableError(error)) }
-        } finally {
-            updateWorkspaceReview(cardId) { it.copy(loading = false) }
-        }
-    }
+    fun clearWorkspaceToast() = review { clearToast() }
 
-    fun selectWorkspaceChange(path: String, commitSha: String = "") {
-        val cardId = _state.value.selectedCardId ?: return
-        workspaceDiffJob?.cancel()
-        updateWorkspaceReview(cardId) {
-            it.copy(selectedPath = path, selectedCommitSha = commitSha, diff = null, diffLines = emptyList())
-        }
-        if (path.isNotEmpty() || commitSha.isNotEmpty()) loadWorkspaceDiff(append = false)
-    }
+    fun clearWorkspaceError() = review { clearError() }
 
-    fun closeWorkspaceDiff() = selectWorkspaceChange("", "")
-
-    fun loadMoreWorkspaceDiff() = loadWorkspaceDiff(append = true)
-
-    private fun loadWorkspaceDiff(append: Boolean) {
-        val cardId = _state.value.selectedCardId ?: return
-        val review = _state.value.workspaceReview
-        val changes = review.changeset ?: return
-        if (review.selectedPath.isEmpty() && review.selectedCommitSha.isEmpty()) return
-        val path = review.selectedPath
-        val commitSha = review.selectedCommitSha
-        workspaceDiffJob?.cancel()
-        workspaceDiffJob = viewModelScope.launch {
-            updateWorkspaceReview(cardId) { it.copy(diffLoading = true) }
-            try {
-                connectionManager.ensureConversationRoute(cardId)
-                val request = GetDiffRequest.newBuilder()
-                    .setCardId(cardId)
-                    .setPath(path)
-                    .setCommitSha(commitSha)
-                    .setExpectedRevision(changes.revision)
-                    .setLimit(1_048_576)
-                    .setOffset(if (append) review.diff?.nextOffset ?: 0 else 0)
-                    .build()
-                val page = if (commitSha.isEmpty()) repository.fileDiff(request) else repository.commitDiff(request)
-                val current = _state.value.workspaceReview
-                if (current.selectedPath != path || current.selectedCommitSha != commitSha) return@launch
-                val (merged, parsedLines) = withContext(Dispatchers.Default) {
-                    val mergedPage = if (append && current.diff != null) {
-                        current.diff.toBuilder()
-                            .setPatch(current.diff.patch + page.patch)
-                            .setTruncated(page.truncated)
-                            .setNextOffset(page.nextOffset)
-                            .setTotalBytes(page.totalBytes)
-                            .build()
-                    } else {
-                        page
-                    }
-                    mergedPage to UnifiedDiffParser.parse(mergedPage.patch)
-                }
-                val latest = _state.value.workspaceReview
-                if (latest.selectedPath != path || latest.selectedCommitSha != commitSha) return@launch
-                updateWorkspaceReview(cardId) {
-                    it.copy(diff = merged, diffLines = parsedLines, diffLoading = false)
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                if (Status.fromThrowable(error).code == Status.Code.ABORTED) {
-                    updateWorkspaceReview(cardId) {
-                        it.copy(diffLoading = false, error = "The workspace changed while this diff was open. Refreshing…")
-                    }
-                    loadWorkspaceSurface()
-                } else {
-                    updateWorkspaceReview(cardId) { it.copy(diffLoading = false, error = readableError(error)) }
-                }
-            }
-        }
-    }
-
-    fun startWorkspaceGitOperation(kind: String, parameters: Map<String, String> = emptyMap()) {
-        val cardId = _state.value.selectedCardId ?: return
-        viewModelScope.launch { startGitOperationInternal(cardId, kind, parameters) }
-    }
-
-    private suspend fun startGitOperationInternal(
-        cardId: String,
-        kind: String,
-        parameters: Map<String, String>,
-    ): Boolean {
-        return try {
-            connectionManager.ensureConversationRoute(cardId)
-            val revision = _state.value.workspaceReview.changeset?.revision.orEmpty()
-            val operation = repository.startGitOperation(cardId, kind, revision, parameters)
-            gitOperationLastSequence = 0
-            gitOperationWatchId = null
-            updateWorkspaceReview(cardId) {
-                it.copy(operation = operation, operationLogs = emptyList(), error = null)
-            }
-            observeGitOperation(cardId, operation.id)
-            true
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Throwable) {
-            updateWorkspaceReview(cardId) { it.copy(error = readableError(error)) }
-            false
-        }
-    }
-
-    fun cancelWorkspaceGitOperation() {
-        val cardId = _state.value.selectedCardId ?: return
-        val operation = _state.value.workspaceReview.operation ?: return
-        if (!GitOperationStatuses.active(operation.status)) return
-        viewModelScope.launch {
-            try {
-                val canceled = repository.cancelGitOperation(operation.id)
-                updateWorkspaceReview(cardId) { it.copy(operation = canceled) }
-            } catch (error: Throwable) {
-                updateWorkspaceReview(cardId) { it.copy(error = readableError(error)) }
-            }
-        }
-    }
-
-    private suspend fun resumeGitOperation(cardId: String, operationId: String) {
-        if (gitOperationWatchId == operationId && gitOperationJob?.isActive == true) return
-        val known = _state.value.workspaceReview.operation?.takeIf { it.id == operationId }
-        val operation = known ?: runCatching { repository.gitOperation(operationId) }.getOrNull() ?: return
-        if (gitOperationWatchId != operationId) gitOperationLastSequence = 0
-        updateWorkspaceReview(cardId) { current ->
-            current.copy(operation = operation, operationLogs = if (known == null) emptyList() else current.operationLogs)
-        }
-        if (GitOperationStatuses.active(operation.status)) observeGitOperation(cardId, operationId)
-    }
-
-    private fun observeGitOperation(cardId: String, operationId: String) {
-        if (gitOperationWatchId == operationId && gitOperationJob?.isActive == true) return
-        gitOperationJob?.cancel()
-        gitOperationWatchId = operationId
-        gitOperationJob = viewModelScope.launch {
-            var attempt = 0
-            while (true) {
-                try {
-                    repository.watchGitOperation(operationId, gitOperationLastSequence).collect { frame ->
-                        attempt = 0
-                        acceptGitOperationFrame(cardId, operationId, frame)
-                    }
-                    // The daemon closes the stream once the operation settles.
-                    break
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Throwable) {
-                    val code = Status.fromThrowable(error).code
-                    val transient = code == Status.Code.UNAVAILABLE || code == Status.Code.DEADLINE_EXCEEDED
-                    if (!transient || !foreground) {
-                        if (code == Status.Code.NOT_FOUND) {
-                            updateWorkspaceReview(cardId) { it.copy(operation = null, operationLogs = emptyList()) }
-                        } else if (!transient) {
-                            updateWorkspaceReview(cardId) { it.copy(error = readableError(error)) }
-                        }
-                        return@launch
-                    }
-                    delay((500L shl attempt.coerceAtMost(4)).coerceAtMost(8_000L))
-                    attempt += 1
-                }
-            }
-            if (_state.value.workspaceReview.operation?.id == operationId) onGitOperationSettled(cardId)
-        }
-    }
-
-    private fun acceptGitOperationFrame(cardId: String, operationId: String, frame: GitOperationFrame) {
-        if (frame.heartbeat && !frame.hasOperation()) return
-        val previousStatus = _state.value.workspaceReview.operation?.takeIf { it.id == operationId }?.status
-        gitOperationLastSequence = maxOf(
-            gitOperationLastSequence,
-            frame.operation.sequence,
-            frame.logsList.maxOfOrNull { it.sequence } ?: 0,
-        )
-        updateWorkspaceReview(cardId) { current ->
-            if (current.operation != null && current.operation.id != operationId) current
-            else current.copy(
-                operation = frame.operation,
-                operationLogs = mergeGitOperationLogs(current.operationLogs, frame.logsList),
-            )
-        }
-        val enteredConflict = previousStatus != "waiting_for_resolution" && frame.operation.status == "waiting_for_resolution"
-        if (enteredConflict) loadWorkspaceSurface()
-    }
-
-    private suspend fun onGitOperationSettled(cardId: String) {
-        val operation = _state.value.workspaceReview.operation ?: return
-        val removesWorkspace = operation.status == "succeeded" &&
-            operation.kind in setOf(GitOperationKinds.CLEANUP, GitOperationKinds.DISCARD, GitOperationKinds.ADOPT)
-        if (operation.status == "succeeded") {
-            showWorkspaceToast("${GitOperationKinds.title(operation.kind)} succeeded")
-        }
-        if (removesWorkspace) {
-            updateWorkspaceReview(cardId) {
-                it.copy(
-                    workspace = null,
-                    changeset = null,
-                    diff = null,
-                    diffLines = emptyList(),
-                    comments = emptyList(),
-                    selectedPath = "",
-                    selectedCommitSha = "",
-                    surfaceRemoved = true,
-                    loading = false,
-                    error = null,
-                )
-            }
-        } else if (_state.value.selectedCardId == cardId) {
-            refreshWorkspaceSurface(cardId)
-        }
-        // The hydrated card carries refreshed workspace and PR summaries.
-        runCatching { repository.card(cardId).card }.getOrNull()?.let(::updateCard)
-    }
-
-    private fun showWorkspaceToast(message: String) {
-        val cardId = _state.value.workspaceReview.cardId.ifBlank { return }
-        updateWorkspaceReview(cardId) { it.copy(toast = message) }
-        workspaceToastJob?.cancel()
-        workspaceToastJob = viewModelScope.launch {
-            delay(6_000)
-            updateWorkspaceReview(cardId) { it.copy(toast = null) }
-        }
-    }
-
-    fun clearWorkspaceError() {
-        val cardId = _state.value.workspaceReview.cardId.ifBlank { return }
-        updateWorkspaceReview(cardId) { it.copy(error = null) }
-    }
-
-    fun addWorkspaceChangeComment(path: String, side: String, line: Int, body: String) {
-        val cardId = _state.value.selectedCardId ?: return
-        val revision = _state.value.workspaceReview.changeset?.revision.orEmpty()
-        viewModelScope.launch {
-            try {
-                val comment = repository.addChangeComment(
-                    AddChangeCommentRequest.newBuilder()
-                        .setCardId(cardId)
-                        .setPath(path)
-                        .setSide(side)
-                        .setLine(line)
-                        .setBody(body)
-                        .setAuthor("You")
-                        .setRevision(revision)
-                        .build(),
-                )
-                updateWorkspaceReview(cardId) { it.copy(comments = it.comments + comment) }
-            } catch (error: Throwable) {
-                if (Status.fromThrowable(error).code == Status.Code.ABORTED) {
-                    updateWorkspaceReview(cardId) {
-                        it.copy(error = "The workspace changed before the comment was saved. Refreshing…")
-                    }
-                    loadWorkspaceSurface()
-                } else {
-                    updateWorkspaceReview(cardId) { it.copy(error = readableError(error)) }
-                }
-            }
-        }
-    }
-
-    fun updateConversationWorkspace(mode: String, branch: String, baseBranch: String) = action {
-        val cardId = _state.value.selectedCardId ?: return@action
-        connectionManager.ensureConversationRoute(cardId)
-        val selectedWorkspaceMode = ConversationWorkspaceMode.resolve(mode)
-        updateCard(repository.updateConversationWorkspace(
-            cardId,
-            selectedWorkspaceMode.wire,
-            branch.takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty(),
-            baseBranch.takeIf { selectedWorkspaceMode == ConversationWorkspaceMode.WORKTREE }.orEmpty(),
-        ))
-        loadWorkspaceSurface()
-    }
-
-    /**
-     * The merge sheet's full flow: commit dirty work when needed, merge into the
-     * base branch, then optionally remove the workspace and move the card to
-     * Done. Each stage is an ordinary durable Git operation, so progress, logs,
-     * and failures surface through the shared operation state.
-     */
-    fun runWorkspaceMergeFlow(
-        strategy: String,
-        subject: String,
-        body: String,
-        validate: Boolean,
-        removeWorkspace: Boolean,
-        moveCardToDone: Boolean,
-    ) {
-        if (mergeFlowJob?.isActive == true) return
-        val cardId = _state.value.selectedCardId ?: return
-        val card = _state.value.selectedCard ?: return
-        mergeFlowJob = viewModelScope.launch {
-            val review = _state.value.workspaceReview
-            val branch = review.workspace?.branch ?: card.workspace.branch
-            val base = (review.workspace?.baseBranch ?: card.workspace.baseBranch).ifBlank { "base" }
-            try {
-                if (review.workspace?.dirty == true) {
-                    updateWorkspaceReview(cardId) { it.copy(mergeFlowStep = "commit") }
-                    val committed = startGitOperationInternal(
-                        cardId,
-                        GitOperationKinds.COMMIT,
-                        mapOf("subject" to subject, "body" to body, "stage_all" to "true"),
-                    ) && awaitGitOperationSuccess()
-                    if (!committed) return@launch
-                    refreshWorkspaceSurface(cardId)
-                }
-                updateWorkspaceReview(cardId) { it.copy(mergeFlowStep = "merge") }
-                val merged = startGitOperationInternal(
-                    cardId,
-                    GitOperationKinds.MERGE_LOCAL,
-                    mapOf("strategy" to strategy, "subject" to subject, "validate" to if (validate) "true" else "false"),
-                ) && awaitGitOperationSuccess()
-                if (!merged) return@launch
-                if (removeWorkspace) {
-                    updateWorkspaceReview(cardId) { it.copy(mergeFlowStep = "cleanup") }
-                    refreshWorkspaceSurface(cardId)
-                    if (startGitOperationInternal(cardId, GitOperationKinds.CLEANUP, emptyMap())) {
-                        awaitGitOperationSuccess()
-                    }
-                }
-                var movedToDone = false
-                if (moveCardToDone && card.scope != "chat") {
-                    val lanes = _state.value.boards.firstOrNull { it.id == card.boardId }?.lanesList.orEmpty()
-                    val doneLane = lanes.firstOrNull { it.id == "done" }?.id ?: lanes.lastOrNull()?.id
-                    if (doneLane != null && card.lane != doneLane) {
-                        runCatching { updateCard(repository.moveCard(cardId, doneLane)) }
-                            .onSuccess { movedToDone = true }
-                    }
-                }
-                showWorkspaceToast(
-                    "Merged ${branch.ifBlank { "workspace" }} into $base" +
-                        if (movedToDone) " · card moved to Done" else "",
-                )
-            } finally {
-                updateWorkspaceReview(cardId) { it.copy(mergeFlowStep = null) }
-            }
-        }
-    }
-
-    /**
-     * Waits for the most recently started operation to settle. Polls the daemon
-     * directly so orchestration survives a dropped watch stream.
-     */
-    private suspend fun awaitGitOperationSuccess(): Boolean {
-        val operationId = _state.value.workspaceReview.operation?.id ?: return false
-        val deadline = System.currentTimeMillis() + 3_600_000L
-        while (System.currentTimeMillis() < deadline) {
-            val observed = _state.value.workspaceReview.operation
-            if (observed?.id == operationId &&
-                (GitOperationStatuses.terminal(observed.status) || observed.status == "waiting_for_resolution")
-            ) {
-                return observed.status == "succeeded"
-            }
-            val polled = runCatching { repository.gitOperation(operationId) }.getOrNull()
-            if (polled != null && (GitOperationStatuses.terminal(polled.status) || polled.status == "waiting_for_resolution")) {
-                val cardId = _state.value.workspaceReview.cardId
-                if (_state.value.workspaceReview.operation?.id == operationId && cardId.isNotBlank()) {
-                    updateWorkspaceReview(cardId) { it.copy(operation = polled) }
-                }
-                return polled.status == "succeeded"
-            }
-            delay(400)
-        }
-        return false
-    }
-
-    /** Hands conflict resolution or review follow-up to the conversation's agent. */
     fun sendWorkspaceHandOffMessage(text: String) {
-        val cardId = _state.value.selectedCardId ?: return
-        val card = _state.value.selectedCard ?: return
-        viewModelScope.launch {
-            try {
-                connectionManager.enqueueMessage(
-                    cardId,
-                    listOf(textPart(text)),
-                    card.provider,
-                    card.model,
-                    card.effort,
-                    card.providerOptionsMap,
-                )
-                ensureConversationRecovery(cardId)
-                selectDetailTab(0)
-            } catch (error: Throwable) {
-                updateWorkspaceReview(cardId) { it.copy(error = readableError(error)) }
-            }
-        }
+        val current = session ?: return
+        action { current.send(listOf(textPart(text))) }
     }
 
-    fun loadAdministration() { administration.load(_state.value.selectedProjectId, _state.value.selectedBoardId) }
+    // --- Administration ---------------------------------------------------------------------
 
-    fun clearDirectoryListing() {
-        directoryListingGeneration += 1
-        _state.update {
-            it.copy(directoryListing = null, directoryListingEndpointId = "", directoryListingLoading = false)
-        }
+    fun loadAdministration() = launchCore { loadAdministrationNow() }
+
+    private suspend fun loadAdministrationNow() {
+        val current = _state.value
+        val projectId = current.selectedProjectId.ifBlank { return }
+        val (projects, cards) = core.admin.archives(projectId, current.selectedBoardId.ifBlank { null })
+        val settings = runCatching { core.admin.settings(projectId) }.getOrNull()
+        val options = runCatching { core.admin.settingsOptions(projectId) }.getOrNull()
+        _state.update { it.copy(administration = AdministrationState(settings, options, projects, cards)) }
     }
 
-    fun listDirectories(endpointId: String, path: String = "") {
-        val generation = ++directoryListingGeneration
-        if (endpointId.isBlank()) {
-            _state.update { it.copy(error = "Choose an online machine first.") }
-            return
-        }
-        _state.update {
-            it.copy(directoryListingEndpointId = endpointId, directoryListingLoading = true, error = null)
-        }
+    fun clearDirectoryListing() = _state.update { it.copy(directoryListing = null, directoryListingEndpointId = "", directoryListingLoading = false) }
+
+    fun listDirectories(daemonId: String, path: String = "") {
+        _state.update { it.copy(directoryListingEndpointId = daemonId, directoryListingLoading = true) }
         viewModelScope.launch {
             try {
-                val listing = repository.listDirectoriesOn(endpointId, path)
-                if (directoryListingGeneration == generation) {
-                    _state.update {
-                        it.copy(
-                            directoryListing = listing,
-                            directoryListingEndpointId = endpointId,
-                            directoryListingLoading = false,
-                        )
-                    }
-                }
+                val listing = core.onCore { core.admin.directories(daemonId, path) }
+                _state.update { if (it.directoryListingEndpointId == daemonId) it.copy(directoryListing = listing, directoryListingLoading = false) else it }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                if (directoryListingGeneration == generation) {
-                    _state.update { it.copy(directoryListingLoading = false, error = readableError(error)) }
-                }
+                _state.update { it.copy(directoryListingLoading = false, error = Failures.message(error)) }
             }
         }
     }
 
-    fun attachCheckout(projectId: String, endpointId: String, path: String, name: String) = action(ensureReplicaRoute = false) {
-        repository.attachCheckoutOn(endpointId, com.dbpprt.dieter.v1.AttachCheckoutRequest.newBuilder()
-            .setProjectId(projectId).setPath(path.trim()).setName(name.trim()).build())
-        connectionManager.refreshMachineDirectory()
-        selectProject(projectId)
-        openSurface(AppSurface.WORKSPACE)
+    fun attachCheckout(projectId: String, daemonId: String, path: String, name: String) = action {
+        core.admin.attachCheckout(daemonId, projectId, path, name)
+    }
+
+    fun detachCheckout(id: String) = action {
+        val checkout = _state.value.projects.flatMap { it.checkouts }.first { it.id == id }
+        core.admin.detachCheckout(checkout.project_id, id)
+        _state.update { it.copy(creationCheckoutId = "") }
+    }
+
+    fun consolidateProject(destination: String) = action {
+        core.admin.consolidate(_state.value.selectedProjectId, destination)
+        viewModelScope.launch { selectProject(destination) }
     }
 
     fun createProject(
-        endpointId: String,
-        mode: String,
+        daemonId: String,
+        create: Boolean,
         path: String,
         name: String,
         summary: String,
@@ -3465,361 +1366,109 @@ class DieterViewModel internal constructor(
         baseRemote: String,
         baseBranch: String,
         validationCommands: List<ValidationCommand>,
-    ) = action(ensureReplicaRoute = false) {
-        check(endpointId.isNotBlank()) { "Choose an online machine first." }
-        check(baseBranch.isNotBlank()) { "Enter a workspace base branch." }
-        val payload = CreateProjectRequest.newBuilder()
-                .setMode(mode)
-                .setPath(path.trim())
-                .setName(name.trim())
-                .setSummary(summary.trim())
-                .setPrompt(prompt.trim())
-                .setBoardName(boardName.trim())
-                .setWorkflow(workflow)
-                .setBaseRemote(baseRemote.trim())
-                .setBaseBranch(baseBranch.trim())
-                .addAllValidationCommands(validationCommands)
-                .build()
-        val operationId = pendingProjectCreation?.takeIf { it.first == payload }?.second ?: java.util.UUID.randomUUID().toString()
-        pendingProjectCreation = payload to operationId
-        val created = repository.createProjectOn(endpointId, payload.toBuilder().setOperationId(operationId).build())
+    ) = action {
+        val response = core.admin.createProject(daemonId, path, name, create, boardName, workflow, baseRemote, baseBranch, validationCommands)
+        val project = response.project ?: return@action
+        if (summary.isNotBlank() || prompt.isNotBlank()) core.admin.updateProject(project.id, summary = summary, prompt = prompt)
         pendingProjectCreation = null
-        connectionManager.registerProjectReplica(created.project, endpointId, created.board)
-        _state.update {
-            it.copy(
-                projects = (it.projects.filterNot { project -> project.id == created.project.id } + created.project)
-                    .sortedBy { project -> project.name.lowercase() },
-                boards = listOf(created.board),
-                spaceBoards = (it.spaceBoards.filterNot { board -> board.id == created.board.id } + created.board),
-                selectedProjectId = created.project.id,
-                selectedBoardId = created.board.id,
-                boardOverviewVisible = false,
-                appSurface = null,
-                editingScheduleId = null,
-                directoryListing = null,
-                directoryListingEndpointId = "",
-            )
+        viewModelScope.launch {
+            selectProject(project.id)
+            closeSurface()
         }
-        connectionManager.selectProject(created.project.id)
-        startStateStream()
     }
 
-    fun updateProject(
-        name: String,
-        summary: String,
-        prompt: String,
-        baseRemote: String,
-        baseBranch: String,
-        validationCommands: List<ValidationCommand>,
-    ) = action {
-        val projectId = _state.value.selectedProjectId
-        check(projectId.isNotBlank()) { "Select a project first." }
-        check(name.isNotBlank()) { "Enter a project name." }
-        check(baseBranch.isNotBlank()) { "Enter a workspace base branch." }
-        val selectedCheckout = _state.value.project?.checkoutsList?.filterNot { it.detached }?.let { list -> list.firstOrNull { it.id == _state.value.creationCheckoutId } ?: list.singleOrNull() }
-        val updatesValidation = validationCommands != selectedCheckout?.validationCommandsList.orEmpty()
-        val checkoutId = if (updatesValidation) connectionManager.ensureCheckoutRoute(projectId, _state.value.creationCheckoutId) else ""
-        repository.updateProjectWorkspaceSettings(
-            UpdateProjectWorkspaceSettingsRequest.newBuilder().setCheckoutId(checkoutId)
-                .setProjectId(projectId)
-                .setBaseRemote(baseRemote.trim())
-                .setBaseBranch(baseBranch.trim())
-                .addAllValidationCommands(if (updatesValidation) validationCommands else emptyList())
-                .build(),
-        )
-        repository.updateProject(
-            UpdateProjectRequest.newBuilder()
-                .setProjectId(projectId)
-                .setName(name.trim())
-                .setSummary(summary.trim())
-                .setPrompt(prompt.trim())
-                .build(),
-        )
-        refreshStateOnce()
+    fun updateProject(name: String, summary: String, prompt: String, baseRemote: String, baseBranch: String, validationCommands: List<ValidationCommandDraft>?) = action {
+        val project = _state.value.project ?: return@action
+        ProjectWorkspaceSettings.update(core.sessions, core.workspace, project, baseRemote, baseBranch, _state.value.creationCheckout?.id, validationCommands)
+        core.admin.updateProject(project.id, name = name, summary = summary, prompt = prompt)
     }
 
     fun loadProjectWorkspaces() {
-        val projectId = _state.value.selectedProjectId
-        if (projectId.isBlank()) return
-        _state.update { it.copy(projectWorkspacesLoading = true) }
-        viewModelScope.launch {
-            try {
-                connectionManager.ensureReplicaRoute(projectId)
-                val workspaces = repository.projectWorkspaces(projectId).workspacesList
-                _state.update { current ->
-                    if (current.selectedProjectId != projectId) current
-                    else current.copy(projectWorkspaces = workspaces, projectWorkspacesLoading = false)
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                _state.update { current ->
-                    if (current.selectedProjectId != projectId) current
-                    else current.copy(projectWorkspacesLoading = false, error = readableError(error))
-                }
-            }
-        }
+        val projectId = _state.value.selectedProjectId.ifBlank { return }
+        launchCore { core.projectWorkspaces.load(projectId) }
     }
 
-    fun runProjectWorkspaceOperation(workspace: Workspace, kind: String) {
-        if (kind !in setOf(GitOperationKinds.CLEANUP, GitOperationKinds.DISCARD)) return
-        if (workspace.cardId in _state.value.projectWorkspaceOperations) return
-        projectWorkspaceJobs[workspace.cardId]?.cancel()
-        _state.update {
-            it.copy(
-                projectWorkspaceOperations = it.projectWorkspaceOperations + workspace.cardId,
-                projectWorkspaceErrors = it.projectWorkspaceErrors - workspace.cardId,
-            )
-        }
-        projectWorkspaceJobs[workspace.cardId] = viewModelScope.launch {
-            try {
-                connectionManager.ensureConversationRoute(workspace.cardId)
-                var operation = repository.startGitOperation(workspace.cardId, kind, workspace.revision)
-                while (GitOperationStatuses.active(operation.status)) {
-                    delay(500)
-                    operation = repository.gitOperation(operation.id)
-                }
-                if (operation.status != "succeeded") error(operation.error.ifBlank { "Workspace operation ${operation.status}." })
-                val refreshed = repository.projectWorkspaces(workspace.projectId).workspacesList
-                _state.update { current ->
-                    if (current.selectedProjectId != workspace.projectId) current
-                    else current.copy(projectWorkspaces = refreshed)
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                _state.update {
-                    it.copy(projectWorkspaceErrors = it.projectWorkspaceErrors + (workspace.cardId to readableError(error)))
-                }
-            } finally {
-                projectWorkspaceJobs.remove(workspace.cardId)
-                _state.update {
-                    it.copy(projectWorkspaceOperations = it.projectWorkspaceOperations - workspace.cardId)
-                }
-            }
-        }
-    }
+    fun removeProjectWorkspace(workspace: Workspace, discard: Boolean) = launchCore { core.projectWorkspaces.remove(workspace, discard) }
 
     fun archiveCurrentProject() = action {
-        val projectId = _state.value.selectedProjectId
-        if (projectId.isBlank()) return@action
-        repository.archiveProject(projectId, true)
-        _state.update { it.copy(selectedProjectId = "", selectedBoardId = "") }
-        startStateStream()
+        core.admin.setProjectArchived(_state.value.selectedProjectId, true)
     }
 
     fun restoreProject(project: Project) = action {
-        repository.archiveProject(project.id, false)
-        _state.update { it.copy(selectedProjectId = project.id) }
-        startStateStream()
+        core.admin.setProjectArchived(project.id, false)
+        loadAdministrationNow()
     }
 
-    fun restoreCard(card: Card) = action {
-        repository.archiveCard(card.id, false)
-        loadAdministration()
-        refreshStateOnce()
-    }
-
-    fun createBoard(
-        name: String,
-        workflow: String,
-        description: String,
-        openAfterCreate: Boolean = false,
-        baseRemote: String = _state.value.project?.baseRemote.orEmpty(),
-        remotePublishMode: String = "manual",
-    ) = action {
-        val board = repository.createBoard(
-            CreateBoardRequest.newBuilder()
-                .setProjectId(_state.value.selectedProjectId)
-                .setName(name)
-                .setWorkflow(workflow)
-                .setDescription(description)
-                .setDoneArchivePolicy("never")
-                .setBaseRemote(baseRemote.trim())
-                .setRemotePublishMode(remotePublishMode)
-                .build(),
-        )
-        _state.update {
-            it.copy(
-                selectedBoardId = board.id,
-                appSurface = if (openAfterCreate) null else it.appSurface,
-                boardOverviewVisible = if (openAfterCreate) false else it.boardOverviewVisible,
-            )
+    fun createBoard(name: String, workflow: String, description: String, openAfterCreate: Boolean = false, baseRemote: String = "", remotePublishMode: String = "manual") = action {
+        val projectId = _state.value.selectedProjectId
+        val board = core.admin.createBoard(projectId, name, workflow, description, baseRemote = baseRemote, publishMode = remotePublishMode)
+        viewModelScope.launch {
+            closeSurface()
+            if (openAfterCreate) openBoard(projectId, board.id)
         }
-        refreshStateOnce()
-        refreshSpaces()
     }
 
-    fun restoreBoard(id: String) = action {
-        val board = repository.board(id)
-        repository.setBoardRetired(com.dbpprt.dieter.v1.SetBoardRetiredRequest.newBuilder()
-            .setBoardId(id).setRetired(false).setExpectedRevision(board.retirementRevision)
-            .setOperationId(java.util.UUID.randomUUID().toString()).build())
-        refreshStateOnce()
-        refreshSpaces()
-    }
+    fun restoreBoard(id: String) = action { core.admin.setBoardRetired(id, false) }
 
-    fun setBoardArchivePolicy(policy: String) = action {
-        repository.setBoardArchivePolicy(_state.value.selectedBoardId, policy)
-        refreshStateOnce()
-    }
+    fun retireBoard(id: String) = action { core.admin.setBoardRetired(id, true) }
+
+    fun setBoardArchivePolicy(policy: String) = action { core.admin.setArchivePolicy(_state.value.selectedBoardId, policy) }
 
     fun updateBoardGitSettings(baseRemote: String, remotePublishMode: String) = action {
-        repository.updateBoardGitSettings(_state.value.selectedBoardId, baseRemote, remotePublishMode)
-        refreshStateOnce()
+        core.admin.setGitSettings(_state.value.selectedBoardId, baseRemote, remotePublishMode)
     }
 
-    fun createBoardLabel(name: String, color: String) = action {
-        repository.createBoardLabel(_state.value.selectedBoardId, name, color)
-        refreshStateOnce()
-    }
+    fun createBoardLabel(name: String, color: String) = action { core.admin.createLabel(_state.value.selectedBoardId, name, color) }
 
-    fun deleteBoardLabel(labelId: String) = action {
-        repository.deleteBoardLabel(_state.value.selectedBoardId, labelId)
-        refreshStateOnce()
-    }
+    fun deleteBoardLabel(labelId: String) = action { core.admin.deleteLabel(_state.value.selectedBoardId, labelId) }
 
     fun updateSettings(settings: Settings) = action {
-        administration.update(_state.value.selectedProjectId, settings).join()
+        val updated = core.admin.updateSettings(_state.value.selectedProjectId, settings)
+        _state.update { it.copy(administration = it.administration.copy(settings = updated)) }
     }
 
-    fun loadSharedConflicts(keys: List<String>) = action {
-        val records = keys.distinct().map { key -> repository.peerRecord(key.substringBefore('/'), key.substringAfter('/')) }
-        _state.update { it.copy(sharedConflicts = records.filter { record -> record.versionsCount > 1 }) }
-    }
-    fun dismissSharedConflicts() { _state.update { it.copy(sharedConflicts = emptyList()) } }
-    fun resolveSharedConflict(record: com.dbpprt.dieter.v1.PeerRecord, version: com.dbpprt.dieter.v1.PeerVersion) = action {
-        repository.resolvePeerRecord(com.dbpprt.dieter.v1.PutPeerRecordRequest.newBuilder()
-            .setKind(record.kind).setId(record.id).setExpectedRevision(record.revision)
-            .setValueJson(version.valueJson).setDeleted(version.deleted).build())
-        _state.update { it.copy(sharedConflicts = it.sharedConflicts.filterNot { candidate -> candidate.id == record.id }) }
-        refreshStateOnce()
+    fun loadSharedConflicts(keys: List<String>) = launchCore {
+        val projectId = _state.value.selectedProjectId
+        val records = keys.mapNotNull { key -> core.admin.conflict(projectId, key) }
+        _state.update { it.copy(sharedConflicts = records) }
     }
 
-    fun clearError() = _state.update { it.copy(error = null) }
+    fun dismissSharedConflicts() = _state.update { it.copy(sharedConflicts = emptyList()) }
 
-    private fun action(
-        ensureReplicaRoute: Boolean = true,
-        onFinished: () -> Unit = {},
-        block: suspend () -> Unit,
-    ) {
-        viewModelScope.launch {
-            try {
-                mutationMutex.withLock {
-                    _state.update { it.copy(working = true, error = null) }
-                    try {
-                        if (ensureReplicaRoute) connectionManager.ensureReplicaRoute(_state.value.selectedProjectId)
-                        block()
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Throwable) {
-                        _state.update { it.copy(error = readableError(error)) }
-                    } finally {
-                        _state.update { it.copy(working = false) }
-                    }
-                }
-            } finally {
-                onFinished()
-            }
-        }
+    fun resolveSharedConflict(record: PeerRecord, version: PeerVersion) = action {
+        core.admin.resolve(_state.value.selectedProjectId, record, version.value_json.takeUnless { version.deleted }, version.deleted)
+        _state.update { current -> current.copy(sharedConflicts = current.sharedConflicts.filterNot { it.id == record.id && it.kind == record.kind }) }
     }
 
-    private fun cardAction(
-        cardId: String,
-        operation: CardOperation,
-        prepare: (DieterUiState) -> DieterUiState = { it },
-        rollback: ((DieterUiState) -> DieterUiState)? = null,
-        block: suspend () -> Unit,
-    ) {
-        if (_state.value.cardOperations.containsKey(cardId)) return
-        _state.update { current ->
-            prepare(current).let {
-                it.copy(
-                    cardOperations = it.cardOperations + (cardId to operation),
-                    cardOperationErrors = it.cardOperationErrors - cardId,
-                )
-            }
-        }
-        viewModelScope.launch {
-            try {
-                block()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                val message = readableError(error)
-                _state.update { current ->
-                    (rollback?.invoke(current) ?: current).copy(
-                        error = message,
-                        cardOperationErrors = current.cardOperationErrors + (cardId to message),
-                    )
-                }
-            } finally {
-                _state.update { it.copy(cardOperations = it.cardOperations - cardId) }
-            }
-        }
-    }
+    // --- Quotas -----------------------------------------------------------------------------
 
-    private suspend fun refreshStateOnce() {
-        connectionManager.state.value.selectedState?.let(::applyRemoteState)
-    }
+    fun refreshProviderQuotas(requestRefresh: Boolean = true) = launchCore(report = false) { core.quotas.load(requestRefresh) }
 
-    private suspend fun <T> runFeatureCall(apply: (T) -> Unit, block: suspend () -> T) {
-        try {
-            apply(block())
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Throwable) {
-            _state.update { it.copy(error = readableError(error)) }
-        }
-    }
+    fun setProviderQuotaSummaryInclusion(provider: ProviderQuotaProvider, accountKey: String, included: Boolean) =
+        launchCore(report = false) { core.quotas.setIncluded(provider, accountKey, included) }
 
-    override fun onCleared() {
-        schedules.cancel()
-        administration.cancel()
-        stopTerminalWatch()
-        cancelTerminalIO()
-        connectionManager.onAppBackgrounded()
-    }
+    fun consumeProviderQuotaReset(accountKey: String) = launchCore(report = false) { core.quotas.consumeReset(accountKey) }
 
-    private fun readableTerminalError(error: Throwable): String {
-        val status = Status.fromThrowable(error)
-        if (status.code == Status.Code.UNIMPLEMENTED || status.description?.contains("404 (Not Found)") == true) {
-            return "This gateway needs the terminal-forwarding update. Update it, then refresh terminals."
-        }
-        return readableError(error)
-    }
-
-    private fun readableError(error: Throwable): String {
-        val status = Status.fromThrowable(error)
-        return status.description?.takeIf { it.isNotBlank() }
-            ?: error.message?.substringBefore('\n')
-            ?: "Dieter could not complete the request"
-    }
+    // --- Factory ----------------------------------------------------------------------------
 
     internal class Factory(
-        private val connectionManager: DieterConnectionManager,
+        private val core: CoreRuntime,
         private val appPreferences: AppPreferences,
-        private val conversationDrafts: ConversationDraftStore = ConversationDraftStore(),
+        private val policy: ConnectionPolicy,
+        private val host: AppHost,
         private val taskCaptures: TaskCaptureStore? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            DieterViewModel(connectionManager, appPreferences, conversationDrafts, taskCaptures) as T
+            DieterViewModel(core, appPreferences, policy, host, taskCaptures) as T
     }
 
     companion object {
-        fun textPart(text: String): MessagePart = MessagePart.newBuilder().setType("text").setText(text).build()
+        fun textPart(text: String): MessagePart = MessagePart(type = "text", text = text)
 
-        fun defaultScheduleDraft(projectId: String, boardId: String): ScheduleDraft = ScheduleDraft.newBuilder()
-            .setProjectId(projectId)
-            .setBoardId(boardId)
-            .setTimezone(ZoneId.systemDefault().id)
-            .setEnabled(true)
-            .setAction("draft")
-            .setTitleTemplate("Scheduled work · {{date}}")
-            .setOpenCardPolicy("skip_if_open")
-            .setMisfirePolicy("latest")
-            .setWorkspaceMode("worktree")
-            .build()
+        /** A new terminal's first grid on a phone; the view reports its real size once shown. */
+        private const val PHONE_COLUMNS = 80
+        private const val PHONE_ROWS = 28
+
     }
 }

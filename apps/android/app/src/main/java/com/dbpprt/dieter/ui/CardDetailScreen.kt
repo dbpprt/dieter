@@ -2,6 +2,13 @@
 
 package com.dbpprt.dieter.ui
 
+import com.dbpprt.dieter.api.v1.HarnessSelection
+import com.dbpprt.dieter.core.board.Runtimes
+import com.dbpprt.dieter.core.composition.WorkspaceMode
+import com.dbpprt.dieter.core.presentation.CardDetails
+import com.dbpprt.dieter.core.presentation.ContextUsage
+import com.dbpprt.dieter.core.presentation.SubagentPresentation
+import com.dbpprt.dieter.core.board.CardOperation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -69,15 +76,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.dbpprt.dieter.connection.isServerConversationId
+import com.dbpprt.dieter.core.outbox.OutboxPolicy
+import com.dbpprt.dieter.core.selection.AgentControls
 import com.dbpprt.dieter.ui.theme.DieterEyes
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
-import com.dbpprt.dieter.v1.Board
-import com.dbpprt.dieter.v1.Project
-import com.dbpprt.dieter.v1.Subagent
+import com.dbpprt.dieter.api.v1.Board
+import com.dbpprt.dieter.api.v1.Project
+import com.dbpprt.dieter.api.v1.Subagent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import java.time.Duration
@@ -109,21 +117,14 @@ internal fun CardDetailScreen(
         LoadingState(modifier)
         return
     }
-    val standalone = card.scope == "chat"
     val detailSections = detailSectionsFor()
     val detailPageCount = detailSections.size
-    val subagents = snapshot?.conversation?.subagentsList.orEmpty()
-    val activeSubagents = subagents.count { it.status == "running" || it.status == "pending" }
-    val serverBacked = isServerConversationId(card.id)
-    val cardWorkspaceMode = card.workspaceMode.ifBlank { card.workspace.mode }
-    val changedFileCount = if (ConversationWorkspaceMode.resolve(cardWorkspaceMode) == ConversationWorkspaceMode.PROJECT) {
-        0
-    } else {
-        state.workspaceReview.changeset?.filesCount ?: card.workspace.changedFiles
-    }
-    val showDetailTabs = !standalone || serverBacked || subagents.isNotEmpty()
+    val subagents = snapshot?.conversation?.subagents.orEmpty()
+    val activeSubagents = SubagentPresentation.active(subagents)
+    val changedFileCount = CardDetails.changedFiles(card, state.workspaceReview.changeset)
+    val showDetailTabs = CardDetails.showsTabs(card, subagents)
     val cardOperation = state.cardOperations[card.id]
-    val displayRuntime = resolvedCardRuntime(card.runtime, snapshot?.conversation?.status.orEmpty(), cardOperation)
+    val displayRuntime = Runtimes.resolved(card.runtime, snapshot?.conversation?.status.orEmpty(), cardOperation)
     val detailTab by rememberUpdatedState(state.detailTab)
     val detailPagerState = rememberPagerState(
         initialPage = state.detailTab.coerceIn(0, detailPageCount - 1),
@@ -173,7 +174,7 @@ internal fun CardDetailScreen(
                 )
             }
             StatusPill(displayRuntime)
-            if (isActiveCardRuntime(displayRuntime) && cardOperation != CardOperation.CANCELLING) {
+            if (Runtimes.isActive(displayRuntime) && cardOperation != CardOperation.CANCELLING) {
                 IconButton(onClick = model::cancelSelected) {
                     Icon(Icons.Outlined.Cancel, "Cancel active turn")
                 }
@@ -335,13 +336,11 @@ internal fun DetailTabLabel(label: String, count: Int = 0, selected: Boolean) {
 
 @Composable
 internal fun SubagentsBody(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier) {
-    val subagents = state.conversation?.conversation?.subagentsList.orEmpty()
-    val active = subagents.count { it.status == "running" || it.status == "pending" }
-    val conversationMessages = remember(state.olderMessages, state.conversation) {
-        mergedConversationMessages(state.olderMessages, state.conversation?.conversation?.messagesList.orEmpty())
-    }
-    val contextUsage = remember(conversationMessages) { latestContextUsage(conversationMessages) }
+    val subagents = state.conversation?.conversation?.subagents.orEmpty()
+    val active = SubagentPresentation.active(subagents)
+    val contextUsage = remember(state.conversationView) { ContextUsage.latest(state.conversationMessages) }
     var text by remember(state.selectedCardId) { mutableStateOf("") }
+    var selection by remember(state.selectedCardId) { mutableStateOf<HarnessSelection?>(null) }
     Column(modifier) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -386,20 +385,18 @@ internal fun SubagentsBody(state: DieterUiState, model: DieterViewModel, modifie
                 }
             }
         }
+        val controls = AgentControls.forConversation(selection, state.selectedCard, state.harnesses, enabled = !state.working)
         MessageComposer(
             value = text,
             placeholder = "Message the local agent…",
             enabled = !state.working,
-            harnesses = state.harnesses,
-            card = state.selectedCard,
+            controls = controls.takeIf { state.harnesses.isNotEmpty() && state.selectedCard != null },
             contextUsage = contextUsage,
             onValueChange = { text = it },
-            onSend = { provider, selectedModel, effort, providerOptions ->
-                val message = text.trim()
-                if (message.isNotBlank()) {
-                    text = ""
-                    model.sendMessage(message, emptyList(), provider, selectedModel, effort, providerOptions)
-                }
+            onSelectionChange = { selection = it },
+            onSend = {
+                model.sendMessage(text, controls.selection)
+                text = ""
             },
         )
     }
@@ -407,18 +404,16 @@ internal fun SubagentsBody(state: DieterUiState, model: DieterViewModel, modifie
 
 @Composable
 internal fun SubagentStatusCard(subagent: Subagent) {
-    val running = subagent.status == "running" || subagent.status == "pending"
-    val completed = subagent.status == "completed"
-    val title = subagentDisplayTitle(subagent)
-    val elapsed = subagentElapsed(subagent)
-    val narrative = remember(subagent) { subagentNarrativeSections(subagent) }
-    val primaryNarrative = narrative.firstOrNull()
-    val activity = subagentActivity(subagent)
-    val metrics = remember(subagent) { subagentOperationalMetrics(subagent) }
-    val contextProgress = subagentContextProgress(subagent)
-    val detailSections = remember(subagent, primaryNarrative) {
-        narrative.filterNot { it == primaryNarrative } + subagentTechnicalSections(subagent)
-    }
+    val presented = SubagentPresentation(subagent, kotlin.time.Clock.System.now())
+    val running = presented.active
+    val completed = presented.completed
+    val title = presented.title
+    val elapsed = presented.elapsedLabel
+    val primaryNarrative = presented.narrative.firstOrNull()
+    val nowLine = presented.nowLine
+    val metrics = presented.operationalMetrics
+    val contextProgress = presented.contextFraction?.toFloat()
+    val detailSections = presented.details
     val hasMoreDetails = detailSections.isNotEmpty()
     var expanded by remember(subagent.id) { mutableStateOf(false) }
     val tint = when {
@@ -465,11 +460,9 @@ internal fun SubagentStatusCard(subagent: Subagent) {
                     maxLines = if (expanded) Int.MAX_VALUE else 3,
                 )
             }
-            if (activity.isNotBlank() && !sameSubagentText(activity, title) &&
-                (primaryNarrative == null || !sameSubagentText(activity, primaryNarrative.value))
-            ) {
+            if (nowLine != null) {
                 Text(
-                    "Now · $activity",
+                    "Now · $nowLine",
                     color = DieterMuted,
                     fontSize = 11.sp,
                     maxLines = if (expanded) Int.MAX_VALUE else 2,
@@ -549,13 +542,13 @@ internal fun SubagentStatusCard(subagent: Subagent) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    subagentAgentLabel(subagent.name, subagent.agentType),
+                    presented.agentLabel,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 10.sp,
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    subagentIdentity(subagent),
+                    presented.identity,
                     color = DieterMuted,
                     fontSize = 10.sp,
                     modifier = Modifier.weight(1f),
@@ -582,7 +575,7 @@ private fun SubagentDetailText(
         Spacer(Modifier.height(2.dp))
         SelectionContainer {
             Text(
-                boundedSubagentDetail(value),
+                SubagentPresentation.DetailSection(label, value).bounded(),
                 color = color,
                 fontSize = if (monospace) 9.sp else 11.sp,
                 lineHeight = if (monospace) 13.sp else 15.sp,
@@ -592,104 +585,4 @@ private fun SubagentDetailText(
             )
         }
     }
-}
-
-internal data class SubagentDetailSection(
-    val label: String,
-    val value: String,
-    val monospace: Boolean = false,
-)
-
-internal fun subagentNarrativeSections(subagent: Subagent): List<SubagentDetailSection> {
-    val candidates = listOf(
-        SubagentDetailSection("Assignment", subagent.assignment.trim()),
-        SubagentDetailSection("Task", subagent.task.trim()),
-        SubagentDetailSection("Description", subagent.description.trim()),
-    )
-    val seen = mutableSetOf<String>()
-    return candidates.filter { section ->
-        section.value.isNotBlank() && seen.add(normalizedSubagentText(section.value))
-    }
-}
-
-internal fun subagentTechnicalSections(subagent: Subagent): List<SubagentDetailSection> = buildList {
-    val currentTool = listOfNotNull(
-        subagent.currentTool.trim().takeIf(String::isNotBlank),
-        subagent.currentToolArgs.trim().takeIf(String::isNotBlank),
-    ).joinToString("\n")
-    if (currentTool.isNotBlank()) add(SubagentDetailSection("Current tool", currentTool, monospace = true))
-    val recentOutput = subagent.recentOutputList.map(String::trim).filter(String::isNotBlank).joinToString("\n")
-    if (recentOutput.isNotBlank()) add(SubagentDetailSection("Recent output", recentOutput, monospace = true))
-}
-
-internal fun subagentOperationalMetrics(subagent: Subagent): List<String> = buildList {
-    if (subagent.toolCount > 0) add("${subagent.toolCount} ${plural(subagent.toolCount.toInt(), "tool call")}")
-    if (subagent.requests > 0) add("${subagent.requests} ${plural(subagent.requests.toInt(), "request")}")
-    addAll(subagentUsageMetrics(subagent.tokens, subagent.contextTokens, subagent.contextWindow))
-    if (subagent.cost > 0) {
-        val pattern = if (subagent.cost < 0.01) "$%.4f" else "$%.2f"
-        add(String.format(Locale.US, pattern, subagent.cost))
-    }
-    if (subagent.detached) add("detached")
-    if (subagent.transcriptAvailable) add("transcript captured")
-}
-
-internal fun subagentContextProgress(subagent: Subagent): Float? =
-    if (subagent.contextTokens > 0 && subagent.contextWindow > 0) {
-        (subagent.contextTokens.toFloat() / subagent.contextWindow.toFloat()).coerceIn(0f, 1f)
-    } else {
-        null
-    }
-
-internal fun subagentActivity(subagent: Subagent): String = subagent.activity.trim().ifBlank {
-    subagent.currentTool.trim().takeIf(String::isNotBlank)?.let { "Using $it" }.orEmpty()
-}
-
-internal fun subagentIdentity(subagent: Subagent): String = listOf(
-    listOf(subagent.provider, subagent.model).filter(String::isNotBlank).joinToString("/"),
-    subagent.agentSource,
-).filter(String::isNotBlank).joinToString(" · ").ifBlank { "local" }
-
-internal fun boundedSubagentDetail(value: String, maxChars: Int = 4_000): String {
-    val trimmed = value.trim()
-    return if (trimmed.length <= maxChars) trimmed else trimmed.take(maxChars).trimEnd() + "…"
-}
-
-internal fun sameSubagentText(left: String, right: String): Boolean =
-    normalizedSubagentText(left) == normalizedSubagentText(right)
-
-private fun normalizedSubagentText(value: String): String = value
-    .replace(subagentSuffixPattern, "")
-    .replace(Regex("\\s+"), " ")
-    .trim()
-    .lowercase()
-
-internal val subagentSuffixPattern = Regex("""\s*\((agent\s+\d+)\)\s*$""", RegexOption.IGNORE_CASE)
-
-internal fun cleanSubagentTitle(value: String): String =
-    value.replace(subagentSuffixPattern, "").trim().ifBlank { "Subagent" }
-
-internal fun subagentDisplayTitle(subagent: Subagent): String {
-    val name = cleanSubagentTitle(subagent.name)
-    val genericNames = setOf("agent", "subagent", "task", "worker")
-    val informativeName = name.takeUnless { it.lowercase() in genericNames }
-    val informativeTask = listOf(subagent.task, subagent.assignment, subagent.description)
-        .map(::cleanSubagentTitle)
-        .firstOrNull { it.lowercase() !in genericNames && it != "Subagent" }
-    return informativeName ?: informativeTask ?: cleanSubagentTitle(subagent.agentType)
-}
-
-internal fun subagentAgentLabel(name: String, fallback: String): String =
-    subagentSuffixPattern.find(name)?.groupValues?.getOrNull(1)?.lowercase()
-        ?: fallback.ifBlank { "agent" }
-
-internal fun subagentElapsed(subagent: Subagent): String {
-    val durationMs = subagent.durationMs.takeIf { it > 0 } ?: runCatching {
-        val start = Instant.parse(subagent.startedAt)
-        val end = subagent.endedAt.takeIf(String::isNotBlank)?.let(Instant::parse) ?: Instant.now()
-        Duration.between(start, end).toMillis()
-    }.getOrDefault(0L)
-    val seconds = (durationMs / 1_000).coerceAtLeast(0)
-    if (seconds <= 0L) return ""
-    return if (seconds < 60) "${seconds}s" else "${seconds / 60}m ${seconds % 60}s"
 }

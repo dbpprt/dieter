@@ -16,25 +16,26 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.dbpprt.dieter.connection.BackgroundSyncMode
+import com.dbpprt.dieter.core.admin.BackgroundMode
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterShellTint
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 
 @Composable
 internal fun BackgroundSyncModeSelector(
-    selected: BackgroundSyncMode,
-    onSelect: (BackgroundSyncMode) -> Unit,
+    selected: BackgroundMode,
+    onSelect: (BackgroundMode) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Background sync", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-        BackgroundSyncMode.entries.forEach { mode ->
-            val (title, detail) = backgroundSyncModePresentation(mode)
+        BackgroundMode.entries.forEach { mode ->
+            val title = mode.title
+            val detail = mode.detail
             Surface(
                 onClick = { onSelect(mode) },
                 color = if (selected == mode) DieterShellTint else DieterSurfaceHigh,
                 shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth().testTag("background-sync-${mode.wireValue}"),
+                modifier = Modifier.fillMaxWidth().testTag("background-sync-${mode.wire}"),
             ) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp),
@@ -49,10 +50,4 @@ internal fun BackgroundSyncModeSelector(
             }
         }
     }
-}
-
-internal fun backgroundSyncModePresentation(mode: BackgroundSyncMode): Pair<String, String> = when (mode) {
-    BackgroundSyncMode.LIVE -> "Live" to "Always connected · highest battery use"
-    BackgroundSyncMode.PERIODIC -> "Smart" to "Live for active work; otherwise checks about every minute"
-    BackgroundSyncMode.APP_ONLY -> "App only" to "Sleeps completely until Dieter is opened"
 }

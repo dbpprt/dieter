@@ -26,12 +26,20 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.data.DieterEndpoint
-import com.dbpprt.dieter.v1.CreateConversationRequest
+import com.dbpprt.dieter.api.v1.ConversationRef
+import com.dbpprt.dieter.api.v1.CreateConversationRequest
+import com.dbpprt.dieter.api.v1.CreateFileRequest
+import com.dbpprt.dieter.api.v1.DieterServiceClient
+import com.dbpprt.dieter.api.v1.GetCardRequest
+import com.dbpprt.dieter.api.v1.GetChangesetRequest
+import com.dbpprt.dieter.core.workspace.GitOperationKinds
+import com.dbpprt.dieter.e2e.IsolatedCore
+import com.squareup.wire.GrpcException
+import com.squareup.wire.GrpcStatus
 import java.io.File
 import java.util.UUID
-import io.grpc.Status
+import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -64,75 +72,37 @@ class WorkspaceChangesEndToEndTest {
         val arguments = InstrumentationRegistry.getArguments()
         val token = arguments.getString("isolatedGatewayToken").orEmpty()
         assumeTrue("Pass isolatedGatewayToken for the isolated gateway", token.isNotBlank())
-        val endpoint = DieterEndpoint(
-            id = "android_workspace_changes_e2e_${UUID.randomUUID()}",
-            label = "Isolated workspace gateway",
-            host = arguments.getString("isolatedGatewayHost")?.takeIf(String::isNotBlank) ?: "10.0.2.2",
-            port = arguments.getString("isolatedGatewayPort")?.toIntOrNull() ?: 14243,
-        )
         val application = composeRule.activity.application as DieterApplication
         val container = application.container
-        val manager = container.connectionManager
-        container.repository.setAccessToken(endpoint, token)
-        manager.updateEndpoints(listOf(endpoint), selectedGatewayId = endpoint.id)
-        manager.connect()
-        manager.onAppForegrounded()
-
-        val connected = runBlocking {
-            withTimeout(30_000) {
-                manager.state.first { state ->
-                    state.phase == ConnectionPhase.CONNECTED && state.projects.isNotEmpty() && state.boards.isNotEmpty()
-                }
-            }
+        val core = container.core
+        val connected = IsolatedCore.connect(container)
+        val board = connected.boards.values.flatten().first { candidate ->
+            candidate.lanes.any { lane -> lane.id.equals("todo", true) || lane.name.equals("todo", true) }
         }
-        assertNotNull("Connection failed: ${manager.state.value.error}", connected)
-
-        val board = connected.boards.first { candidate ->
-            candidate.lanesList.any { lane -> lane.id.equals("todo", true) || lane.name.equals("todo", true) }
-        }
-        val todoLane = board.lanesList.first { lane ->
+        val todoLane = board.lanes.first { lane ->
             lane.id.equals("todo", true) || lane.name.equals("todo", true)
         }.id
-        val project = connected.projects.first { it.id == board.projectId }
-        val repository = container.repository
-        val fixture = runBlocking {
-            repository.createConversation(
-                CreateConversationRequest.newBuilder()
-                    .setProjectId(project.id)
-                    .setBoardId(board.id)
-                    .setLane(todoLane)
-                    .setTitle("Android workspace E2E ${UUID.randomUUID().toString().take(8)}")
-                    .setPrompt("Review-only workspace fixture. Do not start.")
-                    .setProvider("mock")
-                    .setModel("mock")
-                    .setDeferStart(true)
-                    .setWorkspaceMode("worktree")
-                    .setClientId("android-workspace-changes-test")
-                    .setCommandId(UUID.randomUUID().toString())
-                    .build(),
-                chat = false,
-            )
-        }
+        val project = connected.projects.first { it.id == board.project_id }
+        val checkout = project.checkouts.single { !it.detached }
+        fun <T> daemon(block: suspend (DieterServiceClient) -> T): T = runBlocking { retryTransient { core.onMachine(checkout.daemon_id, block) } }
+        fun projectChangeset() = daemon { it.GetChangeset().execute(GetChangesetRequest(project_id = project.id, checkout_id = checkout.id)) }
+        val fixture = IsolatedCore.createConversation(
+            container,
+            CreateConversationRequest(project_id = project.id, board_id = board.id, lane = todoLane, title = "Android workspace E2E ${UUID.randomUUID().toString().take(8)}", prompt = "Review-only workspace fixture. Do not start.", provider = "mock", model = "mock", defer_start = true, workspace_mode = "worktree"),
+            chat = false,
+        )
 
         try {
             // Card-scoped file writes lazily provision the worktree and give the
             // changeset real tracked content without starting an agent turn.
             val worktreeNote = "android-e2e-${UUID.randomUUID().toString().take(8)}.md"
-            runBlocking {
-                repository.createFile(
-                    projectId = project.id,
-                    path = worktreeNote,
-                    kind = "file",
-                    content = "# Android workspace E2E\n\nWritten through the card-scoped file API.\n",
-                    cardId = fixture.id,
-                )
+            daemon {
+                it.CreateFile().execute(CreateFileRequest(
+                    project_id = project.id, path = worktreeNote, kind = "file",
+                    content = "# Android workspace E2E\n\nWritten through the card-scoped file API.\n", card_id = fixture.id,
+                ))
             }
-
-            runBlocking { manager.refreshMachineDirectory(includeArchivedChats = true) }
-            manager.onAppForegrounded(project.id)
-            runBlocking {
-                withTimeout(10_000) { manager.state.first { state -> state.cards.any { it.id == fixture.id } } }
-            }
+            IsolatedCore.awaitCard(container, 10.seconds) { it.id == fixture.id }
             composeRule.onNodeWithTag("nav-board").performClick()
             composeRule.waitUntil(20_000) {
                 composeRule.onAllNodesWithTag("space-project-${project.id}").fetchSemanticsNodes().isNotEmpty()
@@ -198,10 +168,10 @@ class WorkspaceChangesEndToEndTest {
             composeRule.onAllNodesWithText("No local changes.")[0].assertIsDisplayed()
             capture(screenshotDirectory, "workspace-committed-e2e.png")
 
-            val changeset = runBlocking { repository.changeset(fixture.id) }
-            assertTrue("Committed history must not appear in Working Changes", changeset.commitsCount == 0)
-            assertTrue("Committed files must leave Working Changes", changeset.filesCount == 0)
-            val workspace = runBlocking { repository.workspace(fixture.id) }
+            val changeset = daemon { it.GetChangeset().execute(GetChangesetRequest(card_id = fixture.id)) }
+            assertTrue("Committed history must not appear in Working Changes", changeset.commits.size == 0)
+            assertTrue("Committed files must leave Working Changes", changeset.files.size == 0)
+            val workspace = daemon { it.GetWorkspace().execute(ConversationRef(card_id = fixture.id)) }
             assertTrue("Working tree should be clean after commit", !workspace.dirty)
 
             // Merge into the base branch through the orchestrated flow:
@@ -216,19 +186,14 @@ class WorkspaceChangesEndToEndTest {
                 composeRule.onAllNodesWithText("Workspace removed").fetchSemanticsNodes().isNotEmpty()
             }
             capture(screenshotDirectory, "workspace-merged-e2e.png")
-            val merged = runBlocking { repository.card(fixture.id).card }
+            val merged = requireNotNull(daemon { it.GetCard().execute(GetCardRequest(card_id = fixture.id)) }.card)
             assertTrue("Card should move to Done after merge, was ${merged.lane}", merged.lane == "done")
 
             // Project-directory changes live under Files > Changes and are
             // project-scoped rather than attributed to the card above.
             val projectNote = "android-project-${UUID.randomUUID().toString().take(8)}.md"
-            runBlocking {
-                repository.createFile(
-                    projectId = project.id,
-                    path = projectNote,
-                    kind = "file",
-                    content = "# Android project Changes\n",
-                )
+            daemon {
+                it.CreateFile().execute(CreateFileRequest(project_id = project.id, checkout_id = checkout.id, path = projectNote, kind = "file", content = "# Android project Changes\n"))
             }
             composeRule.onAllNodesWithContentDescription("Back")[0].performClick()
             composeRule.onNodeWithTag("nav-tools").performClick()
@@ -238,14 +203,9 @@ class WorkspaceChangesEndToEndTest {
             composeRule.waitUntil(30_000) { composeRule.onAllNodesWithText(projectNote).fetchSemanticsNodes().isNotEmpty() }
             capture(screenshotDirectory, "project-changes-list-e2e.png")
 
-            val projectChanges = runBlocking {
-                retryTransient {
-                    manager.ensureReplicaRoute(project.id)
-                    repository.projectChangeset(project.id)
-                }
-            }
-            assertTrue("Project changes must carry project scope", projectChanges.projectId == project.id && projectChanges.cardId.isEmpty())
-            assertTrue("Project note must be unstaged", projectChanges.filesList.any { it.path == projectNote && it.unstaged })
+            val projectChanges = projectChangeset()
+            assertTrue("Project changes must carry project scope", projectChanges.project_id == project.id && projectChanges.card_id.isEmpty())
+            assertTrue("Project note must be unstaged", projectChanges.files.any { it.path == projectNote && it.unstaged })
             composeRule.onNodeWithTag("project-changes-stage-all").performClick()
             composeRule.waitUntil(30_000) {
                 composeRule.onAllNodesWithText("No unstaged changes").fetchSemanticsNodes().isNotEmpty() &&
@@ -262,13 +222,8 @@ class WorkspaceChangesEndToEndTest {
             composeRule.onNodeWithTag("project-operation-start").performClick()
             composeRule.waitUntil(120_000) { composeRule.onAllNodesWithTag("project-changes-clean").fetchSemanticsNodes().isNotEmpty() }
             capture(screenshotDirectory, "project-changes-committed-e2e.png")
-            val cleanProject = runBlocking {
-                retryTransient {
-                    manager.ensureReplicaRoute(project.id)
-                    repository.projectChangeset(project.id)
-                }
-            }
-            assertTrue("Project checkout must be clean after the staged commit", cleanProject.filesCount == 0 && !cleanProject.dirty)
+            val cleanProject = projectChangeset()
+            assertTrue("Project checkout must be clean after the staged commit", cleanProject.files.size == 0 && !cleanProject.dirty)
 
             // Shipping stays explicit. Update and validation execute through the
             // same durable operation path; push is present but is not clicked
@@ -288,12 +243,7 @@ class WorkspaceChangesEndToEndTest {
                 operation?.kind == GitOperationKinds.VALIDATE && operation.status == "succeeded"
             }
             val discarded = "android-discard-${UUID.randomUUID().toString().take(8)}.txt"
-            runBlocking {
-                retryTransient {
-                    manager.ensureReplicaRoute(project.id)
-                    repository.createFile(project.id, discarded, "file", "discard me\n")
-                }
-            }
+            daemon { it.CreateFile().execute(CreateFileRequest(project_id = project.id, checkout_id = checkout.id, path = discarded, kind = "file", content = "discard me\n")) }
             composeRule.onNodeWithContentDescription("Refresh project changes").performClick()
             composeRule.waitUntil(30_000) { composeRule.onAllNodesWithText(discarded).fetchSemanticsNodes().isNotEmpty() }
             composeRule.onNodeWithContentDescription("Actions for $discarded").performClick()
@@ -303,12 +253,7 @@ class WorkspaceChangesEndToEndTest {
             composeRule.waitUntil(120_000) { composeRule.onAllNodesWithTag("project-changes-clean").fetchSemanticsNodes().isNotEmpty() }
             assertTrue(
                 "Discard must remove the untracked project file",
-                runBlocking {
-                    retryTransient {
-                        manager.ensureReplicaRoute(project.id)
-                        repository.projectChangeset(project.id)
-                    }
-                }.filesCount == 0,
+                projectChangeset().files.isEmpty(),
             )
             composeRule.onNodeWithTag("project-changes-actions").performClick()
             composeRule.onNodeWithTag("project-changes-push").assertIsDisplayed()
@@ -316,7 +261,7 @@ class WorkspaceChangesEndToEndTest {
             runCatching { capture(requireNotNull(instrumentation.targetContext.getExternalFilesDir(null)), "workspace-before-cleanup-failure.png") }
             throw error
         } finally {
-            runBlocking { runCatching { retryTransient { repository.archiveCard(fixture.id, true) } } }
+            runBlocking { runCatching { retryTransient { core.onBoard { archive(fixture.id) } } } }
         }
     }
 
@@ -335,7 +280,7 @@ class WorkspaceChangesEndToEndTest {
             try {
                 return@withTimeout block()
             } catch (error: Throwable) {
-                if (Status.fromThrowable(error).code !in setOf(Status.Code.UNAVAILABLE, Status.Code.UNAUTHENTICATED)) throw error
+                if (error is CancellationException || (error as? GrpcException)?.grpcStatus !in setOf(GrpcStatus.UNAVAILABLE, GrpcStatus.UNAUTHENTICATED)) throw error
                 delay(250)
             }
         }

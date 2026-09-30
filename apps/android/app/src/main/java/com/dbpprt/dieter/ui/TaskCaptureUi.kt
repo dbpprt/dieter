@@ -14,55 +14,67 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.dbpprt.dieter.core.composition.Attachments
+import com.dbpprt.dieter.core.composition.TaskDraftEditor
+import com.dbpprt.dieter.core.composition.TaskDrafts
+import com.dbpprt.dieter.core.composition.frozen
+import com.dbpprt.dieter.core.composition.hasContent
+import com.dbpprt.dieter.core.composition.task
+import com.dbpprt.dieter.core.state.CaptureDraft
+import com.dbpprt.dieter.core.state.CaptureFailure
 import kotlinx.coroutines.launch
 
 @Composable
-internal fun TaskAttachmentControls(draft: CardCreationDraft, store: TaskCaptureStore?, onDiscard: () -> Unit = {}) {
-    var replacing by remember { mutableStateOf<TaskImportFailure?>(null) }
+internal fun TaskAttachmentControls(editor: TaskDraftEditor, store: TaskCaptureStore?, onDiscard: () -> Unit = {}) {
+    val draft by editor.state.collectAsState()
+    val saveError by editor.error.collectAsState()
+    var replacing by remember { mutableStateOf<CaptureFailure?>(null) }
     var picker by remember { mutableStateOf(false) }
     var discard by remember { mutableStateOf(false) }
-    var preview by remember { mutableStateOf<com.dbpprt.dieter.v1.MessagePart?>(null) }
+    var preview by remember { mutableStateOf<com.dbpprt.dieter.api.v1.MessagePart?>(null) }
     val scope = rememberCoroutineScope()
-    val photos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(MAX_COMPOSER_ATTACHMENTS)) {
-        if (it.isNotEmpty()) { replacing?.let(draft.importFailures::remove); store?.import(draft, it, imagesOnly = true) }
+    val editable = !draft.importing && !draft.frozen
+    fun chosen(uris: List<android.net.Uri>, imagesOnly: Boolean) {
+        if (uris.isNotEmpty()) {
+            replacing?.let { failure -> editor.edit { TaskDrafts.removeFailure(it, failure) } }
+            store?.import(editor, uris, imagesOnly)
+        }
         replacing = null
     }
-    val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) {
-        if (it.isNotEmpty()) { replacing?.let(draft.importFailures::remove); store?.import(draft, it) }
-        replacing = null
-    }
+    val photos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(Attachments.MAX_COUNT)) { chosen(it, imagesOnly = true) }
+    val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { chosen(it, imagesOnly = false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        TextButton(onClick = { replacing = null; picker = true }, enabled = !draft.importing && draft.submissionId.isBlank(), modifier = Modifier.testTag("create-attach")) {
+        TextButton(onClick = { replacing = null; picker = true }, enabled = editable, modifier = Modifier.testTag("create-attach")) {
             Text("Add images or files")
         }
         if (draft.importing) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
             Text("Importing attachments…")
-            TextButton(onClick = { store?.cancelImport(draft) }) { Text("Cancel import") }
+            TextButton(onClick = { store?.cancelImport(editor) }) { Text("Cancel import") }
         }
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            draft.attachments.forEachIndexed { index, part ->
+            draft.task.attachments.forEachIndexed { index, part ->
                 Column {
-                    ComposerAttachmentPreview(part, index, !draft.importing && draft.submissionId.isBlank()) { draft.attachments.removeAt(index) }
+                    ComposerAttachmentPreview(part, index, editable) { editor.edit { TaskDrafts.removeAttachment(it, index) } }
                     TextButton(onClick = { preview = part }) { Text("Preview ${part.filename}") }
                 }
             }
         }
-        draft.importFailures.toList().forEach { failure ->
+        draft.failures.forEach { failure ->
             Text(failure.message, color = MaterialTheme.colorScheme.error)
             FlowRow {
-                TextButton(onClick = { store?.retry(draft, failure) }, enabled = !draft.importing && failure.uri.isNotBlank()) { Text("Retry import") }
+                TextButton(onClick = { store?.retry(editor, failure) }, enabled = !draft.importing && failure.source.isNotBlank()) { Text("Retry import") }
                 TextButton(onClick = { replacing = failure; picker = true }, enabled = !draft.importing) { Text("Choose again") }
-                TextButton(onClick = { draft.importFailures.remove(failure) }, enabled = !draft.importing) { Text("Remove failed attachment") }
+                TextButton(onClick = { editor.edit { TaskDrafts.removeFailure(it, failure) } }, enabled = !draft.importing) { Text("Remove failed attachment") }
             }
         }
-        draft.persistenceError?.let {
+        saveError?.let {
             Text(it, color = MaterialTheme.colorScheme.error)
-            TextButton(onClick = { scope.launch { runCatching { store?.flush(draft) } } }) { Text("Retry saving draft") }
+            TextButton(onClick = { scope.launch { runCatching { store?.flush(editor) } } }) { Text("Retry saving draft") }
         }
-        Text("Up to 4 attachments · 5 MiB each · 6 MiB total", style = MaterialTheme.typography.bodySmall)
-        if (draft.submissionId.isNotBlank()) Text("Submission pending. Retry Save with the same task; attachments are retained.")
-        if (draft.hasContent && draft.submissionId.isBlank()) TextButton(onClick = { discard = true }) { Text("Discard draft") }
+        Text(Attachments.LIMITS, style = MaterialTheme.typography.bodySmall)
+        if (draft.frozen) Text("Submission pending. Retry Save with the same task; attachments are retained.")
+        if (draft.hasContent && !draft.frozen) TextButton(onClick = { discard = true }) { Text("Discard draft") }
     }
     if (picker) AttachmentPickerSheet(
         onDismiss = { picker = false; replacing = null },
@@ -81,49 +93,45 @@ internal fun TaskAttachmentControls(draft: CardCreationDraft, store: TaskCapture
     preview?.let { part ->
         val bitmap = rememberAttachmentBitmap(part, maxDimension = 1200)
         AlertDialog(onDismissRequest = { preview = null }, title = { Text(part.filename) },
-            text = { Column { if (bitmap != null) Image(bitmap, part.filename, Modifier.fillMaxWidth().heightIn(max = 450.dp)); Text(attachmentDetails(part)) } },
+            text = { Column { if (bitmap != null) Image(bitmap, part.filename, Modifier.fillMaxWidth().heightIn(max = 450.dp)); Text(Attachments.details(part)) } },
             confirmButton = { TextButton(onClick = { preview = null }) { Text("Close preview") } })
     }
 }
 
 @Composable
 internal fun TaskCaptureHost(state: DieterUiState, model: DieterViewModel, store: TaskCaptureStore) {
-    val scope = rememberCoroutineScope()
-    var pendingShare by remember { mutableStateOf<CardCreationDraft?>(null) }
-    var discardSaved by remember { mutableStateOf<CardCreationDraft?>(null) }
+    val captures by store.view.collectAsState()
+    var pendingShare by remember { mutableStateOf<TaskDraftEditor?>(null) }
+    var discardSaved by remember { mutableStateOf<CaptureDraft?>(null) }
     var restoredAccount by remember { mutableStateOf<String?>(null) }
     store.error?.let { message ->
         AlertDialog(onDismissRequest = store::clearError, title = { Text("Could not capture task") },
             text = { Text(message) }, confirmButton = { TextButton(onClick = store::clearError) { Text("Close") } })
     }
     val incoming = store.incoming
-    LaunchedEffect(state.activeGatewayId, state.projects.isNotEmpty()) {
-        if (restoredAccount != state.activeGatewayId && state.projects.isNotEmpty()) {
+    LaunchedEffect(state.activeGatewayId, state.projects.isNotEmpty(), captures.bound) {
+        if (restoredAccount != state.activeGatewayId && state.projects.isNotEmpty() && captures.bound) {
             restoredAccount = state.activeGatewayId
-            if (incoming == null && model.activeCapture == null) {
-                store.drafts.lastOrNull { it.accountId == state.activeGatewayId && it.hasContent }?.let(model::beginCapture)
-            }
+            if (incoming == null && model.activeCapture == null) store.latest()?.let(model::beginCapture)
         }
     }
     LaunchedEffect(incoming?.id) {
         incoming ?: return@LaunchedEffect
-        val current = model.activeCapture
-        if (current != null && current !== incoming && current.hasContent) pendingShare = incoming
+        if (TaskDrafts.asksToMerge(model.activeCapture?.state?.value, incoming.state.value)) pendingShare = incoming
         else model.beginCapture(incoming)
         store.consumeIncoming()
     }
     pendingShare?.let { share ->
+        val shareDraft by share.state.collectAsState()
+        val openDraft = model.activeCapture?.state?.collectAsState()?.value
         AlertDialog(onDismissRequest = { pendingShare = null }, title = { Text("Shared content received") },
             text = { Text("Keep your existing draft or add this content to it.") },
-            confirmButton = { TextButton(enabled = !share.importing && model.activeCapture?.submissionId.isNullOrBlank(), onClick = {
+            confirmButton = { TextButton(enabled = !shareDraft.importing && openDraft?.frozen == false, onClick = {
                 val current = model.activeCapture ?: return@TextButton
-                val limit = attachmentLimitError(current.attachments, share.attachments)
-                if (limit != null) current.importFailures += TaskImportFailure("", limit)
-                else {
-                    current.prompt = listOf(current.prompt, share.prompt).filter(String::isNotBlank).joinToString("\n")
-                    current.attachments.addAll(share.attachments); current.importFailures.addAll(share.importFailures)
-                    scope.launch { runCatching { store.flush(current) }.onSuccess { store.discard(share) }.onFailure { current.persistenceError = it.message } }
-                }
+                val problem = TaskDrafts.mergeProblem(current.state.value, shareDraft)
+                current.edit { TaskDrafts.merge(it, shareDraft) }
+                // The share is dropped only once its content is part of the open draft.
+                if (problem == null) store.discard(share.id)
                 pendingShare = null
             }) { Text("Add to current draft") } },
             dismissButton = { TextButton(onClick = { model.beginCapture(share); pendingShare = null }) { Text("Keep draft and start new") } })
@@ -131,19 +139,26 @@ internal fun TaskCaptureHost(state: DieterUiState, model: DieterViewModel, store
     discardSaved?.let { saved ->
         AlertDialog(onDismissRequest = { discardSaved = null }, title = { Text("Discard saved draft?") },
             text = { Text("Its text and attachments will be removed from this device.") },
-            confirmButton = { TextButton(onClick = { store.discard(saved); discardSaved = null }) { Text("Discard") } },
+            confirmButton = { TextButton(onClick = { store.discard(saved.id); discardSaved = null }) { Text("Discard") } },
             dismissButton = { TextButton(onClick = { discardSaved = null }) { Text("Keep draft") } })
     }
     if (!model.captureChooserVisible) return
-    val draft = model.activeCapture ?: return
+    val editor = model.activeCapture ?: return
+    val draft by editor.state.collectAsState()
+    val scope = rememberCoroutineScope()
     CaptureDestinationSheet(
         state = state,
         draft = draft,
-        savedDrafts = store.drafts.filter { it !== draft && it.accountId == state.activeGatewayId && it.hasContent },
+        savedDrafts = captures.drafts.filter { it.id != draft.id && it.hasContent },
         onDismiss = { model.captureChooserVisible = false },
         onProject = model::captureProject,
         onBoard = model::openCaptureBoard,
-        onResumeDraft = { saved -> model.beginCapture(saved); if (saved.projectId.isNotBlank()) model.selectProject(saved.projectId) },
+        onResumeDraft = { saved ->
+            scope.launch {
+                model.beginCapture(store.editor(saved.id))
+                if (saved.project_id.isNotBlank()) model.selectProject(saved.project_id)
+            }
+        },
         onDiscardDraft = { discardSaved = it },
     )
 }

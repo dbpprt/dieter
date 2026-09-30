@@ -2,6 +2,8 @@
 
 package com.dbpprt.dieter.ui
 
+import com.dbpprt.dieter.core.presentation.Ages
+import com.dbpprt.dieter.core.selection.Selections
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -67,28 +69,21 @@ import com.dbpprt.dieter.settings.DEFAULT_PANE_LEADING_FRACTION
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
-import com.dbpprt.dieter.v1.Harness
-import java.time.Duration
+import com.dbpprt.dieter.api.v1.Harness
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import com.dbpprt.dieter.ui.theme.DieterShellTint
+import kotlin.time.Instant as KotlinInstant
+import kotlin.time.toJavaInstant
+import kotlin.time.toKotlinInstant
 
-internal const val PROJECT_CHAT_PREVIEW_COUNT = 5
 
-internal fun conversationRefreshLabel(lastRefreshedAtMillis: Long?, syncing: Boolean, nowMillis: Long): String {
-    if (lastRefreshedAtMillis == null) return if (syncing) "Refreshing…" else "Not refreshed yet"
-    val ageMillis = (nowMillis - lastRefreshedAtMillis).coerceAtLeast(0L)
-    val freshness = when {
-        ageMillis < 60_000L -> "just now"
-        ageMillis < 3_600_000L -> "${ageMillis / 60_000L}m ago"
-        ageMillis < 86_400_000L -> "${ageMillis / 3_600_000L}h ago"
-        else -> DateTimeFormatter.ofPattern("MMM d · HH:mm", Locale.getDefault())
-            .format(Instant.ofEpochMilli(lastRefreshedAtMillis).atZone(ZoneId.systemDefault()))
+internal fun conversationRefreshLabel(lastRefreshedAtMillis: Long?, syncing: Boolean, nowMillis: Long): String =
+    Ages.refreshed(lastRefreshedAtMillis?.let(KotlinInstant::fromEpochMilliseconds), syncing, KotlinInstant.fromEpochMilliseconds(nowMillis)) { at ->
+        DateTimeFormatter.ofPattern("MMM d · HH:mm", Locale.getDefault()).format(at.toJavaInstant().atZone(ZoneId.systemDefault()))
     }
-    return "Last refreshed $freshness" + if (syncing) " · Refreshing…" else ""
-}
 
 /** Dashed rounded outline used by the reference design for "add" affordances and empty states. */
 internal fun Modifier.dashedBorder(
@@ -290,37 +285,20 @@ internal fun ResizableHorizontalSplitPane(
     }
 }
 
+/** A list timestamp: "5m", "3h", else the day; future times read "in 5m", else date and time. */
 internal fun shortTimestamp(
     value: String,
     now: Instant = Instant.now(),
     zoneId: ZoneId = ZoneId.systemDefault(),
-): String {
-    if (value.isBlank()) return ""
-    return runCatching {
-        val timestamp = Instant.parse(value)
-        if (timestamp.isAfter(now)) {
-            val until = Duration.between(now, timestamp)
-            return@runCatching when {
-                until.toMinutes() < 1 -> "in <1m"
-                until.toMinutes() < 60 -> "in ${until.toMinutes()}m"
-                until.toHours() < 24 -> "in ${until.toHours()}h"
-                else -> DateTimeFormatter.ofPattern("MMM d · HH:mm")
-                    .format(timestamp.atZone(zoneId))
-            }
-        }
-        val age = Duration.between(timestamp, now)
-        when {
-            age.toMinutes() < 1 -> "now"
-            age.toMinutes() < 60 -> "${age.toMinutes()}m"
-            age.toHours() < 24 -> "${age.toHours()}h"
-            else -> DateTimeFormatter.ofPattern("MMM d")
-                .format(timestamp.atZone(zoneId))
-        }
-    }.getOrElse { value.substringBefore('T').takeLast(5) }
-}
+): String = Ages.short(
+    value,
+    now.toKotlinInstant(),
+    day = { DateTimeFormatter.ofPattern("MMM d").format(it.toJavaInstant().atZone(zoneId)) },
+    dateTime = { DateTimeFormatter.ofPattern("MMM d · HH:mm").format(it.toJavaInstant().atZone(zoneId)) },
+)
 
 @Composable
-internal fun FileCreateDialog(currentPath: String, onDismiss: () -> Unit, onCreate: (String, Boolean) -> Unit) {
+internal fun FileCreateDialog(currentPath: String, onDismiss: () -> Unit, onCreate: (name: String, directory: Boolean) -> Unit) {
     var name by remember { mutableStateOf("") }
     var directory by remember { mutableStateOf(false) }
     AlertDialog(
@@ -337,7 +315,7 @@ internal fun FileCreateDialog(currentPath: String, onDismiss: () -> Unit, onCrea
         },
         confirmButton = {
             Button(
-                onClick = { onCreate(listOf(currentPath.trim('/'), name.trim('/')).filter { it.isNotBlank() }.joinToString("/"), directory) },
+                onClick = { onCreate(name, directory) },
                 enabled = name.isNotBlank(),
             ) { Text("Create") }
         },
@@ -382,28 +360,23 @@ internal fun ConfirmDialog(
 
 @Composable
 internal fun CardLabelsDialog(state: DieterUiState, onDismiss: () -> Unit, onSave: (List<String>) -> Unit) {
-    val selected = remember(state.selectedCardId) { mutableStateListOf<String>().also { it += state.selectedCard?.labelIdsList.orEmpty() } }
+    val selected = remember(state.selectedCardId) { mutableStateListOf<String>().also { it += state.selectedCard?.label_ids.orEmpty() } }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Card labels") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                state.board?.labelsList.orEmpty().forEach { label ->
+                state.board?.labels.orEmpty().forEach { label ->
                     FilterChip(
                         selected = label.id in selected,
                         onClick = { if (label.id in selected) selected.remove(label.id) else selected += label.id },
                         label = { Text(label.name) },
                     )
                 }
-                if (state.board?.labelsCount == 0) Text("This board has no labels yet.", color = DieterMuted)
+                if (state.board?.labels.isNullOrEmpty() != false) Text("This board has no labels yet.", color = DieterMuted)
             }
         },
         confirmButton = { Button(onClick = { onSave(selected.toList()) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
-
-internal fun Harness.effortOptionsFor(modelId: String) =
-    modelsList.firstOrNull { it.id == modelId }?.effortsList.orEmpty().let { allowed ->
-        effort.optionsList.filter { allowed.isEmpty() || it.id in allowed }
-    }

@@ -18,19 +18,16 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.lifecycle.ViewModelStore
 import androidx.test.platform.app.InstrumentationRegistry
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.connection.DieterConnectionManager
-import com.dbpprt.dieter.connection.ProjectReplica
-import com.dbpprt.dieter.data.DIETER_ENDPOINTS
-import com.dbpprt.dieter.data.DieterEndpoint
-import com.dbpprt.dieter.data.DieterRepository
+import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.navigation.Destination
+import com.dbpprt.dieter.e2e.TestCore
+import com.dbpprt.dieter.ui.ProjectReplica
 import com.dbpprt.dieter.settings.AppPreferences
-import com.dbpprt.dieter.settings.NavigationFolder
-import com.dbpprt.dieter.settings.NavigationFolderPreferences
+import com.dbpprt.dieter.core.navigation.NavigationFolder
 import com.dbpprt.dieter.ui.theme.DieterTheme
-import com.dbpprt.dieter.v1.Board
-import com.dbpprt.dieter.v1.Card
-import com.dbpprt.dieter.v1.Project
+import com.dbpprt.dieter.api.v1.Board
+import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.Project
 import java.io.File
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.CoroutineScope
@@ -49,40 +46,24 @@ class ProjectOverviewVisualTest {
     @get:Rule val compose = createComposeRule()
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private val lifecycle = ViewModelStore()
-    private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private lateinit var core: TestCore
     private lateinit var model: DieterViewModel
 
     @Before fun setup() {
         assumeTrue("Use the isolated screen fixture app", (context.packageName.endsWith(".e2e")))
         context.getSharedPreferences("dieter_shared_kv", Context.MODE_PRIVATE).edit().clear()
             .putString("activeAccount", "project-overview-fixture").commit()
-        var endpoints = DIETER_ENDPOINTS
-        val repository = Proxy.newProxyInstance(
-            DieterRepository::class.java.classLoader,
-            arrayOf(DieterRepository::class.java),
-        ) { _, method, args ->
-            when (method.name) {
-                "getEndpoints" -> endpoints
-                "getActiveEndpoint" -> endpoints.first()
-                "replaceEndpoints" -> {
-                    @Suppress("UNCHECKED_CAST")
-                    val replacement = args!![0] as List<DieterEndpoint>
-                    endpoints = replacement
-                    Unit
-                }
-                "close", "reconnect" -> Unit
-                else -> error("Unexpected repository call in layout-only test: ${method.name}")
-            }
-        } as DieterRepository
+        core = TestCore(navigationAccount = "component-fixture")
         compose.runOnUiThread {
-            model = DieterViewModel(DieterConnectionManager(context, repository, managerScope), AppPreferences(context))
+            model = core.viewModel()
             lifecycle.put("project-overview", model)
         }
     }
 
     @After fun cleanup() {
         compose.runOnUiThread { lifecycle.clear() }
-        managerScope.cancel()
+        core.close()
+        core.delete()
     }
 
     @Test fun projectHubMatchesTheReferenceHierarchy() {
@@ -103,12 +84,6 @@ class ProjectOverviewVisualTest {
             }
         }
 
-        visualState.projectFolders.folders.forEach { folder ->
-            model.navigationFolders.update(com.dbpprt.dieter.settings.NavigationFolderScope.PROJECTS) { current ->
-                if (current.folders.any { it.id == folder.id }) current
-                else NavigationFolderPreferences.from(current.folders + folder)
-            }
-        }
         compose.onNodeWithTag("spaces-overview").assertIsDisplayed()
         compose.onNodeWithTag("nav-board").assertIsDisplayed()
         compose.onNodeWithText("PINNED").assertIsDisplayed()
@@ -155,12 +130,10 @@ class ProjectOverviewVisualTest {
         loading = false,
         projects = projects,
         pinnedProjectOrder = listOf("dieter", "between"),
-        projectFolders = NavigationFolderPreferences.from(
-            listOf(
-                NavigationFolder("clients", "Clients", listOf("kannacli", "nmt", "omelette")),
-                NavigationFolder("infra-folder", "Infra", listOf("infra"), isExpanded = false),
-                NavigationFolder("experiments-folder", "Experiments", listOf("experiments"), isExpanded = false),
-            ),
+        projectFolders = listOf(
+            NavigationFolder("clients", "Clients", listOf("kannacli", "nmt", "omelette")),
+            NavigationFolder("infra-folder", "Infra", listOf("infra"), expanded = false),
+            NavigationFolder("experiments-folder", "Experiments", listOf("experiments"), expanded = false),
         ),
         spaceBoards = boards,
         spaceCards = cards,
@@ -170,23 +143,9 @@ class ProjectOverviewVisualTest {
         },
     )
 
-    private fun project(id: String, name: String) = Project.newBuilder()
-        .setId(id)
-        .setName(name)
-        .setPath("/home/demo/Development/$name")
-        .build()
+    private fun project(id: String, name: String) = Project(id = id, name = name, path = "/home/demo/Development/$name")
 
-    private fun board(id: String, projectID: String, name: String) = Board.newBuilder()
-        .setId(id)
-        .setProjectId(projectID)
-        .setName(name)
-        .build()
+    private fun board(id: String, projectID: String, name: String) = Board(id = id, project_id = projectID, name = name)
 
-    private fun card(id: String, projectID: String, boardID: String, lane: String, runtime: String = "idle") = Card.newBuilder()
-        .setId(id)
-        .setProjectId(projectID)
-        .setBoardId(boardID)
-        .setLane(lane)
-        .setRuntime(runtime)
-        .build()
+    private fun card(id: String, projectID: String, boardID: String, lane: String, runtime: String = "idle") = Card(id = id, project_id = projectID, board_id = boardID, lane = lane, runtime = runtime)
 }

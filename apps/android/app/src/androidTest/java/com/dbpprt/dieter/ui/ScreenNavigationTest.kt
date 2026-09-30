@@ -28,6 +28,7 @@ import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.unit.Density
+import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

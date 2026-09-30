@@ -35,8 +35,13 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.dbpprt.dieter.v1.Board
-import com.dbpprt.dieter.v1.Project
+import com.dbpprt.dieter.api.v1.Board
+import com.dbpprt.dieter.api.v1.Project
+import com.dbpprt.dieter.core.composition.CaptureDestinations
+import com.dbpprt.dieter.core.composition.TaskDrafts
+import com.dbpprt.dieter.core.composition.frozen
+import com.dbpprt.dieter.core.search.ListFilters
+import com.dbpprt.dieter.core.state.CaptureDraft
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -46,20 +51,20 @@ import java.time.format.FormatStyle
 @Composable
 internal fun CaptureDestinationSheet(
     state: DieterUiState,
-    draft: CardCreationDraft,
-    savedDrafts: List<CardCreationDraft>,
+    draft: CaptureDraft,
+    savedDrafts: List<CaptureDraft>,
     onDismiss: () -> Unit,
     onProject: (String) -> Unit,
     onBoard: (String) -> Unit,
-    onResumeDraft: (CardCreationDraft) -> Unit,
-    onDiscardDraft: (CardCreationDraft) -> Unit,
+    onResumeDraft: (CaptureDraft) -> Unit,
+    onDiscardDraft: (CaptureDraft) -> Unit,
 ) {
     var projectStepId by rememberSaveable(draft.id) { mutableStateOf<String?>(null) }
     var projectQuery by rememberSaveable(draft.id) { mutableStateOf("") }
     var boardQuery by rememberSaveable(draft.id, projectStepId) { mutableStateOf("") }
     val project = state.projects.firstOrNull { it.id == projectStepId }
     val allBoards = (state.spaceBoards + state.boards).distinctBy { it.id }.filterNot { it.retired }
-    val boards = allBoards.filter { it.projectId == project?.id }
+    val boards = allBoards.filter { it.project_id == project?.id }
     val query = if (project == null) projectQuery else boardQuery
     val density = LocalDensity.current
 
@@ -89,7 +94,7 @@ internal fun CaptureDestinationSheet(
                 if (project != null) {
                     ListItem(
                         headlineContent = { Text(project.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                        supportingContent = { Text(projectDestinationInfo(project, boards.size, state.presentedProjectReplicas[project.id]?.online == false)) },
+                        supportingContent = { Text(CaptureDestinations.projectInfo(project, boards.size, state.presentedProjectReplicas[project.id]?.online == false)) },
                         leadingContent = { CaptureProjectIcon(project) },
                         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
                         modifier = Modifier.padding(horizontal = 16.dp).clip(MaterialTheme.shapes.medium),
@@ -111,7 +116,7 @@ internal fun CaptureDestinationSheet(
                 )
                 LazyColumn(Modifier.weight(1f, fill = false).testTag("capture-destination-list"), contentPadding = PaddingValues(bottom = 24.dp)) {
                     if (project == null) {
-                        val projects = state.projects.filter { it.name.contains(query.trim(), true) || it.summary.contains(query.trim(), true) }
+                        val projects = ListFilters.projects(state.projects, query)
                         item { CaptureSectionTitle("Projects", projects.size) }
                         if (projects.isEmpty()) item {
                             CaptureEmptyState(if (state.projects.isEmpty()) "No projects yet" else "No matching projects",
@@ -119,13 +124,13 @@ internal fun CaptureDestinationSheet(
                                 else "Try another project name or clear the search.")
                         }
                         items(projects, key = { "project-${it.id}" }) { candidate ->
-                            val count = allBoards.count { it.projectId == candidate.id }
+                            val count = allBoards.count { it.project_id == candidate.id }
                             CaptureDestinationRow(
                                 title = candidate.name,
                                 detail = candidate.summary.ifBlank { candidate.path }.takeIf(String::isNotBlank),
-                                metadata = projectDestinationInfo(candidate, count, state.presentedProjectReplicas[candidate.id]?.online == false),
-                                selected = candidate.id == draft.projectId,
-                                enabled = draft.submittedRequest?.let { it.projectId == candidate.id } != false,
+                                metadata = CaptureDestinations.projectInfo(candidate, count, state.presentedProjectReplicas[candidate.id]?.online == false),
+                                selected = candidate.id == draft.project_id,
+                                enabled = CaptureDestinations.selectable(draft, candidate.id),
                                 tag = "capture-project-${candidate.id}",
                                 leading = { CaptureProjectIcon(candidate) },
                                 onClick = { focus.clearFocus(force = true); keyboard?.hide(); projectStepId = candidate.id; onProject(candidate.id) },
@@ -135,11 +140,11 @@ internal fun CaptureDestinationSheet(
                             item { HorizontalDivider(Modifier.padding(vertical = 12.dp)); CaptureSectionTitle("Saved drafts", savedDrafts.size) }
                             items(savedDrafts, key = { "draft-${it.id}" }) { saved ->
                                 ListItem(
-                                    headlineContent = { Text(saved.title.ifBlank { saved.prompt.ifBlank { "Task with attachments" } }, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                                    supportingContent = { Text(state.projects.firstOrNull { it.id == saved.projectId }?.name ?: "Choose a project to continue") },
+                                    headlineContent = { Text(TaskDrafts.creationTitle(saved), maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                                    supportingContent = { Text(state.projects.firstOrNull { it.id == saved.project_id }?.name ?: "Choose a project to continue") },
                                     leadingContent = { Icon(Icons.Outlined.Description, null) },
                                     trailingContent = {
-                                        IconButton(onClick = { onDiscardDraft(saved) }, enabled = saved.submissionId.isBlank()) {
+                                        IconButton(onClick = { onDiscardDraft(saved) }, enabled = !saved.frozen) {
                                             Icon(Icons.Outlined.DeleteOutline, "Discard saved draft")
                                         }
                                     },
@@ -148,7 +153,7 @@ internal fun CaptureDestinationSheet(
                             }
                         }
                     } else {
-                        val filtered = boards.filter { it.name.contains(query.trim(), true) || it.description.contains(query.trim(), true) }
+                        val filtered = ListFilters.boards(boards, query)
                         item { CaptureSectionTitle("Boards", filtered.size) }
                         if (filtered.isEmpty()) item {
                             CaptureEmptyState(if (boards.isEmpty()) "No active boards" else "No matching boards",
@@ -160,8 +165,8 @@ internal fun CaptureDestinationSheet(
                                 title = board.name,
                                 detail = board.description.takeIf(String::isNotBlank),
                                 metadata = boardDestinationInfo(board, project, boards.count { it.name == board.name } > 1),
-                                selected = board.id == draft.boardId,
-                                enabled = draft.submittedRequest?.let { it.boardId == board.id } != false,
+                                selected = board.id == draft.board_id,
+                                enabled = CaptureDestinations.selectable(draft, project.id, board.id),
                                 tag = "capture-board-${board.id}",
                                 leading = { Icon(Icons.Outlined.ViewKanban, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary) },
                                 onClick = { keyboard?.hide(); onBoard(board.id) },
@@ -221,17 +226,10 @@ private fun CaptureEmptyState(title: String, message: String) {
     }
 }
 
-private fun projectDestinationInfo(project: Project, boards: Int, offline: Boolean): String = buildList {
-    add(if (boards == 1) "1 board" else "$boards boards")
-    if (project.checkoutsCount > 1) add("${project.checkoutsCount} checkouts")
-    if (offline) add("Offline")
-}.joinToString(" · ")
-
-private fun boardDestinationInfo(board: Board, project: Project, duplicateName: Boolean): String = buildList {
-    add(when (board.workflow) { "review" -> "Review workflow"; "direct" -> "Direct workflow"; else -> "${board.lanesCount} lanes" })
-    val branch = listOf(board.baseRemote.ifBlank { project.baseRemote }, project.baseBranch).filter(String::isNotBlank).joinToString("/")
-    if (branch.isNotBlank()) add(branch)
+/** The core's description, plus the creation date when board names repeat (formatted for this device). */
+private fun boardDestinationInfo(board: Board, project: Project, duplicateName: Boolean): String = listOfNotNull(
+    CaptureDestinations.boardInfo(board, project),
     if (duplicateName) runCatching {
-        DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT).withZone(ZoneId.systemDefault()).format(Instant.parse(board.createdAt))
-    }.getOrNull()?.let { add("Created $it") }
-}.joinToString(" · ")
+        "Created " + DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT).withZone(ZoneId.systemDefault()).format(Instant.parse(board.created_at))
+    }.getOrNull() else null,
+).joinToString(" · ")

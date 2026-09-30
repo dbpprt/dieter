@@ -29,9 +29,15 @@ just android build
 
 If necessary, set `JAVA_HOME` to
 `/Applications/Android Studio.app/Contents/jbr/Contents/Home`. Open `apps/android`
-in Android Studio for interactive development. The authoritative protobuf schema
-is generated into Lite messages and Kotlin stubs by Gradle; do not commit those
-build outputs.
+in Android Studio for interactive development. Client logic (connection, sync,
+outbox, conversations, captures, schedules, terminals, screens) and the
+presentation rules behind the UI (what a row, notice, or control says and
+allows) live in the shared Kotlin core under [`apps/core`](../core/README.md),
+which also generates the Wire messages and gRPC clients from the authoritative
+schema. The app keeps the Compose UI and Android adapters: OkHttp transport,
+Keystore credentials, WebRTC/MediaCodec screen media, notifications, widgets,
+the sideload updater, and the background service. Add new rules to the core
+with core tests, not to the app. Do not commit generated build outputs.
 
 ## Visible emulator
 

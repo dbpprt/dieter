@@ -27,13 +27,11 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.data.DIETER_ENDPOINTS
-import com.dbpprt.dieter.data.DieterEndpoint
-import com.dbpprt.dieter.v1.CreateConversationRequest
-import com.dbpprt.dieter.v1.MessagePart
-import com.dbpprt.dieter.v1.SendMessageRequest
-import com.dbpprt.dieter.v1.StartCardRequest
+import com.dbpprt.dieter.DieterContainer
+import com.dbpprt.dieter.api.v1.CreateConversationRequest
+import com.dbpprt.dieter.api.v1.MessagePart
+import com.dbpprt.dieter.api.v1.SendMessageRequest
+import com.dbpprt.dieter.e2e.IsolatedCore
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.flow.first
@@ -60,48 +58,21 @@ class ConversationDraftQueueEndToEndTest {
         val arguments = InstrumentationRegistry.getArguments()
         val token = arguments.getString("isolatedGatewayToken").orEmpty()
         assumeTrue("Pass isolatedGatewayToken for the isolated gateway", token.isNotBlank())
-        val origin = DieterEndpoint(
-            id = "android_composer_queue_e2e",
-            label = "Isolated composer gateway",
-            host = arguments.getString("isolatedGatewayHost")?.takeIf(String::isNotBlank) ?: "10.0.2.2",
-            port = arguments.getString("isolatedGatewayPort")?.toIntOrNull() ?: 14243,
-            secure = false,
-        )
         val application = composeRule.activity.application as DieterApplication
         val container = application.container
-        val manager = container.connectionManager
-        val repository = container.repository
-        repository.setAccessToken(origin, token)
-        manager.updateEndpoints(listOf(origin), selectedGatewayId = origin.id)
-        manager.connect()
-        manager.onAppForegrounded()
-        val connected = runBlocking {
-            withTimeout(30_000) {
-                manager.state.first { state ->
-                    state.phase == ConnectionPhase.CONNECTED && state.projects.isNotEmpty() &&
-                        state.boards.isNotEmpty() && state.harnesses.isNotEmpty()
-                }
-            }
-        }
-        val board = connected.boards.first()
-        val project = connected.projects.first { it.id == board.projectId }
-        val harness = connected.harnesses.first { it.id == "mock" }
+        val core = container.core
+        val connected = IsolatedCore.connect(container)
+        val board = connected.boards.values.flatten().first()
+        val project = connected.projects.first { it.id == board.project_id }
+        val daemonId = project.checkouts.first { !it.detached }.daemon_id
+        val harness = IsolatedCore.harnesses(container, daemonId).first { it.id == "mock" }
         val createdIds = mutableListOf<String>()
         var queuedMessageId = ""
         try {
-            val first = runBlocking { createDeferredChat(repository, project.id, harness.id, harness.defaultModel, "First draft") }
-            val second = runBlocking { createDeferredChat(repository, project.id, harness.id, harness.defaultModel, "Second draft") }
+            val first = createDeferredChat(container, project.id, harness.id, harness.default_model, "First draft")
+            val second = createDeferredChat(container, project.id, harness.id, harness.default_model, "Second draft")
             createdIds += first.id
             createdIds += second.id
-            runBlocking { manager.refreshMachineDirectory(includeArchivedChats = true) }
-            runBlocking {
-                withTimeout(15_000) {
-                    manager.state.first { state ->
-                        state.chats.any { it.id == first.id } && state.chats.any { it.id == second.id }
-                    }
-                }
-            }
-            manager.onAppForegrounded(project.id)
 
             // Real pager gestures still select routes; detail layout changes
             // must not be interpreted as another swipe.
@@ -149,58 +120,23 @@ class ConversationDraftQueueEndToEndTest {
             }
             capture("conversation-draft-restored-e2e.png")
 
-            val queueCard = runBlocking {
-                repository.createConversation(
-                    CreateConversationRequest.newBuilder()
-                        .setProjectId(project.id)
-                        .setBoardId(board.id)
-                        .setLane("todo")
-                        .setTitle("Queue recall ${UUID.randomUUID().toString().take(8)}")
-                        .setPrompt("mock-queue-hold")
-                        .setProvider(harness.id)
-                        .setModel(harness.defaultModel)
-                        .setDeferStart(true)
-                        .setWorkspaceMode("project")
-                        .build(),
-                    chat = false,
-                )
-            }
+            val queueCard = IsolatedCore.createConversation(
+                container,
+                CreateConversationRequest(project_id = project.id, board_id = board.id, lane = "todo", title = "Queue recall ${UUID.randomUUID().toString().take(8)}", prompt = "mock-queue-hold", provider = harness.id, model = harness.default_model, defer_start = true, workspace_mode = "project"),
+                chat = false,
+            )
             createdIds += queueCard.id
             runBlocking {
-                repository.startCard(
-                    StartCardRequest.newBuilder()
-                        .setCardId(queueCard.id)
-                        .setClientId("android-queue-ui-e2e")
-                        .setCommandId(UUID.randomUUID().toString())
-                        .build(),
-                )
-                withTimeout(15_000) {
-                    repository.watchConversation(queueCard.id, 8).first { snapshot ->
-                        snapshot.conversation.status == "running" || snapshot.detail.card.runtime == "running"
-                    }
-                }
+                core.startCard(queueCard.id)
+                withTimeout(15_000) { core.workspace.state.first { it.card(queueCard.id)?.runtime == "running" } }
                 val messageId = "msg_android_queue_ui_${UUID.randomUUID().toString().replace("-", "").take(12)}"
-                val queued = repository.sendMessage(
-                    SendMessageRequest.newBuilder()
-                        .setCardId(queueCard.id)
-                        .addParts(MessagePart.newBuilder().setType("text").setText("queued text to edit"))
-                        .setProvider(harness.id)
-                        .setModel(harness.defaultModel)
-                        .setEffort(queueCard.effort)
-                        .putAllProviderOptions(queueCard.providerOptionsMap)
-                        .setClientId("android-queue-ui-e2e")
-                        .setCommandId(UUID.randomUUID().toString())
-                        .setMessageId(messageId)
-                        .build(),
-                )
-                assertTrue(queued.queued)
-                queuedMessageId = queued.messageId
-                manager.refreshMachineDirectory(includeArchivedChats = true)
-                withTimeout(15_000) {
-                    manager.state.first { state ->
-                        (state.cards + state.chats).any { it.id == queueCard.id }
-                    }
+                val queued = core.onMachine(daemonId) {
+                    it.SendMessage().execute(
+                        SendMessageRequest(card_id = queueCard.id, parts = listOf(MessagePart(type = "text", text = "queued text to edit")), provider = harness.id, model = harness.default_model, effort = queueCard.effort, provider_options = queueCard.provider_options, client_id = "android-queue-ui-e2e", command_id = UUID.randomUUID().toString(), message_id = messageId),
+                    )
                 }
+                assertTrue(queued.queued)
+                queuedMessageId = queued.message_id
             }
             container.requestOpen(cardId = queueCard.id)
             composeRule.waitUntil(20_000) {
@@ -211,7 +147,7 @@ class ConversationDraftQueueEndToEndTest {
                 runCatching { visibleNodeWithTag("message-input").assertTextEquals("queued text to edit") }.isSuccess
             }
             visibleNodeWithTag("message-input").assertTextEquals("queued text to edit")
-            assertTrue(runBlocking { repository.conversation(queueCard.id).conversation.queueCount == 0 })
+            assertTrue(IsolatedCore.conversation(container, queueCard.id, daemonId).conversation?.queue.orEmpty().isEmpty())
             capture("queued-message-restored-to-composer-e2e.png")
         } catch (error: Throwable) {
             runCatching { capture("conversation-draft-queue-failure.png") }
@@ -219,31 +155,23 @@ class ConversationDraftQueueEndToEndTest {
         } finally {
             createdIds.asReversed().forEach { id ->
                 runBlocking {
-                    runCatching { repository.cancelCard(id) }
-                    runCatching { repository.archiveCard(id, true) }
+                    runCatching { core.onBoard { cancel(id) } }
+                    runCatching { core.onBoard { archive(id) } }
                 }
             }
-            manager.updateEndpoints(DIETER_ENDPOINTS)
-            manager.connect()
+            IsolatedCore.disconnect(container)
         }
     }
 
-    private suspend fun createDeferredChat(
-        repository: com.dbpprt.dieter.data.DieterRepository,
+    private fun createDeferredChat(
+        container: DieterContainer,
         projectId: String,
         provider: String,
         model: String,
         title: String,
-    ) = repository.createConversation(
-        CreateConversationRequest.newBuilder()
-            .setProjectId(projectId)
-            .setTitle("$title ${UUID.randomUUID().toString().take(8)}")
-            .setPrompt("Deferred composer draft fixture")
-            .setProvider(provider)
-            .setModel(model)
-            .setDeferStart(true)
-            .setWorkspaceMode("project")
-            .build(),
+    ) = IsolatedCore.createConversation(
+        container,
+        CreateConversationRequest(project_id = projectId, title = "$title ${UUID.randomUUID().toString().take(8)}", prompt = "Deferred composer draft fixture", provider = provider, model = model, defer_start = true, workspace_mode = "project"),
         chat = true,
     )
 

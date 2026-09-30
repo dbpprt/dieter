@@ -1,5 +1,7 @@
 package com.dbpprt.dieter.ui
 
+import com.dbpprt.dieter.core.terminals.TerminalScreen
+import okio.ByteString.Companion.encodeUtf8
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import androidx.compose.foundation.layout.size
@@ -29,10 +31,7 @@ class RemoteTerminalViewTest {
                             terminal = view
                             view.onInput = { input += it }
                             view.applyScreen(
-                                TerminalScreenState(
-                                    "\u001B[32mANDROID_RENDER_OK\u001B[0m\r\n".encodeToByteArray(),
-                                    resetRevision = 1,
-                                ),
+                                TerminalScreen.EMPTY.reset("\u001B[32mANDROID_RENDER_OK\u001B[0m\r\n".encodeUtf8()),
                             )
                         }
                     },

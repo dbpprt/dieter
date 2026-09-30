@@ -1,5 +1,9 @@
 package com.dbpprt.dieter.ui
 
+import com.dbpprt.dieter.core.terminals.TerminalKeys
+import com.dbpprt.dieter.core.terminals.TerminalReplayCursor
+import com.dbpprt.dieter.core.terminals.TerminalRendererSink
+import com.dbpprt.dieter.core.terminals.TerminalScreen
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -47,8 +51,26 @@ class RemoteTerminalView(
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 13f, resources.displayMetrics).toInt(),
         Typeface.MONOSPACE,
     )
-    private var consumedBytes = 0
-    private var appliedResetRevision = Long.MIN_VALUE
+    // The core retains the transcript; this cursor feeds the emulator only unseen bytes.
+    private val replay = TerminalReplayCursor()
+    private var screenChanged = false
+    private val replaySink = object : TerminalRendererSink {
+        override fun reset() {
+            emulator.reset()
+            topRow = 0
+            screenChanged = true
+        }
+
+        override fun feed(bytes: ByteArray) {
+            emulator.append(bytes, bytes.size)
+            if (topRow == 0) emulator.clearScrollCounter()
+            screenChanged = true
+        }
+
+        override fun redraw() {
+            screenChanged = true
+        }
+    }
     private var topRow = 0
     private var controlArmed = false
     private var singleTapDetected = false
@@ -169,23 +191,10 @@ class RemoteTerminalView(
         contentDescription = "Interactive remote terminal"
     }
 
-    fun applyScreen(screen: TerminalScreenState) {
-        var changed = false
-        if (appliedResetRevision != screen.resetRevision || consumedBytes > screen.data.size) {
-            emulator.reset()
-            consumedBytes = 0
-            appliedResetRevision = screen.resetRevision
-            topRow = 0
-            changed = true
-        }
-        if (screen.data.size > consumedBytes) {
-            val suffix = screen.data.copyOfRange(consumedBytes, screen.data.size)
-            emulator.append(suffix, suffix.size)
-            consumedBytes = screen.data.size
-            if (topRow == 0) emulator.clearScrollCounter()
-            changed = true
-        }
-        if (changed) revealCursorAndRestartBlink() else postInvalidateOnAnimation()
+    fun applyScreen(screen: TerminalScreen) {
+        screenChanged = false
+        replay.apply(screen, replaySink)
+        if (screenChanged) revealCursorAndRestartBlink() else postInvalidateOnAnimation()
     }
 
     fun toggleControl() {
@@ -342,16 +351,8 @@ class RemoteTerminalView(
     }
 
     private fun sendText(value: String, applyControl: Boolean = controlArmed) {
-        val transformed = if (applyControl && value.length == 1) {
-            val character = value[0]
-            when (character) {
-                in '@'..'_' -> (character.code - 64).toChar().toString()
-                in 'a'..'z' -> (character.code - 96).toChar().toString()
-                '?' -> 0x7f.toChar().toString()
-                else -> value
-            }
-        } else value
-        onInput(transformed.toByteArray(Charsets.UTF_8))
+        val bytes = value.toByteArray(Charsets.UTF_8)
+        onInput(if (applyControl) TerminalKeys.control(bytes) ?: bytes else bytes)
         revealCursorAndRestartBlink()
         if (applyControl) consumeControl()
     }

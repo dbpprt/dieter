@@ -18,7 +18,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
-import com.dbpprt.dieter.v1.MessagePart
+import com.dbpprt.dieter.api.v1.MessagePart
+import com.dbpprt.dieter.core.conversation.TurnFailure
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import com.dbpprt.dieter.ui.theme.DieterBackground
 import org.junit.Assert.assertEquals
@@ -32,10 +33,11 @@ class TurnFailureBannerTest {
     @Test
     fun completeLogOpensAndRetryActionIsAvailable() {
         var retries = 0
-        val failure = ConversationTurnFailure(
+        val failure = TurnFailure(
             summary = "codex exited 1 (context overflow).",
             log = "codex exited 1\nprovider stderr: context window exceeded",
-            retryParts = listOf(MessagePart.newBuilder().setType("text").setText("Try again").build()),
+            failedMessageId = null,
+            retryParts = listOf(MessagePart(type = "text", text = "Try again")),
         )
         compose.setContent {
             DieterTheme(darkTheme = true) {

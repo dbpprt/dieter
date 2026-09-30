@@ -14,7 +14,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
-import com.dbpprt.dieter.gateway.v1.*
+import com.dbpprt.dieter.api.gateway.v1.*
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import org.junit.Assert.*
 import org.junit.Rule
@@ -25,22 +25,14 @@ import java.time.Instant
 class ProviderQuotaUiTest {
     @get:Rule val compose = createComposeRule()
     private val provider = ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX
-    private val account = ProviderQuotaSnapshot.newBuilder().setAccountKey("personal").setProvider(provider)
-        .setDisplayEmail("alex@example.com").setPlan("pro")
-        .setAvailability(ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_AVAILABLE)
-        .setResetCredits(ProviderResetCredits.newBuilder().setAvailableCount(2))
-        .addWindows(ProviderQuotaWindow.newBuilder().setLabel("5-hour").setRemainingPercent(76)
-            .setResetsAt(Instant.now().plusSeconds(8100).toString()))
-        .addWindows(ProviderQuotaWindow.newBuilder().setLabel("Weekly").setRemainingPercent(42)
-            .setResetsAt(Instant.now().plusSeconds(183600).toString())).build()
+    private val account = ProviderQuotaSnapshot(account_key = "personal", provider = provider, display_email = "alex@example.com", plan = "pro", availability = ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_AVAILABLE, reset_credits = ProviderResetCredits(available_count = 2), windows = listOf(ProviderQuotaWindow(label = "5-hour", remaining_percent = 76, resets_at = Instant.now().plusSeconds(8100).toString()), ProviderQuotaWindow(label = "Weekly", remaining_percent = 42, resets_at = Instant.now().plusSeconds(183600).toString())))
     private fun state(accounts: List<ProviderQuotaSnapshot> = listOf(account)): DieterUiState {
-        val included = accounts.filter { !it.hasIncludedInSummary() || it.includedInSummary }
-        val summary = ProviderQuotaSummary.newBuilder().setIncludedAccountCount(included.size)
-            .setExcludedAccountCount(accounts.size - included.size)
-        included.flatMap { it.windowsList }.filter { it.hasRemainingPercent() }.minOfOrNull { it.remainingPercent }
-            ?.let { summary.remainingPercent = it }
-        return DieterUiState(providerQuotaGroups = listOf(ProviderQuotaGroup.newBuilder().setProvider(provider)
-            .addAllAccounts(accounts).setSummary(summary).build()))
+        val included = accounts.filter { it.included_in_summary != false }
+        val summary = ProviderQuotaSummary(
+            included_account_count = included.size, excluded_account_count = accounts.size - included.size,
+            remaining_percent = included.flatMap { it.windows }.mapNotNull { it.remaining_percent }.minOrNull(),
+        )
+        return DieterUiState(providerQuotaGroups = listOf(ProviderQuotaGroup(provider = provider, accounts = accounts.toList(), summary = summary)))
     }
 
     @Test fun compactAccountsExpandAndKeepMutationsAccountScoped() {
@@ -52,7 +44,7 @@ class ProviderQuotaUiTest {
             Surface {
                 ProviderQuotaDetails(current.value, { refreshes++ }, { provider, key, included ->
                     inclusions += Triple(provider, key, included)
-                    current.value = state(listOf(account.toBuilder().setIncludedInSummary(included).build()))
+                    current.value = state(listOf(account.copy(included_in_summary = included)))
                 }, { resets += it }, Modifier.fillMaxSize().padding(20.dp))
             }
         } }
@@ -86,18 +78,16 @@ class ProviderQuotaUiTest {
         val scale = mutableStateOf(1f)
         val tablet = mutableStateOf(false)
         val accounts = listOf(account,
-            account.toBuilder().setAccountKey("work").setDisplayEmail("alex@studio.design").setPlan("team")
-                .clearWindows()
-                .addWindows(ProviderQuotaWindow.newBuilder().setLabel("5-hour").setRemainingPercent(93))
-                .addWindows(ProviderQuotaWindow.newBuilder().setLabel("Weekly").setRemainingPercent(8)).build(),
-            account.toBuilder().setAccountKey("long").setDisplayEmail("a.very.long.account.name@a-long-example-domain.com")
-                .setIncludedInSummary(false).clearWindows()
-                .setAvailability(ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_SIGNED_OUT).build())
-        val claude = ProviderQuotaGroup.newBuilder().setProvider(ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE)
-            .addAccounts(account.toBuilder().setAccountKey("claude").setDisplayEmail("").setPlan("max")
-                .clearWindows().clearResetCredits()
-                .addWindows(ProviderQuotaWindow.newBuilder().setLabel("Session").setRemainingPercent(65))
-                .addWindows(ProviderQuotaWindow.newBuilder().setLabel("Weekly · All models"))).build()
+            account.copy(account_key = "work", display_email = "alex@studio.design", plan = "team", windows = listOf(
+                ProviderQuotaWindow(label = "5-hour", remaining_percent = 93), ProviderQuotaWindow(label = "Weekly", remaining_percent = 8),
+            )),
+            account.copy(account_key = "long", display_email = "a.very.long.account.name@a-long-example-domain.com", included_in_summary = false,
+                windows = emptyList(), availability = ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_SIGNED_OUT))
+        val claude = ProviderQuotaGroup(provider = ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE, accounts = listOf(
+            account.copy(account_key = "claude", display_email = "", plan = "max", reset_credits = null, windows = listOf(
+                ProviderQuotaWindow(label = "Session", remaining_percent = 65), ProviderQuotaWindow(label = "Weekly · All models"),
+            )),
+        ))
         compose.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(if (tablet.value) 1f else density.density, scale.value)) {

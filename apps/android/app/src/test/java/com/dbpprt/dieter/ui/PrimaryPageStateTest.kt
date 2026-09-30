@@ -1,8 +1,9 @@
 package com.dbpprt.dieter.ui
 
-import com.dbpprt.dieter.v1.Card
-import com.dbpprt.dieter.v1.Conversation
-import com.dbpprt.dieter.v1.ConversationSnapshot
+import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.Conversation
+import com.dbpprt.dieter.api.v1.ConversationSnapshot
+import com.dbpprt.dieter.core.navigation.Destination
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -21,7 +22,7 @@ class PrimaryPageStateTest {
         val cache = PrimaryPageState(Destination.CHATS)
         val original = DieterUiState(destination = Destination.BOARD)
         val page = cache.project(original)
-        val chat = Card.newBuilder().setId("chat").setTitle("New remote title").build()
+        val chat = Card(id = "chat", title = "New remote title")
         val changed = original.copy(chats = listOf(chat), selectedCardId = chat.id)
         val updated = cache.project(changed)
         assertNotSame(page, updated)
@@ -36,8 +37,7 @@ class PrimaryPageStateTest {
         val original = DieterUiState(destination = Destination.CHATS, selectedCardId = "chat")
         val initial = caches.mapValues { it.value.project(original) }
         assertEquals(1, initial.values.count { it.selectedCardId == "chat" })
-        val transcript = ConversationSnapshot.newBuilder()
-            .setConversation(Conversation.newBuilder().setLastSeq(2)).build()
+        val transcript = ConversationSnapshot(conversation = Conversation(last_seq = 2))
         val changed = original.copy(conversation = transcript, conversationRefreshing = true,
             historyTotal = 400, historyHasMore = true, conversationScrollRequest = 3, detailTab = 1)
         for ((destination, cache) in caches) {

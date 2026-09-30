@@ -2,6 +2,10 @@
 
 package com.dbpprt.dieter.ui
 
+import androidx.compose.runtime.CompositionLocalProvider
+import com.dbpprt.dieter.core.board.Runtimes
+import com.dbpprt.dieter.core.board.CardPolicy
+import com.dbpprt.dieter.core.board.CardOperation
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -80,6 +84,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dbpprt.dieter.core.composition.Attachments
+import com.dbpprt.dieter.core.conversation.TurnFailure
+import com.dbpprt.dieter.core.presentation.ConversationPresentation
+import com.dbpprt.dieter.core.presentation.DeliveryState
+import com.dbpprt.dieter.core.presentation.TimelineItem
+import com.dbpprt.dieter.core.selection.AgentControls
 import com.dbpprt.dieter.ui.theme.DieterAmber
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterShellDeep
@@ -87,12 +97,12 @@ import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
-import com.dbpprt.dieter.v1.QueuedMessage
-import com.dbpprt.dieter.v1.Schedule
-import com.dbpprt.dieter.v1.MessagePart
-import com.dbpprt.dieter.v1.Subagent
-import com.dbpprt.dieter.v1.TaskPlan
-import com.dbpprt.dieter.v1.UiMessage
+import com.dbpprt.dieter.api.v1.QueuedMessage
+import com.dbpprt.dieter.api.v1.Schedule
+import com.dbpprt.dieter.api.v1.MessagePart
+import com.dbpprt.dieter.api.v1.Subagent
+import com.dbpprt.dieter.api.v1.TaskPlan
+import com.dbpprt.dieter.api.v1.UiMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -107,9 +117,11 @@ import com.dbpprt.dieter.ui.theme.DieterAbyss
 
 @Composable
 internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier) {
-    val allMessages = remember(state.olderMessages, state.conversation) {
-        mergedConversationMessages(state.olderMessages, state.conversation?.conversation?.messagesList.orEmpty())
-    }
+    val presentation = remember(
+        state.conversationView, state.selectedCardId, state.selectedCard, state.pendingMessageIds, state.acceptedOutboxIds,
+        state.failedOutboxIds, state.cardOperations, state.showReasoningTraces, state.spaceBoards, state.board,
+    ) { model.presentConversation(state) } ?: return
+    val items = presentation.timeline.items
     val listState = remember(state.selectedCardId) { LazyListState() }
     var initialScrollComplete by remember(state.selectedCardId) { mutableStateOf(false) }
     var followingLatest by remember(state.selectedCardId) { mutableStateOf(true) }
@@ -119,123 +131,37 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
     var historyStartAtRequest by remember(state.selectedCardId) { mutableStateOf(0) }
     var historyObservedLoading by remember(state.selectedCardId) { mutableStateOf(false) }
     var composerError by remember(state.selectedCardId) { mutableStateOf<String?>(null) }
-    var awaitingAgent by remember(state.selectedCardId) { mutableStateOf(false) }
-    var assistantCountAtSend by remember(state.selectedCardId) { mutableStateOf(0) }
-    var observedActiveTurn by remember(state.selectedCardId) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var attachmentPickerVisible by remember(state.selectedCardId) { mutableStateOf(false) }
     val conversation = state.conversation?.conversation
-    val queuedMessages = conversation?.queueList.orEmpty()
-    val card = state.conversation?.detail?.card ?: state.selectedCard
+    val card = presentation.card
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val latestVisible by remember(listState) { derivedStateOf { listState.isAtConversationEnd() } }
-    val responseLoaded = (conversation?.lastSeq ?: 0) >= (card?.responseSeq ?: 0)
-    LaunchedEffect(card?.id, card?.responseSeq, card?.seenResponseSeq, initialScrollComplete, responseLoaded,
+    val responseLoaded = (conversation?.last_seq ?: 0) >= (card?.response_seq ?: 0)
+    LaunchedEffect(card?.id, card?.response_seq, card?.seen_response_seq, initialScrollComplete, responseLoaded,
         latestVisible, lifecycleState, state.connected) {
         if (lifecycleState == Lifecycle.State.RESUMED && initialScrollComplete && latestVisible && state.connected && card != null) {
             // Let the completed reply settle into the viewport. Scrolling or backgrounding
             // cancels this effect before it can acknowledge a merely mounted message.
             delay(200)
-            if (listState.isAtConversationEnd()) model.markResponseSeen(card.id, card.responseSeq)
+            if (listState.isAtConversationEnd()) model.markResponseSeen(card.id)
         }
     }
     val host = card?.let(state::conversationHost)
     val storageQueue = host?.endpointId?.let(state.machineOutboxSummaries::get)?.takeIf { it.storageBlocked && !it.failed }
     val draft = state.composerDraft
-    val text = draft.text
     val attachments = draft.attachments
-    val composerSelection = draft.selection
-        ?: ConversationComposerSelection.initial(card, state.harnesses)
+    val controls = AgentControls.forConversation(draft.selection, card, state.harnesses, enabled = !state.working)
+    LaunchedEffect(card?.id, state.harnesses, draft.selection) {
+        // A saved choice the catalog no longer accepts is corrected in the draft itself.
+        if (draft.selection != null && controls.selection != draft.selection) model.updateComposerSelection(controls.selection)
+    }
     val creationFailure = card?.id
         ?.takeIf(state.failedOutboxIds::contains)
         ?.let(model::conversationCreationFailure)
-    val unsentTask = card?.unsentTaskText()
-    val draftAttachments = conversation?.draftAttachmentsList.orEmpty()
-    val hasUnsentDraft = card?.initialPromptSentAt?.isBlank() == true &&
-        (unsentTask != null || draftAttachments.isNotEmpty())
-    val plansByMessage = remember(conversation) {
-        conversation?.taskPlansList.orEmpty()
-            .groupBy(TaskPlan::getMessageId)
-            .mapValues { (_, plans) -> plans.maxBy(TaskPlan::getRevision) }
-    }
-    val subagentsByMessage = remember(conversation) {
-        conversation?.subagentsList.orEmpty().groupBy(Subagent::getMessageId)
-    }
-    val messages = remember(allMessages, plansByMessage, subagentsByMessage, state.showReasoningTraces) {
-        allMessages.filter { message ->
-            message.hasRenderableConversationContent(
-                taskPlan = plansByMessage[message.id],
-                subagents = subagentsByMessage[message.id].orEmpty(),
-                includeReasoning = state.showReasoningTraces,
-            )
-        }
-    }
-    val runtime = resolvedCardRuntime(
-        card?.runtime.orEmpty(),
-        conversation?.status.orEmpty(),
-        card?.id?.let(state.cardOperations::get),
-    )
-    val activeTurn = isActiveCardRuntime(runtime)
-    val interrupting = card != null && state.cardOperations[card.id] == CardOperation.CANCELLING
-    val turnFailure = remember(allMessages, conversation?.status, card?.runtime) {
-        resolveConversationTurnFailure(
-            messages = allMessages,
-            conversationStatus = conversation?.status.orEmpty(),
-            cardRuntime = card?.runtime.orEmpty(),
-        )
-    }
+    val turnFailure = presentation.turnFailure
     var presentedFailureLog by remember(card?.id, turnFailure?.log) { mutableStateOf<String?>(null) }
-    var failureRetryQueued by remember(card?.id, turnFailure?.log) { mutableStateOf(false) }
-    val assistantCount = remember(messages) {
-        messages.count { it.role.equals("assistant", true) || it.role.equals("agent", true) }
-    }
-    val contextUsage = remember(allMessages) { latestContextUsage(allMessages) }
-    val lastClaudeResponseModelId = remember(allMessages, card?.provider) {
-        if (card?.provider == "claude-code") latestAssistantModelId(allMessages) else null
-    }
-    // Keep the live cue at the transcript tail for the whole turn. Partial
-    // assistant text must not make the agent appear idle while it is still
-    // generating more text or running tools.
-    val showAgentWorking = shouldShowAgentWorking(activeTurn, awaitingAgent)
-    val liveActivityMessages = remember(
-        conversation,
-        queuedMessages,
-        state.pendingMessageIds,
-        state.failedOutboxIds,
-    ) {
-        val excludedIds = buildSet {
-            addAll(queuedMessages.map(QueuedMessage::getId))
-            addAll(state.pendingMessageIds)
-            addAll(state.failedOutboxIds)
-        }
-        conversation?.messagesList.orEmpty().filterNot { it.id in excludedIds }
-    }
-    val workingLabel = remember(
-        liveActivityMessages,
-        conversation?.pendingToolsList,
-        conversation?.taskPlansList,
-        state.showReasoningTraces,
-        conversation?.status,
-        card?.runtime,
-        ConversationActivityPresentation.activeProviderStatus(conversation),
-    ) {
-        ConversationActivityPresentation.liveLabel(
-            messages = liveActivityMessages,
-            pendingTools = conversation?.pendingToolsList.orEmpty(),
-            plans = conversation?.taskPlansList.orEmpty(),
-            showReasoning = state.showReasoningTraces,
-            conversationStatus = conversation?.status.orEmpty(),
-            cardRuntime = card?.runtime.orEmpty(),
-            providerStatus = ConversationActivityPresentation.activeProviderStatus(conversation),
-        )
-    }
-    val turnStartedAtMillis = remember(liveActivityMessages, card?.runtimeUpdatedAt) {
-        ConversationActivityPresentation.turnStartMillis(
-            messages = liveActivityMessages,
-            runtimeUpdatedAt = card?.runtimeUpdatedAt.orEmpty(),
-        )
-    }
     fun addPickedAttachments(uris: List<android.net.Uri>, imagesOnly: Boolean) {
         if (uris.isEmpty()) return
         scope.launch {
@@ -244,7 +170,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
                 uris.map { uri -> runCatching { readAttachmentPart(context, uri, imagesOnly) } }
             }
             val incoming = results.mapNotNull(Result<MessagePart>::getOrNull)
-            val limitError = attachmentLimitError(attachments, incoming)
+            val limitError = Attachments.limitError(attachments + incoming)
             if (limitError == null) model.addComposerAttachments(incoming)
             composerError = limitError ?: results.firstNotNullOfOrNull { result ->
                 result.exceptionOrNull()?.message
@@ -252,18 +178,11 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
         }
     }
     val imagePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia(MAX_COMPOSER_ATTACHMENTS),
+        ActivityResultContracts.PickMultipleVisualMedia(Attachments.MAX_COUNT),
     ) { uris -> addPickedAttachments(uris, imagesOnly = true) }
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris -> addPickedAttachments(uris, imagesOnly = false) }
-    LaunchedEffect(activeTurn, assistantCount, state.error) {
-        if (activeTurn) observedActiveTurn = true
-        if (state.error != null || assistantCount > assistantCountAtSend || (observedActiveTurn && !activeTurn)) {
-            awaitingAgent = false
-        }
-        if (activeTurn || turnFailure == null || state.error != null) failureRetryQueued = false
-    }
     var consumedScrollRequest by remember(state.selectedCardId) { mutableStateOf(Long.MIN_VALUE) }
     LaunchedEffect(listState) {
         snapshotFlow { listState.isScrollInProgress }
@@ -284,6 +203,8 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
             }
         }
     }
+    val historyItems = if (state.historyHasMore || state.historyLoading) 1 else 0
+    val unsentTaskItems = if (presentation.hasUnsentDraft) 1 else 0
     fun requestEarlierHistory(viewport: ConversationHistoryViewport) {
         if (!shouldLoadEarlierConversationHistory(
                 hasMore = state.historyHasMore,
@@ -300,10 +221,8 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
         historyAnchorKey = if (historyKeepLatest) {
             null
         } else {
-            listState.layoutInfo.visibleItemsInfo
-                .map { it.key.toString() }
-                .firstOrNull { it.startsWith("message:") }
-                ?: messages.firstOrNull()?.let { conversationMessageKey(it, 0) }
+            val ids = items.mapTo(HashSet()) { it.id }
+            listState.layoutInfo.visibleItemsInfo.map { it.key.toString() }.firstOrNull { it in ids } ?: items.firstOrNull()?.id
         }
         model.loadOlderMessages()
     }
@@ -330,7 +249,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
     LaunchedEffect(
         state.historyStart,
         state.historyLoading,
-        messages.size,
+        items.size,
         historyAnchorPending,
     ) {
         if (!historyAnchorPending) return@LaunchedEffect
@@ -352,14 +271,8 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
                 if (endIndex >= 0) listState.scrollToItem(endIndex)
                 followingLatest = true
             } else if (historyAnchorKey != null) {
-                val messageIndex = messages.withIndex().indexOfFirst { (index, message) ->
-                    conversationMessageKey(message, index) == historyAnchorKey
-                }
-                if (messageIndex >= 0) {
-                    val historyItems = if (state.historyHasMore || state.historyLoading) 1 else 0
-                    val unsentTaskItems = if (hasUnsentDraft) 1 else 0
-                    listState.scrollToItem(historyItems + unsentTaskItems + messageIndex)
-                }
+                val itemIndex = items.indexOfFirst { it.id == historyAnchorKey }
+                if (itemIndex >= 0) listState.scrollToItem(historyItems + unsentTaskItems + itemIndex)
                 followingLatest = false
             }
         } else {
@@ -374,24 +287,22 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
     }
     LaunchedEffect(
         state.conversationScrollRequest,
-        messages.size,
-        messages.lastOrNull()?.hashCode(),
-        unsentTask,
-        draftAttachments.hashCode(),
-        showAgentWorking,
-        queuedMessages.size,
-        queuedMessages.lastOrNull()?.id,
+        items.size,
+        items.lastOrNull()?.hashCode(),
+        presentation.unsentTask,
+        presentation.draftAttachments.hashCode(),
+        presentation.working,
+        presentation.queue.size,
+        presentation.queue.lastOrNull()?.id,
     ) {
         // Wait until the updated row sizes are reflected in LazyListState.
         // If new tool/model content grew below the current viewport, preserve
         // the reading position and expose the explicit jump affordance.
         withFrameNanos { }
-        val historyItems = if (state.historyHasMore || state.historyLoading) 1 else 0
-        val unsentTaskItems = if (hasUnsentDraft) 1 else 0
-        val endIndex = historyItems + unsentTaskItems + messages.size +
-            (if (showAgentWorking) 1 else 0) + queuedMessages.size
+        val endIndex = historyItems + unsentTaskItems + items.size +
+            (if (presentation.working) 1 else 0) + presentation.queue.size
         val explicitOpenScroll = consumedScrollRequest != state.conversationScrollRequest
-        if ((hasUnsentDraft || messages.isNotEmpty() || showAgentWorking || queuedMessages.isNotEmpty()) &&
+        if (!presentation.empty &&
             shouldFollowConversationUpdate(
                 explicitOpenScroll = explicitOpenScroll,
                 initialScrollComplete = initialScrollComplete,
@@ -419,11 +330,13 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
                 onDiscard = { model.discardOutboxItem(card.id) },
             )
         }
-        if (!hasUnsentDraft && messages.isEmpty() && !showAgentWorking && queuedMessages.isEmpty()) {
+        if (presentation.empty) {
             if (state.conversation == null) LoadingState(Modifier.weight(1f))
             else EmptyList("Conversation is ready", "Send a message to resume the same durable harness session.", Icons.Outlined.ChatBubbleOutline, Modifier.weight(1f))
         } else {
+            val workspaceRoot = state.workspaceReview.workspace?.path?.takeIf { state.workspaceReview.cardId == card?.id }
             Box(Modifier.weight(1f)) {
+                CompositionLocalProvider(LocalWorkspaceRoot provides workspaceRoot) {
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize()
@@ -445,64 +358,59 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
                                     Spacer(Modifier.width(8.dp))
                                     Text("Loading earlier messages…", color = DieterMuted, fontSize = 11.sp)
                                 } else {
-                                    Text("Load earlier messages · ${allMessages.size} of ${state.historyTotal}")
+                                    Text("Load earlier messages · ${presentation.loadedMessages} of ${state.historyTotal}")
                                 }
                             }
                         }
                     }
-                    if (hasUnsentDraft) {
+                    if (presentation.hasUnsentDraft) {
                         item(key = "unsent-agent-task") {
-                            UnsentTaskMessage(unsentTask.orEmpty(), draftAttachments)
+                            UnsentTaskMessage(presentation.unsentTask.orEmpty(), presentation.draftAttachments)
                         }
                     }
-                    itemsIndexed(messages, key = { index, message -> conversationMessageKey(message, index) }) { _, message ->
-                        val plan = plansByMessage[message.id]
-                        val subagents = subagentsByMessage[message.id].orEmpty()
+                    items(items, key = { it.id }) { item ->
                         // animateItem eases freshly synced messages in instead
                         // of teleporting the stale transcript to the new tail.
                         Box(Modifier.animateItem()) {
-                            MessageBlock(
-                                message,
-                                model,
-                                showAgentAvatar = card?.scope == "chat",
-                                showReasoningTraces = state.showReasoningTraces,
-                                plan = plan,
-                                subagents = subagents,
-                            )
+                            when (item) {
+                                is TimelineItem.Message -> MessageBlock(
+                                    item,
+                                    presentation,
+                                    model,
+                                    showAgentAvatar = card?.scope == "chat",
+                                )
+                                is TimelineItem.Activity -> ActivityBlock(item, model, showAgentAvatar = card?.scope == "chat")
+                            }
                         }
                     }
-                    if (showAgentWorking) {
+                    if (presentation.working) {
                         item(key = "agent-working") {
-                            AgentWorkingIndicator(workingLabel, turnStartedAtMillis)
+                            AgentWorkingIndicator(presentation.liveActivity.english(), presentation.turnStart?.toEpochMilliseconds())
                         }
                     }
                     if (turnFailure != null) {
                         item(key = "turn-failure") {
                             TurnFailureBanner(
                                 failure = turnFailure,
-                                retrying = failureRetryQueued,
+                                retrying = presentation.retrying,
                                 onViewLog = { presentedFailureLog = turnFailure.log },
-                                onRetry = {
-                                    if (!failureRetryQueued) {
-                                        failureRetryQueued = true
-                                        model.retryFailedTurn(turnFailure.retryParts)
-                                    }
-                                },
+                                onRetry = model::retryFailedTurn,
                             )
                         }
                     }
-                    items(queuedMessages, key = { "queued-${it.id}" }) { queued ->
+                    items(presentation.queue, key = { "queued-${it.id}" }) { queued ->
                         QueuedMessageBlock(
                             queued = queued,
-                            showInterrupt = queued.id == queuedMessages.firstOrNull()?.id && activeTurn,
-                            interrupting = interrupting,
-                            pending = queued.id in draft.pendingQueueMessageIds,
+                            showInterrupt = queued.id == presentation.steerableId,
+                            interrupting = presentation.interrupting,
+                            pending = queued.id in draft.pendingQueueIds,
                             onEdit = { model.removeQueuedMessage(queued, edit = true) },
                             onRemove = { model.removeQueuedMessage(queued, edit = false) },
-                            onInterrupt = model::cancelSelected,
+                            onInterrupt = { model.steerQueuedMessage(queued) },
                         )
                     }
                     item(key = "conversation-end") { Spacer(Modifier.height(1.dp)) }
+                }
                 }
                 if (initialScrollComplete && !followingLatest && listState.canScrollForward) {
                     FilledTonalButton(
@@ -532,7 +440,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
                 }
             }
         }
-        if (state.selectedCard?.lane?.contains("review", ignoreCase = true) == true) {
+        if (presentation.readyForReview) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                     .clip(RoundedCornerShape(16.dp)).background(DieterAmberTint).padding(12.dp),
@@ -550,40 +458,27 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
                 ) { Text("Mark done") }
             }
         }
-        if (card?.canStartFromTodo(draftAttachments.isNotEmpty()) == true) {
+        if (card != null && presentation.canStart) {
             StartCardBanner(
-                starting = state.cardOperations[card.id] == CardOperation.STARTING,
+                starting = presentation.starting,
                 error = state.cardOperationErrors[card.id],
                 onStart = model::startSelectedCard,
             )
         }
         MessageComposer(
-            value = text,
+            value = draft.text,
             placeholder = "Message the local agent…",
             enabled = !state.working,
-            harnesses = state.harnesses,
-            card = state.selectedCard,
-            contextUsage = contextUsage,
-            lastResponseModelId = lastClaudeResponseModelId,
+            controls = controls.takeIf { state.harnesses.isNotEmpty() && card != null },
+            contextUsage = presentation.contextUsage,
+            respondingModel = presentation.respondingModel,
             attachments = attachments,
-            selection = composerSelection,
             error = composerError,
             onValueChange = model::updateComposerText,
             onSelectionChange = model::updateComposerSelection,
             onAttach = { attachmentPickerVisible = true },
             onRemoveAttachment = model::removeComposerAttachment,
-            onSend = { provider, selectedModel, effort, providerOptions ->
-                val message = text.trim()
-                if (message.isNotBlank() || attachments.isNotEmpty()) {
-                    assistantCountAtSend = assistantCount
-                    observedActiveTurn = false
-                    awaitingAgent = true
-                    val parts = attachments.toList()
-                    model.sendMessage(message, parts, provider, selectedModel, effort, providerOptions) {
-                        model.acceptComposerSend(message, parts)
-                    }
-                }
-            },
+            onSend = model::sendDraft,
         )
     }
     if (attachmentPickerVisible) {
@@ -663,7 +558,7 @@ internal fun CreationFailureBanner(
 
 @Composable
 internal fun TurnFailureBanner(
-    failure: ConversationTurnFailure,
+    failure: TurnFailure,
     retrying: Boolean,
     onViewLog: () -> Unit,
     onRetry: () -> Unit,
@@ -771,8 +666,8 @@ internal fun QueuedMessageBlock(
     onRemove: () -> Unit,
     onInterrupt: () -> Unit,
 ) {
-    val parts = queued.partsList.ifEmpty {
-        listOf(MessagePart.newBuilder().setType("text").setText(queued.text).build())
+    val parts = queued.parts.ifEmpty {
+        listOf(MessagePart(type = "text", text = queued.text))
     }
     Column(
         Modifier.fillMaxWidth(),
@@ -953,22 +848,18 @@ internal fun LazyListState.isAtConversationEnd(): Boolean {
     return layout.visibleItemsInfo.lastOrNull()?.index == layout.totalItemsCount - 1
 }
 
-internal fun conversationMessageKey(message: UiMessage, index: Int): String =
-    if (message.id.isNotBlank()) "message:${message.id}" else "message:anonymous:${message.hashCode()}:$index"
-
 @Composable
 internal fun MessageBlock(
-    message: UiMessage,
+    item: TimelineItem.Message,
+    presentation: ConversationPresentation,
     model: DieterViewModel,
     showAgentAvatar: Boolean,
-    showReasoningTraces: Boolean,
-    plan: TaskPlan? = null,
-    subagents: List<Subagent> = emptyList(),
 ) {
-    val fromUser = message.role.equals("user", true) || message.role.equals("human", true)
-    val failed = model.isFailedOutboxItem(message.id)
-    val pendingAlpha = if (model.isPendingMessage(message.id) && !failed) 0.52f else 1f
-    if (fromUser) {
+    val message = item.message
+    val delivery = presentation.delivery(message.id)
+    val failed = delivery == DeliveryState.FAILED
+    val pendingAlpha = if (presentation.unconfirmed(message.id)) 0.52f else 1f
+    if (item.user) {
         Row(Modifier.fillMaxWidth().alpha(pendingAlpha), horizontalArrangement = Arrangement.End) {
             Surface(
                 color = DieterShellDeep,
@@ -978,14 +869,7 @@ internal fun MessageBlock(
             ) {
                 Box {
                     Column(Modifier.padding(start = 13.dp, top = 8.dp, end = 18.dp, bottom = 8.dp)) {
-                        MessageParts(
-                            message,
-                            model,
-                            compact = true,
-                            showReasoningTraces = showReasoningTraces,
-                            plan = plan,
-                            subagents = subagents,
-                        )
+                        MessageParts(item, model, compact = true)
                         if (failed) {
                             Row(
                                 Modifier.fillMaxWidth().padding(top = 4.dp),
@@ -1003,14 +887,7 @@ internal fun MessageBlock(
                         }
                     }
                     if (!failed) {
-                        MessageDeliveryReceipt(
-                            messageDeliveryState(
-                                pending = model.isPendingMessage(message.id),
-                                accepted = model.isAcceptedOutboxItem(message.id),
-                                failed = false,
-                            ),
-                            Modifier.align(Alignment.BottomEnd).offset(x = (-4).dp, y = (-4).dp),
-                        )
+                        MessageDeliveryReceipt(delivery, Modifier.align(Alignment.BottomEnd).offset(x = (-4).dp, y = (-4).dp))
                     }
                 }
             }
@@ -1019,44 +896,49 @@ internal fun MessageBlock(
         Row(Modifier.fillMaxWidth().alpha(pendingAlpha), verticalAlignment = Alignment.Top) {
             AgentAvatar()
             Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                MessageParts(message, model, showReasoningTraces = showReasoningTraces, plan = plan, subagents = subagents)
-            }
+            Column(Modifier.weight(1f)) { MessageParts(item, model) }
         }
     } else {
-        Column(Modifier.fillMaxWidth().alpha(pendingAlpha)) {
-            MessageParts(message, model, showReasoningTraces = showReasoningTraces, plan = plan, subagents = subagents)
-        }
+        Column(Modifier.fillMaxWidth().alpha(pendingAlpha)) { MessageParts(item, model) }
     }
 }
 
-enum class MessageDeliveryState { LOCAL, ACCEPTED, SYNCED, FAILED }
-
-fun messageDeliveryState(pending: Boolean, accepted: Boolean, failed: Boolean): MessageDeliveryState = when {
-    failed -> MessageDeliveryState.FAILED
-    !pending -> MessageDeliveryState.SYNCED
-    accepted -> MessageDeliveryState.ACCEPTED
-    else -> MessageDeliveryState.LOCAL
+/** Consecutive assistant messages that only used tools or reasoned, folded into one summary. */
+@Composable
+internal fun ActivityBlock(item: TimelineItem.Activity, model: DieterViewModel, showAgentAvatar: Boolean) {
+    val content: @Composable () -> Unit = {
+        ActivityGroup(item.id, item.summary.english(), item.steps, model)
+    }
+    if (showAgentAvatar) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            AgentAvatar()
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) { content() }
+        }
+    } else {
+        Column(Modifier.fillMaxWidth()) { content() }
+    }
 }
 
 @Composable
-internal fun MessageDeliveryReceipt(state: MessageDeliveryState, modifier: Modifier = Modifier) {
-    val tint = if (state == MessageDeliveryState.FAILED) MaterialTheme.colorScheme.error else Color.White.copy(alpha = 0.72f)
+internal fun MessageDeliveryReceipt(state: DeliveryState, modifier: Modifier = Modifier) {
+    val tint = if (state == DeliveryState.FAILED) MaterialTheme.colorScheme.error else Color.White.copy(alpha = 0.72f)
     val description = when (state) {
-        MessageDeliveryState.LOCAL -> "Waiting to send"
-        MessageDeliveryState.ACCEPTED -> "Accepted by daemon"
-        MessageDeliveryState.SYNCED -> "Synced"
-        MessageDeliveryState.FAILED -> "Send failed; retry or remove this message"
+        DeliveryState.LOCAL -> "Waiting to send"
+        DeliveryState.QUEUED -> "Queued"
+        DeliveryState.ACCEPTED -> "Accepted by daemon"
+        DeliveryState.SYNCED -> "Synced"
+        DeliveryState.FAILED -> "Send failed; retry or remove this message"
     }
     Box(modifier.width(14.dp).height(10.dp)) {
         when (state) {
-            MessageDeliveryState.LOCAL -> Icon(Icons.Outlined.Schedule, description, tint = tint, modifier = Modifier.size(10.dp))
-            MessageDeliveryState.ACCEPTED -> Icon(Icons.Default.Check, description, tint = tint, modifier = Modifier.size(11.dp))
-            MessageDeliveryState.SYNCED -> {
+            DeliveryState.LOCAL, DeliveryState.QUEUED -> Icon(Icons.Outlined.Schedule, description, tint = tint, modifier = Modifier.size(10.dp))
+            DeliveryState.ACCEPTED -> Icon(Icons.Default.Check, description, tint = tint, modifier = Modifier.size(11.dp))
+            DeliveryState.SYNCED -> {
                 Icon(Icons.Default.Check, description, tint = tint, modifier = Modifier.offset(x = (-1).dp).size(11.dp))
                 Icon(Icons.Default.Check, null, tint = tint, modifier = Modifier.offset(x = 3.dp).size(11.dp))
             }
-            MessageDeliveryState.FAILED -> Text("!", color = tint, fontSize = 10.sp)
+            DeliveryState.FAILED -> Text("!", color = tint, fontSize = 10.sp)
         }
     }
 }

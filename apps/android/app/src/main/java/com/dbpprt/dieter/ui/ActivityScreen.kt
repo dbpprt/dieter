@@ -40,12 +40,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.dbpprt.dieter.gateway.v1.ProviderQuotaAvailability
-import com.dbpprt.dieter.gateway.v1.ProviderQuotaProvider
-import com.dbpprt.dieter.gateway.v1.ProviderQuotaSnapshot
+import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaAvailability
+import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaProvider
+import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaSnapshot
+import com.dbpprt.dieter.core.activity.Activity
+import com.dbpprt.dieter.core.activity.ActivityItem
+import com.dbpprt.dieter.core.activity.ActivityKind
+import com.dbpprt.dieter.core.activity.ActivitySection
+import com.dbpprt.dieter.core.navigation.Destination
+import com.dbpprt.dieter.core.quotas.QuotaLevel
+import com.dbpprt.dieter.core.quotas.Quotas
 import com.dbpprt.dieter.ui.theme.*
-import com.dbpprt.dieter.v1.Card
-import com.dbpprt.dieter.settings.NavigationFolderScope
+import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.core.navigation.FolderScope
+import kotlin.time.toKotlinInstant
 import kotlinx.coroutines.delay
 import java.time.Instant
 
@@ -63,7 +71,7 @@ internal fun ActivityScreen(state: DieterUiState, model: DieterViewModel, expand
                     state = state, modifier = Modifier.fillMaxSize(),
                     onOpen = { timeline = false; model.openCard(it, Destination.ACTIVITY) },
                     onConnections = model::showConnectionDialog,
-                    onAccount = { accountKey = it.accountKey },
+                    onAccount = { accountKey = it.account_key },
                     onRefreshAccounts = { model.refreshProviderQuotas() },
                     tablet = tablet,
                     timelineOnly = tablet && timeline,
@@ -114,15 +122,15 @@ internal fun ActivityScreen(state: DieterUiState, model: DieterViewModel, expand
         content(Modifier.fillMaxSize().padding(contentPadding))
     }
     folderChatId?.let { id ->
-        MoveToNavigationFolderDialog(id, NavigationFolderScope.CHATS, state.chatFolders,
-            model.navigationFolders, onDismiss = { folderChatId = null })
+        MoveToNavigationFolderDialog(id, FolderScope.CHATS, state.chatFolders,
+            model, onDismiss = { folderChatId = null })
     }
-    val group = state.providerQuotaGroups.firstOrNull { group -> group.accountsList.any { it.accountKey == accountKey } }
-    val account = group?.accountsList?.firstOrNull { it.accountKey == accountKey }
+    val group = state.providerQuotaGroups.firstOrNull { group -> group.accounts.any { it.account_key == accountKey } }
+    val account = group?.accounts?.firstOrNull { it.account_key == accountKey }
     if (account != null) {
         ModalBottomSheet(onDismissRequest = { accountKey = null }, containerColor = DieterSurface) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("${quotaProviderName(group.provider)} account", style = MaterialTheme.typography.titleLarge)
+                Text("${Quotas.productName(group.provider)} account", style = MaterialTheme.typography.titleLarge)
                 ProviderQuotaAccountView(account, group.provider, state, model::setProviderQuotaSummaryInclusion,
                     model::consumeProviderQuotaReset, showMonetaryBalances = false)
             }
@@ -161,21 +169,17 @@ internal fun ActivityFeed(
     var hours by rememberSaveable { mutableIntStateOf(1) }
     var expandedTimeline by rememberSaveable { mutableStateOf(false) }
     var expandedAccounts by rememberSaveable { mutableStateOf(false) }
-    val entries = remember(state.spaceCards, state.cards, state.chats, state.activityDetails) {
-        buildActivityEntries(state.spaceCards + state.cards + state.chats, state.activityDetails)
-    }
+    val entries = state.activityItems
     val projectNames = remember(state.projects) { state.projects.associate { it.id to it.name } }
-    val boardNames = remember(state.spaceBoards) { state.spaceBoards.associate { it.id to it.name } }
     // A removed project must not leave the user looking at a permanently empty filter.
     val selectedProject = projectId.takeIf { it in projectNames }.orEmpty()
-    val filtered = remember(entries, selectedProject, query, projectNames, boardNames) {
-        filterActivityEntries(entries, selectedProject, query, projectNames, boardNames)
-    }
-    val attention = filtered.filter { it.needsYou }
-    val running = filtered.filter { it.running }
-    val recent = filtered.filter { !it.needsYou && !it.running }
-    val intervals = remember(filtered, timelineNow, hours) { activityTimeline(filtered, timelineNow, hours) }
-    val accounts = state.providerQuotaGroups.flatMap { group -> group.accountsList.map { group.provider to it } }
+    val filtered = remember(entries, selectedProject, query) { Activity.filter(entries, selectedProject, query) }
+    val sections = remember(filtered) { Activity.sections(filtered) }
+    val attention = sections.getValue(ActivitySection.ATTENTION)
+    val running = sections.getValue(ActivitySection.RUNNING)
+    val recent = sections.getValue(ActivitySection.RECENT)
+    val intervals = remember(filtered, timelineNow, hours) { Activity.timeline(filtered, timelineNow.toKotlinInstant(), hours) }
+    val accounts = state.providerQuotaGroups.flatMap { group -> group.accounts.map { group.provider to it } }
     Box(modifier, contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             Modifier.widthIn(max = if (timelineOnly) 1800.dp else 900.dp).fillMaxSize().testTag("activity-feed"),
@@ -230,7 +234,7 @@ internal fun ActivityFeed(
                         item("all") { ActivityProjectTile("", "All", selectedProject.isEmpty(), null, { projectId = "" }) }
                         items(state.projects, key = { it.id }) { project ->
                             ActivityProjectTile(project.id, project.name, selectedProject == project.id,
-                                entries.count { it.card.projectId == project.id && it.needsYou }.takeIf { it > 0 }, { projectId = project.id })
+                                Activity.needsYouCount(entries.filter { it.card.project_id == project.id }).takeIf { it > 0 }, { projectId = project.id })
                         }
                     }
                 }
@@ -251,9 +255,9 @@ internal fun ActivityFeed(
                     } else ActivityTimelinePanel(intervals, hours, state.connected, running.size, expandedTimeline,
                         onHours = { hours = it }, onExpand = { expandedTimeline = !expandedTimeline }, onOpen = onOpen, actions = itemActions)
                 }
-                activitySection("Needs attention", attention, now, projectNames, boardNames, state::machineLabel, onOpen, state.selectedCardId, itemActions)
-                activitySection("Running", running, now, projectNames, boardNames, state::machineLabel, onOpen, state.selectedCardId, itemActions)
-                activitySection("Recent", recent, now, projectNames, boardNames, state::machineLabel, onOpen, state.selectedCardId, itemActions)
+                ActivitySection.entries.forEach { section ->
+                    activitySection(section.title, sections.getValue(section), now, state::machineLabel, onOpen, state.selectedCardId, itemActions)
+                }
                 if (filtered.isEmpty()) item("empty") {
                     Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(if (query.isNotBlank()) "No matching activity" else "All quiet here", fontWeight = FontWeight.SemiBold)
@@ -275,7 +279,7 @@ internal fun ActivityFeed(
                     Text(if (state.providerQuotasLoading) "Loading accounts…" else "No account usage available. Sign in to a supported provider on a Dieter machine.",
                         color = DieterMuted, modifier = Modifier.padding(bottom = 12.dp))
                 }
-                items(if (expandedAccounts) accounts else accounts.take(3), key = { "account-${it.first.number}-${it.second.accountKey}" }) { (provider, account) ->
+                items(if (expandedAccounts) accounts else accounts.take(3), key = { "account-${it.first.value}-${it.second.account_key}" }) { (provider, account) ->
                     ActivityAccountRow(provider, account, now, onClick = { onAccount(account) })
                 }
                 if (accounts.size > 3) item("accounts-more") {
@@ -311,16 +315,16 @@ private fun ActivityProjectTile(id: String, name: String, isSelected: Boolean, c
 
 @Composable
 private fun ActivityTimelinePanel(
-    intervals: List<ActivityInterval>, hours: Int, live: Boolean, runningCount: Int, expanded: Boolean,
+    intervals: List<Activity.TimelineBar>, hours: Int, live: Boolean, runningCount: Int, expanded: Boolean,
     onHours: (Int) -> Unit, onExpand: () -> Unit, onOpen: (Card) -> Unit,
     actions: (Card) -> ActivityItemActions?,
 ) {
     var rangeMenu by remember { mutableStateOf(false) }
     var detailLimit by rememberSaveable(hours) { mutableIntStateOf(20) }
-    val preview = intervals.sortedByDescending { it.entry.running }.take(4)
+    val preview = intervals.sortedByDescending { it.item.running }.take(4)
     val outline = DieterOutline
     val marker = DieterCoral
-    val colors = preview.map { if (it.entry.needsYou) DieterAmber else stableAccent(it.entry.card.projectId) }
+    val colors = preview.map { if (it.item.kind.needsYou) DieterAmber else stableAccent(it.item.card.project_id) }
     Surface(shape = RoundedCornerShape(22.dp), color = DieterSurface, modifier = Modifier.fillMaxWidth().testTag("activity-timeline")) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -350,8 +354,8 @@ private fun ActivityTimelinePanel(
                         val rowHeight = size.height / preview.size
                         preview.forEachIndexed { index, interval ->
                             val y = rowHeight * (index + .5f)
-                            val left = interval.from * width
-                            val right = interval.to * width
+                            val left = interval.from.toFloat() * width
+                            val right = interval.to.toFloat() * width
                             if (interval.point) drawCircle(colors[index], 4.dp.toPx(), Offset(right, y))
                             else {
                                 drawRoundRect(colors[index].copy(alpha = .55f), Offset(left, y - 4.dp.toPx()),
@@ -371,12 +375,12 @@ private fun ActivityTimelinePanel(
             if (expanded) {
                 Text("Latest activity per conversation · dots mark events without a recorded duration.", color = DieterMuted, style = MaterialTheme.typography.labelSmall)
                 intervals.take(detailLimit).forEach { interval ->
-                    ActivityItem(card = interval.entry.card, onOpen = onOpen, actions = actions(interval.entry.card), color = Color.Transparent,
-                        modifier = Modifier.fillMaxWidth().testTag("activity-bar-${interval.entry.card.id}")) {
+                    ActivityItem(card = interval.item.card, onOpen = onOpen, actions = actions(interval.item.card), color = Color.Transparent,
+                        modifier = Modifier.fillMaxWidth().testTag("activity-bar-${interval.item.card.id}")) {
                         Column(Modifier.padding(vertical = 12.dp)) {
-                            Text(interval.entry.card.title, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            Text(interval.item.card.title, maxLines = 2, overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.labelLarge)
-                            Text("${if (interval.entry.card.scope == "chat") "Chat" else "Card"} · ${interval.entry.detail}",
+                            Text("${if (interval.item.card.scope == "chat") "Chat" else "Card"} · ${interval.item.detail}",
                                 color = DieterMuted, style = MaterialTheme.typography.bodySmall)
                         }
                     }
@@ -390,7 +394,7 @@ private fun ActivityTimelinePanel(
 }
 
 private fun LazyListScope.activitySection(
-    title: String, entries: List<ActivityEntry>, now: Instant, projects: Map<String, String>, boards: Map<String, String>,
+    title: String, entries: List<ActivityItem>, now: Instant,
     machineLabel: (String) -> String, onOpen: (Card) -> Unit,
     selectedId: String? = null,
     actions: (Card) -> ActivityItemActions? = { null },
@@ -398,7 +402,7 @@ private fun LazyListScope.activitySection(
     if (entries.isEmpty()) return
     item("heading-$title") { ActivitySectionHeading("$title · ${entries.size}") }
     items(entries, key = { "$title-${it.card.id}" }) { entry ->
-        ActivityRow(entry, projects[entry.card.projectId], boards[entry.card.boardId], machineLabel(entry.card.ownerDaemonId), now, entry.card.id == selectedId, actions(entry.card)) { onOpen(entry.card) }
+        ActivityRow(entry, machineLabel(entry.card.owner_daemon_id), now, entry.card.id == selectedId, actions(entry.card)) { onOpen(entry.card) }
     }
 }
 
@@ -410,26 +414,24 @@ private fun ActivitySectionHeading(title: String, modifier: Modifier = Modifier)
 
 @Composable
 private fun ActivityAccountRow(provider: ProviderQuotaProvider, account: ProviderQuotaSnapshot, now: Instant, onClick: () -> Unit) {
-    val stale = activityInstant(account.freshUntil)?.let { it <= now } ?: true
-    val available = account.availability == ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_AVAILABLE
+    val warning = Quotas.warning(account, now.toKotlinInstant())
     Surface(onClick = onClick, shape = RoundedCornerShape(16.dp), color = DieterSurface,
-        modifier = Modifier.fillMaxWidth().testTag("activity-account-${account.accountKey}")) {
+        modifier = Modifier.fillMaxWidth().testTag("activity-account-${account.account_key}")) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(quotaProviderName(provider), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Text(account.displayEmail.ifBlank { account.plan.ifBlank { "Account" } + " · ••" + account.accountKey.takeLast(6) },
+            Text(Quotas.productName(provider), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(Quotas.identity(account),
                 color = DieterMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (!available || stale) Text(if (!available) quotaAvailability(account.availability) else "Last reported · refresh pending",
-                color = DieterAmber, style = MaterialTheme.typography.labelSmall)
-            account.windowsList.forEach { window ->
-                val remaining = window.remainingPercent.coerceIn(0, 100)
-                Text("${window.label.ifBlank { "Usage" }} · ${if (window.hasRemainingPercent()) "$remaining% remaining" else "Not reported"}",
+            warning?.let { Text(it, color = DieterAmber, style = MaterialTheme.typography.labelSmall) }
+            account.windows.forEach { window ->
+                val remaining = (window.remaining_percent ?: 0).coerceIn(0, 100)
+                Text("${Quotas.windowName(window)} · ${if (window.remaining_percent != null) "$remaining% remaining" else "Not reported"}",
                     style = MaterialTheme.typography.labelMedium)
-                if (window.hasRemainingPercent()) LinearProgressIndicator(progress = { remaining / 100f },
-                    color = if (remaining <= 10) DieterCoral else if (remaining <= 30) DieterAmber else quotaTint(provider, remaining),
+                if (window.remaining_percent != null) LinearProgressIndicator(progress = { remaining / 100f },
+                    color = if (Quotas.level(remaining) == QuotaLevel.CRITICAL) DieterCoral else quotaTint(provider, remaining),
                     trackColor = DieterOutline, modifier = Modifier.fillMaxWidth().height(5.dp))
-                if (window.resetsAt.isNotBlank()) Text(activityResetText(window.resetsAt, now), color = DieterMuted, style = MaterialTheme.typography.labelSmall)
+                if (window.resets_at.isNotBlank()) Text(Quotas.resetText(window.resets_at, now.toKotlinInstant(), fine = false), color = DieterMuted, style = MaterialTheme.typography.labelSmall)
             }
-            if (account.windowsCount == 0) Text("Usage windows unavailable", color = DieterMuted, style = MaterialTheme.typography.bodySmall)
+            if (account.windows.size == 0) Text("Usage windows unavailable", color = DieterMuted, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

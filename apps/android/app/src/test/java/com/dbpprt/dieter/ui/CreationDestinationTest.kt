@@ -1,86 +1,83 @@
 package com.dbpprt.dieter.ui
 
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.connection.EndpointConnection
-import com.dbpprt.dieter.connection.ProjectReplica
-import com.dbpprt.dieter.v1.Checkout
-import com.dbpprt.dieter.v1.Project
-import org.junit.Assert.*
+import com.dbpprt.dieter.api.v1.Checkout
+import com.dbpprt.dieter.api.v1.Project
+import com.dbpprt.dieter.core.composition.CatalogState
+import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.machines.MachineRow
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
+/** The UI state feeds the core's destination rules the checkout, its machine, and the loaded catalog. */
 class CreationDestinationTest {
-    private fun checkout(id: String, daemon: String = id) = Checkout.newBuilder()
-        .setId(id).setProjectId("project").setDaemonId(daemon).setName(id).build()
+    private fun checkout(id: String, daemon: String = id) = Checkout(id = id, project_id = "project", daemon_id = daemon, name = id)
 
     private fun state(vararg checkouts: Checkout) = DieterUiState(
         connectionPhase = ConnectionPhase.CONNECTED,
         selectedProjectId = "project",
-        projects = listOf(Project.newBuilder().setId("project").addAllCheckouts(checkouts.toList()).build()),
-        endpointConnections = listOf("mac", "linux").map {
-            EndpointConnection(id = "endpoint-$it", daemonId = it, label = it, address = "")
-        },
-        harnessesEndpointId = "endpoint-mac",
+        projects = listOf(Project(id = "project", checkouts = checkouts.toList())),
+        endpointConnections = listOf("mac", "linux").map { MachineRow(id = it, daemonId = it, label = it, address = "") },
+        harnessesEndpointId = "mac",
     )
 
     @Test fun singleCheckoutWorksWithoutAnExplicitMachineChoice() {
         val state = state(checkout("mac"))
         assertEquals("mac", state.creationCheckout?.id)
-        assertTrue(state.creationCatalogReady)
+        assertEquals(CatalogState.LIVE, state.catalogState)
     }
 
     @Test fun multipleCheckoutsRequireAnExplicitDestinationEvenOnTheSameMachine() {
         val state = state(checkout("one", "mac"), checkout("two", "mac"))
         assertNull(state.creationCheckout)
-        assertFalse(state.creationCatalogReady)
-        assertTrue(state.copy(creationCheckoutId = "two").creationCatalogReady)
+        assertEquals(CatalogState.NONE, state.catalogState)
+        assertEquals(CatalogState.LIVE, state.copy(creationCheckoutId = "two").catalogState)
     }
 
     @Test fun changingMachineCannotReusePreviousMachinesModels() {
         val state = state(checkout("mac"), checkout("linux")).copy(creationCheckoutId = "linux")
-        assertFalse(state.creationCatalogReady)
-        assertTrue(state.copy(harnessesEndpointId = "endpoint-linux").creationCatalogReady)
+        assertEquals(CatalogState.NONE, state.catalogState)
+        assertEquals(CatalogState.LIVE, state.copy(harnessesEndpointId = "linux").catalogState)
     }
 
-    @Test fun offlineOrDetachedDestinationsCannotCreateTasks() {
+    @Test fun offlineDestinationsQueueTasksAgainstTheCachedCatalog() {
         val state = state(checkout("mac"))
-        assertFalse(state.copy(connectionPhase = ConnectionPhase.UNAVAILABLE).creationCatalogReady)
-        assertFalse(state.copy(endpointConnections = emptyList()).creationCatalogReady)
-        assertNull(state(checkout("mac").toBuilder().setDetached(true).build()).creationCheckout)
+        val offline = state.copy(connectionPhase = ConnectionPhase.NO_MACHINE)
+        assertEquals(CatalogState.CACHED, offline.catalogState)
+        assertEquals(offline.harnesses, offline.creationCatalog(chat = false))
+        assertNull(offline.creationCatalog(chat = true))
+        assertNull(state(checkout("mac").copy(detached = true)).creationCheckout)
+        assertEquals("mac", state.creationMachine?.id)
     }
 
     @Test fun staleSelectionDoesNotPickAnArbitraryMachine() {
         val state = state(checkout("mac"), checkout("linux")).copy(creationCheckoutId = "removed")
         assertNull(state.creationCheckout)
-        assertFalse(state.creationCatalogReady)
+        assertEquals(CatalogState.NONE, state.catalogState)
     }
 
     @Test fun projectLocationUsesCheckoutOwnersInsteadOfTheSyncReplica() {
         val state = state(checkout("office"), checkout("laptop")).copy(
             endpointConnections = listOf(
-                EndpointConnection("endpoint-home", "mini-home", "", daemonId = "home"),
-                EndpointConnection("endpoint-office", "mini-office", "", daemonId = "office"),
-                EndpointConnection("endpoint-laptop", "mbp-office", "", daemonId = "laptop", online = false),
+                MachineRow("home", "mini-home", "", daemonId = "home"),
+                MachineRow("office", "mini-office", "", daemonId = "office"),
+                MachineRow("laptop", "mbp-office", "", daemonId = "laptop", online = false),
             ),
-            projectReplicas = mapOf("project" to ProjectReplica("endpoint-home", "home", "mini-home", true)),
+            projectReplicas = mapOf("project" to ProjectReplica("home", "home", "mini-home", true)),
         )
         val project = state.project!!
         assertEquals("mini-office · mbp-office (offline)", state.projectCheckoutLabel(project))
-        assertEquals(state.projectCheckoutLabel(project), state.copy(
-            projectReplicas = mapOf("project" to ProjectReplica("endpoint-office", "office", "mini-office", true)),
-        ).projectCheckoutLabel(project))
-    }
-
-    @Test fun projectLocationDeduplicatesMachinesAndExcludesDetachedCheckouts() {
-        val state = state(checkout("one", "mac"), checkout("two", "mac"),
-            checkout("linux").toBuilder().setDetached(true).build())
-        assertEquals("mac", state.projectCheckoutLabel(state.project!!))
-        assertEquals("No checkouts", state.projectCheckoutLabel(state.project!!.toBuilder().clearCheckouts().build()))
+        assertEquals(
+            state.projectCheckoutLabel(project),
+            state.copy(projectReplicas = mapOf("project" to ProjectReplica("office", "office", "mini-office", true))).projectCheckoutLabel(project),
+        )
     }
 
     @Test fun projectLocationRetainsUnknownAndDisconnectedOwners() {
         val state = state(checkout("unknown"), checkout("mac"))
         assertEquals("mac · unknown (unavailable)", state.projectCheckoutLabel(state.project!!))
-        assertEquals("mac (offline) · unknown (unavailable)",
-            state.copy(connectionPhase = ConnectionPhase.UNAVAILABLE).projectCheckoutLabel(state.project!!))
+        assertEquals("mac (offline) · unknown (unavailable)", state.copy(connectionPhase = ConnectionPhase.NO_MACHINE).projectCheckoutLabel(state.project!!))
+        assertEquals("unknown", state.machineLabel("unknown"))
+        assertEquals("mac", state.machineLabel("mac"))
     }
 }

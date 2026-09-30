@@ -1,96 +1,15 @@
 package com.dbpprt.dieter.settings
 
 import androidx.test.platform.app.InstrumentationRegistry
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.flow.first
+import com.dbpprt.dieter.core.notifications.NotificationSettings
+import com.dbpprt.dieter.core.notifications.NotificationStyle
+import com.dbpprt.dieter.sharedcore.SharedCore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppPreferencesTest {
-    @Test
-    fun conversationCreationPreferencesPersistTogether() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val preferences = AppPreferences(context)
-        val original = preferences.conversationCreation.value
-        val expected = ConversationCreationPreferences(
-            provider = "codex",
-            model = "sol",
-            effort = "xhigh",
-            workspaceMode = "project",
-        )
-
-        try {
-            preferences.setConversationCreationPreferences(expected)
-
-            assertEquals(expected, preferences.conversationCreation.value)
-            assertEquals(expected, AppPreferences(context).conversationCreation.value)
-        } finally {
-            preferences.setConversationCreationPreferences(original)
-        }
-    }
-
-    @Test
-    fun navigationUsesIsolatedAccountCacheAndDurableOfflineQueue() = runBlocking {
-        val base = InstrumentationRegistry.getInstrumentation().targetContext
-        val prefix = "kv-test-${java.util.UUID.randomUUID()}-"
-        val context = object : android.content.ContextWrapper(base) {
-            override fun getApplicationContext(): android.content.Context = this
-            override fun getSharedPreferences(name: String, mode: Int): android.content.SharedPreferences =
-                base.getSharedPreferences(prefix + name, mode)
-        }
-        context.getSharedPreferences("dieter_shared_kv", 0).edit().putString("activeAccount", "fixture-account").commit()
-        val preferences = withContext(Dispatchers.Main) { AppPreferences(context) }
-        var restored: AppPreferences? = null
-        var signedOut: AppPreferences? = null
-        try {
-            withContext(Dispatchers.Main) {
-                preferences.setProjectOrder(listOf("c", "a", "b"))
-                preferences.setPinnedProjectOrder(listOf("project-two", "project-one"))
-                preferences.setPinnedChatOrder(listOf("two", "one"))
-                preferences.setChatProjectCollapsed("p", true)
-                preferences.setChatProjectExpanded("p", true)
-            }
-            preferences.sharedNavigation.awaitPendingWrites()
-            val reloaded = withContext(Dispatchers.Main) { AppPreferences(context) }
-            restored = reloaded
-            withTimeout(5_000) {
-                reloaded.sharedNavigation.status.first { it.pending == 9 }
-                reloaded.projectOrder.first { it == listOf("c", "a", "b") }
-                reloaded.pinnedProjectOrder.first { it == listOf("project-two", "project-one") }
-                reloaded.pinnedChatOrder.first { it == listOf("two", "one") }
-                reloaded.collapsedChatProjectIds.first { "p" in it }
-                reloaded.expandedChatProjectIds.first { "p" in it }
-            }
-            withContext(Dispatchers.Main) {
-                reloaded.setPinnedProjectOrder(listOf("project-one"))
-            }
-            reloaded.sharedNavigation.awaitPendingWrites()
-            withTimeout(5_000) {
-                reloaded.sharedNavigation.status.first { it.pending == 10 }
-                reloaded.pinnedProjectOrder.first { it == listOf("project-one") }
-            }
-            reloaded.sharedNavigation.clearAccount()
-            reloaded.sharedNavigation.awaitPendingWrites()
-            val cleared = withContext(Dispatchers.Main) { AppPreferences(context) }
-            signedOut = cleared
-            cleared.sharedNavigation.awaitPendingWrites()
-            assertTrue(cleared.projectOrder.value.isEmpty())
-            assertTrue(cleared.pinnedProjectOrder.value.isEmpty())
-            assertEquals(0, cleared.sharedNavigation.status.value.pending)
-        } finally {
-            preferences.sharedNavigation.close()
-            restored?.sharedNavigation?.close()
-            signedOut?.sharedNavigation?.close()
-        }
-        base.deleteSharedPreferences(prefix + "dieter_shared_kv")
-        Unit
-    }
-
     @Test
     fun splitPaneWidthsPersistIndependentlyAcrossInstances() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -122,52 +41,45 @@ class AppPreferencesTest {
     @Test
     fun boardNotificationPreferencePersistsPerBoard() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val settings = SharedCore.settings(context)
+        val original = NotificationSettings.load(settings)
         val enabledBoardId = "notification-test-${System.nanoTime()}"
         val untouchedBoardId = "$enabledBoardId-other"
-        val preferences = AppPreferences(context)
-
         try {
-            assertFalse(enabledBoardId in preferences.notificationBoardIds.value)
-            assertFalse(untouchedBoardId in preferences.notificationBoardIds.value)
-
-            preferences.setBoardNotificationsEnabled(enabledBoardId, true)
-
-            assertTrue(enabledBoardId in preferences.notificationBoardIds.value)
-            assertTrue(enabledBoardId in AppPreferences(context).notificationBoardIds.value)
-            assertFalse(untouchedBoardId in preferences.notificationBoardIds.value)
-
-            preferences.setBoardNotificationsEnabled(enabledBoardId, false)
-
-            assertFalse(enabledBoardId in preferences.notificationBoardIds.value)
-            assertFalse(enabledBoardId in AppPreferences(context).notificationBoardIds.value)
+            assertFalse(enabledBoardId in original.boardIds)
+            original.copy(boardIds = original.boardIds + enabledBoardId).save(settings)
+            val reloaded = NotificationSettings.load(SharedCore.settings(context))
+            assertTrue(enabledBoardId in reloaded.boardIds)
+            assertFalse(untouchedBoardId in reloaded.boardIds)
+            reloaded.copy(boardIds = reloaded.boardIds - enabledBoardId).save(settings)
+            assertFalse(enabledBoardId in NotificationSettings.load(SharedCore.settings(context)).boardIds)
         } finally {
-            preferences.setBoardNotificationsEnabled(enabledBoardId, false)
+            original.save(settings)
         }
     }
 
     @Test
     fun detailedNotificationSettingsPersistTogether() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val preferences = AppPreferences(context)
-        val original = preferences.notificationSettings.value
-        val expected = DieterNotificationSettings(
-            activityNotificationsEnabled = false,
-            runningChatsEnabled = false,
-            successfulChatsEnabled = true,
-            attentionChatsEnabled = false,
-            reviewCardsEnabled = false,
-            displayStyle = NotificationDisplayStyle.COMPACT,
-            resultPreviewsEnabled = false,
-            liveStatusActivityEnabled = false,
+        val settings = SharedCore.settings(context)
+        val original = NotificationSettings.load(settings)
+        val expected = NotificationSettings(
+            enabled = false,
+            runningChats = false,
+            successfulChats = true,
+            attentionChats = false,
+            reviewCards = false,
+            style = NotificationStyle.COMPACT,
+            resultPreviews = false,
+            liveStatus = false,
+            boardIds = original.boardIds,
         )
-
         try {
-            preferences.setNotificationSettings(expected)
-
-            assertEquals(expected, preferences.notificationSettings.value)
-            assertEquals(expected, AppPreferences(context).notificationSettings.value)
+            expected.save(settings)
+            // The core reads these through Android's device settings in every process.
+            assertEquals(expected, NotificationSettings.load(SharedCore.settings(context)))
         } finally {
-            preferences.setNotificationSettings(original)
+            original.save(settings)
         }
     }
 }

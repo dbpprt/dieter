@@ -12,8 +12,6 @@ timeout: 300s
 native:
   class: com.dbpprt.dieter.settings.AppPreferencesTest
   methods:
-  - conversationCreationPreferencesPersistTogether
-  - navigationUsesIsolatedAccountCacheAndDurableOfflineQueue
   - splitPaneWidthsPersistIndependentlyAcrossInstances
   - boardNotificationPreferencePersistsPerBoard
   - detailedNotificationSettingsPersistTogether

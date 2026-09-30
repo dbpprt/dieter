@@ -65,14 +65,19 @@ func main() {
 	daemonRestartTrigger := flag.String("daemon-restart-trigger", "", "optional file whose creation restarts the isolated daemon API and gateway tunnel")
 	boardStressFixture := flag.Bool("board-stress-fixture", false, "seed a 100-card board with 85 variable-height cards in one lane")
 	inboxFixture := flag.Bool("inbox-fixture", false, "seed deterministic Inbox activity and real conversations")
+	directRoute := flag.String("direct-route", "", `advertise a loopback direct TLS route for the primary daemon: "live" serves it, "dead" advertises a closed port`)
 	flag.Parse()
-	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *boardStressFixture, *inboxFixture); err != nil {
+	if *directRoute != "" && *directRoute != "live" && *directRoute != "dead" {
+		fmt.Fprintln(os.Stderr, `error: -direct-route must be "live" or "dead"`)
+		os.Exit(2)
+	}
+	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *directRoute, *boardStressFixture, *inboxFixture); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStressFixture, inboxFixture bool) error {
+func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string, boardStressFixture, inboxFixture bool) error {
 	// The mock harness answers every prompt deterministically, so end-to-end
 	// turns complete without real provider credentials.
 	if err := os.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1"); err != nil {
@@ -318,7 +323,12 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 		secondTarget = secondListener.Addr().String()
 	}
 
-	tunnel := &daemon.GatewayClient{ControlWebRTC: control != nil, Identity: identity, LocalTarget: boardListener.Addr().String(), Version: buildinfo.ReleaseVersion, Log: logger}
+	routes, err := fixtureDirectRoute(directRoute, identity, boardListener.Addr().String())
+	if err != nil {
+		return err
+	}
+	tunnel := &daemon.GatewayClient{ControlWebRTC: control != nil, Identity: identity, LocalTarget: boardListener.Addr().String(), Version: buildinfo.ReleaseVersion, Routes: routes.candidates, Log: logger}
+	defer routes.close()
 	if offlineTrigger == "" {
 		go func() { _ = tunnel.Run(ctx) }()
 	} else {
@@ -545,6 +555,39 @@ func run(address, home, offlineTrigger, daemonRestartTrigger string, boardStress
 
 	<-ctx.Done()
 	return nil
+}
+
+type directRoutes struct {
+	candidates []*gatewayv1.DirectCandidate
+	close      func()
+}
+
+// fixtureDirectRoute mirrors the daemon's automatic loopback route, so clients
+// exercise pinned direct TLS against the disposable daemon. A "dead" route
+// advertises a port that refuses connections to cover relay fallback.
+func fixtureDirectRoute(mode string, identity *daemon.Identity, localTarget string) (directRoutes, error) {
+	if mode == "" {
+		return directRoutes{close: func() {}}, nil
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return directRoutes{}, err
+	}
+	port := uint32(listener.Addr().(*net.TCPAddr).Port)
+	candidate := &gatewayv1.DirectCandidate{Id: "loopback", Host: "127.0.0.1", Port: port, Network: "loopback", Priority: 1000, CertificateIdentity: identity.ID}
+	if mode == "dead" {
+		if err := listener.Close(); err != nil {
+			return directRoutes{}, err
+		}
+		return directRoutes{candidates: []*gatewayv1.DirectCandidate{candidate}, close: func() {}}, nil
+	}
+	server, err := daemon.NewDirectServer(identity, localTarget)
+	if err != nil {
+		_ = listener.Close()
+		return directRoutes{}, err
+	}
+	go func() { _ = server.Serve(listener) }()
+	return directRoutes{candidates: []*gatewayv1.DirectCandidate{candidate}, close: server.Stop}, nil
 }
 
 type replaceableHandler struct {

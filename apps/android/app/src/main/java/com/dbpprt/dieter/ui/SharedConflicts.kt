@@ -8,8 +8,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import com.dbpprt.dieter.v1.PeerVersion
-import org.json.JSONTokener
+import com.dbpprt.dieter.core.admin.ConflictVersions
 
 @Composable
 internal fun SharedConflicts(state: DieterUiState, model: DieterViewModel) {
@@ -20,19 +19,14 @@ internal fun SharedConflicts(state: DieterUiState, model: DieterViewModel) {
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text("These edits were made independently. Choose the value to keep, then edit it normally if needed.")
-                record.versionsList.forEach { version ->
-                    Text(sharedVersionText(version))
+                record.versions.forEach { version ->
+                    Text(ConflictVersions.versionText(version))
                     TextButton(onClick = { model.resolveSharedConflict(record, version) }, enabled = !state.working) {
-                        Text(if (version.deleted) "Keep deletion" else "Keep this value")
+                        Text(ConflictVersions.keepLabel(version))
                     }
                 }
             }
         },
         confirmButton = { TextButton(onClick = model::dismissSharedConflicts) { Text("Close") } },
     )
-}
-private fun sharedVersionText(version: PeerVersion): String {
-    if (version.deleted) return "Deleted"
-    val raw = version.valueJson.toStringUtf8()
-    return runCatching { JSONTokener(raw).nextValue().toString() }.getOrDefault(raw)
 }

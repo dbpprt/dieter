@@ -50,11 +50,13 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.dbpprt.dieter.gateway.v1.ProviderQuotaAvailability
-import com.dbpprt.dieter.gateway.v1.ProviderQuotaGroup
-import com.dbpprt.dieter.gateway.v1.ProviderQuotaProvider
-import com.dbpprt.dieter.gateway.v1.ProviderQuotaSnapshot
-import com.dbpprt.dieter.gateway.v1.ProviderQuotaWindow
+import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaAvailability
+import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaGroup
+import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaProvider
+import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaSnapshot
+import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaWindow
+import com.dbpprt.dieter.core.quotas.QuotaLevel
+import com.dbpprt.dieter.core.quotas.Quotas
 import com.dbpprt.dieter.ui.theme.DieterAmber
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
@@ -64,6 +66,7 @@ import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import java.time.Duration
 import java.time.Instant
+import kotlin.time.Clock
 
 @Composable
 internal fun ProviderQuotaDetails(
@@ -118,10 +121,10 @@ internal fun ProviderQuotaDetails(
             }
         }
         state.providerQuotaGroups.forEach { group ->
-            item(key = "provider-${group.providerValue}", span = { GridItemSpan(maxLineSpan) }) {
+            item(key = "provider-${group.provider.value}", span = { GridItemSpan(maxLineSpan) }) {
                 ProviderQuotaGroupHeader(group)
             }
-            items(group.accountsList, key = { "${group.providerValue}-${it.accountKey}" }) { account ->
+            items(group.accounts, key = { "${group.provider.value}-${it.account_key}" }) { account ->
                 ProviderQuotaAccountView(account, group.provider, state, onSetSummaryInclusion, onUseReset)
             }
         }
@@ -133,14 +136,11 @@ private fun ProviderQuotaGroupHeader(group: ProviderQuotaGroup) {
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(quotaProviderName(group.provider), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Text(buildString {
-                append("${group.accountsCount} account${if (group.accountsCount == 1) "" else "s"}")
-                if (group.hasSummary() && group.summary.excludedAccountCount > 0) append(" · ${group.summary.excludedAccountCount} excluded")
-            }, color = DieterMuted, style = MaterialTheme.typography.labelSmall)
+            Text(Quotas.productName(group.provider), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(Quotas.groupSummary(group), color = DieterMuted, style = MaterialTheme.typography.labelSmall)
         }
-        if (group.hasSummary() && group.summary.hasRemainingPercent()) {
-            val remaining = group.summary.remainingPercent.coerceIn(0, 100)
+        group.summary?.remaining_percent?.let { percent ->
+            val remaining = percent.coerceIn(0, 100)
             Column(horizontalAlignment = Alignment.End, modifier = Modifier.semantics(mergeDescendants = true) {
                 contentDescription = "Lowest remaining allowance across included accounts"
             }) {
@@ -160,28 +160,25 @@ internal fun ProviderQuotaAccountView(
     onUseReset: (String) -> Unit,
     showMonetaryBalances: Boolean = true,
 ) {
-    var expanded by rememberSaveable(account.accountKey) { mutableStateOf(false) }
-    var resetConfirmation by remember(account.accountKey) { mutableStateOf(false) }
-    val included = !account.hasIncludedInSummary() || account.includedInSummary
-    val plan = account.plan.ifBlank { "Account" }.replaceFirstChar { it.uppercase() }
-    val identity = account.displayEmail.ifBlank { "$plan · ••${account.accountKey.takeLast(6)}" }
+    var expanded by rememberSaveable(account.account_key) { mutableStateOf(false) }
+    var resetConfirmation by remember(account.account_key) { mutableStateOf(false) }
+    val included = Quotas.included(account)
+    val identity = Quotas.identity(account)
     Surface(
-        modifier = Modifier.fillMaxWidth().testTag("provider-quotas-account-${account.accountKey}"),
+        modifier = Modifier.fillMaxWidth().testTag("provider-quotas-account-${account.account_key}"),
         shape = RoundedCornerShape(16.dp), color = DieterSurface,
         border = BorderStroke(1.dp, DieterOutline.copy(alpha = .6f)),
     ) {
         Column {
             Surface(onClick = { expanded = !expanded }, color = Color.Transparent,
-                modifier = Modifier.fillMaxWidth().testTag("provider-quotas-details-${account.accountKey}")
+                modifier = Modifier.fillMaxWidth().testTag("provider-quotas-details-${account.account_key}")
                     .semantics { stateDescription = if (expanded) "Account details expanded" else "Account details collapsed" }) {
                 Row(Modifier.heightIn(min = 56.dp).padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(identity, style = MaterialTheme.typography.labelLarge,
                             maxLines = if (expanded) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis)
-                        Text(listOfNotNull(plan.takeIf { account.displayEmail.isNotBlank() },
-                            "Excluded from summary".takeIf { !included }).joinToString(" · ").ifBlank { "Account details" },
-                            color = DieterMuted, style = MaterialTheme.typography.labelSmall)
+                        Text(Quotas.subtitle(account), color = DieterMuted, style = MaterialTheme.typography.labelSmall)
                     }
                     Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
                         contentDescription = if (expanded) "Hide account details" else "Show account details",
@@ -189,52 +186,42 @@ internal fun ProviderQuotaAccountView(
                 }
             }
             Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (account.availability != ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_AVAILABLE) {
-                    Text(quotaAvailability(account.availability), color = DieterAmber, style = MaterialTheme.typography.labelMedium)
+                if (!Quotas.available(account)) {
+                    Text(Quotas.availability(account.availability), color = DieterAmber, style = MaterialTheme.typography.labelMedium)
                 }
-                if (account.windowsCount > 0) {
+                if (account.windows.size > 0) {
                     BoxWithConstraints {
                         val columns = if (maxWidth >= 280.dp && LocalDensity.current.fontScale < 1.3f) 2 else 1
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            account.windowsList.chunked(columns).forEach { windows ->
+                            account.windows.chunked(columns).forEach { windows ->
                                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                     windows.forEach { window -> ProviderQuotaWindowView(window, provider, Modifier.weight(1f)) }
-                                    if (columns == 2 && windows.size == 1 && account.windowsCount > 1) Spacer(Modifier.weight(1f))
+                                    if (columns == 2 && windows.size == 1 && account.windows.size > 1) Spacer(Modifier.weight(1f))
                                 }
                             }
                         }
                     }
                 } else {
-                    Text(account.statusCode.ifBlank { "No numeric limit reported" }.replace('_', ' '),
-                        color = DieterMuted, style = MaterialTheme.typography.bodySmall)
+                    Text(Quotas.status(account), color = DieterMuted, style = MaterialTheme.typography.bodySmall)
                 }
                 if (expanded) {
                     HorizontalDivider(color = DieterOutline)
-                    ProviderQuotaMetadata("Account", "••${account.accountKey.takeLast(6)}")
-                    if (showMonetaryBalances && account.hasCredits()) {
-                        ProviderQuotaMetadata("Credits", if (account.credits.unlimited) "Unlimited" else account.credits.balance.ifBlank { "Available" })
-                    }
-                    if (showMonetaryBalances && account.hasSpendAllowance()) {
-                        ProviderQuotaMetadata("Spend", listOf(account.spendAllowance.used, account.spendAllowance.limit)
-                            .filter { it.isNotBlank() }.joinToString(" / ").ifBlank { "Reported" })
-                    }
-                    if (account.hasResetCredits()) ProviderQuotaMetadata("Reset credits", "${account.resetCredits.availableCount} available")
+                    Quotas.details(account, monetary = showMonetaryBalances).forEach { (label, value) -> ProviderQuotaMetadata(label, value) }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("Include in summary", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                         Switch(
                             checked = included,
-                            onCheckedChange = { onSetSummaryInclusion(provider, account.accountKey, it) },
-                            enabled = account.accountKey !in state.providerQuotaMutatingAccounts,
-                            modifier = Modifier.testTag("provider-quotas-include-${account.accountKey}")
+                            onCheckedChange = { onSetSummaryInclusion(provider, account.account_key, it) },
+                            enabled = account.account_key !in state.providerQuotaMutatingAccounts,
+                            modifier = Modifier.testTag("provider-quotas-include-${account.account_key}")
                                 .semantics { contentDescription = "Include $identity in usage summary" },
                         )
                     }
-                    if (provider == ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX &&
-                        account.hasResetCredits() && account.resetCredits.availableCount > 0) {
+                    if (Quotas.canReset(provider, account)) {
                         TextButton(
                             onClick = { resetConfirmation = true },
-                            enabled = account.accountKey !in state.providerQuotaMutatingAccounts,
-                            modifier = Modifier.testTag("provider-quotas-reset-${account.accountKey}"),
+                            enabled = account.account_key !in state.providerQuotaMutatingAccounts,
+                            modifier = Modifier.testTag("provider-quotas-reset-${account.account_key}"),
                         ) { Text("Use reset credit…") }
                     }
                 }
@@ -249,7 +236,7 @@ internal fun ProviderQuotaAccountView(
             confirmButton = {
                 TextButton(onClick = {
                     resetConfirmation = false
-                    onUseReset(account.accountKey)
+                    onUseReset(account.account_key)
                 }) { Text("Use reset credit") }
             },
             dismissButton = { TextButton(onClick = { resetConfirmation = false }) { Text("Cancel") } },
@@ -268,9 +255,10 @@ private fun ProviderQuotaMetadata(label: String, value: String) {
 @Composable
 private fun ProviderQuotaWindowView(window: ProviderQuotaWindow, provider: ProviderQuotaProvider, modifier: Modifier) {
     Column(modifier.semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(window.label.ifBlank { "Quota" }, color = DieterMuted, style = MaterialTheme.typography.labelMedium)
-        if (window.hasRemainingPercent()) {
-            val remaining = window.remainingPercent.coerceIn(0, 100)
+        Text(Quotas.windowName(window), color = DieterMuted, style = MaterialTheme.typography.labelMedium)
+        val percent = window.remaining_percent
+        if (percent != null) {
+            val remaining = percent.coerceIn(0, 100)
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("$remaining%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text("left", color = DieterMuted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(bottom = 3.dp))
@@ -280,42 +268,19 @@ private fun ProviderQuotaWindowView(window: ProviderQuotaWindow, provider: Provi
         } else {
             Text("Not reported", color = DieterMuted, style = MaterialTheme.typography.bodySmall)
         }
-        if (window.resetsAt.isNotBlank()) {
-            Text(quotaResetText(window.resetsAt), color = DieterMuted, style = MaterialTheme.typography.labelSmall)
+        if (window.resets_at.isNotBlank()) {
+            Text(Quotas.resetText(window.resets_at, Clock.System.now()), color = DieterMuted, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
 
-internal fun quotaProviderName(provider: ProviderQuotaProvider): String = when (provider) {
-    ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX -> "OpenAI Codex"
-    ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE -> "Anthropic Claude"
-    else -> "Provider"
-}
-
-internal fun quotaAvailability(value: ProviderQuotaAvailability): String = when (value) {
-    ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_AVAILABLE -> "Available"
-    ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_SIGNED_OUT -> "Signed out"
-    ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_UNSUPPORTED -> "Unsupported"
-    ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_PERMISSION_DENIED -> "Permission denied"
-    ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_TEMPORARILY_UNAVAILABLE -> "Unavailable"
-    else -> "Unknown"
-}
-
 @Composable
-internal fun quotaTint(provider: ProviderQuotaProvider, remaining: Int): Color = when {
-    remaining <= 10 -> MaterialTheme.colorScheme.error
-    remaining <= 30 -> DieterAmber
-    provider == ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX -> DieterOpenAIQuota
-    provider == ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE -> DieterAmber
-    else -> DieterRunning
-}
-
-private fun quotaResetText(value: String): String = runCatching {
-    val duration = Duration.between(Instant.now(), Instant.parse(value))
-    when {
-        duration.isNegative || duration.isZero -> "Reset due"
-        duration.toHours() >= 24 -> "Resets in ${duration.toDays()}d ${duration.toHours() % 24}h"
-        duration.toHours() >= 1 -> "Resets in ${duration.toHours()}h ${duration.toMinutes() % 60}m"
-        else -> "Resets in ${duration.toMinutes().coerceAtLeast(1)}m"
+internal fun quotaTint(provider: ProviderQuotaProvider, remaining: Int): Color = when (Quotas.level(remaining)) {
+    QuotaLevel.CRITICAL -> MaterialTheme.colorScheme.error
+    QuotaLevel.LOW -> DieterAmber
+    else -> when (provider) {
+        ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX -> DieterOpenAIQuota
+        ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE -> DieterAmber
+        else -> DieterRunning
     }
-}.getOrDefault("Reset time unavailable")
+}

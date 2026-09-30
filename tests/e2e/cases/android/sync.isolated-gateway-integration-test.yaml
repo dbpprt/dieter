@@ -10,11 +10,8 @@ components:
 fixture: gateway
 timeout: 300s
 native:
-  class: com.dbpprt.dieter.data.IsolatedGatewayIntegrationTest
+  class: com.dbpprt.dieter.sharedcore.SharedCoreIntegrationTest
   methods:
-  - sharedNavigationCachesOfflineEditsAndDrainsThroughRealGateway
-  - terminalEditingControlBytesRoundTripThroughTheIsolatedGateway
-  - machineScopedProjectCreationAndWorkspaceAdministrationRoundTrip
-  - queuedMessageRemovalReturnsAnEditableDraftEndToEnd
-  - disconnectedCardStartPersistsAndDrainsThroughTheRealGateway
-  - startAdmissionRoundTripsAndPreparesVisibleFixture
+  - relaySignInSyncsTheFixtureAndReachesItsMachine
+  - offlineNavigationEditDrainsAfterReconnect
+  - conversationQueuedOfflineReachesTheDaemonAfterReconnect

@@ -1,0 +1,356 @@
+syntax = "proto3";
+
+package dieter.client.v1;
+
+option java_package = "com.dbpprt.dieter.client.v1";
+option swift_prefix = "Client";
+
+import "dieter/v1/dieter.proto";
+
+// The UI contract of the shared core. It never leaves the device: Kotlin UIs
+// use these types directly, and Apple UIs exchange them as bytes through the
+// generic façade (dispatch a command, observe a slice). Fields are only ever
+// added; a UI ignores what it does not know.
+
+// ---------------------------------------------------------------------------
+// Commands
+
+message Command {
+  oneof command {
+    AdoptSession adopt_session = 1;
+    BeginSignIn begin_sign_in = 2;
+    CompleteSignIn complete_sign_in = 3;
+    SignOut sign_out = 4;
+    SelectGateway select_gateway = 5;
+    AttachMachine attach_machine = 6;
+    SetConnected set_connected = 7;
+    SetForeground set_foreground = 8;
+    CreateConversation create_conversation = 10;
+    SendMessage send_message = 11;
+    StartCard start_card = 12;
+    MoveCard move_card = 13;
+    FinishCard finish_card = 14;
+    SetCardLabels set_card_labels = 15;
+    SetCardPinned set_card_pinned = 16;
+    RenameCard rename_card = 17;
+    ArchiveCard archive_card = 18;
+    CancelCard cancel_card = 19;
+    MarkCardRead mark_card_read = 20;
+    RetryPending retry_pending = 21;
+    DiscardPending discard_pending = 22;
+    RestoreCard restore_card = 23;
+    LoadEarlierMessages load_earlier_messages = 30;
+    ReturnToLatest return_to_latest = 31;
+    RefreshConversation refresh_conversation = 32;
+    SetVisibleConversation set_visible_conversation = 33;
+    RenameMachine rename_machine = 40;
+    RevokeMachine revoke_machine = 41;
+  }
+}
+
+// Uses a gateway session obtained elsewhere: a legacy app's stored token or a
+// test fixture. The gateway becomes the active one.
+message AdoptSession {
+  string gateway_url = 1;
+  string session_token = 2;
+  string name = 3;
+}
+
+message BeginSignIn { string gateway_url = 1; }
+message CompleteSignIn { string callback_url = 1; }
+message SignOut {}
+message SelectGateway { string origin = 1; }
+message AttachMachine { string daemon_id = 1; }
+message SetConnected { bool connected = 1; }
+
+// The app is in the foreground (keeps the feed live) or in the background.
+message SetForeground { bool foreground = 1; }
+
+message CreateConversation {
+  dieter.v1.CreateConversationRequest request = 1;
+  bool chat = 2;
+  // Reusing an ID never creates a second conversation.
+  string submission_id = 3;
+}
+
+message SendMessage {
+  string card_id = 1;
+  repeated dieter.v1.MessagePart parts = 2;
+  dieter.v1.HarnessSelection selection = 3;
+  // Queue behind the running turn instead of joining the transcript.
+  bool queue = 4;
+}
+
+message StartCard {
+  string card_id = 1;
+  bool has_draft_attachments = 2;
+}
+
+message MoveCard {
+  string card_id = 1;
+  string lane = 2;
+  // The card lands after this one; empty places it first.
+  string after_card_id = 3;
+  string before_card_id = 4;
+}
+
+message FinishCard { string card_id = 1; }
+
+message SetCardLabels {
+  string card_id = 1;
+  repeated string label_ids = 2;
+}
+
+message SetCardPinned {
+  string card_id = 1;
+  bool pinned = 2;
+}
+
+message RenameCard {
+  string card_id = 1;
+  string title = 2;
+}
+
+message ArchiveCard { string card_id = 1; }
+
+// Archived cards leave the workspace; the board finds them again.
+message RestoreCard {
+  string card_id = 1;
+  string board_id = 2;
+}
+
+message CancelCard { string card_id = 1; }
+message MarkCardRead { string card_id = 1; }
+
+// An outbox entry or, with daemon_id, every failed entry for that machine.
+message RetryPending {
+  string id = 1;
+  string daemon_id = 2;
+}
+
+message DiscardPending {
+  string id = 1;
+  string daemon_id = 2;
+}
+
+message LoadEarlierMessages { string card_id = 1; }
+message ReturnToLatest { string card_id = 1; }
+message RefreshConversation { string card_id = 1; }
+
+// The conversation on screen; it is marked read as messages arrive.
+message SetVisibleConversation { string card_id = 1; }
+
+message RenameMachine {
+  string daemon_id = 1;
+  string name = 2;
+}
+
+message RevokeMachine { string daemon_id = 1; }
+
+message Result {
+  oneof result {
+    Done done = 1;
+    SignInStarted sign_in_started = 2;
+    dieter.v1.Card card = 3;
+    MessageQueued message_queued = 4;
+    PageLoaded page_loaded = 5;
+    GatewaySelected gateway_selected = 6;
+  }
+}
+
+message Done {}
+message SignInStarted { string authorize_url = 1; }
+message MessageQueued { string message_id = 1; }
+message PageLoaded { bool loaded = 1; }
+message GatewaySelected { string origin = 1; }
+
+// Why a command failed. `kind` drives the UI: retry, sign in, or update.
+message Failure {
+  enum Kind {
+    KIND_TRANSIENT = 0;
+    KIND_PERMANENT = 1;
+    KIND_UNAUTHENTICATED = 2;
+    KIND_UPDATE_REQUIRED = 3;
+    KIND_CONFLICT = 4;
+    KIND_INVALID = 5;
+  }
+  Kind kind = 1;
+  string message = 2;
+}
+
+// What a byte-level dispatch returns: the result or the failure.
+message Reply {
+  oneof reply {
+    Result result = 1;
+    Failure failure = 2;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Slices: observed state. The first update is a snapshot; later updates of
+// keyed slices carry only upserts and removals.
+
+enum Slice {
+  SLICE_UNSPECIFIED = 0;
+  SLICE_SESSION = 1;
+  SLICE_WORKSPACE = 2;
+  SLICE_OUTBOX = 3;
+  SLICE_ACTIVITY = 4;
+  // Scoped by card ID.
+  SLICE_CONVERSATION = 5;
+}
+
+message Update {
+  Slice slice = 1;
+  string scope = 2;
+  // Increases by one per update of this subscription; a gap means a missed
+  // delta and the observer resubscribes.
+  uint64 sequence = 3;
+  oneof value {
+    SessionSlice session = 10;
+    WorkspaceSlice workspace = 11;
+    WorkspaceDelta workspace_delta = 12;
+    OutboxSlice outbox = 13;
+    ActivitySlice activity = 14;
+    ConversationSlice conversation = 15;
+    ConversationDelta conversation_delta = 16;
+  }
+}
+
+message SessionSlice {
+  enum Phase {
+    PHASE_DISCONNECTED = 0;
+    PHASE_CONNECTING = 1;
+    PHASE_SYNCING = 2;
+    PHASE_CONNECTED = 3;
+    PHASE_RECONNECTING = 4;
+    PHASE_NO_MACHINE = 5;
+    PHASE_AUTH_REQUIRED = 6;
+    PHASE_UPDATE_REQUIRED = 7;
+  }
+  Phase phase = 1;
+  string gateway_origin = 2;
+  repeated GatewayEntry gateways = 3;
+  bool signed_in = 4;
+  string attached_machine_id = 5;
+  string error = 6;
+  int64 retry_at_millis = 7;
+  repeated MachineEntry machines = 8;
+  string client_id = 9;
+}
+
+message GatewayEntry {
+  string origin = 1;
+  string name = 2;
+  bool active = 3;
+  bool connect = 4;
+}
+
+message MachineEntry {
+  string id = 1;
+  string name = 2;
+  bool online = 3;
+  bool attached = 4;
+  // "Direct TLS", "WebRTC · Direct", "Relay", … when a data plane is open.
+  string route = 5;
+  int64 route_latency_millis = 6;
+  string platform = 7;
+  string release_version = 8;
+  bool compatible = 9;
+}
+
+message WorkspaceSlice {
+  repeated dieter.v1.Project projects = 1;
+  repeated dieter.v1.Board boards = 2;
+  // Every card and unfiled chat, archived excluded, in board order.
+  repeated dieter.v1.Card cards = 3;
+  repeated string pending_card_ids = 4;
+  bool loaded = 5;
+  // Project ID → the machine that last listed it.
+  map<string, string> project_replicas = 6;
+}
+
+// Projects and boards are small and always complete; cards are keyed.
+message WorkspaceDelta {
+  repeated dieter.v1.Project projects = 1;
+  repeated dieter.v1.Board boards = 2;
+  repeated dieter.v1.Card upserted_cards = 3;
+  repeated string removed_card_ids = 4;
+  // The complete card order, sent only when it changed.
+  repeated string card_order = 5;
+  bool order_changed = 6;
+  repeated string pending_card_ids = 7;
+  bool loaded = 8;
+  map<string, string> project_replicas = 9;
+}
+
+message OutboxSlice {
+  repeated string pending_card_ids = 1;
+  repeated string pending_message_ids = 2;
+  repeated string accepted_ids = 3;
+  repeated string failed_ids = 4;
+  repeated MachineOutbox machines = 5;
+  // Local conversation ID → the daemon's ID.
+  map<string, string> resolutions = 6;
+}
+
+message MachineOutbox {
+  string daemon_id = 1;
+  int32 pending = 2;
+  int32 failed = 3;
+  string last_error = 4;
+}
+
+message ActivitySlice {
+  repeated ActivityRow rows = 1;
+}
+
+message ActivityRow {
+  enum Section {
+    SECTION_ATTENTION = 0;
+    SECTION_RUNNING = 1;
+    SECTION_RECENT = 2;
+  }
+  dieter.v1.Card card = 1;
+  // The core's ActivityKind name, e.g. "NEEDS_INPUT" or "RUNNING".
+  string kind = 2;
+  Section section = 3;
+  string detail = 4;
+  int64 at_millis = 5;
+  int64 started_at_millis = 6;
+  string project_name = 7;
+  string board_name = 8;
+  bool chat = 9;
+}
+
+message ConversationSlice {
+  string card_id = 1;
+  string daemon_id = 2;
+  dieter.v1.Card card = 3;
+  // The conversation without its messages; they arrive keyed.
+  dieter.v1.Conversation conversation = 4;
+  repeated dieter.v1.UiMessage messages = 5;
+  bool loading = 6;
+  bool syncing = 7;
+  string error = 8;
+  bool pending = 9;
+  bool has_earlier = 10;
+  bool loading_earlier = 11;
+  bool browsing_earlier = 12;
+}
+
+message ConversationDelta {
+  dieter.v1.Card card = 1;
+  dieter.v1.Conversation conversation = 2;
+  repeated dieter.v1.UiMessage upserted_messages = 3;
+  repeated string removed_message_ids = 4;
+  repeated string message_order = 5;
+  bool order_changed = 6;
+  bool loading = 7;
+  bool syncing = 8;
+  string error = 9;
+  bool pending = 10;
+  bool has_earlier = 11;
+  bool loading_earlier = 12;
+  bool browsing_earlier = 13;
+}

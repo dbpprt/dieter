@@ -16,43 +16,53 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dbpprt.dieter.api.v1.Harness
+import com.dbpprt.dieter.core.composition.CaptureDestinations
+import com.dbpprt.dieter.core.composition.CatalogState
+import com.dbpprt.dieter.core.composition.Creation
+import com.dbpprt.dieter.core.composition.CreationInput
+import com.dbpprt.dieter.core.composition.TaskDrafts
+import com.dbpprt.dieter.core.composition.ready
+import com.dbpprt.dieter.core.machines.MachineRows
+import com.dbpprt.dieter.core.state.CaptureDraft
 import com.dbpprt.dieter.ui.theme.*
-import com.dbpprt.dieter.v1.Project
+import com.dbpprt.dieter.api.v1.Project
 
 internal val DieterUiState.creationCheckout
-    get() = project?.checkoutsList.orEmpty().filterNot { it.detached }.let { checkouts ->
-        checkouts.firstOrNull { it.id == creationCheckoutId } ?: checkouts.singleOrNull()
-    }
+    get() = project?.let { Creation.checkout(it, creationCheckoutId) }
 
 internal val DieterUiState.creationMachine
     get() = creationCheckout?.let { checkout ->
-        presentedEndpointConnections.firstOrNull { it.daemonId == checkout.daemonId }
+        presentedEndpointConnections.firstOrNull { it.daemonId == checkout.daemon_id }
     }
 
-internal val DieterUiState.creationCatalogReady: Boolean
-    get() = creationMachine?.let { it.online && it.id == harnessesEndpointId } == true
+/** The destination machine's agent catalog: live, cached while it is offline, or not loaded. */
+internal val DieterUiState.catalogState: CatalogState
+    get() = Creation.catalogState(creationCheckout, harnessesEndpointId, creationMachine?.online == true)
 
-internal val DieterUiState.taskCatalogAvailableForQueue: Boolean
-    get() = creationMachine?.let { it.id == harnessesEndpointId } == true
+/** The catalog a new conversation is validated against, or null while it loads (the core's rule). */
+internal fun DieterUiState.creationCatalog(chat: Boolean): List<Harness>? = Creation.catalog(chat, catalogState, harnesses)
+
+/** Why [draft] cannot be queued now, or null: the core's creation rules against this state. */
+internal fun DieterUiState.creationProblem(draft: CaptureDraft, chat: Boolean): String? {
+    val project = project ?: return "Select a project before creating a conversation."
+    if (!draft.ready) return "Finish importing or remove failed attachments before saving."
+    return Creation.problem(creationInput(draft, project, chat), creationCatalog(chat))
+}
+
+internal fun DieterUiState.canSubmitTask(draft: CaptureDraft): Boolean = !working && creationProblem(draft, chat = false) == null
+
+internal fun DieterUiState.creationInput(draft: CaptureDraft, project: Project, chat: Boolean): CreationInput {
+    val input = TaskDrafts.input(draft, project, if (chat) null else board, creationCheckout?.id ?: creationCheckoutId)
+    return if (chat) input.copy(chat = true, lane = "", labelIds = emptyList()) else input
+}
 
 internal fun DieterUiState.machineLabel(daemonId: String): String =
-    presentedEndpointConnections.firstOrNull { it.daemonId == daemonId }?.label?.takeIf { it.isNotBlank() }
-        ?: projectReplicas.values.firstOrNull { it.daemonId == daemonId }?.hostname?.takeIf { it.isNotBlank() }
-        ?: daemonId.ifBlank { "Unassigned" }
+    MachineRows.label(presentedEndpointConnections, projectReplicas.values.associate { it.daemonId to it.hostname }, daemonId)
 
 internal fun DieterUiState.projectCheckoutLabel(project: Project): String {
     val machines = presentedEndpointConnections.associateBy { it.daemonId }
-    // A project replica supplies shared metadata; only checkouts identify where
-    // the repository lives. Changing the sync route must not change this label.
-    return project.checkoutsList.filterNot { it.detached }.map { it.daemonId }.distinct()
-        .sortedWith(compareByDescending<String> { machines[it]?.online == true }.thenBy { machineLabel(it).lowercase() })
-        .joinToString(" · ") { daemonId ->
-            machineLabel(daemonId) + when (machines[daemonId]?.online) {
-                true -> ""
-                false -> " (offline)"
-                null -> " (unavailable)"
-            }
-        }.ifEmpty { "No checkouts" }
+    return CaptureDestinations.checkoutSummary(project, ::machineLabel) { daemonId -> machines[daemonId]?.online }
 }
 
 @Composable
@@ -62,16 +72,10 @@ internal fun CreationDestinationPicker(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val checkouts = state.project?.checkoutsList.orEmpty().filterNot { it.detached }
+    val checkouts = state.project?.checkouts.orEmpty().filterNot { it.detached }
     val selected = state.creationCheckout
     val machine = state.creationMachine
-    val status = when {
-        checkouts.isEmpty() -> "No checkouts available for this project"
-        selected == null -> "Choose where this task will run"
-        machine?.online != true -> "Machine offline · choose an online destination"
-        !state.creationCatalogReady -> "Loading agent models…"
-        else -> selected.name.ifBlank { "Project checkout" }
-    }
+    val status = Creation.destinationStatus(state.project, selected, machine?.online == true, state.catalogState)
     Box(modifier.fillMaxWidth()) {
         Surface(
             onClick = { expanded = true },
@@ -86,7 +90,7 @@ internal fun CreationDestinationPicker(
                 Icon(Icons.Outlined.Computer, null, Modifier.size(20.dp), tint = DieterShell)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("Run on", color = DieterMuted, fontSize = 11.sp, lineHeight = 14.sp)
-                    Text(selected?.let { state.machineLabel(it.daemonId) } ?: "Select machine",
+                    Text(selected?.let { state.machineLabel(it.daemon_id) } ?: "Select machine",
                         fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(status, color = DieterMuted, fontSize = 11.sp, lineHeight = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
@@ -95,11 +99,11 @@ internal fun CreationDestinationPicker(
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }, modifier = Modifier.widthIn(max = 360.dp)) {
             checkouts.forEach { checkout ->
-                val online = state.presentedEndpointConnections.any { it.daemonId == checkout.daemonId && it.online }
+                val online = state.presentedEndpointConnections.any { it.daemonId == checkout.daemon_id && it.online }
                 DropdownMenuItem(
                     text = {
                         Column {
-                            Text(state.machineLabel(checkout.daemonId), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(state.machineLabel(checkout.daemon_id), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(checkout.name.ifBlank { "Project checkout" } + if (online) "" else " · Offline",
                                 fontSize = 11.sp, lineHeight = 14.sp, color = DieterMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }

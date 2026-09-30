@@ -13,7 +13,7 @@ native:
   class: com.dbpprt.dieter.data.BackgroundTranscriptSyncIntegrationTest
   methods:
   - transcriptsArriveThroughGlobalSyncWithoutOpeningTheChat
-  - connectionManagerKeepsTranscriptsWarmInBackground
+  - liveSyncKeepsTranscriptsWarmInBackground
 arguments:
   idleSampleMillis: '30000'
   idleSampleWindows: '2'

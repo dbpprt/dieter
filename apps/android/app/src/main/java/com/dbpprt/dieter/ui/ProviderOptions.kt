@@ -18,47 +18,18 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.dbpprt.dieter.v1.Harness
-import com.dbpprt.dieter.v1.ProviderOption
+import com.dbpprt.dieter.api.v1.Harness
+import com.dbpprt.dieter.api.v1.ProviderOption
 
-/**
- * Builds the provider-defined configuration without teaching the Android app
- * about a particular harness or option ID. Saved values win over newly
- * advertised defaults so an existing conversation retains its configuration.
- */
-internal fun providerOptionValues(
-    harness: Harness?,
-    saved: Map<String, String> = emptyMap(),
-    model: String = harness?.defaultModel.orEmpty(),
-): Map<String, String> = buildMap {
-    providerOptionsForModel(harness, model).forEach { option ->
-        put(option.id, saved[option.id] ?: option.defaultValue)
-    }
-}
-
-internal fun providerOptionsForModel(harness: Harness?, model: String): List<ProviderOption> {
-    val selectedModel = model.ifBlank { harness?.defaultModel.orEmpty() }
-    return harness?.optionsList.orEmpty().filter { option ->
-        option.modelsList.isEmpty() || selectedModel in option.modelsList
-    }
-}
-
-internal fun providerOptionValue(
-    option: ProviderOption,
-    values: Map<String, String>,
-): String = values[option.id] ?: option.defaultValue
-
-internal fun providerOptionEnabled(option: ProviderOption, conversationLocked: Boolean): Boolean =
-    !conversationLocked || option.mutable
-
+/** One provider-defined option; its value and whether it may change come from the core. */
 @Composable
 internal fun ProviderOptionControl(
     option: ProviderOption,
-    values: Map<String, String>,
+    value: String,
     enabled: Boolean,
     onValueChange: (String, String) -> Unit,
 ) {
-    val current = providerOptionValue(option, values)
+    val current = value
     val semantics = Modifier
         .testTag("provider-option-${option.id}")
         .semantics {
@@ -81,7 +52,7 @@ internal fun ProviderOptionControl(
 
         "enum", "select" -> {
             var expanded by remember(option.id) { mutableStateOf(false) }
-            val label = option.choicesList.firstOrNull { it.value == current }
+            val label = option.choices.firstOrNull { it.value_ == current }
                 ?.name?.ifBlank { current }
                 ?: option.name
             Box(semantics) {
@@ -91,12 +62,12 @@ internal fun ProviderOptionControl(
                     label = { Text(label) },
                 )
                 DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                    option.choicesList.forEach { choice ->
+                    option.choices.forEach { choice ->
                         DropdownMenuItem(
-                            text = { Text(choice.name.ifBlank { choice.value }) },
+                            text = { Text(choice.name.ifBlank { choice.value_ }) },
                             onClick = {
                                 expanded = false
-                                onValueChange(option.id, choice.value)
+                                onValueChange(option.id, choice.value_)
                             },
                         )
                     }

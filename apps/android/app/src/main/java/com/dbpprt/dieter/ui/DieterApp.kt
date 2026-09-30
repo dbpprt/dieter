@@ -81,8 +81,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.content.ContextCompat
 import com.dbpprt.dieter.DieterContainer
-import com.dbpprt.dieter.connection.ConnectionPhase
-import com.dbpprt.dieter.connection.EndpointPhase
+import com.dbpprt.dieter.core.connection.Availability
+import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.machines.MachineLink
+import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.update.AppUpdateManager
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterEyes
@@ -92,69 +94,12 @@ import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import com.dbpprt.dieter.ui.theme.DieterText
 import com.dbpprt.dieter.ui.theme.DieterOutline
+import kotlin.time.Instant
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.delay
 import com.dbpprt.dieter.ui.theme.DieterCoral
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontFamily
-
-private fun Destination.isOfflineSensitiveProjectSurface(): Boolean =
-    this == Destination.FILES || this == Destination.SCHEDULES
-
-private fun Destination.usesSynchronizedWorkspace(): Boolean =
-    this != Destination.MACHINES && this != Destination.TERMINALS && this != Destination.SCREENS
-
-private fun Destination.supportsOfflineOutbox(): Boolean =
-    this == Destination.ACTIVITY || this == Destination.CHATS || this == Destination.BOARD
-
-internal enum class WorkspaceSurfaceTreatment {
-    CURRENT,
-    UNAVAILABLE;
-
-    val showsNotice: Boolean get() = this != CURRENT
-    val blocksInteraction: Boolean get() = this == UNAVAILABLE
-}
-
-internal fun workspaceSurfaceTreatment(
-    showsSynchronizedWorkspace: Boolean,
-    hasCachedWorkspace: Boolean,
-    phase: ConnectionPhase,
-): WorkspaceSurfaceTreatment {
-    if (!showsSynchronizedWorkspace || !hasCachedWorkspace) return WorkspaceSurfaceTreatment.CURRENT
-    return when (phase) {
-        // A route handoff can remain in CONNECTING/SYNCING until the next
-        // workspace heartbeat. Cached surfaces and conversation-level refresh
-        // state are already usable, so do not turn that routine handoff into a
-        // persistent global banner.
-        ConnectionPhase.CONNECTED,
-        ConnectionPhase.CONNECTING,
-        ConnectionPhase.SYNCING,
-        -> WorkspaceSurfaceTreatment.CURRENT
-        ConnectionPhase.RECONNECTING,
-        ConnectionPhase.AUTH_REQUIRED,
-        ConnectionPhase.INCOMPATIBLE,
-        ConnectionPhase.UNAVAILABLE,
-        ConnectionPhase.STOPPED,
-        -> WorkspaceSurfaceTreatment.UNAVAILABLE
-    }
-}
-
-internal fun workspaceInteractionBlocked(
-    treatment: WorkspaceSurfaceTreatment,
-    supportsOfflineOutbox: Boolean,
-): Boolean = treatment.blocksInteraction && !supportsOfflineOutbox
-
-internal fun shouldShowInitialWorkspaceSync(
-    showsSynchronizedWorkspace: Boolean,
-    hasCachedWorkspace: Boolean,
-    loading: Boolean,
-    desiredConnected: Boolean,
-    phase: ConnectionPhase,
-): Boolean = showsSynchronizedWorkspace && !hasCachedWorkspace && desiredConnected &&
-    (loading || phase != ConnectionPhase.CONNECTED)
-
-internal fun projectScopedNavigationEnabled(state: DieterUiState): Boolean =
-    state.projects.any { state.presentedProjectReplicas[it.id]?.online != false }
 
 internal const val TABLET_LAYOUT_MIN_WIDTH_DP = 600
 
@@ -165,14 +110,16 @@ internal fun usesTabletLayout(availableWidthDp: Float): Boolean =
 fun DieterApp(container: DieterContainer) {
     val model: DieterViewModel = viewModel(
         factory = DieterViewModel.Factory(
-            container.connectionManager,
+            container.core,
             container.appPreferences,
-            container.conversationDrafts,
+            container.policy,
+            container,
             container.taskCaptures,
         ),
     )
     val state by model.state.collectAsStateWithLifecycle()
-    if (!container.taskCaptures.loaded) {
+    val captures by container.taskCaptures.view.collectAsStateWithLifecycle()
+    if (!captures.bound) {
         androidx.compose.material3.CircularProgressIndicator()
         return
     }
@@ -237,8 +184,8 @@ fun DieterApp(container: DieterContainer) {
     // Tapping either offers a project picker so the surface never falls back to a stale project.
     val handleNavigate: (Destination) -> Unit = { destination ->
         toolsOpen = false
-        if (!destination.isOfflineSensitiveProjectSurface() || projectScopedNavigationEnabled(state)) {
-            if (destination.isOfflineSensitiveProjectSurface() && state.projects.size > 1) {
+        if (!destination.projectScoped || state.projectSurfacesEnabled) {
+            if (destination.projectScoped && state.projects.size > 1) {
                 projectPickerTarget = destination
             } else {
                 model.navigate(destination)
@@ -249,15 +196,9 @@ fun DieterApp(container: DieterContainer) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val tabletLayout = usesTabletLayout(maxWidth.value)
         val tabletWorkspace = usesTabletWorkspace(maxWidth.value)
-        val synchronizedWorkspaceVisible = state.appSurface == null && state.destination.usesSynchronizedWorkspace()
-        val workspaceStatusIsInline = state.hasCachedWorkspace && synchronizedWorkspaceVisible ||
-            shouldShowInitialWorkspaceSync(
-                showsSynchronizedWorkspace = synchronizedWorkspaceVisible,
-                hasCachedWorkspace = state.hasCachedWorkspace,
-                loading = state.loading,
-                desiredConnected = state.desiredConnected,
-                phase = state.connectionPhase,
-            )
+        val synchronizedWorkspaceVisible = state.appSurface == null && state.destination.synchronized
+        val workspaceStatusIsInline = synchronizedWorkspaceVisible && (state.hasCachedWorkspace ||
+            Availability.initialSync(state.destination, state.hasCachedWorkspace, state.loading, state.desiredConnected, state.connectionPhase))
         val globalConnectionStatusVisible =
             state.connectionPhase != ConnectionPhase.CONNECTED && !workspaceStatusIsInline
         // Tools is modal inside this window: its scrim handles pointer input,
@@ -308,7 +249,7 @@ fun DieterApp(container: DieterContainer) {
                         DieterNavigationRail(
                             selected = state.destination,
                             onSelect = handleNavigate,
-                            projectSurfacesEnabled = projectScopedNavigationEnabled(state),
+                            projectSurfacesEnabled = state.projectSurfacesEnabled,
                             onSettings = { model.openSurface(AppSurface.APP_SETTINGS) },
                             onCreate = {
                                 when (state.destination) {
@@ -391,7 +332,7 @@ fun DieterApp(container: DieterContainer) {
         if (toolsOpen && state.appSurface == null) {
             DieterToolsSheet(
                 selected = state.destination,
-                projectSurfacesEnabled = projectScopedNavigationEnabled(state),
+                projectSurfacesEnabled = state.projectSurfacesEnabled,
                 onSelect = handleNavigate,
                 onSettings = {
                     toolsOpen = false
@@ -407,9 +348,9 @@ fun DieterApp(container: DieterContainer) {
             FileCreateDialog(
                 currentPath = state.filePath,
                 onDismiss = { fileCreateVisible = false },
-            ) { path, directory ->
+            ) { name, directory ->
                 fileCreateVisible = false
-                model.createFile(path, directory)
+                model.createFile(name, directory)
             }
         }
         projectPickerTarget?.let { target ->
@@ -529,8 +470,8 @@ internal fun ConnectionStatusIndicator(
     supportsOfflineOutbox: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val presentation = workspaceStatusPresentation(phase, showingCachedData, supportsOfflineOutbox)
-    val accent = if (presentation.usesOfflineAccent) DieterCoral else DieterAmber
+    val presentation = Availability.notice(phase, showingCachedData, supportsOfflineOutbox)
+    val accent = if (presentation.offline) DieterCoral else DieterAmber
     var nowMillis by remember(lastConnectedAtMillis) { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(lastConnectedAtMillis) {
         while (true) {
@@ -538,7 +479,7 @@ internal fun ConnectionStatusIndicator(
             nowMillis = System.currentTimeMillis()
         }
     }
-    val freshness = lastUpdatedLabel(lastConnectedAtMillis, nowMillis)
+    val freshness = Availability.updated(lastConnectedAtMillis?.let(Instant::fromEpochMilliseconds), Instant.fromEpochMilliseconds(nowMillis))
     val content = "${presentation.title}. ${presentation.detail} $freshness."
     Surface(
         modifier = modifier.testTag("workspace-connection-status"),
@@ -602,99 +543,6 @@ internal fun ConnectionStatusIndicator(
     }
 }
 
-internal data class WorkspaceStatusPresentation(
-    val title: String,
-    val detail: String,
-    val working: Boolean,
-    val usesOfflineAccent: Boolean,
-)
-
-internal fun workspaceStatusPresentation(
-    phase: ConnectionPhase,
-    showingCachedData: Boolean,
-    supportsOfflineOutbox: Boolean = false,
-): WorkspaceStatusPresentation {
-    val cachedDetail = if (supportsOfflineOutbox && phase in setOf(
-            ConnectionPhase.RECONNECTING,
-            ConnectionPhase.AUTH_REQUIRED,
-            ConnectionPhase.INCOMPATIBLE,
-            ConnectionPhase.UNAVAILABLE,
-            ConnectionPhase.STOPPED,
-        )) {
-        "Cached conversations stay available; messages and new conversations queue until Dieter reconnects."
-    } else when (phase) {
-        ConnectionPhase.CONNECTING -> "Your workspace stays available while Dieter connects."
-        ConnectionPhase.SYNCING -> "Your current workspace stays available while changes load."
-        ConnectionPhase.RECONNECTING -> "Cached data stays visible while the connection recovers."
-        else -> "Cached data is read-only until Dieter reconnects."
-    }
-    val uncachedDetail = when (phase) {
-        ConnectionPhase.CONNECTING -> "Contacting Dieter and discovering your machines."
-        ConnectionPhase.SYNCING -> "Projects, boards, and conversations are loading."
-        ConnectionPhase.RECONNECTING -> "Restoring your connection to Dieter."
-        else -> "Open connection settings to continue."
-    }
-    return WorkspaceStatusPresentation(
-        title = when (phase) {
-            ConnectionPhase.CONNECTED -> "Workspace is up to date"
-            ConnectionPhase.CONNECTING -> "Connecting to Dieter"
-            ConnectionPhase.SYNCING -> "Refreshing workspace"
-            ConnectionPhase.RECONNECTING -> "Reconnecting to Dieter"
-            ConnectionPhase.AUTH_REQUIRED -> "Sign in required"
-            ConnectionPhase.INCOMPATIBLE -> "Update required"
-            ConnectionPhase.UNAVAILABLE, ConnectionPhase.STOPPED -> if (showingCachedData) "Working from cached data" else "Dieter is unavailable"
-        },
-        detail = if (showingCachedData) cachedDetail else uncachedDetail,
-        working = phase == ConnectionPhase.CONNECTING || phase == ConnectionPhase.SYNCING || phase == ConnectionPhase.RECONNECTING,
-        usesOfflineAccent = phase == ConnectionPhase.AUTH_REQUIRED || phase == ConnectionPhase.INCOMPATIBLE ||
-            phase == ConnectionPhase.UNAVAILABLE || phase == ConnectionPhase.STOPPED,
-    )
-}
-
-internal data class ConnectionStatusPresentation(
-    val label: String,
-    val working: Boolean,
-)
-
-internal fun connectionStatusPresentation(phase: ConnectionPhase): ConnectionStatusPresentation = when (phase) {
-    ConnectionPhase.CONNECTED -> ConnectionStatusPresentation("Online", working = false)
-    ConnectionPhase.CONNECTING -> ConnectionStatusPresentation("Connecting", working = true)
-    ConnectionPhase.SYNCING -> ConnectionStatusPresentation("Syncing", working = true)
-    ConnectionPhase.RECONNECTING -> ConnectionStatusPresentation("Reconnecting", working = true)
-    ConnectionPhase.AUTH_REQUIRED -> ConnectionStatusPresentation("Sign in required", working = false)
-    ConnectionPhase.INCOMPATIBLE -> ConnectionStatusPresentation("Update required", working = false)
-    ConnectionPhase.UNAVAILABLE -> ConnectionStatusPresentation("Unavailable", working = false)
-    ConnectionPhase.STOPPED -> ConnectionStatusPresentation("Offline", working = false)
-}
-
-internal fun lastConnectedLabel(
-    lastConnectedAtMillis: Long?,
-    nowMillis: Long = System.currentTimeMillis(),
-): String {
-    if (lastConnectedAtMillis == null || lastConnectedAtMillis <= 0L) return "Last connected unknown"
-    val elapsedSeconds = ((nowMillis - lastConnectedAtMillis).coerceAtLeast(0L) / 1_000L)
-    return when {
-        elapsedSeconds < 60L -> "Last connected just now"
-        elapsedSeconds < 3_600L -> "Last connected ${maxOf(1L, elapsedSeconds / 60L)}m ago"
-        elapsedSeconds < 86_400L -> "Last connected ${maxOf(1L, elapsedSeconds / 3_600L)}h ago"
-        else -> "Last connected ${maxOf(1L, elapsedSeconds / 86_400L)}d ago"
-    }
-}
-
-internal fun lastUpdatedLabel(
-    lastConnectedAtMillis: Long?,
-    nowMillis: Long = System.currentTimeMillis(),
-): String {
-    if (lastConnectedAtMillis == null || lastConnectedAtMillis <= 0L) return "Waiting for first update"
-    val elapsedSeconds = ((nowMillis - lastConnectedAtMillis).coerceAtLeast(0L) / 1_000L)
-    return when {
-        elapsedSeconds < 60L -> "Updated just now"
-        elapsedSeconds < 3_600L -> "Updated ${maxOf(1L, elapsedSeconds / 60L)}m ago"
-        elapsedSeconds < 86_400L -> "Updated ${maxOf(1L, elapsedSeconds / 3_600L)}h ago"
-        else -> "Updated ${maxOf(1L, elapsedSeconds / 86_400L)}d ago"
-    }
-}
-
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel) {
@@ -738,26 +586,17 @@ private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel)
                 }
                 Surface(
                     shape = RoundedCornerShape(50),
-                    color = when (state.connectionPhase) {
-                        ConnectionPhase.CONNECTED -> DieterEyes.copy(alpha = 0.14f)
-                        ConnectionPhase.UNAVAILABLE, ConnectionPhase.INCOMPATIBLE, ConnectionPhase.AUTH_REQUIRED -> MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
+                    color = when {
+                        connected -> DieterEyes.copy(alpha = 0.14f)
+                        Availability.blocked(state.connectionPhase) -> MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
                         else -> DieterSurfaceHigh
                     },
                 ) {
                     Text(
-                        when (state.connectionPhase) {
-                            ConnectionPhase.CONNECTED -> "● Connected"
-                            ConnectionPhase.SYNCING -> "Syncing"
-                            ConnectionPhase.RECONNECTING -> "Reconnecting"
-                            ConnectionPhase.INCOMPATIBLE -> "Incompatible"
-                            ConnectionPhase.UNAVAILABLE -> "Unavailable"
-                            ConnectionPhase.AUTH_REQUIRED -> "Sign in required"
-                            ConnectionPhase.STOPPED -> "Disconnected"
-                            else -> "Connecting"
-                        },
-                        color = when (state.connectionPhase) {
-                            ConnectionPhase.CONNECTED -> DieterEyes
-                            ConnectionPhase.UNAVAILABLE, ConnectionPhase.INCOMPATIBLE, ConnectionPhase.AUTH_REQUIRED -> MaterialTheme.colorScheme.error
+                        if (connected) "● ${Availability.label(state.connectionPhase)}" else Availability.label(state.connectionPhase),
+                        color = when {
+                            connected -> DieterEyes
+                            Availability.blocked(state.connectionPhase) -> MaterialTheme.colorScheme.error
                             else -> DieterMuted
                         },
                         fontSize = 11.sp,
@@ -767,7 +606,7 @@ private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel)
                 }
             }
             state.presentedEndpointConnections.forEach { endpoint ->
-                val endpointConnected = endpoint.phase == EndpointPhase.CONNECTED
+                val endpointConnected = endpoint.phase == MachineLink.CONNECTED
                 val outboxSummary = state.machineOutboxSummaries[endpoint.id]
                 Surface(
                     color = if (endpointConnected) DieterEyes.copy(alpha = 0.08f) else DieterSurfaceHigh,
@@ -783,12 +622,12 @@ private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel)
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         when (endpoint.phase) {
-                            EndpointPhase.TRYING -> CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                            MachineLink.TRYING -> CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
                             else -> Surface(
                                 shape = RoundedCornerShape(50),
                                 color = when (endpoint.phase) {
-                                    EndpointPhase.CONNECTED -> DieterEyes
-                                    EndpointPhase.FAILED -> if (endpoint.online) MaterialTheme.colorScheme.error else DieterCoral.copy(alpha = 0.7f)
+                                    MachineLink.CONNECTED -> DieterEyes
+                                    MachineLink.FAILED -> if (endpoint.online) MaterialTheme.colorScheme.error else DieterCoral.copy(alpha = 0.7f)
                                     else -> DieterMuted.copy(alpha = 0.45f)
                                 },
                                 modifier = Modifier.size(8.dp),
@@ -891,27 +730,15 @@ private fun DestinationContent(
     destination: Destination = state.destination,
     contentPadding: PaddingValues = PaddingValues(),
 ) {
-    val showsSynchronizedWorkspace = destination.usesSynchronizedWorkspace()
-    val initialWorkspaceSync = shouldShowInitialWorkspaceSync(
-        showsSynchronizedWorkspace = showsSynchronizedWorkspace,
-        hasCachedWorkspace = state.hasCachedWorkspace,
-        loading = state.loading,
-        desiredConnected = state.desiredConnected,
-        phase = state.connectionPhase,
-    )
-    if (initialWorkspaceSync) {
+    if (Availability.initialSync(destination, state.hasCachedWorkspace, state.loading, state.desiredConnected, state.connectionPhase)) {
         InitialWorkspaceSyncState(
             phase = state.connectionPhase,
             modifier = Modifier.fillMaxSize().padding(contentPadding),
         )
         return
     }
-    val treatment = workspaceSurfaceTreatment(
-        showsSynchronizedWorkspace = showsSynchronizedWorkspace,
-        hasCachedWorkspace = state.hasCachedWorkspace,
-        phase = state.connectionPhase,
-    )
-    val blocksInteraction = workspaceInteractionBlocked(treatment, destination.supportsOfflineOutbox())
+    val treatment = Availability.treatment(destination, state.hasCachedWorkspace, state.connectionPhase)
+    val blocksInteraction = Availability.blocksInteraction(destination, state.hasCachedWorkspace, state.connectionPhase)
     val layoutDirection = LocalLayoutDirection.current
     val destinationPadding = if (treatment.showsNotice) {
         PaddingValues(
@@ -937,7 +764,7 @@ private fun DestinationContent(
                 phase = state.connectionPhase,
                 lastConnectedAtMillis = state.lastConnectedAtMillis,
                 showingCachedData = true,
-                supportsOfflineOutbox = destination.supportsOfflineOutbox(),
+                supportsOfflineOutbox = destination.offlineOutbox,
                 modifier = Modifier.fillMaxWidth().padding(
                     start = 10.dp,
                     top = contentPadding.calculateTopPadding() + 6.dp,
@@ -980,7 +807,7 @@ internal fun InitialWorkspaceSyncState(
     phase: ConnectionPhase,
     modifier: Modifier = Modifier,
 ) {
-    val presentation = initialWorkspaceSyncPresentation(phase)
+    val presentation = Availability.firstSync(phase)
     val accent = if (presentation.working) DieterAmber else DieterCoral
     Box(
         modifier = modifier
@@ -1029,50 +856,6 @@ internal fun InitialWorkspaceSyncState(
             )
         }
     }
-}
-
-internal data class InitialWorkspaceSyncPresentation(
-    val title: String,
-    val detail: String,
-    val working: Boolean,
-)
-
-internal fun initialWorkspaceSyncPresentation(phase: ConnectionPhase): InitialWorkspaceSyncPresentation = when (phase) {
-    ConnectionPhase.STOPPED -> InitialWorkspaceSyncPresentation(
-        "Preparing your workspace",
-        "Dieter is getting ready to connect.",
-        working = true,
-    )
-    ConnectionPhase.CONNECTING -> InitialWorkspaceSyncPresentation(
-        "Connecting to Dieter",
-        "Discovering your enrolled machines and choosing the fastest route.",
-        working = true,
-    )
-    ConnectionPhase.SYNCING, ConnectionPhase.CONNECTED -> InitialWorkspaceSyncPresentation(
-        "Syncing your workspace",
-        "Projects, boards, and conversations will appear together as soon as they arrive.",
-        working = true,
-    )
-    ConnectionPhase.RECONNECTING -> InitialWorkspaceSyncPresentation(
-        "Reconnecting to Dieter",
-        "Restoring the secure route to your workspace.",
-        working = true,
-    )
-    ConnectionPhase.AUTH_REQUIRED -> InitialWorkspaceSyncPresentation(
-        "Sign in to continue",
-        "Open connection settings and sign in to load your workspace.",
-        working = false,
-    )
-    ConnectionPhase.INCOMPATIBLE -> InitialWorkspaceSyncPresentation(
-        "Update required",
-        "Update Dieter before syncing this workspace.",
-        working = false,
-    )
-    ConnectionPhase.UNAVAILABLE -> InitialWorkspaceSyncPresentation(
-        "Dieter is unavailable",
-        "Check your connection and try again.",
-        working = false,
-    )
 }
 
 @Composable

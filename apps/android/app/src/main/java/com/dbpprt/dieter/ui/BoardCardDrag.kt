@@ -7,7 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.isSpecified
-import com.dbpprt.dieter.v1.Card
+import com.dbpprt.dieter.api.v1.Card
 
 internal data class BoardCardLaneDrop(val cardId: String, val laneId: String)
 

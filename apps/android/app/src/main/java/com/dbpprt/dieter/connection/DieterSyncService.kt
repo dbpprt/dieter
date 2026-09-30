@@ -1,179 +1,148 @@
 package com.dbpprt.dieter.connection
 
-import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.content.res.ColorStateList
 import android.content.res.Configuration
-import android.content.pm.PackageManager
-import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
-import android.graphics.Typeface
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import android.text.Spannable
-import android.text.SpannableStringBuilder
-import android.text.style.ForegroundColorSpan
-import android.text.style.StyleSpan
 import android.view.View
 import android.widget.RemoteViews
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.dbpprt.dieter.DieterApplication
-import com.dbpprt.dieter.MainActivity
 import com.dbpprt.dieter.R
-import com.dbpprt.dieter.settings.AppPreferences
+import com.dbpprt.dieter.core.CoreRuntime
+import com.dbpprt.dieter.core.admin.BackgroundMode
+import com.dbpprt.dieter.core.admin.BackgroundPolicy
+import com.dbpprt.dieter.core.board.Runtimes
+import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.notifications.BackgroundStatus
+import com.dbpprt.dieter.core.notifications.NotificationSettings
+import com.dbpprt.dieter.core.notifications.NotificationStyle
 import com.dbpprt.dieter.settings.DieterPalette
-import com.dbpprt.dieter.settings.DieterNotificationSettings
-import com.dbpprt.dieter.settings.NotificationDisplayStyle
-import com.dbpprt.dieter.v1.Card
-import com.dbpprt.dieter.v1.ConversationSnapshot
+import com.dbpprt.dieter.sharedcore.ConnectionPolicy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
-private data class NotificationInputs(
-    val state: DieterConnectionState,
-    val settings: DieterNotificationSettings,
-    val boardIds: Set<String>,
-    val palette: DieterPalette,
-)
-
+/**
+ * Keeps the shared core connected while the app is in the background. The
+ * core decides when to run ([BackgroundPolicy]); this service holds the wake
+ * lock, runs periodic windows, and shows the connection notification.
+ */
 class DieterSyncService : Service() {
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val notificationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private lateinit var manager: DieterConnectionManager
-    private lateinit var notifications: NotificationManagerCompat
-    private val transitions = NotificationTransitionTracker()
-    private var collectionJob: Job? = null
-    private var syncPolicyJob: Job? = null
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private lateinit var core: CoreRuntime
+    private lateinit var policy: ConnectionPolicy
+    private var policyJob: Job? = null
+    private var renderJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
-    private var postedRunningChatIds: Set<String> = emptySet()
-    private var postedTerminalChatIds: Set<String> = emptySet()
-    private var postedReviewCardIds: Set<String> = emptySet()
-    private var summarizedResultNotificationIds: Set<Int> = emptySet()
-    private var resultsSummaryReconciled = false
-    private var currentPalette = DieterPalette.DEFAULT
-    private var lastConnectionFingerprint: Int? = null
-    private val runningChatFingerprints = mutableMapOf<String, Int>()
-    private var cachedConnectionBadge: Pair<Pair<Boolean, String>, android.graphics.drawable.Icon>? = null
-    private val paletteTokens get() = currentPalette.tokens
-    private val notificationAccent get() = paletteTokens.shellStartInt
-    private val reviewAccent get() = Color.rgb(226, 190, 106)
+    private var palette = DieterPalette.DEFAULT
+    private var lastRendered: Any? = null
+    private var cachedBadge: Pair<Pair<Boolean, String>, android.graphics.drawable.Icon>? = null
 
     override fun onCreate() {
         super.onCreate()
-        manager = (application as DieterApplication).container.connectionManager
-        notifications = NotificationManagerCompat.from(this)
-        createChannels()
-        val appPreferences = (application as DieterApplication).container.appPreferences
-        currentPalette = appPreferences.palette.value
-        // Foreground services must publish immediately. Keep this first notification tiny; the
-        // fully rendered version is produced on the notification dispatcher below.
-        startInForeground(bootstrapConnectionNotification())
-        manager.onServiceStarted()
-        syncPolicyJob = serviceScope.launch {
-            manager.state
-                .map { it.desiredConnected to it.backgroundSyncMode }
-                .distinctUntilChanged()
-                .collectLatest { (desiredConnected, mode) ->
-                    if (!desiredConnected || !mode.usesBackgroundService) {
-                        manager.setPeriodicSyncWindowActive(false)
-                        releaseWakeLock()
-                        return@collectLatest
-                    }
-                    when (mode) {
-                        BackgroundSyncMode.LIVE -> runLivePolicy()
-                        BackgroundSyncMode.PERIODIC -> runPeriodicPolicy()
-                        BackgroundSyncMode.APP_ONLY -> Unit
-                    }
+        val container = (application as DieterApplication).container
+        core = container.core
+        policy = container.policy
+        palette = container.appPreferences.palette.value
+        // Foreground services must publish immediately; the full notification follows.
+        startInForeground(bootstrapNotification())
+        policy.setServiceActive(true)
+        policyJob = scope.launch {
+            combine(policy.desired, policy.mode) { desired, mode -> desired to mode }.collectLatest { (desired, mode) ->
+                if (!desired || !mode.usesBackgroundService) {
+                    policy.setPeriodicWindow(false)
+                    releaseWakeLock()
+                    return@collectLatest
                 }
+                when (mode) {
+                    BackgroundMode.LIVE -> {
+                        policy.setPeriodicWindow(false)
+                        whileWakeLockHeld { awaitCancellation() }
+                    }
+                    BackgroundMode.PERIODIC -> runPeriodicPolicy()
+                    BackgroundMode.APP_ONLY -> Unit
+                }
+            }
         }
-        collectionJob = notificationScope.launch {
-            manager.state
-                .combine(appPreferences.notificationSettings) { state, settings ->
-                    state to settings
-                }
-                .combine(appPreferences.notificationBoardIds) { stateAndSettings, boardIds ->
-                    Triple(stateAndSettings.first, stateAndSettings.second, boardIds)
-                }
-                .combine(appPreferences.palette) { stateSettingsAndBoards, palette ->
-                    NotificationInputs(
-                        stateSettingsAndBoards.first,
-                        stateSettingsAndBoards.second,
-                        stateSettingsAndBoards.third,
-                        palette,
-                    )
-                }
-                .collect { input ->
-                    currentPalette = input.palette
-                    render(input.state, input.settings, input.boardIds)
-                }
+        renderJob = scope.launch {
+            combine(core.connection.state, core.workspace.state, core.outbox.view, policy.mode, container.appPreferences.palette) { connection, workspace, outbox, mode, palette ->
+                ConnectionInputs(connection.phase, connection.error, connection.gateway?.name, mode, palette, workspace.allItems, workspace.boards.values.sumOf { it.size }, outbox.let { BackgroundPolicy.hasActiveWork(workspace.allItems, it) })
+            }.collectLatest { inputs ->
+                palette = inputs.palette
+                if (inputs == lastRendered) return@collectLatest
+                lastRendered = inputs
+                startInForeground(connectionNotification(inputs))
+            }
         }
     }
+
+    private data class ConnectionInputs(
+        val phase: ConnectionPhase,
+        val error: String?,
+        val gateway: String?,
+        val mode: BackgroundMode,
+        val palette: DieterPalette,
+        val items: List<com.dbpprt.dieter.api.v1.Card>,
+        val boards: Int,
+        val activeWork: Boolean,
+    )
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_DISCONNECT -> {
-                manager.disconnect(stopService = false)
-                syncPolicyJob?.cancel()
-                releaseWakeLock()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                scope.launch { core.setConnected(false) }
+                stopBackground()
                 return START_NOT_STICKY
             }
             ACTION_STOP_BACKGROUND -> {
-                syncPolicyJob?.cancel()
-                manager.setPeriodicSyncWindowActive(false)
-                releaseWakeLock()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                stopBackground()
                 return START_NOT_STICKY
             }
             else -> {
-                startInForeground(bootstrapConnectionNotification())
-                manager.onServiceStarted()
+                startInForeground(bootstrapNotification())
+                policy.setServiceActive(true)
             }
         }
-        return if (manager.state.value.desiredConnected && manager.state.value.backgroundSyncMode.usesBackgroundService) {
-            START_STICKY
-        } else {
-            START_NOT_STICKY
-        }
+        return if (policy.desired.value && policy.mode.value.usesBackgroundService) START_STICKY else START_NOT_STICKY
+    }
+
+    private fun stopBackground() {
+        policyJob?.cancel()
+        policy.setPeriodicWindow(false)
+        releaseWakeLock()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     override fun onDestroy() {
-        collectionJob?.cancel()
-        syncPolicyJob?.cancel()
-        manager.setPeriodicSyncWindowActive(false)
+        policyJob?.cancel()
+        renderJob?.cancel()
         releaseWakeLock()
-        serviceScope.cancel()
-        notificationScope.cancel()
-        manager.onServiceStopped()
+        policy.setServiceActive(false)
+        scope.cancel()
         super.onDestroy()
     }
 
@@ -184,63 +153,22 @@ class DieterSyncService : Service() {
             this,
             CONNECTION_NOTIFICATION_ID,
             notification,
-            if (android.os.Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING else 0,
+            if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING else 0,
         )
     }
 
-    @SuppressLint("WakelockTimeout")
-    private fun acquireWakeLock() {
-        val lock = wakeLock ?: getSystemService(PowerManager::class.java)
-            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:global-sync")
-            .also { it.setReferenceCounted(false); wakeLock = it }
-        if (lock.isHeld) lock.release()
-        lock.acquire(WAKE_LOCK_TIMEOUT_MS)
-    }
-
-    private suspend fun runLivePolicy() {
-        manager.setPeriodicSyncWindowActive(false)
-        whileWakeLockHeld {
-            kotlinx.coroutines.awaitCancellation()
-        }
-    }
-
+    /** Wakes every minute for one core periodic window (up to 30 s, longer while agents work or changes are queued). */
     private suspend fun runPeriodicPolicy() {
         while (true) {
-            val cycleStartedAt = System.currentTimeMillis()
-            val previousFrameAt = manager.state.value.lastConnectedAtMs ?: 0L
             whileWakeLockHeld {
-                manager.setPeriodicSyncWindowActive(true)
+                policy.setPeriodicWindow(true)
                 try {
-                    val connected = withTimeoutOrNull(BACKGROUND_SYNC_WINDOW_TIMEOUT_MS) {
-                        manager.state.first { state ->
-                            state.backgroundSyncMode != BackgroundSyncMode.PERIODIC ||
-                                !state.desiredConnected ||
-                                state.phase == ConnectionPhase.CONNECTED &&
-                                (state.lastConnectedAtMs ?: 0L) > previousFrameAt
-                        }
-                    }
-                    val state = manager.state.value
-                    if (state.backgroundSyncMode != BackgroundSyncMode.PERIODIC || !state.desiredConnected) {
-                        return@whileWakeLockHeld
-                    }
-                    android.util.Log.i(
-                        DieterConnectionManager.SYNC_LOG_TAG,
-                        "periodicCycleMs=${System.currentTimeMillis() - cycleStartedAt} connected=${connected != null}",
-                    )
-                    if (connected != null && hasActiveBackgroundWork(state)) {
-                        // Running agents and queued delivery temporarily receive
-                        // live behaviour; return to sleeping as soon as idle.
-                        manager.state.first { latest ->
-                            latest.backgroundSyncMode != BackgroundSyncMode.PERIODIC ||
-                                !latest.desiredConnected ||
-                                !hasActiveBackgroundWork(latest)
-                        }
-                    }
+                    core.periodicWindow()
                 } finally {
-                    manager.setPeriodicSyncWindowActive(false)
+                    policy.setPeriodicWindow(false)
                 }
             }
-            delay(BACKGROUND_POLL_INTERVAL_MS)
+            delay(BackgroundPolicy.POLL_INTERVAL)
         }
     }
 
@@ -260,361 +188,95 @@ class DieterSyncService : Service() {
         }
     }
 
+    @SuppressLint("WakelockTimeout")
+    private fun acquireWakeLock() {
+        val lock = wakeLock ?: getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:global-sync")
+            .also { it.setReferenceCounted(false); wakeLock = it }
+        if (lock.isHeld) lock.release()
+        lock.acquire(WAKE_LOCK_TIMEOUT_MS)
+    }
+
     private fun releaseWakeLock() {
         wakeLock?.takeIf(PowerManager.WakeLock::isHeld)?.release()
     }
 
-    private fun render(
-        state: DieterConnectionState,
-        settings: DieterNotificationSettings,
-        notificationBoardIds: Set<String>,
-    ) {
-        if (!state.desiredConnected || !state.backgroundSyncMode.usesBackgroundService) {
-            serviceScope.launch(Dispatchers.Main.immediate) {
-                val current = manager.state.value
-                if (!current.desiredConnected || !current.backgroundSyncMode.usesBackgroundService) {
-                    syncPolicyJob?.cancel()
-                    manager.setPeriodicSyncWindowActive(false)
-                    releaseWakeLock()
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelf()
-                }
-            }
-            return
-        }
-        val fingerprint = connectionNotificationFingerprint(state, settings, currentPalette.slug)
-        if (fingerprint != lastConnectionFingerprint) {
-            startInForeground(connectionNotification(state, settings))
-            lastConnectionFingerprint = fingerprint
-        }
-        val events = transitions.update(
-            state.cards,
-            state.chats,
-            state.activeConversations,
-            notificationBoardIds,
-            settings,
-        )
-        renderRunningChats(state.chats, state.activeConversations, settings)
-        var resultsChanged = cancelDisabledResultNotifications(state.chats, settings)
-        resultsChanged = cancelDisabledBoardNotifications(state.cards, notificationBoardIds, settings) || resultsChanged
-        events.forEach { resultsChanged = postEvent(it, state.boards, settings) || resultsChanged }
-        if (!resultsSummaryReconciled || resultsChanged) {
-            reconcileResultsSummary()
-            resultsSummaryReconciled = true
-        }
-    }
-
-    private fun cancelDisabledBoardNotifications(
-        cards: List<Card>,
-        notificationBoardIds: Set<String>,
-        settings: DieterNotificationSettings,
-    ): Boolean {
-        val cardsById = cards.associateBy(Card::getId)
-        val disabledCardIds = postedReviewCardIds.filterTo(mutableSetOf()) { cardId ->
-            !settings.activityNotificationsEnabled ||
-                !settings.reviewCardsEnabled ||
-                cardsById[cardId]?.boardId !in notificationBoardIds ||
-                cardsById[cardId]?.lane?.equals("review", true) != true
-        }
-        cards.filterTo(mutableSetOf()) { card ->
-            !settings.activityNotificationsEnabled ||
-                !settings.reviewCardsEnabled ||
-                card.boardId !in notificationBoardIds ||
-                !card.lane.equals("review", true)
-        }.mapTo(disabledCardIds, Card::getId)
-        disabledCardIds.forEach { notifications.cancel(reviewNotificationId(it)) }
-        postedReviewCardIds -= disabledCardIds
-        return disabledCardIds.isNotEmpty()
-    }
-
-    private fun renderRunningChats(
-        chats: List<Card>,
-        conversations: Map<String, ConversationSnapshot>,
-        settings: DieterNotificationSettings,
-    ) {
-        val runningChatIds = chats.filter {
-            it.scope == "chat" && it.boardId.isBlank() && isActiveRuntime(it.runtime)
-        }.mapTo(mutableSetOf(), Card::getId)
-        val activeIds = runningChatIds.takeIf {
-            settings.activityNotificationsEnabled && settings.runningChatsEnabled
-        }.orEmpty()
-        val cancelledIds = (postedRunningChatIds + runningChatIds) - activeIds
-        cancelledIds.forEach {
-            notifications.cancel(runningChatNotificationId(it))
-            runningChatFingerprints.remove(it)
-        }
-        postedRunningChatIds = activeIds
-        val preferences = getSharedPreferences(NOTIFICATION_PREFERENCES, Context.MODE_PRIVATE)
-        chats.filter { it.id in activeIds }.forEach { chat ->
-            val session = chatSession(chat)
-            if (preferences.getString(dismissedChatKey(chat.id), null) == session) {
-                runningChatFingerprints.remove(chat.id)
-                return@forEach
-            }
-            val fingerprint = runningChatNotificationFingerprint(
-                chat,
-                conversations[chat.id],
-                session,
-                settings,
-                currentPalette.slug,
-            )
-            if (runningChatFingerprints[chat.id] == fingerprint) return@forEach
-            if (postNotification(
-                    runningChatNotificationId(chat.id),
-                    runningChatNotification(chat, conversations[chat.id], session, settings),
-                )
-            ) {
-                runningChatFingerprints[chat.id] = fingerprint
-            }
-        }
-    }
-
-    private fun cancelDisabledResultNotifications(chats: List<Card>, settings: DieterNotificationSettings): Boolean {
-        val chatsById = chats.associateBy(Card::getId)
-        val disabledChatIds = postedTerminalChatIds.filterTo(mutableSetOf()) { cardId ->
-            chatsById[cardId]?.let { chat ->
-                isActiveRuntime(chat.runtime) || !chatResultNotificationEnabled(chat, settings)
-            } != false
-        }
-        chats.filterTo(mutableSetOf()) { chat ->
-            isActiveRuntime(chat.runtime) || !chatResultNotificationEnabled(chat, settings)
-        }
-            .mapTo(disabledChatIds, Card::getId)
-        disabledChatIds.forEach { notifications.cancel(terminalNotificationId(it)) }
-        postedTerminalChatIds -= disabledChatIds
-        return disabledChatIds.isNotEmpty()
-    }
-
-    private fun postEvent(
-        event: DieterNotificationEvent,
-        boards: List<com.dbpprt.dieter.v1.Board>,
-        settings: DieterNotificationSettings,
-    ): Boolean = when (event) {
-            is DieterNotificationEvent.ChatFinished -> {
-                notifications.cancel(runningChatNotificationId(event.card.id))
-                getSharedPreferences(NOTIFICATION_PREFERENCES, Context.MODE_PRIVATE)
-                    .edit().remove(dismissedChatKey(event.card.id)).apply()
-                postNotification(terminalNotificationId(event.card.id), terminalChatNotification(event, settings)).also { posted ->
-                    if (posted) {
-                    postedTerminalChatIds += event.card.id
-                    }
-                }
-            }
-            is DieterNotificationEvent.ReadyForReview -> {
-                val boardName = boards.firstOrNull { it.id == event.card.boardId }?.name.orEmpty()
-                postNotification(reviewNotificationId(event.card.id), reviewNotification(event.card, boardName, settings)).also { posted ->
-                    if (posted) {
-                        postedReviewCardIds += event.card.id
-                    }
-                }
-            }
-        }
-
-    private fun reconcileResultsSummary() {
-        val activeNotifications = getSystemService(NotificationManager::class.java).activeNotifications
-        val activeResultNotificationIds = activeNotifications.asSequence()
-            .filter { status ->
-                status.id != RESULTS_SUMMARY_NOTIFICATION_ID &&
-                    status.notification.group == RESULTS_GROUP &&
-                    status.notification.flags and Notification.FLAG_GROUP_SUMMARY == 0
-            }
-            .mapTo(mutableSetOf()) { it.id }
-
-        // Android owns dismissal and auto-cancel state. Keep the service's
-        // bookkeeping aligned with what is actually still visible.
-        postedTerminalChatIds = postedTerminalChatIds.filterTo(mutableSetOf()) { cardId ->
-            terminalNotificationId(cardId) in activeResultNotificationIds
-        }
-        postedReviewCardIds = postedReviewCardIds.filterTo(mutableSetOf()) { cardId ->
-            reviewNotificationId(cardId) in activeResultNotificationIds
-        }
-
-        val summaryActive = activeNotifications.any { it.id == RESULTS_SUMMARY_NOTIFICATION_ID }
-        when (
-            resultSummaryAction(
-                activeChildIds = activeResultNotificationIds,
-                summarizedChildIds = summarizedResultNotificationIds,
-                summaryActive = summaryActive,
-            )
-        ) {
-            ResultSummaryAction.UNCHANGED -> Unit
-            ResultSummaryAction.CANCEL -> {
-                notifications.cancel(RESULTS_SUMMARY_NOTIFICATION_ID)
-                summarizedResultNotificationIds = emptySet()
-            }
-            ResultSummaryAction.POST -> {
-                if (
-                    postNotification(
-                        RESULTS_SUMMARY_NOTIFICATION_ID,
-                        resultsGroupSummary(activeResultNotificationIds.size),
-                    )
-                ) {
-                    summarizedResultNotificationIds = activeResultNotificationIds
-                }
-            }
-        }
-    }
-
-    private fun connectionNotification(
-        state: DieterConnectionState,
-        settings: DieterNotificationSettings,
-    ): Notification {
-        val connected = state.phase == ConnectionPhase.CONNECTED
-        val periodicSleeping = state.backgroundSyncMode == BackgroundSyncMode.PERIODIC &&
-            !state.periodicSyncWindowActive && state.phase == ConnectionPhase.STOPPED
-        val available = connected || periodicSleeping
-        val endpoint = state.endpoint
-        val activityPreview = modelActivityPreview(
-            activeCardsById = (state.cards + state.chats)
-                .filter { card -> isActiveRuntime(card.runtime) }
-                .associateBy(Card::getId),
-            conversations = state.activeConversations,
-        )
-        val visibleActivityCount = activityPreview.totalCount.takeIf { settings.liveStatusActivityEnabled } ?: 0
-        val activeSubagents = state.activeConversations.values.sumOf { snapshot ->
-            snapshot.conversation.subagentsList.count { it.status == "running" || it.status == "pending" }
-        }
-        val reviews = state.cards.count { it.lane.equals("review", true) }
-        val hostname = state.projectReplicas.values.firstOrNull { host ->
-            host.online && (endpoint == null || host.endpointId == endpoint.id)
-        }?.hostname ?: state.projectReplicas.values.firstOrNull { it.online }?.hostname
-        val title = when (state.phase) {
-            ConnectionPhase.CONNECTED -> "Connected to ${hostname ?: endpoint?.label ?: "Dieter"}"
-            ConnectionPhase.SYNCING -> "Synchronizing Dieter"
-            ConnectionPhase.RECONNECTING -> "Reconnecting to Dieter"
-            ConnectionPhase.AUTH_REQUIRED -> "Sign in to Dieter"
-            ConnectionPhase.INCOMPATIBLE -> "Incompatible Dieter server"
-            ConnectionPhase.UNAVAILABLE -> "Dieter is unavailable"
-            else -> if (periodicSleeping) "Dieter Smart sync" else "Connecting to Dieter"
-        }
-        val endpointText = endpoint?.let { "${it.label} · ${it.address.substringBefore(':')}" }
-            ?: "Trying configured addresses"
-        val summary = when {
-            periodicSleeping -> "Sleeping between checks · opens with an immediate refresh"
-            connected && state.backgroundSyncMode == BackgroundSyncMode.LIVE -> "$endpointText · live in background"
-            connected && hasActiveBackgroundWork(state) -> "$endpointText · live while work is active"
-            connected -> "$endpointText · periodic background check"
-            else -> state.error ?: endpointText
-        }
-        val builder = Notification.Builder(this, CONNECTION_CHANNEL_ID)
+    private fun connectionNotification(inputs: ConnectionInputs): Notification {
+        val settings = NotificationSettings.load(core.platform.settings)
+        val status = BackgroundStatus.of(inputs.phase, inputs.error, inputs.gateway, inputs.mode, inputs.items, inputs.boards, inputs.activeWork, settings)
+        val accent = palette.tokens.shellStartInt
+        val builder = Notification.Builder(this, AndroidNotifications.CONNECTION_CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title)
-            .setContentText(summary)
-            .setSubText(
-                when {
-                    connected && visibleActivityCount > 0 -> activeNowLabel(visibleActivityCount)
-                    connected -> "Ongoing"
-                    else -> null
-                },
-            )
-            .setLargeIcon(connectionBadge(available))
-            .setColor(notificationAccent)
+            .setContentTitle(status.title)
+            .setContentText(status.summary)
+            .setSubText(status.subtext)
+            .setLargeIcon(connectionBadge(status.available))
+            .setColor(accent)
             .setCategory(Notification.CATEGORY_SERVICE)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
-            .setContentIntent(openIntent(showConnection = !available))
+            .setContentIntent(AndroidNotifications.openIntent(this, showConnection = !status.available))
             .addAction(Notification.Action.Builder(null, "Disconnect", serviceIntent(ACTION_DISCONNECT, 11)).build())
-            .addAction(Notification.Action.Builder(null, "Open", openIntent(showConnection = !available)).build())
-        if (Build.VERSION.SDK_INT >= 36 && connected) {
+            .addAction(Notification.Action.Builder(null, "Open", AndroidNotifications.openIntent(this, showConnection = !status.available)).build())
+        if (Build.VERSION.SDK_INT >= 36 && status.connected) {
             // Surface live agent work as an Android 16 promoted Live Update chip.
-            if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1) {
-                builder.setRequestPromotedOngoing(true)
-            }
-            if (visibleActivityCount > 0) {
-                builder.setShortCriticalText("$visibleActivityCount active")
-            }
+            if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1) builder.setRequestPromotedOngoing(true)
+            if (status.running > 0) builder.setShortCriticalText("${status.running} active")
         }
-        if (settings.displayStyle == NotificationDisplayStyle.DETAILED) {
+        if (settings.style == NotificationStyle.DETAILED) {
             builder.setStyle(Notification.DecoratedCustomViewStyle())
-            builder.setCustomBigContentView(
-                connectionExpandedView(
-                    title = title,
-                    summary = summary,
-                    boards = state.boards.size,
-                    reviews = reviews,
-                    subagents = activeSubagents.takeIf { settings.liveStatusActivityEnabled } ?: 0,
-                    preview = activityPreview.takeIf { connected && settings.liveStatusActivityEnabled },
-                ),
-            )
+            builder.setCustomBigContentView(expandedView(status))
         }
         return builder.build()
     }
 
-    private fun bootstrapConnectionNotification(): Notification = Notification.Builder(this, CONNECTION_CHANNEL_ID)
+    private fun bootstrapNotification(): Notification = Notification.Builder(this, AndroidNotifications.CONNECTION_CHANNEL)
         .setSmallIcon(R.drawable.ic_notification)
         .setContentTitle("Connecting to Dieter")
         .setContentText("Starting background synchronization")
-        .setColor(notificationAccent)
+        .setColor(palette.tokens.shellStartInt)
         .setCategory(Notification.CATEGORY_SERVICE)
         .setOngoing(true)
         .setOnlyAlertOnce(true)
         .setShowWhen(false)
-        .setContentIntent(openIntent())
+        .setContentIntent(AndroidNotifications.openIntent(this))
         .build()
 
-    /** Expanded shade body matching the design reference: stat pills plus live activity rows. */
-    private fun connectionExpandedView(
-        title: String,
-        summary: String,
-        boards: Int,
-        reviews: Int,
-        subagents: Int,
-        preview: ModelActivityPreview?,
-    ): RemoteViews {
+    /** Expanded shade body: board and review pills. */
+    private fun expandedView(status: BackgroundStatus): RemoteViews {
+        val tokens = palette.tokens
         val view = RemoteViews(packageName, R.layout.notification_connection_expanded)
-        view.setTextViewText(R.id.notification_title, title)
-        view.setTextViewText(R.id.notification_text, summary)
-        view.setTextViewText(R.id.notification_chip_boards, "$boards ${if (boards == 1) "board" else "boards"}")
+        view.setTextViewText(R.id.notification_title, status.title)
+        view.setTextViewText(R.id.notification_text, status.summary)
+        view.setTextViewText(R.id.notification_chip_boards, status.boardsLabel)
         val darkMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
-        val neutralBackground = if (darkMode) paletteTokens.darkRaisedInt else paletteTokens.paneStartInt
-        val neutralText = if (darkMode) paletteTokens.paneStartInt else paletteTokens.darkRaisedInt
+        val neutralBackground = if (darkMode) tokens.darkRaisedInt else tokens.paneStartInt
+        val neutralText = if (darkMode) tokens.paneStartInt else tokens.darkRaisedInt
         view.setTextColor(R.id.notification_chip_boards, neutralText)
-        view.setTextColor(R.id.notification_chip_subagents, neutralText)
         if (Build.VERSION.SDK_INT >= 31) {
-            val tint = ColorStateList.valueOf(neutralBackground)
-            view.setColorStateList(R.id.notification_chip_boards, "setBackgroundTintList", tint)
-            view.setColorStateList(R.id.notification_chip_subagents, "setBackgroundTintList", tint)
+            view.setColorStateList(R.id.notification_chip_boards, "setBackgroundTintList", ColorStateList.valueOf(neutralBackground))
         }
-        if (reviews > 0) {
-            view.setTextViewText(R.id.notification_chip_reviews, "$reviews ${if (reviews == 1) "review" else "reviews"}")
+        status.reviewsLabel?.let { reviews ->
+            view.setTextViewText(R.id.notification_chip_reviews, reviews)
             view.setViewVisibility(R.id.notification_chip_reviews, View.VISIBLE)
-        }
-        if (subagents > 0) {
-            view.setTextViewText(R.id.notification_chip_subagents, "• $subagents ${if (subagents == 1) "subagent" else "subagents"}")
-            view.setViewVisibility(R.id.notification_chip_subagents, View.VISIBLE)
-        }
-        val rowIds = listOf(R.id.notification_activity_1, R.id.notification_activity_2, R.id.notification_activity_3)
-        val rows = preview?.rows.orEmpty()
-        if (rows.isNotEmpty()) {
-            view.setViewVisibility(R.id.notification_activity, View.VISIBLE)
-            rows.zip(rowIds).forEach { (row, id) ->
-                val modelLabel = if (row.modelLabel == "Main model") "Main" else row.modelLabel
-                view.setTextViewText(id, activityLine(row.cardTitle, "$modelLabel · ${row.detail}"))
-                view.setViewVisibility(id, View.VISIBLE)
-            }
-            val overflow = rows.size - minOf(rows.size, rowIds.size) + (preview?.overflowCount ?: 0)
-            if (overflow > 0) {
-                view.setTextViewText(R.id.notification_activity_more, "+$overflow more active")
-                view.setViewVisibility(R.id.notification_activity_more, View.VISIBLE)
-            }
         }
         return view
     }
 
-    /** Rounded status tile shown as the large icon: green wifi when connected, muted when not. */
+    /** Rounded status tile shown as the large icon: bright when connected, muted when not. */
     private fun connectionBadge(connected: Boolean): android.graphics.drawable.Icon {
-        val key = connected to currentPalette.slug
-        cachedConnectionBadge?.takeIf { it.first == key }?.second?.let { return it }
+        val key = connected to palette.slug
+        cachedBadge?.takeIf { it.first == key }?.second?.let { return it }
+        val tokens = palette.tokens
         val size = 192
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
-        val tile = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if (connected) paletteTokens.eyesTintInt else paletteTokens.darkRaisedInt
-        }
-        canvas.drawRoundRect(RectF(0f, 0f, size.toFloat(), size.toFloat()), 52f, 52f, tile)
+        canvas.drawRoundRect(RectF(0f, 0f, size.toFloat(), size.toFloat()), 52f, 52f, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = if (connected) tokens.eyesTintInt else tokens.darkRaisedInt
+        })
         val glyph = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if (connected) paletteTokens.eyesInt else paletteTokens.mutedInt
+            color = if (connected) tokens.eyesInt else tokens.mutedInt
             style = Paint.Style.STROKE
             strokeWidth = 14f
             strokeCap = Paint.Cap.ROUND
@@ -625,240 +287,15 @@ class DieterSyncService : Service() {
             canvas.drawArc(RectF(cx - radius, cy - radius, cx + radius, cy + radius), 215f, 110f, false, glyph)
         }
         canvas.drawCircle(cx, cy - 2f, 10f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = glyph.color })
-        return android.graphics.drawable.Icon.createWithBitmap(bitmap).also {
-            cachedConnectionBadge = key to it
-        }
+        return android.graphics.drawable.Icon.createWithBitmap(bitmap).also { cachedBadge = key to it }
     }
 
-    private fun runningChatNotification(
-        chat: Card,
-        snapshot: ConversationSnapshot?,
-        session: String,
-        settings: DieterNotificationSettings,
-    ): Notification {
-        val preview = modelActivityPreview(
-            activeCardsById = mapOf(chat.id to chat),
-            conversations = snapshot?.let { mapOf(chat.id to it) }.orEmpty(),
-        )
-        val activity = preview.rows.firstOrNull()?.detail ?: "Working on your request"
-        val builder = Notification.Builder(this, RUNNING_CHAT_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(chat.title.ifBlank { "Running chat" })
-            .setContentText(activity)
-            .setSubText(activeNowLabel(preview.totalCount))
-            .setColor(notificationAccent)
-            .setCategory(Notification.CATEGORY_PROGRESS)
-            .setOnlyAlertOnce(true)
-            .setShowWhen(false)
-            .setAutoCancel(false)
-            .setOngoing(false)
-            .setContentIntent(openIntent(cardId = chat.id))
-            .setDeleteIntent(dismissIntent(chat, session))
-        if (settings.displayStyle == NotificationDisplayStyle.COMPACT) {
-            builder.setProgress(0, 0, true)
-        } else if (Build.VERSION.SDK_INT >= 36 && preview.rows.size <= 1) {
-            // Android 16 ProgressStyle renders the fancy segmented live progress bar.
-            builder.setStyle(
-                Notification.ProgressStyle()
-                    .setProgressIndeterminate(true)
-                    .setStyledByProgress(false),
-            )
-        } else {
-            builder.setProgress(0, 0, true)
-            builder.setStyle(runningChatActivityStyle(chat, preview))
-        }
-        return builder.build()
-    }
-
-    private fun runningChatActivityStyle(chat: Card, preview: ModelActivityPreview): Notification.InboxStyle =
-        Notification.InboxStyle()
-            .setBigContentTitle(chat.title.ifBlank { "Live activity" })
-            .also { style ->
-                preview.rows.forEach { row -> style.addLine(activityLine(row.modelLabel, row.detail)) }
-            }
-            .setSummaryText(activitySummary(preview, "Tap to open conversation"))
-
-    private fun activityLine(label: String, detail: String): CharSequence = SpannableStringBuilder()
-        .append("●  ", ForegroundColorSpan(notificationAccent), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        .append(label, StyleSpan(Typeface.BOLD), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-        .append("  ·  ")
-        .append(detail)
-
-    private fun activitySummary(preview: ModelActivityPreview, trailingText: CharSequence): CharSequence =
-        if (preview.overflowCount > 0) {
-            SpannableStringBuilder("+${preview.overflowCount} more active · ").append(trailingText)
-        } else {
-            trailingText
-        }
-
-    private fun activeNowLabel(count: Int): String = "$count ${if (count == 1) "model" else "models"} active now"
-
-    private fun terminalChatNotification(
-        event: DieterNotificationEvent.ChatFinished,
-        settings: DieterNotificationSettings,
-    ): Notification {
-        val runtime = event.card.runtime.lowercase()
-        val title = when {
-            event.subagentCount > 0 -> "Subagents finished · ${event.completedSubagentCount} of ${event.subagentCount}"
-            runtime == "failed" -> "Chat failed"
-            runtime in setOf("interrupted", "cancelled") -> "Chat stopped"
-            runtime == "waiting_for_user" -> "Chat needs you"
-            else -> "Chat finished"
-        }
-        val chatTitle = event.card.title.ifBlank { "Standalone chat" }
-        val builder = Notification.Builder(this, AGENT_RESULTS_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title)
-            .setContentText(chatTitle)
-            .setColor(notificationAccent)
-            .setCategory(Notification.CATEGORY_STATUS)
-            .setAutoCancel(true)
-            .setGroup(RESULTS_GROUP)
-            .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
-            .setOnlyAlertOnce(true)
-            .setContentIntent(openIntent(cardId = event.card.id))
-        if (
-            settings.displayStyle == NotificationDisplayStyle.DETAILED &&
-            settings.resultPreviewsEnabled &&
-            event.resultPreview.isNotBlank()
-        ) {
-            // Show the agent's closing words so the outcome is readable from the shade.
-            val expanded = SpannableStringBuilder()
-                .append(chatTitle, StyleSpan(Typeface.BOLD), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                .append("\n")
-                .append(event.resultPreview)
-            builder.setStyle(Notification.BigTextStyle().bigText(expanded))
-        }
-        return builder.build()
-    }
-
-    private fun reviewNotification(
-        card: Card,
-        boardName: String,
-        settings: DieterNotificationSettings,
-    ): Notification {
-        val cardTitle = card.title.ifBlank { "Dieter conversation" }
-        val builder = Notification.Builder(this, AGENT_RESULTS_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Ready for review")
-            .setContentText("$cardTitle · ${boardName.ifBlank { "Board" }}")
-            .setColor(reviewAccent)
-            .setCategory(Notification.CATEGORY_STATUS)
-            .setAutoCancel(true)
-            .setGroup(RESULTS_GROUP)
-            .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
-            .setOnlyAlertOnce(true)
-            .setContentIntent(openIntent(cardId = card.id))
-            .addAction(
-                Notification.Action.Builder(null, "Mark done", markDoneIntent(card)).build(),
-            )
-            .addAction(Notification.Action.Builder(null, "Open", openIntent(cardId = card.id)).build())
-        val summary = card.summary.trim()
-        if (settings.displayStyle == NotificationDisplayStyle.DETAILED && summary.isNotBlank()) {
-            val expanded = SpannableStringBuilder()
-                .append(cardTitle, StyleSpan(Typeface.BOLD), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                .append(" · ").append(boardName.ifBlank { "Board" })
-                .append("\n")
-                .append(summary)
-            builder.setStyle(Notification.BigTextStyle().bigText(expanded))
-        }
-        return builder.build()
-    }
-
-    /** Collapses multiple agent results into one tidy, silent stack in the shade. */
-    private fun resultsGroupSummary(childCount: Int): Notification = Notification.Builder(this, AGENT_RESULTS_CHANNEL_ID)
-        .setSmallIcon(R.drawable.ic_notification)
-        .setContentTitle("$childCount Dieter updates")
-        .setContentText("Chats finished or cards are ready for review")
-        .setColor(notificationAccent)
-        .setCategory(Notification.CATEGORY_STATUS)
-        .setGroup(RESULTS_GROUP)
-        .setGroupSummary(true)
-        .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
-        .setAutoCancel(true)
-        .setOnlyAlertOnce(true)
-        .setShowWhen(false)
-        .setNumber(childCount)
-        .setContentIntent(openIntent())
-        .build()
-
-    private fun openIntent(cardId: String = "", showConnection: Boolean = false): PendingIntent {
-        val intent = Intent(this, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            .putExtra(EXTRA_CARD_ID, cardId)
-            .putExtra(EXTRA_SHOW_CONNECTION, showConnection)
-        return PendingIntent.getActivity(
-            this,
-            ((cardId.hashCode() * 31 + if (showConnection) 1 else 0) and 0x7fffffff),
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-    }
-
-    private fun serviceIntent(action: String, requestCode: Int): PendingIntent = PendingIntent.getService(
+    private fun serviceIntent(action: String, requestCode: Int) = android.app.PendingIntent.getService(
         this,
         requestCode,
         Intent(this, DieterSyncService::class.java).setAction(action),
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
     )
-
-    private fun dismissIntent(chat: Card, session: String): PendingIntent = PendingIntent.getBroadcast(
-        this,
-        runningChatNotificationId(chat.id),
-        Intent(this, NotificationDismissedReceiver::class.java)
-            .setAction(ACTION_CHAT_NOTIFICATION_DISMISSED)
-            .putExtra(EXTRA_CARD_ID, chat.id)
-            .putExtra(EXTRA_SESSION, session),
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
-
-    private fun markDoneIntent(card: Card): PendingIntent = PendingIntent.getBroadcast(
-        this,
-        reviewNotificationId(card.id),
-        Intent(this, NotificationActionReceiver::class.java)
-            .setAction(ACTION_MARK_CARD_DONE)
-            .putExtra(EXTRA_CARD_ID, card.id)
-            .putExtra(EXTRA_PROJECT_ID, card.projectId)
-            .putExtra(EXTRA_NOTIFICATION_ID, reviewNotificationId(card.id)),
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
-
-    private fun createChannels() {
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
-            NotificationChannel(CONNECTION_CHANNEL_ID, "Dieter connection", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Permanent status while Dieter stays connected"
-                setShowBadge(false)
-            },
-        )
-        manager.createNotificationChannel(
-            NotificationChannel(RUNNING_CHAT_CHANNEL_ID, "Running chats", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Silent progress while standalone chats are running"
-                setSound(null, null)
-                enableVibration(false)
-            },
-        )
-        manager.createNotificationChannel(
-            NotificationChannel(AGENT_RESULTS_CHANNEL_ID, "Agent results", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = "Completion, failure, stopped, needs-you, and review updates"
-            },
-        )
-    }
-
-    private fun canPostNotifications(): Boolean =
-        Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-
-    @SuppressLint("MissingPermission")
-    private fun postNotification(id: Int, notification: Notification): Boolean {
-        if (!canPostNotifications()) return false
-        return try {
-            notifications.notify(id, notification)
-            true
-        } catch (_: SecurityException) {
-            // Permission can be revoked between the check and notification.
-            false
-        }
-    }
 
     companion object {
         const val ACTION_DISCONNECT = "com.dbpprt.dieter.action.DISCONNECT"
@@ -867,21 +304,12 @@ class DieterSyncService : Service() {
         const val ACTION_MARK_CARD_DONE = "com.dbpprt.dieter.action.MARK_CARD_DONE"
         const val EXTRA_CARD_ID = "card_id"
         const val EXTRA_PROJECT_ID = "project_id"
-        const val EXTRA_NOTIFICATION_ID = "notification_id"
+        const val EXTRA_NOTIFICATION_TAG = "notification_tag"
         const val EXTRA_SHOW_CONNECTION = "show_connection"
         const val EXTRA_SESSION = "session"
-        const val NOTIFICATION_PREFERENCES = "dieter_notification_state"
-
-        private const val CONNECTION_CHANNEL_ID = "dieter_connection"
+        const val CONNECTION_NOTIFICATION_ID = 1001
         private const val WAKE_LOCK_TIMEOUT_MS = 15 * 60 * 1_000L
         private const val WAKE_LOCK_RENEW_MS = 10 * 60 * 1_000L
-        internal const val BACKGROUND_POLL_INTERVAL_MS = 60_000L
-        internal const val BACKGROUND_SYNC_WINDOW_TIMEOUT_MS = 30_000L
-        private const val RESULTS_GROUP = "dieter_agent_results"
-        private const val RESULTS_SUMMARY_NOTIFICATION_ID = 1002
-        const val RUNNING_CHAT_CHANNEL_ID = "dieter_agent_running"
-        const val AGENT_RESULTS_CHANNEL_ID = "dieter_agent_activity"
-        const val CONNECTION_NOTIFICATION_ID = 1001
 
         fun start(context: Context) {
             ContextCompat.startForegroundService(context, Intent(context, DieterSyncService::class.java))
@@ -890,12 +318,5 @@ class DieterSyncService : Service() {
         fun stop(context: Context) {
             context.stopService(Intent(context, DieterSyncService::class.java))
         }
-
-        fun dismissedChatKey(cardId: String): String = "dismissed_chat_$cardId"
-
-        private fun chatSession(card: Card): String = card.runtimeUpdatedAt.ifBlank { card.updatedAt.ifBlank { card.id } }
-        private fun runningChatNotificationId(cardId: String): Int = 20_000 + (cardId.hashCode() and 0x3fff)
-        private fun terminalNotificationId(cardId: String): Int = 40_000 + (cardId.hashCode() and 0x3fff)
-        private fun reviewNotificationId(cardId: String): Int = 60_000 + (cardId.hashCode() and 0x3fff)
     }
 }

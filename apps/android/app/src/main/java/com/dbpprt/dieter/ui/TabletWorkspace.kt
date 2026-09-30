@@ -23,11 +23,19 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.dbpprt.dieter.settings.NavigationFolderScope
+import com.dbpprt.dieter.core.activity.Activity
+import com.dbpprt.dieter.core.activity.ActivityItem
+import com.dbpprt.dieter.core.activity.ActivityKind
+import com.dbpprt.dieter.core.activity.ActivitySection
+import com.dbpprt.dieter.core.board.ProjectOverview
+import com.dbpprt.dieter.core.navigation.Destination
+import com.dbpprt.dieter.core.navigation.FolderScope
+import com.dbpprt.dieter.core.navigation.NavigationLayout
 import com.dbpprt.dieter.settings.DEFAULT_SIDEBAR_LEADING_FRACTION
 import com.dbpprt.dieter.ui.theme.*
-import com.dbpprt.dieter.v1.Board
-import com.dbpprt.dieter.v1.Project
+import com.dbpprt.dieter.api.v1.Board
+import com.dbpprt.dieter.api.v1.Project
+import kotlin.time.toKotlinInstant
 
 // Medium windows retain the Fold layout. Use the actual window, not the device's
 // physical size, so split-screen and freeform windows adapt without losing selection.
@@ -54,8 +62,8 @@ internal fun TabletWorkspace(
     val projects = state.destination in listOf(Destination.BOARD, Destination.FILES, Destination.SCHEDULES) ||
         (state.destination == Destination.CHATS && projectChats)
     val tools = !projects && !state.destination.isPrimaryDestination() || usage
-    val attentionCount = remember(state.spaceCards, state.cards, state.chats, state.activityDetails) {
-        buildActivityEntries(state.spaceCards + state.cards + state.chats, state.activityDetails).count { it.needsYou }
+    val attentionCount = remember(state.activityItems) {
+        state.activityItems.count { it.kind.needsYou }
     }
     val settings = state.appSurface == AppSurface.APP_SETTINGS
     val newChat = state.appSurface == AppSurface.NEW_CHAT
@@ -124,7 +132,7 @@ internal fun TabletWorkspace(
                                     Column(paneModifier) {
                                         if ((state.project != null && !state.boardOverviewVisible) ||
                                             state.destination in listOf(Destination.FILES, Destination.SCHEDULES) || projectChats) {
-                                            TabletProjectTabs(projectTab, projectScopedNavigationEnabled(state)) { tab ->
+                                            TabletProjectTabs(projectTab, state.projectSurfacesEnabled) { tab ->
                                                 model.closeSurface()
                                                 usage = false
                                                 projectChats = tab == TabletProjectTab.CHATS
@@ -145,7 +153,7 @@ internal fun TabletWorkspace(
                                                 state.destination == Destination.BOARD && state.boardOverviewVisible ->
                                                     EmptyDetail("Your projects, side by side", "Choose a board to see its workflow, conversations, and files.", Icons.Outlined.ViewKanban, Modifier.fillMaxSize())
                                                 else -> destinationContent(if (projectChats) state.copy(
-                                                    chats = state.chats.filter { it.projectId == state.selectedProjectId },
+                                                    chats = state.chats.filter { it.project_id == state.selectedProjectId },
                                                     projects = state.projects.filter { it.id == state.selectedProjectId },
                                                 ) else state)
                                             }
@@ -320,19 +328,18 @@ internal fun TabletProjectNavigator(
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var alphabetical by rememberSaveable { mutableStateOf(false) }
-    val boards = state.spaceBoards.groupBy { it.projectId }
-    val projects = state.projects.filter { project -> query.isBlank() || project.name.contains(query, true) ||
-        boards[project.id].orEmpty().any { it.name.contains(query, true) } }
+    val boards = state.spaceBoards.groupBy { it.project_id }
+    val projects = state.projects.filter { project -> ProjectOverview.matches(project, boards[project.id].orEmpty(), query) }
     val byId = projects.associateBy { it.id }
     val pinned = orderedPinnedProjects(projects, state.pinnedProjectOrder)
-    val unfiled = state.projectFolders.unfiledIDs(projects.map { it.id }).mapNotNull(byId::get)
+    val unfiled = NavigationLayout.unfiled(state.projectFolders, projects.map { it.id }).mapNotNull(byId::get)
         .filterNot { it.id in state.pinnedProjectOrder }
     fun ordered(items: List<Project>) = if (alphabetical) items.sortedBy { it.name.lowercase() } else items
     Column(modifier.background(DieterSurface).semantics { paneTitle = "Projects" }.testTag("tablet-project-navigator")) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, top = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Projects", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                Text("${state.projects.size} projects · ${state.projectFolders.folders.size} folders", style = MaterialTheme.typography.bodySmall, color = DieterMuted)
+                Text("${state.projects.size} projects · ${state.projectFolders.size} folders", style = MaterialTheme.typography.bodySmall, color = DieterMuted)
             }
             IconToggleButton(checked = alphabetical, onCheckedChange = { alphabetical = it }) {
                 Icon(Icons.Outlined.SortByAlpha, if (alphabetical) "Use synced project order" else "Sort projects A–Z")
@@ -346,20 +353,20 @@ internal fun TabletProjectNavigator(
                 item { ListSectionLabel("Pinned") }
                 items(ordered(pinned), key = { "pinned-${it.id}" }) { TabletProjectRow(it, boards[it.id].orEmpty(), state, model, onOpenBoard) }
             }
-            state.projectFolders.folders.forEach { folder ->
-                val members = ordered(folder.itemIDs.mapNotNull(byId::get).filterNot { it.id in state.pinnedProjectOrder })
+            state.projectFolders.forEach { folder ->
+                val members = ordered(folder.itemIds.mapNotNull(byId::get).filterNot { it.id in state.pinnedProjectOrder })
                 if (query.isBlank() || members.isNotEmpty()) {
                     item(key = "folder-${folder.id}") {
-                        NavigationFolderHeader(folder, members.size, NavigationFolderScope.PROJECTS, state.projectFolders,
-                            model.navigationFolders, revealSearchResults = query.isNotBlank())
+                        NavigationFolderHeader(folder, members.size, FolderScope.PROJECTS, state.projectFolders,
+                            model, revealSearchResults = query.isNotBlank())
                     }
-                    if (folder.isExpanded || query.isNotBlank()) items(members, key = { "folder-project-${it.id}" }) {
+                    if (folder.expanded || query.isNotBlank()) items(members, key = { "folder-project-${it.id}" }) {
                         TabletProjectRow(it, boards[it.id].orEmpty(), state, model, onOpenBoard)
                     }
                 }
             }
             if (unfiled.isNotEmpty()) {
-                item { ListSectionLabel(if (pinned.isEmpty() && state.projectFolders.folders.isEmpty()) "All projects" else "Unfiled") }
+                item { ListSectionLabel(if (pinned.isEmpty() && state.projectFolders.isEmpty()) "All projects" else "Unfiled") }
                 items(ordered(unfiled), key = { it.id }) { TabletProjectRow(it, boards[it.id].orEmpty(), state, model, onOpenBoard) }
             }
             if (projects.isEmpty()) item {
@@ -438,13 +445,13 @@ internal fun SettingsAdaptiveLayout(
 
 @Composable
 internal fun TabletActivityTimeline(
-    intervals: List<ActivityInterval>,
+    intervals: List<Activity.TimelineBar>,
     projectNames: Map<String, String>,
     hours: Int,
     live: Boolean,
     onHours: (Int) -> Unit,
-    onOpen: (com.dbpprt.dieter.v1.Card) -> Unit,
-    actions: (com.dbpprt.dieter.v1.Card) -> ActivityItemActions? = { null },
+    onOpen: (com.dbpprt.dieter.api.v1.Card) -> Unit,
+    actions: (com.dbpprt.dieter.api.v1.Card) -> ActivityItemActions? = { null },
 ) {
     var visibleCount by rememberSaveable(hours) { mutableIntStateOf(40) }
     Column(Modifier.fillMaxWidth().testTag("tablet-activity-timeline"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -458,23 +465,23 @@ internal fun TabletActivityTimeline(
             Text("−${hours}h", color = DieterMuted, style = MaterialTheme.typography.labelSmall)
             Text(if (live) "Now" else "Last sync", color = DieterMuted, style = MaterialTheme.typography.labelSmall)
         }
-        intervals.take(visibleCount).groupBy { it.entry.card.projectId }.forEach { (projectId, activity) ->
+        intervals.take(visibleCount).groupBy { it.item.card.project_id }.forEach { (projectId, activity) ->
             Surface(color = DieterSurface, shape = RoundedCornerShape(20.dp)) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(projectNames[projectId] ?: "Project unavailable", color = stableAccent(projectId), fontWeight = FontWeight.SemiBold)
                     activity.forEach { interval ->
-                        val color = if (interval.entry.needsYou) DieterAmber else DieterShell
-                        ActivityItem(card = interval.entry.card, onOpen = onOpen, actions = actions(interval.entry.card), color = DieterSurfaceHigh, shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth().testTag("tablet-activity-${interval.entry.card.id}")) {
+                        val color = if (interval.item.kind.needsYou) DieterAmber else DieterShell
+                        ActivityItem(card = interval.item.card, onOpen = onOpen, actions = actions(interval.item.card), color = DieterSurfaceHigh, shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("tablet-activity-${interval.item.card.id}")) {
                             Column(Modifier.padding(12.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    Text(interval.entry.card.title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                                    Text(interval.entry.kind.label, style = MaterialTheme.typography.labelSmall, color = color)
+                                    Text(interval.item.card.title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                                    Text(interval.item.kind.label, style = MaterialTheme.typography.labelSmall, color = color)
                                 }
-                                Text(interval.entry.detail, style = MaterialTheme.typography.bodySmall, color = DieterMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(interval.item.detail, style = MaterialTheme.typography.bodySmall, color = DieterMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 10.dp).height(6.dp).background(DieterDivider, RoundedCornerShape(3.dp))) {
-                                    val start = interval.from.coerceIn(0f, 1f)
-                                    val end = interval.to.coerceIn(start, 1f)
+                                    val start = interval.from.toFloat().coerceIn(0f, 1f)
+                                    val end = interval.to.toFloat().coerceIn(start, 1f)
                                     val barWidth = (maxWidth * (end - start)).coerceAtLeast(4.dp).coerceAtMost(maxWidth)
                                     Box(Modifier.offset(x = (maxWidth * start).coerceAtMost(maxWidth - barWidth)).width(barWidth).fillMaxHeight().background(color, RoundedCornerShape(3.dp)))
                                 }

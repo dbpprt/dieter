@@ -18,5 +18,4 @@ native:
   - projectSyncStatusExplainsFailuresAndClearsAfterRecovery
   - projectPinsPersistInSharedNavigationAndCanBeRemovedFromThePinnedCard
   - boardlessProjectsExposeBoardCreationInsteadOfAnEmptyBoard
-  - sharedRecordsPreserveBothScopesAndCollapsedMembership
   - folderPickerScrollsWithLargeTextAndManyFolders

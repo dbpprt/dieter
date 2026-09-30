@@ -1,5 +1,8 @@
 package com.dbpprt.dieter.ui
 
+import com.dbpprt.dieter.core.composition.ConversationDraft
+import com.dbpprt.dieter.core.navigation.Destination
+
 /** Keep neighboring directories warm without mounting another page's transcript. */
 internal class PrimaryPageState(private val destination: Destination) {
     private var previous: DieterUiState? = null
@@ -9,7 +12,7 @@ internal class PrimaryPageState(private val destination: Destination) {
             destination = destination,
             selectedCardId = null,
             conversation = null,
-            olderMessages = emptyList(),
+            conversationView = null,
             historyStart = 0,
             historyTotal = 0,
             historyHasMore = false,
@@ -19,7 +22,7 @@ internal class PrimaryPageState(private val destination: Destination) {
             conversationLastRefreshedAtMillis = null,
             conversationScrollRequest = 0,
             detailTab = 0,
-            composerDraft = ConversationComposerDraft(),
+            composerDraft = ConversationDraft(),
         )
         return previous?.takeIf { it == next } ?: next.also { previous = it }
     }

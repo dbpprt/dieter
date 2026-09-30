@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package dieter.core.v1;
+
+option java_package = "com.dbpprt.dieter.core.journal";
+
+// On-device state owned by the shared core. Never sent to a daemon.
+
+enum OutboxKind {
+  OUTBOX_KIND_UNSPECIFIED = 0;
+  OUTBOX_KIND_CREATE_CARD = 1;
+  OUTBOX_KIND_CREATE_CHAT = 2;
+  OUTBOX_KIND_SEND_MESSAGE = 3;
+  OUTBOX_KIND_START_CARD = 4;
+}
+
+enum OutboxState {
+  OUTBOX_STATE_QUEUED = 0;
+  OUTBOX_STATE_RETRYING = 1;
+  // A definitive rejection. Kept until the user retries or discards it.
+  OUTBOX_STATE_FAILED = 2;
+}
+
+enum OutboxPlacement {
+  // A send renders in the transcript.
+  OUTBOX_PLACEMENT_TRANSCRIPT = 0;
+  // A send made during an active turn renders in the steer queue.
+  OUTBOX_PLACEMENT_QUEUE = 1;
+}
+
+// One durable user command. The daemon applies each (client_id, command_id)
+// exactly once, so redelivery after a lost acknowledgement is safe.
+message OutboxEntry {
+  string command_id = 1;
+  string client_id = 2;
+  // The machine that executes the command.
+  string daemon_id = 3;
+  OutboxKind kind = 4;
+  // The encoded dieter.v1 request.
+  bytes request = 5;
+  // The ID the UI shows before the daemon answers: a local_ conversation, a
+  // message ID, or the started card.
+  string optimistic_id = 6;
+  // Set once the daemon accepted the command; the entry stays until sync shows it.
+  string server_id = 7;
+  int32 attempts = 8;
+  string last_error = 9;
+  OutboxState state = 10;
+  int64 next_attempt_at_millis = 11;
+  OutboxPlacement placement = 12;
+  int64 created_at_millis = 13;
+  int64 accepted_at_millis = 14;
+}
+
+message OutboxJournal {
+  int32 version = 1;
+  uint64 revision = 2;
+  repeated OutboxEntry entries = 3;
+  // Local conversation ID → the daemon's ID, most recent last. Bounded.
+  map<string, string> resolutions = 4;
+  repeated string resolution_order = 5;
+}
+
+message ClientIdentityRecord {
+  string client_id = 1;
+}
