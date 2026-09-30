@@ -7,6 +7,7 @@ import android.os.SystemClock
 import android.text.Editable
 import android.text.InputType
 import android.view.*
+import android.view.animation.DecelerateInterpolator
 import android.view.inputmethod.*
 import android.widget.FrameLayout
 import com.dbpprt.dieter.api.v1.RemoteDesktopPointerButton.Button
@@ -22,7 +23,6 @@ import com.dbpprt.dieter.core.screens.ScreenPhase
 import com.dbpprt.dieter.core.screens.ScreenView
 import com.dbpprt.dieter.core.screens.TouchTrackpad
 import com.dbpprt.dieter.core.screens.TrackpadActions
-import com.dbpprt.dieter.core.screens.Typed
 import okio.ByteString
 import org.webrtc.*
 import java.util.concurrent.CountDownLatch
@@ -81,6 +81,7 @@ class ScreenCanvasView(context: Context, val host: ScreenHost) : FrameLayout(con
     private val touchConfiguration = ViewConfiguration.get(context)
     private var canvasAnimation: ValueAnimator? = null
     private var animationTargetZoom = 1.0
+    private var geometryApplied = false
     var onCanvasChanged: (() -> Unit)? = null
     private var controlling = false
     private var holding = false
@@ -251,8 +252,13 @@ class ScreenCanvasView(context: Context, val host: ScreenHost) : FrameLayout(con
     }
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { super.onSizeChanged(w, h, oldw, oldh); geometry() }
     private fun geometry() {
+        // Texture/surface callbacks can repeat during composition. A no-op size
+        // update must not cancel the button animation half way through a step.
+        if (geometryApplied && canvasModel.viewWidth == width.toDouble() && canvasModel.viewHeight == height.toDouble() &&
+            canvasModel.remoteWidth == frameWidth.toDouble() && canvasModel.remoteHeight == frameHeight.toDouble()) return
         canvasAnimation?.cancel()
         canvasModel.resize(width.toDouble(), height.toDouble(), frameWidth.toDouble(), frameHeight.toDouble())
+        geometryApplied = true
         applyCanvasTransform()
     }
     private fun applyCanvasTransform() {
@@ -270,12 +276,15 @@ class ScreenCanvasView(context: Context, val host: ScreenHost) : FrameLayout(con
         if (direct) surface?.let {
             // Fixed decoder-sized storage; zoom only changes compositor geometry.
             // Allocating a zoom-sized buffer would multiply bandwidth and memory.
-            it.holder.setFixedSize(frameWidth, frameHeight)
-            it.layoutParams = LayoutParams(
-                (m.remoteWidth * m.scale).roundToInt().coerceAtLeast(1),
-                (m.remoteHeight * m.scale).roundToInt().coerceAtLeast(1)).apply {
-                leftMargin = m.left.roundToInt(); topMargin = m.top.roundToInt()
+            // Keep layout/buffer allocation independent of gesture cadence.
+            // RenderNode properties move the existing surface each display frame.
+            if (it.layoutParams.width != frameWidth || it.layoutParams.height != frameHeight) {
+                it.holder.setFixedSize(frameWidth, frameHeight)
+                it.layoutParams = LayoutParams(frameWidth, frameHeight)
             }
+            it.pivotX = 0f; it.pivotY = 0f
+            it.scaleX = m.scale.toFloat(); it.scaleY = m.scale.toFloat()
+            it.translationX = m.left.toFloat(); it.translationY = m.top.toFloat()
         }
         invalidate()
         onCanvasChanged?.invoke()
@@ -304,6 +313,7 @@ class ScreenCanvasView(context: Context, val host: ScreenHost) : FrameLayout(con
         m.setView(startZoom, startX, startY)
         canvasAnimation = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 180
+            interpolator = DecelerateInterpolator()
             addUpdateListener {
                 val fraction = (it.animatedValue as Float).toDouble()
                 m.setView(startZoom + (endZoom - startZoom) * fraction,
@@ -471,41 +481,21 @@ class ScreenCanvasView(context: Context, val host: ScreenHost) : FrameLayout(con
     fun showKeyboard(show: Boolean) {
         requestFocus()
         val ime = context.getSystemService(InputMethodManager::class.java)
-        if (show) ime.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+        if (show) ime.showSoftInput(this, 0)
         else { ime.hideSoftInputFromWindow(windowToken, 0); editorBuffer.clear(); host.releaseInput() }
     }
     override fun onCheckIsTextEditor() = true
     override fun onCreateInputConnection(info: EditorInfo): InputConnection {
         info.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-        info.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
-        return object : BaseInputConnection(this, true) {
-            override fun getEditable(): Editable = editorBuffer
-            override fun performContextMenuAction(id: Int): Boolean = when (id) {
+        info.imeOptions = EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_ENTER_ACTION or
+            EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+        return ScreenInputConnection(this, editorBuffer, { modifiers }, host::text, ::pressKey) { id ->
+            when (id) {
                 android.R.id.paste -> { host.paste(); true }
                 android.R.id.cut -> { host.cut(); true }
                 android.R.id.copy -> { host.copy(); true }
-                else -> super.performContextMenuAction(id)
+                else -> false
             }
-            override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
-                text?.let { committedText(it.toString()) }; editorBuffer.clear(); return true
-            }
-            override fun finishComposingText(): Boolean {
-                if (editorBuffer.isNotEmpty()) { committedText(editorBuffer.toString()); editorBuffer.clear() }
-                return super.finishComposingText()
-            }
-            override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
-                if (editorBuffer.isNotEmpty()) return super.deleteSurroundingText(beforeLength, afterLength)
-                repeat(beforeLength.coerceIn(0, 128)) { pressKey(ScreenKeyboard.BACKSPACE) }; repeat(afterLength.coerceIn(0, 128)) { pressKey(ScreenKeyboard.DELETE) }; return true
-            }
-            override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int) = deleteSurroundingText(beforeLength, afterLength)
-            override fun sendKeyEvent(event: KeyEvent) = dispatchKeyEvent(event)
-            override fun performEditorAction(actionCode: Int): Boolean { pressKey(ScreenKeyboard.ENTER); return true }
-        }
-    }
-    private fun committedText(value: String) {
-        for (typed in ScreenKeyboard.committed(value, modifiers)) when (typed) {
-            is Typed.Key -> pressKey(typed.hid)
-            is Typed.Text -> host.text(typed.text)
         }
     }
     fun pressKey(hid: Int) { host.key(hid, true, modifiers); host.key(hid, false, modifiers) }

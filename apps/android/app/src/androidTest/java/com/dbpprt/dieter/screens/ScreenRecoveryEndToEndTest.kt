@@ -167,9 +167,7 @@ class ScreenRecoveryEndToEndTest {
             }
         }
         try {
-            compose.onNodeWithTag("screen-machine").performClick()
             compose.onNodeWithText("Codec test Mac").performClick()
-            compose.onNodeWithTag("screen-connect").performClick()
             waitVideo("H264")
             // Keep loss qualification within the emulator decoder's sustained
             // throughput. Codec/high-refresh qualification is separate; every

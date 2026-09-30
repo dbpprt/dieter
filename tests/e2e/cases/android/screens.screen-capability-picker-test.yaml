@@ -14,3 +14,5 @@ native:
   methods:
   - canvasControlsAndTouchEventsKeepZoomAnchoredAndFitRecoverable
   - unreadyHostCanBeSelectedForGuidanceAndRetryWhileOfflineHostsStayDisabled
+  - machineRefreshAndKeyboardKeepTheSameSessionAndViewport
+  - terminalMachineMenuDoesNotMoveAfterSelectionOrPresenceUpdates

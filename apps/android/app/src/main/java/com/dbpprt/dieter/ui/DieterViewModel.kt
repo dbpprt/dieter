@@ -1164,9 +1164,17 @@ class DieterViewModel internal constructor(
 
     // --- Terminals --------------------------------------------------------------------------
 
+    fun selectTerminalMachine(daemonId: String) {
+        if (_state.value.presentedEndpointConnections.none { it.daemonId == daemonId && it.online && it.isCompatible }) return
+        terminalMachineId = daemonId
+        loadTerminals()
+    }
+
     fun loadTerminals() {
         if (!foreground) return
         val daemonId = terminalMachineId ?: core.connection.state.value.attachedMachineId ?: return
+        // Route/presence refreshes must not silently move this surface to another machine.
+        terminalMachineId = daemonId
         launchCore {
             terminals.bind(TerminalScope(daemonId, TerminalScopeKind.MACHINE))
             terminals.setActive(foreground && _state.value.destination == Destination.TERMINALS)

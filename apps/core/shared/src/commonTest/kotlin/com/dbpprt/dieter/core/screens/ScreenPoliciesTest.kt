@@ -31,6 +31,17 @@ class ScreenPoliciesTest {
     private val epoch = ByteArray(16) { 7 }.toByteString()
 
     @Test
+    fun softKeyboardReturnAndTabsBecomeKeysWithoutSplittingUnicodeText() {
+        assertEquals(listOf(Typed.Key(40)), ScreenKeyboard.committed("\n", 0))
+        assertEquals(listOf(Typed.Text("é世界🙂"), Typed.Key(40), Typed.Text("next"), Typed.Key(43), Typed.Key(40)),
+            ScreenKeyboard.committed("é世界🙂\r\nnext\t\r", 0))
+        assertEquals(listOf(Typed.Key(4), Typed.Key(40)), ScreenKeyboard.committed("a\n", Modifiers.CONTROL))
+        assertEquals(emptyList(), ScreenKeyboard.committed("", 0))
+        assertEquals(40, AndroidKeys.hid(66))
+        assertEquals(88, AndroidKeys.hid(160))
+    }
+
+    @Test
     fun trustMessageMatchesTheDaemonGolden() {
         val binding = RemoteDesktopSessionBinding(
             client_nonce = "nonce", helper_dtls_fingerprint = "sha-256 AA:BB", expires_at = "2026-08-25T08:00:00Z",

@@ -25,6 +25,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.Computer
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Close
@@ -106,7 +109,8 @@ fun TerminalsScreen(
                 bottom = contentPadding.calculateBottomPadding(),
             ),
     ) {
-        ProjectCheckoutSelector(state, model)
+        TerminalMachinePicker(state.presentedEndpointConnections.filter { it.daemonId != null },
+            state.terminalWorkspace.scope?.daemonId, model::selectTerminalMachine)
         TerminalHeader(
             terminalCount = state.terminals.size,
             connected = state.terminalStreamConnected,
@@ -223,6 +227,37 @@ fun TerminalsScreen(
                 ) { Text("Close terminal", color = DieterCoral) }
             },
         )
+    }
+}
+
+@Composable
+internal fun TerminalMachinePicker(machines: List<com.dbpprt.dieter.core.machines.MachineRow>, selectedId: String?, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val ordered = remember(machines) { stableMachineOrder(machines) }
+    val selected = machines.firstOrNull { it.daemonId == selectedId }
+    Box(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
+        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.testTag("terminal-machine")) {
+            Icon(Icons.Outlined.Computer, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(selected?.label ?: selectedId ?: "Choose machine", maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Icon(Icons.Outlined.ExpandMore, null, Modifier.size(18.dp))
+        }
+        DropdownMenu(expanded, { expanded = false }) {
+            ordered.forEach { machine ->
+                key(machine.id) {
+                    DropdownMenuItem(text = {
+                        Column {
+                            Text(machine.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(machine.hostDetail, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }, leadingIcon = { Icon(if (machine.daemonId == selectedId) Icons.Outlined.Check else Icons.Outlined.Computer, null) },
+                        enabled = machine.online && machine.isCompatible && machine.daemonId != null,
+                        onClick = { expanded = false; machine.daemonId?.let(onSelect) },
+                        modifier = Modifier.testTag("terminal-machine-${machine.id}"))
+                }
+            }
+        }
     }
 }
 
@@ -528,7 +563,7 @@ internal fun TerminalProjectPicker(
             }
         }
         DropdownMenu(expanded = menuVisible, onDismissRequest = { menuVisible = false }) {
-            projects.forEach { candidate ->
+            projects.sortedWith(compareBy<Project> { it.name.lowercase(java.util.Locale.ROOT) }.thenBy { it.id }).forEach { candidate ->
                 DropdownMenuItem(
                     text = {
                         Column {

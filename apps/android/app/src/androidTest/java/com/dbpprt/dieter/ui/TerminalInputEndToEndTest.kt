@@ -65,6 +65,11 @@ class TerminalInputEndToEndTest {
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("tool-terminals").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("tool-terminals").performClick()
             compose.waitUntil(10_000) { compose.onAllNodesWithTag("new-terminal").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("terminal-machine").performClick()
+            compose.onNodeWithTag("terminal-machine-$daemonId").performClick()
+            compose.waitUntil(10_000) {
+                ViewModelProvider(compose.activity)[DieterViewModel::class.java].state.value.terminalWorkspace.scope?.daemonId == daemonId
+            }
             compose.onNodeWithTag("new-terminal").performClick()
             compose.onNodeWithTag("terminal-name").performTextReplacement(name)
             closeSoftKeyboard()

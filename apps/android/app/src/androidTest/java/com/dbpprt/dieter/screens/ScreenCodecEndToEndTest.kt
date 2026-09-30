@@ -68,9 +68,7 @@ class ScreenCodecEndToEndTest {
         }
         fun awaitNewSession(previous: String) = compose.waitUntil(10_000) { view().sessionId.isNotEmpty() && view().sessionId != previous }
         try {
-            compose.onNodeWithTag("screen-machine").performClick()
             compose.onNodeWithText("Codec test Mac").performClick()
-            compose.onNodeWithTag("screen-connect").performClick()
             waitVideo("H264")
             if (media.directSurfacePresentation) {
                 val oldSurface = requireNotNull(media.decoderSurface)

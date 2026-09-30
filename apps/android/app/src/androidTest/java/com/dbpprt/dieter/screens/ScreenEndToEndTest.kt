@@ -83,15 +83,18 @@ class ScreenEndToEndTest {
                 }
             }
         }
-        compose.onNodeWithTag("screen-machine").performClick()
-        compose.onNodeWithText("Native test Mac").performClick()
         fun findCanvas(view: View): ScreenCanvasView? {
             if (view is ScreenCanvasView) return view
             if (view is ViewGroup) for (index in 0 until view.childCount) findCanvas(view.getChildAt(index))?.let { return it }
             return null
         }
-        compose.runOnIdle { canvas = requireNotNull(WindowInspector.getGlobalWindowViews().firstNotNullOfOrNull(::findCanvas)) }
-        fun connect() { compose.onNodeWithTag("screen-connect").performClick() }
+        fun connect() {
+            if (compose.onAllNodesWithTag("screen-machine-d_screens_fixture").fetchSemanticsNodes().isNotEmpty())
+                compose.onNodeWithTag("screen-machine-d_screens_fixture").performClick()
+            else compose.onNodeWithTag("screen-connect").performClick()
+            compose.waitForIdle()
+            compose.runOnIdle { canvas = requireNotNull(WindowInspector.getGlobalWindowViews().firstNotNullOfOrNull(::findCanvas)) }
+        }
         fun awaitInputAck(after: Long) {
             compose.runOnIdle { host.key(41, true); host.key(41, false) }
             compose.waitUntil(5_000) { state().last_input_ordinal > after }
@@ -112,6 +115,7 @@ class ScreenEndToEndTest {
                 host.releaseInput()
             }
 
+            compose.onNodeWithContentDescription("Connection details").performClick()
             val clipboard = context.getSystemService(ClipboardManager::class.java)
             val originalClip = clipboard.primaryClip
             val (hostClient, hostHttp) = fixture.client()
@@ -206,6 +210,7 @@ class ScreenEndToEndTest {
                 }
             }
 
+            compose.onNodeWithText("Done").performClick()
             // Capture the actual GPU output, not only a composable placeholder.
             val screenshot = captureScreenFixture()
             val samples = mutableSetOf<Int>()
@@ -245,13 +250,20 @@ class ScreenEndToEndTest {
                 canvas.pressKey(43); canvas.pressKey(80)
             }
             compose.waitUntil(15_000) { view().controlActive && canvas.hasWindowFocus() }
+            val beforeKeys = listOf(canvas.width, canvas.height)
             compose.onNodeWithContentDescription("Special keys").performClick()
+            compose.runOnIdle { assertEquals(beforeKeys, listOf(canvas.width, canvas.height)) }
             compose.onNodeWithText("Ctrl").performClick()
             compose.onNodeWithText("Ctrl").performClick()
             compose.onNodeWithText("Esc").performClick()
-            compose.onNodeWithContentDescription("Toggle keyboard").performClick()
-            SystemClock.sleep(400)
-            compose.onNodeWithContentDescription("Toggle keyboard").performClick()
+            val keyboardGeometry = listOf(canvas.width.toDouble(), canvas.height.toDouble(), canvas.canvasModel.scale)
+            compose.onNodeWithContentDescription("Show keyboard").performClick()
+            compose.waitUntil(5_000) { androidx.core.view.ViewCompat.getRootWindowInsets(canvas)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == true }
+            compose.runOnIdle {
+                assertEquals(keyboardGeometry, listOf(canvas.width.toDouble(), canvas.height.toDouble(), canvas.canvasModel.scale))
+                canvas.onCreateInputConnection(EditorInfo()).commitText("\n", 1)
+            }
+            compose.onNodeWithContentDescription("Hide keyboard").performClick()
             // Wait for the IME window transition before dispatching remote gestures.
             compose.waitUntil(15_000) { view().controlActive && canvas.hasWindowFocus() }
             // Two fingers change only the local canvas; they must never generate mouse input.
@@ -308,6 +320,7 @@ class ScreenEndToEndTest {
             gesture(canvas, listOf(listOf(cx - 80 to cy, cx to cy, cx + 80 to cy), listOf(cx - 80 to cy + 60, cx to cy + 60, cx + 80 to cy + 60)))
             assertEquals(zoom, canvas.canvasModel.zoom, 0.0)
             if (fixture.real) {
+                compose.onNodeWithContentDescription("Connection details").performClick()
                 val originalClip = clipboard.primaryClip
                 try {
                     val beforeCopy = view().clipboardOperations
@@ -321,6 +334,7 @@ class ScreenEndToEndTest {
                 } finally {
                     compose.runOnIdle { if (originalClip != null) clipboard.setPrimaryClip(originalClip) else clipboard.clearPrimaryClip() }
                 }
+                compose.onNodeWithText("Done").performClick()
             }
             // Held keys are released when focus is lost and control stays disabled until restored.
             val ackBeforeFocus = state().last_input_ordinal
@@ -373,11 +387,11 @@ class ScreenEndToEndTest {
             compose.onNodeWithTag("screen-disconnect").performClick()
             compose.waitUntil(5_000) { view().phase == ScreenPhase.Idle }
             // Drive Compose's test clock through the phase change and canvas-clear effect.
-            compose.onNodeWithTag("screen-connect").assertIsDisplayed()
+            compose.onNodeWithTag("screen-machines").assertIsDisplayed()
             compose.waitForIdle()
             SystemClock.sleep(200)
-            val cleared = captureScreenFixture()
-            assertEquals("Disconnect must clear remote pixels", android.graphics.Color.rgb(12, 15, 20), cleared.getPixel(cleared.width / 2, cleared.height / 2))
+            compose.onNodeWithTag("screen-canvas").assertDoesNotExist()
+            assertNull("Disconnect must detach the video renderer", host.media.videoSink)
             connect()
             compose.waitUntil(30_000) { settled() }
             assertEquals(failure(), ScreenPhase.Streaming, view().phase)

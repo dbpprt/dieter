@@ -83,8 +83,29 @@ object ScreenKeyboard {
      * reach the host as key presses, or Cmd+A would type a literal "a".
      */
     fun committed(text: String, modifiers: Int): List<Typed> {
-        if (modifiers and Modifiers.SHORTCUTS == 0) return listOf(Typed.Text(text))
-        return text.map { character -> hid(character)?.let(Typed::Key) ?: Typed.Text(character.toString()) }
+        // IMEs may send Return as committed text instead of a KeyEvent or
+        // editor action. Remote applications need a key, including in terminals.
+        val result = mutableListOf<Typed>()
+        val buffer = StringBuilder()
+        fun flush() {
+            if (buffer.isNotEmpty()) { result += Typed.Text(buffer.toString()); buffer.clear() }
+        }
+        var index = 0
+        while (index < text.length) {
+            val character = text[index++]
+            val key = when (character) {
+                '\r' -> {
+                    if (text.getOrNull(index) == '\n') index++
+                    ENTER
+                }
+                '\n' -> ENTER
+                '\t' -> 43
+                else -> if (modifiers and Modifiers.SHORTCUTS != 0) hid(character) else null
+            }
+            if (key != null) { flush(); result += Typed.Key(key) } else buffer.append(character)
+        }
+        flush()
+        return result
     }
 }
 
@@ -401,7 +422,7 @@ object AndroidKeys {
         for (index in 0..11) put(131 + index, 58 + index) // F1..F12
         putAll(
             mapOf(
-                66 to 40, 111 to 41, 67 to 42, 61 to 43, 62 to 44, 69 to 45, 70 to 46, 71 to 47, 72 to 48, 73 to 49, 74 to 51, 75 to 52,
+                66 to 40, 160 to 88, 111 to 41, 67 to 42, 61 to 43, 62 to 44, 69 to 45, 70 to 46, 71 to 47, 72 to 48, 73 to 49, 74 to 51, 75 to 52,
                 68 to 53, 55 to 54, 56 to 55, 76 to 56, 115 to 57, 124 to 73, 122 to 74, 92 to 75, 112 to 76, 123 to 77, 93 to 78,
                 22 to 79, 21 to 80, 20 to 81, 19 to 82, 113 to 224, 59 to 225, 57 to 226, 117 to 227, 114 to 228, 60 to 229, 58 to 230, 118 to 231,
             ),
