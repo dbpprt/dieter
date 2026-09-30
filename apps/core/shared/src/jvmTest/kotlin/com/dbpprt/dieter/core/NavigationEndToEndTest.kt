@@ -33,8 +33,11 @@ class NavigationEndToEndTest : EndToEnd() {
         mac.editNavigation { setLaneDescending(fixture.boardId, "todo", false) }
         mac.navigationKv.status.await(describe = { "mac delivered: ${mac.navigationKv.status.value}" }) { it.pending == 0 }
 
-        phone.navigationKv.values.await(20.seconds, describe = { "phone sees the folder" }) { values ->
-            NavigationLayout(values).folders(FolderScope.PROJECTS).any { it.name == "Clients" && it.itemIds == listOf(fixture.projectId) }
+        // Each edit is its own write, so the phone can see the folder before the lane sort.
+        phone.navigationKv.values.await(20.seconds, describe = { "phone sees the folder and lane sort" }) { values ->
+            val layout = NavigationLayout(values)
+            layout.folders(FolderScope.PROJECTS).any { it.name == "Clients" && it.itemIds == listOf(fixture.projectId) } &&
+                !layout.laneDescending(fixture.boardId, "todo")
         }
         assertEquals(false, phone.layout().laneDescending(fixture.boardId, "todo"))
 
