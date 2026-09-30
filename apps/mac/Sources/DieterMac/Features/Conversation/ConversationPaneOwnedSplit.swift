@@ -38,6 +38,10 @@ struct ConversationPaneOwnedSplit<ChatBar: View, Chat: View, WorkspaceBar: View,
         controller.workspaceColumn.contentHost.rootView = AnyView(content())
         controller.setPresentation(split: presented, singleWorkspace: singleWorkspace)
     }
+
+    static func dismantleNSViewController(_ controller: ConversationPaneOwnedSplitController, coordinator: ()) {
+        controller.stopPositionRestore()
+    }
 }
 
 @MainActor
@@ -47,7 +51,8 @@ final class ConversationPaneOwnedSplitController: NSSplitViewController {
     private var presented = false
     private var singleWorkspace = false
     private var restorePosition = false
-    private var restoreScheduled = false
+    private var restoreTask: Task<Void, Never>?
+    private var presentationGeneration = 0
 
     var chatItem: NSSplitViewItem { splitViewItems[0] }
     var workspaceItem: NSSplitViewItem { splitViewItems[1] }
@@ -85,6 +90,7 @@ final class ConversationPaneOwnedSplitController: NSSplitViewController {
 
     override func viewDidLayout() {
         super.viewDidLayout()
+        updateThicknessLimits()
         schedulePositionRestore()
     }
 
@@ -94,6 +100,9 @@ final class ConversationPaneOwnedSplitController: NSSplitViewController {
 
     func setPresentation(split presented: Bool, singleWorkspace: Bool) {
         guard self.presented != presented || self.singleWorkspace != singleWorkspace else { return }
+        presentationGeneration &+= 1
+        restoreTask?.cancel()
+        restoreTask = nil
         self.presented = presented
         self.singleWorkspace = singleWorkspace
         // Explicitly establish both retained items. Like the Markdown native
@@ -103,24 +112,69 @@ final class ConversationPaneOwnedSplitController: NSSplitViewController {
         chatItem.isCollapsed = !presented && singleWorkspace
         workspaceItem.isCollapsed = !presented && !singleWorkspace
         restorePosition = presented
+        updateThicknessLimits()
         view.needsLayout = true
         schedulePositionRestore()
     }
 
     private func schedulePositionRestore() {
-        guard presented, restorePosition, splitView.bounds.width > 0, !restoreScheduled else { return }
-        restoreScheduled = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.restoreScheduled = false
-            guard self.presented, self.restorePosition, self.splitView.bounds.width > 0 else { return }
-            self.restorePosition = false
-            let available = max(0, self.splitView.bounds.width - self.splitView.dividerThickness)
-            self.splitView.setPosition(
-                available * ConversationContentSizing.conversationFraction,
-                ofDividerAt: 0
-            )
+        guard presented, restorePosition, restoreTask == nil else { return }
+        let generation = presentationGeneration
+        restoreTask = Task { @MainActor [weak self] in
+            var previousWidth: CGFloat?
+            var stableSamples = 0
+            for _ in 0..<50 {
+                try? await Task.sleep(for: .milliseconds(20))
+                guard !Task.isCancelled, let self, self.presentationGeneration == generation,
+                    self.presented, self.restorePosition
+                else { return }
+                guard self.view.window != nil, self.splitView.bounds.width > 0 else {
+                    previousWidth = nil
+                    stableSamples = 0
+                    continue
+                }
+                let width = self.splitView.bounds.width
+                stableSamples = previousWidth.map { abs($0 - width) < 1 } == true ? stableSamples + 1 : 0
+                previousWidth = width
+                guard stableSamples >= 3 else { continue }
+                self.restorePosition = false
+                self.restoreTask = nil
+                self.updateThicknessLimits()
+                let available = max(0, width - self.splitView.dividerThickness)
+                self.splitView.setPosition(
+                    available * ConversationContentSizing.conversationFraction,
+                    ofDividerAt: 0
+                )
+                self.splitView.layoutSubtreeIfNeeded()
+                return
+            }
+            guard let self, self.presentationGeneration == generation else { return }
+            self.restoreTask = nil
         }
+    }
+
+    private func updateThicknessLimits() {
+        guard presented else {
+            setMinimumThickness(1, for: chatItem)
+            setMinimumThickness(0, for: workspaceItem)
+            return
+        }
+        let available = max(0, splitView.bounds.width - splitView.dividerThickness)
+        setMinimumThickness(
+            max(1, ConversationContentSizing.minimumConversationWidth(availableWidth: available)), for: chatItem)
+        setMinimumThickness(
+            ConversationContentSizing.minimumWorkspaceWidth(availableWidth: available), for: workspaceItem)
+    }
+
+    private func setMinimumThickness(_ value: CGFloat, for item: NSSplitViewItem) {
+        if abs(item.minimumThickness - value) > 0.5 { item.minimumThickness = value }
+    }
+
+    func stopPositionRestore() {
+        presentationGeneration &+= 1
+        restorePosition = false
+        restoreTask?.cancel()
+        restoreTask = nil
     }
 }
 
