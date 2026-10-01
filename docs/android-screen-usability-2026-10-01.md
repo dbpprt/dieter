@@ -93,3 +93,6 @@ zoom in/out, two-finger pinch with pan, and Fit, all without receiving another
 video frame. It checks both the displayed image and newly exposed background.
 The earlier gesture/keyboard/session tests remain in place. The first fixed
 renderer and canvas-controls run passed in `tmp/e2e-4095952655`.
+The expanded pixel test, codec/surface ownership checks, input, canvas controls,
+screen navigation and terminal shell cases also passed in `tmp/e2e-2771714359`.
+`just android check` passed with the final change.
