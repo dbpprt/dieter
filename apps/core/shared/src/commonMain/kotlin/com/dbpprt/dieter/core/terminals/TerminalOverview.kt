@@ -109,6 +109,28 @@ class TerminalOverview(
         return entry
     }
 
+    /**
+     * Takes the selected machine's terminals from the [terminals] surface, so
+     * closes and renames made there show here without another listing. The
+     * selection follows the surface's.
+     */
+    fun reconcile() {
+        val surface = terminals.view.value
+        val scope = surface.scope ?: return
+        if (scope.kind != TerminalScopeKind.MACHINE || surface.loading || surface.error != null) return
+        val current = view.value
+        val name = current.entries.firstOrNull { it.daemonId == scope.daemonId }?.machineName
+            ?: machines().firstOrNull { it.id == scope.daemonId }?.name ?: return
+        val entries = TerminalOverviewCatalog.sorted(
+            current.entries.filterNot { it.daemonId == scope.daemonId } + surface.terminals.map { TerminalOverviewEntry(scope.daemonId, name, it) },
+        )
+        val selected = surface.selectedId?.let { "${scope.daemonId}|$it" }?.takeIf { id -> entries.any { it.id == id } }
+            ?: current.selectedId?.takeIf { id -> entries.any { it.id == id } }
+        if (entries != current.entries || selected != current.selectedId) {
+            mutableView.update { it.copy(entries = entries, selectedId = selected) }
+        }
+    }
+
     private suspend fun activate(entry: TerminalOverviewEntry?) {
         mutableView.update { it.copy(selectedId = entry?.id) }
         if (entry == null) return terminals.bind(null)

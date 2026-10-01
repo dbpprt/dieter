@@ -239,6 +239,39 @@ class ScreenPoliciesTest {
     }
 
     @Test
+    fun referencesAckInEitherOrderAcrossTheRtpWrapAndStopWithThePeer() {
+        val references = ScreenReferences(millisecondQuantized = false)
+        fun reference(id: Long, timestamp: UInt, generation: Long = 1) =
+            RemoteDesktopReference(frame_id = id, generation = generation, rtp_timestamp = timestamp.toInt())
+        assertEquals(emptyList(), references.expect(reference(1, 90_025u), t0))
+        assertEquals(emptyList(), references.decoded(90_024u, t0), "a neighbouring timestamp is not the frame")
+        assertEquals(listOf(1L), references.decoded(90_025u, t0).map { it.frame_id })
+        references.decoded(UInt.MAX_VALUE, t0)
+        assertEquals(listOf(2L), references.expect(reference(2, UInt.MAX_VALUE), t0).map { it.frame_id }, "the decode came first")
+        val later = t0 + 2001.milliseconds
+        assertEquals(emptyList(), references.expect(reference(3, 90_025u), later), "decodes expire after two seconds")
+        references.stop()
+        references.decoded(90_025u, later)
+        assertEquals(emptyList(), references.expect(reference(4, 90_025u), later), "a stopped peer acknowledges nothing")
+    }
+
+    @Test
+    fun referenceChallengesAreBoundedAndScopedToTheNewestGeneration() {
+        val references = ScreenReferences(millisecondQuantized = false)
+        fun reference(id: Long, timestamp: UInt, generation: Long = 1) =
+            RemoteDesktopReference(frame_id = id, generation = generation, rtp_timestamp = timestamp.toInt())
+        references.expect(reference(1, 90u), t0)
+        val later = t0 + 2001.milliseconds
+        assertEquals(emptyList(), references.decoded(90u, later), "an expired challenge is not answered")
+        for (id in 2..10) references.expect(reference(id.toLong(), (id * 90).toUInt(), generation = 2), later)
+        assertEquals(emptyList(), references.decoded(180u, later), "at most eight challenges are pending")
+        assertEquals(emptyList(), references.expect(reference(11, 180u, generation = 1), later), "an older generation is ignored")
+        assertEquals(listOf(10L), references.decoded(900u, later).map { it.frame_id })
+        references.expect(reference(12, 270u, generation = 3), later)
+        assertEquals(listOf(12L), references.decoded(270u, later).map { it.frame_id }, "a newer generation drops the older challenges")
+    }
+
+    @Test
     fun clipboardFramesRoundTripAndRejectForeignOperations() {
         val payload = ByteArray(40_000) { (it % 251).toByte() }.toByteString()
         val frames = ClipboardFraming.frames("op", payload)

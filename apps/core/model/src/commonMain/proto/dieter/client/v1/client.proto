@@ -5,6 +5,7 @@ package dieter.client.v1;
 option java_package = "com.dbpprt.dieter.client.v1";
 option swift_prefix = "Client";
 
+import "dieter/gateway/v1/gateway.proto";
 import "dieter/v1/dieter.proto";
 
 // The UI contract of the shared core. It never leaves the device: Kotlin UIs
@@ -39,12 +40,51 @@ message Command {
     RetryPending retry_pending = 21;
     DiscardPending discard_pending = 22;
     RestoreCard restore_card = 23;
+    AddCardLabel add_card_label = 24;
+    UpdateCardDraft update_card_draft = 25;
+    MergeCard merge_card = 26;
+    ForkCard fork_card = 27;
+    ListArchivedCards list_archived_cards = 28;
+    ClearCardError clear_card_error = 29;
     LoadEarlierMessages load_earlier_messages = 30;
     ReturnToLatest return_to_latest = 31;
     RefreshConversation refresh_conversation = 32;
     SetVisibleConversation set_visible_conversation = 33;
+    LoadLaterMessages load_later_messages = 34;
+    RetryFailedTurn retry_failed_turn = 35;
+    RemoveQueuedMessage remove_queued_message = 36;
+    SteerConversation steer_conversation = 37;
+    LoadToolOutput load_tool_output = 38;
     RenameMachine rename_machine = 40;
     RevokeMachine revoke_machine = 41;
+    EnsureMetadata ensure_metadata = 42;
+    SetGateways set_gateways = 43;
+    Resync resync = 44;
+    SetProjectOrder set_project_order = 45;
+    SetPinnedProjects set_pinned_projects = 46;
+    SetPinnedChatOrder set_pinned_chat_order = 47;
+    SetProjectExpanded set_project_expanded = 48;
+    SetChatSectionCollapsed set_chat_section_collapsed = 49;
+    SetChatsShowAll set_chats_show_all = 50;
+    SetLaneDescending set_lane_descending = 51;
+    SetFolders set_folders = 52;
+    ListDrafts list_drafts = 53;
+    SetDraftText set_draft_text = 54;
+    RememberCreation remember_creation = 55;
+    FilesCommand files = 56;
+    FileTreeCommand file_tree = 57;
+    TerminalsCommand terminals = 58;
+    TerminalOverviewCommand terminal_overview = 59;
+    SchedulesCommand schedules = 60;
+    ReviewCommand review = 61;
+    ProjectChangesCommand project_changes = 62;
+    ProjectWorkspacesCommand project_workspaces = 63;
+    AdminCommand admin = 64;
+    TelemetryCommand telemetry = 65;
+    QuotasCommand quotas = 66;
+    ProcessesCommand processes = 67;
+    SearchCommand search = 68;
+    ScreenCommand screen = 69;
   }
 }
 
@@ -120,6 +160,38 @@ message RestoreCard {
 }
 
 message CancelCard { string card_id = 1; }
+
+message AddCardLabel {
+  string card_id = 1;
+  string label_id = 2;
+}
+
+// Edits a never-started todo card's title, task, and (when set) agent.
+message UpdateCardDraft {
+  string card_id = 1;
+  string title = 2;
+  string prompt = 3;
+  dieter.v1.DraftAgentSettings agent = 4;
+}
+
+// Merges an idle card into a started card on the same board and machine.
+message MergeCard {
+  string source_card_id = 1;
+  string target_card_id = 2;
+}
+
+// Forks a conversation, optionally at a message; the result is the new card.
+message ForkCard {
+  string card_id = 1;
+  string message_id = 2;
+  string title = 3;
+}
+
+// The board's archived cards; the result carries them.
+message ListArchivedCards { string board_id = 1; }
+
+// Dismisses a card's last operation error.
+message ClearCardError { string card_id = 1; }
 message MarkCardRead { string card_id = 1; }
 
 // An outbox entry or, with daemon_id, every failed entry for that machine.
@@ -135,6 +207,33 @@ message DiscardPending {
 
 message LoadEarlierMessages { string card_id = 1; }
 message ReturnToLatest { string card_id = 1; }
+message LoadLaterMessages { string card_id = 1; }
+
+// Resends the request of the conversation's failed turn; the result is the
+// queued message, or empty when there is nothing to retry.
+message RetryFailedTurn { string card_id = 1; }
+
+// Removes a queued message; with `edit`, the result carries it back so the
+// composer can edit it.
+message RemoveQueuedMessage {
+  string card_id = 1;
+  string message_id = 2;
+  bool edit = 3;
+}
+
+// Stops the running turn so the next queued message runs now.
+message SteerConversation {
+  string card_id = 1;
+  string message_id = 2;
+}
+
+// A tool call's full payload, cached per revision.
+message LoadToolOutput {
+  string card_id = 1;
+  string message_id = 2;
+  string tool_call_id = 3;
+  string revision = 4;
+}
 message RefreshConversation { string card_id = 1; }
 
 // The conversation on screen; it is marked read as messages arrive.
@@ -147,6 +246,459 @@ message RenameMachine {
 
 message RevokeMachine { string daemon_id = 1; }
 
+// Loads a machine's agents, settings choices, and runtime status (retrying
+// until it succeeds); `refresh` reloads them.
+message EnsureMetadata {
+  string daemon_id = 1;
+  bool refresh = 2;
+}
+
+// Replaces the gateway list; plaintext is only allowed on loopback.
+message SetGateways {
+  repeated GatewayConfig gateways = 1;
+  string active_origin = 2;
+}
+
+message GatewayConfig {
+  string url = 1;
+  string name = 2;
+}
+
+// Drops the cached workspace and synchronizes from scratch.
+message Resync {}
+
+// ---------------------------------------------------------------------------
+// The account-wide navigation layout. Each edit is one atomic batch, kept
+// on this device until a machine accepts it.
+
+// The sidebar's project order; IDs it omits follow in their own order.
+message SetProjectOrder { repeated string project_ids = 1; }
+// The pinned projects, in order.
+message SetPinnedProjects { repeated string project_ids = 1; }
+// The pinned chats' order; membership comes from each chat's pin.
+message SetPinnedChatOrder { repeated string card_ids = 1; }
+message SetProjectExpanded {
+  string project_id = 1;
+  bool expanded = 2;
+}
+message SetChatSectionCollapsed {
+  string project_id = 1;
+  bool collapsed = 2;
+}
+// Show all of a project's chats instead of the preview.
+message SetChatsShowAll {
+  string project_id = 1;
+  bool show_all = 2;
+}
+message SetLaneDescending {
+  string board_id = 1;
+  string lane_id = 2;
+  bool descending = 3;
+}
+// Replaces a scope's folders: names, order, expansion, and members. Only the
+// differences are recorded, so concurrent edits elsewhere survive.
+message SetFolders {
+  FolderScope scope = 1;
+  repeated NavigationFolder folders = 2;
+}
+
+enum FolderScope {
+  FOLDER_SCOPE_PROJECTS = 0;
+  FOLDER_SCOPE_CHATS = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Composition: this device's unsent drafts and creation choices.
+
+// Every saved draft's text, for a composer to show without waiting.
+message ListDrafts {}
+
+// The unsent text of one conversation on the machine that runs it; empty
+// text clears the draft. Saved in the background.
+message SetDraftText {
+  string daemon_id = 1;
+  string card_id = 2;
+  string text = 3;
+}
+
+message DraftText {
+  string daemon_id = 1;
+  string card_id = 2;
+  string text = 3;
+}
+
+message Drafts { repeated DraftText drafts = 1; }
+
+// Remembers what was chosen when creating a card or chat. Unset fields keep
+// what was remembered.
+message RememberCreation {
+  dieter.v1.HarnessSelection selection = 1;
+  // "worktree" or "project".
+  string workspace_mode = 2;
+  string project_id = 3;
+  // The board chosen in `project_id`.
+  string board_id = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Files: a project's or conversation's files, one surface per view. Observing
+// SLICE_FILES or SLICE_FILE_TREE with a scope the view chooses opens the
+// surface; commands address it by that scope; it closes with its last
+// observer.
+
+message FilesCommand {
+  string scope = 1;
+  oneof action {
+    FilesTarget bind = 2;
+    // Lists a folder; empty is the current one.
+    FilesPath load = 3;
+    // Opens a folder, recording history.
+    FilesPath navigate = 4;
+    FilesStep back = 5;
+    FilesStep forward = 6;
+    FilesStep parent = 7;
+    FilesToggle show_hidden = 8;
+    FilesPath open = 9;
+    // Saves over the revision that was read; a conflict keeps the text and
+    // fails with KIND_CONFLICT. The result is the saved document, or the
+    // surface when a save already runs.
+    FilesText save = 10;
+    // Replaces the open document with the version on disk.
+    FilesStep reload = 11;
+    // Creates `name` in the current folder.
+    FilesCreate create = 12;
+    FilesMove move = 13;
+    FilesDelete delete = 14;
+    // Closes the open document; the folder stays.
+    FilesStep close = 15;
+  }
+}
+
+// Whose files: a project checkout, or a conversation's workspace, on the
+// machine that holds it.
+message FilesTarget {
+  string daemon_id = 1;
+  string project_id = 2;
+  string checkout_id = 3;
+  string card_id = 4;
+}
+
+message FilesPath { string path = 1; }
+message FilesStep {}
+message FilesToggle { bool on = 1; }
+message FilesText { string text = 1; }
+
+message FilesCreate {
+  string name = 1;
+  bool directory = 2;
+}
+
+message FilesMove {
+  string source = 1;
+  string destination = 2;
+}
+
+message FilesDelete {
+  string path = 1;
+  bool recursive = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Terminals: a machine's, project checkout's, or conversation's terminals, one
+// surface per view, opened by observing SLICE_TERMINALS with a scope like
+// files. Only the selected terminal of an active surface streams; hiding a
+// surface never stops a shell. The account-wide overview (SLICE_TERMINAL_OVERVIEW)
+// holds a terminals surface for its selected machine; terminals commands with
+// the overview's scope address that one.
+
+// ---------------------------------------------------------------------------
+// Schedules: the shown project's schedules. Lists come from any replica; full
+// definitions, run history, and every change go to the machine that owns the
+// schedule. Results for a project that is no longer shown are dropped.
+
+// ---------------------------------------------------------------------------
+// Review: a conversation workspace's changes, diffs, comments, Git
+// operations, and the merge flow, on the machine that owns the conversation;
+// one surface per view (SLICE_REVIEW). An active surface refreshes itself.
+
+message ReviewCommand {
+  string scope = 1;
+  oneof action {
+    ReviewTarget bind = 2;
+    // Visible and foregrounded: refresh periodically.
+    ReviewToggle active = 3;
+    // Reads the workspace; on return the surface is at least as new as the call.
+    ReviewStep refresh = 4;
+    // Shows a file, or a whole commit when `commit` is set and `path` empty.
+    ReviewSelect select = 5;
+    ReviewStep load_more_diff = 6;
+    // A comment on one diff row of the current revision; the result is the comment.
+    ReviewComment add_comment = 7;
+    // Starts a Git operation against the current revision, never retried
+    // automatically; the result is the operation.
+    GitStart start = 8;
+    // Cancels a running operation; one waiting on a conflict is aborted instead.
+    ReviewStep cancel_operation = 9;
+    // Commits, merges into the base, optionally removes the workspace and
+    // moves the card to Done; any failed step stops it. The result is the outcome.
+    ReviewMerge merge = 10;
+    // Changes the workspace before the first turn.
+    ReviewSettings update_settings = 11;
+    ReviewStep clear_toast = 12;
+    ReviewStep clear_error = 13;
+  }
+}
+
+message ReviewTarget {
+  string card_id = 1;
+  string daemon_id = 2;
+}
+
+message ReviewStep {}
+message ReviewToggle { bool on = 1; }
+
+message ReviewSelect {
+  string path = 1;
+  string commit = 2;
+}
+
+message ReviewComment {
+  // The diff row the comment attaches to.
+  int32 row_id = 1;
+  string body = 2;
+  string author = 3;
+}
+
+message GitStart {
+  string kind = 1;
+  map<string, string> parameters = 2;
+}
+
+message ReviewMerge {
+  // "squash", "merge_commit", or "fast_forward".
+  string strategy = 1;
+  string subject = 2;
+  string body = 3;
+  bool validate = 4;
+  bool remove_workspace = 5;
+  bool move_to_done = 6;
+}
+
+message ReviewSettings {
+  // "project" or "worktree".
+  string mode = 1;
+  string branch = 2;
+  string base_branch = 3;
+  string base_remote = 4;
+  string publish_mode = 5;
+}
+
+message Outcome { bool succeeded = 1; }
+
+// ---------------------------------------------------------------------------
+// Project changes: a project checkout's changes outside any conversation's
+// worktree, one surface per view (SLICE_PROJECT_CHANGES). An active surface
+// refreshes itself; success is reported only after the refresh that shows it.
+
+message ProjectChangesCommand {
+  string scope = 1;
+  oneof action {
+    ProjectChangesTarget bind = 2;
+    ReviewToggle active = 3;
+    ReviewStep refresh = 4;
+    // Shows one section of a file; the latest selection wins.
+    ProjectChangeSelect select = 5;
+    ReviewStep deselect = 6;
+    // Dismisses shown errors and notices.
+    ReviewStep dismiss = 7;
+    ReviewStep load_more_diff = 8;
+    // Runs a checkout operation and waits for it; the result is the outcome.
+    GitStart run = 9;
+  }
+}
+
+message ProjectChangesTarget {
+  string project_id = 1;
+  string checkout_id = 2;
+  string daemon_id = 3;
+}
+
+message ProjectChangeSelect {
+  string path = 1;
+  // The staged half (HEAD to index); otherwise the unstaged half.
+  bool staged = 2;
+}
+
+// A project's conversation workspaces across its checkouts.
+message ProjectWorkspacesCommand {
+  oneof action {
+    ProjectWorkspacesLoad load = 1;
+    // Cleans up or discards a worktree workspace and waits for the result.
+    ProjectWorkspaceRemove remove = 2;
+  }
+}
+
+message ProjectWorkspacesLoad { string project_id = 1; }
+
+message ProjectWorkspaceRemove {
+  string card_id = 1;
+  bool discard = 2;
+}
+
+message SchedulesCommand {
+  oneof action {
+    // Shows a project's schedules; empty shows none.
+    ScheduleProject bind = 1;
+    ScheduleStep load = 2;
+    ScheduleStep load_more = 3;
+    // Selects a schedule and reads its runs.
+    ScheduleId select = 4;
+    ScheduleStep load_more_runs = 5;
+    // The owner's full definition; the result is the schedule.
+    ScheduleId details = 6;
+    // Previews the next occurrences shortly after the last change.
+    SchedulePreview preview = 7;
+    // Drops the preview; a late result cannot bring it back.
+    ScheduleStep close_editor = 8;
+    // Creates on the chosen checkout's machine or updates on the owner; the
+    // result is the saved schedule.
+    SaveSchedule save = 9;
+    // The result is the schedule.
+    ScheduleEnabled set_enabled = 10;
+    // The result is the run.
+    ScheduleId run_now = 11;
+    ScheduleId delete = 12;
+    ScheduleStep clear_action_error = 13;
+  }
+}
+
+message ScheduleProject { string project_id = 1; }
+message ScheduleStep {}
+message ScheduleId { string schedule_id = 1; }
+
+message SchedulePreview {
+  string cron = 1;
+  string timezone = 2;
+}
+
+message SaveSchedule {
+  dieter.v1.ScheduleDraft draft = 1;
+  // Empty creates a schedule.
+  string schedule_id = 2;
+  // The checkout a new schedule runs in; empty uses the draft's or the
+  // project's default.
+  string checkout_id = 3;
+}
+
+message ScheduleEnabled {
+  string schedule_id = 1;
+  bool enabled = 2;
+}
+
+message TerminalsCommand {
+  string scope = 1;
+  oneof action {
+    TerminalTarget bind = 2;
+    // Foreground and visible: stream the selection; otherwise only stop.
+    TerminalToggle active = 3;
+    TerminalStep load = 4;
+    TerminalId select = 5;
+    // Creates a terminal in the surface and selects it; the result is the
+    // terminal.
+    CreateTerminal create = 6;
+    TerminalRename rename = 7;
+    // Ends the shell and forgets its scrollback.
+    TerminalId close = 8;
+    // Input for the selected terminal, delivered in order.
+    TerminalInput input = 9;
+    // The visible grid; the machine resizes shortly after the last change.
+    TerminalGrid grid = 10;
+  }
+}
+
+message TerminalTarget {
+  enum Kind {
+    KIND_MACHINE = 0;
+    KIND_PROJECT = 1;
+    KIND_CARD = 2;
+  }
+  string daemon_id = 1;
+  Kind kind = 2;
+  string project_id = 3;
+  string checkout_id = 4;
+  string card_id = 5;
+}
+
+message TerminalStep {}
+message TerminalToggle { bool on = 1; }
+message TerminalId { string terminal_id = 1; }
+message TerminalInput { bytes data = 1; }
+
+message CreateTerminal {
+  string name = 1;
+  string shell = 2;
+  // Empty starts in the surface's default directory.
+  string working_directory = 3;
+  int32 columns = 4;
+  int32 rows = 5;
+}
+
+message TerminalRename {
+  string terminal_id = 1;
+  string name = 2;
+}
+
+message TerminalGrid {
+  int32 columns = 1;
+  int32 rows = 2;
+}
+
+message TerminalOverviewCommand {
+  string scope = 1;
+  oneof action {
+    // Lists every online machine's terminals; keeps the selection, else
+    // prefers the machine's first terminal.
+    TerminalOverviewLoad load = 2;
+    // Selects an entry by its ID.
+    TerminalId select = 3;
+    // Creates a terminal on a machine and selects it.
+    CreateOverviewTerminal create = 4;
+  }
+}
+
+message TerminalOverviewLoad { string preferred_daemon_id = 1; }
+
+message CreateOverviewTerminal {
+  string daemon_id = 1;
+  string project_id = 2;
+  string checkout_id = 3;
+  // Start in the machine's home rather than the project checkout.
+  bool machine_home = 4;
+  string name = 5;
+  string shell = 6;
+  string working_directory = 7;
+}
+
+message FileTreeCommand {
+  string scope = 1;
+  oneof action {
+    FilesTarget bind = 2;
+    FilesPath load = 3;
+    FilesPath toggle = 4;
+    // Expands and loads every folder above a file.
+    FilesPath reveal = 5;
+    FilesStep refresh = 6;
+    FilesToggle show_hidden = 7;
+  }
+}
+
+message NavigationFolder {
+  string id = 1;
+  string name = 2;
+  repeated string item_ids = 3;
+  bool expanded = 4;
+}
+
 message Result {
   oneof result {
     Done done = 1;
@@ -155,6 +707,52 @@ message Result {
     MessageQueued message_queued = 4;
     PageLoaded page_loaded = 5;
     GatewaySelected gateway_selected = 6;
+    Cards cards = 7;
+    dieter.v1.QueuedMessage queued_message = 8;
+    dieter.v1.ToolOutput tool_output = 9;
+    Drafts drafts = 10;
+    dieter.v1.FileDocument file_document = 11;
+    // The surface after a files or file tree command, so the view reads the
+    // command's effect without waiting for the next update.
+    FilesSlice files = 12;
+    FileTreeSlice file_tree = 13;
+    // A created terminal.
+    dieter.v1.Terminal terminal = 14;
+    // The surface after a terminals or overview command, without output.
+    TerminalsSlice terminals = 15;
+    TerminalOverviewSlice terminal_overview = 16;
+    dieter.v1.Schedule schedule = 17;
+    dieter.v1.ScheduleRun schedule_run = 18;
+    // The schedules after a command.
+    SchedulesSlice schedules = 19;
+    // A started Git operation.
+    dieter.v1.GitOperation git_operation = 20;
+    dieter.v1.ChangeComment change_comment = 21;
+    // Whether a flow or operation that waits for its outcome succeeded.
+    Outcome outcome = 22;
+    ReviewSlice review = 23;
+    ProjectChangesSlice project_changes = 24;
+    ProjectWorkspacesSlice project_workspaces = 25;
+    dieter.v1.Project project = 26;
+    dieter.v1.Board board = 27;
+    dieter.v1.Checkout checkout = 28;
+    dieter.v1.DirectoryListing directory_listing = 29;
+    dieter.v1.PromptSettings prompt_settings = 30;
+    dieter.v1.Settings settings = 31;
+    dieter.v1.SettingsOptions settings_options = 32;
+    dieter.v1.PromptPreview prompt_preview = 33;
+    // A shared record with competing versions; empty when none compete.
+    ConflictRecord conflict = 34;
+    Archives archives = 35;
+    Projects projects = 36;
+    dieter.v1.Workspace workspace = 37;
+    dieter.v1.CreateProjectResponse created_project = 38;
+    dieter.v1.MachineOperationResponse machine_operation = 39;
+    SearchResults search_results = 40;
+    // The processes after a command.
+    ProcessesSlice processes = 41;
+    // The screen after a command.
+    ScreenSlice screen = 42;
   }
 }
 
@@ -163,6 +761,7 @@ message SignInStarted { string authorize_url = 1; }
 message MessageQueued { string message_id = 1; }
 message PageLoaded { bool loaded = 1; }
 message GatewaySelected { string origin = 1; }
+message Cards { repeated dieter.v1.Card cards = 1; }
 
 // Why a command failed. `kind` drives the UI: retry, sign in, or update.
 message Failure {
@@ -198,6 +797,27 @@ enum Slice {
   SLICE_ACTIVITY = 4;
   // Scoped by card ID.
   SLICE_CONVERSATION = 5;
+  SLICE_METADATA = 6;
+  SLICE_BOARD = 7;
+  SLICE_NAVIGATION = 8;
+  SLICE_CREATION = 9;
+  // Scoped by the view's surface key.
+  SLICE_FILES = 10;
+  SLICE_FILE_TREE = 11;
+  // Scoped by the view's surface key.
+  SLICE_TERMINALS = 12;
+  SLICE_TERMINAL_OVERVIEW = 13;
+  SLICE_SCHEDULES = 14;
+  // Scoped by the view's surface key.
+  SLICE_REVIEW = 15;
+  SLICE_PROJECT_CHANGES = 16;
+  SLICE_PROJECT_WORKSPACES = 17;
+  SLICE_TELEMETRY = 18;
+  SLICE_QUOTAS = 19;
+  // Scoped by the view's surface key.
+  SLICE_PROCESSES = 20;
+  // Scoped by the view's surface key.
+  SLICE_SCREEN = 21;
 }
 
 message Update {
@@ -214,6 +834,25 @@ message Update {
     ActivitySlice activity = 14;
     ConversationSlice conversation = 15;
     ConversationDelta conversation_delta = 16;
+    MetadataSlice metadata = 17;
+    BoardSlice board = 18;
+    NavigationSlice navigation = 19;
+    CreationSlice creation = 20;
+    FilesSlice files = 21;
+    FileTreeSlice file_tree = 22;
+    TerminalsSlice terminals = 23;
+    TerminalOverviewSlice terminal_overview = 24;
+    SchedulesSlice schedules = 25;
+    ReviewSlice review = 26;
+    ProjectChangesSlice project_changes = 27;
+    ProjectWorkspacesSlice project_workspaces = 28;
+    TelemetrySlice telemetry = 29;
+    QuotasSlice quotas = 30;
+    ProcessesSlice processes = 31;
+    ScreenSlice screen = 32;
+    // The slice cannot be observed, e.g. an app newer than its core asked for
+    // one the core does not know. Sent once; nothing follows.
+    Failure failure = 9;
   }
 }
 
@@ -237,6 +876,28 @@ message SessionSlice {
   int64 retry_at_millis = 7;
   repeated MachineEntry machines = 8;
   string client_id = 9;
+  FeedStatus feed = 10;
+  // Shared updates between machines that are delayed or blocked, one line each.
+  repeated string sync_warnings = 11;
+  // The active gateway's build, once it has described itself.
+  GatewayBuild gateway_build = 12;
+}
+
+message GatewayBuild {
+  string release_version = 1;
+  string source_revision = 2;
+  string built_at = 3;
+}
+
+// The attached machine's workspace feed.
+message FeedStatus {
+  string daemon_id = 1;
+  // A live frame has been applied in this session.
+  bool live = 2;
+  // The daemon is still assembling its projection.
+  bool projection_pending = 3;
+  // The last applied workspace change; heartbeats never advance it.
+  int64 last_applied_at_millis = 4;
 }
 
 message GatewayEntry {
@@ -257,6 +918,19 @@ message MachineEntry {
   string platform = 7;
   string release_version = 8;
   bool compatible = 9;
+  string last_seen_at = 10;
+  string minimum_release_version = 11;
+  // Why an incompatible machine cannot be used, e.g. "Update required · …".
+  string incompatibility = 12;
+  bool remote_desktop_ready = 13;
+  string remote_desktop_reason = 14;
+  // The gateway's CompatibilityStatus name, e.g. "COMPATIBILITY_STATUS_UPDATE_REQUIRED".
+  string compatibility = 15;
+  // Shared updates this machine reports as delayed or blocked, one line each.
+  repeated string sync_warnings = 16;
+  // The open data plane is a loopback route: the machine is this device, so
+  // its paths can be opened locally.
+  bool local = 17;
 }
 
 message WorkspaceSlice {
@@ -268,6 +942,10 @@ message WorkspaceSlice {
   bool loaded = 5;
   // Project ID → the machine that last listed it.
   map<string, string> project_replicas = 6;
+  // Retired boards, still shown where their cards are.
+  repeated dieter.v1.Board retired_boards = 7;
+  // The attached machine's settings.
+  dieter.v1.Settings settings = 8;
 }
 
 // Projects and boards are small and always complete; cards are keyed.
@@ -282,6 +960,8 @@ message WorkspaceDelta {
   repeated string pending_card_ids = 7;
   bool loaded = 8;
   map<string, string> project_replicas = 9;
+  repeated dieter.v1.Board retired_boards = 10;
+  dieter.v1.Settings settings = 11;
 }
 
 message OutboxSlice {
@@ -292,6 +972,23 @@ message OutboxSlice {
   repeated MachineOutbox machines = 5;
   // Local conversation ID → the daemon's ID.
   map<string, string> resolutions = 6;
+  // A failed item's ID (card or message) → why the daemon rejected it.
+  map<string, string> failures = 7;
+  // The journal could not be written; nothing new is accepted until it can.
+  string storage_error = 8;
+  // Rejected operations, oldest first; each keeps its data until retried or discarded.
+  repeated FailedOperation failed_operations = 9;
+}
+
+message FailedOperation {
+  // The ID RetryPending and DiscardPending take.
+  string id = 1;
+  // What the operation does, e.g. "Send message".
+  string label = 2;
+  // The conversation or message it targets.
+  string target_id = 3;
+  string failure = 4;
+  int64 created_at_millis = 5;
 }
 
 message MachineOutbox {
@@ -299,6 +996,10 @@ message MachineOutbox {
   int32 pending = 2;
   int32 failed = 3;
   string last_error = 4;
+  int32 message_count = 5;
+  int32 change_count = 6;
+  // Delivery failed transiently and is being retried.
+  bool retrying = 7;
 }
 
 message ActivitySlice {
@@ -337,6 +1038,56 @@ message ConversationSlice {
   bool has_earlier = 10;
   bool loading_earlier = 11;
   bool browsing_earlier = 12;
+  // A message this client sent has not been answered yet.
+  bool awaiting_reply = 13;
+  // A failed turn's retry was sent and has not run yet.
+  bool retrying = 14;
+  int64 refreshed_at_millis = 15;
+  // The last turn failed; absent otherwise.
+  TurnFailure turn_failure = 16;
+  // The card's project and board, as the machine last described them.
+  dieter.v1.Project project = 17;
+  dieter.v1.Board board = 18;
+  // The live window's position in the whole transcript.
+  dieter.v1.ConversationPage page = 19;
+  // How many leading `messages` are loaded history before the live window.
+  int32 earlier_count = 20;
+  // What the conversation screen shows besides the transcript.
+  ConversationState state = 21;
+}
+
+// The conversation's state as every client presents it.
+message ConversationState {
+  // The runtime to show: this device's start or cancel wins over the reported one.
+  string runtime = 1;
+  bool active_turn = 2;
+  // An active turn, or a sent message still waiting for its reply.
+  bool working = 3;
+  // What the agent is doing now, e.g. "Running tests"; empty when idle.
+  string live_activity = 4;
+  // The same, preferring the latest reasoning headline when there is one.
+  string live_reasoning = 5;
+  int64 turn_started_at_millis = 6;
+  // The model Claude Code reported for its latest reply, when it differs.
+  string responding_model = 7;
+  // A never-started card's task, while it can still be edited.
+  string unsent_task = 8;
+  // The queued message that may interrupt the running turn now.
+  string steerable_id = 9;
+  bool interrupting = 10;
+  bool ready_for_review = 11;
+  bool can_start = 12;
+  bool starting = 13;
+  int64 context_used_tokens = 14;
+  int64 context_window_tokens = 15;
+}
+
+message TurnFailure {
+  string summary = 1;
+  string log = 2;
+  string failed_message_id = 3;
+  // The failed request can be sent again.
+  bool retryable = 4;
 }
 
 message ConversationDelta {
@@ -353,4 +1104,871 @@ message ConversationDelta {
   bool has_earlier = 11;
   bool loading_earlier = 12;
   bool browsing_earlier = 13;
+  bool awaiting_reply = 14;
+  bool retrying = 15;
+  int64 refreshed_at_millis = 16;
+  TurnFailure turn_failure = 17;
+  dieter.v1.Project project = 18;
+  dieter.v1.Board board = 19;
+  dieter.v1.ConversationPage page = 20;
+  // The server ID once a conversation created on this device is accepted,
+  // and the machine that runs it.
+  string card_id = 21;
+  string daemon_id = 22;
+  int32 earlier_count = 23;
+  ConversationState state = 24;
+}
+
+// Per machine: its agents, settings choices, and runtime readiness.
+message MetadataSlice {
+  map<string, MachineMetadata> machines = 1;
+}
+
+message MachineMetadata {
+  dieter.v1.HarnessCatalog harnesses = 1;
+  dieter.v1.SettingsOptions settings_options = 2;
+  dieter.v1.RuntimeStatus runtime = 3;
+  int64 refreshed_at_millis = 4;
+  string error = 5;
+  // The catalog has arrived.
+  bool loaded = 6;
+}
+
+// Card operations in flight, their last failures, and unconfirmed moves.
+message BoardSlice {
+  // Card ID → the core's CardOperation name, e.g. "STARTING" or "MOVING".
+  map<string, string> operations = 1;
+  map<string, string> errors = 2;
+  repeated PendingCardMove moves = 3;
+}
+
+message PendingCardMove {
+  string card_id = 1;
+  string lane = 2;
+  string after_card_id = 3;
+  string before_card_id = 4;
+}
+
+// The navigation layout with this device's pending edits applied.
+message NavigationSlice {
+  repeated string project_order = 1;
+  repeated string pinned_projects = 2;
+  repeated string pinned_chat_order = 3;
+  repeated NavigationFolder project_folders = 4;
+  repeated NavigationFolder chat_folders = 5;
+  repeated string expanded_projects = 6;
+  repeated string collapsed_chat_sections = 7;
+  repeated string chats_show_all = 8;
+  // "<board>.<lane>" → "ascending" or "descending"; absent lanes are descending.
+  map<string, string> lane_sorts = 9;
+  // Edits not yet accepted by a machine.
+  int32 pending = 10;
+  // Why edits are not being delivered, if they are not.
+  string error = 11;
+  // A full replay arrived since the machine was attached.
+  bool caught_up = 12;
+}
+
+// Creation choices remembered on this device.
+message CreationSlice {
+  // The last agent chosen; may name one a machine no longer offers.
+  dieter.v1.HarnessSelection selection = 1;
+  string workspace_mode = 2;
+  string project_id = 3;
+  // Project ID → the board last chosen in it.
+  map<string, string> boards = 4;
+}
+
+// One files surface: a folder listing and the open document.
+message FilesSlice {
+  FilesTarget target = 1;
+  string directory = 2;
+  repeated dieter.v1.FileEntry entries = 3;
+  bool show_hidden = 4;
+  bool listing_loading = 5;
+  string listing_error = 6;
+  string selected_path = 7;
+  // The open document; left out when unchanged since the previous update.
+  dieter.v1.FileDocument document = 8;
+  bool document_unchanged = 9;
+  bool document_loading = 10;
+  string document_error = 11;
+  // The last save met a newer version on disk.
+  bool conflict = 12;
+  bool saving = 13;
+  bool can_go_back = 14;
+  bool can_go_forward = 15;
+}
+
+// A lazily expanded folder tree.
+message FileTreeSlice {
+  repeated FileTreeFolder folders = 1;
+  repeated string expanded = 2;
+  repeated string loading = 3;
+  string error = 4;
+  bool show_hidden = 5;
+}
+
+message FileTreeFolder {
+  string path = 1;
+  repeated dieter.v1.FileEntry entries = 2;
+}
+
+// One terminals surface.
+message TerminalsSlice {
+  TerminalTarget target = 1;
+  repeated dieter.v1.Terminal terminals = 2;
+  string selected_id = 3;
+  bool loading = 4;
+  string error = 5;
+  bool stream_connected = 6;
+  bool active = 7;
+  // Output this observer has not seen yet, per terminal; never in command
+  // results.
+  repeated TerminalOutput output = 8;
+}
+
+message TerminalOutput {
+  string terminal_id = 1;
+  // Clear the screen before writing: the terminal started over, or the
+  // observer fell behind what is retained, so data replays it.
+  bool reset = 2;
+  bytes data = 3;
+}
+
+// Every terminal on every online, compatible machine.
+message TerminalOverviewSlice {
+  repeated OverviewTerminal entries = 1;
+  string selected_id = 2;
+  bool loading = 3;
+  // Machines that could not be listed, by machine name.
+  map<string, string> errors = 4;
+  // No compatible machine is online.
+  bool no_machines = 5;
+  // The selected entry's machine.
+  TerminalsSlice terminals = 6;
+}
+
+message OverviewTerminal {
+  // `daemon|terminal`.
+  string id = 1;
+  string daemon_id = 2;
+  string machine_name = 3;
+  dieter.v1.Terminal terminal = 4;
+}
+
+// The shown project's schedules.
+message SchedulesSlice {
+  string project_id = 1;
+  repeated dieter.v1.Schedule schedules = 2;
+  int32 total_count = 3;
+  string next_page_token = 4;
+  bool loaded = 5;
+  bool loading = 6;
+  bool loading_more = 7;
+  // The list could not be read.
+  string error = 8;
+  // A change or run history read failed.
+  string action_error = 9;
+  string selected_id = 10;
+  repeated dieter.v1.ScheduleRun runs = 11;
+  string runs_next_page_token = 12;
+  bool runs_loading = 13;
+  bool runs_loading_more = 14;
+  // Next occurrences (RFC 3339, UTC) for the editor's timing.
+  repeated string preview = 15;
+  string preview_error = 16;
+}
+
+// One line of a unified diff, numbered on both sides.
+message DiffRow {
+  enum Kind {
+    KIND_HEADER = 0;
+    KIND_HUNK = 1;
+    KIND_CONTEXT = 2;
+    KIND_ADDITION = 3;
+    KIND_DELETION = 4;
+  }
+  int32 id = 1;
+  Kind kind = 2;
+  string text = 3;
+  // 0 when the side has no line.
+  int32 old_line = 4;
+  int32 new_line = 5;
+}
+
+// What a workspace allows now.
+message WorkspaceAvailability {
+  // Git operation kinds that can start now.
+  repeated string allowed = 1;
+  bool allows_merge_flow = 2;
+  // Where a merge's result ends up.
+  string merge_destination = 3;
+  bool has_review_branch = 4;
+  bool agent_active = 5;
+  bool operation_active = 6;
+  bool conflicted = 7;
+  bool has_remote = 8;
+  bool dirty = 9;
+  int32 changed_files = 10;
+  bool has_commits = 11;
+  string branch = 12;
+  string base = 13;
+  string publish = 14;
+  // "project" or "worktree".
+  string mode = 15;
+}
+
+// One conversation workspace's review.
+message ReviewSlice {
+  string card_id = 1;
+  string daemon_id = 2;
+  dieter.v1.Workspace workspace = 3;
+  dieter.v1.Changeset changeset = 4;
+  dieter.v1.SCMCapabilities scm = 5;
+  repeated dieter.v1.ChangeComment comments = 6;
+  bool loading = 7;
+  string error = 8;
+  string selected_path = 9;
+  string selected_commit = 10;
+  // The diff page; its patch is in `diff_rows`.
+  dieter.v1.FileDiff diff = 11;
+  repeated DiffRow diff_rows = 12;
+  bool diff_loading = 13;
+  dieter.v1.GitOperation operation = 14;
+  repeated dieter.v1.GitOperationLogEntry logs = 15;
+  bool submitting = 16;
+  // After a reconnect or an ambiguous start, changes wait for a refresh.
+  bool needs_reconciliation = 17;
+  // Cleanup, discard, or adopt succeeded; the workspace is gone here.
+  bool surface_removed = 18;
+  // "commit", "merge", or "cleanup" while the merge flow runs.
+  string merge_step = 19;
+  string toast = 20;
+  bool operation_active = 21;
+  bool conflicted = 22;
+  // Present when the conversation's card is known.
+  WorkspaceAvailability availability = 23;
+}
+
+// One project checkout's changes.
+message ProjectChangesSlice {
+  string project_id = 1;
+  string checkout_id = 2;
+  string daemon_id = 3;
+  dieter.v1.Changeset changes = 4;
+  // The selected file and half, when one is selected.
+  ProjectChangeSelect selection = 5;
+  dieter.v1.FileDiff diff = 6;
+  repeated DiffRow diff_rows = 7;
+  bool diff_loading = 8;
+  dieter.v1.GitOperation operation = 9;
+  string pending_kind = 10;
+  bool needs_reconciliation = 11;
+  bool refreshing = 12;
+  string refresh_error = 13;
+  string diff_error = 14;
+  string operation_error = 15;
+  string notice = 16;
+  bool busy = 17;
+  bool mutations_disabled = 18;
+  // "3 local files · main".
+  string summary = 19;
+}
+
+message ProjectWorkspacesSlice {
+  string project_id = 1;
+  repeated dieter.v1.Workspace workspaces = 2;
+  bool loading = 3;
+  string error = 4;
+  // Card IDs with a cleanup or discard in flight.
+  repeated string pending = 5;
+  map<string, string> errors = 6;
+}
+
+// ---------------------------------------------------------------------------
+// Administration and one-off machine reads. Each runs on the machine that
+// holds what it changes: a project's replica, a checkout's owner, a
+// conversation's owner, or the machine the command names.
+
+message AdminCommand {
+  oneof action {
+    // Registers an existing repository or creates one; the result is the
+    // created project and board.
+    AdminCreateProject create_project = 1;
+    // The result is the project.
+    AdminUpdateProject update_project = 2;
+    AdminProjectArchived set_project_archived = 3;
+    // The result is the projects.
+    AdminMachine archived_projects = 4;
+    // Folds one project into another; the result is the destination.
+    AdminConsolidate consolidate = 5;
+    // Folders on a machine; empty lists its default locations.
+    AdminDirectories directories = 6;
+    // The result is the checkout.
+    AdminAttachCheckout attach_checkout = 7;
+    AdminCheckout detach_checkout = 8;
+    // Board changes; the result is the board.
+    AdminCreateBoard create_board = 9;
+    AdminRenameBoard rename_board = 10;
+    AdminArchivePolicy set_archive_policy = 11;
+    AdminGitSettings set_git_settings = 12;
+    AdminHostnames set_hostnames = 13;
+    AdminBoardRetired set_board_retired = 14;
+    AdminLabel create_label = 15;
+    AdminLabel update_label = 16;
+    AdminLabel delete_label = 17;
+    // A machine's global prompt settings.
+    AdminMachine prompt_settings = 18;
+    AdminPromptSettings update_prompt_settings = 19;
+    // Portable settings on a project's replica, else the attached machine.
+    AdminProject settings = 20;
+    AdminSettings update_settings = 21;
+    AdminProject settings_options = 22;
+    // Sets or clears a project's or board's prompt override.
+    AdminScopedPrompt set_project_prompt = 23;
+    AdminScopedPrompt set_board_prompt = 24;
+    AdminPreviewPrompt preview_prompt = 25;
+    // The competing versions behind a conflict key such as `board/b_1.name`.
+    AdminConflict conflict = 26;
+    // Keeps one version, or the deletion.
+    AdminResolveConflict resolve_conflict = 27;
+    // Archived projects and a board's archived cards.
+    AdminArchives archives = 28;
+    // Workspace defaults and a checkout's validation commands; the result
+    // is the project.
+    AdminWorkspaceSettings workspace_settings = 29;
+    // A conversation's workspace on its machine.
+    AdminCard conversation_workspace = 30;
+    // Changes a conversation's workspace before its first turn; the result
+    // is the card.
+    AdminConversationWorkspace update_conversation_workspace = 31;
+    // Archived chats of every online machine; the result is the cards.
+    AdminStep archived_chats = 32;
+    // Reads one file, e.g. to download it; the result is the document.
+    AdminReadFile read_file = 33;
+  }
+}
+
+message AdminStep {}
+message AdminMachine { string daemon_id = 1; }
+message AdminProject { string project_id = 1; }
+message AdminCard { string card_id = 1; }
+
+message AdminCreateProject {
+  string daemon_id = 1;
+  string path = 2;
+  string name = 3;
+  // Create a new repository rather than register an existing one.
+  bool create = 4;
+  string board_name = 5;
+  string workflow = 6;
+  string base_remote = 7;
+  string base_branch = 8;
+  repeated dieter.v1.ValidationCommand validation = 9;
+}
+
+message AdminUpdateProject {
+  string project_id = 1;
+  optional string name = 2;
+  optional string summary = 3;
+  optional string prompt = 4;
+  // Replaces the hostnames when set.
+  bool set_hostnames = 5;
+  repeated string hostnames = 6;
+}
+
+message AdminProjectArchived {
+  string project_id = 1;
+  bool archived = 2;
+}
+
+message AdminConsolidate {
+  string source_id = 1;
+  string destination_id = 2;
+}
+
+message AdminDirectories {
+  string daemon_id = 1;
+  string path = 2;
+}
+
+message AdminAttachCheckout {
+  string daemon_id = 1;
+  string project_id = 2;
+  string path = 3;
+  string name = 4;
+}
+
+message AdminCheckout {
+  string project_id = 1;
+  string checkout_id = 2;
+}
+
+message AdminCreateBoard {
+  string project_id = 1;
+  string name = 2;
+  string workflow = 3;
+  string description = 4;
+  string done_archive_policy = 5;
+  string base_remote = 6;
+  string publish_mode = 7;
+}
+
+message AdminRenameBoard {
+  string board_id = 1;
+  string name = 2;
+}
+
+message AdminArchivePolicy {
+  string board_id = 1;
+  string policy = 2;
+}
+
+message AdminGitSettings {
+  string board_id = 1;
+  string base_remote = 2;
+  string publish_mode = 3;
+}
+
+message AdminHostnames {
+  string board_id = 1;
+  repeated string hostnames = 2;
+  bool append = 3;
+}
+
+message AdminBoardRetired {
+  string board_id = 1;
+  bool retired = 2;
+}
+
+message AdminLabel {
+  string board_id = 1;
+  // Empty when creating.
+  string label_id = 2;
+  string name = 3;
+  string color = 4;
+  string instructions = 5;
+}
+
+message AdminPromptSettings {
+  string daemon_id = 1;
+  string context = 2;
+  string board_skill = 3;
+  string chat_skill = 4;
+}
+
+message AdminSettings {
+  string project_id = 1;
+  dieter.v1.Settings settings = 2;
+}
+
+message AdminScopedPrompt {
+  // The project or board.
+  string scope_id = 1;
+  // Unset inherits.
+  optional string template = 2;
+}
+
+message AdminPreviewPrompt {
+  string project_id = 1;
+  string board_id = 2;
+  string card_id = 3;
+  repeated string label_ids = 4;
+  // Renders on the checkout's machine, since it reads the repository.
+  string checkout_id = 5;
+}
+
+message AdminConflict {
+  string project_id = 1;
+  string key = 2;
+}
+
+message AdminResolveConflict {
+  string project_id = 1;
+  dieter.v1.PeerRecord record = 2;
+  bytes value_json = 3;
+  bool deleted = 4;
+}
+
+message AdminArchives {
+  string project_id = 1;
+  string board_id = 2;
+}
+
+message AdminWorkspaceSettings {
+  string project_id = 1;
+  string base_remote = 2;
+  string base_branch = 3;
+  string checkout_id = 4;
+  // Replaces the checkout's validation commands when set.
+  bool set_validation = 5;
+  repeated dieter.v1.ValidationCommand validation = 6;
+}
+
+message AdminConversationWorkspace {
+  string card_id = 1;
+  // "project" or "worktree".
+  string mode = 2;
+  string branch = 3;
+  string base_branch = 4;
+  string base_remote = 5;
+  string publish_mode = 6;
+}
+
+message AdminReadFile {
+  string daemon_id = 1;
+  string project_id = 2;
+  string checkout_id = 3;
+  string card_id = 4;
+  string path = 5;
+}
+
+message ConflictRecord { dieter.v1.PeerRecord record = 1; }
+
+message Archives {
+  repeated dieter.v1.Project projects = 1;
+  repeated dieter.v1.Card cards = 2;
+}
+
+message Projects { repeated dieter.v1.Project projects = 1; }
+
+// ---------------------------------------------------------------------------
+// Machines: the selected machine's live telemetry (every 2 s while shown),
+// one-off reads for the machine list, and power and update operations.
+
+message TelemetryCommand {
+  oneof action {
+    // Shows a machine while active; switching machines resets the operation
+    // state, not what was read.
+    TelemetrySelect select = 1;
+    // Reads every listed machine once, a few at a time.
+    TelemetryRefresh refresh_all = 2;
+    // Records why a machine cannot be read now.
+    TelemetryUnavailable unavailable = 3;
+    // Restarts, shuts down, or updates the selected machine; a lost reply is
+    // never acted on twice. The result is the response.
+    TelemetryOperation perform = 4;
+  }
+}
+
+message TelemetrySelect {
+  // Empty shows none.
+  string daemon_id = 1;
+  bool active = 2;
+}
+
+message TelemetryRefresh { repeated string daemon_ids = 1; }
+
+message TelemetryUnavailable {
+  string daemon_id = 1;
+  string message = 2;
+}
+
+message TelemetryOperation { dieter.v1.MachineOperationAction action = 1; }
+
+message TelemetrySlice {
+  // The machine shown in detail.
+  string daemon_id = 1;
+  // Every machine read so far, by daemon.
+  map<string, MachineReadings> machines = 2;
+  bool operation_pending = 3;
+  string operation_result = 4;
+}
+
+message MachineReadings {
+  dieter.v1.MachineInformation information = 1;
+  bool loading = 2;
+  string error = 3;
+  // The last CPU samples, oldest first.
+  repeated double cpu_history = 4;
+  // Per GPU, its last utilization samples.
+  map<string, Samples> gpu_history = 5;
+}
+
+message Samples { repeated double values = 1; }
+
+// ---------------------------------------------------------------------------
+// Provider quotas: credential-free snapshots from the gateway, watched rather
+// than polled.
+
+message QuotasCommand {
+  oneof action {
+    QuotasLoad load = 1;
+    QuotaInclusion set_included = 2;
+    // Spends one reset of an account; the result is whether it was accepted.
+    QuotaAccount consume_reset = 3;
+  }
+}
+
+message QuotasLoad {
+  // Ask the gateway to read the providers again.
+  bool refresh = 1;
+}
+
+message QuotaInclusion {
+  dieter.gateway.v1.ProviderQuotaProvider provider = 1;
+  string account_key = 2;
+  bool included = 3;
+}
+
+message QuotaAccount { string account_key = 1; }
+
+message QuotasSlice {
+  repeated dieter.gateway.v1.ProviderQuotaGroup groups = 1;
+  bool loading = 2;
+  string error = 3;
+  // Accounts with a change in flight.
+  repeated string mutating = 4;
+  // The gateway stream is connected.
+  bool live = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Processes: the background processes an agent started for one conversation,
+// one surface per view (SLICE_PROCESSES). While active, the list refreshes
+// every 2 s and the selected process streams its output. Hiding the view never
+// stops a process; only an explicit stop does.
+
+message ProcessesCommand {
+  string scope = 1;
+  oneof action {
+    ProcessesTarget bind = 2;
+    ProcessId select = 3;
+    ProcessesStep stop = 4;
+  }
+}
+
+message ProcessesTarget {
+  string daemon_id = 1;
+  string project_id = 2;
+  string card_id = 3;
+  // Shown now: refresh and stream.
+  bool active = 4;
+}
+
+message ProcessId { string execution_id = 1; }
+message ProcessesStep {}
+
+message ProcessesSlice {
+  string daemon_id = 1;
+  string project_id = 2;
+  string card_id = 3;
+  repeated dieter.v1.Execution processes = 4;
+  string selected_id = 5;
+  // The selected process's newest output, bounded.
+  bytes stdout = 6;
+  bytes stderr = 7;
+  // Older output was dropped.
+  bool output_truncated = 8;
+  bool loading = 9;
+  bool stopping = 10;
+  string error = 11;
+  int32 running = 12;
+  bool can_stop = 13;
+}
+
+// ---------------------------------------------------------------------------
+// Search: tasks and chats by title, task text, and location; every term must
+// prefix a word. Transcripts are never searched.
+
+message SearchCommand {
+  string query = 1;
+  // At most this many; zero uses the default.
+  int32 limit = 2;
+}
+
+message SearchResults { repeated SearchHit hits = 1; }
+
+message SearchHit {
+  string card_id = 1;
+  string title = 2;
+  // "Project · Board"; empty for an unfiled chat.
+  string location = 3;
+  bool chat = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Screens: sharing a machine's screen, one surface per view (SLICE_SCREEN).
+// The native media engine only moves pixels and packets; the core owns
+// signaling, trust, the lease, recovery, configuration, input, clipboard
+// sync, and resolution matching.
+
+message ScreenCommand {
+  string scope = 1;
+  oneof action {
+    // Starts a session with a machine; an earlier one is closed first.
+    ScreenConnect connect = 2;
+    ScreenStep disconnect = 3;
+    // The view's size; the requested stream size follows, debounced.
+    ScreenViewport viewport = 4;
+    ScreenPreferences preferences = 5;
+    // Takes or hands back control, once at a time.
+    ScreenToggle control = 6;
+    // Moves the remote pointer; quick moves coalesce.
+    ScreenPointer pointer = 7;
+    ScreenButton button = 8;
+    ScreenScroll scroll = 9;
+    // A physical key by USB HID usage.
+    ScreenKey key = 10;
+    // Committed text.
+    ScreenText text = 11;
+    // Releases every held key and button on the host.
+    ScreenStep release_input = 12;
+    // "copy", "cut", or "paste" on the host.
+    ScreenClipboardOperation clipboard = 13;
+    ScreenToggle clipboard_enabled = 14;
+    // The device woke or the app returned: start over at once.
+    ScreenStep resume = 15;
+    // The device is going to sleep: release held input.
+    ScreenStep sleep = 16;
+    ScreenToggle focused = 17;
+    // Matches the host display to this screen while holding control; an
+    // empty target stops matching and restores a temporary mode.
+    ScreenDisplayTarget match_display = 18;
+    // Asks the host for a fresh frame.
+    ScreenStep refresh = 19;
+  }
+}
+
+message ScreenStep {}
+message ScreenToggle { bool on = 1; }
+message ScreenConnect { string daemon_id = 1; }
+
+message ScreenViewport {
+  double width_points = 1;
+  double height_points = 2;
+  double scale = 3;
+}
+
+message ScreenPreferences {
+  dieter.v1.RemoteDesktopCodecPreference codec = 1;
+  int32 max_fps = 2;
+  dieter.v1.RemoteDesktopQuality quality = 3;
+  string display_id = 4;
+  bool clipboard = 5;
+}
+
+message ScreenPointer {
+  // Normalized to the shared display, 0 to 1.
+  double x = 1;
+  double y = 2;
+}
+
+message ScreenButton {
+  dieter.v1.RemoteDesktopPointerButton.Button button = 1;
+  bool down = 2;
+  int32 clicks = 3;
+  double x = 4;
+  double y = 5;
+  // Shift 1, Control 2, Option 4, Command 8, Caps Lock 16, Function 32.
+  int32 modifiers = 6;
+}
+
+message ScreenScroll {
+  double dx = 1;
+  double dy = 2;
+  int32 phase = 3;
+  int32 momentum = 4;
+  int32 modifiers = 5;
+  bool precise = 6;
+}
+
+message ScreenKey {
+  int32 hid = 1;
+  bool down = 2;
+  bool repeat = 3;
+  int32 modifiers = 4;
+}
+
+message ScreenText {
+  string text = 1;
+  int32 modifiers = 2;
+}
+
+message ScreenClipboardOperation { string operation = 1; }
+
+message ScreenDisplayTarget {
+  // Points; zero stops matching.
+  double width = 1;
+  double height = 2;
+  double scale = 3;
+  double refresh = 4;
+}
+
+message ScreenSlice {
+  // "idle", "loading", "permission_required", "unsupported", "connecting",
+  // "waiting_for_host_approval", "streaming", "reconnecting", or "failed".
+  string phase = 1;
+  string phase_label = 2;
+  // Why no session can run, or why it is reconnecting.
+  string problem = 3;
+  // Holding or establishing a session.
+  bool active = 4;
+  dieter.v1.RemoteDesktopCapabilities capabilities = 5;
+  dieter.v1.RemoteDesktopSessionState state = 6;
+  string session_id = 7;
+  // Streaming with input channels open and the display presented.
+  bool ready = 8;
+  bool control_active = 9;
+  bool can_transfer_control = 10;
+  bool control_transferring = 11;
+  string control_error = 12;
+  string codec_fallback_reason = 13;
+  bool clipboard_enabled = 14;
+  string clipboard_error = 15;
+  bool clipboard_busy = 16;
+  int32 clipboard_operations = 17;
+  // The host cursor image (PNG); left out when unchanged since the
+  // previous update.
+  bytes cursor_image = 18;
+  bool cursor_image_unchanged = 19;
+  double cursor_x = 20;
+  double cursor_y = 21;
+  bool cursor_visible = 22;
+  double cursor_width = 23;
+  double cursor_height = 24;
+  double cursor_hotspot_x = 25;
+  double cursor_hotspot_y = 26;
+  string route_label = 27;
+  ScreenPreferences preferences = 28;
+  // Resolution matching while holding control.
+  string display_status = 29;
+  bool display_busy = 30;
+}
+
+// The native media engine across the Apple bridge, encoded.
+
+message ScreenMediaCapabilities {
+  repeated RtpCodec receive_codecs = 1;
+  bool hevc_decoder = 2;
+  bool reference_dependencies = 3;
+  bool millisecond_timestamps = 4;
+  // A decoder or renderer that cannot start; the session fails before offering.
+  string initialization_failure = 5;
+}
+
+message RtpCodec {
+  string name = 1;
+  string profile = 2;
+}
+
+message ScreenMediaConfig {
+  dieter.gateway.v1.RTCConfiguration rtc = 1;
+  repeated RtpCodec codecs = 2;
+  bool enable_reference_dependencies = 3;
+  repeated ScreenChannel channels = 4;
+  bool relay_only = 5;
+}
+
+message ScreenChannel {
+  string label = 1;
+  bool ordered = 2;
+  // Unset retransmits until delivered.
+  optional int32 max_retransmits = 3;
+}
+
+message ClipboardContent {
+  string text = 1;
+  repeated dieter.v1.RemoteDesktopClipboardItem items = 2;
 }

@@ -24,5 +24,29 @@ class AppleProtoTests(unittest.TestCase):
             self.assertFalse(sync_apple_proto.sync(root, check=True))
             self.assertEqual(before, target.stat().st_mtime_ns)
 
+    def test_client_schemas_are_copied_with_package_local_imports_and_stale_copies_removed(self):
+        with tempfile.TemporaryDirectory(prefix="dieter client schema ") as directory:
+            root = Path(directory)
+            for source in sync_apple_proto.SCHEMAS:
+                file = root / "api/proto" / source
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text('syntax = "proto3";\n')
+            client = root / sync_apple_proto.CLIENT_SCHEMA_DIR
+            client.mkdir(parents=True)
+            (client / "client.proto").write_text(
+                'import "dieter/v1/dieter.proto";\nimport "dieter/client/v1/files.proto";\n')
+            (client / "files.proto").write_text('import "dieter/v1/dieter.proto";\n')
+            self.assertFalse(sync_apple_proto.sync(root))
+            copies = root / "apps/mac/Sources/DieterAPI/client"
+            self.assertEqual(
+                'import "dieter.proto";\nimport "client/files.proto";\n', (copies / "client.proto").read_text())
+            self.assertTrue(sync_apple_proto.sync(root, check=True))
+            (client / "files.proto").unlink()
+            self.assertFalse(sync_apple_proto.sync(root, check=True))
+            self.assertTrue((copies / "files.proto").exists(), "a check never deletes")
+            self.assertFalse(sync_apple_proto.sync(root))
+            self.assertFalse((copies / "files.proto").exists())
+            self.assertTrue(sync_apple_proto.sync(root, check=True))
+
 
 if __name__ == "__main__": unittest.main()

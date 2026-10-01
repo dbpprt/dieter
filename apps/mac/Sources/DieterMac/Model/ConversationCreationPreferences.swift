@@ -2,12 +2,9 @@ import DieterAPI
 import Foundation
 
 /// Device-local defaults shared by the new-card and new-chat composers.
+/// Device-local defaults shared by the new-card and new-chat composers; the
+/// shared core remembers them (`AppSession.creationPreferences`).
 struct ConversationCreationPreferences: Equatable {
-    static let providerKey = "DieterConversationCreationProvider"
-    static let modelKey = "DieterConversationCreationModel"
-    static let effortKey = "DieterConversationCreationEffort"
-    static let workspaceModeKey = "DieterConversationCreationWorkspaceMode"
-
     var provider: String
     var model: String
     var effort: String
@@ -23,23 +20,6 @@ struct ConversationCreationPreferences: Equatable {
         self.model = model
         self.effort = effort
         self.workspaceMode = workspaceMode
-    }
-
-    static func load(from defaults: UserDefaults = .standard) -> Self {
-        Self(
-            provider: defaults.string(forKey: providerKey) ?? "",
-            model: defaults.string(forKey: modelKey) ?? "",
-            effort: defaults.string(forKey: effortKey) ?? "",
-            workspaceMode: defaults.string(forKey: workspaceModeKey)
-                .flatMap(ConversationWorkspaceMode.init(rawValue:)) ?? .worktree
-        )
-    }
-
-    func save(to defaults: UserDefaults = .standard) {
-        defaults.set(provider, forKey: Self.providerKey)
-        defaults.set(model, forKey: Self.modelKey)
-        defaults.set(effort, forKey: Self.effortKey)
-        defaults.set(workspaceMode.rawValue, forKey: Self.workspaceModeKey)
     }
 
     func resolved(in harnesses: [Dieter_V1_Harness]) -> ConversationCreationSelection? {

@@ -65,8 +65,6 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
     }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        controller?.clipboardWindow = window
-        controller?.clipboardVisible = window != nil
         focusObserverBag.tokens.forEach(NotificationCenter.default.removeObserver)
         focusObserverBag.tokens.removeAll()
         for (name, object) in [
@@ -133,8 +131,8 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
         let cursor = controller.remoteCursor
         hostCursorView.image = cursor.image
         hostCursorView.frame = NSRect(
-            x: rect.minX + rect.width * Double(state.normalizedX) / 1_000_000 - cursor.hotSpot.x,
-            y: rect.maxY - rect.height * Double(state.normalizedY) / 1_000_000 - cursor.image.size.height
+            x: rect.minX + rect.width * state.x - cursor.hotSpot.x,
+            y: rect.maxY - rect.height * state.y - cursor.image.size.height
                 + cursor.hotSpot.y,
             width: cursor.image.size.width, height: cursor.image.size.height)
     }
@@ -223,9 +221,9 @@ final class RemoteDesktopInputView: NSView, @preconcurrency NSTextInputClient, @
         {
             if !event.isARepeat {
                 switch event.keyCode {
-                case 7: controller?.clipboard.cut()
-                case 8: controller?.clipboard.copySelection()
-                default: controller?.clipboard.paste()
+                case 7: controller?.performClipboard("cut")
+                case 8: controller?.performClipboard("copy")
+                default: controller?.performClipboard("paste")
                 }
             }
             return

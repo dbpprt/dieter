@@ -63,6 +63,26 @@ let package = Package(
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             ]),
         .testTarget(name: "DieterCoreTests", dependencies: ["DieterCore", "DieterAPI"]),
+        // The shared Kotlin core (apps/core), assembled into Frameworks/ by
+        // scripts/shared-framework.sh; `just mac build|test` and `just ios build`
+        // refresh it when the core changes.
+        .binaryTarget(name: "DieterShared", path: "Frameworks/DieterShared.xcframework"),
+        // The app's side of the shared core: the native transport and platform
+        // services it injects, and the command/slice client the app observes.
+        .target(
+            name: "SharedCore",
+            dependencies: [
+                "DieterShared", "DieterAPI", "DieterClient",
+                .product(name: "GRPCCore", package: "grpc-swift-2"),
+                .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
+                .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+            ]),
+        .testTarget(
+            name: "SharedCoreTests",
+            dependencies: [
+                "SharedCore", "DieterAPI", "DieterClient",
+                .product(name: "GRPCCore", package: "grpc-swift-2"),
+            ]),
         .target(
             name: "DieterAPI",
             dependencies: [
@@ -73,6 +93,8 @@ let package = Package(
             exclude: [
                 "gateway.proto",
                 "dieter.proto",
+                // The shared core's UI contract, copied by scripts/sync_apple_proto.py.
+                "client",
                 "grpc-swift-proto-generator-config.json",
                 "Generated/.inputs.sha256",
             ]
@@ -81,7 +103,7 @@ let package = Package(
             name: "DieterMac",
             dependencies: [
                 "DieterCore", "DieterClient",
-                "DieterAPI",
+                "DieterAPI", "SharedCore", "DieterShared",
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
@@ -113,7 +135,7 @@ let package = Package(
         .testTarget(
             name: "DieterMacTests",
             dependencies: [
-                "DieterMac",
+                "DieterMac", "SharedCore", "DieterShared",
                 .product(name: "MarkdownEngine", package: "swift-markdown-engine"),
                 "DieterAPI",
                 .product(name: "SwiftTerm", package: "SwiftTerm"),

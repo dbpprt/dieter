@@ -2,225 +2,234 @@ import AppKit
 import DieterAPI
 import DieterCore
 import Foundation
+import SharedCore
 import Synchronization
 import Testing
 @testable import DieterMac
 
-private final class ScreenFixture: ScreenSignalingRPC {
-    let closed = Mutex(false)
-    let capabilities = Mutex<Dieter_V1_RemoteDesktopCapabilities>(.init())
-    let starts = Mutex(0)
-    let leaseSignals = Mutex<[Dieter_V1_RemoteDesktopSignal]>([])
-    func shutdown() { closed.withLock { $0 = true } }
-    func remoteDesktopCapabilities() async throws -> Dieter_V1_RemoteDesktopCapabilities {
-        capabilities.withLock { $0 }
-    }
-    func startRemoteDesktop(
-        _ request: Dieter_V1_StartRemoteDesktopRequest,
-        receive: @escaping @Sendable (Dieter_V1_RemoteDesktopSignal) async throws -> Void
-    ) async throws { starts.withLock { $0 += 1 } }
-    func sendRemoteDesktopSignal(_ signal: Dieter_V1_RemoteDesktopSignal) async throws {
-        leaseSignals.withLock { $0.append(signal) }
-    }
-    func remoteDesktopSession(sessionID: String) async throws -> Dieter_V1_RemoteDesktopSessionState { .init() }
-    func updateRemoteDesktopSession(_ request: Dieter_V1_UpdateRemoteDesktopSessionRequest) async throws
-        -> Dieter_V1_RemoteDesktopSessionState
-    { .init() }
-    func setRemoteDesktopControl(sessionID: String, take: Bool) async throws -> Dieter_V1_RemoteDesktopSessionState {
-        .init()
-    }
-    func closeRemoteDesktop(sessionID: String) async throws {}
-    func remoteDesktopDisplayModes(sessionID: String) async throws -> Dieter_V1_RemoteDesktopDisplayModes { .init() }
-    func setRemoteDesktopDisplayMode(_ request: Dieter_V1_SetRemoteDesktopDisplayModeRequest) async throws
-        -> Dieter_V1_RemoteDesktopDisplayModes
-    { .init() }
-    func restoreRemoteDesktopDisplayMode(sessionID: String) async throws -> Dieter_V1_RemoteDesktopDisplayModes {
-        .init()
-    }
-    func connection(_ label: String) -> RemoteDesktopSignalingConnection {
-        .init(
-            rpc: self, connectionTask: Task {}, rtcConfiguration: .init(), daemonCertificatePEM: Data(),
-            routeLabel: label)
-    }
+// The screen view's adapter over the shared core's screen session. The
+// session itself (trust, the lease, recovery, superseded attempts, input
+// sequencing) is covered by the core's ScreenSessionTest; these pin what the
+// Mac sends and how it reads the slice back.
+
+@MainActor private func screenCommands(_ core: ScriptedCoreClient) -> [ClientScreenCommand] {
+    core.commands.compactMap { if case .screen(let screen)? = $0.command { screen } else { nil } }
 }
 
-@Test @MainActor func screenUnavailableHostOffersPermissionGuidanceWithoutStartingMedia() async {
-    let rpc = ScreenFixture(), controller = RemoteDesktopController()
-    rpc.capabilities.withLock {
-        $0.availability = .permissionRequired
-        $0.unavailableReason = "Run dieter daemon permissions on the host"
-    }
-    await controller.connect(machineName: "Host") { rpc.connection("fixture") }.value
-    #expect(controller.phase == .permissionRequired("Run dieter daemon permissions on the host"))
-    #expect(rpc.starts.withLock { $0 } == 0)
-    controller.disconnect()
-    rpc.capabilities.withLock {
-        $0.availability = .unsupported
-        $0.unavailableReason = "No graphical session"
-    }
-    await controller.connect(machineName: "Host") { rpc.connection("fixture") }.value
-    #expect(controller.phase == .unsupported("No graphical session"))
-    #expect(rpc.starts.withLock { $0 } == 0)
-    controller.disconnect()
+/// The action's case name, e.g. "pointer".
+private func actionName(_ action: ClientScreenCommand.OneOf_Action?) -> String {
+    guard let action else { return "" }
+    return String(String(describing: action).prefix { $0 != "(" })
 }
 
-@Test @MainActor func screenLeaseRenewalDoesNotWaitForTheMainActor() async throws {
-    let rpc = ScreenFixture()
-    let renewal = RemoteDesktopLeaseRenewal.start(rpc: rpc, sessionID: "owned-session", interval: .milliseconds(15)) {
-        _ in
+@Test @MainActor func screenConnectSendsPreferencesViewportAndMachineInOrder() async throws {
+    let core = ScriptedCoreClient()
+    let controller = RemoteDesktopController(core: core)
+    controller.setViewport(CGSize(width: 1280, height: 800), scale: 1)
+    controller.inputFocused = true
+    await controller.settle()
+    #expect(core.commands.isEmpty, "nothing reaches the core before a session is opened")
+
+    controller.connect(daemonID: "daemon-a", machineName: "Studio")
+    await controller.settle()
+    #expect(core.isObserved(.screen, scope: controller.scope))
+    let sent = screenCommands(core)
+    #expect(sent.allSatisfy { $0.scope == controller.scope })
+    guard sent.count == 3, case .preferences(let preferences)? = sent[0].action,
+        case .viewport(let viewport)? = sent[1].action, case .connect(let connect)? = sent[2].action
+    else {
+        Issue.record("unexpected commands: \(sent)")
+        return
     }
-    // Confirm the detached sender has been scheduled before measuring it while
-    // the main actor is blocked. Task startup latency is not part of the lease
-    // renewal invariant.
-    for _ in 0..<200 where rpc.leaseSignals.withLock({ $0.isEmpty }) {
-        try await Task.sleep(nanoseconds: 5_000_000)
-    }
-    try #require(rpc.leaseSignals.withLock { !$0.isEmpty })
-    rpc.leaseSignals.withLock { $0.removeAll() }
-    // Deliberately prevent the UI actor from executing. The sender must keep
-    // renewing independently, just like the native receiver feedback pump.
-    blockUIForLeaseRenewalTest()
-    #expect(rpc.leaseSignals.withLock { !$0.isEmpty })
-    #expect(
-        rpc.leaseSignals.withLock { signals in
-            signals.allSatisfy { signal in
-                guard case .leaseHeartbeat = signal.payload else { return false }
-                return signal.sessionID == "owned-session"
-            }
-        })
-    renewal.cancel(); await renewal.value
-    let count = rpc.leaseSignals.withLock { $0.count }
-    try await Task.sleep(nanoseconds: 50_000_000)
-    #expect(rpc.leaseSignals.withLock { $0.count } == count)
+    #expect(preferences.codec == .h264 && preferences.maxFps == 60 && preferences.clipboard)
+    #expect(viewport.widthPoints == 1280 && viewport.heightPoints == 800 && viewport.scale == 1)
+    #expect(connect.daemonID == "daemon-a")
+    #expect(controller.machineName == "Studio")
 }
 
-@MainActor private func blockUIForLeaseRenewalTest() {
-    Thread.sleep(forTimeInterval: 0.18)
-}
+@Test @MainActor func screenSliceFoldsPhaseControlCursorAndPreferences() throws {
+    let core = ScriptedCoreClient()
+    let controller = RemoteDesktopController(core: core)
+    controller.connect(daemonID: "daemon-a", machineName: "Studio")
+    var cursorChanges = 0
+    controller.onCursorChange = { cursorChanges += 1 }
 
-@Test func screenRecoveryContinuesWithBoundedFrequencyUntilDisconnected() {
-    var recovery = RemoteDesktopRecovery()
-    #expect(recovery.nextDelay(now: 0) == 0.25)
-    recovery.streaming(now: 1)
-    #expect(recovery.nextDelay(now: 2) == 0.5)
-    #expect(recovery.nextDelay(now: 3) == 1)
-    #expect(recovery.nextDelay(now: 4) == 2)
-    for now in 5..<1000 { #expect(recovery.nextDelay(now: Double(now)) <= 5) }
-    recovery.streaming(now: 5)
-    #expect(recovery.nextDelay(now: 16) == 0.25)
-    #expect(RemoteDesktopRecovery.retryableClosure("session lease expired"))
-    for reason in [
-        "native capture rendition stopped", "native daemon heartbeat expired",
-        "native capture helper unresponsive", "native capture helper stopped",
-    ] {
-        #expect(RemoteDesktopRecovery.retryableClosure(reason))
+    core.emit(.screen, scope: controller.scope) {
+        $0.screen = .with {
+            $0.phase = "permission_required"
+            $0.problem = "Grant Screen Recording on the host"
+        }
     }
-    #expect(!RemoteDesktopRecovery.retryableClosure("closed by client"))
-    #expect(!RemoteDesktopRecovery.retryableClosure("capture permission denied"))
-}
-private actor DelayedScreenRoute {
-    var continuation: CheckedContinuation<RemoteDesktopSignalingConnection, Never>?
-    func route() async -> RemoteDesktopSignalingConnection {
-        await withCheckedContinuation { continuation = $0 }
-    }
-    var waiting: Bool { continuation != nil }
-    func finish(_ connection: RemoteDesktopSignalingConnection) {
-        continuation?.resume(returning: connection); continuation = nil
-    }
-}
-@MainActor private func waitForSession(_ condition: () async -> Bool) async throws {
-    for _ in 0..<1_000 {
-        if await condition() { return }
-        try await Task.sleep(nanoseconds: 1_000_000)
-    }
-    throw CocoaError(.coderValueNotFound)
-}
-
-@Test @MainActor func screenDisconnectClosesALateRouteWithoutResurrectingSession() async throws {
-    let controller = RemoteDesktopController(), route = DelayedScreenRoute(), rpc = ScreenFixture()
-    let task = controller.connect(machineName: "A") { await route.route() }
-    try await waitForSession { await route.waiting }
-    controller.disconnect()
-    await route.finish(rpc.connection("late")); await task.value
-    #expect(controller.phase == .idle)
-    #expect(controller.routeLabel.isEmpty)
-    #expect(rpc.closed.withLock { $0 })
-}
-
-@Test @MainActor func screenTeardownWithClosedInputDoesNotFailRecursively() async {
-    let controller = RemoteDesktopController(), rpc = ScreenFixture()
-    await controller.connect(machineName: "Fixture") { rpc.connection("fixture") }.value
-    // The peer can close its data channel before the main actor observes it.
-    // Teardown still tries to release held keys, but that send is best effort.
-    controller.controlActive = true
-    controller.disconnect()
-    #expect(controller.phase == .idle)
+    #expect(controller.phase == .permissionRequired("Grant Screen Recording on the host"))
     #expect(controller.errorMessage == nil)
+
+    let image = NSImage(size: NSSize(width: 8, height: 8), flipped: false) { rect in
+        NSColor.red.setFill(); rect.fill(); return true
+    }
+    let png = try #require(
+        image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:))?.representation(using: .png, properties: [:]))
+    core.emit(.screen, scope: controller.scope) {
+        $0.screen = .with {
+            $0.phase = "streaming"
+            $0.active = true
+            $0.ready = true
+            $0.controlActive = true
+            $0.canTransferControl = true
+            $0.routeLabel = "Direct"
+            $0.capabilities = .with { $0.maxFps = 120; $0.platform = "darwin"; $0.clipboardSupported = true }
+            $0.state = .with { $0.codec = "H264"; $0.displayGeneration = 3; $0.controlActive = true }
+            $0.cursorImage = png
+            $0.cursorWidth = 16
+            $0.cursorHeight = 16
+            $0.cursorHotspotX = 2
+            $0.cursorHotspotY = 3
+            $0.cursorVisible = true
+            $0.cursorX = 0.25
+            $0.cursorY = 0.75
+            $0.clipboardEnabled = true
+            $0.preferences = .with { $0.codec = .auto; $0.maxFps = 90; $0.quality = .detail }
+            $0.displayStatus = "Matched: 1512 × 982"
+        }
+    }
+    #expect(controller.phase == .streaming)
+    #expect(controller.controlActive && controller.canTransferControl)
+    #expect(controller.controlUnavailableReason.isEmpty)
+    #expect(controller.routeLabel == "Direct")
+    #expect(controller.sessionState.displayGeneration == 3)
+    #expect(controller.availableFrameRates == [30, 60, 90, 120])
+    #expect(controller.remoteCursor.image.size == NSSize(width: 16, height: 16))
+    #expect(controller.remoteCursor.hotSpot == NSPoint(x: 2, y: 3))
+    #expect(controller.remoteCursorState == RemoteDesktopCursorState(visible: true, x: 0.25, y: 0.75))
+    #expect(controller.codecPreference == .auto && controller.preferredMaxFPS == 90 && controller.quality == .detail)
+    #expect(controller.displayMatchingStatus == "Matched: 1512 × 982")
+    #expect(cursorChanges >= 2)
+
+    // An unchanged cursor image is left out; the shape stays.
+    let shape = controller.remoteCursor
+    core.emit(.screen, scope: controller.scope) {
+        $0.screen = .with {
+            $0.phase = "streaming"
+            $0.active = true
+            $0.cursorImageUnchanged = true
+            $0.cursorVisible = true
+            $0.capabilities = .with { $0.platform = "linux" }
+        }
+    }
+    #expect(controller.remoteCursor === shape)
     #expect(!controller.controlActive)
-    #expect(rpc.closed.withLock { $0 })
-}
+    #expect(controller.controlUnavailableReason.contains("Linux desktop portal"))
 
-@Test @MainActor func screenSupersededSetupCannotDisconnectItsSuccessor() async throws {
-    let controller = RemoteDesktopController(), route = DelayedScreenRoute()
-    let old = ScreenFixture(), current = ScreenFixture()
-    let first = controller.connect(machineName: "A") { await route.route() }
-    try await waitForSession { await route.waiting }
-    let second = controller.connect(machineName: "B") { current.connection("B") }
-    await second.value
-    await route.finish(old.connection("A")); await first.value
-    #expect(controller.routeLabel == "B")
-    #expect(controller.machineName == "B")
-    #expect(old.closed.withLock { $0 })
-    #expect(!current.closed.withLock { $0 })
-    controller.disconnect()
-    #expect(current.closed.withLock { $0 })
-}
-
-private actor TerminalInputFixture: TerminalInputRPC {
-    var writes: [Data] = []
-    var continuation: CheckedContinuation<Dieter_V1_Terminal, Error>?
-    var waiting: Bool { continuation != nil }
-    func writeTerminal(id: String, data: Data) async throws -> Dieter_V1_Terminal {
-        writes.append(data)
-        return try await withCheckedThrowingContinuation { continuation = $0 }
+    core.emit(.screen, scope: controller.scope) {
+        $0.screen = .with {
+            $0.phase = "failed"
+            $0.problem = "The enrolled machine identity changed."
+        }
     }
-    func fail() { continuation?.resume(throwing: CocoaError(.fileWriteUnknown)); continuation = nil }
-    func finish() { continuation?.resume(returning: .init()); continuation = nil }
+    #expect(controller.phase == .failed("The enrolled machine identity changed."))
+    #expect(controller.errorMessage == "The enrolled machine identity changed.")
+    #expect(controller.mediaRouteLabel == "Negotiating media")
 }
 
-@Test @MainActor func terminalInputBoundsPendingAndInFlightBytesWithoutRetryingAmbiguousWrites() async throws {
-    let input = TerminalInputForwarder(byteLimit: 1_024), rpc = TerminalInputFixture()
-    var failures: [String] = []
-    input.enqueue(endpointID: "machine", id: "terminal", data: Data(repeating: 1, count: 1_000), rpc: rpc) {
-        failures.append($0)
+@Test @MainActor func screenInputMapsAppKitEventsToCoreCommands() async throws {
+    let core = ScriptedCoreClient()
+    let controller = RemoteDesktopController(core: core)
+    var activity = 0
+    controller.onUserActivity = { activity += 1 }
+    controller.connect(daemonID: "daemon-a", machineName: "Studio")
+    await controller.settle()
+    let opened = core.commands.count
+
+    // Pointer motion is dropped until the core reports control.
+    controller.sendPointerMove(x: 0.5, y: 0.5)
+    controller.releaseAllInput()
+    await controller.settle()
+    #expect(core.commands.count == opened)
+
+    core.emit(.screen, scope: controller.scope) {
+        $0.screen = .with {
+            $0.phase = "streaming"
+            $0.controlActive = true
+            $0.canTransferControl = true
+            $0.clipboardEnabled = true
+        }
     }
-    try await waitForSession { await rpc.waiting }
-    input.enqueue(endpointID: "machine", id: "terminal", data: Data(repeating: 2, count: 24), rpc: rpc) {
-        failures.append($0)
+    controller.sendPointerMove(x: 0.25, y: 0.75)
+    controller.sendPointerButton(.left, down: true, clickCount: 5, x: 0.25, y: 0.75, modifiers: [.command, .shift])
+    controller.sendScroll(
+        deltaX: 1.5, deltaY: -4.25, precise: true, modifiers: [.option], phase: [.began], momentumPhase: [.ended])
+    controller.sendKey(code: 0, down: true, repeat: true, modifiers: [.control, .capsLock])
+    controller.sendKey(code: 999, down: true, repeat: false, modifiers: [])
+    controller.sendText("héllo")
+    controller.releaseAllInput()
+    controller.transferControl(take: false)
+    #expect(controller.controlTransferPending)
+    controller.transferControl(take: true)
+    controller.performClipboard("copy")
+    controller.setDisplayMatchingTarget(.init(width: 1512, height: 982, scale: 2, refresh: 120))
+    controller.setDisplayMatchingTarget(nil)
+    controller.configure(quality: .motion, maxFPS: 500, refresh: true)
+    await controller.settle()
+
+    let sent = screenCommands(core).dropFirst(opened).map(\.action)
+    let expected: [String] = [
+        "pointer", "button", "scroll", "key", "text", "releaseInput", "control", "clipboard", "matchDisplay",
+        "matchDisplay", "preferences", "refresh",
+    ]
+    let names: [String] = sent.map(actionName)
+    #expect(names == expected)
+    guard case .pointer(let pointer)? = sent[0], case .button(let button)? = sent[1], case .scroll(let scroll)? = sent[2],
+        case .key(let key)? = sent[3], case .text(let text)? = sent[4], case .control(let control)? = sent[6],
+        case .clipboard(let clipboard)? = sent[7], case .matchDisplay(let match)? = sent[8],
+        case .matchDisplay(let stop)? = sent[9], case .preferences(let preferences)? = sent[10]
+    else {
+        Issue.record("unexpected commands: \(sent)")
+        return
     }
-    input.enqueue(endpointID: "machine", id: "terminal", data: Data([3]), rpc: rpc) { failures.append($0) }
-    #expect(input.pendingByteCount == 1_024)
-    #expect(failures.count == 1)
-    await rpc.fail()
-    try await waitForSession { input.pendingByteCount == 0 }
-    #expect(await rpc.writes.count == 1)
-    #expect(failures.count == 2)
+    #expect(pointer.x == 0.25 && pointer.y == 0.75)
+    #expect(button.button == .left && button.down && button.clicks == 3 && button.modifiers == 9)
+    #expect(scroll.dx == 1.5 && scroll.dy == -4.25 && scroll.precise && scroll.phase == 1 && scroll.momentum == 3)
+    #expect(scroll.modifiers == 4)
+    #expect(key.hid == 4 && key.down && key.repeat && key.modifiers == 18, "the A key is HID usage 4")
+    #expect(text.text == "héllo")
+    #expect(!control.on, "a transfer in flight is not repeated")
+    #expect(clipboard.operation == "copy")
+    #expect(match.width == 1512 && match.height == 982 && match.scale == 2 && match.refresh == 120)
+    #expect(stop.width == 0 && stop.height == 0, "an empty target stops matching")
+    #expect(preferences.quality == .motion && preferences.maxFps == 60, "the frame rate stays within the host's")
+    #expect(activity >= 8)
 }
 
-@Test @MainActor func terminalRouteReplacementDoesNotReplayOldInputOrClearNewPump() async throws {
-    let input = TerminalInputForwarder(), old = TerminalInputFixture(), new = TerminalInputFixture()
-    var failures: [String] = []
-    input.enqueue(endpointID: "machine", id: "terminal", data: Data([1]), rpc: old) { failures.append($0) }
-    try await waitForSession { await old.waiting }
-    input.suspend()
-    input.enqueue(endpointID: "machine", id: "terminal", data: Data([2]), rpc: new) { failures.append($0) }
-    try await waitForSession { await new.waiting }
-    await old.fail()
-    #expect(input.pendingByteCount == 1)
-    await new.finish()
-    try await waitForSession { input.pendingByteCount == 0 }
-    #expect(failures.isEmpty)
-    #expect(await new.writes == [Data([2])])
+@Test @MainActor func screenWakeResumesOnlyAnOpenSession() async throws {
+    let core = ScriptedCoreClient()
+    let controller = RemoteDesktopController(core: core)
+    let session = ScreenShareSession(
+        machineID: "origin#wake", daemonID: "wake", machineName: "Fixture", controller: controller,
+        monitorsInactivity: false)
+    session.configureInactivityTimeout(enabled: true, minutes: 1)
+    session.connect()
+    controller.phase = .streaming
+    func count(_ name: String) -> Int {
+        screenCommands(core).filter { actionName($0.action) == name }.count
+    }
+
+    NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.willSleepNotification, object: nil)
+    #expect(controller.systemSleeping)
+    #expect(!session.disconnectIfInactive(at: Date().addingTimeInterval(3600)))
+    NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+    await controller.settle()
+    #expect(!controller.systemSleeping)
+    #expect(count("sleep") == 1 && count("resume") == 1)
+
+    session.disconnect()
+    #expect(controller.phase == .idle)
+    NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+    await controller.settle()
+    #expect(count("resume") == 1, "a closed tab does not reopen on wake")
+    #expect(count("disconnect") == 1)
+
+    session.close()
+    await controller.settle()
+    #expect(!core.isObserved(.screen, scope: controller.scope), "closing the tab releases the core's screen")
 }
 
 @Test func callbackCancellationCompletesWithoutWaitingForNativeCallback() async throws {
@@ -234,28 +243,4 @@ private actor TerminalInputFixture: TerminalInputRPC {
     await #expect(throws: CancellationError.self) { try await task.value }
     // A native callback after cancellation is harmless and cannot resume twice.
     callback.withLock { $0 }?(.success(7))
-}
-
-@Test @MainActor func screenWakeNotificationReopensOnlyAnIntentionallyOpenTab() async throws {
-    let controller = RemoteDesktopController(), rpc = ScreenFixture()
-    let session = ScreenShareSession(
-        machineID: "wake", machineName: "Fixture", controller: controller, monitorsInactivity: false)
-    session.configureInactivityTimeout(enabled: true, minutes: 1)
-    var openings = 0
-    session.connect {
-        openings += 1; return rpc.connection("wake fixture")
-    }
-    try await waitForSession { openings == 1 }
-    NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.willSleepNotification, object: nil)
-    #expect(controller.systemSleeping)
-    #expect(!session.disconnectIfInactive(at: Date().addingTimeInterval(3600)))
-    NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
-    try await waitForSession { openings == 2 }
-    #expect(!controller.systemSleeping)
-    #expect(!session.disconnectIfInactive())
-    session.disconnect()
-    NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
-    try await Task.sleep(nanoseconds: 300_000_000)
-    #expect(openings == 2)
-    #expect(controller.phase == .idle)
 }

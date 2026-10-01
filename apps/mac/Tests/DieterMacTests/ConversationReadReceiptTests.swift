@@ -1,35 +1,13 @@
 import DieterAPI
 import Foundation
+import SharedCore
 import Testing
 @testable import DieterMac
 
-private actor ReceiptFixture: ConversationRPC {
-    var receipts: [Int64] = []
-    func markConversationRead(cardID: String, responseSeq: Int64) async throws -> Dieter_V1_Card {
-        receipts.append(responseSeq)
-        var card = Dieter_V1_Card()
-        card.id = cardID
-        card.scope = "chat"
-        card.responseSeq = responseSeq
-        card.responseMessageID = "reply"
-        card.seenResponseSeq = responseSeq
-        return card
-    }
-    func conversation(cardID: String, limit: Int32, before: Int32?) async throws -> Dieter_V1_ConversationSnapshot {
-        throw CancellationError()
-    }
-    func watchConversation(
-        cardID: String, after: Int64,
-        receive: @escaping @Sendable (Dieter_V1_ConversationUpdate) async -> Void
-    ) async throws {
-        throw CancellationError()
-    }
-}
-
 @Test @MainActor func readReceiptRequiresLoadedReplyAndCurrentSelection() async {
-    let rpc = ReceiptFixture()
+    let core = ScriptedCoreClient()
     let model = ConversationModel()
-    model.bind(client: rpc, endpointID: "machine")
+    model.core = core
     model.selectedChatID = "chat"
     var snapshot = Dieter_V1_ConversationSnapshot()
     snapshot.detail.card.id = "chat"
@@ -37,30 +15,30 @@ private actor ReceiptFixture: ConversationRPC {
     snapshot.detail.card.responseSeq = 40
     snapshot.detail.card.responseMessageID = "reply"
     model.conversation = snapshot
+    func receipts() -> [String] { core.commands.compactMap { if case .markCardRead(let read) = $0.command { read.cardID } else { nil } } }
     await model.markResponseSeen()
-    #expect(await rpc.receipts.isEmpty)
-    var reply = Dieter_V1_UiMessage()
-    reply.id = "reply"
-    reply.role = "assistant"
-    snapshot.conversation.messages = [reply]
-    model.conversation = snapshot
+    #expect(receipts().isEmpty)
+    snapshot.conversation.messages = [fixtureMessage("reply", role: "assistant")]
     // Directory metadata can announce completion before the final transcript frame arrives.
     snapshot.conversation.lastSeq = 39
     model.conversation = snapshot
     await model.markResponseSeen()
-    #expect(await rpc.receipts.isEmpty)
+    #expect(receipts().isEmpty)
     snapshot.conversation.lastSeq = 40
     model.conversation = snapshot
     model.browsingEarlierHistory = true
     await model.markResponseSeen()
-    #expect(await rpc.receipts.isEmpty)
+    #expect(receipts().isEmpty)
     model.browsingEarlierHistory = false
     model.selectedChatID = "other"
     await model.markResponseSeen()
-    #expect(await rpc.receipts.isEmpty)
+    #expect(receipts().isEmpty)
     model.selectedChatID = "chat"
     await model.markResponseSeen()
+    #expect(receipts() == ["chat"])
+    // The core confirms through the card; a seen reply is not sent again.
+    snapshot.detail.card.seenResponseSeq = 40
+    model.conversation = snapshot
     await model.markResponseSeen()
-    #expect(await rpc.receipts == [40])
-    #expect(model.conversation?.detail.card.seenResponseSeq == 40)
+    #expect(receipts() == ["chat"])
 }

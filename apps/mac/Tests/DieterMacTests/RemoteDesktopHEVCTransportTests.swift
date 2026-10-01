@@ -61,9 +61,9 @@ private func envRecovery(_ name: String) -> [String]? {
     let caps = try await rpc.remoteDesktopCapabilities()
     try #require(caps.codecModes.contains { $0.codec == "H265" })
     let frames = HEVCFrameCount()
-    let pump = RemoteDesktopFeedbackPump()
-    let references = RemoteDesktopReferenceReceiver { pump.acknowledge($0) }
-    defer { references.stop(); pump.stop() }
+    let pump = HEVCTransportFeedback()
+    let references = HEVCReferenceAcks { pump.acknowledge($0) }
+    defer { pump.stop() }
     let factory = RTCPeerConnectionFactory(
         encoderFactory: RTCDefaultVideoEncoderFactory(),
         decoderFactory: RemoteDesktopDecoderFactory(
@@ -242,14 +242,14 @@ private final class HEVCFrameCount: @unchecked Sendable {
     var count: Int { lock.lock(); defer { lock.unlock() }; return value }
 }
 @MainActor private final class HEVCTransportSignaling {
-    let pump: RemoteDesktopFeedbackPump
+    let pump: HEVCTransportFeedback
     let channel: RTCDataChannel?
     let peer: RTCPeerConnection, request: Dieter_V1_StartRemoteDesktopRequest, certificate: Data
     var binding: Dieter_V1_RemoteDesktopSessionBinding?, answer: String?, sessionID = "", codec = "", failure: String?
     var applied = false, candidates: [RTCIceCandidate] = []
     init(
         peer: RTCPeerConnection, request: Dieter_V1_StartRemoteDesktopRequest, certificate: Data,
-        pump: RemoteDesktopFeedbackPump, channel: RTCDataChannel?
+        pump: HEVCTransportFeedback, channel: RTCDataChannel?
     ) {
         self.pump = pump; self.channel = channel
         self.peer = peer; self.request = request; self.certificate = certificate
@@ -287,11 +287,11 @@ private final class HEVCFrameCount: @unchecked Sendable {
 private final class HEVCTransportDelegate: NSObject, RTCPeerConnectionDelegate, RTCDataChannelDelegate,
     @unchecked Sendable
 {
-    let references: RemoteDesktopReferenceReceiver
+    let references: HEVCReferenceAcks
     private let lock = NSLock()
     private var latest = Dieter_V1_RemoteDesktopSessionState()
     var state: Dieter_V1_RemoteDesktopSessionState { lock.withLock { latest } }
-    init(references: RemoteDesktopReferenceReceiver) { self.references = references }
+    init(references: HEVCReferenceAcks) { self.references = references }
     func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {}
     func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
         guard let event = try? Dieter_V1_RemoteDesktopHostEvent(serializedBytes: buffer.data) else { return }
@@ -317,5 +317,89 @@ private final class HEVCTransportDelegate: NSObject, RTCPeerConnectionDelegate, 
         _ peerConnection: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams: [RTCMediaStream]
     ) {
         (rtpReceiver.track as? RTCVideoTrack)?.add(sink)
+    }
+}
+
+// This proof drives the pinned WebRTC SDK directly, without the app or the
+// shared core, so it answers the host's feedback contract itself: periodic
+// receiver feedback carrying the references this decoder completed.
+private final class HEVCTransportFeedback: @unchecked Sendable {
+    private let lock = NSLock()
+    private let queue = DispatchQueue(label: "dieter.screen.hevc-transport-feedback")
+    private var timer: DispatchSourceTimer?
+    private var channel: RTCDataChannel?
+    private var feedback = Dieter_V1_RemoteDesktopReceiverFeedback()
+    private var references: [Dieter_V1_RemoteDesktopReference] = []
+    private var sequence: UInt64 = 0
+    private var measurement: UInt64 = 1
+
+    func start(channel: RTCDataChannel?, initial: Dieter_V1_RemoteDesktopReceiverFeedback) {
+        lock.withLock {
+            self.channel = channel
+            feedback = initial
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.schedule(deadline: .now(), repeating: .milliseconds(500))
+            timer.setEventHandler { [weak self] in self?.send() }
+            self.timer = timer
+            timer.resume()
+        }
+    }
+
+    func update(_ value: Dieter_V1_RemoteDesktopReceiverFeedback) {
+        lock.withLock { feedback = value; measurement &+= 1 }
+    }
+
+    func acknowledge(_ values: [Dieter_V1_RemoteDesktopReference]) {
+        lock.withLock { references = Array((references + values).suffix(8)) }
+        queue.async { [weak self] in self?.send() }
+    }
+
+    func stop() { lock.withLock { timer?.cancel(); timer = nil; channel = nil } }
+
+    private func send() {
+        lock.withLock {
+            guard let channel, channel.readyState == .open, channel.bufferedAmount < 16_384 else { return }
+            sequence &+= 1
+            var value = feedback
+            value.sequence = sequence
+            value.decodedReferences = references
+            value.measurementSequence = measurement
+            guard let raw = try? value.serializedData() else { return }
+            _ = channel.sendData(RTCDataBuffer(data: raw, isBinary: true))
+        }
+    }
+}
+
+/// Acknowledges a reference once its frame has decoded, in either order.
+private final class HEVCReferenceAcks: @unchecked Sendable {
+    private let lock = NSLock()
+    private var decodedTimestamps: [UInt32] = []
+    private var pending: [Dieter_V1_RemoteDesktopReference] = []
+    private let acknowledge: @Sendable ([Dieter_V1_RemoteDesktopReference]) -> Void
+
+    init(acknowledge: @escaping @Sendable ([Dieter_V1_RemoteDesktopReference]) -> Void) {
+        self.acknowledge = acknowledge
+    }
+
+    func decoded(timestamp: UInt32) {
+        let acked = lock.withLock { () -> [Dieter_V1_RemoteDesktopReference] in
+            decodedTimestamps = Array((decodedTimestamps + [timestamp]).suffix(128))
+            return deliver()
+        }
+        if !acked.isEmpty { acknowledge(acked) }
+    }
+
+    func expect(_ reference: Dieter_V1_RemoteDesktopReference) {
+        let acked = lock.withLock { () -> [Dieter_V1_RemoteDesktopReference] in
+            pending = Array((pending + [reference]).suffix(8))
+            return deliver()
+        }
+        if !acked.isEmpty { acknowledge(acked) }
+    }
+
+    private func deliver() -> [Dieter_V1_RemoteDesktopReference] {
+        let acked = pending.filter { decodedTimestamps.contains($0.rtpTimestamp) }
+        pending.removeAll { decodedTimestamps.contains($0.rtpTimestamp) }
+        return acked
     }
 }

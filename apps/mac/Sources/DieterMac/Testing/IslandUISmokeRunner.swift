@@ -8,13 +8,8 @@
         static func run(store: DieterStore, controller: DieterIslandController) async {
             let output = outputDirectory()
             try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-            // This fixture bypasses connect(), which normally waits for disk
-            // restoration before publishing state. Do not let restoration
-            // replace the synthetic cards after the first layout begins.
-            if let syncRestoreTask = store.connectionEffects.syncRestoreTask {
-                await syncRestoreTask.value
-                store.connectionEffects.syncRestoreTask = nil
-            }
+            // This fixture bypasses connect(), so the core never starts and
+            // cannot replace the synthetic cards after the first layout.
             installFixture(in: store)
 
             let defaults = DieterAppearance.applicationDefaults()

@@ -776,12 +776,10 @@ private struct ConversationWorkspaceTabView: View {
 
     private func currentExternalActions() -> FileExternalActions {
         let scope = tab.scope
-        let rpc = store.rpc
         let verifiedLocal =
-            active && tab.transportsLive && tab.files.isLive && store.phase.isConnected
+            active && tab.transportsLive && tab.files.isLive
             && scope?.target == tab.files.target && scope?.rootPath == tab.rootPath
-            && rpc != nil && rpc === scope?.client
-            && rpc?.endpoint.id == tab.files.target.endpointID && rpc?.isLoopbackDataPlane == true
+            && store.isLocalMachine(tab.files.target.endpointID)
         return FileExternalActions.resolve(
             verifiedLocal: verifiedLocal, rootPath: tab.rootPath,
             relativePath: tab.files.fileDocument?.path ?? "")

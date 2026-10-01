@@ -100,7 +100,7 @@ extension DieterStore {
     }
 
     var hasLoadedWorkspace: Bool {
-        !health.releaseVersion.isEmpty || !state.projects.isEmpty || !projectDirectory.isEmpty
+        coreWorkspace.loaded || !projectDirectory.isEmpty
     }
 
     func isChatUnread(_ card: Dieter_V1_Card) -> Bool {
@@ -108,35 +108,24 @@ extension DieterStore {
     }
 
     func isPendingCard(_ id: String) -> Bool { pendingCardIDs.contains(id) }
+    /// The conversation exists on its machine, not only in this Mac's outbox.
     func isConversationServerBacked(_ id: String) -> Bool {
-        guard DieterConversationID.isServerBacked(id) else { return false }
-        guard
-            let pending = outbox.entries.first(where: {
-                $0.kind != .sendMessage && DieterOutboxPolicy.conversationIDs(for: $0).contains(id)
-            })
-        else { return true }
-        return pending.serverID == id || publishedConversationIDs[pending.endpointID]?.contains(id) == true
+        DieterConversationID.isServerBacked(id) && !outboxState.pendingCardIds.contains(id)
     }
     func isPendingMessage(_ id: String) -> Bool { pendingMessageIDs.contains(id) }
     func isAcceptedOutboxItem(_ id: String) -> Bool { acceptedOutboxIDs.contains(id) }
     func isFailedOutboxItem(_ id: String) -> Bool { failedOutboxIDs.contains(id) }
     func failedCreationError(_ id: String) -> String? {
-        outbox.entries.first { entry in
-            DieterOutboxPolicy.conversationIDs(for: entry).contains(id) && entry.lastError != nil
-                && (entry.kind == .createCard || entry.kind == .createChat)
-        }?.lastError
+        guard outboxState.pendingCardIds.contains(id) else { return nil }
+        return outboxState.failures[id]
     }
 
     var failedOutboxItems: [DieterFailedOutboxItem] {
-        outbox.entries.compactMap { entry in
-            guard entry.state == .failed else { return nil }
-            return DieterFailedOutboxItem(
-                id: entry.serverID ?? entry.optimisticID,
-                operation: entry.kind.rawValue,
-                targetID: entry.serverID ?? entry.optimisticID,
-                failure: entry.lastError ?? "The queued operation failed.",
-                createdAt: entry.createdAt
-            )
+        outboxState.failedOperations.map { operation in
+            DieterFailedOutboxItem(
+                id: operation.id, operation: operation.label, targetID: operation.targetID,
+                failure: operation.failure,
+                createdAt: Date(timeIntervalSince1970: Double(operation.createdAtMillis) / 1_000))
         }
     }
 

@@ -9,21 +9,38 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 extension DieterStore {
+    /// Points the files at the project's chosen checkout, or a conversation's
+    /// workspace, on the machine that holds it; the core reaches that machine
+    /// whichever one is attached.
     func resetFileSurface() {
+        let checkout = fileScopeCardID == nil ? checkout(forProjectID: selectedProjectID) : nil
+        let machine: String
+        if let checkout {
+            machine = endpointID(forDaemon: checkout.daemonID)
+        } else if let card = fileScopeCardID, filesModel.target.conversationID == card {
+            // A conversation's files stay on the machine they were opened from.
+            machine = filesModel.target.endpointID
+        } else {
+            machine = endpoint.id
+        }
         filesModel.bind(
             target: WorkspaceTarget(
-                endpointID: endpoint.id,
-                projectID: selectedProjectID, conversationID: fileScopeCardID ?? "",
-                checkoutID: fileScopeCardID == nil ? (checkout(forProjectID: selectedProjectID)?.id ?? "") : ""),
-            client: rpc
+                endpointID: machine, projectID: selectedProjectID, conversationID: fileScopeCardID ?? "",
+                checkoutID: checkout?.id ?? ""),
+            core: core
         )
         filesModel.projectName = selectedProject?.name ?? "Project"
         filesModel.projectPath = selectedProject?.path ?? ""
-        filesModel.isLive = selectedProjectIsLive
+        filesModel.isLive = filesAreLive
+    }
+
+    /// Files can change while their machine is online.
+    var filesAreLive: Bool {
+        let machine = filesModel.target.endpointID
+        return selectedProjectIsLive || (phase.isConnected && endpoints.contains { $0.id == machine && $0.online })
     }
 
     @discardableResult func loadFiles(path: String? = nil) async -> Bool {
-        if fileScopeCardID == nil { guard await ensureCheckoutConnection(selectedProjectID) else { return false } }
         resetFileSurface()
         return await filesModel.loadFiles(path: path)
     }
@@ -44,34 +61,18 @@ extension DieterStore {
         resetFileSurface(); await filesModel.moveFile(source: source, destination: destination)
     }
 
+    /// Shows the selected project's schedules; the core reaches each
+    /// schedule's machine whichever machine is attached.
     func bindSchedules() {
-        schedulesModel.bind(
-            target: WorkspaceTarget(endpointID: endpoint.id, projectID: selectedProjectID),
-            reader: scheduleRPCOverride ?? rpc, writer: rpc
-        )
-        schedulesModel.isLive = selectedProjectIsLive
-        if scheduleRPCOverride != nil { schedulesModel.ownerConnection = nil; return }
-        schedulesModel.ownerConnection = { [weak self] ownerID, checkoutID in
-            guard let self else { throw CancellationError() }
-            let checkout =
-                self.projectDirectory[self.selectedProjectID]?.checkouts.first { $0.id == checkoutID }
-                ?? self.checkout(forProjectID: self.selectedProjectID)
-            let daemonID = ownerID.isEmpty ? checkout?.daemonID : ownerID
-            guard let daemonID, let machine = self.endpoints.first(where: { $0.daemonID == daemonID }), machine.online
-            else {
-                throw NSError(
-                    domain: "Schedule", code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Choose an online machine and checkout for this schedule."])
+        schedulesModel.bind(target: WorkspaceTarget(endpointID: endpoint.id, projectID: selectedProjectID), core: core)
+        schedulesModel.isLive = workspaceIsLive
+        schedulesModel.catalog = { [weak self] daemonID in
+            guard let self else { return nil }
+            if self.machineMetadata[daemonID]?.loaded != true {
+                _ = await self.perform { $0.ensureMetadata = .with { $0.daemonID = daemonID } }
+                _ = await self.awaitCore(timeout: .seconds(5)) { self.machineMetadata[daemonID]?.loaded == true }
             }
-            if machine.id == self.endpoint.id, let rpc = self.rpc {
-                return ScheduleOwnerConnection(
-                    reader: rpc, writer: rpc, detail: { try await rpc.schedule(id: $0) }, release: {},
-                    catalog: { try await rpc.harnesses() })
-            }
-            let lease = try await self.selectDirectoryDataPlane(for: machine)
-            return ScheduleOwnerConnection(
-                reader: lease.rpc, writer: lease.rpc, detail: { try await lease.rpc.schedule(id: $0) },
-                release: { lease.release() }, catalog: { try await lease.rpc.harnesses() })
+            return self.machineMetadata[daemonID].flatMap { $0.loaded ? $0.harnesses : nil }
         }
     }
 
@@ -92,7 +93,6 @@ extension DieterStore {
         bindSchedules(); await schedulesModel.loadScheduleRuns(for: id, appending: appending)
     }
     func loadMoreScheduleRuns() async { bindSchedules(); await schedulesModel.loadMoreScheduleRuns() }
-    func upsertLoadedSchedule(_ schedule: Dieter_V1_Schedule) { schedulesModel.upsertLoadedSchedule(schedule) }
     @discardableResult func saveSchedule(id: String?, draft: Dieter_V1_ScheduleDraft) async -> Bool {
         bindSchedules(); return await schedulesModel.saveSchedule(id: id, draft: draft)
     }
@@ -105,91 +105,95 @@ extension DieterStore {
     func deleteSchedule(_ schedule: Dieter_V1_Schedule) async {
         bindSchedules(); await schedulesModel.deleteSchedule(schedule)
     }
-    func previewSchedule(cron: String, timezone: String, count: Int32 = 5) async throws -> [String]? {
-        bindSchedules(); return try await schedulesModel.previewSchedule(cron: cron, timezone: timezone, count: count)
-    }
 
     func loadPromptSettings() async throws -> Dieter_V1_PromptSettings? {
-        guard let rpc else { return nil }
-        return try await rpc.promptSettings()
+        guard let daemonID = endpoint.daemonID else { return nil }
+        return try await administer { $0.promptSettings = .with { $0.daemonID = daemonID } }.promptSettings
     }
 
     func updatePromptSettings(_ value: Dieter_V1_PromptSettings) async throws -> Dieter_V1_PromptSettings? {
-        guard let rpc else { return nil }
-        var request = Dieter_V1_UpdatePromptSettingsRequest()
-        request.promptTemplate = value.promptTemplate
-        request.boardSkillTemplate = value.boardSkillTemplate
-        request.chatSkillTemplate = value.chatSkillTemplate
-        return try await rpc.updatePromptSettings(request)
+        guard let daemonID = endpoint.daemonID else { return nil }
+        return try await administer {
+            $0.updatePromptSettings = .with {
+                $0.daemonID = daemonID
+                $0.context = value.promptTemplate
+                $0.boardSkill = value.boardSkillTemplate
+                $0.chatSkill = value.chatSkillTemplate
+            }
+        }.promptSettings
     }
 
     @discardableResult
     func setSelectedProjectPromptTemplate(inherit: Bool, template: String) async throws -> Bool {
-        guard let rpc, let project = selectedProject else { return false }
-        var request = Dieter_V1_SetScopedPromptTemplateRequest()
-        request.scopeID = project.id
-        request.inherit = inherit
-        request.promptTemplate = template
-        acceptProject(try await rpc.setProjectPromptTemplate(request))
+        guard let project = selectedProject else { return false }
+        acceptProject(
+            try await administer {
+                $0.setProjectPrompt = .with {
+                    $0.scopeID = project.id
+                    if !inherit { $0.template = template }
+                }
+            }.project)
         return true
     }
 
     @discardableResult
     func setSelectedBoardPromptTemplate(inherit: Bool, template: String) async throws -> Bool {
-        guard let rpc, let board = selectedBoard else { return false }
-        var request = Dieter_V1_SetScopedPromptTemplateRequest()
-        request.scopeID = board.id
-        request.inherit = inherit
-        request.promptTemplate = template
-        acceptBoard(try await rpc.setBoardPromptTemplate(request))
+        guard let board = selectedBoard else { return false }
+        acceptBoard(
+            try await administer {
+                $0.setBoardPrompt = .with {
+                    $0.scopeID = board.id
+                    if !inherit { $0.template = template }
+                }
+            }.board)
         return true
     }
 
     @discardableResult
     func updatePromptInstructions(for label: Dieter_V1_Label, instructions: String) async throws -> Bool {
-        guard let rpc, let board = selectedBoard else { return false }
-        var request = Dieter_V1_UpdateBoardLabelRequest()
-        request.boardID = board.id
-        request.labelID = label.id
-        request.name = label.name
-        request.color = label.color
-        request.instructions = instructions
-        acceptBoard(try await rpc.updateBoardLabel(request))
+        guard let board = selectedBoard else { return false }
+        acceptBoard(
+            try await administer {
+                $0.updateLabel = .with {
+                    $0.boardID = board.id
+                    $0.labelID = label.id
+                    $0.name = label.name
+                    $0.color = label.color
+                    $0.instructions = instructions
+                }
+            }.board)
         return true
     }
 
     func previewPrompt(labelIDs: Set<String>) async throws -> Dieter_V1_PromptPreview? {
-        guard let rpc, let project = selectedProject else { return nil }
-        var request = Dieter_V1_PreviewPromptRequest()
-        request.projectID = project.id
-        request.boardID = selectedBoard?.id ?? ""
-        request.scope = request.boardID.isEmpty ? "chat" : "board"
-        request.labelIds = Array(labelIDs)
-        return try await rpc.previewPrompt(request)
+        guard let project = selectedProject else { return nil }
+        let boardID = selectedBoard?.id ?? ""
+        return try await administer {
+            $0.previewPrompt = .with {
+                $0.projectID = project.id
+                $0.boardID = boardID
+                $0.labelIds = Array(labelIDs)
+            }
+        }.promptPreview
+    }
+
+    /// The core posts notifications and reads this setting on every change.
+    var notificationsEnabled: Bool {
+        get { (environment.defaults.string(forKey: "notifications.enabled") ?? "true") == "true" }
+        set {
+            environment.defaults.set(newValue ? "true" : "false", forKey: "notifications.enabled")
+            environment.defaults.set(newValue, forKey: "DieterNotifications")
+        }
     }
 
     func requestNotifications() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
-    func notifyTransitions(_ cards: [Dieter_V1_Card], endpointID: String) {
-        for card in activityTransitions.accept(cards, endpointID: endpointID) {
-            notify(title: card.title, body: "Status changed to \(card.runtime)")
-        }
-    }
-
-    func notify(title: String, body: String) {
-        guard environment.defaults.bool(forKey: "DieterNotifications") else { return }
-        let content = UNMutableNotificationContent(); content.title = title; content.body = body;
-        content.sound = .default
-        UNUserNotificationCenter.current().add(
-            UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
-    }
-
     func show(_ error: Error) {
         guard !Self.isExpectedCancellation(error) else { return }
         if DieterRPCFailure.isTransient(error) {
-            guard phase.isConnected, rpc != nil else { return }
+            guard phase.isConnected else { return }
             // A single failed operation is not proof that the shared data plane
             // is dead. Stream supervisors and the transport runner own recovery;
             // this caller only reports its own unsuccessful operation. Ignore a

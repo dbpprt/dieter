@@ -64,14 +64,13 @@ struct WorkspaceDiffProjection: Sendable {
     var hunkDeltas: [Int: WorkspaceHunkDelta] = [:]
 
     static func build(
-        patch: String,
+        lines: [UnifiedDiffLine],
         path: String,
         commitSHA: String,
         split: Bool,
         comments: [Dieter_V1_ChangeComment]
     ) -> WorkspaceDiffProjection {
         MacPerformanceSignposts.measure("Diff projection", log: MacPerformanceSignposts.projection) {
-            let lines = UnifiedDiffParser.parse(patch)
             let fileRows = path.isEmpty && !commitSHA.isEmpty
             let rows =
                 split

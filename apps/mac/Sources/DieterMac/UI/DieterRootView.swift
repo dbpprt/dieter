@@ -139,10 +139,6 @@ struct DieterRootView: View {
                         ScreensView(
                             model: store.screensModel,
                             machines: store.machines, initialMachineID: store.endpoint.id,
-                            makeConnection: { [weak store] machineID in
-                                guard let store else { throw CancellationError() }
-                                return try await store.remoteDesktopConnection(machineID: machineID)
-                            },
                             showInDieter: { [weak store] in
                                 store?.section = .screens
                                 store?.reopenWorkspaceWindow()

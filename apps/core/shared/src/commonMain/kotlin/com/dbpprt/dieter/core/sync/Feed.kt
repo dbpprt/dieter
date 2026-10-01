@@ -137,6 +137,13 @@ class Feed(
     }
 
     /** Writes the applied projection and its cursor together, so a restart never pairs them wrongly. */
+    /** Drops unsaved changes: its cache is being removed and must not be written again. */
+    fun discard() {
+        persistJob?.cancel()
+        persistJob = null
+        dirty = false
+    }
+
     fun flush() {
         if (!dirty) return
         dirty = false

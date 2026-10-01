@@ -12,6 +12,7 @@ SWIFT_SCRATCH_PATH=${DIETER_SWIFT_SCRATCH_PATH:-$APP_ROOT/.build/dieter-local}
 python3 "$REPO_ROOT/scripts/mac_app_lifecycle.py" assert-stopped
 
 "$SCRIPT_DIR/sync-proto.sh" >&2
+"$SCRIPT_DIR/shared-framework.sh" "$CONFIGURATION" macos
 set --
 if [ -n "${DIETER_SWIFT_JOBS:-}" ]; then
     set -- --jobs "$DIETER_SWIFT_JOBS"

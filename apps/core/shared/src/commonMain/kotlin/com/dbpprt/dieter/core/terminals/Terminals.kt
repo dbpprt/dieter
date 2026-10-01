@@ -125,6 +125,12 @@ class Terminals(
         mutableView.value = TerminalsView(scope = target, active = view.value.active)
     }
 
+    /** Stops streaming and input when no view shows the surface any more; the shells keep running. */
+    fun stop() {
+        setActive(false)
+        bind(null)
+    }
+
     /** Foreground and visible: stream the selection. Otherwise only stop streaming. */
     fun setActive(active: Boolean) {
         mutableView.update { it.copy(active = active) }

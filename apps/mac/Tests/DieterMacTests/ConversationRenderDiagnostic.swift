@@ -63,13 +63,6 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
     #expect(shown.filter(\.isToolCallGroup).count == 2)
 }
 
-@Test func activeConversationKeepsAVisibleActivityPresentation() {
-    #expect(ConversationActivityPresentation.isActive(conversationStatus: "running", cardRuntime: "idle"))
-    #expect(ConversationActivityPresentation.isActive(conversationStatus: "idle", cardRuntime: "streaming"))
-    #expect(!ConversationActivityPresentation.isActive(conversationStatus: "idle", cardRuntime: "running-lane"))
-    #expect(ConversationActivityPresentation.liveLabel(messages: [], pendingTools: [], plans: []) == "Thinking…")
-}
-
 @Test @MainActor func conversationViewSettlesAfterUnrelatedMachineDirectoryInvalidation() {
     let store = DieterStore(restoreSync: false)
     var activeProject = Dieter_V1_Project()
@@ -173,45 +166,4 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
     if let output = ProcessInfo.processInfo.environment["DIETER_QUEUE_RENDER_OUTPUT"], !output.isEmpty {
         try png.write(to: URL(fileURLWithPath: output), options: .atomic)
     }
-}
-
-@Test func activityUsesPersistedTurnStartInsteadOfChangingRuntimeTimestamp() throws {
-    var user = Dieter_V1_UiMessage()
-    user.role = "user"
-    user.metadataJson = Data(#"{"createdAt":"2026-09-10T10:00:00Z"}"#.utf8)
-    let expected = ISO8601DateFormatter().date(from: "2026-09-10T10:00:00Z")
-    #expect(
-        ConversationActivityPresentation.turnStart(messages: [user], runtimeUpdatedAt: "2026-09-10T10:02:00Z")
-            == expected)
-    #expect(ConversationActivityPresentation.turnStart(messages: [], runtimeUpdatedAt: "invalid") == nil)
-}
-
-@Test func activityUsesLiveToolAndPlanWithThinkingFallback() {
-    var tool = Dieter_V1_PendingTool()
-    tool.toolName = "read_file"
-    tool.inputPreview = "Sources/app.swift"
-    #expect(
-        ConversationActivityPresentation.liveLabel(messages: [], pendingTools: [tool], plans: []) == "Reading app.swift"
-    )
-    var task = Dieter_V1_TaskPlanItem()
-    task.status = "in_progress"
-    task.activeForm = "Inspecting the tests"
-    var phase = Dieter_V1_TaskPlanPhase()
-    phase.tasks = [task]
-    var plan = Dieter_V1_TaskPlan()
-    plan.messageID = "assistant"
-    plan.state = "active"
-    plan.phases = [phase]
-    var assistant = Dieter_V1_UiMessage()
-    assistant.id = "assistant"
-    assistant.role = "assistant"
-    #expect(
-        ConversationActivityPresentation.liveLabel(messages: [assistant], pendingTools: [], plans: [plan])
-            == "Inspecting the tests")
-    task.status = "completed"
-    phase.tasks = [task]
-    plan.phases = [phase]
-    #expect(
-        ConversationActivityPresentation.liveLabel(messages: [assistant], pendingTools: [], plans: [plan])
-            == "Thinking…")
 }

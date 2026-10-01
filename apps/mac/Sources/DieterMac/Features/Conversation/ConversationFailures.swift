@@ -49,7 +49,7 @@ struct TurnFailureBanner: View {
                 .buttonStyle(.borderedProminent)
                 .tint(DieterTheme.elevated)
                 .foregroundStyle(DieterTheme.text)
-                .disabled(retrying || failure.retryParts.isEmpty)
+                .disabled(retrying || !failure.retryable)
                 .accessibilityIdentifier("conversation.failure.retry")
             }
         }

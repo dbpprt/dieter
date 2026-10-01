@@ -24,18 +24,17 @@
         static func run(store: DieterStore) async {
             let output = outputDirectory()
             try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-            // Let the store's normal disk projection restoration finish, then replace
-            // it with a deterministic UI-only workspace for this smoke process.
+            // Shared navigation needs an account, so the core connects to the
+            // isolated gateway: layout edits reach its machine and come back on
+            // relaunch. The fixture's workspace and machines replace what the
+            // core would show; navigation keeps folding live.
+            store.coreFoldsHeld = true
+            await store.startCore()
+            _ = await store.awaitCore(timeout: .seconds(30)) { store.session.phase == .connected }
+            _ = await store.awaitCore(timeout: .seconds(10)) { store.navigationCaughtUp }
             try? await DieterTaskSleep.seconds(1)
             seed(store)
             try? "seeded".write(to: output.appending(path: "progress.txt"), atomically: true, encoding: .utf8)
-            // This suite deliberately uses an offline account fixture. Its
-            // restart assertions exercise the durable client outbox/cache.
-            store.environment.defaults.set("sidebar-fixture", forKey: "DieterSharedKV.activeAccount")
-            store.sharedNavigation = SharedKV(
-                defaults: store.environment.defaults,
-                root: store.syncPersistence.fileURL.deletingLastPathComponent().appending(path: "shared-kv"))
-            store.bindSharedNavigation(); store.applySharedNavigation()
             try? await DieterTaskSleep.milliseconds(700)
 
             guard

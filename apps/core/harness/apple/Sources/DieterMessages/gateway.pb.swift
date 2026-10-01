@@ -1,1 +1,0 @@
-../../../../../mac/Sources/DieterAPI/Generated/gateway.pb.swift

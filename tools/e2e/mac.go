@@ -26,8 +26,10 @@ func validateMacNative(n Native, fixture string) error {
 	if !slices.Contains(macSuites, n.Suite) || n.Class != "" || len(n.Methods) != 0 || len(n.Checks) == 0 || len(n.Checks) > 2048 {
 		return fmt.Errorf("Mac native requires a known suite and explicit checks")
 	}
+	// The sidebar needs an account for shared navigation, so only the Island
+	// runs without a gateway.
 	expectedFixture := "gateway"
-	if n.Suite == "sidebar" || n.Suite == "island" {
+	if n.Suite == "island" {
 		expectedFixture = "none"
 	}
 	if fixture != expectedFixture {

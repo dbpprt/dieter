@@ -52,14 +52,10 @@ struct ScreenShareViewTests {
             #expect(surface.controller === session.controller)
             #expect(surface.renderer === session.controller.renderer)
             #expect(session.controller.renderer.superview === surface)
-            #expect(session.controller.clipboardVisible)
-            #expect(session.controller.clipboardWindow === fixture.window)
             #expect(fixture.model.connectedCount == 2)
             if let previous, previous !== session {
                 #expect(previousSurface?.window == nil)
                 #expect(!previous.controller.inputFocused)
-                #expect(!previous.controller.clipboardVisible)
-                #expect(previous.controller.clipboardWindow == nil)
             }
         }
 
@@ -83,7 +79,6 @@ struct ScreenShareViewTests {
         #expect(fixture.first.videoSurface === surface)
         #expect(surface.window === viewer.window)
         #expect(surface.renderer === fixture.first.controller.renderer)
-        #expect(fixture.first.controller.clipboardWindow === viewer.window)
         fixture.model.undock(fixture.first.id, fullScreen: false)
         #expect(fixture.model.detachedWindows.count == 1)
         fixture.model.selectSession(fixture.second.id)
@@ -95,7 +90,6 @@ struct ScreenShareViewTests {
         #expect(fixture.model.detachedWindows.isEmpty)
         #expect(!fixture.first.isDetached)
         #expect(fixture.surface === surface)
-        #expect(fixture.first.controller.clipboardWindow === fixture.window)
         #expect(fixture.first.controller.phase == .streaming)
         #expect(fixture.second.controller.phase == .streaming)
         fixture.model.undock(fixture.first.id, fullScreen: false)
@@ -140,7 +134,6 @@ struct ScreenShareViewTests {
                 charactersIgnoringModifiers: "f", isARepeat: false, keyCode: 3))
         #expect(surface.performKeyEquivalent(with: event))
         #expect(toggled, "View-only mode must not send the shortcut to the main app's fullscreen menu")
-        #expect(fixture.first.controller.eventOrdinal == 0)
     }
 }
 
@@ -169,9 +162,7 @@ private final class ScreenShareViewFixture {
         first.controller.phase = .streaming
         second.controller.phase = .streaming
         let host = NSHostingView(
-            rootView: ScreensView(
-                model: model, machines: [], initialMachineID: "alpha",
-                makeConnection: { _ in throw CancellationError() }))
+            rootView: ScreensView(model: model, machines: [], initialMachineID: "alpha"))
         host.sizingOptions = []
         root = host
         window = NSWindow(

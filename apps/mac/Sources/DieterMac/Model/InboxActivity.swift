@@ -2,7 +2,7 @@ import DieterAPI
 import DieterCore
 import Foundation
 
-/// Mirrors Android ActivityModel: one latest activity per conversation, not a run history.
+/// One latest activity per conversation, not a run history; the shared core classifies it.
 enum InboxActivityKind: Int, Equatable {
     case running, answer, unread, review, failed, recent
 
@@ -31,12 +31,6 @@ struct InboxActivityEntry: Identifiable, Equatable {
     var canFinish: Bool { card.scope != "chat" && card.lane == "review" && !running && kind != .answer }
 }
 
-struct InboxActivityDetail: Equatable {
-    let runtimeUpdatedAt: String
-    let start: Date?
-    let label: String
-}
-
 struct InboxActivityInterval: Identifiable {
     let entry: InboxActivityEntry
     let from: Double
@@ -46,76 +40,6 @@ struct InboxActivityInterval: Identifiable {
 }
 
 enum InboxActivity {
-    static func entries(
-        cards: [Dieter_V1_Card], details: [String: InboxActivityDetail] = [:], excludedIDs: Set<String> = []
-    ) -> [InboxActivityEntry] {
-        var freshest: [String: (card: Dieter_V1_Card, date: Date)] = [:]
-        for card in cards where !card.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let date =
-                [card.updatedAt, card.runtimeUpdatedAt, card.lastActivityAt]
-                .compactMap(DieterTimestamp.date(from:)).max() ?? .distantPast
-            // Equal timestamps prefer the later source (selected-project optimistic metadata).
-            if freshest[card.id].map({ date >= $0.date }) ?? true { freshest[card.id] = (card, date) }
-        }
-        return freshest.values.compactMap { value -> InboxActivityEntry? in
-            let card = value.card
-            guard !card.archived, !excludedIDs.contains(card.id) else { return nil }
-            let runtime = card.runtime.lowercased()
-            let active = ConversationActivityPresentation.isActive(conversationStatus: "", cardRuntime: runtime)
-            let kind: InboxActivityKind
-            if runtime == "waiting_for_user" {
-                kind = .answer
-            } else if active {
-                kind = .running
-            } else if card.responseSeq > card.seenResponseSeq {
-                kind = .unread
-            } else if card.scope != "chat", card.lane == "review" {
-                kind = .review
-            } else if runtime == "failed" {
-                kind = .failed
-            } else if !runtime.isEmpty, runtime != "pending", !card.initialPromptSentAt.isEmpty,
-                !card.runtimeUpdatedAt.isEmpty
-            {
-                kind = .recent
-            } else {
-                return nil
-            }
-            let at =
-                DieterTimestamp.date(from: card.runtimeUpdatedAt)
-                ?? DieterTimestamp.date(from: card.lastActivityAt)
-                ?? DieterTimestamp.date(from: card.phaseChangedAt)
-            let cached = details[card.id].flatMap { $0.runtimeUpdatedAt == card.runtimeUpdatedAt ? $0 : nil }
-            let recordedStart = cached?.start.flatMap { start in at.map { start <= $0 ? start : nil } ?? nil }
-            let start = recordedStart ?? (active ? DieterTimestamp.date(from: card.runtimeUpdatedAt) : nil)
-            let detail: String
-            if runtime == "cancelling" {
-                detail = "Stopping…"
-            } else if active {
-                if let label = cached?.label, !label.isEmpty {
-                    detail = label
-                } else {
-                    detail = card.summary.isEmpty ? "Working on your request" : card.summary
-                }
-            } else if kind == .unread {
-                detail = "New reply"
-            } else if kind == .answer {
-                detail = "Waiting for your answer"
-            } else if kind == .review {
-                detail = "Ready for review"
-            } else if kind == .failed {
-                detail = "Agent failed"
-            } else if ["cancelled", "canceled", "stopped", "interrupted"].contains(runtime) {
-                detail = "Stopped"
-            } else {
-                detail = card.scope == "chat" ? "Replied" : "Finished"
-            }
-            return InboxActivityEntry(card: card, kind: kind, at: at, start: start, detail: detail)
-        }.sorted {
-            if $0.at != $1.at { return ($0.at ?? .distantPast) > ($1.at ?? .distantPast) }
-            return $0.id < $1.id
-        }
-    }
-
     static func timeline(entries: [InboxActivityEntry], now: Date, hours: Int) -> [InboxActivityInterval] {
         precondition([1, 6, 24].contains(hours))
         let duration = Double(hours * 3600)
@@ -143,69 +67,29 @@ enum InboxActivity {
     }
 }
 
-/// Only the already bounded in-memory snapshot cache is inspected. No transcript
-/// fetches, disk decoding, or history pages are performed by the Inbox.
-@MainActor
-final class InboxActivityProjection {
-    private var snapshots: [String: Dieter_V1_ConversationSnapshot] = [:]
-    private var details: [String: InboxActivityDetail] = [:]
-    private var cards: [Dieter_V1_Card] = []
-    private var excludedIDs: Set<String> = []
-    private var omittedMessageIDs: Set<String> = []
-    private var showReasoning = true
-    private var projected: [InboxActivityEntry] = []
-
-    func resolve(
-        cards nextCards: [Dieter_V1_Card], snapshots incoming: [Dieter_V1_ConversationSnapshot],
-        excludedIDs nextExcludedIDs: Set<String>, omittedMessageIDs nextOmittedMessageIDs: Set<String>,
-        showReasoning nextShowReasoning: Bool
-    ) -> [InboxActivityEntry] {
-        var nextSnapshots: [String: Dieter_V1_ConversationSnapshot] = [:]
-        for snapshot in incoming.suffix(cachedConversationLimit + 1) where !snapshot.detail.card.id.isEmpty {
-            nextSnapshots[snapshot.detail.card.id] = snapshot
+extension InboxActivityKind {
+    /// The core's activity kind, by name.
+    init?(core name: String) {
+        switch name {
+        case "ANSWER": self = .answer
+        case "RUNNING": self = .running
+        case "UNREAD": self = .unread
+        case "REVIEW": self = .review
+        case "FAILED": self = .failed
+        case "RECENT": self = .recent
+        default: return nil
         }
-        let preferencesChanged = showReasoning != nextShowReasoning || omittedMessageIDs != nextOmittedMessageIDs
-        var nextDetails: [String: InboxActivityDetail] = [:]
-        for (id, snapshot) in nextSnapshots {
-            if !preferencesChanged, snapshots[id] == snapshot, let detail = details[id] {
-                nextDetails[id] = detail
-                continue
-            }
-            let conversation = snapshot.conversation
-            let queuedIDs = Set(conversation.queue.map(\.id)).union(nextOmittedMessageIDs)
-            let messages = conversation.messages.filter { !queuedIDs.contains($0.id) }
-            nextDetails[id] = InboxActivityDetail(
-                runtimeUpdatedAt: snapshot.detail.card.runtimeUpdatedAt,
-                start: ConversationActivityPresentation.turnStart(messages: messages, runtimeUpdatedAt: ""),
-                label: ConversationActivityPresentation.liveLabel(
-                    messages: messages, pendingTools: conversation.pendingTools, plans: conversation.taskPlans,
-                    showReasoning: nextShowReasoning, conversationStatus: conversation.status,
-                    cardRuntime: snapshot.detail.card.runtime, providerStatus: conversation.activeProviderStatus))
-        }
-        snapshots = nextSnapshots
-        omittedMessageIDs = nextOmittedMessageIDs
-        showReasoning = nextShowReasoning
-        if cards != nextCards || details != nextDetails || excludedIDs != nextExcludedIDs {
-            cards = nextCards
-            details = nextDetails
-            excludedIDs = nextExcludedIDs
-            projected = InboxActivity.entries(cards: nextCards, details: nextDetails, excludedIDs: nextExcludedIDs)
-        }
-        return projected
     }
 }
 
 extension DieterStore {
+    /// One latest activity per conversation, as the shared core classifies it.
     var inboxEntries: [InboxActivityEntry] {
-        // Read the reconciled directory once. Combining independent timestamp-
-        // selected copies here can undo causal merges or optimistic Finish.
-        let directoryCards = navigationCards.keys.sorted().flatMap { navigationCards[$0] ?? [] } + chats
-        let known = Set(directoryCards.map(\.id))
-        let cards = directoryCards + (state.cards + state.chats).filter { !known.contains($0.id) }
-        var snapshots = syncSnapshot?.conversations ?? []
-        if let conversation { snapshots.append(conversation) }
-        return inboxActivityProjection.resolve(
-            cards: cards, snapshots: snapshots, excludedIDs: pendingCardIDs,
-            omittedMessageIDs: pendingMessageIDs.union(failedOutboxIDs), showReasoning: showReasoning)
+        activityRows.compactMap { row in
+            guard let kind = InboxActivityKind(core: row.kind) else { return nil }
+            func date(_ millis: Int64) -> Date? { millis > 0 ? Date(timeIntervalSince1970: Double(millis) / 1_000) : nil }
+            return InboxActivityEntry(
+                card: row.card, kind: kind, at: date(row.atMillis), start: date(row.startedAtMillis), detail: row.detail)
+        }
     }
 }

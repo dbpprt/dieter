@@ -2,7 +2,11 @@ import DieterAPI
 import DieterCore
 import Foundation
 import Observation
+import SharedCore
 
+/// A conversation workspace's review, kept by the shared core on the machine
+/// that owns the conversation: changes, diffs, comments, Git operations, and
+/// the merge flow. An active review refreshes itself.
 @MainActor @Observable
 final class WorktreeChangesModel {
     private(set) var target = WorkspaceTarget(endpointID: "", projectID: "")
@@ -12,6 +16,8 @@ final class WorktreeChangesModel {
     var conversationWorkspace: Dieter_V1_Workspace?
     var conversationChangeset: Dieter_V1_Changeset?
     var conversationDiff: Dieter_V1_FileDiff?
+    /// The diff's lines as the core numbers them; comments attach to one.
+    var diffLines: [UnifiedDiffLine] = []
     var conversationChangeComments: [Dieter_V1_ChangeComment] = []
     var conversationSCMCapabilities: Dieter_V1_SCMCapabilities?
     var gitOperation: Dieter_V1_GitOperation?
@@ -25,24 +31,34 @@ final class WorktreeChangesModel {
     var conversationDiffLoading = false
     var gitOperationSubmitting = false
     var gitOperationNeedsReconciliation = false
-    var gitReconciliationGeneration: UInt64 = 0
-    var gitOperationSubmissionID: UUID?
-    @ObservationIgnored var workspaceRequestGeneration: UInt64 = 0
-    @ObservationIgnored var diffRequestGeneration: UInt64 = 0
-    @ObservationIgnored var workspaceRefreshTask: Task<Void, Never>?
-    @ObservationIgnored var workspaceRefreshAgain = false
-    @ObservationIgnored var gitOperationTask: Task<Void, Never>?
+    /// What the workspace allows now, as the core decides it.
+    private(set) var availability = WorkspaceActionAvailability()
+    /// A cleanup, discard, or adopt removed the workspace here.
+    private(set) var surfaceRemoved = false
+    /// Visible and foregrounded: the core refreshes the review periodically.
+    var active = false {
+        didSet {
+            guard active != oldValue else { return }
+            let on = active
+            send { $0.active = .with { $0.on = on } }
+        }
+    }
     @ObservationIgnored var workspaceToastTask: Task<Void, Never>?
-    @ObservationIgnored private var rpc: (any WorktreeRPC)?
     private(set) var bindingGeneration: UInt64 = 0
     @ObservationIgnored var onCard: @MainActor (Dieter_V1_Card) -> Void = { _ in }
-    @ObservationIgnored var onTransportFailure: @MainActor (Error, any WorktreeRPC) -> Void = { _, _ in }
     @ObservationIgnored var onOperationFinished: @MainActor (WorkspaceTarget) async -> Void = { _ in }
     @ObservationIgnored var onOpenFiles: @MainActor (Dieter_V1_Card, String?) async -> Void = { _, _ in }
     @ObservationIgnored var onOpenTerminal: @MainActor (Dieter_V1_Card) async -> Void = { _ in }
     @ObservationIgnored var onSendMessage: @MainActor (String, Dieter_V1_Card, WorkspaceTarget) async -> Bool = {
         _, _, _ in false
     }
+    @ObservationIgnored private var core: CoreClient?
+    @ObservationIgnored private let scope = "review-\(UUID().uuidString)"
+    @ObservationIgnored private var subscription: SliceSubscription?
+    /// What the core was last told to review; slices for another are stale.
+    @ObservationIgnored private var bound = ClientReviewTarget()
+    @ObservationIgnored private var queued: Task<Void, Never>?
+    @ObservationIgnored private var shownToast = ""
 
     func openWorkspaceFiles(card: Dieter_V1_Card, opening path: String? = nil) async { await onOpenFiles(card, path) }
     func openWorkspaceTerminal(card: Dieter_V1_Card) async { await onOpenTerminal(card) }
@@ -50,252 +66,197 @@ final class WorktreeChangesModel {
         guard let card else { return false }
         let binding = bindingGeneration
         let sent = await onSendMessage(text, card, target)
-        return owns(binding) && sent
+        return binding == bindingGeneration && sent
     }
 
-    private var cardID: String? { target.conversationID.isEmpty ? nil : target.conversationID }
-
-    func bind(target: WorkspaceTarget, client: (any WorktreeRPC)?, card: Dieter_V1_Card?, doneLaneID: String?) {
-        if self.target != target || rpc !== client {
-            resetWorkspaceSurface()
-            self.target = target; rpc = client
+    /// Reviews `target`'s conversation through `core`; a conversation not yet
+    /// on its machine has nothing to review.
+    func bind(target: WorkspaceTarget, core: CoreClient?, card: Dieter_V1_Card?, doneLaneID: String?) {
+        if subscription == nil, let core {
+            self.core = core
+            subscription = SliceSubscription(client: core, slice: .review, scope: scope) { [weak self] update in
+                guard let self, case .review(let slice) = update.value else { return }
+                self.fold(slice)
+            }
         }
-        self.card = card; self.doneLaneID = doneLaneID
+        self.card = card
+        self.doneLaneID = doneLaneID
+        guard self.target != target else { return }
+        self.target = target
+        resetWorkspaceSurface()
+        let id = target.conversationID
+        bound = ClientReviewTarget.with {
+            $0.cardID = DieterConversationID.isServerBacked(id) ? id : ""
+            $0.daemonID = target.daemonID
+        }
+        let review = bound, on = active
+        send { $0.bind = review }
+        send { $0.active = .with { $0.on = on } }
     }
 
-    private func owns(_ binding: UInt64) -> Bool { binding == bindingGeneration && !Task.isCancelled }
-    private func acceptWorkspaceCard(_ card: Dieter_V1_Card) {
-        if self.card?.id == card.id { self.card = card }
-        onCard(card)
-    }
-
+    /// Clears what the view shows until the core reports the new workspace.
     func resetWorkspaceSurface() {
         bindingGeneration &+= 1
-        gitOperationTask?.cancel(); gitOperationTask = nil
         workspaceToastTask?.cancel(); workspaceToastTask = nil
-        workspaceToast = nil; mergeFlowStep = nil
-        workspaceRequestGeneration &+= 1; diffRequestGeneration &+= 1
-        workspaceRefreshTask?.cancel(); workspaceRefreshTask = nil; workspaceRefreshAgain = false
-        conversationDiffLoading = false
-        gitOperationSubmitting = false
-        gitOperationNeedsReconciliation = false
-        gitReconciliationGeneration &+= 1
-        gitOperationSubmissionID = nil
-        conversationWorkspace = nil
-        conversationChangeset = nil
-        conversationDiff = nil
-        conversationChangeComments = []
-        conversationSCMCapabilities = nil
-        gitOperation = nil
-        gitOperationLogs = []
-        workspaceLoading = false
-        workspaceError = nil
-        selectedChangePath = ""
-        selectedCommitSHA = ""
+        workspaceToast = nil; mergeFlowStep = nil; shownToast = ""
+        conversationWorkspace = nil; conversationChangeset = nil; conversationDiff = nil; diffLines = []
+        conversationChangeComments = []; conversationSCMCapabilities = nil
+        gitOperation = nil; gitOperationLogs = []
+        workspaceLoading = false; workspaceError = nil; conversationDiffLoading = false
+        gitOperationSubmitting = false; gitOperationNeedsReconciliation = false
+        selectedChangePath = ""; selectedCommitSHA = ""
+        availability = WorkspaceActionAvailability(); surfaceRemoved = false
     }
 
-    func loadWorkspaceSurface() async {
-        if let workspaceRefreshTask {
-            workspaceRefreshAgain = true
-            await workspaceRefreshTask.value
-            return
+    private func fold(_ slice: ClientReviewSlice) {
+        guard slice.cardID == bound.cardID, slice.daemonID == bound.daemonID else { return }
+        let workspace = slice.hasWorkspace ? slice.workspace : nil
+        if conversationWorkspace != workspace { conversationWorkspace = workspace }
+        let changeset = slice.hasChangeset ? slice.changeset : nil
+        if conversationChangeset != changeset { conversationChangeset = changeset }
+        let scm = slice.hasScm ? slice.scm : nil
+        if conversationSCMCapabilities != scm { conversationSCMCapabilities = scm }
+        if conversationChangeComments != slice.comments { conversationChangeComments = slice.comments }
+        if workspaceLoading != slice.loading { workspaceLoading = slice.loading }
+        let error = slice.error.isEmpty ? nil : slice.error
+        if workspaceError != error { workspaceError = error }
+        if selectedChangePath != slice.selectedPath { selectedChangePath = slice.selectedPath }
+        if selectedCommitSHA != slice.selectedCommit { selectedCommitSHA = slice.selectedCommit }
+        let diff = slice.hasDiff ? slice.diff : nil
+        if conversationDiff != diff { conversationDiff = diff }
+        let lines = slice.diffRows.map(UnifiedDiffLine.init)
+        if diffLines != lines { diffLines = lines }
+        if conversationDiffLoading != slice.diffLoading { conversationDiffLoading = slice.diffLoading }
+        let previous = gitOperation
+        let operation = slice.hasOperation ? slice.operation : nil
+        if gitOperation != operation { gitOperation = operation }
+        if gitOperationLogs != slice.logs { gitOperationLogs = slice.logs }
+        if gitOperationSubmitting != slice.submitting { gitOperationSubmitting = slice.submitting }
+        if gitOperationNeedsReconciliation != slice.needsReconciliation {
+            gitOperationNeedsReconciliation = slice.needsReconciliation
         }
-        guard let rpc, let cardID = self.cardID,
-            DieterConversationID.isServerBacked(cardID)
-        else { return }
-        workspaceRequestGeneration &+= 1
-        let generation = workspaceRequestGeneration
-        workspaceLoading = true
-        let task = Task { [weak self] in
-            guard let self else { return }
-            defer {
-                if self.workspaceRequestGeneration == generation {
-                    self.workspaceLoading = false
-                    self.workspaceRefreshTask = nil
-                }
-            }
-            repeat {
-                self.workspaceRefreshAgain = false
-                await self.readWorkspaceSurface(rpc: rpc, cardID: cardID, generation: generation)
-            } while self.workspaceRefreshAgain && self.workspaceRequestGeneration == generation && !Task.isCancelled
+        if surfaceRemoved != slice.surfaceRemoved { surfaceRemoved = slice.surfaceRemoved }
+        let step = WorkspaceMergeStep(rawValue: slice.mergeStep)
+        if mergeFlowStep != step { mergeFlowStep = step }
+        let next = slice.hasAvailability ? WorkspaceActionAvailability(slice.availability) : WorkspaceActionAvailability()
+        if availability != next { availability = next }
+        if !slice.toast.isEmpty, slice.toast != shownToast {
+            shownToast = slice.toast
+            showWorkspaceToast(slice.toast)
+            send { $0.clearToast_p = ClientReviewStep() }
         }
-        workspaceRefreshTask = task
-        await task.value
+        // A finished operation can change the project's workspaces and board.
+        if let previous, let operation, previous.id == operation.id,
+            GitOperationStatus.active(previous.status), GitOperationStatus.terminal(operation.status)
+        {
+            let target = target
+            Task { await onOperationFinished(target) }
+        }
     }
 
-    private func readWorkspaceSurface(rpc: any WorktreeRPC, cardID: String, generation: UInt64) async {
-        let reconciliationGeneration = gitReconciliationGeneration
-        func ownsRequest() -> Bool {
-            !Task.isCancelled && self.rpc === rpc && workspaceRequestGeneration == generation
-                && (self.cardID) == cardID
+    /// Sends a command without waiting for it, after those sent before.
+    private func send(_ build: @escaping (inout ClientReviewCommand) -> Void) {
+        guard core != nil else { return }
+        let previous = queued
+        queued = Task { [weak self] in
+            await previous?.value
+            await self?.run(afterQueued: false, build)
         }
+    }
+
+    /// Runs a review command and folds the review it returns; a failure
+    /// shows as the workspace error.
+    @discardableResult
+    private func run(
+        afterQueued: Bool = true, _ build: (inout ClientReviewCommand) -> Void
+    ) async -> ClientResult? {
+        guard let core else { return nil }
+        if afterQueued, let queued { await queued.value }
+        var command = ClientReviewCommand()
+        command.scope = scope
+        build(&command)
+        let sent = command, binding = bindingGeneration
         do {
-            async let workspaceValue = rpc.workspace(cardID: cardID)
-            async let changesetValue = rpc.changeset(cardID: cardID)
-            let (workspace, changes) = try await (workspaceValue, changesetValue)
-            guard ownsRequest() else { return }
-            let revisionChanged = conversationChangeset?.revision != changes.revision
-            var comments = conversationChangeComments
-            if revisionChanged {
-                comments = try await rpc.changeComments(cardID: cardID, revision: changes.revision).comments
-            }
-            guard ownsRequest() else { return }
-            var capabilities = conversationSCMCapabilities
-            if capabilities == nil { capabilities = try await rpc.scmCapabilities(cardID: cardID) }
-            guard ownsRequest() else { return }
-            if conversationWorkspace != workspace { conversationWorkspace = workspace }
-            if conversationChangeset != changes { conversationChangeset = changes }
-            if conversationChangeComments != comments { conversationChangeComments = comments }
-            conversationSCMCapabilities = capabilities
-            if gitReconciliationGeneration == reconciliationGeneration { gitOperationNeedsReconciliation = false }
-            workspaceError = nil
-            acceptWorkspaceSummary(workspace)
-            let selection = WorkspaceReviewSelectionResolver.resolve(
-                currentPath: selectedChangePath, currentCommitSHA: selectedCommitSHA,
-                filePaths: changes.files.map(\.path), commitSHAs: changes.commits.map(\.sha)
-            )
-            if selection.path.isEmpty && selection.commitSHA.isEmpty {
-                diffRequestGeneration &+= 1
-                selectedChangePath = ""; selectedCommitSHA = ""
-                conversationDiff = nil; conversationDiffLoading = false
-            } else if revisionChanged || conversationDiff == nil || selection.path != selectedChangePath
-                || selection.commitSHA != selectedCommitSHA
-            {
-                await loadConversationDiff(path: selection.path, commitSHA: selection.commitSHA, retryStale: false)
-            }
-            guard ownsRequest() else { return }
-            let observed = gitOperation?.cardID == cardID ? gitOperation : nil
-            if let operationID = GitOperationReconciliation.operationID(
-                workspaceOperationID: workspace.currentOperationID,
-                observedOperationID: observed?.id, observedStatus: observed?.status
-            ) {
-                await resumeGitOperation(id: operationID)
-            }
+            let result = try await core.dispatch(.with { $0.review = sent })
+            if case .review(let slice)? = result.result { fold(slice) }
+            return result
+        } catch let failure as CoreFailure {
+            if binding == bindingGeneration { workspaceError = failure.message }
+            return nil
         } catch {
-            guard ownsRequest() else { return }
-            workspaceError = DieterRPCFailure.message(for: error)
+            return nil
         }
+    }
+
+    /// Reads the workspace; on return the review is at least as new as the call.
+    func loadWorkspaceSurface() async {
+        guard !bound.cardID.isEmpty else { return }
+        await run { $0.refresh = ClientReviewStep() }
     }
 
     func loadConversationDiff(path: String, commitSHA: String = "", append: Bool = false, retryStale: Bool = true) async
     {
-        guard let rpc, let cardID = self.cardID,
-            let changes = conversationChangeset
-        else { return }
-        if append, conversationDiffLoading { return }
-        if selectedChangePath != path || selectedCommitSHA != commitSHA { conversationDiff = nil }
-        selectedChangePath = path; selectedCommitSHA = commitSHA
-        diffRequestGeneration &+= 1
-        let generation = diffRequestGeneration
-        conversationDiffLoading = true
-        defer { if generation == diffRequestGeneration { conversationDiffLoading = false } }
-        var request = Dieter_V1_GetDiffRequest()
-        request.cardID = cardID; request.path = path; request.commitSha = commitSHA
-        request.expectedRevision = changes.revision; request.limit = 1_048_576
-        let previous = append ? conversationDiff : nil
-        if let previous { request.offset = previous.nextOffset }
-        func ownsRequest() -> Bool {
-            !Task.isCancelled && self.rpc === rpc && diffRequestGeneration == generation
-                && (self.cardID) == cardID && conversationChangeset?.revision == changes.revision
-                && selectedChangePath == path && selectedCommitSHA == commitSHA
+        if append {
+            await run { $0.loadMoreDiff = ClientReviewStep() }
+            return
         }
-        do {
-            var page = try await (commitSHA.isEmpty ? rpc.fileDiff(request) : rpc.commitDiff(request))
-            guard ownsRequest() else { return }
-            if let previous { page.patch = previous.patch + page.patch }
-            conversationDiff = page
-        } catch {
-            guard ownsRequest() else { return }
-            let message = DieterRPCFailure.message(for: error)
-            workspaceError = message
-            if retryStale
-                && (message.localizedCaseInsensitiveContains("refresh")
-                    || message.localizedCaseInsensitiveContains("revision"))
-            {
-                await loadWorkspaceSurface()
+        if selectedChangePath != path || selectedCommitSHA != commitSHA {
+            selectedChangePath = path; selectedCommitSHA = commitSHA
+            conversationDiff = nil; diffLines = []
+        }
+        await run { command in
+            command.select = .with {
+                $0.path = path
+                $0.commit = commitSHA
             }
         }
     }
 
-    func addChangeComment(path: String, side: String, line: Int32, body: String) async -> Bool {
-        guard let rpc, let cardID = self.cardID,
-            let changes = conversationChangeset
-        else { return false }
-        var request = Dieter_V1_AddChangeCommentRequest()
-        request.cardID = cardID; request.path = path; request.side = side; request.line = line
-        request.body = body; request.author = authorName; request.revision = changes.revision
-        let binding = bindingGeneration
-        do {
-            let value = try await rpc.addChangeComment(request)
-            guard owns(binding), conversationChangeset?.revision == changes.revision else { return false }
-            conversationChangeComments.append(value)
-            return true
-        } catch {
-            if owns(binding) { workspaceError = DieterRPCFailure.message(for: error) }
-            return false
+    /// Comments on one line of the current revision.
+    func addChangeComment(line: UnifiedDiffLine, body: String) async -> Bool {
+        let author = authorName
+        let result = await run { command in
+            command.addComment = .with {
+                $0.rowID = Int32(line.id)
+                $0.body = body
+                $0.author = author
+            }
         }
+        guard case .changeComment? = result?.result else { return false }
+        return true
     }
 
+    /// Changes the workspace before the first turn.
     func updateConversationWorkspace(_ draft: ConversationWorkspaceDraft) async -> Bool {
-        guard let rpc, let cardID = self.cardID else { return false }
-        var request = Dieter_V1_UpdateConversationWorkspaceRequest()
-        request.cardID = cardID; request.mode = draft.mode.rawValue
-        request.branch = draft.mode == .worktree ? draft.branch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
-        request.baseBranch =
-            draft.mode == .worktree ? draft.baseBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
-        let binding = bindingGeneration
-        do {
-            let card = try await rpc.updateConversationWorkspace(request)
-            guard owns(binding) else { return false }
-            acceptWorkspaceCard(card)
-            return true
-        } catch {
-            if owns(binding) { workspaceError = DieterRPCFailure.message(for: error) }
-            return false
-        }
-    }
-
-    func startGitOperation(
-        _ kind: GitOperationKind, cardID explicitCardID: String? = nil, parameters: [String: String] = [:]
-    ) async -> Bool {
-        guard !gitOperationSubmitting, let rpc, let cardID = explicitCardID ?? self.cardID else { return false }
-        let submissionID = UUID()
-        gitOperationSubmissionID = submissionID
-        gitOperationSubmitting = true
-        defer {
-            if gitOperationSubmissionID == submissionID {
-                gitOperationSubmitting = false; gitOperationSubmissionID = nil
+        guard !bound.cardID.isEmpty else { return false }
+        let result = await run { command in
+            command.updateSettings = .with {
+                $0.mode = draft.mode.rawValue
+                $0.branch = draft.branch
+                $0.baseBranch = draft.baseBranch
+                $0.baseRemote = draft.baseRemote
+                $0.publishMode = draft.remotePublishMode
             }
         }
-        var request = Dieter_V1_StartGitOperationRequest()
-        request.cardID = cardID; request.kind = kind.rawValue
-        if explicitCardID == nil || explicitCardID == self.cardID {
-            request.expectedRevision = conversationChangeset?.revision ?? ""
+        return result != nil
+    }
+
+    /// Starts a Git operation against the current revision.
+    func startGitOperation(_ kind: GitOperationKind, parameters: [String: String] = [:]) async -> Bool {
+        guard !bound.cardID.isEmpty, !gitOperationSubmitting else { return false }
+        let result = await run { command in
+            command.start = .with {
+                $0.kind = kind.rawValue
+                $0.parameters = parameters
+            }
         }
-        request.parameters = parameters
-        do {
-            let operation = try await rpc.startGitOperation(request)
-            guard self.rpc === rpc, gitOperationSubmissionID == submissionID else { return false }
-            if GitOperationStatus.terminal(operation.status) { requireGitReconciliation() }
-            gitOperation = operation
-            gitOperationLogs = []
-            observeGitOperation(id: operation.id, after: 0)
-            return true
-        } catch {
-            guard self.rpc === rpc, gitOperationSubmissionID == submissionID else { return false }
-            workspaceError = DieterRPCFailure.message(for: error)
-            return false
-        }
+        guard case .gitOperation? = result?.result else { return false }
+        return true
     }
 
     func cancelCurrentGitOperation() async {
-        guard let rpc, let operation = gitOperation, GitOperationStatus.active(operation.status) else { return }
-        let binding = bindingGeneration
-        do {
-            let updated = try await rpc.cancelGitOperation(id: operation.id)
-            guard owns(binding), gitOperation?.id == operation.id else { return }
-            gitOperation = updated
-        } catch { if owns(binding) { workspaceError = DieterRPCFailure.message(for: error) } }
+        guard let operation = gitOperation, GitOperationStatus.active(operation.status) else { return }
+        await run { $0.cancelOperation = ClientReviewStep() }
     }
 
     func showWorkspaceToast(_ message: String) {
@@ -308,10 +269,10 @@ final class WorktreeChangesModel {
         }
     }
 
-    /// Runs the full merge flow the merge sheet offers: commit dirty work when
-    /// needed, merge into the base branch, then optionally remove the workspace
-    /// and move the card to Done. Each stage is an ordinary Git operation, so
-    /// progress, logs, and failures surface through the usual operation state.
+    /// Commits dirty work when needed, merges into the base branch, then
+    /// optionally removes the workspace and moves the card to Done. Each
+    /// stage is an ordinary Git operation, so progress, logs, and failures
+    /// show through the usual operation state.
     @discardableResult
     func performMergeFlow(
         strategy: String,
@@ -321,221 +282,59 @@ final class WorktreeChangesModel {
         removeWorkspace: Bool,
         moveCardToDone: Bool
     ) async -> Bool {
-        guard mergeFlowStep == nil, let card = self.card, let rpc else { return false }
-        let binding = bindingGeneration
-        let branch = conversationWorkspace?.branch ?? card.workspace.branch
-        var base = conversationWorkspace?.baseBranch ?? card.workspace.baseBranch
-        if base.isEmpty { base = "base" }
-        defer { if binding == bindingGeneration { mergeFlowStep = nil } }
-
-        if conversationWorkspace?.dirty == true {
-            guard owns(binding) else { return false }
-            mergeFlowStep = .commit
-            guard
-                await startGitOperation(
-                    .commit,
-                    parameters: [
-                        "subject": subject, "body": body, "stage_all": "true",
-                    ]), await awaitCurrentGitOperationSuccess()
-            else { return false }
-            await loadWorkspaceSurface()
-        }
-
-        guard owns(binding) else { return false }
-        mergeFlowStep = .merge
-        guard
-            await startGitOperation(
-                .mergeLocal,
-                parameters: [
-                    "strategy": strategy, "subject": subject, "validate": validate ? "true" : "false",
-                ]), await awaitCurrentGitOperationSuccess()
-        else { return false }
-
-        if removeWorkspace {
-            guard owns(binding) else { return false }
-            mergeFlowStep = .cleanup
-            await loadWorkspaceSurface()
-            guard owns(binding), await startGitOperation(.cleanup),
-                await awaitCurrentGitOperationSuccess()
-            else { return false }
-        }
-
-        guard owns(binding) else { return false }
-        var movedToDone = false
-        if moveCardToDone, card.scope != "chat", let lane = doneLaneID, card.lane != lane {
-            var request = Dieter_V1_MoveCardRequest(); request.cardID = card.id; request.lane = lane
-            do {
-                let moved = try await rpc.moveCard(request)
-                guard owns(binding) else { return false }
-                acceptWorkspaceCard(moved)
-            } catch {
-                if owns(binding) { workspaceError = DieterRPCFailure.message(for: error) }
-                return false
+        guard mergeFlowStep == nil, card != nil else { return false }
+        let result = await run { command in
+            command.merge = .with {
+                $0.strategy = strategy
+                $0.subject = subject
+                $0.body = body
+                $0.validate = validate
+                $0.removeWorkspace = removeWorkspace
+                $0.moveToDone = moveCardToDone
             }
-            movedToDone = true
         }
-        let mergedLabel = branch.isEmpty ? "workspace" : branch
-        showWorkspaceToast("Merged \(mergedLabel) into \(base)" + (movedToDone ? " · card moved to Done" : ""))
-        return true
+        guard case .outcome(let outcome)? = result?.result else { return false }
+        return outcome.succeeded
     }
 
-    /// Waits for the operation started last to settle. Polls the daemon
-    /// directly so orchestration survives a dropped watch stream.
+    /// Waits for the operation started last to settle.
     func awaitCurrentGitOperationSuccess() async -> Bool {
-        guard let id = gitOperation?.id, let rpc else { return false }
+        guard let id = gitOperation?.id else { return false }
         let binding = bindingGeneration
-        let deadline = Date().addingTimeInterval(3_600)
-        while Date() < deadline, owns(binding) {
+        let deadline = ContinuousClock.now + .seconds(3_600)
+        while binding == bindingGeneration, ContinuousClock.now < deadline, !Task.isCancelled {
             if let current = gitOperation, current.id == id,
                 GitOperationStatus.terminal(current.status) || current.status == "waiting_for_resolution"
             {
                 return current.status == "succeeded"
             }
-            if let polled = try? await rpc.gitOperation(id: id), owns(binding),
-                GitOperationStatus.terminal(polled.status) || polled.status == "waiting_for_resolution"
-            {
-                if gitOperation?.id == id { gitOperation = polled }
-                return polled.status == "succeeded"
-            }
-            try? await DieterTaskSleep.milliseconds(400)
+            try? await Task.sleep(for: .milliseconds(100))
         }
         return false
     }
+}
 
-    func resumeGitOperation(id: String) async {
-        guard let rpc else { return }
-        let binding = bindingGeneration
-        do {
-            let operation = try await rpc.gitOperation(id: id)
-            guard owns(binding), self.rpc === rpc, operation.cardID == cardID else { return }
-            let changedOperation = gitOperation?.id != id
-            if GitOperationStatus.terminal(operation.status),
-                changedOperation || gitOperation?.status != operation.status
-            {
-                requireGitReconciliation()
-                workspaceRefreshAgain = true
+extension UnifiedDiffLine {
+    /// A row of the core's numbered diff.
+    init(_ row: ClientDiffRow) {
+        let kind: Kind =
+            switch row.kind {
+            case .header: .header
+            case .hunk: .hunk
+            case .addition: .addition
+            case .deletion: .deletion
+            default: .context
             }
-            gitOperation = operation
-            if changedOperation {
-                gitOperationLogs = []
-                if GitOperationStatus.active(operation.status) { observeGitOperation(id: id, after: 0) }
-            } else if GitOperationStatus.terminal(operation.status) {
-                gitOperationTask?.cancel()
-                gitOperationTask = nil
-            }
-        } catch { if owns(binding) { workspaceError = DieterRPCFailure.message(for: error) } }
+        self.init(
+            id: Int(row.id), kind: kind, text: row.text, oldLine: row.oldLine == 0 ? nil : Int(row.oldLine),
+            newLine: row.newLine == 0 ? nil : Int(row.newLine))
     }
+}
 
-    func observeGitOperation(id: String, after sequence: UInt64) {
-        gitOperationTask?.cancel()
-        let binding = bindingGeneration
-        gitOperationTask = Task { [weak self] in
-            guard let self, let rpc = self.rpc else { return }
-            var nextSequence = sequence
-            var consecutiveFailures = 0
-            while !Task.isCancelled, self.owns(binding), self.gitOperation?.id == id {
-                do {
-                    try await rpc.watchGitOperation(id: id, after: nextSequence) { [weak self] frame in
-                        if await self?.acceptGitOperationFrame(frame, operationID: id, binding: binding) == true {
-                            await self?.loadWorkspaceSurface()
-                        }
-                    }
-                    guard self.owns(binding), self.gitOperation?.id == id else { return }
-                    let selectedConversationID = self.cardID
-                    if self.gitOperation?.cardID == selectedConversationID {
-                        let removesWorkspace =
-                            ["cleanup", "discard", "adopt"].contains(self.gitOperation?.kind ?? "")
-                            && self.gitOperation?.status == "succeeded"
-                        if removesWorkspace {
-                            self.clearWorkspaceContentPreservingOperation()
-                        } else {
-                            await self.loadWorkspaceSurface()
-                        }
-                    }
-                    guard self.owns(binding) else { return }
-                    await self.onOperationFinished(self.target)
-                    return
-                } catch {
-                    guard self.owns(binding), !Task.isCancelled else { return }
-                    if DieterRPCFailure.isAuthenticationFailure(error) {
-                        self.onTransportFailure(error, rpc)
-                        return
-                    }
-                    guard DieterRPCFailure.canRetryRead(error) else {
-                        self.workspaceError = DieterRPCFailure.message(for: error)
-                        return
-                    }
-                    nextSequence = self.gitOperationLogs.last?.sequence ?? nextSequence
-                    consecutiveFailures += 1
-                    let delay = DieterStreamRecoveryPolicy.delay(
-                        consecutiveFailures: consecutiveFailures)
-                    try? await DieterTaskSleep.seconds(delay)
-                }
-            }
-        }
+extension WorkspaceActionAvailability {
+    init(_ core: ClientWorkspaceAvailability) {
+        self.init(
+            allowed: Set(core.allowed), allowsMergeFlow: core.allowsMergeFlow, hasReviewBranch: core.hasReviewBranch_p,
+            workspaceMode: core.mode, remotePublishMode: core.publish, mergeDestination: core.mergeDestination)
     }
-
-    func acceptGitOperationFrame(_ frame: Dieter_V1_GitOperationFrame, operationID: String, binding: UInt64? = nil)
-        -> Bool
-    {
-        guard binding == nil || binding == bindingGeneration, gitOperation?.id == operationID else { return false }
-        let enteredConflict =
-            gitOperation?.status != "waiting_for_resolution" && frame.operation.status == "waiting_for_resolution"
-        if GitOperationStatus.terminal(frame.operation.status), gitOperation?.status != frame.operation.status {
-            requireGitReconciliation()
-        }
-        gitOperation = frame.operation
-        let known = Set(gitOperationLogs.map(\.sequence))
-        gitOperationLogs.append(contentsOf: frame.logs.filter { !known.contains($0.sequence) })
-        var retainedBytes = 0, retainedCount = 0
-        for entry in gitOperationLogs.reversed().prefix(2_000) {
-            let bytes = entry.message.utf8.count
-            guard retainedBytes + bytes <= 8 * 1_024 * 1_024 else { break }
-            retainedBytes += bytes; retainedCount += 1
-        }
-        if retainedCount < gitOperationLogs.count {
-            gitOperationLogs.removeFirst(gitOperationLogs.count - retainedCount)
-        }
-        return enteredConflict
-    }
-
-    func clearWorkspaceContentPreservingOperation() {
-        workspaceRequestGeneration &+= 1; diffRequestGeneration &+= 1
-        workspaceRefreshTask?.cancel(); workspaceRefreshTask = nil; workspaceRefreshAgain = false
-        conversationDiffLoading = false
-        gitOperationNeedsReconciliation = false
-        conversationWorkspace = nil
-        conversationChangeset = nil
-        conversationDiff = nil
-        conversationChangeComments = []
-        conversationSCMCapabilities = nil
-        selectedChangePath = ""
-        selectedCommitSHA = ""
-        workspaceLoading = false
-        workspaceError = nil
-    }
-
-    private func requireGitReconciliation() {
-        gitReconciliationGeneration &+= 1
-        gitOperationNeedsReconciliation = true
-    }
-
-    func acceptWorkspaceSummary(_ workspace: Dieter_V1_Workspace) {
-        guard var card = self.card, card.id == workspace.cardID else { return }
-        card.workspace.mode = workspace.mode
-        card.workspace.state = workspace.state
-        card.workspace.branch = workspace.branch
-        card.workspace.baseBranch = workspace.baseBranch
-        card.workspace.headSha = workspace.headSha
-        card.workspace.baseSha = workspace.baseSha
-        card.workspace.revision = workspace.revision
-        card.workspace.changedFiles = workspace.changedFiles
-        card.workspace.additions = workspace.additions
-        card.workspace.deletions = workspace.deletions
-        card.workspace.ahead = workspace.ahead
-        card.workspace.behind = workspace.behind
-        card.workspace.currentOperationID = workspace.currentOperationID
-        acceptWorkspaceCard(card)
-    }
-
 }

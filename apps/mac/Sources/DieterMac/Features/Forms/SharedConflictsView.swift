@@ -1,5 +1,6 @@
 import DieterAPI
 import Foundation
+import SharedCore
 import SwiftUI
 
 struct SharedConflictsButton: View {
@@ -53,29 +54,37 @@ private struct SharedConflictsView: View {
         if let string = try? JSONDecoder().decode(String.self, from: value.valueJson) { return string }
         return String(data: value.valueJson, encoding: .utf8) ?? "Unavailable value"
     }
+    /// The competing versions, read from the project's replica.
     private func load() async {
-        guard let rpc = store.rpc else { return }
+        let projectID = store.selectedProjectID
         do {
             var loaded: [Dieter_V1_PeerRecord] = []
-            for key in keys {
-                let parts = key.split(separator: "/", maxSplits: 1)
-                guard parts.count == 2 else { continue }
-                var request = Dieter_V1_PeerRecordRef(); request.kind = String(parts[0]); request.id = String(parts[1])
-                let record = try await rpc.peerRecord(request)
-                if record.versions.count > 1 { loaded.append(record) }
+            for key in keys where key.contains("/") {
+                let conflict = try await store.administer {
+                    $0.conflict = .with {
+                        $0.projectID = projectID
+                        $0.key = key
+                    }
+                }.conflict
+                if conflict.hasRecord { loaded.append(conflict.record) }
             }
             records = loaded
-        } catch { self.error = DieterRPCFailure.message(for: error) }
+        } catch { self.error = (error as? CoreFailure)?.message ?? error.localizedDescription }
     }
+    /// Keeps one version, or the deletion, on the replica that served it.
     private func resolve(_ record: Dieter_V1_PeerRecord, _ version: Dieter_V1_PeerVersion) async {
-        guard let rpc = store.rpc else { return }
         saving = true; defer { saving = false }
-        var request = Dieter_V1_PutPeerRecordRequest()
-        request.kind = record.kind; request.id = record.id; request.expectedRevision = record.revision
-        request.deleted = version.deleted; request.valueJson = version.valueJson
+        let projectID = store.selectedProjectID
         do {
-            _ = try await rpc.putPeerRecord(request)
+            _ = try await store.administer {
+                $0.resolveConflict = .with {
+                    $0.projectID = projectID
+                    $0.record = record
+                    $0.valueJson = version.valueJson
+                    $0.deleted = version.deleted
+                }
+            }
             await store.refreshState(); await load()
-        } catch { self.error = DieterRPCFailure.message(for: error) }
+        } catch { self.error = (error as? CoreFailure)?.message ?? error.localizedDescription }
     }
 }

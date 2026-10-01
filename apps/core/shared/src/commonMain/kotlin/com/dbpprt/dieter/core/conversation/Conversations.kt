@@ -34,7 +34,7 @@ class Conversations(
     /** Opens [cardId] (a server or local ID) or returns the session already open for it. */
     fun open(cardId: String): ConversationSession {
         val id = outbox.view.value.resolve(cardId)
-        open.remove(id)?.let { existing ->
+        open.remove(key(id))?.let { existing ->
             open[id] = existing
             return existing
         }
@@ -50,11 +50,19 @@ class Conversations(
         return session
     }
 
-    fun session(cardId: String): ConversationSession? = open[outbox.view.value.resolve(cardId)]
+    fun session(cardId: String): ConversationSession? = open[key(outbox.view.value.resolve(cardId))]
 
     fun close(cardId: String) {
-        open.remove(outbox.view.value.resolve(cardId))?.close()
+        open.remove(key(outbox.view.value.resolve(cardId)))?.close()
     }
+
+    /**
+     * The key [id] is open under. A conversation opened while it was still
+     * being created stays keyed by its local ID after the outbox resolves it,
+     * so its server ID must find it too.
+     */
+    private fun key(id: String): String =
+        if (id in open) id else open.keys.firstOrNull { outbox.view.value.resolve(it) == id } ?: id
 
     /** Closes everything and forgets cached transcripts, e.g. when the account changes. */
     fun reset() {

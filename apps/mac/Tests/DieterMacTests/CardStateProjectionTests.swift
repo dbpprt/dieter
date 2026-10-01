@@ -69,30 +69,6 @@ private func stateCard(lane: String, runtime: String, placement: UInt64, summary
     #expect(current.lane == "review" && current.placementRevision == "resolved")
 }
 
-@Test @MainActor func finishReceiptSurvivesBackgroundAndActiveReplicaSnapshots() {
-    let store = DieterStore(restoreSync: false)
-    var project = Dieter_V1_Project(); project.id = "project"
-    var board = Dieter_V1_Board(); board.id = "board"; board.projectID = project.id
-    var state = Dieter_V1_State(); state.projects = [project]; state.project = project; state.boards = [board]
-    let running = stateCard(lane: "running", runtime: "running", placement: 1, summary: 1)
-    let done = stateCard(lane: "done", runtime: "idle", placement: 2, summary: 2)
-    state.cards = [running]
-    store.endpoint = DieterEndpoint(name: "Owner", host: "test", port: 443, daemonID: "owner")
-    store.acceptState(state)
-    store.acceptWorkspaceCard(done)
-    // RPC replies and rollback paths can also arrive late from the owner.
-    store.acceptWorkspaceCard(running, sourceDaemonID: "owner")
-    #expect(store.boardCards.first?.lane == "done")
-    #expect(store.boardCards.first?.runtime == "idle")
-    for _ in 0..<3 {
-        var snapshot = Dieter_V1_GlobalSnapshot(); snapshot.state = state
-        store.applyGlobalSnapshot(snapshot, endpointID: "account#peer")
-        store.acceptState(state)
-        #expect(store.boardCards.first?.lane == "done")
-        #expect(store.boardCards.first?.runtime == "idle")
-    }
-}
-
 @Test func newerPeerCompletionDoesNotRetainOldSubagentRunningBadge() {
     var running = stateCard(lane: "running", runtime: "running", placement: 1, summary: 1)
     var worker = Dieter_V1_Subagent(); worker.status = "running"; running.activeSubagents = [worker]
@@ -101,19 +77,6 @@ private func stateCard(lane: String, runtime: String, placement: UInt64, summary
     #expect(merged.runtime == "idle")
     #expect(merged.activeSubagents.isEmpty)
     #expect(BoardAgentStatus.resolve(merged) == .idle)
-}
-
-@Test @MainActor func causalMetadataDoesNotEraseAnOptimisticStart() {
-    let store = DieterStore(restoreSync: false)
-    let original = stateCard(lane: "todo", runtime: "idle", placement: 1, summary: 1)
-    store.state.cards = [original]
-    store.navigationCards = [original.projectID: [original]]
-    let start = OptimisticCardStart(operationID: .init(), runningLaneID: "running")
-    store.pendingCardStarts[original.id] = start
-    store.applyBoardCardMutation(start.applying(to: original))
-    #expect(store.state.cards.first?.lane == "running")
-    #expect(store.state.cards.first?.runtime == "starting")
-    #expect(store.pendingCardStarts[original.id] == start)
 }
 
 @Test func transcriptMetadataCannotUndoAPlacementReceipt() {

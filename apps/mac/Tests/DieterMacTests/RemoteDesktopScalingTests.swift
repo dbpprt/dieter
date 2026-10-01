@@ -2,24 +2,9 @@ import AppKit
 import Testing
 @testable import DieterMac
 
-@Test func remoteDesktopRequestsSettledBackingPixelsWithoutCoarseUpscaling() {
+@Test func remoteDesktopRejectsInvalidGeometry() {
     let expected = CGSize(width: 1000, height: 600)
-    #expect(RemoteDesktopVideoGeometry.requestedSize(points: CGSize(width: 1001, height: 600), scale: 1) == expected)
-    #expect(RemoteDesktopVideoGeometry.requestedSize(points: CGSize(width: 500.5, height: 300), scale: 2) == expected)
-    #expect(
-        RemoteDesktopVideoGeometry.requestedSize(points: CGSize(width: 832, height: 468), scale: 1)
-            == CGSize(width: 832, height: 468))
-    #expect(
-        RemoteDesktopVideoGeometry.requestedSize(points: CGSize(width: 100, height: 100), scale: 1)
-            == CGSize(width: 640, height: 360))
-    #expect(
-        RemoteDesktopVideoGeometry.requestedSize(points: CGSize(width: 4000, height: 3000), scale: 2)
-            == CGSize(width: 3840, height: 2160))
-    for scale: CGFloat in [0, -1, .nan, .infinity] {
-        #expect(RemoteDesktopVideoGeometry.requestedSize(points: expected, scale: scale) == nil)
-    }
     for size in [CGSize.zero, CGSize(width: CGFloat.infinity, height: 600), CGSize(width: 1000, height: CGFloat.nan)] {
-        #expect(RemoteDesktopVideoGeometry.requestedSize(points: size, scale: 1) == nil)
         #expect(RemoteDesktopVideoGeometry.contentRect(pixelSize: size, videoSize: expected) == .zero)
     }
 }

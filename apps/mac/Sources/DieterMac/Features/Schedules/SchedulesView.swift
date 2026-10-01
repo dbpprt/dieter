@@ -135,7 +135,7 @@ struct SchedulesView: View {
                 }
             }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            .task(id: model.connectionGeneration) {
+            .task(id: model.target.projectID) {
                 let target = model.target
                 guard await prepare(), !Task.isCancelled, model.target == target else { return }
                 await model.loadSchedules()

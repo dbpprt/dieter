@@ -3,70 +3,60 @@ import DieterAPI
 import Foundation
 @testable import MarkdownEngine
 import SwiftUI
+import SharedCore
 import Testing
 @testable import DieterMac
 
-private func presentedSnapshot(_ id: String, cardID: String = "card") -> Dieter_V1_ConversationSnapshot {
-    var snapshot = Dieter_V1_ConversationSnapshot()
-    snapshot.detail.card.id = cardID
-    snapshot.conversation.cardID = cardID
-    snapshot.conversation.presentedContent.id = id
-    snapshot.conversation.presentedContent.path = "docs/plan.md"
-    return snapshot
-}
-
-@Test @MainActor func presentationIsConsumedOnceAcrossReadsDeltasAndReconnects() async {
+@Test @MainActor func presentationIsConsumedOncePerMachineAcrossUpdates() {
+    let core = ScriptedCoreClient()
     let model = ConversationModel()
-    model.bind(client: nil, endpointID: "machine-A")
+    model.core = core
     model.selectedCardID = "card"
+    model.observe("card")
+    defer { model.observe(nil) }
     var received: [String] = []
     model.onContentPresentation = { value, id in received.append("\(id):\(value.id)") }
-    let first = presentedSnapshot("first")
-    await model.acceptConversation(first, chat: false)
-    await model.acceptConversation(first, chat: false)
-    var delta = Dieter_V1_ConversationUpdate()
-    delta.presentedContent = first.conversation.presentedContent
-    await model.applyConversationUpdate(delta, cardID: "card")
+    func present(_ id: String, path: String = "docs/plan.md", line: Int32 = 0, machine: String = "machine-A") {
+        core.emitConversation("card", daemonID: machine) {
+            $0.conversation.presentedContent.id = id
+            $0.conversation.presentedContent.path = path
+            $0.conversation.presentedContent.line = line
+        }
+    }
+    present("first")
+    present("first")
     #expect(received == ["card:first"])
-
-    delta.presentedContent.id = "second"
-    delta.presentedContent.path = "source.swift"
-    delta.presentedContent.line = 42
-    await model.applyConversationUpdate(delta, cardID: "card")
+    present("second", path: "source.swift", line: 42)
     #expect(model.conversation?.conversation.presentedContent.path == "source.swift")
     #expect(model.conversation?.conversation.presentedContent.line == 42)
-    var replacement = Dieter_V1_ConversationUpdate()
-    replacement.snapshot = first
-    await model.applyConversationUpdate(replacement, cardID: "card")
+    present("first")
     #expect(received == ["card:first", "card:second"])
-
-    // Identity includes the authenticated machine, even if card/request IDs
-    // happen to match. Reconnecting to the original machine still deduplicates.
-    model.bind(client: nil, endpointID: "machine-B")
-    await model.acceptConversation(first, chat: false)
-    model.bind(client: nil, endpointID: "machine-A")
-    await model.acceptConversation(first, chat: false)
+    // Identity includes the machine that runs the conversation, even if card
+    // and request IDs happen to match; returning to it still deduplicates.
+    present("first", machine: "machine-B")
+    present("first", machine: "machine-A")
     #expect(received == ["card:first", "card:second", "card:first"])
 }
 
-@Test @MainActor func cachedOrUnselectedPresentationCannotOpenAnotherConversationsWorkspace() async {
+@Test @MainActor func unselectedPresentationCannotOpenAnotherConversationsWorkspace() {
+    let core = ScriptedCoreClient()
     let model = ConversationModel()
-    model.bind(client: nil, endpointID: "machine")
+    model.core = core
     model.selectedChatID = "card"
+    model.observe("card")
+    defer { model.observe(nil) }
     var received: [String] = []
     model.onContentPresentation = { value, _ in received.append(value.id) }
-    let snapshot = presentedSnapshot("open-plan")
-    await model.acceptConversation(snapshot, chat: true, cache: false)
-    #expect(received.isEmpty)
-    await model.acceptConversation(presentedSnapshot("other-request", cardID: "other"), chat: true)
-    #expect(received.isEmpty)
-    await model.acceptConversation(snapshot, chat: true)
+    core.emitConversation("card") {
+        $0.conversation.presentedContent.id = "open-plan"
+        $0.conversation.presentedContent.path = "docs/plan.md"
+    }
     #expect(received == ["open-plan"])
     model.selectedChatID = "other"
-    var delta = Dieter_V1_ConversationUpdate()
-    delta.presentedContent.id = "late"
-    delta.presentedContent.path = "private.md"
-    await model.applyConversationUpdate(delta, cardID: "card")
+    core.emitConversation("card") {
+        $0.conversation.presentedContent.id = "late"
+        $0.conversation.presentedContent.path = "private.md"
+    }
     #expect(received == ["open-plan"])
 }
 

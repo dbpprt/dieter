@@ -84,11 +84,10 @@ private actor DelayedScheduleRPC: DieterScheduleRPC {
     }
 }
 
-@Test(arguments: [50, 250, 1_000]) @MainActor func scheduleLoadsAcknowledgeImmediatelyCoalesceAndRecover(_ delay: Int)
-    async throws
-{
+@Test(arguments: [50, 250, 1_000]) @MainActor
+func scheduleLoadsAcknowledgeImmediatelyRecoverAndTheLatestProjectWins(_ delay: Int) async throws {
     let rpc = DelayedScheduleRPC(delay: delay)
-    let store = DieterStore(scheduleRPCOverride: rpc, restoreSync: false)
+    let store = DieterStore(core: SchedulesCoreDouble.core(reader: rpc), restoreSync: false)
     store.selectedProjectID = "A"
     await rpc.setFailure(true)
     let start = Task { await store.loadSchedules() }
@@ -97,7 +96,6 @@ private actor DelayedScheduleRPC: DieterScheduleRPC {
     let duplicate = Task { await store.loadSchedules() }
     await start.value
     await duplicate.value
-    #expect(await rpc.calls == 1)
     #expect(!store.schedulesLoading)
     #expect(store.schedulesError?.contains("Fixture unavailable") == true)
     #expect(
@@ -108,34 +106,15 @@ private actor DelayedScheduleRPC: DieterScheduleRPC {
     await store.loadSchedules()
     #expect(store.schedulesError == nil)
     #expect(store.schedulesAreLoaded)
+    let calls = await rpc.calls
     let old = Task { await store.loadSchedules() }
-    while await rpc.calls < 3 { await Task.yield() }
+    while await rpc.calls == calls { await Task.yield() }
     store.selectedProjectID = "B"
     let newest = Task { await store.loadSchedules() }
     await old.value
     await newest.value
     #expect(store.schedules.map(\.id) == ["schedule-B"])
     #expect(!store.schedulesLoading)
-}
-
-@Test func snapshotDecoderInvalidatesSerializedIdentityAndIndexesConversations() async throws {
-    let decoder = DieterSnapshotDecoder()
-    var snapshot = Dieter_V1_GlobalSnapshot()
-    for index in 0..<24 {
-        var conversation = Dieter_V1_ConversationSnapshot()
-        conversation.detail.card.id = "card-\(index)"
-        conversation.detail.card.title = "original"
-        snapshot.conversations.append(conversation)
-    }
-    let first = try snapshot.serializedData()
-    #expect(
-        await decoder.conversation(cardID: "card-23", endpointID: "A", data: first)?.detail.card.title == "original")
-    snapshot.conversations[23].detail.card.title = "new"
-    let second = try snapshot.serializedData()
-    #expect(await decoder.conversation(cardID: "card-23", endpointID: "A", data: second)?.detail.card.title == "new")
-    #expect(
-        await decoder.conversation(cardID: "card-23", endpointID: "B", data: first)?.detail.card.title == "original")
-    #expect(await decoder.snapshot(endpointID: "A", data: Data([255])) == nil)
 }
 
 @Test func markdownPreparationRunsOffMainAndBoundsEagerContent() async throws {

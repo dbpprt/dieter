@@ -3,6 +3,9 @@ import Foundation
 import Testing
 @testable import DieterMac
 
+/// The shared core classifies activity (its ActivityTest); the Mac maps its
+/// rows and lays out the timeline.
+@MainActor
 struct InboxActivityTests {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
@@ -17,90 +20,6 @@ struct InboxActivityTests {
         card.runtimeUpdatedAt = "2026-09-24T10:00:00Z"
         card.initialPromptSentAt = "2026-09-24T09:00:00Z"
         return card
-    }
-
-    @Test func runningPrecedesAttentionWithoutIncludingDrafts() {
-        var draft = card("draft", runtime: "idle")
-        draft.initialPromptSentAt = ""
-        let entries = InboxActivity.entries(cards: [
-            card("answer", runtime: "waiting_for_user", lane: "review"),
-            card("working", runtime: "running", lane: "review"),
-            card("review", runtime: "failed", lane: "review"),
-            card("chat", runtime: "completed", scope: "chat", lane: "review"),
-            card("pending", runtime: "pending"), draft,
-        ])
-        #expect(entries.map(\.id) == ["answer", "chat", "review", "working"])
-        #expect(entries.map(\.kind) == [.answer, .recent, .review, .running])
-        #expect(entries.filter(\.needsYou).map(\.id) == ["answer"])
-        #expect(entries.filter(\.running).map(\.id) == ["working"])
-    }
-
-    @Test func finishingReviewKeepsRecentChronological() {
-        var review = card("review", runtime: "idle", lane: "review")
-        var failed = card("failed", runtime: "failed")
-        failed.runtimeUpdatedAt = "2026-09-24T11:00:00Z"
-        let recent = card("recent", runtime: "idle")
-        let before = InboxActivity.entries(cards: [review, failed, recent]).map(\.id)
-        review.lane = "done"
-        #expect(InboxActivity.entries(cards: [review, failed, recent]).map(\.id) == before)
-        #expect(before == ["failed", "recent", "review"])
-    }
-
-    @Test func unreadRepliesNeedAttentionUntilSeenAcrossCardsAndChats() {
-        for scope in ["board", "chat"] {
-            var reply = card("reply", runtime: "idle", scope: scope, lane: "review")
-            reply.responseSeq = 30
-            reply.seenResponseSeq = 10
-            #expect(InboxActivity.entries(cards: [reply]).first?.kind == .unread)
-            #expect(InboxActivity.entries(cards: [reply]).first?.needsYou == true)
-            reply.seenResponseSeq = 30
-            #expect(InboxActivity.entries(cards: [reply]).first?.needsYou == false)
-            reply.responseSeq = 50
-            #expect(InboxActivity.entries(cards: [reply]).first?.needsYou == true)
-            reply.runtime = "running"
-            #expect(InboxActivity.entries(cards: [reply]).first?.kind == .running)
-            reply.archived = true
-            #expect(InboxActivity.entries(cards: [reply]).isEmpty)
-        }
-    }
-
-    @Test func freshestIdentityWinsBeforeArchivedFiltering() {
-        var old = card("same", runtime: "running")
-        old.updatedAt = "2026-09-24T11:00:00+02:00"
-        var newest = old
-        newest.runtime = "completed"
-        newest.lastActivityAt = "2026-09-24T10:01:00Z"
-        #expect(InboxActivity.entries(cards: [newest, old]).map(\.kind) == [.recent])
-        newest.archived = true
-        #expect(InboxActivity.entries(cards: [newest, old]).isEmpty)
-        #expect(InboxActivity.entries(cards: [old], excludedIDs: [old.id]).isEmpty)
-    }
-
-    @Test func missingAndTiedTimestampsHaveDeterministicIdentityOrder() {
-        var a = card("a", runtime: "failed")
-        a.runtimeUpdatedAt = "invalid"
-        var b = a
-        b.id = "b"
-        let c = card("c", runtime: "failed")
-        #expect(InboxActivity.entries(cards: [b, c, a]).map(\.id) == ["c", "a", "b"])
-    }
-
-    @Test func staleAndFutureTurnStartsCannotInventCompletedDurations() throws {
-        let finished = card("finished", runtime: "completed")
-        let at = try #require(DieterTimestamp.date(from: finished.runtimeUpdatedAt))
-        let stale = InboxActivityDetail(
-            runtimeUpdatedAt: "old-turn", start: at.addingTimeInterval(-600), label: "Old work")
-        let future = InboxActivityDetail(
-            runtimeUpdatedAt: finished.runtimeUpdatedAt, start: at.addingTimeInterval(1), label: "")
-        let valid = InboxActivityDetail(
-            runtimeUpdatedAt: finished.runtimeUpdatedAt, start: at.addingTimeInterval(-600), label: "")
-        #expect(InboxActivity.entries(cards: [finished], details: [finished.id: stale]).first?.start == nil)
-        #expect(InboxActivity.entries(cards: [finished], details: [finished.id: future]).first?.start == nil)
-        #expect(
-            InboxActivity.entries(cards: [finished], details: [finished.id: valid]).first?.start
-                == at.addingTimeInterval(-600))
-        let running = card("running", runtime: "streaming")
-        #expect(InboxActivity.entries(cards: [running], details: [running.id: stale]).first?.start == at)
     }
 
     @Test func timelineClipsDurationsKeepsBoundaryEventsAndOmitsOutsideEvents() throws {
@@ -129,27 +48,28 @@ struct InboxActivityTests {
         #expect(InboxActivity.timeline(entries: entries, now: now, hours: 6).contains { $0.id == "old" })
     }
 
-    @Test @MainActor func cachedDetailsExcludeQueuedMessagesAndEvictRemovedSnapshots() throws {
-        let projection = InboxActivityProjection()
-        let running = card("running", runtime: "running")
-        var snapshot = Dieter_V1_ConversationSnapshot()
-        snapshot.detail.card = running
-        var sent = Dieter_V1_UiMessage()
-        sent.id = "sent"
-        sent.role = "user"
-        sent.metadataJson = Data(#"{"createdAt":"2026-09-24T09:30:00Z"}"#.utf8)
-        var queued = sent
-        queued.id = "queued"
-        queued.metadataJson = Data(#"{"createdAt":"2026-09-24T09:59:00Z"}"#.utf8)
-        var queue = Dieter_V1_QueuedMessage()
-        queue.id = queued.id
-        snapshot.conversation.messages = [sent, queued]
-        snapshot.conversation.queue = [queue]
-        let first = projection.resolve(
-            cards: [running], snapshots: [snapshot], excludedIDs: [], omittedMessageIDs: [], showReasoning: true)
-        #expect(first.first?.start == DieterTimestamp.date(from: "2026-09-24T09:30:00Z"))
-        let evicted = projection.resolve(
-            cards: [running], snapshots: [], excludedIDs: [], omittedMessageIDs: [], showReasoning: true)
-        #expect(evicted.first?.start == DieterTimestamp.date(from: running.runtimeUpdatedAt))
+
+    @Test func inboxEntriesComeFromTheCoresActivityRows() {
+        let store = DieterStore(restoreSync: false)
+        store.activityRows = [
+            .with {
+                $0.card = card("needs", runtime: "waiting_for_user")
+                $0.kind = "ANSWER"
+                $0.detail = "Waiting for your answer"
+                $0.atMillis = 1_800_000_000_000
+            },
+            .with {
+                $0.card = card("busy", runtime: "running")
+                $0.kind = "RUNNING"
+                $0.detail = "Running tests"
+                $0.startedAtMillis = 1_799_999_000_000
+            },
+            .with { $0.card = card("unknown", runtime: "idle"); $0.kind = "SOMETHING_NEW" },
+        ]
+        let entries = store.inboxEntries
+        #expect(entries.map(\.id) == ["needs", "busy"], "kinds this Mac does not know are skipped")
+        #expect(entries[0].needsYou && entries[0].at == Date(timeIntervalSince1970: 1_800_000_000))
+        #expect(entries[1].running && entries[1].detail == "Running tests" && entries[1].at == nil)
+        #expect(entries[1].start == Date(timeIntervalSince1970: 1_799_999_000))
     }
 }

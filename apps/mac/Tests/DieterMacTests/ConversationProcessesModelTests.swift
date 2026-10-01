@@ -1,106 +1,107 @@
 import DieterAPI
 import DieterCore
 import Foundation
+import SharedCore
 import Testing
 @testable import DieterMac
 
-private actor ProcessFixture: ProcessesRPC {
-    var values: [Dieter_V1_Execution]
-    var receivers: [String: @Sendable (Dieter_V1_ExecutionEvent) async -> Void] = [:]
-    private(set) var scopes: [String] = []
-    private(set) var stops = 0
-    private(set) var canceledWatches = 0
-
-    init(values: [Dieter_V1_Execution]) { self.values = values }
-    func executions(projectID: String, cardID: String) async throws -> Dieter_V1_ExecutionsResponse {
-        scopes.append("\(projectID)/\(cardID)")
-        var response = Dieter_V1_ExecutionsResponse(); response.executions = values; return response
-    }
-    func watchExecution(
-        id: String, after: UInt64, receive: @escaping @Sendable (Dieter_V1_ExecutionEvent) async -> Void
-    ) async throws {
-        receivers[id] = receive
-        do { try await Task.sleep(for: .seconds(60)) } catch { canceledWatches += 1; throw error }
-    }
-    func cancelExecution(id: String) async throws -> Dieter_V1_Execution {
-        stops += 1
-        var value = values.first { $0.id == id }!; value.status = "canceled"; value.sequence += 1
-        return value
-    }
-    func watching(_ id: String) -> Bool { receivers[id] != nil }
-    func emit(_ event: Dieter_V1_ExecutionEvent) async { await receivers[event.execution.id]?(event) }
-}
-
+// The processes view's adapter over the core's processes surface. Bounded
+// output, refresh, and stop on the real daemon are covered by the core's
+// ClientApiProcessesEndToEndTest; these pin what the Mac sends and folds.
 @MainActor struct ConversationProcessesModelTests {
-    private func execution(_ id: String, card: String = "card") -> Dieter_V1_Execution {
+    private func execution(_ id: String, card: String = "card", status: String = "running") -> Dieter_V1_Execution {
         var value = Dieter_V1_Execution()
-        value.id = id; value.projectID = "project"; value.cardID = card; value.status = "running"; value.name = id
+        value.id = id; value.projectID = "project"; value.cardID = card; value.status = status; value.name = id
         return value
     }
-    private func wait(_ condition: () async -> Bool) async -> Bool {
-        for _ in 0..<100 {
-            if await condition() { return true }
-            try? await Task.sleep(for: .milliseconds(10))
+
+    private func sent(_ core: ScriptedCoreClient) -> [ClientProcessesCommand] {
+        core.commands.compactMap { if case .processes(let command)? = $0.command { command } else { nil } }
+    }
+
+    private func settle(_ model: ConversationProcessesModel) async { await model.refresh() }
+
+    @Test func processesFollowTheConversationsMachineAndIgnoreAnotherTarget() async {
+        let core = ScriptedCoreClient()
+        let model = ConversationProcessesModel()
+        model.bind(target: .init(endpointID: "origin#daemon-a", projectID: "project", conversationID: "card"), core: core)
+        model.active = true
+        await settle(model)
+        guard case .bind(let bind)? = sent(core).last?.action else {
+            Issue.record("expected a bind: \(sent(core))")
+            return
         }
-        return await condition()
+        #expect(bind.daemonID == "daemon-a" && bind.projectID == "project" && bind.cardID == "card" && bind.active)
+        let scope = sent(core)[0].scope
+        #expect(core.isObserved(.processes, scope: scope))
+
+        core.emit(.processes, scope: scope) {
+            $0.processes = .with {
+                $0.daemonID = "daemon-a"; $0.projectID = "project"; $0.cardID = "card"
+                $0.processes = [self.execution("own")]
+                $0.selectedID = "own"
+                $0.stdout = Data("ready\n".utf8)
+                $0.stderr = Data("warning".utf8)
+                $0.outputTruncated = true
+            }
+        }
+        #expect(model.processes.map(\.id) == ["own"] && model.selectedID == "own")
+        #expect(String(decoding: model.stdout, as: UTF8.self) == "ready\n" && model.outputTruncated)
+
+        // A late slice for the previous conversation never crosses over.
+        model.bind(target: .init(endpointID: "origin#daemon-b", projectID: "project", conversationID: "next"), core: core)
+        core.emit(.processes, scope: scope) {
+            $0.processes = .with {
+                $0.daemonID = "daemon-a"; $0.projectID = "project"; $0.cardID = "card"
+                $0.processes = [self.execution("own")]
+                $0.stdout = Data("old machine output".utf8)
+            }
+        }
+        #expect(model.processes.isEmpty && model.stdout.isEmpty && model.selectedID == nil)
     }
 
-    @Test func processScopeOutputAndExplicitStopStayBounded() async {
-        let own = execution("own")
-        let fixture = ProcessFixture(values: [own, execution("foreign", card: "other")])
+    @Test func hidingOnlyDeactivatesAndStopIsExplicit() async {
+        let core = ScriptedCoreClient()
         let model = ConversationProcessesModel()
-        model.bind(target: .init(endpointID: "machine", projectID: "project", conversationID: "card"), client: fixture)
+        model.bind(target: .init(endpointID: "origin#daemon-a", projectID: "project", conversationID: "card"), core: core)
         model.active = true
-        defer { model.active = false }
-        #expect(await wait { await fixture.watching("own") })
-        #expect(model.processes.map(\.id) == ["own"])
-        #expect(await fixture.scopes.first == "project/card")
-        var event = Dieter_V1_ExecutionEvent(); event.execution = own; event.sequence = 1
-        event.stream = .stdout; event.data = Data(repeating: 65, count: ConversationProcessesModel.maximumOutputBytes)
-        await fixture.emit(event)
-        event.sequence = 2; event.stream = .stderr; event.data = Data("warning".utf8)
-        await fixture.emit(event)
-        #expect(model.stdout.count <= ConversationProcessesModel.maximumOutputBytes / 2)
-        #expect(model.outputTruncated && String(decoding: model.stderr, as: UTF8.self) == "warning")
+        await settle(model)
+        let scope = sent(core)[0].scope
+        core.emit(.processes, scope: scope) {
+            $0.processes = .with {
+                $0.daemonID = "daemon-a"; $0.projectID = "project"; $0.cardID = "card"
+                $0.processes = [self.execution("own"), self.execution("done", status: "exited")]
+                $0.selectedID = "own"
+            }
+        }
         model.active = false
-        #expect(await wait { await fixture.canceledWatches == 1 })
-        #expect(await fixture.stops == 0, "Hiding or closing only detaches the watch")
-        model.active = true
+        await settle(model)
+        #expect(!sent(core).contains { if case .stop? = $0.action { true } else { false } }, "hiding never stops")
+        guard case .bind(let hidden)? = sent(core).last?.action else { return }
+        #expect(!hidden.active)
+
         await model.stopSelected()
-        #expect(await fixture.stops == 1)
-        #expect(model.selected?.status == "canceled")
-    }
-
-    @Test func staleProcessOutputCannotCrossMachineOrConversation() async {
-        let old = execution("old")
-        let first = ProcessFixture(values: [old])
-        let second = ProcessFixture(values: [execution("new", card: "next")])
-        let model = ConversationProcessesModel()
-        model.bind(target: .init(endpointID: "first", projectID: "project", conversationID: "card"), client: first)
+        #expect(!sent(core).contains { if case .stop? = $0.action { true } else { false } }, "a hidden view cannot stop")
         model.active = true
-        defer { model.active = false }
-        #expect(await wait { await first.watching("old") })
-        model.bind(target: .init(endpointID: "second", projectID: "project", conversationID: "next"), client: second)
-        #expect(await wait { await second.watching("new") })
-        var late = Dieter_V1_ExecutionEvent(); late.execution = old; late.sequence = 99
-        late.stream = .stdout; late.data = Data("old machine output".utf8)
-        await first.emit(late)
-        #expect(model.selectedID == "new" && model.stdout.isEmpty)
-        #expect(await first.stops == 0)
+        model.select("done")
+        await model.stopSelected()
+        #expect(!sent(core).contains { if case .stop? = $0.action { true } else { false } }, "only a running process stops")
+        model.select("own")
+        await model.stopSelected()
+        #expect(sent(core).filter { if case .stop? = $0.action { true } else { false } }.count == 1)
     }
 
-    @Test func releasingActiveProcessModelCancelsObserversWithoutStoppingProcess() async {
-        let fixture = ProcessFixture(values: [execution("own")])
+    @Test func releasingTheModelReleasesTheCoreSurface() async {
+        let core = ScriptedCoreClient()
         var model: ConversationProcessesModel? = ConversationProcessesModel()
-        weak var released = model
-        model?.bind(target: .init(endpointID: "machine", projectID: "project", conversationID: "card"), client: fixture)
+        model?.bind(target: .init(endpointID: "origin#daemon-a", projectID: "project", conversationID: "card"), core: core)
         model?.active = true
-        #expect(await wait { await fixture.watching("own") })
+        await model?.refresh()
+        let scope = sent(core)[0].scope
+        #expect(core.isObserved(.processes, scope: scope))
         model = nil
-        #expect(
-            await wait {
-                let canceled = await fixture.canceledWatches; return released == nil && canceled == 1
-            })
-        #expect(await fixture.stops == 0)
+        for _ in 0..<50 where core.isObserved(.processes, scope: scope) { try? await Task.sleep(for: .milliseconds(10)) }
+        #expect(!core.isObserved(.processes, scope: scope))
+        #expect(!sent(core).contains { if case .stop? = $0.action { true } else { false } })
     }
 }

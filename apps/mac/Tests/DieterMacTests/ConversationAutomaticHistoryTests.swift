@@ -1,134 +1,108 @@
 import DieterAPI
 import Foundation
+import SharedCore
 import Testing
 @testable import DieterMac
 
 private func automaticHistoryMessage(_ index: Int) -> Dieter_V1_UiMessage {
-    var message = Dieter_V1_UiMessage()
-    message.id = "message-\(index)"
-    message.role = "user"
-    var part = Dieter_V1_MessagePart()
-    part.type = "text"
-    part.text = "Message \(index)"
-    message.parts = [part]
-    return message
+    fixtureMessage("message-\(index)", text: "Message \(index)")
 }
 
-private actor AutomaticHistoryRPC: ConversationRPC {
-    func markConversationRead(cardID: String, responseSeq: Int64) async throws -> Dieter_V1_Card {
-        var card = Dieter_V1_Card()
-        card.id = cardID; card.responseSeq = responseSeq; card.seenResponseSeq = responseSeq
-        return card
+/// The core pages history; the model shows it as earlier messages ahead of
+/// the live window and reports a page once the update carrying it arrives.
+@MainActor private final class HistoryCore {
+    let core = ScriptedCoreClient()
+    let model = ConversationModel()
+    var earlier: Range<Int>
+    let live: Range<Int>
+    var browsing = false
+
+    init(earlier: Range<Int>, live: Range<Int>) {
+        self.earlier = earlier
+        self.live = live
+        model.core = core
+        model.selectedChatID = "chat"
+        model.observe("chat")
+        publish()
     }
 
-    var requests: [Int32] = []
-    var total = 3_030
-
-    func conversation(cardID: String, limit: Int32, before: Int32?) async throws -> Dieter_V1_ConversationSnapshot {
-        let end = min(total, Int(before ?? Int32(total)))
-        let start = max(0, end - Int(limit))
-        requests.append(Int32(end))
-        var snapshot = Dieter_V1_ConversationSnapshot()
-        snapshot.conversation.cardID = cardID
-        snapshot.conversation.messages = (start..<end).map(automaticHistoryMessage)
-        snapshot.page.start = Int32(start)
-        snapshot.page.total = Int32(total)
-        snapshot.page.hasMore_p = start > 0
-        return snapshot
+    func publish() {
+        core.emitConversation("chat") { slice in
+            slice.messages = (Array(earlier) + Array(live)).map(automaticHistoryMessage)
+            slice.earlierCount = Int32(earlier.count)
+            slice.page = .with {
+                $0.start = Int32(live.lowerBound)
+                $0.end = Int32(live.upperBound)
+                $0.total = Int32(live.upperBound)
+            }
+            slice.hasEarlier_p = (earlier.isEmpty ? live.lowerBound : earlier.lowerBound) > 0
+            slice.browsingEarlier = browsing
+        }
     }
-
-    func watchConversation(
-        cardID: String, after: Int64, receive: @escaping @Sendable (Dieter_V1_ConversationUpdate) async -> Void
-    ) async throws {}
 }
 
-@Test @MainActor func automaticHistoryAdvancesAcrossEvictedNewerPagesWithoutGaps() async {
-    let rpc = AutomaticHistoryRPC(), model = ConversationModel()
-    model.bind(client: rpc, endpointID: "test")
-    model.selectedChatID = "chat"
-    var live = Dieter_V1_ConversationSnapshot()
-    live.conversation.cardID = "chat"
-    live.conversation.messages = (3_000..<3_030).map(automaticHistoryMessage)
-    live.page.start = 3_000
-    live.page.total = 3_030
-    live.page.hasMore_p = true
-    model.conversation = live
-    model.olderConversationMessages = (400..<2_400).map(automaticHistoryMessage)
-    model.conversationHistoryStart = 400
-    model.conversationHistoryTotal = 3_030
-    model.conversationHistoryHasMore = true
-    model.browsingEarlierHistory = true
-
-    #expect(await model.loadLaterMessages())
-    #expect(model.conversationHistoryStart == 460)
-    #expect(model.conversationMessages.map(\.id) == (460..<2_460).map { "message-\($0)" })
-    #expect(model.olderConversationMessages.count == 2_000)
-    #expect(model.browsingEarlierHistory)
-    for _ in 0..<9 { #expect(await model.loadLaterMessages()) }
-    #expect(!model.browsingEarlierHistory)
-    #expect(model.conversationMessages.map(\.id) == (1_000..<3_030).map { "message-\($0)" })
-    #expect(model.olderConversationMessages.count == 2_000)
-    #expect(await rpc.requests == stride(from: Int32(2_460), through: 3_000, by: 60).map { $0 })
-
-    model.returnToLatest()
-    #expect(model.olderConversationMessages.isEmpty)
+@Test @MainActor func historyPagesExtendOnceTheirUpdateArrivesAndReturnToTheLiveWindow() async {
+    let fixture = HistoryCore(earlier: 3_000..<3_000, live: 3_000..<3_030)
+    let model = fixture.model
     #expect(model.conversationMessages.map(\.id) == (3_000..<3_030).map { "message-\($0)" })
-    #expect(model.conversationHistoryStart == 3_000)
-    #expect(model.conversationHistoryHasMore)
-    #expect(!(await model.loadLaterMessages()))
-}
-
-private actor SuspendedAutomaticHistoryRPC: ConversationRPC {
-    func markConversationRead(cardID: String, responseSeq: Int64) async throws -> Dieter_V1_Card {
-        var card = Dieter_V1_Card()
-        card.id = cardID; card.responseSeq = responseSeq; card.seenResponseSeq = responseSeq
-        return card
-    }
-
-    var pending: CheckedContinuation<Dieter_V1_ConversationSnapshot, Never>?
-    var requested: Bool { pending != nil }
-    func conversation(cardID: String, limit: Int32, before: Int32?) async throws -> Dieter_V1_ConversationSnapshot {
-        await withCheckedContinuation { pending = $0 }
-    }
-    func finish() {
-        var snapshot = Dieter_V1_ConversationSnapshot()
-        snapshot.conversation.messages = (30..<60).map(automaticHistoryMessage)
-        snapshot.page.start = 30
-        snapshot.page.total = 90
-        pending?.resume(returning: snapshot)
-        pending = nil
-    }
-    func watchConversation(
-        cardID: String, after: Int64, receive: @escaping @Sendable (Dieter_V1_ConversationUpdate) async -> Void
-    ) async throws {}
-}
-
-@Test @MainActor func returningToLatestRejectsAnInFlightHistoryPage() async {
-    let rpc = SuspendedAutomaticHistoryRPC(), model = ConversationModel()
-    model.bind(client: rpc, endpointID: "test")
-    model.selectedChatID = "chat"
-    var live = Dieter_V1_ConversationSnapshot()
-    live.conversation.messages = (60..<90).map(automaticHistoryMessage)
-    live.page.start = 60
-    live.page.total = 90
-    live.page.hasMore_p = true
-    model.conversation = live
-    model.olderConversationMessages = (0..<30).map(automaticHistoryMessage)
-    model.conversationHistoryStart = 0
-    model.conversationHistoryTotal = 90
-    model.browsingEarlierHistory = true
-    let request = Task { await model.loadLaterMessages() }
-    for _ in 0..<1_000 {
-        if await rpc.requested { break }
-        await Task.yield()
-    }
-    #expect(await rpc.requested)
-    #expect(!(await model.loadLaterMessages()))
-    model.returnToLatest()
-    await rpc.finish()
-    #expect(!(await request.value))
     #expect(model.olderConversationMessages.isEmpty)
-    #expect(model.conversationMessages == live.conversation.messages)
-    #expect(!model.conversationHistoryLoading)
+    #expect(model.conversationHistoryHasMore)
+
+    // The core publishes the page before it answers.
+    fixture.core.asyncHandler = { command in
+        guard case .loadEarlierMessages = command.command else { return .with { $0.done = ClientDone() } }
+        fixture.earlier = 2_940..<3_000
+        fixture.publish()
+        return .with { $0.pageLoaded = .with { $0.loaded = true } }
+    }
+    #expect(await model.loadEarlierMessages())
+    #expect(model.olderConversationMessages.map(\.id) == (2_940..<3_000).map { "message-\($0)" })
+    #expect(model.conversation?.conversation.messages.count == 30, "the live window stays separate")
+    #expect(model.conversationHistoryStart == 2_940)
+
+    // An update that lands after the reply is still awaited.
+    fixture.core.asyncHandler = { command in
+        guard case .loadEarlierMessages = command.command else { return .with { $0.done = ClientDone() } }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(80))
+            fixture.earlier = 2_880..<3_000
+            fixture.browsing = true
+            fixture.publish()
+        }
+        return .with { $0.pageLoaded = .with { $0.loaded = true } }
+    }
+    #expect(await model.loadEarlierMessages())
+    #expect(model.olderConversationMessages.count == 120)
+    #expect(model.browsingEarlierHistory)
+
+    // Nothing more to load answers at once.
+    fixture.core.asyncHandler = { _ in .with { $0.pageLoaded = .with { $0.loaded = false } } }
+    #expect(!(await model.loadLaterMessages()))
+
+    model.returnToLatest()
+    try? await Task.sleep(for: .milliseconds(50))
+    #expect(fixture.core.commands.contains { if case .returnToLatest = $0.command { true } else { false } })
+    fixture.earlier = 3_000..<3_000
+    fixture.browsing = false
+    fixture.publish()
+    #expect(model.olderConversationMessages.isEmpty)
     #expect(!model.browsingEarlierHistory)
+    #expect(model.conversationMessages.map(\.id) == (3_000..<3_030).map { "message-\($0)" })
+    model.observe(nil)
+}
+
+@Test @MainActor func aPageForAConversationNoLongerShownIsNotReported() async {
+    let fixture = HistoryCore(earlier: 60..<60, live: 60..<90)
+    let model = fixture.model
+    var release: CheckedContinuation<Void, Never>?
+    fixture.core.asyncHandler = { _ in
+        await withCheckedContinuation { release = $0 }
+        return .with { $0.pageLoaded = .with { $0.loaded = true } }
+    }
+    let request = Task { await model.loadEarlierMessages() }
+    for _ in 0..<1_000 where release == nil { await Task.yield() }
+    #expect(release != nil)
+    model.observe(nil)
+    release?.resume()
+    #expect(!(await request.value))
 }

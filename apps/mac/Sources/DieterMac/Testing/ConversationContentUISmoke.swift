@@ -211,7 +211,7 @@
         }
 
         private static func installFixture(_ store: DieterStore) async throws -> String {
-            guard let rpc = store.rpc, let project = store.projects.first,
+            guard let rpc = await store.fixtureRPC(), let project = store.projects.first,
                 let board = store.state.boards.first(where: { $0.projectID == project.id })
             else { throw CocoaError(.fileNoSuchFile) }
             var request = Dieter_V1_CreateConversationRequest()
@@ -258,39 +258,19 @@
             store.selectedBoardID = board.id
             store.selectedChatID = nil
             store.selectedCardID = card.id
-            // Establish the production read/watch lifecycle as well as the
-            // workspace RPC scope. Assigning a local snapshot alone leaves
-            // agent-originated content presentations without a live consumer.
+            // Observe through the core as production does; a local snapshot
+            // alone would leave agent-originated presentations unconsumed.
             store.bindConversation()
-            let previousAccepted = store.conversationModel.onAccepted
-            var initialReadRefreshedAt: Date?
-            store.conversationModel.onAccepted = { snapshot, chat in
-                previousAccepted(snapshot, chat)
-                if snapshot.conversation.cardID == card.id {
-                    initialReadRefreshedAt = store.conversationLastRefreshedAt
-                }
+            store.conversationModel.observe(card.id)
+            let live = await NativeUIAccessibility.wait(timeout: 15) {
+                store.conversation?.conversation.cardID == card.id && store.conversationLastRefreshedAt != nil
             }
-            defer { store.conversationModel.onAccepted = previousAccepted }
-            await store.conversationModel.fetchConversation(cardID: card.id, chat: false, rpc: rpc)
-            guard store.conversation?.conversation.cardID == card.id,
-                store.conversationTask != nil
-            else { throw CocoaError(.fileReadUnknown) }
-            if store.conversation?.conversation.lastSeq == 0 {
-                // A zero-sequence watch starts with a replacement snapshot.
-                // Wait for it before installing synthetic renderer history,
-                // which the authoritative replacement correctly clears.
-                // Watch liveness advances even when the initial frame equals
-                // the unary read and correctly skips another cache write.
-                let watching = await NativeUIAccessibility.wait(timeout: 8) {
-                    initialReadRefreshedAt != nil
-                        && store.conversationLastRefreshedAt != initialReadRefreshedAt
-                }
-                guard watching else { throw CocoaError(.fileReadUnknown) }
-            }
+            guard live else { throw CocoaError(.fileReadUnknown) }
             // Keep the daemon's live transcript authoritative. The local
             // renderer fixture lives in earlier history, which metadata and
             // content-presentation deltas intentionally preserve.
-            store.conversationModel.olderConversationMessages = [message]
+            store.conversationModel.fixtureHistory = [message]
+            store.conversationModel.olderConversationMessages = [message] + store.conversationModel.olderConversationMessages
             store.section = .board
             return card.id
         }

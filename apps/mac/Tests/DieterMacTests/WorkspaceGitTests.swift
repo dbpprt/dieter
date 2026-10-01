@@ -20,44 +20,6 @@ import Testing
     #expect(request.remotePublishMode == "pull_request")
 }
 
-@Test func remotePublishPolicyRoutesReviewActions() {
-    let pullRequest = WorkspaceActionAvailability(
-        agentActive: false,
-        operationActive: false,
-        workspaceState: "ready",
-        workspaceMode: "worktree",
-        changedFiles: 0,
-        hasCommits: true,
-        hasRemote: true,
-        scmAuthenticated: true,
-        hasPullRequest: false,
-        workspaceBranch: "feature/review",
-        baseBranch: "main",
-        remotePublishMode: RemotePublishMode.pullRequest.rawValue
-    )
-    #expect(!pullRequest.allowsMergeFlow)
-    #expect(!pullRequest.allows(.mergeLocal))
-    #expect(pullRequest.allows(.createPullRequest))
-
-    let pushBase = WorkspaceActionAvailability(
-        agentActive: false,
-        operationActive: false,
-        workspaceState: "ready",
-        workspaceMode: "worktree",
-        changedFiles: 0,
-        hasCommits: true,
-        hasRemote: true,
-        scmAuthenticated: true,
-        hasPullRequest: false,
-        workspaceBranch: "feature/direct",
-        baseBranch: "main",
-        remotePublishMode: RemotePublishMode.pushBase.rawValue
-    )
-    #expect(pushBase.allowsMergeFlow)
-    #expect(pushBase.allows(.mergeLocal))
-    #expect(!pushBase.allows(.createPullRequest))
-}
-
 @Test func projectDirectoryDraftDoesNotSendWorktreeBranchOverrides() {
     var request = Dieter_V1_CreateConversationRequest()
     ConversationWorkspaceDraft(mode: .project, branch: "stale", baseBranch: "main").apply(
@@ -66,105 +28,6 @@ import Testing
     #expect(request.workspaceMode == "project")
     #expect(request.workspaceBranch.isEmpty)
     #expect(request.workspaceBaseBranch.isEmpty)
-}
-
-@Test func unifiedDiffParserTracksBothSidesOfAHunk() {
-    let lines = UnifiedDiffParser.parse(
-        """
-        diff --git a/a.swift b/a.swift
-        @@ -10,3 +10,4 @@
-         context
-        -old
-        +new
-        +extra
-         tail
-        """)
-
-    let deletion = lines.first { $0.kind == .deletion }
-    let additions = lines.filter { $0.kind == .addition }
-    #expect(deletion?.oldLine == 11)
-    #expect(deletion?.newLine == nil)
-    #expect(additions.map(\.newLine) == [11, 12])
-    #expect(lines.last?.oldLine == 12)
-    #expect(lines.last?.newLine == 13)
-}
-
-@Test func workspaceActionAvailabilityLocksNormalActionsDuringConflicts() {
-    let availability = WorkspaceActionAvailability(
-        agentActive: false,
-        operationActive: false,
-        workspaceState: "conflicted",
-        workspaceMode: "worktree",
-        changedFiles: 2,
-        hasCommits: true,
-        hasRemote: true,
-        scmAuthenticated: true,
-        hasPullRequest: true
-    )
-
-    #expect(!availability.allows(.commit))
-    #expect(!availability.allows(.mergePullRequest))
-    #expect(availability.allows(.continueConflict))
-    #expect(availability.allows(.abortConflict))
-}
-
-@Test func projectDirectoryActionsFollowItsActualCheckedOutBranch() {
-    let feature = WorkspaceActionAvailability(
-        agentActive: false,
-        operationActive: false,
-        workspaceState: "ready",
-        workspaceMode: "project",
-        changedFiles: 0,
-        hasCommits: true,
-        hasRemote: true,
-        scmAuthenticated: true,
-        hasPullRequest: false,
-        workspaceBranch: "feature/direct",
-        baseBranch: "main"
-    )
-
-    #expect(feature.allows(.push))
-    #expect(feature.allows(.createPullRequest))
-    #expect(!feature.allows(.mergeLocal))
-    #expect(!feature.allows(.discard))
-    #expect(!feature.allowsMergeFlow)
-
-    let base = WorkspaceActionAvailability(
-        agentActive: false,
-        operationActive: false,
-        workspaceState: "ready",
-        workspaceMode: "project",
-        changedFiles: 0,
-        hasCommits: true,
-        hasRemote: true,
-        scmAuthenticated: true,
-        hasPullRequest: false,
-        workspaceBranch: "main",
-        baseBranch: "main"
-    )
-    #expect(!base.allows(.push))
-    #expect(!base.allows(.createPullRequest))
-}
-
-@Test func activeGitOperationIsReconciledAfterWorkspaceClearsItsOperationID() {
-    #expect(
-        GitOperationReconciliation.operationID(
-            workspaceOperationID: "",
-            observedOperationID: "gitop_stale",
-            observedStatus: "running"
-        ) == "gitop_stale")
-    #expect(
-        GitOperationReconciliation.operationID(
-            workspaceOperationID: "",
-            observedOperationID: "gitop_finished",
-            observedStatus: "succeeded"
-        ) == nil)
-    #expect(
-        GitOperationReconciliation.operationID(
-            workspaceOperationID: "gitop_current",
-            observedOperationID: nil,
-            observedStatus: nil
-        ) == "gitop_current")
 }
 
 @Test func validationCommandDraftRoundTripsLiteralArgumentsAndEnvironment() {
@@ -221,37 +84,4 @@ import Testing
     #expect(WorkspaceChangePresentation.filename("Sources/App/Workspace.swift") == "Workspace.swift")
     #expect(WorkspaceChangePresentation.directory("Sources/App/Workspace.swift") == "Sources/App")
     #expect(WorkspaceChangePresentation.directory("README.md").isEmpty)
-}
-
-@Test func workspaceReviewSelectionSurvivesRefreshAndFallsBackSafely() {
-    #expect(
-        WorkspaceReviewSelectionResolver.resolve(
-            currentPath: "Sources/App.swift",
-            currentCommitSHA: "",
-            filePaths: ["README.md", "Sources/App.swift"],
-            commitSHAs: ["abc"]
-        ) == .init(path: "Sources/App.swift", commitSHA: ""))
-    #expect(
-        WorkspaceReviewSelectionResolver.resolve(
-            currentPath: "Removed.swift",
-            currentCommitSHA: "",
-            filePaths: [],
-            commitSHAs: ["abc"]
-        ) == .init(path: "", commitSHA: "abc"))
-    #expect(
-        WorkspaceReviewSelectionResolver.resolve(
-            currentPath: "Removed.swift",
-            currentCommitSHA: "old",
-            filePaths: [],
-            commitSHAs: []
-        ) == .init(path: "", commitSHA: ""))
-}
-
-@Test func unifiedDiffDoesNotInventALineFromThePatchTerminator() {
-    let lines = UnifiedDiffParser.parse("@@ -0,0 +1,2 @@\n+new line\n+\n")
-    #expect(lines.filter { $0.kind == .context }.isEmpty)
-    #expect(lines.filter { $0.kind == .addition }.map(\.newLine) == [1, 2])
-    let context = UnifiedDiffParser.parse("@@ -1 +1 @@\n \n")
-    #expect(context.last?.kind == .context)
-    #expect(context.last?.newLine == 1)
 }

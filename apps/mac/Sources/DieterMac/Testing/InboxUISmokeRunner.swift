@@ -87,7 +87,7 @@
                     && !visible("inbox.finish.\(waiting.id)", window) && !visible("inbox.finish.\(chat.id)", window),
                 &results)
             do {
-                let archived = try await store.rpc?.archivedCards(boardID: waiting.boardID)
+                let archived = try await store.fixtureRPC()?.archivedCards(boardID: waiting.boardID)
                 let fixture = archived?.cards.first { $0.title.hasPrefix("Inbox archived:") }
                 record(
                     "archived-excluded", fixture != nil && !visible("inbox.row.\(fixture?.id ?? "")", window), &results)
@@ -250,7 +250,7 @@
             }
             record("card-context-archive-clears-selected-detail", archivedCard && cardRemoved, &results)
             do {
-                let archived = try await store.rpc?.archivedCards(boardID: review.boardID)
+                let archived = try await store.fixtureRPC()?.archivedCards(boardID: review.boardID)
                 record("card-archive-persisted", archived?.cards.contains { $0.id == review.id } == true, &results)
             } catch { results["card-archive-persisted"] = "failed: \(error)" }
 
@@ -270,7 +270,7 @@
                 archivedChat && chatRemoved && selectedID(store) == waiting.id && store.composerText == archiveDraft,
                 &results)
             do {
-                let archived = try await store.rpc?.chats(includeArchived: true)
+                let archived = try await store.fixtureRPC()?.chats(includeArchived: true)
                 record(
                     "chat-archive-persisted",
                     archived?.chats.contains { $0.id == chat.id && $0.archived } == true, &results)

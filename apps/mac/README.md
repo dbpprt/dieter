@@ -113,10 +113,16 @@ need OS permissions and inject input only into their owned fixture window.
 
 ## Architecture and generated code
 
-`DieterCore` holds identities, contracts, and pure policies; `DieterClient` owns
-RPC, routing, and persistence. `DieterMac/Features` contains native feature models.
-`AppSession` owns the menu-bar lifetime and `WindowWorkspace` owns the workspace
-window. Pending commands have a durable journal separate from cached projections.
+The shared Kotlin core (`apps/core`, linked as `DieterShared` through the
+`SharedCore` target) owns the session, routing, sync, the outbox, and every
+feature surface: files, terminals, schedules, review, administration,
+processes, search, and screen sessions. `DieterMac/Features` contains native
+presentation models that observe core slices and send commands. The editor
+buffer, SwiftTerm, Markdown rendering, the transcript scroll controller, and the
+WebRTC, VideoToolbox, and Metal screen engine stay native. `DieterCore` holds
+identities, contracts, and pure Swift policies; `DieterClient` holds the native
+gRPC transport the core uses. `AppSession` owns the menu-bar lifetime and
+`WindowWorkspace` owns the workspace window.
 
 SwiftProtobuf messages and grpc-swift v2 stubs are checked in. `just proto`
 regenerates authoritative schema outputs; `just mac proto-check` checks fingerprints.

@@ -72,18 +72,27 @@ class CheckChangedTests(unittest.TestCase):
                 # Branding is the only shared input the Kotlin core does not consume.
                 self.assertEqual(self.components(path), clients if path.startswith("assets/") else clients | {"kmp"})
 
-    def test_shared_kotlin_core_runs_only_its_own_checks(self):
+    def test_shared_kotlin_core_runs_its_checks_and_every_client_that_links_it(self):
         core = [["just", "core", "test"], ["just", "core", "android-test"], ["just", "core", "apple-test"]]
         for path in ("apps/core/shared/src/commonMain/kotlin/com/dbpprt/dieter/core/CoreRuntime.kt",
-                     "apps/core/harness/apple/Sources/CoreBridge/CoreStore.swift", "just/core.just"):
+                     "apps/core/apple/src/appleMain/kotlin/com/dbpprt/dieter/shared/DieterShared.kt", "just/core.just"):
             with self.subTest(path=path):
                 plan = self.plan(path)
                 for command in core:
                     self.assertIn(command, plan)
-                # The Android app compiles the core from source; no device suite runs.
+                # Android compiles the core from source; the Mac links it, so its
+                # unit tests, the Swift bridge suite, and every smoke suite run.
                 self.assertIn(["just", "android", "test"], plan)
-                self.assertFalse(any(command[:2] in (["just", "mac"], ["just", "ios"], ["just", "e2e"]) for command in plan))
-        self.assertEqual(self.components("apps/core/model/src/commonMain/proto/dieter/client/v1/client.proto"), {"kmp", "android"})
+                self.assertIn(["just", "mac", "test"], plan)
+                self.assertIn(["just", "mac", "core-test"], plan)
+                self.assertIn(["just", "e2e", "run", "--platform", "mac", "--suite", "smoke"], plan)
+                self.assertFalse(any(command[:2] == ["just", "ios"] for command in plan))
+        self.assertEqual(self.components("apps/core/model/src/commonMain/proto/dieter/client/v1/client.proto"), {"kmp", "android", "macos"})
+        for path in ("apps/mac/Sources/SharedCore/CoreRpcBridge.swift", "apps/mac/scripts/shared-framework.sh"):
+            with self.subTest(path=path):
+                plan = self.plan(path)
+                self.assertIn(["just", "mac", "core-test"], plan)
+                self.assertNotIn(["just", "core", "test"], plan)
         for path in ("api/proto/dieter/v1/dieter.proto", "scripts/isolated-gateway/main.go"):
             with self.subTest(path=path):
                 self.assertIn(["just", "core", "test"], self.plan(path))

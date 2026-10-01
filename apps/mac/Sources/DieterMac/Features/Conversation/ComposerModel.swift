@@ -122,88 +122,17 @@ final class ConversationDraft {
     }
 }
 
-@MainActor
-private final class ConversationDraftTextPersistence {
-    private struct StoredDraft: Codable {
-        var target: WorkspaceTarget
-        var text: String
-        var updatedAt: Date
-    }
-
-    private struct Store: Codable {
-        var version = 1
-        var drafts: [StoredDraft]
-    }
-
-    private static let storageKey = "DieterConversationDraftTexts"
-    private let defaults: UserDefaults
-    private let maximumDrafts: Int
-    private var drafts: [WorkspaceTarget: StoredDraft]
-
-    init(defaults: UserDefaults, maximumDrafts: Int) {
-        self.defaults = defaults
-        self.maximumDrafts = maximumDrafts
-        let stored = defaults.data(forKey: Self.storageKey)
-            .flatMap { try? JSONDecoder().decode(Store.self, from: $0) }
-        drafts = Dictionary(
-            (stored?.drafts ?? []).filter { !$0.target.conversationID.isEmpty && !$0.text.isEmpty }
-                .map { ($0.target, $0) },
-            uniquingKeysWith: { first, second in first.updatedAt >= second.updatedAt ? first : second }
-        )
-        trimToBound()
-    }
-
-    func text(for target: WorkspaceTarget) -> String {
-        drafts[target]?.text ?? ""
-    }
-
-    func update(_ text: String, for target: WorkspaceTarget) {
-        if text.isEmpty {
-            drafts.removeValue(forKey: target)
-        } else {
-            drafts[target] = StoredDraft(target: target, text: text, updatedAt: Date())
-        }
-        trimToBound()
-        save()
-    }
-
-    func retarget(from old: WorkspaceTarget, to new: WorkspaceTarget) {
-        guard var value = drafts.removeValue(forKey: old) else { return }
-        value.target = new
-        value.updatedAt = Date()
-        drafts[new] = value
-        trimToBound()
-        save()
-    }
-
-    private func trimToBound() {
-        guard drafts.count > maximumDrafts else { return }
-        let retained = drafts.values.sorted { $0.updatedAt > $1.updatedAt }.prefix(maximumDrafts)
-        drafts = Dictionary(retained.map { ($0.target, $0) }, uniquingKeysWith: { first, _ in first })
-    }
-
-    private func save() {
-        guard !drafts.isEmpty else {
-            defaults.removeObject(forKey: Self.storageKey)
-            return
-        }
-        let value = Store(drafts: drafts.values.sorted { $0.updatedAt > $1.updatedAt })
-        guard let data = try? JSONEncoder().encode(value) else { return }
-        defaults.set(data, forKey: Self.storageKey)
-    }
-}
-
 @MainActor @Observable
 final class ComposerModel {
     private(set) var draft = ConversationDraft()
     @ObservationIgnored private var drafts: [WorkspaceTarget: ConversationDraft] = [:]
     @ObservationIgnored private var target: WorkspaceTarget?
-    @ObservationIgnored private var persistence: ConversationDraftTextPersistence?
+    @ObservationIgnored private let store: DraftTextStore?
 
-    init(defaults: UserDefaults? = nil, maximumDrafts: Int = 64) {
-        if let defaults {
-            persistence = ConversationDraftTextPersistence(defaults: defaults, maximumDrafts: maximumDrafts)
-        }
+    /// `store` keeps unsent text between launches; without one, drafts live
+    /// only as long as this model.
+    init(store: DraftTextStore? = nil) {
+        self.store = store
     }
 
     func select(_ target: WorkspaceTarget?) {
@@ -219,21 +148,33 @@ final class ComposerModel {
         if let existing = drafts[target] {
             draft = existing
         } else {
-            let persistence = persistence
-            let value = ConversationDraft(
-                text: persistence?.text(for: target) ?? "",
-                onTextChange: { persistence?.update($0, for: target) }
-            )
+            let value = makeDraft(for: target)
             drafts[target] = value; draft = value
+        }
+    }
+
+    /// Fills drafts opened before the saved text arrived, unless typed in.
+    func adoptSavedTexts() {
+        for (target, existing) in drafts where existing.revision == 0 && existing.text.isEmpty {
+            let saved = store?.text(for: target) ?? ""
+            guard !saved.isEmpty else { continue }
+            let value = makeDraft(for: target)
+            drafts[target] = value
+            if self.target == target { draft = value }
         }
     }
 
     func retarget(from old: WorkspaceTarget, to new: WorkspaceTarget) {
         guard let value = drafts.removeValue(forKey: old) else { return }
-        persistence?.retarget(from: old, to: new)
-        let persistence = persistence
-        value.observeTextChanges { persistence?.update($0, for: new) }
+        store?.retarget(from: old, to: new)
+        let store = store
+        value.observeTextChanges { store?.update($0, for: new) }
         drafts[new] = value
         if target == old { target = new; draft = value }
+    }
+
+    private func makeDraft(for target: WorkspaceTarget) -> ConversationDraft {
+        let store = store
+        return ConversationDraft(text: store?.text(for: target) ?? "", onTextChange: { store?.update($0, for: target) })
     }
 }

@@ -9,7 +9,7 @@ import Testing
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     let store = DieterStore(restoreSync: false)
-    let draft = QuickTaskFormState(defaults: defaults)
+    let draft = QuickTaskFormState()
     draft.initialized = true
     draft.story = "Investigate the selected browser page"
 

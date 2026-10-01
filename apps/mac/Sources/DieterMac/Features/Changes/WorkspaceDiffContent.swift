@@ -86,6 +86,8 @@ struct DiffScrollOffsetObserver: NSViewRepresentable {
 
 struct WorkspaceDiffContent: View {
     let diff: Dieter_V1_FileDiff
+    /// The diff's lines as the core numbers them.
+    let lines: [UnifiedDiffLine]
     let split: Bool
     let comments: [Dieter_V1_ChangeComment]
     let canComment: Bool
@@ -102,7 +104,7 @@ struct WorkspaceDiffContent: View {
     private var buildKey: String {
         let commentRevision = comments.map { "\($0.id):\($0.revision)" }.joined(separator: ",")
         return
-            "\(diff.projectID)|\(diff.cardID)|\(diff.section)|\(diff.path)|\(diff.commitSha)|\(diff.revision)|\(split)|\(diff.nextOffset)|\(diff.totalBytes)|\(commentRevision)"
+            "\(diff.projectID)|\(diff.cardID)|\(diff.section)|\(diff.path)|\(diff.commitSha)|\(diff.revision)|\(split)|\(diff.nextOffset)|\(diff.totalBytes)|\(lines.count)|\(commentRevision)"
     }
 
     var body: some View {
@@ -145,7 +147,7 @@ struct WorkspaceDiffContent: View {
         .task(id: buildKey) {
             guard builtKey != buildKey else { return }
             let key = buildKey
-            let patch = diff.patch
+            let lines = lines
             let path = diff.path
             let commitSHA = diff.commitSha
             let split = split
@@ -153,7 +155,7 @@ struct WorkspaceDiffContent: View {
             guard
                 let next = try? await BackgroundPreparation.run({
                     WorkspaceDiffProjection.build(
-                        patch: patch,
+                        lines: lines,
                         path: path,
                         commitSHA: commitSHA,
                         split: split,
@@ -167,7 +169,8 @@ struct WorkspaceDiffContent: View {
             expandedFolds = []
             #if DIETER_UI_SMOKE
                 if NativeUISmokeTargets.enabled {
-                    NativeUISmokeTargets.diffText = patch; NativeUISmokeTargets.diffSplit = split
+                    NativeUISmokeTargets.diffText = lines.map(\.text).joined(separator: "\n")
+                    NativeUISmokeTargets.diffSplit = split
                 }
             #endif
         }

@@ -1,6 +1,7 @@
 import AppKit
 import DieterAPI
 import DieterCore
+import SharedCore
 import Testing
 @testable import DieterMac
 
@@ -46,8 +47,9 @@ private actor FilesFixture: FilesRPC {
 }
 
 @Test @MainActor func filesSaveAcknowledgementPreservesNewerEditsAndSerializesSaves() async throws {
-    let client = FilesFixture(), model = FilesModel()
-    model.bind(target: .init(endpointID: "machine", projectID: "project"), client: client)
+    let client = FilesFixture(), core = FilesCoreDouble.core(over: client), model = FilesModel()
+    model.bind(target: .init(endpointID: "gateway#machine", projectID: "project"), core: core)
+    model.isLive = true
     await model.openFile(path: "file.swift")
     let editor = NSTextView()
     model.fileEditorSession.attach(editor, documentKey: model.documentKey, initialText: "project")
@@ -73,12 +75,13 @@ private actor FilesFixture: FilesRPC {
 }
 
 @Test @MainActor func filesLateSaveCannotReplaceAnotherProjectDocument() async throws {
-    let client = FilesFixture(), model = FilesModel()
-    model.bind(target: .init(endpointID: "machine", projectID: "A"), client: client)
+    let client = FilesFixture(), core = FilesCoreDouble.core(over: client), model = FilesModel()
+    model.bind(target: .init(endpointID: "gateway#machine", projectID: "A"), core: core)
+    model.isLive = true
     await model.openFile(path: "same.swift")
     let save = Task { await model.saveFile(content: "A changed") }
     try await waitForFiles { await client.saving }
-    model.bind(target: .init(endpointID: "machine", projectID: "B"), client: client)
+    model.bind(target: .init(endpointID: "gateway#machine", projectID: "B"), core: core)
     await model.openFile(path: "same.swift")
     await client.finishSave()
     #expect(await save.value == nil)
@@ -87,12 +90,79 @@ private actor FilesFixture: FilesRPC {
 }
 
 @Test @MainActor func filesLateDeleteCannotClearTheCurrentDocument() async throws {
-    let client = FilesFixture(), model = FilesModel()
-    model.bind(target: .init(endpointID: "machine", projectID: "A"), client: client)
+    let client = FilesFixture(), core = FilesCoreDouble.core(over: client), model = FilesModel()
+    model.bind(target: .init(endpointID: "gateway#machine", projectID: "A"), core: core)
+    model.isLive = true
     await model.openFile(path: "deleted.swift")
     let deletion = Task { await model.deleteFile(path: "deleted.swift", recursive: false) }
     try await waitForFiles { await client.deleting }
     await model.openFile(path: "retained.swift")
     await client.finishDelete(); await deletion.value
     #expect(model.fileDocument?.path == "retained.swift")
+}
+
+@Test @MainActor func filesFolderHistoryIsTheCoresAndTheModelStepsThroughIt() async throws {
+    let core = ScriptedCoreClient(), model = FilesModel()
+    core.handler = { command in
+        var slice = ClientFilesSlice()
+        slice.target = .with { $0.daemonID = "machine"; $0.projectID = "project" }
+        switch command.files.action {
+        case .navigate(let path)?: slice.directory = path.path; slice.canGoBack = true
+        case .back?: slice.canGoForward = true
+        default: break
+        }
+        return .with { $0.files = slice }
+    }
+    model.bind(target: .init(endpointID: "gateway#machine", projectID: "project"), core: core)
+    await model.navigateFiles(to: "apps")
+    #expect(model.filePath == "apps")
+    #expect(model.fileNavigation == ProjectFileNavigation(canGoBack: true, canGoForward: false))
+    await model.navigateFilesBack()
+    #expect(model.filePath == "")
+    #expect(model.fileNavigation == ProjectFileNavigation(canGoBack: false, canGoForward: true))
+    #expect(
+        core.commands.map(\.files.action) == [
+            .bind(.with { $0.daemonID = "machine"; $0.projectID = "project" }),
+            .navigate(.with { $0.path = "apps" }), .back(ClientFilesStep()),
+        ])
+}
+
+@Test @MainActor func filesIgnoreTheSurfaceOfAPreviousTarget() async throws {
+    let core = ScriptedCoreClient(), model = FilesModel()
+    core.handler = { _ in .with { $0.done = ClientDone() } }
+    model.bind(target: .init(endpointID: "gateway#machine", projectID: "B"), core: core)
+    await model.loadFiles()
+    let scope = try #require(core.commands.first?.files.scope)
+    core.emit(.files, scope: scope) {
+        $0.files = .with {
+            $0.target = .with { $0.daemonID = "machine"; $0.projectID = "A" }
+            $0.directory = "stale"
+        }
+    }
+    #expect(model.filePath == "")
+    core.emit(.files, scope: scope) {
+        $0.files = .with {
+            $0.target = .with { $0.daemonID = "machine"; $0.projectID = "B" }
+            $0.directory = "current"
+        }
+    }
+    #expect(model.filePath == "current")
+}
+
+@Test @MainActor func filesRefuseChangesWhileTheirWorkspaceIsNotLive() async throws {
+    let client = FilesFixture(), core = FilesCoreDouble.core(over: client), model = FilesModel()
+    model.bind(target: .init(endpointID: "gateway#machine", projectID: "project"), core: core)
+    await model.openFile(path: "file.swift")
+    #expect(model.fileDocument != nil)
+    #expect(await model.saveFile(content: "changed") == nil)
+    await model.createFile(path: "new.swift", directory: false)
+    await model.deleteFile(path: "file.swift", recursive: false)
+    #expect(await client.saveCount == 0)
+    let changes = core.commands.filter {
+        switch $0.files.action {
+        case .save?, .create?, .delete?: true
+        default: false
+        }
+    }
+    #expect(changes.isEmpty)
 }

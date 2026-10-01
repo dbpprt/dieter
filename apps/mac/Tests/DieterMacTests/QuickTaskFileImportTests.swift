@@ -117,7 +117,7 @@ struct QuickTaskFileImportTests {
     }
 
     private func makeDraft() -> QuickTaskFormState {
-        QuickTaskFormState(defaults: UserDefaults(suiteName: "quick-task-import-" + UUID().uuidString)!)
+        QuickTaskFormState()
     }
 
     private func part(_ filename: String) -> Dieter_V1_MessagePart {

@@ -318,7 +318,7 @@ struct NewConversationSheet: View {
         guard !draftInitialized else { return }
         draftInitialized = true
         workspaceDraft.mode =
-            ConversationCreationPreferences.load(from: DieterAppearance.applicationDefaults()).workspaceMode
+            store.creationPreferences.workspaceMode
         if lane.isEmpty { lane = store.selectedBoard?.lanes.first?.id ?? "todo" }
         if workspaceDraft.baseBranch.isEmpty { workspaceDraft.baseBranch = project?.baseBranch ?? "" }
         if workspaceDraft.baseRemote.isEmpty {
@@ -352,7 +352,7 @@ struct NewConversationSheet: View {
         let initializing = provider.isEmpty
         let preferences =
             initializing
-            ? ConversationCreationPreferences.load(from: DieterAppearance.applicationDefaults())
+            ? store.creationPreferences
             : ConversationCreationPreferences(
                 provider: provider, model: model, effort: effort, workspaceMode: workspaceDraft.mode)
         guard let selection = preferences.resolved(in: destinationHarnesses),
@@ -374,12 +374,12 @@ struct NewConversationSheet: View {
     private func submit() async {
         guard canSubmit else { return }
         submitting = true
-        ConversationCreationPreferences(
+        store.rememberCreation(ConversationCreationPreferences(
             provider: provider,
             model: model,
             effort: effort,
             workspaceMode: workspaceDraft.mode
-        ).save(to: DieterAppearance.applicationDefaults())
+        ))
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         await store.createConversation(

@@ -1,4 +1,5 @@
 import DieterAPI
+import SharedCore
 import Testing
 @testable import DieterMac
 
@@ -29,27 +30,30 @@ import Testing
     #expect(model.conversationPresentationRevision == revision + 3)
 }
 
-@Test @MainActor func duplicateConversationFramesDoNotPersistAgain() async {
+@Test @MainActor func duplicateConversationSlicesDoNotRebuildTheTimeline() {
+    let core = ScriptedCoreClient()
     let model = ConversationModel()
+    model.core = core
     model.selectedChatID = "card"
-    var snapshot = Dieter_V1_ConversationSnapshot()
-    snapshot.detail.card.id = "card"
-    snapshot.conversation.cardID = "card"
-    snapshot.conversation.lastSeq = 10
-    var writes = 0
-    model.onSnapshot = { _, _, _ in writes += 1 }
-    var update = Dieter_V1_ConversationUpdate()
-    update.snapshot = snapshot
-    await model.applyConversationUpdate(update, cardID: "card")
-    let revision = model.conversationPresentationRevision
-    model.conversationLastRefreshedAt = .distantPast
-    for _ in 0..<100 {
-        await model.applyConversationUpdate(update, cardID: "card")
+    model.observe("card")
+    defer { model.observe(nil) }
+    let first = fixtureMessage("message")
+    core.emitConversation("card") {
+        $0.conversation.lastSeq = 10
+        $0.messages = [first]
     }
-    #expect(writes == 1)
+    let revision = model.conversationPresentationRevision
+    for _ in 0..<100 {
+        core.emitConversation("card") {
+            $0.conversation.lastSeq = 10
+            $0.messages = [first]
+        }
+    }
     #expect(model.conversationPresentationRevision == revision)
-    #expect(model.conversationLastRefreshedAt != .distantPast)
-    update.snapshot.conversation.lastSeq = 11
-    await model.applyConversationUpdate(update, cardID: "card")
-    #expect(writes == 2)
+    core.emitConversation("card") {
+        $0.conversation.lastSeq = 11
+        $0.messages = [first, fixtureMessage("reply", role: "assistant")]
+    }
+    #expect(model.conversationPresentationRevision == revision + 1)
+    #expect(model.conversationMessages.map(\.id) == ["message", "reply"])
 }

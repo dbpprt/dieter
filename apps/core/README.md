@@ -23,9 +23,14 @@ Android runs entirely on the core:
 - There was no soak or shadow mode and there is no Android legacy importer:
   the app had no users yet.
 
-The macOS and iOS apps do not link the core yet. `harness/apple` links the
-`DieterShared` framework the way they will, and their legacy state is carried
-over once by the macOS and iOS importer.
+The macOS app runs on the core
+([cutover plan](../../docs/mac-shared-core-cutover-plan-2026-10-01.md)). Its
+`SharedCore` target (`apps/mac/Sources/SharedCore`) links `DieterShared`,
+provides the native transport and platform services, and carries the legacy
+state over once through the macOS importer. Every Mac feature is a slice and
+command surface; the Mac keeps presentation, the editor, terminal rendering,
+and the WebRTC, VideoToolbox, and Metal screen engine. The iOS app does not
+link the core yet.
 
 | Module | Role |
 | --- | --- |
@@ -33,7 +38,6 @@ over once by the macOS and iOS importer.
 | `shared` | All client logic, the platform-extension contracts (`platform/Platform.kt`, `screens/ScreenMedia.kt`, `terminals/TerminalScreen.kt`), and the OkHttp transport for Android and the JVM (`jvmSharedMain`). |
 | `testing` | Fakes, the JVM platform, the JDK's Ed25519 verifier, and the `IsolatedGateway` fixture launcher used by every end-to-end test. |
 | `apple` | The `DieterShared` façade, the only module exported to Swift. It offers `dispatch(command)` and `observe(slice, scope)` over encoded `dieter.client.v1` messages, a grpc-swift transport bridge, and the native extension protocols. |
-| `harness/apple` | A SwiftPM adapter harness: grpc-swift, CryptoKit, and an `@Observable` store that folds slice deltas, tested against an isolated gateway. |
 | `harness/android` | The core's Android variant (OkHttp transport) in a minimal app, tested on the JVM against an isolated gateway. |
 
 ## Architecture
@@ -86,17 +90,13 @@ Status key:
 | W6 Screens | `screens` (trust, session controller, recovery, input, gestures, mouse buttons, clipboard, frame gating, receiver feedback), `platform/ControlFrames.kt` | `ScreenPoliciesTest`, `ScreenFramesTest`, `MouseButtonsTest`, `ControlFramesTest`, `ScreenSessionTest` (scripted daemon and engine), `ScreenEndToEndTest` | done |
 | D7 UI contract | `client` (`ClientApi`, keyed deltas), `apple` | `KeyedTest`, `ClientApiEndToEndTest`, Swift harness | done |
 | Legacy import | `legacy` (macOS and iOS formats) | `LegacyFormatsTest`, `LegacyInputsTest`, `LegacyImportEndToEndTest` | done, façade; Android needs none |
-| F5 App integration | Android `sharedcore/` (`SharedCore`, `ConnectionPolicy`) | Android unit tests, the Android instrumentation catalog (`tests/e2e`) | Android fully on the core. Apple is linked through the harness only. |
-| W7 Consolidation | — | — | Android done: legacy logic, protobuf-lite, and grpc-java deleted. Apple follows its cutover. |
+| F5 App integration | Android `sharedcore/` (`SharedCore`, `ConnectionPolicy`); macOS `SharedCore` and slice adapters | Android unit tests and instrumentation catalog (`tests/e2e`); `just mac test`, `just mac core-test`, `just mac screens-test` | Android and macOS on the core; iOS not yet. |
+| W7 Consolidation | — | — | Android: legacy logic, protobuf-lite, and grpc-java deleted. macOS: the legacy feature plane and Swift rule copies deleted. |
 
-**Not on the Apple façade yet:** navigation edits, drafts, captures,
-schedules, terminals, workspace and git, files, admin, quotas, search,
-executions, and screens.
-- All of them are implemented and tested in Kotlin.
-- Each needs its commands and slices added to `client.proto`.
-- Terminals and screens also need their native extension protocols
-  (`TerminalRendererSink`, `ScreenMediaEngineFactory`) exported through
-  `DieterShared`.
+**On the Apple façade:** every feature, as `client.proto` commands and
+slices. Screens take a `NativeScreenMedia` engine and a `NativeClipboard`
+through `SharedExtensions`; engines are created per observed screen scope.
+Terminal output reaches Swift through the terminals slice.
 
 ## Deviations from the plan
 
@@ -126,12 +126,13 @@ Xcode. The first Kotlin/Native build downloads about 1.6 GB into `~/.konan`.
 just core test          # JVM unit and end-to-end tests against isolated gateways and daemons
 just core android-test  # the Android variant against an isolated gateway
 just core native-test   # common tests natively on macOS, plus the DieterShared XCFramework
-just core apple-test    # DieterShared driven from Swift against an isolated gateway
+just core apple-test    # native tests, then `just mac core-test`: DieterShared driven from the Mac bridge
 just core check         # everything this host supports
 ```
 
-After changing `client.proto`, regenerate the harness's Swift types with
-`harness/apple/generate-client-proto.sh`. This needs `protoc`.
+After changing the client schema (`model/src/commonMain/proto/dieter/client/v1`),
+regenerate the Mac package's Swift types with `just mac proto-generate`; it
+copies the schema into `apps/mac/Sources/DieterAPI/client` first.
 
 On an iOS simulator:
 `./gradlew :shared:iosSimulatorArm64Test -Pdieter.simulator=<disposable simulator UDID>`.

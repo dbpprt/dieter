@@ -6,6 +6,7 @@ import Foundation
 import GRPCCore
 import Observation
 import OSLog
+import SharedCore
 import UniformTypeIdentifiers
 import UserNotifications
 
@@ -16,17 +17,10 @@ import UserNotifications
 final class AppSession {
     let quickTaskForm = QuickTaskFormState()
     var lastUsedChatID: String?
-    let cardStartRPCOverride: (any DieterCardStartRPC)?
     var pendingCardStarts: [String: OptimisticCardStart] {
         get { replica.pendingCardStarts }
         set { replica.pendingCardStarts = newValue }
     }
-    struct PendingChatPin {
-        let operationID: UUID
-        let pinned: Bool
-        let original: Dieter_V1_Card
-    }
-
     let window = WindowWorkspace()
     @ObservationIgnored var reopenWorkspaceWindow: @MainActor () -> Void = {}
     var section: AppSection {
@@ -41,7 +35,7 @@ final class AppSession {
     }
     var phase: ConnectionPhase = .disconnected {
         didSet {
-            filesModel.isLive = selectedProjectIsLive; schedulesModel.isLive = selectedProjectIsLive;
+            filesModel.isLive = filesAreLive; schedulesModel.isLive = workspaceIsLive;
             terminalsModel.isLive =
                 terminalScopeCardID == nil
                 ? terminalOverviewMachines.contains(where: machineIsAvailable)
@@ -51,7 +45,6 @@ final class AppSession {
     var endpoint: DieterEndpoint {
         didSet {
             if endpoint.id != oldValue.id {
-                if endpoint.credentialID != oldValue.credentialID { sharedNavigation.clearAccount() }
                 bindComposer(); resetFileSurface(); bindSchedules(); bindConversation(); bindWorktree(); bindTerminals()
             }
         }
@@ -60,7 +53,28 @@ final class AppSession {
     var health = Dieter_V1_HealthResponse()
     var runtime = Dieter_V1_RuntimeStatus()
     let replica = WorkspaceReplica()
-    @ObservationIgnored let inboxActivityProjection = InboxActivityProjection()
+    /// The shared core: connection, sync, outbox, and conversations.
+    @ObservationIgnored let core: CoreClient
+    @ObservationIgnored let coreHost: CoreHost?
+    @ObservationIgnored var coreStart: Task<Void, Never>?
+    @ObservationIgnored var coreSubscriptions: [SliceSubscription] = []
+    @ObservationIgnored var coreWorkspace = ClientWorkspaceSlice()
+    var session = ClientSessionSlice()
+    var outboxState = ClientOutboxSlice()
+    var boardState = ClientBoardSlice()
+    var creationMemory = ClientCreationSlice()
+    /// The Inbox's rows, newest activity first, as the core classifies them.
+    var activityRows: [ClientActivityRow] = []
+    @ObservationIgnored var machineMetadata: [String: ClientMachineMetadata] = [:]
+    /// The attached machine whose metadata was last requested.
+    @ObservationIgnored var requestedMetadata: String?
+    /// UI fixtures that render injected state hold the core's folds; the
+    /// latest slices apply when released.
+    @ObservationIgnored var coreFoldsHeld = false {
+        didSet { if oldValue, !coreFoldsHeld { releaseHeldFolds() } }
+    }
+    /// A session this launch adopts from `--dieter-endpoint` and `--dieter-access-token-file`.
+    let launchSession: (gateway: DieterEndpoint, token: String)?
     var harnessCatalog = Dieter_V1_HarnessCatalog()
     var harnessCatalogsByEndpoint: [String: Dieter_V1_HarnessCatalog] = [:]
     var boardSettings = Dieter_V1_Settings()
@@ -74,87 +88,71 @@ final class AppSession {
             return self.machines.contains(where: { $0.id == self.endpoint.id })
                 ? self.machines : self.machines + [self.endpoint]
         },
-        acquire: { [weak self] machine in
-            guard let self else { throw CancellationError() }
-            if machine.id == self.endpoint.id, let rpc = self.rpc { return FeatureClientLease(client: rpc) }
-            let lease = try await self.selectDirectoryDataPlane(for: machine)
-            self.machineConnectionStatuses[machine.id] = lease.connection
-            return FeatureClientLease(client: lease.rpc, release: { lease.release() })
-        }, reportError: { [weak self] in self?.show($0) })
+        core: core, reportError: { [weak self] in self?.show($0) })
     var gatewayInformation: [String: Dieter_Gateway_V1_GatewayInformation] = [:]
-    @ObservationIgnored lazy var quotas = ProviderQuotaModel { [weak self] in
-        guard let self else { throw CancellationError() }
-        return try await self.providerQuotaClient()
-    }
+    @ObservationIgnored lazy var quotas = CoreProviderQuotas(core: core)
     var archivedProjects: [Dieter_V1_Project] = []
     var archivedCards: [Dieter_V1_Card] = []
+    /// Archived chats, which the core's live workspace omits.
+    var archivedChats: [Dieter_V1_Card] = []
     var sidebarProjectNavigation: SidebarProjectNavigationPreferences {
         didSet {
             guard sidebarProjectNavigation != oldValue else { return }
-            syncNavigationOrder(oldValue.projectOrder, sidebarProjectNavigation.projectOrder, prefix: "projects-order")
-            syncNavigationFlags(
-                oldValue.expandedProjectIDs, sidebarProjectNavigation.expandedProjectIDs, prefix: "projects-disclosure")
+            syncSidebarProjects(oldValue, sidebarProjectNavigation)
         }
     }
     var sidebarProjectFolders: NavigationFolderPreferences {
         didSet {
             guard sidebarProjectFolders != oldValue else { return }
-            syncNavigationFolders(oldValue, sidebarProjectFolders, scope: "projects")
+            syncNavigationFolders(sidebarProjectFolders, scope: .projects)
         }
     }
     var allChatsFolders: NavigationFolderPreferences {
         didSet {
             guard allChatsFolders != oldValue else { return }
-            syncNavigationFolders(oldValue, allChatsFolders, scope: "chats")
+            syncNavigationFolders(allChatsFolders, scope: .chats)
         }
     }
 
-    @ObservationIgnored lazy var sharedNavigation = SharedKV(
-        defaults: environment.defaults,
-        root: syncPersistence.fileURL.deletingLastPathComponent().appending(path: "shared-kv"))
+    @ObservationIgnored var navigationEditTail: Task<Void, Never>?
+    /// The legacy app's state directory; the core imported from it and keeps its own state below it.
+    let legacyDirectory: URL
     @ObservationIgnored var applyingSharedNavigation = false
     var navigationPendingCount = 0
+    /// The core has replayed the account's navigation since it attached a machine.
+    @ObservationIgnored var navigationCaughtUp = false
     var navigationSyncError: String?
     var sharedLaneSortDirections: [String: String] = [:]
     var pinnedProjectNavigation = PinnedProjectNavigationPreferences() {
         didSet {
             guard pinnedProjectNavigation != oldValue else { return }
-            syncNavigationMembership(
-                oldValue.projectOrder, pinnedProjectNavigation.projectOrder, prefix: "projects-pinned")
+            syncPinnedProjects(pinnedProjectNavigation)
         }
     }
     var pinnedChatNavigation = PinnedChatNavigationPreferences() {
-        didSet { syncNavigationOrder(oldValue.chatOrder, pinnedChatNavigation.chatOrder, prefix: "pinned-order") }
+        didSet {
+            guard pinnedChatNavigation != oldValue else { return }
+            syncPinnedChats(pinnedChatNavigation)
+        }
     }
     var chatProjectDisclosure = ChatProjectDisclosurePreferences() {
         didSet {
-            syncNavigationFlags(
-                oldValue.collapsedProjectIDs, chatProjectDisclosure.collapsedProjectIDs, prefix: "chats-section",
-                inverted: true)
-            syncNavigationFlags(
-                oldValue.expandedProjectIDs, chatProjectDisclosure.expandedProjectIDs, prefix: "chats-disclosure")
+            guard chatProjectDisclosure != oldValue else { return }
+            syncChatDisclosure(oldValue, chatProjectDisclosure)
         }
     }
     let conversationModel = ConversationModel()
     @ObservationIgnored var onConversationContentConnectionChanged: @MainActor () -> Void = {}
     @ObservationIgnored lazy var conversationContext = makeConversationContext()
-    @ObservationIgnored let snapshotDecoder = DieterSnapshotDecoder()
-    var conversationRead: OwnedRead<Dieter_V1_ConversationSnapshot> { conversationModel.conversationRead }
     var projectWorkspaces: [Dieter_V1_Workspace] = []
     let schedulesModel = SchedulesModel()
     let terminalsModel: TerminalsModel
     let screensModel: ScreensModel
     @ObservationIgnored lazy var terminalOverview = TerminalOverviewModel(
-        terminalsModel: terminalsModel,
-        machines: { [weak self] in self?.terminalOverviewMachines ?? [] },
-        available: { [weak self] in self?.machineIsAvailable($0) ?? false },
+        terminalsModel: terminalsModel, core: core,
+        endpointID: { [weak self] in self?.endpointID(forDaemon: $0) ?? $0 },
         active: { [weak self] in self?.section == .terminals && self?.terminalsModel.terminalScopeCardID == nil },
-        acquire: { [weak self] machine in
-            guard let self else { throw CancellationError() }
-            if machine.id == self.endpoint.id, let rpc = self.rpc { return FeatureClientLease(client: rpc) }
-            let lease = try await self.selectDirectoryDataPlane(for: machine)
-            return FeatureClientLease(client: lease.rpc, release: { lease.release() })
-        }, reportError: { [weak self] in self?.show($0) })
+        reportError: { [weak self] in self?.errorMessage = $0 })
     let filesModel = FilesModel()
     var fileListingGeneration: UInt64 { filesModel.fileListingGeneration }
     let worktreeChanges = WorktreeChangesModel()
@@ -181,6 +179,8 @@ final class AppSession {
         }
     }
     let composer: ComposerModel
+    /// Unsent draft text, kept by the core.
+    @ObservationIgnored let composerDrafts: CoreDraftTexts
     var query = "" {
         didSet { if query != oldValue { refreshBoardProjection() } }
     }
@@ -194,8 +194,6 @@ final class AppSession {
     var movingCardIDs: Set<String> = []
     var labelUpdatingCardIDs: Set<String> = []
     var pendingCardIDs: Set<String> = []
-    // Kept separate from rows that include local outbox overlays.
-    var publishedConversationIDs: [String: Set<String>] = [:]
     var pendingMessageIDs: Set<String> = []
     var acceptedOutboxIDs: Set<String> = []
     var failedOutboxIDs: Set<String> = []
@@ -241,8 +239,6 @@ final class AppSession {
 
     func refreshConversationPresentationState() { conversationModel.refreshConversationPresentationState() }
 
-    @ObservationIgnored let chatsRead = OwnedRead<Dieter_V1_ChatsResponse>()
-    var terminalsRead: OwnedRead<Dieter_V1_TerminalsResponse> { terminalsModel.terminalsRead }
     var chatsLoading = false
     var chatsError: String?
     var archiveLoading = false
@@ -251,31 +247,19 @@ final class AppSession {
 
     var errorMessage: String?
 
-    var rpc: DieterRPC? {
+    /// The attached machine while the core is connected to it. The feature
+    /// surfaces rebind when it changes.
+    var connectedMachineID: String? {
         didSet {
-            if rpc !== oldValue {
-                terminalInputForwarder.suspend(); resetFileSurface(); bindSchedules(); bindConversation();
+            if connectedMachineID != oldValue {
+                connectionGeneration &+= 1
+                resetFileSurface(); bindSchedules(); bindConversation();
                 bindWorktree(); bindTerminals()
                 onConversationContentConnectionChanged()
-                bindSharedNavigation()
             }
         }
     }
-    let scheduleRPCOverride: (any DieterScheduleRPC)?
-    let chatPinRPCOverride: (any DieterChatPinRPC)?
-    let connectionEffects = ConnectionEffects()
-    let connections: ConnectionManager
-    var directCredential: DirectAccessCredential?
-    var connectionRecoveryStartedAt: Date?
-    var connectionRecoverySource = ""
-    var outboxTask: Task<Void, Never>? {
-        get { outbox.workerTask }
-        set { outbox.workerTask = newValue }
-    }
-    var outboxWorkerGeneration: UInt64 {
-        get { outbox.workerGeneration }
-        set { outbox.workerGeneration = newValue }
-    }
+    /// Changes whenever the connected machine changes.
     var connectionGeneration: UInt64 = 0
     var boardSelectionGeneration: UInt64 = 0
     var pendingCardMoves: [String: OptimisticCardMove] {
@@ -294,117 +278,85 @@ final class AppSession {
         get { replica.pendingProjects }
         set { replica.pendingProjects = newValue }
     }
-    var activityTransitions = ActivityTransitions()
-    @ObservationIgnored var lastSyncFrameAt: Date?
-    @ObservationIgnored var syncAttemptStartedAt: Date?
-    @ObservationIgnored var syncSubscriptionGeneration: UInt64 = 0
-    @ObservationIgnored var pendingSyncSnapshot: Dieter_V1_GlobalSnapshot?
-    @ObservationIgnored var syncLastActivity: ContinuousClock.Instant?
-    @ObservationIgnored var syncTransportTimeout: Duration = .seconds(45)
-    @ObservationIgnored var syncLastAppliedActivity: ContinuousClock.Instant?
-    @ObservationIgnored var lastSyncPersistenceAt: [String: Date] = [:]
-    var persistConnectionSelection = true
     let accessTokenOverride: String?
     @ObservationIgnored let themeDefaults: UserDefaults
     var gatewayOrigins: [DieterEndpoint]
-    let authentication: DieterAuthentication
     @ObservationIgnored let environment: DieterAppEnvironment
-    let syncPersistence: DieterSyncPersistence
     let attachmentLoader = AttachmentLoader()
-    let syncClientID: String
-    var terminalInputForwarder: TerminalInputForwarder { terminalsModel.terminalInputForwarder }
     var terminalOutputAccumulator: TerminalOutputAccumulator { terminalsModel.terminalOutputAccumulator }
-    var pendingChatPins: [String: PendingChatPin] = [:]
-    let outbox: DurableOutbox
-    var syncDiskState = DieterSyncDiskState.empty
-    var syncProjection = DieterSyncProjection.empty
-    var syncSnapshot: Dieter_V1_GlobalSnapshot?
-    @ObservationIgnored var syncStateDirty = false
 
+    /// `core` replaces the shared core, e.g. with a `ScriptedCoreClient` in
+    /// tests. Only `liveCore` builds the real one from the environment: it
+    /// owns the state under the environment's storage root, so the app entry
+    /// point and isolated integration tests opt in, and nothing else does.
     init(
         environment: DieterAppEnvironment? = nil,
-        scheduleRPCOverride: (any DieterScheduleRPC)? = nil,
-        chatPinRPCOverride: (any DieterChatPinRPC)? = nil,
-        cardStartRPCOverride: (any DieterCardStartRPC)? = nil,
-        syncPersistenceOverride: DieterSyncPersistence? = nil,
-        outboxOverride: DurableOutbox? = nil,
+        core: CoreClient? = nil,
+        liveCore: Bool = false,
         themeDefaultsOverride: UserDefaults? = nil,
         restoreSync: Bool = true
     ) {
-        self.scheduleRPCOverride = scheduleRPCOverride
-        self.chatPinRPCOverride = chatPinRPCOverride
-        self.cardStartRPCOverride = cardStartRPCOverride
         let environment = environment ?? (restoreSync ? .live() : .testing(defaults: themeDefaultsOverride))
         self.environment = environment
-        composer = ComposerModel(defaults: environment.defaults)
-        terminalsModel = TerminalsModel(selectionDefaults: environment.defaults)
+        terminalsModel = TerminalsModel()
         screensModel = ScreensModel(defaults: environment.defaults)
         sidebarProjectNavigation = SidebarProjectNavigationPreferences()
         sidebarProjectFolders = NavigationFolderPreferences()
         allChatsFolders = NavigationFolderPreferences()
-        connections = ConnectionManager(factory: environment.clients, clock: environment.clock)
-        authentication = DieterAuthentication(
-            defaults: environment.defaults, credentials: environment.credentials, clock: environment.clock)
-        syncClientID = DieterSyncPersistence.installationID(defaults: environment.defaults)
         showReasoning = ReasoningTracePreferences.load(from: environment.defaults)
         defaultConversationMode = ConversationDefaultMode.load(from: environment.defaults)
-        let persistence = syncPersistenceOverride ?? DieterSyncPersistence(root: environment.storageRoot)
-        syncPersistence = persistence
-        outbox =
-            outboxOverride
-            ?? DurableOutbox(journal: OutboxJournal(url: persistence.outboxJournalURL))
+        let root =
+            environment.storageRoot
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        legacyDirectory = root.appending(path: "Dieter", directoryHint: .isDirectory)
         let themeDefaults = themeDefaultsOverride ?? environment.defaults
         self.themeDefaults = themeDefaults
         let initialTheme = DieterThemeSelection.load(from: themeDefaults)
         themeSelection = initialTheme
         DieterTheme.install(selection: initialTheme)
         let arguments = environment.arguments
+        var tokenOverride: String?
         if let flag = arguments.firstIndex(of: "--dieter-access-token-file"), arguments.indices.contains(flag + 1),
             let token = try? String(contentsOfFile: arguments[flag + 1], encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty
         {
-            accessTokenOverride = token
-        } else {
-            accessTokenOverride = nil
+            tokenOverride = token
         }
-        if let flag = arguments.firstIndex(of: "--dieter-endpoint"), arguments.indices.contains(flag + 1),
-            let override = DieterEndpoint.parse(arguments[flag + 1], name: "Command line")
-        {
-            endpoints = [override]
-            endpoint = override
-            gatewayOrigins = [override]
-            persistConnectionSelection = false
-            if restoreSync {
-                connectionEffects.syncRestoreTask = Task { [weak self] in await self?.restorePersistentSync() }
-            }
-            bindSharedNavigation(); applySharedNavigation()
-            return
+        accessTokenOverride = tokenOverride
+        let override = arguments.firstIndex(of: "--dieter-endpoint")
+            .flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
+            .flatMap { DieterEndpoint.parse($0, name: "Command line") }
+        launchSession = override.flatMap { gateway in tokenOverride.map { (gateway, $0) } }
+        let gateway = override ?? DieterEndpoint.defaults[0]
+        endpoints = []
+        endpoint = gateway
+        gatewayOrigins = [gateway]
+        var host: CoreHost?
+        var screenMedia: CoreScreenMedia?
+        if liveCore, core == nil {
+            let defaults = environment.defaults
+            let media = CoreScreenMedia()
+            screenMedia = media
+            host = try? CoreHost(
+                configuration: CoreHostConfiguration(
+                    root: root,
+                    credentialsFile: environment.storageRoot?.appending(path: "gateway-sessions.json")
+                        ?? DieterCredentialFileStore.defaultFileURL(),
+                    clientVersion: DieterRelease.current, oauthRedirectURI: "dieter-mac://oauth/callback",
+                    clientIDPrefix: "mac", logSubsystem: "com.dbpprt.dieter.mac"),
+                defaults: defaults, notificationsEnabled: { true },
+                screens: CoreHostScreens(media: media, clipboard: CoreScreenClipboard()))
         }
-
-        let defaults = environment.defaults
-        let storedEndpoints = defaults.data(forKey: "DieterEndpoints")
-            .flatMap { try? JSONDecoder().decode([DieterEndpoint].self, from: $0) }
-        var seenOrigins = Set<String>()
-        let secureEndpoints =
-            storedEndpoints?.filter { $0.secure && $0.daemonID == nil }
-            .map(\.currentPublicGateway)
-            .filter { seenOrigins.insert($0.credentialID).inserted } ?? []
-        let loadedEndpoints = secureEndpoints.isEmpty ? DieterEndpoint.defaults : secureEndpoints
-        endpoints = loadedEndpoints
-        gatewayOrigins = loadedEndpoints
-        var activeEndpointChanged = false
-        if let data = defaults.data(forKey: "DieterActiveEndpoint"),
-            let decoded = try? JSONDecoder().decode(DieterEndpoint.self, from: data), decoded.secure
-        {
-            endpoint = decoded.currentPublicGateway
-            activeEndpointChanged = endpoint != decoded
-        } else {
-            endpoint = loadedEndpoints[0]
-        }
-        bindSharedNavigation(); applySharedNavigation()
-        if loadedEndpoints != storedEndpoints || activeEndpointChanged { persistEndpoints() }
-        if restoreSync {
-            connectionEffects.syncRestoreTask = Task { [weak self] in await self?.restorePersistentSync() }
+        let resolved: CoreClient = core ?? host?.client ?? ScriptedCoreClient()
+        self.core = resolved
+        coreHost = host
+        composerDrafts = CoreDraftTexts(core: resolved)
+        composer = ComposerModel(store: composerDrafts)
+        conversationModel.core = resolved
+        screensModel.core = resolved
+        screensModel.media = screenMedia
+        quickTaskForm.remember = { [weak self] remember in
+            Task { await self?.perform { $0.rememberCreation = remember } }
         }
     }
 

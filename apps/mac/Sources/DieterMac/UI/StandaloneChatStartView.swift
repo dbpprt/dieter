@@ -468,7 +468,7 @@ struct StandaloneChatStartView: View {
         let initializing = provider.isEmpty
         let preferences =
             initializing
-            ? ConversationCreationPreferences.load(from: DieterAppearance.applicationDefaults())
+            ? store.creationPreferences
             : ConversationCreationPreferences(
                 provider: provider, model: model, effort: effort, workspaceMode: workspaceDraft.mode)
         guard let selection = preferences.resolved(in: destinationHarnesses),
@@ -494,12 +494,12 @@ struct StandaloneChatStartView: View {
             !harnessCatalogLoading, harnessCatalogError == nil, harness != nil
         else { return }
         submitting = true
-        ConversationCreationPreferences(
+        store.rememberCreation(ConversationCreationPreferences(
             provider: provider,
             model: model,
             effort: effort,
             workspaceMode: workspaceDraft.mode
-        ).save(to: DieterAppearance.applicationDefaults())
+        ))
         let firstLine =
             text.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init)
             ?? attachments.first?.filename ?? "New chat"

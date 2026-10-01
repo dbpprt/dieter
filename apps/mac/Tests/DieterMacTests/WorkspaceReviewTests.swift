@@ -4,7 +4,7 @@ import Testing
 @testable import DieterMac
 
 private func parsed(_ patch: String) -> [UnifiedDiffLine] {
-    UnifiedDiffParser.parse(patch)
+    DiffFixtures.parse(patch)
 }
 
 @Test func diffProjectionMeasuresLongCodeAndKeepsHunkCountsSeparate() {
@@ -22,7 +22,7 @@ private func parsed(_ patch: String) -> [UnifiedDiffLine] {
         """
     for split in [false, true] {
         let projection = WorkspaceDiffProjection.build(
-            patch: patch, path: "source.swift", commitSHA: "", split: split, comments: [])
+            lines: DiffFixtures.parse(patch), path: "source.swift", commitSHA: "", split: split, comments: [])
         let hunkIDs = projection.rows.compactMap { row -> Int? in
             if case .hunk(let id, _, _) = row { id } else { nil }
         }
@@ -138,32 +138,6 @@ private func parsed(_ patch: String) -> [UnifiedDiffLine] {
     #expect(pairs[3].old?.kind == .context)
 }
 
-@Test func parserClassifiesCommitMetadataAndResetsBetweenFiles() {
-    let lines = parsed(
-        """
-        diff --git a/one.txt b/one.txt
-        new file mode 100644
-        index 0000000..5626abf
-        --- /dev/null
-        +++ b/one.txt
-        @@ -0,0 +1 @@
-        +one
-        diff --git a/two.txt b/two.txt
-        new file mode 100644
-        index 0000000..f719efd
-        --- /dev/null
-        +++ b/two.txt
-        @@ -0,0 +1 @@
-        +two
-        """)
-
-    // Every metadata line stays out of the content stream for both files.
-    #expect(lines.filter { $0.kind == .header }.count == 10)
-    #expect(lines.filter { $0.kind == .addition }.count == 2)
-    #expect(!lines.contains { $0.kind == .context })
-    #expect(lines.last?.newLine == 1)
-}
-
 @Test func diffDisplayEmitsFileRowsForWholeCommitPatches() {
     let lines = parsed(
         """
@@ -264,28 +238,6 @@ private func parsed(_ patch: String) -> [UnifiedDiffLine] {
     )
     #expect(merged.stateLabel == "Merged")
     #expect(merged.mergeBlockedReason == "already merged")
-}
-
-@Test func mergeFlowAvailabilityAcceptsDirtyAndConflictedWorktrees() {
-    func availability(state: String = "ready", mode: String = "worktree", files: Int, commits: Bool, dirty: Bool)
-        -> WorkspaceActionAvailability
-    {
-        WorkspaceActionAvailability(
-            agentActive: false, operationActive: false, workspaceState: state,
-            workspaceMode: mode, changedFiles: files, hasCommits: commits,
-            hasRemote: false, scmAuthenticated: false, hasPullRequest: false, dirty: dirty
-        )
-    }
-
-    #expect(availability(files: 3, commits: false, dirty: true).allowsMergeFlow)
-    #expect(availability(files: 0, commits: true, dirty: false).allowsMergeFlow)
-    #expect(availability(state: "conflicted", files: 0, commits: false, dirty: false).allowsMergeFlow)
-    #expect(!availability(mode: "project", files: 3, commits: true, dirty: true).allowsMergeFlow)
-    #expect(!availability(files: 0, commits: false, dirty: false).allowsMergeFlow)
-    // The raw merge gate still demands a clean tree.
-    #expect(!availability(files: 3, commits: true, dirty: true).allows(.mergeLocal))
-    // Committing needs a dirty tree or visible changes.
-    #expect(availability(files: 0, commits: false, dirty: true).allows(.commit))
 }
 
 @Test func relativeTimeFormatsCompactStamps() {

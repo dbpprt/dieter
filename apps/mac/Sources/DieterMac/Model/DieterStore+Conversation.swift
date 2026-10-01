@@ -4,47 +4,33 @@ import Foundation
 import GRPCCore
 import OSLog
 import Observation
+import SharedCore
 import UniformTypeIdentifiers
 import UserNotifications
 
+/// Conversations and board cards: the shared core delivers, queues, and
+/// reconciles every change; these adapt the app's selection to it.
 extension DieterStore {
+    /// Loads archived chats, which the live workspace omits. Unarchived chats
+    /// come from the core.
     func refreshChats(includeArchived: Bool = true) async {
-        guard let rpc else { return }
+        guard includeArchived else { return }
         chatsRequestGeneration &+= 1
         let generation = chatsRequestGeneration
         chatsLoading = true
         chatsError = nil
         defer { if generation == chatsRequestGeneration { chatsLoading = false } }
         do {
-            let response = try await chatsRead.value(key: "\(ObjectIdentifier(rpc)):\(includeArchived)") {
-                try await rpc.chats(includeArchived: includeArchived)
+            // Every online machine's archived chats; live ones are in the workspace.
+            let archived = try await administer { $0.archivedChats = ClientAdminStep() }.cards.cards
+            guard generation == chatsRequestGeneration else { return }
+            if archivedChats != archived {
+                archivedChats = archived
+                foldWorkspace(coreWorkspace)
             }
-            guard self.rpc === rpc, generation == chatsRequestGeneration else { return }
-            let refreshedChats = reconcilePendingChatPins(
-                replica.retainingOwnerDetails(response.chats, sourceDaemonID: endpoint.daemonID))
-            notifyTransitions(refreshedChats, endpointID: endpoint.id)
-            let previousProjectIDs = Set(
-                projectReplicaEndpointIDs.compactMap { $0.value == endpoint.id ? $0.key : nil })
-            for project in response.projects {
-                projectDirectory[project.id] = project
-                projectReplicaEndpointIDs[project.id] = endpoint.id
-            }
-            let combined =
-                chats.filter { !previousProjectIDs.contains($0.projectID) || (!includeArchived && $0.archived) }
-                + refreshedChats
-            let nextChats = Array(
-                combined.reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }.values
-            ).sorted {
-                ($0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt)
-                    > ($1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt)
-            }
-            if chats != nextChats { chats = nextChats }
-            chatProjects = projects
-            updateSelectedState()
-            rebuildOutboxOverlays()
         } catch {
-            guard self.rpc === rpc, generation == chatsRequestGeneration else { return }
-            if !Self.isExpectedCancellation(error) { chatsError = DieterRPCFailure.message(for: error) }
+            guard generation == chatsRequestGeneration else { return }
+            if !Self.isExpectedCancellation(error) { chatsError = (error as? CoreFailure)?.message ?? error.localizedDescription }
         }
     }
 
@@ -52,8 +38,6 @@ extension DieterStore {
         let previousConversationID = selectedCardID ?? selectedChatID
         conversationSelectionGeneration &+= 1
         let selectionGeneration = conversationSelectionGeneration
-        conversationError = nil
-        conversationRead.cancel()
         let knownChat =
             chats.first(where: { $0.id == cardID })
             ?? state.chats.first(where: { $0.id == cardID })
@@ -64,7 +48,6 @@ extension DieterStore {
         let opensChat =
             chat || knownChat != nil || card?.scope.caseInsensitiveCompare("chat") == .orderedSame
         let projectID = card?.projectID ?? ""
-        let endpointID = endpointID(for: card)
         stopTerminalWatch()
         section = fromInbox ? .inbox : (opensChat ? .chats : .board)
         if !projectID.isEmpty {
@@ -78,101 +61,35 @@ extension DieterStore {
         selectedChatID = opensChat ? cardID : nil
         if previousConversationID != cardID {
             conversationContext.content.applyDefaultMode(defaultConversationMode, conversationID: cardID)
+            conversationModel.resetConversationHistory()
+            conversation = nil
+            selectedDetail = nil
+            conversationLastRefreshedAt = nil
+            conversationError = nil
+            conversationLoading = true
         }
         if opensChat { lastUsedChatID = cardID }
         if opensChat { newChatProjectID = "" }
-        resetConversationHistory()
-        conversationTask?.cancel()
-        gitOperationTask?.cancel()
         resetWorkspaceSurface()
-        conversation = nil
-        selectedDetail = nil
-        conversationLastRefreshedAt = nil
-        guard isConversationServerBacked(cardID) else {
-            conversationLoading = false
-            conversationSyncing = false
-            if let entry = outbox.entries.first(where: { $0.optimisticID == cardID }),
-                let request = try? Dieter_V1_CreateConversationRequest(serializedBytes: entry.request)
-            {
-                var snapshot = Dieter_V1_ConversationSnapshot()
-                snapshot.detail.card = card ?? Dieter_V1_Card()
-                snapshot.detail.project = projectDirectory[request.projectID] ?? Dieter_V1_Project()
-                if !opensChat { snapshot.detail.board = board(id: request.boardID) ?? Dieter_V1_Board() }
-                snapshot.conversation.cardID = cardID
-                snapshot.conversation.status = entry.state == .failed ? "failed" : "pending"
-                snapshot.conversation.draftAttachments = request.attachments
-                conversation = snapshot
-                selectedDetail = snapshot.detail
-            }
-            return
-        }
-
-        conversationLoading = true
-        let cached = await projectedConversation(cardID: cardID, endpointID: endpointID)
-        guard selectionGeneration == conversationSelectionGeneration else { return }
-        if let cached {
-            await acceptConversation(
-                cached,
-                chat: opensChat,
-                refreshedAt: conversationRefreshDate(cardID: cardID, endpointID: endpointID),
-                cache: false
-            )
-            conversationLoading = false
-        } else {
-            // Only yield a visible loading transaction when there is no local
-            // transcript to mount. Cached chat switches stay atomic and avoid a
-            // one-frame loading flash.
-            conversationLoading = true
-            await Task.yield()
-            guard selectionGeneration == conversationSelectionGeneration,
-                (selectedCardID ?? selectedChatID) == cardID
-            else { return }
-        }
-        guard selectionGeneration == conversationSelectionGeneration else { return }
-        conversationSyncing = true
-        if let card, !(await ensureConversationConnection(card, reportOffline: false)) {
-            guard selectionGeneration == conversationSelectionGeneration,
-                (selectedCardID ?? selectedChatID) == cardID
-            else { return }
-            conversationLoading = false
-            conversationSyncing = false
-            conversationError = "This machine is unavailable. Cached messages remain readable."
-            return
-        }
-        guard selectionGeneration == conversationSelectionGeneration,
-            (selectedCardID ?? selectedChatID) == cardID
+        // The core opens the conversation on the machine that runs it and
+        // shows its cached transcript at once.
+        bindConversation()
+        conversationModel.observe(cardID)
+        await perform { $0.setVisibleConversation = .with { $0.cardID = cardID } }
+        // Files, terminals, and review still use the attached machine's
+        // feature plane, so follow the conversation to its machine.
+        guard selectionGeneration == conversationSelectionGeneration, let card, isConversationServerBacked(cardID)
         else { return }
-        guard let rpc else {
-            conversationLoading = false
-            conversationSyncing = false
-            conversationError = "This machine is unavailable. Reconnect and retry."
-            return
-        }
-        await fetchConversation(cardID: cardID, chat: opensChat, rpc: rpc)
+        _ = await ensureConversationConnection(card, reportOffline: false)
     }
 
     func bindConversation() {
-        conversationModel.bind(client: rpc, endpointID: endpoint.id)
-        conversationModel.onAccepted = { [weak self] snapshot, chat in
+        conversationModel.core = core
+        conversationModel.onAccepted = { [weak self] snapshot, _ in
             guard let self else { return }
             self.bindWorktree()
-            let draft = self.composer.draft
             let harness = self.harnessCatalog.harnesses.first { $0.id == snapshot.detail.card.provider }
-            draft.reconcileSettings(card: snapshot.detail.card, harness: harness)
-        }
-        conversationModel.onSnapshot = { [weak self] snapshot, endpointID, refreshedAt in
-            guard let self else { return }
-            if self.endpoint.id == endpointID,
-                (self.selectedCardID ?? self.selectedChatID) == snapshot.detail.card.id
-            {
-                let harness = self.harnessCatalog.harnesses.first { $0.id == snapshot.detail.card.provider }
-                self.composer.draft.reconcileSettings(card: snapshot.detail.card, harness: harness)
-            }
-            await self.cacheConversation(snapshot, endpointID: endpointID, refreshedAt: refreshedAt)
-        }
-        conversationModel.onTransportFailure = { [weak self] error, client in
-            guard let rpc = client as? DieterRPC else { return }
-            self?.connectionStopped(error, client: rpc, source: "conversation-auth")
+            self.composer.draft.reconcileSettings(card: snapshot.detail.card, harness: harness)
         }
         conversationModel.onContentPresentation = { [weak self] presentation, cardID in
             guard let self, let url = ConversationPresentedContent.url(for: presentation) else { return }
@@ -181,44 +98,14 @@ extension DieterStore {
         }
     }
 
-    func fetchConversation(cardID: String, chat: Bool, rpc: DieterRPC, recoveryAttempts: Int = 0)
-        async
-    {
-        bindConversation()
-        await conversationModel.fetchConversation(
-            cardID: cardID, chat: chat, rpc: rpc, recoveryAttempts: recoveryAttempts, preferStream: true)
-    }
-    func acceptConversation(
-        _ snapshot: Dieter_V1_ConversationSnapshot, chat: Bool, refreshedAt: Date? = Date(),
-        cache: Bool = true
-    ) async {
-        bindConversation()
-        await conversationModel.acceptConversation(
-            snapshot, chat: chat, refreshedAt: refreshedAt, cache: cache)
-    }
     @discardableResult func loadEarlierMessages() async -> Bool {
-        bindConversation()
-        return await conversationModel.loadEarlierMessages()
-    }
-    func resetConversationHistory(from snapshot: Dieter_V1_ConversationSnapshot? = nil) {
-        conversationModel.resetConversationHistory(from: snapshot)
-    }
-    func applyConversationUpdate(
-        _ update: Dieter_V1_ConversationUpdate, cardID: String, client: DieterRPC? = nil,
-        selectionGeneration: UInt64? = nil
-    ) async {
-        await conversationModel.applyConversationUpdate(
-            update, cardID: cardID, client: client, selectionGeneration: selectionGeneration)
+        await conversationModel.loadEarlierMessages()
     }
 
     func closeConversation() {
         conversationSelectionGeneration &+= 1
-        conversationRead.cancel()
-        conversationTask?.cancel()
-        conversationTask = nil
-        gitOperationTask?.cancel()
-        gitOperationTask = nil
         resetWorkspaceSurface()
+        conversationModel.observe(nil)
         conversation = nil
         selectedDetail = nil
         selectedCardID = nil
@@ -226,7 +113,8 @@ extension DieterStore {
         conversationLoading = false
         conversationSyncing = false
         conversationLastRefreshedAt = nil
-        resetConversationHistory()
+        conversationModel.resetConversationHistory()
+        Task { await perform { $0.setVisibleConversation = ClientSetVisibleConversation() } }
     }
 
     func resetWorkspaceSurface() { worktreeChanges.resetWorkspaceSurface() }
@@ -235,52 +123,40 @@ extension DieterStore {
         DieterRPCFailure.isCancellation(error)
     }
 
-    nonisolated static func retainedHistoryPrefix(
-        current: [Dieter_V1_UiMessage], replacementIDs: Set<String>
-    )
-        -> [Dieter_V1_UiMessage]?
-    {
-        ConversationModel.retainedHistoryPrefix(current: current, replacementIDs: replacementIDs)
-    }
-    func apply(_ update: Dieter_V1_ConversationUpdate) { conversationModel.apply(update) }
-
     func sendComposer() async {
         let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !composerAttachments.isEmpty, let id = selectedCardID ?? selectedChatID
         else { return }
-        let targetEndpointID = endpointID(for: selectedCard ?? selectedDetail?.card)
         let draft = composer.draft
         guard !draft.sending else { return }
         draft.sending = true
         defer { draft.sending = false }
         let draftRevision = draft.revision
-        let attachments = draft.attachments
-        var parts = attachments
+        var parts = draft.attachments
         if !text.isEmpty {
             var part = Dieter_V1_MessagePart()
             part.type = "text"
             part.text = text
             parts.insert(part, at: 0)
         }
-        var request = Dieter_V1_SendMessageRequest()
-        request.cardID = id
-        request.parts = parts
-        draft.applySettings(to: &request, fallback: selectedCard ?? selectedDetail?.card)
-        request.clientID = syncClientID
-        request.commandID = UUID().uuidString.lowercased()
-        request.messageID =
-            "msg_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
+        var settings = Dieter_V1_SendMessageRequest()
+        draft.applySettings(to: &settings, fallback: selectedCard ?? selectedDetail?.card)
         let queuesBehindActiveTurn =
-            ConversationActivityPresentation.isActive(
-                conversationStatus: conversation?.conversation.status ?? "",
-                cardRuntime: (selectedCard ?? selectedDetail?.card)?.runtime ?? ""
-            ) || !(conversation?.conversation.queue.isEmpty ?? true)
+            conversationModel.state.activeTurn || !(conversation?.conversation.queue.isEmpty ?? true)
         do {
-            try await enqueueMessage(
-                request,
-                endpointID: targetEndpointID,
-                optimisticPlacement: queuesBehindActiveTurn ? .queue : .transcript
-            )
+            try await core.dispatch {
+                $0.sendMessage = .with { send in
+                    send.cardID = id
+                    send.parts = parts
+                    send.selection = .with {
+                        $0.provider = settings.provider
+                        $0.model = settings.model
+                        $0.effort = settings.effort
+                        $0.providerOptions = settings.providerOptions
+                    }
+                    send.queue = queuesBehindActiveTurn
+                }
+            }
             draft.acceptSend(revision: draftRevision)
         } catch {
             show(error)
@@ -292,16 +168,17 @@ extension DieterStore {
     /// queued nor in-progress input is lost.
     @discardableResult
     func removeQueuedMessage(_ message: Dieter_V1_QueuedMessage, edit: Bool) async -> Bool {
-        guard let cardID = selectedCardID ?? selectedChatID, let rpc else { return false }
+        guard let cardID = selectedCardID ?? selectedChatID else { return false }
         let draft = composer.draft
         do {
             return try await draft.removeQueuedMessage(message, edit: edit) { messageID in
-                let removed = try await rpc.removeQueuedMessage(cardID: cardID, messageID: messageID)
-                if (self.selectedCardID ?? self.selectedChatID) == cardID, var snapshot = self.conversation {
-                    snapshot.conversation.queue.removeAll { $0.id == removed.id }
-                    self.conversation = snapshot
-                }
-                return removed
+                try await self.core.dispatch {
+                    $0.removeQueuedMessage = .with {
+                        $0.cardID = cardID
+                        $0.messageID = messageID
+                        $0.edit = edit
+                    }
+                }.queuedMessage
             }
         } catch {
             show(error)
@@ -311,29 +188,9 @@ extension DieterStore {
 
     @discardableResult
     func retryFailedTurn(_ failure: ConversationTurnFailure) async -> Bool {
-        guard !failure.retryParts.isEmpty,
-            let id = selectedCardID ?? selectedChatID,
-            let card = selectedCard ?? selectedDetail?.card
-        else { return false }
-        let targetEndpointID = endpointID(for: card)
-        var request = Dieter_V1_SendMessageRequest()
-        request.cardID = id
-        request.parts = failure.retryParts
-        request.provider = card.provider
-        request.model = card.model
-        request.effort = card.effort
-        request.providerOptions = card.providerOptions
-        request.clientID = syncClientID
-        request.commandID = UUID().uuidString.lowercased()
-        request.messageID =
-            "msg_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
-        do {
-            try await enqueueMessage(request, endpointID: targetEndpointID)
-            return true
-        } catch {
-            show(error)
-            return false
-        }
+        guard failure.retryable, let id = selectedCardID ?? selectedChatID else { return false }
+        guard let result = await perform({ $0.retryFailedTurn = .with { $0.cardID = id } }) else { return false }
+        return !result.messageQueued.messageID.isEmpty
     }
 
     func toolOutput(
@@ -341,16 +198,15 @@ extension DieterStore {
         toolCallID: String,
         revision: String
     ) async throws -> Dieter_V1_ToolOutput? {
-        guard !toolCallID.isEmpty,
-            let cardID = selectedCardID ?? selectedChatID,
-            let rpc
-        else { return nil }
-        var request = Dieter_V1_GetToolOutputRequest()
-        request.cardID = cardID
-        request.messageID = messageID
-        request.toolCallID = toolCallID
-        request.revision = revision
-        return try await rpc.toolOutput(request)
+        guard !toolCallID.isEmpty, let cardID = selectedCardID ?? selectedChatID else { return nil }
+        return try await core.dispatch {
+            $0.loadToolOutput = .with {
+                $0.cardID = cardID
+                $0.messageID = messageID
+                $0.toolCallID = toolCallID
+                $0.revision = revision
+            }
+        }.toolOutput
     }
 
     func addAttachments(_ urls: [URL]) {
@@ -574,52 +430,22 @@ extension DieterStore {
         request.labelIds = labelIDs
         request.autoGenerateTitle = autoGenerateTitle
         workspace.apply(to: &request)
-        request.clientID = syncClientID
-        request.commandID = UUID().uuidString.lowercased()
-        do {
-            let shouldOpenConversation = Self.shouldOpenCreatedConversation(
-                chat: chat, lane: request.lane)
-            guard
-                let optimisticID = DieterOutboxPolicy.expectedConversationID(
-                    clientID: request.clientID, commandID: request.commandID)
-            else { throw CocoaError(.validationMissingMandatoryProperty) }
-            let target = endpoints.first { $0.daemonID == chosen?.daemonID }
-            guard let target, target.online else {
-                errorMessage = "Choose an online checkout for this conversation."; return false
-            }
-            try await enqueueOutbox(
-                DieterOutboxEntry(
-                    commandID: request.commandID,
-                    clientID: syncClientID,
-                    endpointID: target.id,
-                    kind: chat ? .createChat : .createCard,
-                    request: try request.serializedData(),
-                    optimisticID: optimisticID,
-                    attempts: 0,
-                    createdAt: Date()
-                ))
-            createConversationPresented = false
-            rebuildOutboxOverlays()
-            if shouldOpenConversation {
-                let card = (chat ? chats : state.cards).first { $0.id == optimisticID } ?? Dieter_V1_Card()
-                var local = Dieter_V1_ConversationSnapshot()
-                local.detail.card = card
-                local.detail.project = projectDirectory[destinationProjectID] ?? Dieter_V1_Project()
-                if !chat { local.detail.board = board(id: request.boardID) ?? Dieter_V1_Board() }
-                local.conversation.cardID = optimisticID
-                local.conversation.status = "pending"
-                local.conversation.draftAttachments = attachments
-                conversation = local
-                selectedDetail = local.detail
-                selectedCardID = chat ? nil : optimisticID
-                selectedChatID = chat ? optimisticID : nil
-            }
-            section = chat ? .chats : .board
-            return true
-        } catch {
-            show(error)
-            return false
+        // The outbox keeps the creation until its machine accepts it, even
+        // while that machine is offline.
+        guard
+            let created = await perform({
+                $0.createConversation = .with {
+                    $0.request = request
+                    $0.chat = chat
+                }
+            })
+        else { return false }
+        createConversationPresented = false
+        if Self.shouldOpenCreatedConversation(chat: chat, lane: request.lane) {
+            await openConversation(cardID: created.card.id, chat: chat)
         }
+        section = chat ? .chats : .board
+        return true
     }
 
     nonisolated static func shouldOpenCreatedConversation(chat: Bool, lane: String) -> Bool {
@@ -631,146 +457,45 @@ extension DieterStore {
         afterCardID: String = "", beforeCardID: String = ""
     ) async {
         guard pendingCardMoves[card.id] == nil else { return }
-        let account = activeGateway.credentialID
-        let original = navigationCards[card.projectID]?.first(where: { $0.id == card.id }) ?? card
-        // Capture the target board and stable neighbors before a route switch
-        // suspends this action. Inbox may be showing a completely different board.
-        let peers = (navigationCards[card.projectID] ?? []).filter {
-            $0.id != card.id && $0.boardID == card.boardID && $0.lane == lane
-        }.sorted { $0.orderKey == $1.orderKey ? $0.id < $1.id : $0.orderKey < $1.orderKey }
-        var request = Dieter_V1_MoveCardRequest()
-        request.cardID = card.id; request.lane = lane
-        request.expectedRevision = original.placementRevision
-        request.afterCardID = afterCardID; request.beforeCardID = beforeCardID
-        let operationID = UUID()
-        let pending = OptimisticCardMove(
-            operationID: operationID, lane: lane,
-            position: (peers.map(\.position).max() ?? 0) + 1_024,
-            afterCardID: request.afterCardID, beforeCardID: request.beforeCardID)
-        pendingCardMoves[card.id] = pending
-        replica.upsert(pending.applying(to: original))
-        refreshReplicaPresentation()
-        movingCardIDs.insert(card.id)
-        let connected: Bool
-        if lane == "running" && card.initialPromptSentAt.isEmpty {
-            connected = await ensureConversationConnection(card)
-        } else {
-            connected = await ensureReplicaConnection(card.projectID)
-        }
-        guard activeGateway.credentialID == account else { return }
-        guard connected, let rpc, pendingCardMoves[card.id]?.operationID == operationID else {
-            if pendingCardMoves[card.id]?.operationID == operationID {
-                pendingCardMoves.removeValue(forKey: card.id); movingCardIDs.remove(card.id)
-                acceptWorkspaceCard(original)
+        await perform {
+            $0.moveCard = .with {
+                $0.cardID = card.id
+                $0.lane = lane
+                $0.afterCardID = afterCardID
+                $0.beforeCardID = beforeCardID
             }
-            return
-        }
-        let mutationDaemonID = endpoint.daemonID
-        do {
-            let moved = try await rpc.moveCard(request)
-            guard activeGateway.credentialID == account else { return }
-            guard pendingCardMoves[card.id]?.operationID == operationID else { return }
-            pendingCardMoves.removeValue(forKey: card.id); movingCardIDs.remove(card.id)
-            // Merge the committed causal receipt even if navigation changed.
-            acceptWorkspaceCard(moved, sourceDaemonID: mutationDaemonID)
-        } catch {
-            guard activeGateway.credentialID == account else { return }
-            guard pendingCardMoves[card.id]?.operationID == operationID else { return }
-            pendingCardMoves.removeValue(forKey: card.id); movingCardIDs.remove(card.id)
-            acceptWorkspaceCard(original)
-            show(error)
         }
     }
 
     func start(_ card: Dieter_V1_Card) async {
-        guard isConversationServerBacked(card.id) else { return }
-        if cardStartRPCOverride == nil { guard await ensureConversationConnection(card) else { return } }
-        guard let client = cardStartRPCOverride ?? rpc else { return }
-        let current = state.cards.first(where: { $0.id == card.id }) ?? card
-        let board = board(id: current.boardID)
+        guard isConversationServerBacked(card.id), pendingCardStarts[card.id] == nil else { return }
         let hasDraftAttachments =
-            conversation?.detail.card.id == current.id
+            conversation?.detail.card.id == card.id
             && !(conversation?.conversation.draftAttachments.isEmpty ?? true)
-        guard
-            let optimistic = BoardCardStartPolicy.optimisticCard(
-                current,
-                board: board,
-                hasDraftAttachments: hasDraftAttachments
-            ), pendingCardStarts[current.id] == nil
-        else { return }
-
-        let operationID = UUID()
-        pendingCardStarts[current.id] = .init(
-            operationID: operationID,
-            runningLaneID: optimistic.lane
-        )
-        applyBoardCardMutation(optimistic)
-
-        var request = Dieter_V1_StartCardRequest()
-        request.cardID = current.id
-        request.clientID = syncClientID
-        request.commandID = UUID().uuidString.lowercased()
-        do {
-            let response = try await client.startCard(request)
-            guard pendingCardStarts[current.id]?.operationID == operationID else { return }
-            applyBoardCardMutation(response.card)
-        } catch {
-            guard pendingCardStarts[current.id]?.operationID == operationID else { return }
-            pendingCardStarts.removeValue(forKey: current.id)
-            applyBoardCardMutation(current)
-            show(error)
-        }
-    }
-
-    func applyBoardCardMutation(_ updated: Dieter_V1_Card) {
-        var received = Dieter_V1_State()
-        received.cards = replica.retainingOwnerDetails([updated], sourceDaemonID: endpoint.daemonID)
-        // Optimistic operations are a presentation layer over the causal state.
-        let updated = replica.reconcile(received).cards[0]
-        if let index = state.cards.firstIndex(where: { $0.id == updated.id }) {
-            var next = state
-            next.cards[index] = updated
-            state = next
-        }
-        if var cards = navigationCards[updated.projectID],
-            let index = cards.firstIndex(where: { $0.id == updated.id })
-        {
-            cards[index] = updated
-            navigationCards[updated.projectID] = cards
-        }
-        if var detail = selectedDetail, detail.card.id == updated.id {
-            detail.card = updated
-            selectedDetail = detail
-        }
-        if var snapshot = conversation, snapshot.detail.card.id == updated.id {
-            snapshot.detail.card = updated
-            snapshot.conversation.status = updated.runtime
-            conversation = snapshot
+        await perform {
+            $0.startCard = .with {
+                $0.cardID = card.id
+                $0.hasDraftAttachments_p = hasDraftAttachments
+            }
         }
     }
 
     func rename(_ card: Dieter_V1_Card, title: String) async {
-        guard await ensureReplicaConnection(card.projectID) else { return }
-        guard let rpc else { return }
-        var request = Dieter_V1_RenameCardRequest()
-        request.cardID = card.id
-        request.title = title
-        do {
-            _ = try await rpc.renameCard(request)
-            await refreshState()
-            await refreshChats()
-        } catch { show(error) }
+        await perform {
+            $0.renameCard = .with {
+                $0.cardID = card.id
+                $0.title = title
+            }
+        }
     }
 
     func merge(_ source: Dieter_V1_Card, into target: Dieter_V1_Card) async {
-        guard await ensureConversationConnection(source), let rpc else { return }
-        var request = Dieter_V1_MergeCardRequest()
-        request.cardID = source.id
-        request.targetCardID = target.id
-        do {
-            _ = try await rpc.mergeCard(request)
-            await refreshState()
-        } catch { show(error) }
+        await perform {
+            $0.mergeCard = .with {
+                $0.sourceCardID = source.id
+                $0.targetCardID = target.id
+            }
+        }
     }
 
     @discardableResult
@@ -778,178 +503,79 @@ extension DieterStore {
         _ card: Dieter_V1_Card, title: String, initialPrompt: String,
         agentSettings: Dieter_V1_DraftAgentSettings? = nil
     ) async -> Bool {
-        guard await ensureConversationConnection(card), let rpc else { return false }
-        var request = Dieter_V1_UpdateCardRequest()
-        request.cardID = card.id
-        request.title = title
-        request.initialPrompt = initialPrompt
-        if let agentSettings { request.agentSettings = agentSettings }
-        do {
-            _ = try await rpc.updateCard(request)
-            await refreshState()
-            return true
-        } catch {
-            show(error)
-            return false
-        }
+        await perform {
+            $0.updateCardDraft = .with { update in
+                update.cardID = card.id
+                update.title = title
+                update.prompt = initialPrompt
+                if let agentSettings { update.agent = agentSettings }
+            }
+        } != nil
     }
 
     func archive(_ card: Dieter_V1_Card, archived: Bool) async {
-        guard await ensureReplicaConnection(card.projectID) else { return }
-        guard let rpc else { return }
-        var request = Dieter_V1_ArchiveCardRequest()
-        request.cardID = card.id
-        request.archived = archived
         let generation = conversationSelectionGeneration
-        do {
-            let updated = try await rpc.archiveCard(request)
-            guard self.rpc === rpc else { return }
-            acceptWorkspaceCard(updated)
-            if generation == conversationSelectionGeneration,
-                (selectedCardID ?? selectedChatID) == card.id
-            {
+        if archived {
+            guard await perform({ $0.archiveCard = .with { $0.cardID = card.id } }) != nil else { return }
+            if generation == conversationSelectionGeneration, (selectedCardID ?? selectedChatID) == card.id {
                 closeConversation()
             }
-            await refreshState()
-            guard self.rpc === rpc else { return }
-            await refreshChats()
-        } catch { if self.rpc === rpc { show(error) } }
+        } else if !card.boardID.isEmpty {
+            await perform {
+                $0.restoreCard = .with {
+                    $0.cardID = card.id
+                    $0.boardID = card.boardID
+                }
+            }
+            archivedCards.removeAll { $0.id == card.id }
+        } else {
+            // A chat has no board; the core restores it on its own machine.
+            guard await perform({ $0.restoreCard = .with { $0.cardID = card.id } }) != nil else { return }
+            archivedChats.removeAll { $0.id == card.id }
+            foldWorkspace(coreWorkspace)
+        }
     }
 
     func pin(_ card: Dieter_V1_Card, pinned: Bool) async {
-        guard await ensureReplicaConnection(card.projectID) else { return }
-        guard let client = chatPinRPCOverride ?? rpc else { return }
-        let original =
-            chats.first(where: { $0.id == card.id })
-            ?? state.chats.first(where: { $0.id == card.id })
-            ?? card
-        guard original.pinned != pinned else { return }
-        let operationID = UUID()
-        pendingChatPins[card.id] = PendingChatPin(
-            operationID: operationID,
-            pinned: pinned,
-            original: original
-        )
-        var optimistic = original
-        optimistic.pinned = pinned
-        applyChatMutation(optimistic)
-
-        var request = Dieter_V1_PinChatRequest()
-        request.cardID = card.id
-        request.pinned = pinned
-        do {
-            let updated = try await client.pinChat(request)
-            guard pendingChatPins[card.id]?.operationID == operationID else { return }
-            applyChatMutation(updated)
-        } catch {
-            guard let pending = pendingChatPins[card.id], pending.operationID == operationID else {
-                return
+        guard card.pinned != pinned else { return }
+        await perform {
+            $0.setCardPinned = .with {
+                $0.cardID = card.id
+                $0.pinned = pinned
             }
-            pendingChatPins.removeValue(forKey: card.id)
-            applyChatMutation(pending.original)
-            show(error)
-        }
-    }
-
-    func applyChatMutation(_ updated: Dieter_V1_Card) {
-        let updated = replica.retainingOwnerDetails([updated], sourceDaemonID: endpoint.daemonID)[0]
-        if let index = chats.firstIndex(where: { $0.id == updated.id }) {
-            chats[index] = updated
-        } else if updated.scope == "chat", updated.boardID.isEmpty {
-            chats.append(updated)
-        }
-        if var detail = selectedDetail, detail.card.id == updated.id {
-            detail.card = updated
-            selectedDetail = detail
-        }
-        if var snapshot = conversation, snapshot.detail.card.id == updated.id {
-            snapshot.detail.card = updated
-            conversation = snapshot
-        }
-        updateSelectedState()
-    }
-
-    func reconcilePendingChatPins(_ serverChats: [Dieter_V1_Card]) -> [Dieter_V1_Card] {
-        serverChats.map { serverChat in
-            guard let pending = pendingChatPins[serverChat.id] else { return serverChat }
-            if serverChat.pinned == pending.pinned {
-                pendingChatPins.removeValue(forKey: serverChat.id)
-                return serverChat
-            }
-            var optimistic = serverChat
-            optimistic.pinned = pending.pinned
-            return optimistic
         }
     }
 
     func fork(_ card: Dieter_V1_Card, at messageID: String = "") async {
-        guard await ensureConversationConnection(card), let rpc else { return }
-        var request = Dieter_V1_ForkChatRequest()
-        request.sourceCardID = card.id
-        request.messageID = messageID
-        do {
-            let fork = try await rpc.forkChat(request)
-            await refreshChats()
-            await openConversation(cardID: fork.id, chat: true)
-        } catch {
-            show(error)
-        }
+        guard
+            let fork = await perform({
+                $0.forkCard = .with {
+                    $0.cardID = card.id
+                    $0.messageID = messageID
+                }
+            })
+        else { return }
+        await openConversation(cardID: fork.card.id, chat: true)
     }
 
     func cancel(_ card: Dieter_V1_Card) async {
-        guard await ensureConversationConnection(card), workspaceIsLive else { return }
-        do {
-            try await rpc?.cancelCard(id: card.id)
-            await refreshState()
-        } catch { show(error) }
+        await perform { $0.cancelCard = .with { $0.cardID = card.id } }
     }
 
     func setLabels(_ card: Dieter_V1_Card, ids: [String]) async {
-        guard selectedProjectIsLive, let rpc else { return }
         let normalized = ids.reduce(into: [String]()) { result, id in
             if !result.contains(id) { result.append(id) }
         }
-        let original = state.cards.first(where: { $0.id == card.id }) ?? card
-        guard original.labelIds != normalized else { return }
-
-        let operationID = UUID()
-        pendingCardLabelUpdates[card.id] = .init(operationID: operationID, labelIDs: normalized)
-
-        if let index = state.cards.firstIndex(where: { $0.id == card.id }) {
-            var next = state
-            next.cards[index].labelIds = normalized
-            state = next
-        }
-        labelUpdatingCardIDs.insert(card.id)
-
-        var request = Dieter_V1_SetCardLabelsRequest()
-        request.cardID = card.id
-        request.labelIds = normalized
-        do {
-            let updated = try await rpc.setCardLabels(request)
-            if let pending = pendingCardLabelUpdates[card.id], pending.operationID != operationID {
-                return
+        guard card.labelIds != normalized else { return }
+        await perform {
+            $0.setCardLabels = .with {
+                $0.cardID = card.id
+                $0.labelIds = normalized
             }
-            if let index = state.cards.firstIndex(where: { $0.id == updated.id }) {
-                var next = state
-                next.cards[index] = updated
-                state = next
-            }
-        } catch {
-            guard pendingCardLabelUpdates[card.id]?.operationID == operationID else { return }
-            pendingCardLabelUpdates.removeValue(forKey: card.id)
-            labelUpdatingCardIDs.remove(card.id)
-            if let index = state.cards.firstIndex(where: { $0.id == original.id }) {
-                var next = state
-                next.cards[index] = original
-                state = next
-            }
-            show(error)
         }
     }
 
     func loadArchive() async {
-        guard let rpc else { return }
         archiveRequestGeneration &+= 1
         let generation = archiveRequestGeneration
         let boardID = selectedBoardID
@@ -957,18 +583,20 @@ extension DieterStore {
         archiveError = nil
         defer { if generation == archiveRequestGeneration { archiveLoading = false } }
         do {
-            async let projects = rpc.archivedProjects().projects
-            let cards = boardID.isEmpty ? [] : try await rpc.archivedCards(boardID: boardID).cards
-            let loadedProjects = try await projects
-            guard self.rpc === rpc, generation == archiveRequestGeneration, boardID == selectedBoardID
-            else { return }
-            archivedProjects = loadedProjects
+            let cards =
+                boardID.isEmpty
+                ? [] : try await core.dispatch { $0.listArchivedCards = .with { $0.boardID = boardID } }.cards.cards
+            let projects = try await administer { $0.archivedProjects = ClientAdminMachine() }.projects.projects
+            guard generation == archiveRequestGeneration, boardID == selectedBoardID else { return }
+            archivedProjects = projects
             archivedCards = cards
             await refreshChats(includeArchived: true)
             if generation == archiveRequestGeneration { archiveError = chatsError }
         } catch {
-            guard self.rpc === rpc, generation == archiveRequestGeneration else { return }
-            if !Self.isExpectedCancellation(error) { archiveError = DieterRPCFailure.message(for: error) }
+            guard generation == archiveRequestGeneration else { return }
+            if !Self.isExpectedCancellation(error) {
+                archiveError = (error as? CoreFailure)?.message ?? DieterRPCFailure.message(for: error)
+            }
         }
     }
 }

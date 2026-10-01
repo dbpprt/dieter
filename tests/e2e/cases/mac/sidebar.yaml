@@ -4,7 +4,7 @@ id: mac.sidebar
 platform: mac
 suites: [smoke, functional]
 components: [sidebar]
-fixture: none
+fixture: gateway
 timeout: 3m
 native:
   suite: sidebar

@@ -148,21 +148,8 @@ struct ConversationTimeline: View {
     private var pendingTools: [Dieter_V1_PendingTool] {
         context.conversation?.conversation.pendingTools ?? []
     }
-    private var agentIsWorking: Bool {
-        let card = context.selectedCard ?? context.selectedDetail?.card
-        return ConversationActivityPresentation.isActive(
-            conversationStatus: context.conversation?.conversation.status ?? "",
-            cardRuntime: card?.runtime ?? ""
-        )
-    }
-    private var turnFailure: ConversationTurnFailure? {
-        let card = context.selectedCard ?? context.selectedDetail?.card
-        return ConversationTurnFailure.resolve(
-            messages: messages,
-            conversationStatus: context.conversation?.conversation.status ?? "",
-            cardRuntime: card?.runtime ?? ""
-        )
-    }
+    private var agentIsWorking: Bool { context.model.state.working }
+    private var turnFailure: ConversationTurnFailure? { context.model.turnFailure.map(ConversationTurnFailure.init) }
     private var creationFailure: String? {
         context.failedCreationError(conversationID)
     }
@@ -241,16 +228,9 @@ struct ConversationTimeline: View {
                 }
                 if agentIsWorking {
                     ConversationAgentWorkingIndicator(
-                        label: ConversationActivityPresentation.liveLabel(
-                            messages: liveMessages, pendingTools: pendingTools, plans: plans,
-                            showReasoning: context.showReasoning,
-                            conversationStatus: context.conversation?.conversation.status ?? "",
-                            cardRuntime: (context.selectedCard ?? context.selectedDetail?.card)?.runtime ?? "",
-                            providerStatus: context.conversation?.conversation.activeProviderStatus),
-                        startedAt: ConversationActivityPresentation.turnStart(
-                            messages: liveMessages,
-                            runtimeUpdatedAt: (context.selectedCard ?? context.selectedDetail?.card)?
-                                .runtimeUpdatedAt ?? "")
+                        label: context.showReasoning
+                            ? context.model.state.liveReasoning : context.model.state.liveActivity,
+                        startedAt: context.model.turnStartedAt
                     )
                     .id("conversation.agent-working")
                 }

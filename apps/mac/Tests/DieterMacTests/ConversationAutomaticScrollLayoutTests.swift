@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import SharedCore
 import SwiftUI
 import Testing
 @testable import DieterMac
@@ -19,7 +20,7 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
     store.conversation = snapshot
     store.selectedDetail = snapshot.detail
     let context = store.conversationContext
-    context.model.resetConversationHistory(from: snapshot)
+    context.model.resetHistory(to: snapshot)
     var historyRequests = 0
     context.onLoadEarlierMessages = {
         historyRequests += 1; return false
@@ -59,18 +60,16 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
 }
 
 @Test @MainActor func automaticHistoryScrollLoadsOnePageAndPreservesTheReaderThroughNetworkDelay() async throws {
-    let rpc = AutomaticScrollLayoutRPC()
-    let store = DieterStore(restoreSync: false)
+    let snapshot = automaticScrollSnapshot(start: 90, end: 120)
+    let rpc = AutomaticScrollLayoutCore(snapshot)
+    let store = DieterStore(core: rpc.core, restoreSync: false)
     let context = store.conversationContext
     let model = context.model
-    let snapshot = automaticScrollSnapshot(start: 90, end: 120)
     store.state.chats = [snapshot.detail.card]
     store.chats = [snapshot.detail.card]
     store.selectedChatID = snapshot.detail.card.id
-    store.conversation = snapshot
-    store.selectedDetail = snapshot.detail
-    model.resetConversationHistory(from: snapshot)
-    model.bind(client: rpc, endpointID: "automatic-scroll-layout")
+    model.observe(snapshot.detail.card.id)
+    rpc.publish()
     context.onLoadEarlierMessages = { await model.loadEarlierMessages() }
 
     let root = NSHostingView(
@@ -82,8 +81,8 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
     window.isReleasedWhenClosed = false
     window.contentView = root
     defer {
-        model.bind(client: nil, endpointID: "automatic-scroll-layout")
-        Task { await rpc.releasePage() }
+        model.observe(nil)
+        rpc.releasePage()
         window.close()
     }
 
@@ -93,7 +92,7 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
             ($0.documentView?.bounds.height ?? 0)
                 > $0.contentView.bounds.height - $0.contentInsets.top - $0.contentInsets.bottom
         })
-    #expect(await rpc.requestCount == 0, "Opening at the live tail must not load older pages")
+    #expect(rpc.requestCount == 0, "Opening at the live tail must not load older pages")
     #expect(
         abs(
             scroll.documentVisibleRect.maxY - scroll.contentInsets.bottom
@@ -104,9 +103,9 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
     for index in 0..<100 {
         try automaticScrollWheel(scroll, window: window, pixels: 64, phase: index == 0 ? 1 : 2)
         await settleAutomaticScroll(root, milliseconds: 20)
-        if await rpc.requestCount > 0 { break }
+        if rpc.requestCount > 0 { break }
     }
-    try #require(await rpc.requestCount == 1, "Scrolling to the earlier edge must request one page")
+    try #require(rpc.requestCount == 1, "Scrolling to the earlier edge must request one page")
     try #require(model.conversationHistoryLoading)
 
     // The user keeps scrolling while the network is outstanding. Restoring
@@ -124,7 +123,7 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
         automaticScrollTextPosition(reading.text, in: scroll).map { abs($0 - reading.offset) }
     }
 
-    await rpc.releasePage()
+    rpc.releasePage()
     for _ in 0..<40 {
         await settleAutomaticScroll(root, milliseconds: 20)
         if !model.conversationHistoryLoading,
@@ -139,7 +138,7 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
     #expect(abs(restoredOffset - reading.offset) < 2, "Loading must preserve the current message's pixel offset")
     #expect(committed.stop() < 2, "No committed frame may show the transcript displaced by the loaded page")
     #expect(model.olderConversationMessages.count == 60)
-    #expect(await rpc.requestCount == 1, "A restored viewport must not chain-load another page")
+    #expect(rpc.requestCount == 1, "A restored viewport must not chain-load another page")
 
     // Scrolling down through the loaded conversation rejoins the live tail
     // and releases the accumulated history without a later-page button.
@@ -157,7 +156,7 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
         abs(
             scroll.documentVisibleRect.maxY - scroll.contentInsets.bottom
                 - (scroll.documentView?.bounds.maxY ?? 0)) < 2)
-    #expect(await rpc.requestCount == 1)
+    #expect(rpc.requestCount == 1)
 }
 
 @Test @MainActor func automaticHistoryDownwardWheelAdvancesFromABoundedRenderedEnd() async throws {
@@ -179,7 +178,7 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
     store.selectedChatID = snapshot.detail.card.id
     store.conversation = snapshot
     store.selectedDetail = snapshot.detail
-    context.model.resetConversationHistory(from: snapshot)
+    context.model.resetHistory(to: snapshot)
     context.onLoadEarlierMessages = { false }
     let root = NSHostingView(
         rootView: ConversationTimeline().environment(store).environment(context))
@@ -251,7 +250,7 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
     store.selectedChatID = snapshot.detail.card.id
     store.conversation = snapshot
     store.selectedDetail = snapshot.detail
-    context.model.resetConversationHistory(from: snapshot)
+    context.model.resetHistory(to: snapshot)
     context.onLoadEarlierMessages = { false }
 
     let root = NSHostingView(
@@ -312,36 +311,53 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
         "The gesture must make substantial progress through the long transcript: \(windows)")
 }
 
-private actor AutomaticScrollLayoutRPC: ConversationRPC {
-    func markConversationRead(cardID: String, responseSeq: Int64) async throws -> Dieter_V1_Card {
-        var card = Dieter_V1_Card()
-        card.id = cardID; card.responseSeq = responseSeq; card.seenResponseSeq = responseSeq
-        return card
+/// Holds a history page open the way a slow network would, then publishes
+/// it as the core does: earlier messages ahead of the live window.
+@MainActor private final class AutomaticScrollLayoutCore {
+    let core = ScriptedCoreClient()
+    let snapshot: Dieter_V1_ConversationSnapshot
+    private(set) var requestCount = 0
+    private var earlier: [Dieter_V1_UiMessage] = []
+    private var pending: CheckedContinuation<Void, Never>?
+
+    init(_ snapshot: Dieter_V1_ConversationSnapshot) {
+        self.snapshot = snapshot
+        core.asyncHandler = { [unowned self] command in
+            switch command.command {
+            case .loadEarlierMessages:
+                requestCount += 1
+                publish(loading: true)
+                await withCheckedContinuation { pending = $0 }
+                let end = Int(snapshot.page.start) - earlier.count
+                earlier = automaticScrollSnapshot(start: max(0, end - 60), end: end).conversation.messages + earlier
+                publish()
+                return .with { $0.pageLoaded = .with { $0.loaded = true } }
+            case .returnToLatest:
+                earlier = []
+                publish()
+            default: break
+            }
+            return .with { $0.done = ClientDone() }
+        }
     }
 
-    private var pending: CheckedContinuation<Dieter_V1_ConversationSnapshot, Never>?
-    private var requestedBefore = 0
-    private var requestedLimit = 0
-    private(set) var requestCount = 0
-
-    func conversation(cardID: String, limit: Int32, before: Int32?) async throws -> Dieter_V1_ConversationSnapshot {
-        requestedBefore = Int(before ?? 120)
-        requestedLimit = Int(limit)
-        requestCount += 1
-        return await withCheckedContinuation { pending = $0 }
+    func publish(loading: Bool = false) {
+        core.emitConversation(snapshot.detail.card.id) { slice in
+            slice.card = snapshot.detail.card
+            slice.conversation = snapshot.conversation
+            slice.conversation.messages = []
+            slice.messages = earlier + snapshot.conversation.messages
+            slice.earlierCount = Int32(earlier.count)
+            slice.page = snapshot.page
+            slice.hasEarlier_p = Int(snapshot.page.start) - earlier.count > 0
+            slice.loadingEarlier = loading
+        }
     }
 
     func releasePage() {
-        guard let pending else { return }
-        self.pending = nil
-        pending.resume(
-            returning: automaticScrollSnapshot(
-                start: max(0, requestedBefore - requestedLimit), end: requestedBefore))
+        pending?.resume()
+        pending = nil
     }
-
-    func watchConversation(
-        cardID: String, after: Int64, receive: @escaping @Sendable (Dieter_V1_ConversationUpdate) async -> Void
-    ) async throws {}
 }
 
 private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_ConversationSnapshot {
@@ -560,7 +576,7 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
         store.selectedChatID = snapshot.detail.card.id
         store.conversation = snapshot
         store.selectedDetail = snapshot.detail
-        store.conversationContext.model.resetConversationHistory(from: snapshot)
+        store.conversationContext.model.resetHistory(to: snapshot)
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 700, height: 600),
             styleMask: [.borderless], backing: .buffered, defer: false)

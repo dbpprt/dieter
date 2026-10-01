@@ -31,6 +31,9 @@ extension DieterStore {
         return ConversationWorkspaceRoute(endpointID: machine.id, machineName: machine.name)
     }
 
+    /// Attaches the conversation's machine so the feature panes reach it.
+    /// The conversation itself does not need this: the core opens it on its
+    /// machine either way. Never connects a session that is offline.
     func ensureConversationConnection(_ card: Dieter_V1_Card, reportOffline: Bool = true) async -> Bool {
         guard let target = machine(for: card), target.online else {
             if reportOffline {
@@ -38,48 +41,52 @@ extension DieterStore {
             }
             return false
         }
-        if target.id == endpoint.id, phase.isConnected, rpc != nil { return true }
+        guard phase.isConnected else { return false }
+        if target.id == endpoint.id { return true }
         await connect(to: target)
-        return !Task.isCancelled && endpoint.id == target.id && phase.isConnected && rpc != nil
+        return !Task.isCancelled && endpoint.id == target.id && phase.isConnected
     }
 
     func attachCheckout(projectID: String, path: String, name: String, machineID: String) async -> Bool {
-        guard let target = endpoints.first(where: { $0.id == machineID }), target.online else { return false }
-        await connect(to: target)
-        guard endpoint.id == target.id, let rpc else { return false }
-        var request = Dieter_V1_AttachCheckoutRequest()
-        request.projectID = projectID; request.path = path; request.name = name
+        guard let target = endpoints.first(where: { $0.id == machineID }), target.online,
+            let daemonID = target.daemonID
+        else { return false }
         do {
-            _ = try await rpc.attachCheckout(request)
+            _ = try await administer {
+                $0.attachCheckout = .with {
+                    $0.daemonID = daemonID
+                    $0.projectID = projectID
+                    $0.path = path
+                    $0.name = name
+                }
+            }
             await refreshState()
-            await refreshMachineDirectory()
             return true
         } catch { show(error); return false }
     }
     func detachCheckout(_ checkout: Dieter_V1_Checkout) async {
-        guard let machine = endpoints.first(where: { $0.daemonID == checkout.daemonID }), machine.online else {
-            errorMessage = "The checkout’s machine is offline."; return
-        }
         do {
-            var request = Dieter_V1_CheckoutRef(); request.checkoutID = checkout.id
-            if machine.id == endpoint.id, let rpc {
-                _ = try await rpc.detachCheckout(request)
-            } else {
-                let lease = try await selectDirectoryDataPlane(for: machine)
-                defer { lease.release() }
-                _ = try await lease.rpc.detachCheckout(request)
+            _ = try await administer {
+                $0.detachCheckout = .with {
+                    $0.projectID = checkout.projectID
+                    $0.checkoutID = checkout.id
+                }
             }
             creationCheckoutIDs.removeValue(forKey: checkout.projectID)
-            await refreshState(); await refreshMachineDirectory()
+            await refreshState()
         } catch { show(error) }
     }
 
     func consolidateProject(source: String, destination: String) async -> Bool {
-        guard await ensureReplicaConnection(source), let rpc else { return false }
         do {
-            _ = try await rpc.consolidateProject(source: source, destination: destination)
+            _ = try await administer {
+                $0.consolidate = .with {
+                    $0.sourceID = source
+                    $0.destinationID = destination
+                }
+            }
             selectedProjectID = destination
-            await refreshState(); await refreshMachineDirectory()
+            await refreshState()
             return true
         } catch { show(error); return false }
     }
@@ -105,9 +112,8 @@ extension DieterStore {
             return false
         }
         if target.id != endpoint.id || !phase.isConnected { await connect(to: target) }
-        guard endpoint.id == target.id, phase.isConnected, let rpc else { return false }
-        rpc.selectCheckout(projectID: projectID, checkoutID: checkout.id)
-        return true
+        // Surfaces name the checkout in their targets; the core routes them.
+        return endpoint.id == target.id && phase.isConnected
     }
 
     func selectCheckout(_ checkout: Dieter_V1_Checkout) async {

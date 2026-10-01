@@ -4,6 +4,7 @@ import com.dbpprt.dieter.api.gateway.v1.RTCConfiguration
 import com.dbpprt.dieter.api.v1.DieterServiceClient
 import com.dbpprt.dieter.api.v1.RemoteDesktopCapabilities
 import com.dbpprt.dieter.api.v1.RemoteDesktopClipboardFrame
+import com.dbpprt.dieter.api.v1.RemoteDesktopClipboardItem
 import com.dbpprt.dieter.api.v1.RemoteDesktopClipboardRequest
 import com.dbpprt.dieter.api.v1.RemoteDesktopClipboardResponse
 import com.dbpprt.dieter.api.v1.RemoteDesktopHostEvent
@@ -18,6 +19,7 @@ import com.dbpprt.dieter.api.v1.RemoteDesktopSignal
 import com.dbpprt.dieter.api.v1.StartRemoteDesktopRequest
 import com.dbpprt.dieter.api.v1.UpdateRemoteDesktopSessionRequest
 import com.dbpprt.dieter.core.screens.ClipboardFraming
+import com.dbpprt.dieter.core.screens.LocalClipboard
 import com.dbpprt.dieter.core.screens.PeerState
 import com.dbpprt.dieter.core.screens.RtpCodec
 import com.dbpprt.dieter.core.screens.ScreenChannels
@@ -239,6 +241,59 @@ class ScreenSessionTest {
         val off = session.view.await { !it.clipboardEnabled }
         assertEquals(null, off.clipboardError)
         assertEquals(false, onCore { session.preferences.clipboard })
+        onCore { session.disconnect() }
+    }
+
+    @Test
+    fun aUserPasteWaitsForTheBackgroundSyncAndASecondOperationIsRefused() = runBlocking {
+        val engines = Engines()
+        val daemon = FakeDaemon()
+        daemon.caps = daemon.caps.copy(clipboard_supported = true)
+        val local = object : LocalClipboard {
+            override fun stamp() = 1L
+            override fun read(binary: Boolean) = "pasted text" to emptyList<RemoteDesktopClipboardItem>()
+            override fun apply(text: String, items: List<RemoteDesktopClipboardItem>) = Unit
+        }
+        val session = ScreenSession(engines, JcaSignatureVerifier, ScreenConfig("Test", ViewportPolicy.Fixed), Clock.System, scope, PrintLogger, local)
+        onCore { session.connect { daemon.route() } }
+        session.view.await { it.sessionId == "rd_test" }
+        val engine = engines.created.single()
+        eventually { engine.answer != null }
+        onCore { engine.open += ScreenChannels.CLIPBOARD; engine.connect() }
+        daemon.signals.send(RemoteDesktopSignal(session_id = "rd_test", state = daemon.state(1, 1000).copy(clipboard_enabled = true, clipboard_generation = 1)))
+        onCore { engine.events.presented(1200u) }
+        session.view.await { it.controlActive && it.clipboardEnabled }
+        fun requests() = engine.sent.filter { it.first == ScreenChannels.CLIPBOARD }
+            .map { RemoteDesktopClipboardRequest.ADAPTER.decode(RemoteDesktopClipboardFrame.ADAPTER.decode(it.second).data_) }
+        suspend fun answer(request: RemoteDesktopClipboardRequest, revision: String) {
+            val response = RemoteDesktopClipboardResponse.ADAPTER.encodeByteString(RemoteDesktopClipboardResponse(operation_id = request.operation_id, revision = revision))
+            ClipboardFraming.frames(request.operation_id, response).forEach { reply ->
+                onCore { engine.events.channelMessage(ScreenChannels.CLIPBOARD, RemoteDesktopClipboardFrame.ADAPTER.encode(reply)) }
+            }
+        }
+
+        // The background sync's read is in flight and unanswered.
+        eventually({ "a background read" }) { requests().isNotEmpty() }
+        val read = requests().single()
+        assertEquals(RemoteDesktopClipboardRequest.Action.READ, read.action)
+        val paste = scope.async { session.performClipboard("paste") }
+        session.view.await { it.clipboardBusy }
+        onCore { }
+        assertEquals(1, requests().size, "the paste waits for the exchange in flight")
+        assertEquals(null, session.view.value.clipboardError)
+        withContext(core) { session.performClipboard("copy") }
+        assertEquals("A clipboard operation is still in progress", session.view.value.clipboardError)
+
+        answer(read, "r1")
+        eventually({ "the paste request" }) { requests().size == 2 }
+        val pasted = requests()[1]
+        assertEquals(RemoteDesktopClipboardRequest.Action.PASTE, pasted.action)
+        assertEquals("pasted text", pasted.text)
+        assertEquals("r1", pasted.known_revision)
+        answer(pasted, "r2")
+        paste.await()
+        val done = session.view.await { !it.clipboardBusy && it.clipboardOperations == 1 }
+        assertEquals(null, done.clipboardError)
         onCore { session.disconnect() }
     }
 

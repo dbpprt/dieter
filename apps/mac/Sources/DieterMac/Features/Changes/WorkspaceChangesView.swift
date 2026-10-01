@@ -107,31 +107,7 @@ struct WorkspaceChangesView: View {
         return GitOperationStatus.active(operation.status) || operation.status == "failed"
             ? operation : nil
     }
-    private var availability: WorkspaceActionAvailability {
-        let mode = ConversationWorkspaceMode.projectMode(
-            workspace?.mode ?? card?.workspace.mode ?? card?.workspaceMode ?? "project"
-        ).rawValue
-        return WorkspaceActionAvailability(
-            agentActive: [
-                "starting", "running", "working", "streaming", "waiting", "waiting_for_user", "cancelling",
-            ]
-            .contains((card?.runtime ?? "").lowercased()),
-            operationActive: operationActive,
-            workspaceState: workspace?.state ?? card?.workspace.state ?? "",
-            workspaceMode: mode,
-            changedFiles: Int(changes?.files.count ?? Int(card?.workspace.changedFiles ?? 0)),
-            hasCommits: !(changes?.commits.isEmpty ?? true)
-                || (workspace?.ahead ?? card?.workspace.ahead ?? 0) > 0,
-            hasRemote: model.conversationSCMCapabilities?.pushAvailable ?? false,
-            scmAuthenticated: model.conversationSCMCapabilities?.authenticated ?? false,
-            hasPullRequest: pullRequest != nil,
-            workspaceBranch: workspace?.branch ?? card?.workspace.branch ?? "",
-            baseBranch: workspace?.baseBranch ?? card?.workspace.baseBranch ?? "",
-            dirty: workspace?.dirty ?? false,
-            remotePublishMode: workspace?.remotePublishMode ?? card?.remotePublishMode
-                ?? RemotePublishMode.manual.rawValue
-        )
-    }
+    private var availability: WorkspaceActionAvailability { model.availability }
 
     var body: some View {
         GeometryReader { geometry in
@@ -145,16 +121,13 @@ struct WorkspaceChangesView: View {
         }
         .background(background)
         .task(id: "\(model.bindingGeneration):\(active)") {
+            // The core refreshes an active review, idle checkouts included:
+            // external edits and short turns can happen between two reads.
+            model.active = active
             guard active, let id = card?.id, DieterConversationID.isServerBacked(id) else { return }
             await model.loadWorkspaceSurface()
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
-                guard !Task.isCancelled, model.target.conversationID == id else { return }
-                // Include idle checkouts: external edits and short turns can
-                // start and finish entirely between two polls.
-                await model.loadWorkspaceSurface()
-            }
         }
+        .onDisappear { model.active = false }
         .onChange(of: changes?.revision) { _, revision in
             guard viewedRevision != (revision ?? "") else { return }
             viewedRevision = revision ?? ""
@@ -819,6 +792,7 @@ struct WorkspaceChangesView: View {
                     } else {
                         WorkspaceDiffContent(
                             diff: diff,
+                            lines: model.diffLines,
                             split: diffMode == .split,
                             comments: model.conversationChangeComments.filter {
                                 $0.path == model.selectedChangePath
@@ -1014,13 +988,9 @@ struct WorkspaceChangesView: View {
     }
 
     private func addComment(_ line: UnifiedDiffLine) {
-        let side = line.kind == .deletion ? "old" : "new"
-        let number = Int32(line.kind == .deletion ? line.oldLine ?? 0 : line.newLine ?? 0)
         let body = commentBody
         Task {
-            if await model.addChangeComment(
-                path: model.selectedChangePath, side: side, line: number, body: body)
-            {
+            if await model.addChangeComment(line: line, body: body) {
                 selectedCommentLine = nil
                 commentBody = ""
             }

@@ -25,8 +25,8 @@
             defer { session.controller.controlActive = false; store.screensModel.dock(session.id) }
             results["01a-screen-undock"] =
                 session.controller.renderer === renderer && renderer.superview === surface
-                    && session.controller.clipboardWindow === detached
-                ? "passed" : "failed: undocking replaced the renderer or left clipboard in the main window"
+                    && surface.window === detached
+                ? "passed" : "failed: undocking replaced the renderer or left the surface in the main window"
             let active = await wait { NSApp.isActive && detached.isKeyWindow }
             let keyboardTap = RemoteDesktopKeyboardCapture()
             var capturedTab = 0
@@ -54,8 +54,8 @@
             // This fixture deliberately has no peer. Test real AppKit activation
             // and cursor presentation without sending input to an unowned host.
             session.controller.remoteCursorState.visible = true
-            session.controller.remoteCursorState.normalizedX = 100_000
-            session.controller.remoteCursorState.normalizedY = 100_000
+            session.controller.remoteCursorState.x = 0.1
+            session.controller.remoteCursorState.y = 0.1
             session.controller.remoteCursor = .crosshair
             session.controller.controlActive = true
             let center = CGPoint(x: surface.bounds.midX, y: surface.bounds.midY)
@@ -106,7 +106,7 @@
             let docked = await wait { !session.isDetached && surface.window === window && store.section == .screens }
             results["01a-screen-return-to-dieter"] =
                 returned && docked && session.controller.phase == .streaming
-                    && session.controller.clipboardWindow === window && !detached.isVisible
+                    && surface.window === window && !detached.isVisible
                 ? "passed" : "failed: Return to Dieter did not reopen Screens with the same live session"
             return results
         }

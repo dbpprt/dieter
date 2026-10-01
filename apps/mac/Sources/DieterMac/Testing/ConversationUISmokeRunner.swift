@@ -361,24 +361,29 @@
             snapshot.detail.card.runtime = "failed"
             store.conversation = snapshot
             store.selectedDetail = snapshot.detail
+            // The core reads the failure from the transcript (its own tests
+            // cover that); this renders what it reports.
+            store.conversationModel.turnFailure = .with {
+                $0.summary = "codex exited 1 after 42s (context overflow)."
+                $0.log = diagnostic.text
+                $0.failedMessageID = assistant.id
+                $0.retryable = true
+            }
             try? await DieterTaskSleep.seconds(1)
             capture(window, to: output.appending(path: "08-turn-failed.png"))
 
-            let failure = ConversationTurnFailure.resolve(
-                messages: snapshot.conversation.messages,
-                conversationStatus: snapshot.conversation.status,
-                cardRuntime: snapshot.detail.card.runtime
-            )
+            let failure = store.conversationModel.turnFailure.map(ConversationTurnFailure.init)
             results["turn-failure"] =
-                failure != nil ? "passed" : "failed: failure presentation was not resolved"
+                failure != nil && NativeUIAccessibility.find("conversation.failure.view-log", in: window) != nil
+                ? "passed" : "failed: failure presentation was not rendered"
             results["turn-failure-log"] =
                 failure?.log.contains("provider stderr") == true
                 ? "passed"
                 : "failed: complete diagnostic was not retained"
             results["turn-failure-retry"] =
-                failure?.retryParts.first?.text == "Update the config and show the work."
+                failure?.retryable == true
                 ? "passed"
-                : "failed: original prompt was not available for retry"
+                : "failed: the failed turn was not retryable"
 
             let ready = await prepareComposerWindow(window)
             let settled = await waitForStableControl("conversation.failure.view-log", in: window)
@@ -1355,6 +1360,14 @@
             snapshot.detail.card.runtime = "running"
             store.conversation = snapshot
             store.selectedDetail = snapshot.detail
+            // The core presents the active turn; the fixture stands in for it.
+            store.conversationModel.state = .with {
+                $0.runtime = "running"
+                $0.activeTurn = true
+                $0.working = true
+                $0.liveActivity = "Thinking…"
+                $0.liveReasoning = "Thinking…"
+            }
             let indicatorReady = await NativeUIAccessibility.wait {
                 guard let frame = NativeUIAccessibility.find("conversation.agent-working", in: window)?.recordedFrame
                 else { return false }
@@ -1362,10 +1375,7 @@
             }
             capture(window, to: output.appending(path: "06-agent-thinking.png"))
             results["agent-activity-indicator"] =
-                ConversationActivityPresentation.isActive(
-                    conversationStatus: snapshot.conversation.status,
-                    cardRuntime: snapshot.detail.card.runtime
-                ) && indicatorReady
+                store.conversationModel.state.working && indicatorReady
                 ? "passed" : "failed: active fixture did not render the full-width 38pt working indicator"
         }
 

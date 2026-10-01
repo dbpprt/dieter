@@ -2,6 +2,7 @@ import AppKit
 import DieterAPI
 import DieterCore
 import GRPCCore
+import SharedCore
 import Testing
 @testable import DieterMac
 
@@ -64,7 +65,7 @@ private actor ConversationContentTerminalFixture: TerminalsRPC {
         if includesExistingTerminal {
             var terminal = Dieter_V1_Terminal()
             terminal.id = "workspace-shell"; terminal.name = "Shell"; terminal.status = "running"
-            terminal.columns = 100; terminal.rows = 30
+            terminal.columns = 100; terminal.rows = 30; terminal.cardID = cardID
             values.insert(terminal, at: 0)
         }
         var response = Dieter_V1_TerminalsResponse(); response.terminals = values
@@ -77,7 +78,7 @@ private actor ConversationContentTerminalFixture: TerminalsRPC {
             createRequests.count == 1 ? "created-workspace-shell" : "created-workspace-shell-\(createRequests.count)"
         terminal.name = request.name; terminal.status = "running"
         terminal.shell = request.shell; terminal.workingDirectory = request.workingDirectory
-        terminal.columns = request.columns; terminal.rows = request.rows
+        terminal.columns = request.columns; terminal.rows = request.rows; terminal.cardID = request.cardID
         createdTerminals.append(terminal)
         return terminal
     }
@@ -90,27 +91,6 @@ private actor ConversationContentTerminalFixture: TerminalsRPC {
     func resizeTerminal(id: String, columns: Int, rows: Int) async throws -> Dieter_V1_Terminal { .init() }
     func renameTerminal(id: String, name: String) async throws -> Dieter_V1_Terminal { .init() }
     func closeTerminal(id: String) async throws { closes += 1 }
-}
-
-private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
-    private(set) var projectReads: [String] = []
-    private(set) var diffReads: [Dieter_V1_GetDiffRequest] = []
-    func changeset(projectID: String) async throws -> Dieter_V1_Changeset {
-        projectReads.append(projectID)
-        var file = Dieter_V1_ChangedFile(); file.path = "source.swift"; file.unstaged = true
-        var value = Dieter_V1_Changeset(); value.projectID = projectID; value.revision = "r1"; value.files = [file]
-        return value
-    }
-    func fileDiff(_ request: Dieter_V1_GetDiffRequest) async throws -> Dieter_V1_FileDiff {
-        diffReads.append(request)
-        var value = Dieter_V1_FileDiff(); value.projectID = request.projectID
-        value.path = request.path; value.revision = request.expectedRevision; value.patch = "+change"
-        return value
-    }
-    func startGitOperation(_ request: Dieter_V1_StartGitOperationRequest) async throws -> Dieter_V1_GitOperation {
-        .init()
-    }
-    func gitOperation(id: String) async throws -> Dieter_V1_GitOperation { .init() }
 }
 
 @Suite @MainActor struct ConversationContentModelTests {
@@ -185,17 +165,17 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
         #expect(content.isPresented(for: "card-A"))
     }
 
-    private func scope(
-        _ client: ConversationContentFilesFixture, cardID: String = "card-A"
-    ) -> ConversationContentScope {
+    private func scope(cardID: String = "card-A") -> ConversationContentScope {
         .init(
-            target: .init(endpointID: "remote-machine", projectID: "project-A", conversationID: cardID),
-            rootPath: "/remote/worktrees/\(cardID)", client: client)
+            target: .init(endpointID: "gateway#remote-machine", projectID: "project-A", conversationID: cardID),
+            rootPath: "/remote/worktrees/\(cardID)")
     }
 
+    /// A content model whose files reach `client` through a scripted core.
     private func model(_ client: ConversationContentFilesFixture) -> ConversationContentModel {
         let result = ConversationContentModel()
-        result.prepareScope = { id in self.scope(client, cardID: id) }
+        result.core = FilesCoreDouble.core(over: client)
+        result.prepareScope = { id in self.scope(cardID: id) }
         return result
     }
 
@@ -208,8 +188,8 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
     @Test func opensInTheConversationWorkspaceWithoutChangingTheFilesRoute() async throws {
         let client = ConversationContentFilesFixture()
         let filesRoute = FilesModel()
-        let routeTarget = WorkspaceTarget(endpointID: "local-machine", projectID: "different-project")
-        filesRoute.bind(target: routeTarget, client: client)
+        let routeTarget = WorkspaceTarget(endpointID: "gateway#local-machine", projectID: "different-project")
+        filesRoute.bind(target: routeTarget, core: FilesCoreDouble.core(over: client))
         await filesRoute.openFile(path: "other.md")
         let routeSession = filesRoute.fileEditorSession
         let content = model(client)
@@ -221,7 +201,7 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
         #expect(request.projectID == "project-A")
         #expect(request.cardID == "card-A")
         #expect(request.path == "docs/plan.md")
-        #expect(content.files.target.endpointID == "remote-machine")
+        #expect(content.files.target.endpointID == "gateway#remote-machine")
         #expect(content.rootPath == "/remote/worktrees/card-A")
         #expect(content.selection == .file(path: "docs/plan.md", line: 9))
         #expect(content.isPresented(for: "card-A"))
@@ -327,7 +307,7 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
         #expect(session.isDirty)
         #expect(editor.selectedRange() == selection)
         #expect(files.fileDocument?.revision == "revision-1")
-        #expect(files.fileError?.contains("File changed") == true)
+        #expect(files.fileError?.contains("changed on disk") == true)
         #expect(!content.confirming)
         #expect(!files.saving)
         session.detach(editor)
@@ -340,13 +320,13 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
             if id == "old-card" {
                 return try await withCheckedThrowingContinuation { pending = $0 }
             }
-            return self.scope(client, cardID: id)
+            return self.scope(cardID: id)
         }
         let oldURL = try url("old.md"), newURL = try url("new.md")
         let oldOpen = Task { await content.open(oldURL, conversationID: "old-card") }
         try await waitUntil { pending != nil }
         #expect(await content.open(newURL, conversationID: "new-card"))
-        pending?.resume(returning: scope(client, cardID: "old-card"))
+        pending?.resume(returning: scope(cardID: "old-card"))
 
         #expect(!(await oldOpen.value))
         #expect(content.sourceURL == newURL)
@@ -388,7 +368,7 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
         try await waitUntil { pending != nil }
 
         content.suspend()
-        pending?.resume(returning: scope(client))
+        pending?.resume(returning: scope())
 
         #expect(!(await opening.value))
         #expect(!content.isOpen)
@@ -564,13 +544,10 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
     }
 
     @Test func terminalWatchIsScopedAndStoppingItsTabNeverClosesTheShell() async throws {
-        let client = ConversationContentFilesFixture(), terminalClient = ConversationContentTerminalFixture()
+        let terminalClient = ConversationContentTerminalFixture()
         let content = ConversationContentModel()
-        content.prepareScope = { id in
-            var value = self.scope(client, cardID: id)
-            value.terminalsClient = terminalClient
-            return value
-        }
+        content.core = TerminalsCoreDouble.core(over: terminalClient)
+        content.prepareScope = { id in self.scope(cardID: id) }
         #expect(await content.openPanel(.terminal, conversationID: "card-A"))
         let tab = try #require(content.selectedTab)
         #expect(tab.terminals.active)
@@ -592,14 +569,10 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
     }
 
     @Test func openingTerminalPanelCreatesAScopedShellWhenNoneExists() async throws {
-        let client = ConversationContentFilesFixture()
         let terminalClient = ConversationContentTerminalFixture(includesExistingTerminal: false)
         let content = ConversationContentModel()
-        content.prepareScope = { id in
-            var value = self.scope(client, cardID: id)
-            value.terminalsClient = terminalClient
-            return value
-        }
+        content.core = TerminalsCoreDouble.core(over: terminalClient)
+        content.prepareScope = { id in self.scope(cardID: id) }
 
         #expect(await content.openPanel(.terminal, conversationID: "card-A"))
 
@@ -619,13 +592,10 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
     }
 
     @Test func everyTerminalTabOwnsADifferentSession() async throws {
-        let client = ConversationContentFilesFixture(), terminalClient = ConversationContentTerminalFixture()
+        let terminalClient = ConversationContentTerminalFixture()
         let content = ConversationContentModel()
-        content.prepareScope = { id in
-            var value = self.scope(client, cardID: id)
-            value.terminalsClient = terminalClient
-            return value
-        }
+        content.core = TerminalsCoreDouble.core(over: terminalClient)
+        content.prepareScope = { id in self.scope(cardID: id) }
 
         #expect(await content.openPanel(.terminal, conversationID: "card-A"))
         let first = try #require(content.selectedTab)
@@ -643,32 +613,28 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
 
     @Test func sameCardOnAnotherEndpointCannotReuseThePreviousDocument() async throws {
         let client = ConversationContentFilesFixture(), content = model(client)
-        var endpoint = "machine-A"
+        var endpoint = "gateway#machine-A"
         content.currentEndpointID = { _ in endpoint }
         content.prepareScope = { id in
             .init(
-                target: .init(endpointID: endpoint, projectID: "project", conversationID: id), rootPath: "/workspace",
-                client: client)
+                target: .init(endpointID: endpoint, projectID: "project", conversationID: id), rootPath: "/workspace")
         }
         #expect(await content.open(try url("plan.md"), conversationID: "card-A"))
         let old = try #require(content.selectedTab)
         edit(content)
-        endpoint = "machine-B"
+        endpoint = "gateway#machine-B"
         content.confirmUnsaved = { _ in .cancel }
         #expect(!(await content.open(try url("plan.md"), conversationID: "card-A")))
         #expect(content.selectedTab === old)
         content.confirmUnsaved = { _ in .discard }
         #expect(await content.open(try url("plan.md"), conversationID: "card-A"))
         #expect(content.selectedTab !== old)
-        #expect(content.files.target.endpointID == "machine-B")
+        #expect(content.files.target.endpointID == "gateway#machine-B")
         #expect(await client.reads.count == 2)
     }
 
     @Test func reconnectRebindsEveryRetainedEditorWithoutReplacingDirtyBuffers() async throws {
-        let firstClient = ConversationContentFilesFixture(), nextClient = ConversationContentFilesFixture()
-        var currentClient = firstClient
-        let content = ConversationContentModel()
-        content.prepareScope = { id in self.scope(currentClient, cardID: id) }
+        let client = ConversationContentFilesFixture(), content = model(client)
         #expect(await content.open(try url("first.md"), conversationID: "card-A"))
         edit(content, text: "Keep first edits")
         let first = try #require(content.selectedTab)
@@ -679,72 +645,74 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
         content.invalidateTransports()
         #expect(!first.files.isLive && !second.files.isLive)
         await first.files.saveCurrentDocument()
-        #expect(await firstClient.saves.isEmpty)
-        currentClient = nextClient
+        #expect(await client.saves.isEmpty)
         await content.refreshBindings()
+        #expect(first.files.isLive && second.files.isLive)
         #expect(first.files.fileEditorSession === firstSession)
         #expect(second.files.fileEditorSession === secondSession)
         #expect(firstSession.currentText() == "Keep first edits")
         #expect(secondSession.currentText() == "Keep second edits")
         await first.files.saveCurrentDocument()
         await second.files.saveCurrentDocument()
-        #expect(await firstClient.saves.isEmpty)
-        let writes = await nextClient.saves
+        let writes = await client.saves
         #expect(writes.map(\.path) == ["first.md", "second.md"])
         #expect(
             writes.allSatisfy { $0.cardID == "card-A" && $0.projectID == "project-A" && $0.revision == "revision-1" })
         #expect(!firstSession.isDirty && !secondSession.isDirty)
     }
 
-    @Test func projectModeReviewUsesItsOwnProjectClientWithoutCardChangesetRPC() async throws {
-        let files = ConversationContentFilesFixture(), projectClient = ConversationContentProjectReviewFixture()
+    @Test func projectModeReviewShowsTheConversationsCheckoutOnItsMachine() async throws {
+        let core = ScriptedCoreClient()
         let content = ConversationContentModel()
-        let globalRoute = ProjectChangesModel()
-        globalRoute.bind(projectID: "unrelated-project", client: projectClient)
+        content.core = core
         content.prepareScope = { id in
-            var value = self.scope(files, cardID: id)
+            var value = self.scope(cardID: id)
             value.workspaceMode = "project"
-            value.projectChangesClient = projectClient
-            // No WorktreeRPC: project mode must not require or call it.
+            value.card = .with {
+                $0.id = id
+                $0.projectID = "project-A"
+                $0.checkoutID = "checkout-A"
+            }
             return value
         }
         #expect(await content.openPanel(.review, conversationID: "card-A"))
         let tab = try #require(content.selectedTab)
         #expect(tab.usesProjectReview)
-        #expect(tab.projectReview !== globalRoute)
         await tab.projectReview.refresh()
-        await tab.projectReview.waitForDiff()
-        #expect(await projectClient.projectReads == ["project-A"])
-        let request = try #require(await projectClient.diffReads.first)
-        #expect(request.projectID == "project-A")
-        #expect(request.cardID.isEmpty)
-        #expect(globalRoute.projectID == "unrelated-project")
-        #expect(globalRoute.changes == nil)
+        let binds = core.commands.compactMap { command -> ClientProjectChangesTarget? in
+            guard case .projectChanges(let changes)? = command.command, case .bind(let target)? = changes.action
+            else { return nil }
+            return target
+        }
+        #expect(
+            binds == [
+                .with {
+                    $0.projectID = "project-A"
+                    $0.checkoutID = "checkout-A"
+                    $0.daemonID = "remote-machine"
+                }
+            ])
         #expect(content.isPresented(for: "card-A"))
         #expect(!content.addablePanelKinds.contains(.review))
         #expect(content.addablePanelKinds.contains(.terminal))
         #expect(content.addablePanelKinds.contains(.browser))
     }
 
-    @Test func reconnectResumesScopedTerminalWatchUsingTheNewClient() async throws {
-        let files = ConversationContentFilesFixture()
-        let first = ConversationContentTerminalFixture(), next = ConversationContentTerminalFixture()
-        var terminalClient = first
+    @Test func reconnectResumesTheScopedTerminalWithoutClosingIt() async throws {
+        let terminalClient = ConversationContentTerminalFixture()
         let content = ConversationContentModel()
-        content.prepareScope = { id in
-            var value = self.scope(files, cardID: id); value.terminalsClient = terminalClient; return value
-        }
+        content.core = TerminalsCoreDouble.core(over: terminalClient)
+        content.prepareScope = { id in self.scope(cardID: id) }
         #expect(await content.openPanel(.terminal, conversationID: "card-A"))
         let tab = try #require(content.selectedTab)
         content.invalidateTransports()
         #expect(!tab.terminals.active)
-        terminalClient = next
         await content.refreshBindings()
         #expect(content.selectedTab === tab)
         #expect(tab.terminals.active)
-        #expect(await next.listings.count == 1)
-        #expect(await first.closes == 0)
-        #expect(await next.closes == 0)
+        #expect(tab.terminals.selectedTerminalID == "workspace-shell")
+        #expect(await terminalClient.listings.count == 2)
+        #expect(await terminalClient.closes == 0)
         content.suspend()
         #expect(!tab.terminals.active)
         content.resume()
@@ -757,7 +725,7 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
         #expect(await content.open(try url("plan.md"), conversationID: "card-A"))
         edit(content)
         let tab = try #require(content.selectedTab)
-        let moved = ConversationContentScope(target: tab.files.target, rootPath: "/new/worktree", client: client)
+        let moved = ConversationContentScope(target: tab.files.target, rootPath: "/new/worktree")
         content.rebindRetainedTabs(scope: moved)
         #expect(!tab.files.isLive)
         #expect(tab.error?.contains("workspace moved") == true)
@@ -804,11 +772,11 @@ private actor ConversationContentProjectReviewFixture: ProjectChangesRPC {
         var unavailable = true
         content.prepareScope = { id in
             if unavailable { throw CocoaError(.fileReadNoPermission) }
-            return self.scope(client, cardID: id)
+            return self.scope(cardID: id)
         }
         await content.refreshBindings()
         #expect(content.error != nil)
-        let moved = ConversationContentScope(target: tab.files.target, rootPath: "/moved/worktree", client: client)
+        let moved = ConversationContentScope(target: tab.files.target, rootPath: "/moved/worktree")
         content.rebindRetainedTabs(scope: moved)
         #expect(tab.error != nil)
         #expect(!tab.files.isLive)

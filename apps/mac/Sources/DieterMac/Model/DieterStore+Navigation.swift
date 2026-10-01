@@ -44,8 +44,7 @@ extension DieterStore {
     }
 
     func hasLiveBoardProjection(projectID: String) -> Bool {
-        workspaceIsLive
-            && syncSnapshot?.state.projects.contains(where: { $0.id == projectID }) == true
+        workspaceIsLive && projectDirectory[projectID] != nil
     }
 
     /// Board navigation is backed by the synchronized projection. Selecting it
@@ -122,7 +121,7 @@ extension DieterStore {
         }
     }
 
-    var hasLiveChatDirectory: Bool { workspaceIsLive && syncSnapshot != nil }
+    var hasLiveChatDirectory: Bool { workspaceIsLive && coreWorkspace.loaded }
 
     func ensureChatDirectory(includeArchived: Bool) async {
         if includeArchived || !hasLiveChatDirectory { await refreshChats(includeArchived: includeArchived) }
@@ -150,29 +149,16 @@ extension DieterStore {
         }
     }
 
+    /// Opens a new shell in a conversation's workspace, on the machine that holds it.
     func openWorkspaceTerminal(card: Dieter_V1_Card) async {
-        guard await ensureConversationConnection(card), let rpc else { return }
         selectedProjectID = card.projectID
         terminalScopeCardID = card.id
-        var request = Dieter_V1_CreateTerminalRequest()
-        request.projectID = card.projectID
-        request.cardID = card.id
-        request.name = card.title.isEmpty ? "Workspace" : card.title
-        request.shell = ""
-        request.workingDirectory = "."
-        request.columns = 120
-        request.rows = 36
-        do {
-            let terminal = try await rpc.createTerminal(request)
-            closeConversation()
-            section = .terminals
-            terminalsModel.terminals = try await rpc.terminals(projectID: card.projectID, cardID: card.id).terminals
-            upsertTerminal(terminal)
-            terminalsModel.selectedTerminalID = terminal.id
-            terminalsModel.terminalSequences[terminal.id] = 0
-            terminalsModel.terminalScreens[terminal.id] = TerminalScreenState()
-            startTerminalWatch()
-        } catch { show(error) }
+        closeConversation()
+        section = .terminals
+        await terminalsModel.loadTerminals()
+        await terminalsModel.createTerminal(
+            name: card.title.isEmpty ? "Workspace" : card.title, shell: "", workingDirectory: ".")
+        if let message = terminalsModel.errorMessage { errorMessage = message }
     }
 
     func showAllTerminals() async {
@@ -204,24 +190,24 @@ extension DieterStore {
         await terminalOverview.loadTerminalOverview(preferredMachineID: machine.id)
     }
 
+    /// Points the terminals at the overview, or at a conversation's
+    /// workspace on the machine that holds it.
     func bindTerminals() {
-        terminalsModel.active = section == .terminals
         terminalsModel.onCreated = { [weak self] in self?.section = .terminals }
-        terminalsModel.onTerminalChanged = { [weak self] machineID, terminalID, terminal in
-            self?.terminalOverview.updateTerminalOverviewEntry(
-                machineID: machineID, terminalID: terminalID, terminal: terminal)
-        }
-        guard terminalScopeCardID != nil else {
+        guard let cardID = terminalScopeCardID else {
             terminalsModel.isLive = terminalOverviewMachines.contains(where: machineIsAvailable)
+            terminalsModel.active = section == .terminals
             return
         }
+        terminalOverview.stop()
+        let card = synchronizedCardValues().first { $0.id == cardID } ?? chats.first { $0.id == cardID }
+        let machine = card.map { endpointID(for: $0) } ?? endpoint.id
         terminalsModel.bind(
-            target: WorkspaceTarget(
-                endpointID: endpoint.id,
-                projectID: terminalScopeCardID == nil ? "" : selectedProjectID,
-                conversationID: terminalScopeCardID ?? ""), client: rpc)
-        terminalsModel.machineName = endpoint.name
+            target: WorkspaceTarget(endpointID: machine, projectID: selectedProjectID, conversationID: cardID),
+            core: core)
+        terminalsModel.machineName = endpoints.first { $0.id == machine }?.name ?? endpoint.name
         terminalsModel.isLive = workspaceIsLive
+        terminalsModel.active = section == .terminals
     }
     func loadTerminals() async {
         if terminalScopeCardID == nil {
@@ -252,40 +238,9 @@ extension DieterStore {
                 name: name, shell: shell, workingDirectory: workingDirectory)
             return
         }
-        if machineHome {
-            guard
-                let machine = endpoints.first(where: { $0.id == machineID })
-                    ?? (endpoint.id == machineID ? endpoint : nil)
-            else {
-                show(
-                    NSError(
-                        domain: "DieterTerminal", code: 1,
-                        userInfo: [NSLocalizedDescriptionKey: "The selected machine is unavailable."]))
-                return
-            }
-            guard machineIsAvailable(machine) else {
-                show(
-                    NSError(
-                        domain: "DieterTerminal", code: 2,
-                        userInfo: [NSLocalizedDescriptionKey: "\(machine.name) is offline."]))
-                return
-            }
-            if machine.id != endpoint.id {
-                await connect(to: machine)
-                guard phase.isConnected, endpoint.id == machine.id else { return }
-            }
-        } else if let cardID = terminalScopeCardID,
-            let card = synchronizedCardValues().first(where: { $0.id == cardID })
-        {
-            guard await ensureConversationConnection(card) else { return }
-        } else {
-            if !checkoutID.isEmpty { creationCheckoutIDs[projectID] = checkoutID }
-            guard await ensureCheckoutConnection(projectID) else { return }
-        }
+        // A conversation's terminals start in its workspace.
         bindTerminals()
-        await terminalsModel.createTerminal(
-            projectID: projectID, machineHome: machineHome, name: name, shell: shell,
-            workingDirectory: workingDirectory)
+        await terminalsModel.createTerminal(name: name, shell: shell, workingDirectory: workingDirectory)
     }
     func sendTerminalInput(id: String, data: Data) {
         terminalsModel.sendTerminalInput(id: id, data: data)
@@ -308,16 +263,13 @@ extension DieterStore {
     }
     func startTerminalWatch() {
         bindTerminals()
-        terminalsModel.startTerminalWatch()
+        terminalsModel.active = true
     }
+    /// Stops streaming when the terminals are hidden; the shells keep running.
     func stopTerminalWatch() {
-        terminalsModel.stopTerminalWatch()
+        terminalsModel.active = false
         terminalOverview.stop()
     }
-    func acceptTerminalFrame(_ frame: Dieter_V1_TerminalFrame, terminalID: String) async {
-        await terminalsModel.acceptTerminalFrame(frame, terminalID: terminalID)
-    }
-    func upsertTerminal(_ value: Dieter_V1_Terminal) { terminalsModel.upsertTerminal(value) }
 
     var terminalOverviewMachines: [DieterEndpoint] {
         var values = endpoints.filter { $0.daemonID != nil || $0.id == endpoint.id }

@@ -17,6 +17,7 @@ import com.dbpprt.dieter.core.routing.RouteSelector
 import com.dbpprt.dieter.core.runtime.CoreException
 import com.dbpprt.dieter.core.runtime.FailureKind
 import com.dbpprt.dieter.core.runtime.Failures
+import com.dbpprt.dieter.api.gateway.v1.GatewayInformation
 import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
 import kotlin.time.Clock
@@ -62,10 +63,15 @@ class GatewaySession(
         classified { client.GetAccount().execute(Unit) }
     }
 
+    /** The gateway's build, as its latest directory or presence report described it. */
+    var information: GatewayInformation? = null
+        private set
+
     suspend fun machines(): List<Machine> {
-        val daemons = classified { client.ListDaemons().execute(Unit) }.daemons
+        val response = classified { client.ListDaemons().execute(Unit) }
+        response.gateway_information?.let { information = it }
         val receivedAt = clock.now()
-        return daemons.map { Machine.from(it, receivedAt) }
+        return response.daemons.map { Machine.from(it, receivedAt) }
     }
 
     /** Presence updates; advisory, so callers retry independently of the feed. */
@@ -75,6 +81,7 @@ class GatewaySession(
             val updates = call.executeIn(this, WatchDaemonsRequest(heartbeat_seconds = heartbeat.inWholeSeconds.toInt()))
             try {
                 for (update in updates) {
+                    update.gateway_information?.let { information = it }
                     val receivedAt = clock.now()
                     emit(update.daemons.map { Machine.from(it, receivedAt) })
                 }

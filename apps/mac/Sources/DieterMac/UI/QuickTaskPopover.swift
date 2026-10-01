@@ -25,22 +25,15 @@ struct QuickTaskDraft {
 
 @MainActor @Observable
 final class QuickTaskFormState {
-    private struct Choices: Codable {
-        var project: String
-        var boards: [String: String]
-        var provider: String
-        var model: String
-        var effort: String
-        var options: [String: String]
-    }
-    private let defaults: UserDefaults
-    private static let key = "quickTask.lastChoices"
+    /// Remembers what was chosen through the shared core; set by the session.
+    @ObservationIgnored var remember: (ClientRememberCreation) -> Void = { _ in }
+    @ObservationIgnored private var adopting = false
     private var boards: [String: String] = [:]
     var story = ""
-    var provider = "" { didSet { saveChoices() } }
-    var model = "" { didSet { saveChoices() } }
-    var effort = "" { didSet { saveChoices() } }
-    var providerOptions: [String: String] = [:] { didSet { saveChoices() } }
+    var provider = "" { didSet { saveSelection() } }
+    var model = "" { didSet { saveSelection() } }
+    var effort = "" { didSet { saveSelection() } }
+    var providerOptions: [String: String] = [:] { didSet { saveSelection() } }
     var attachments: [Dieter_V1_MessagePart] = []
     var initialized = false
     private(set) var attachmentImportID: UUID?
@@ -49,27 +42,28 @@ final class QuickTaskFormState {
     private let filePicker = QuickTaskFilePicker()
     var rememberHostname = false
     var sourceURL = ""
-    var draftProjectID = "" { didSet { saveChoices() } }
+    var draftProjectID = "" { didSet { saveDestination() } }
     var draftBoardID = "" {
         didSet {
             if !draftProjectID.isEmpty && !draftBoardID.isEmpty { boards[draftProjectID] = draftBoardID }
-            saveChoices()
+            saveDestination()
         }
     }
 
-    init(defaults: UserDefaults = DieterAppearance.applicationDefaults()) {
-        self.defaults = defaults
-        if let data = defaults.data(forKey: Self.key),
-            let saved = try? JSONDecoder().decode(Choices.self, from: data)
-        {
-            boards = saved.boards
-            draftProjectID = saved.project
-            draftBoardID = saved.boards[saved.project] ?? ""
-            provider = saved.provider
-            model = saved.model
-            effort = saved.effort
-            providerOptions = saved.options
-        }
+    init() {}
+
+    /// Shows the choices the core remembers, without sending them back.
+    func adopt(_ creation: ClientCreationSlice) {
+        adopting = true
+        defer { adopting = false }
+        boards = creation.boards
+        if draftProjectID != creation.projectID { draftProjectID = creation.projectID }
+        let board = creation.boards[creation.projectID] ?? ""
+        if draftBoardID != board { draftBoardID = board }
+        if provider != creation.selection.provider { provider = creation.selection.provider }
+        if model != creation.selection.model { model = creation.selection.model }
+        if effort != creation.selection.effort { effort = creation.selection.effort }
+        if providerOptions != creation.selection.providerOptions { providerOptions = creation.selection.providerOptions }
     }
 
     func selectProject(_ id: String, boardIDs: [String]) {
@@ -118,11 +112,26 @@ final class QuickTaskFormState {
         }
     }
 
-    private func saveChoices() {
-        let choices = Choices(
-            project: draftProjectID, boards: boards, provider: provider, model: model, effort: effort,
-            options: providerOptions)
-        if let data = try? JSONEncoder().encode(choices) { defaults.set(data, forKey: Self.key) }
+    private func saveSelection() {
+        guard !adopting else { return }
+        remember(
+            .with {
+                $0.selection = .with {
+                    $0.provider = provider
+                    $0.model = model
+                    $0.effort = effort
+                    $0.providerOptions = providerOptions
+                }
+            })
+    }
+
+    private func saveDestination() {
+        guard !adopting, !draftProjectID.isEmpty else { return }
+        remember(
+            .with {
+                $0.projectID = draftProjectID
+                $0.boardID = draftBoardID
+            })
     }
 
     func reset() {
@@ -209,7 +218,7 @@ struct QuickTaskPopover: View {
             provider: provider, model: model, effort: effort, workspaceMode: preferences.workspaceMode)
     }
     private var preferences: ConversationCreationPreferences {
-        ConversationCreationPreferences.load(from: DieterAppearance.applicationDefaults())
+        store.creationPreferences
     }
     private var defaultsSummary: String {
         let laneName = lane?.name ?? "Todo"
@@ -480,6 +489,12 @@ struct QuickTaskPopover: View {
         .smokeTarget("quick-task.content")
         .task {
             if !initialized {
+                // A capture's own form starts from what the core remembers
+                // and remembers through the session, like the menu bar's.
+                if formDraft !== store.quickTaskForm {
+                    formDraft.adopt(store.creationMemory)
+                    formDraft.remember = store.quickTaskForm.remember
+                }
                 if !chooseDestination && (draftProjectID.isEmpty || capturedBrowser) {
                     draftProjectID = store.selectedProjectID
                     draftBoardID = store.selectedBoardID

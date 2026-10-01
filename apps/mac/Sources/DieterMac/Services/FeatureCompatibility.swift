@@ -189,22 +189,6 @@ extension AppSession {
         get { filesModel.fileEditorSession }
         set { filesModel.fileEditorSession = newValue }
     }
-    var workspaceRequestGeneration: UInt64 {
-        get { worktreeChanges.workspaceRequestGeneration }
-        set { worktreeChanges.workspaceRequestGeneration = newValue }
-    }
-    var workspaceRefreshTask: Task<Void, Never>? {
-        get { worktreeChanges.workspaceRefreshTask }
-        set { worktreeChanges.workspaceRefreshTask = newValue }
-    }
-    var workspaceRefreshAgain: Bool {
-        get { worktreeChanges.workspaceRefreshAgain }
-        set { worktreeChanges.workspaceRefreshAgain = newValue }
-    }
-    var diffRequestGeneration: UInt64 {
-        get { worktreeChanges.diffRequestGeneration }
-        set { worktreeChanges.diffRequestGeneration = newValue }
-    }
     var conversationDiffLoading: Bool {
         get { worktreeChanges.conversationDiffLoading }
         set { worktreeChanges.conversationDiffLoading = newValue }
@@ -216,14 +200,6 @@ extension AppSession {
     var gitOperationNeedsReconciliation: Bool {
         get { worktreeChanges.gitOperationNeedsReconciliation }
         set { worktreeChanges.gitOperationNeedsReconciliation = newValue }
-    }
-    var gitReconciliationGeneration: UInt64 {
-        get { worktreeChanges.gitReconciliationGeneration }
-        set { worktreeChanges.gitReconciliationGeneration = newValue }
-    }
-    var gitOperationSubmissionID: UUID? {
-        get { worktreeChanges.gitOperationSubmissionID }
-        set { worktreeChanges.gitOperationSubmissionID = newValue }
     }
     var terminalScopeCardID: String? {
         get { terminalsModel.terminalScopeCardID }
@@ -393,24 +369,8 @@ extension AppSession {
         get { window.archivePolicyPresented }
         set { window.archivePolicyPresented = newValue }
     }
-    var conversationTask: Task<Void, Never>? {
-        get { conversationModel.conversationTask }
-        set { conversationModel.conversationTask = newValue }
-    }
-    var gitOperationTask: Task<Void, Never>? {
-        get { worktreeChanges.gitOperationTask }
-        set { worktreeChanges.gitOperationTask = newValue }
-    }
     var workspaceToastTask: Task<Void, Never>? {
         get { worktreeChanges.workspaceToastTask }
         set { worktreeChanges.workspaceToastTask = newValue }
-    }
-    var conversationHistoryRequestID: UUID? {
-        get { conversationModel.conversationHistoryRequestID }
-        set { conversationModel.conversationHistoryRequestID = newValue }
-    }
-    var schedulesLoadedEndpointID: String {
-        get { schedulesModel.schedulesLoadedEndpointID }
-        set { schedulesModel.schedulesLoadedEndpointID = newValue }
     }
 }

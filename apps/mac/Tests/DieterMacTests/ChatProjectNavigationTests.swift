@@ -1,97 +1,99 @@
 import Foundation
+import DieterAPI
 import DieterCore
+import SharedCore
 import SwiftUI
 import Testing
 @testable import DieterMac
 
-@Test @MainActor func projectOrderIsSharedThroughTheAppSessionAndPersisted() throws {
-    let suite = "dieter-chat-project-navigation-\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
-    defaults.set("test-account", forKey: "DieterSharedKV.activeAccount")
-    let environment = DieterAppEnvironment.testing(defaults: defaults)
-    let store = DieterStore(environment: environment, restoreSync: false)
+/// The navigation edits the session sent the core, once queued edits ran.
+@MainActor private func navigationCommands(_ core: ScriptedCoreClient, of store: DieterStore) async -> [ClientCommand
+    .OneOf_Command]
+{
+    await store.navigationEditTail?.value
+    return core.commands.compactMap(\.command)
+}
 
+@Test @MainActor func projectOrderIsSharedThroughTheCore() async throws {
+    let core = ScriptedCoreClient()
+    let store = DieterStore(core: core, restoreSync: false)
     var navigation = store.sidebarProjectNavigation
     let moved = navigation.move("p_three", before: "p_one", availableIDs: ["p_one", "p_two", "p_three"])
     #expect(moved)
     store.sidebarProjectNavigation = navigation
-
     #expect(
         store.sidebarProjectNavigation.orderedIDs(from: ["p_one", "p_two", "p_three"]) == [
             "p_three", "p_one", "p_two",
         ])
-    #expect(
-        DieterStore(environment: environment, restoreSync: false).sidebarProjectNavigation
-            == store.sidebarProjectNavigation)
+    let sent = await navigationCommands(core, of: store)
+    guard case .setProjectOrder(let order) = sent.last else {
+        Issue.record("expected a project order, sent \(sent)")
+        return
+    }
+    #expect(order.projectIds == store.sidebarProjectNavigation.projectOrder)
+    // What the core restores on the next launch shows as sent.
+    let relaunched = DieterStore(core: ScriptedCoreClient(), restoreSync: false)
+    relaunched.foldNavigation(.with { $0.projectOrder = order.projectIds })
+    #expect(relaunched.sidebarProjectNavigation == store.sidebarProjectNavigation)
 }
 
-@Test @MainActor func projectFoldersAreSharedThroughTheAppSessionAndPersisted() throws {
-    let suite = "dieter-project-folder-navigation-\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
-    defaults.set("test-account", forKey: "DieterSharedKV.activeAccount")
-    let environment = DieterAppEnvironment.testing(defaults: defaults)
-    let store = DieterStore(environment: environment, restoreSync: false)
-
+@Test @MainActor func projectFoldersAreSharedThroughTheCore() async throws {
+    let core = ScriptedCoreClient()
+    let store = DieterStore(core: core, restoreSync: false)
     var folders = store.sidebarProjectFolders
-    let createdFolderID = folders.createFolder(named: "Active work")
-    let folderID = try #require(createdFolderID)
+    let created = folders.createFolder(named: "Active work")
+    let folderID = try #require(created)
     let moved = folders.moveItem("p_one", to: folderID)
     #expect(moved)
     store.sidebarProjectFolders = folders
-
-    #expect(
-        DieterStore(environment: environment, restoreSync: false).sidebarProjectFolders
-            == store.sidebarProjectFolders
-    )
+    let sent = await navigationCommands(core, of: store)
+    guard case .setFolders(let set) = sent.last else {
+        Issue.record("expected folders, sent \(sent)")
+        return
+    }
+    #expect(set.scope == .projects)
+    #expect(set.folders.map(\.name) == ["Active work"] && set.folders.first?.itemIds == ["p_one"])
+    let relaunched = DieterStore(core: ScriptedCoreClient(), restoreSync: false)
+    relaunched.foldNavigation(.with { $0.projectFolders = set.folders })
+    #expect(relaunched.sidebarProjectFolders == store.sidebarProjectFolders)
 }
 
-@Test @MainActor func projectPinsAreSharedThroughTheAppSessionAndPersisted() throws {
-    let suite = "dieter-project-pin-navigation-\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
-    defaults.set("test-account", forKey: "DieterSharedKV.activeAccount")
-    let environment = DieterAppEnvironment.testing(defaults: defaults)
-    let store = DieterStore(environment: environment, restoreSync: false)
-
+@Test @MainActor func projectPinsAreSharedThroughTheCore() async throws {
+    let core = ScriptedCoreClient()
+    let store = DieterStore(core: core, restoreSync: false)
     var pins = store.pinnedProjectNavigation
     let pinnedOne = pins.setPinned("p_one", pinned: true)
     let pinnedTwo = pins.setPinned("p_two", pinned: true)
-    #expect(pinnedOne)
-    #expect(pinnedTwo)
+    #expect(pinnedOne && pinnedTwo)
     store.pinnedProjectNavigation = pins
-
-    let restored = DieterStore(environment: environment, restoreSync: false)
-    #expect(restored.pinnedProjectNavigation.projectOrder == ["p_one", "p_two"])
-
-    pins = restored.pinnedProjectNavigation
-    let unpinnedOne = pins.setPinned("p_one", pinned: false)
-    #expect(unpinnedOne)
-    restored.pinnedProjectNavigation = pins
-    #expect(
-        DieterStore(environment: environment, restoreSync: false).pinnedProjectNavigation.projectOrder == ["p_two"])
+    let unpinned = pins.setPinned("p_one", pinned: false)
+    #expect(unpinned)
+    store.pinnedProjectNavigation = pins
+    let sent = await navigationCommands(core, of: store).compactMap { command -> [String]? in
+        if case .setPinnedProjects(let pinned) = command { pinned.projectIds } else { nil }
+    }
+    #expect(sent == [["p_one", "p_two"], ["p_two"]])
+    // A fold from the core is mirrored without being sent back.
+    store.foldNavigation(.with { $0.pinnedProjects = ["p_two"] })
+    #expect(store.pinnedProjectNavigation.projectOrder == ["p_two"])
+    #expect(await navigationCommands(core, of: store).count == 2)
 }
 
-@Test @MainActor func chatFoldersAreSharedThroughTheAppSessionAndPersisted() throws {
-    let suite = "dieter-chat-folder-navigation-\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
-    defaults.set("test-account", forKey: "DieterSharedKV.activeAccount")
-    let environment = DieterAppEnvironment.testing(defaults: defaults)
-    let store = DieterStore(environment: environment, restoreSync: false)
-
+@Test @MainActor func chatFoldersAreSharedThroughTheCore() async throws {
+    let core = ScriptedCoreClient()
+    let store = DieterStore(core: core, restoreSync: false)
     var folders = store.allChatsFolders
-    let createdFolderID = folders.createFolder(named: "Research")
-    let folderID = try #require(createdFolderID)
+    let created = folders.createFolder(named: "Research")
+    let folderID = try #require(created)
     let moved = folders.moveItem("c_one", to: folderID)
     #expect(moved)
     store.allChatsFolders = folders
-
-    #expect(
-        DieterStore(environment: environment, restoreSync: false).allChatsFolders
-            == store.allChatsFolders
-    )
+    let sent = await navigationCommands(core, of: store)
+    guard case .setFolders(let set) = sent.last else {
+        Issue.record("expected folders, sent \(sent)")
+        return
+    }
+    #expect(set.scope == .chats && set.folders.first?.itemIds == ["c_one"])
 }
 
 @Test @MainActor func sharedProjectMachineBadgeRendersOnlineAndOfflineStates() {

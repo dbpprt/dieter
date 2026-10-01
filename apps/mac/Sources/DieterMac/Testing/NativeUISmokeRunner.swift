@@ -616,28 +616,31 @@
                             initialTitle = card.title
                             return !card.id.isEmpty && card.lane == "running"
                         }
+                        // The core shows a new task under a local ID until its
+                        // machine accepts it, then under the server ID.
+                        func taskID() -> String? { createdID.map { store.outboxState.resolutions[$0] ?? $0 } }
                         let startedBeforeTitle = await waitUntil(timeout: 15, intervalMilliseconds: 25) {
-                            guard let card = store.state.cards.first(where: { $0.id == createdID }) else {
+                            guard let card = store.state.cards.first(where: { $0.id == taskID() }) else {
                                 return false
                             }
                             return !card.initialPromptSentAt.isEmpty && card.provider == "mock"
                                 && card.title == runStory && card.lane == "running"
                         }
                         let titled = await waitUntil(timeout: 20, intervalMilliseconds: 100) {
-                            guard let card = store.state.cards.first(where: { $0.id == createdID }) else {
+                            guard let card = store.state.cards.first(where: { $0.id == taskID() }) else {
                                 return false
                             }
                             return card.title == "Quick Task Starts Immediately" && !card.initialPromptSentAt.isEmpty
-                                && store.selectedCardID == createdID
+                                && store.selectedCardID == taskID()
                         }
                         results["quick-task-run-before-title"] =
                             clicked && saved && startedBeforeTitle
                             ? "passed"
                             : "failed: click=\(clicked) saved=\(saved) startedBeforeTitle=\(startedBeforeTitle) id=\(createdID ?? "nil") initialTitle=\(initialTitle ?? "nil")"
                         results["quick-task-run-keeps-task-id"] =
-                            saved && titled && createdID?.hasPrefix("c_") == true
+                            saved && titled && taskID()?.hasPrefix("c_") == true
                             ? "passed"
-                            : "failed: generated title did not update the same selected task \(createdID ?? "nil")"
+                            : "failed: generated title did not update the same selected task \(taskID() ?? "nil")"
                         capture(window, to: output.appending(path: "quick-task-running-generated-title.png"))
                     } else {
                         results["quick-task-run-before-title"] = "failed: isolated mock provider unavailable"
@@ -684,7 +687,6 @@
                         && session.controller.renderer.window === window
                         && (session.controller.renderer.superview as? RemoteDesktopInputView)?.controller
                             === session.controller
-                        && session.controller.clipboardVisible
                 }
                 screenSwitchesPassed = screenSwitchesPassed && clicked && switched
             }
@@ -1021,13 +1023,15 @@
             store.labelsPresented = false
             try? await DieterTaskSleep.milliseconds(350)
 
-            let connectedPhase = store.phase
+            // The onboarding overlay is rendered from a fixture phase; hold the
+            // core's live session so it cannot replace it while capturing.
+            store.coreFoldsHeld = true
             store.phase = .authenticationRequired
             try? await DieterTaskSleep.milliseconds(700)
             await captureAppearances(window, named: "12b-connection-onboarding.png", in: output)
             results["12b-connection-onboarding"] =
                 store.phase.needsConnectionOverlay ? "passed" : "failed: overlay phase inactive"
-            store.phase = connectedPhase
+            store.coreFoldsHeld = false
             try? await DieterTaskSleep.milliseconds(350)
 
             store.errorMessage = nil
@@ -1215,7 +1219,7 @@
             results["13c-standalone-chat-opens"] =
                 openedChat && store.errorMessage == nil
                 ? "passed"
-                : "failed: selected=\(store.selectedChatID ?? "none"), loading=\(store.conversationLoading), error=\(store.errorMessage ?? "none")"
+                : "failed: selected=\(store.selectedChatID ?? "none"), loading=\(store.conversationLoading), error=\(store.errorMessage ?? "none"), session=\(store.session.phase) attached='\(store.session.attachedMachineID)' endpoint=\(store.endpoint.id) replicas=\(store.projectReplicaEndpointIDs[project.id] ?? "none")"
             results["13c-standalone-chat-single-row"] =
                 chatRowStayedSingle
                 ? "passed"
@@ -1294,12 +1298,10 @@
 
             // One shared project offers a checkout on each machine. Render the
             // real new-chat surface and preserve the selected execution owner.
-            // The extra machine exists only in this renderer fixture. Pause the
-            // gateway directory poll so its authoritative response cannot remove
-            // the injected endpoint while the view settles or screenshots render.
-            let resumeMachineDirectoryRefresh = store.connectionEffects.machineDirectoryTask != nil
-            store.connectionEffects.machineDirectoryTask?.cancel()
-            store.connectionEffects.machineDirectoryTask = nil
+            // The extra machine exists only in this renderer fixture. Hold the
+            // core's folds so its authoritative directory cannot remove the
+            // injected endpoint while the view settles or screenshots render.
+            store.coreFoldsHeld = true
             let duplicateMachine = DieterEndpoint(
                 name: "Smoke remote Mac",
                 host: store.endpoint.host,
@@ -1345,18 +1347,13 @@
             store.endpoints.removeAll { $0.id == duplicateMachine.id }
             store.newChatProjectID = project.id
             store.selectedProjectID = project.id
-            if resumeMachineDirectoryRefresh {
-                // Screenshot rendering can outlast a presence lease on CI.
-                // Restore authoritative presence after pausing its poll; do
-                // not start live operations with the renderer fixture's stale
-                // directory while waiting another 15 seconds for the poll.
-                await store.refreshDaemonPresence()
-                store.startMachineDirectoryRefresh()
-                results["13h-machine-presence-restored"] =
-                    store.replica(forProjectID: project.id)?.online == true
-                    ? "passed"
-                    : "failed: live fixture machine presence was not restored"
-            }
+            // Releasing the hold applies the core's latest directory, so live
+            // operations never start from the fixture's stale machines.
+            store.coreFoldsHeld = false
+            results["13h-machine-presence-restored"] =
+                store.replica(forProjectID: project.id)?.online == true
+                ? "passed"
+                : "failed: live fixture machine presence was not restored"
             try? await DieterTaskSleep.milliseconds(350)
 
             store.createProjectPresented = true
@@ -1515,15 +1512,11 @@
                     await captureAppearances(window, named: "17a-offline-message-queued.png", in: output)
 
                     // Exercise the native presentation without exhausting the host disk.
-                    // The worker's failure/relaunch/retry path is covered by DurableOutboxTests.
-                    try await store.outbox.update { entries in
-                        for index in entries.indices where entries[index].serverID == nil {
-                            entries[index].state = .retrying
-                            entries[index].lastError = "insufficient free disk space to start an agent turn"
-                            entries[index].nextAttemptAt = Date().addingTimeInterval(60)
-                        }
-                    }
-                    store.rebuildOutboxOverlays()
+                    // The core's retry path is covered by its outbox tests.
+                    store.coreFoldsHeld = true
+                    store.machineOutboxSummaries[machine.id] = MachineOutboxSummary(
+                        messageCount: 1, changeCount: 0, retrying: true, failed: false,
+                        failureMessage: "insufficient free disk space to start an agent turn")
                     let storageWarning = await waitUntil(timeout: 5) {
                         NativeUIAccessibility.find("machine.\(machine.daemonID ?? machine.id).queue-title", in: window)
                             != nil
@@ -1535,6 +1528,7 @@
                             && store.outboxSummary(for: machine)?.toastPhase(machineOnline: true) == .waitingForStorage
                         ? "passed" : "failed: storage warning or retry action missing"
                     await captureAppearances(window, named: "17a-storage-message-queued.png", in: output)
+                    store.coreFoldsHeld = false
 
                     let removed = await store.discardOutbox(for: machine)
                     let canceled = await waitUntil(timeout: 5) {
@@ -1623,9 +1617,12 @@
 
             // Use an independent task: closing a Window cancels its view task,
             // while the app session and its menu-bar reopen action must survive.
+            // Only a settled connection must survive closing the window.
+            _ = await waitUntil(timeout: 15) { store.phase.isConnected }
+            try? await DieterTaskSleep.milliseconds(500)
             let reopened = await Task { @MainActor in
                 let selection = store.selectedProjectID
-                let client = store.rpc
+                let generation = store.connectionGeneration
                 window.close()
                 try? await DieterTaskSleep.milliseconds(350)
                 store.reopenWorkspaceWindow()
@@ -1636,7 +1633,7 @@
                 ) {
                     capture(reopenedWindow, to: output.appending(path: "workspace-window-reopened.png"))
                 }
-                return visible && store.rpc === client && store.selectedProjectID == selection
+                return visible && store.connectionGeneration == generation && store.selectedProjectID == selection
             }.value
             results["workspace-window-reopen"] =
                 reopened ? "passed" : "failed: selection, connection or window count changed"
@@ -1840,7 +1837,7 @@
                     UserDefaults.standard.removeObject(forKey: filePaneWidthKey)
                 }
             }
-            guard let rpc = store.rpc else {
+            guard let rpc = await store.fixtureRPC() else {
                 results["files-editor-lifecycle"] = "failed: no RPC"
                 return
             }

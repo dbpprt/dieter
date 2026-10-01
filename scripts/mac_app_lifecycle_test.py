@@ -154,9 +154,11 @@ class MacAppLifecycleTests(unittest.TestCase):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(lifecycle.ROOT / relative, target)
             (root / "justfile").write_text("mod mac 'just/mac.just'\n")
-            sync = root / "apps/mac/scripts/sync-proto.sh"
-            sync.write_text("#!/bin/sh\nexit 0\n")
-            sync.chmod(0o755)
+            # Proto sync and the shared-core framework build are their own steps.
+            for script in ["sync-proto.sh", "shared-framework.sh"]:
+                stub = root / "apps/mac/scripts" / script
+                stub.write_text("#!/bin/sh\nexit 0\n")
+                stub.chmod(0o755)
             commands = root / "bin"
             commands.mkdir()
             for name, body in {

@@ -170,7 +170,7 @@
                     && NativeUIAccessibility.horizontalScrollView("project-changes.diff", in: window) != nil
             }
             capture(window, to: output.appending(path: "11-design-dark-split.png"))
-            let hunkID = UnifiedDiffParser.parse(model.diff?.patch ?? "").first { $0.kind == .hunk }?.id ?? -1
+            let hunkID = model.diffLines.first { $0.kind == .hunk }?.id ?? -1
             let hunkTarget = "workspace-diff.hunk.\(hunkID)"
             let hunkBefore = NativeUIAccessibility.find(hunkTarget, in: window)?.recordedFrame
             let scrolled = NativeUIAccessibility.scrollHorizontally("project-changes.diff", in: window, delta: -220)
@@ -336,7 +336,7 @@
             store: DieterStore, window: NSWindow, project: Dieter_V1_Project,
             results: inout [String: String], output: URL
         ) async {
-            guard let rpc = store.rpc else { results["project-changes"] = "failed: RPC unavailable"; return }
+            guard let rpc = await store.fixtureRPC() else { results["project-changes"] = "failed: RPC unavailable"; return }
             try? "# Isolated E2E\n\nProject checkout local edit.\n".write(
                 toFile: project.path + "/README.md", atomically: true, encoding: .utf8)
             try? "temporary project note\n".write(

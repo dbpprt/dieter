@@ -1,6 +1,7 @@
 import DieterAPI
 import DieterCore
 import Foundation
+import SharedCore
 import Testing
 @testable import DieterMac
 
@@ -66,14 +67,10 @@ private func settingsCard() -> Dieter_V1_Card {
     #expect(request.model == "model-b" && request.providerOptions["fast_mode"] == "true")
 }
 
-@Test @MainActor func composerOutboxCapturesSettingsForChatAndCardMessages() async throws {
+@Test @MainActor func composerSendCapturesSettingsForChatAndCardMessages() async throws {
     for chat in [false, true] {
-        let root = FileManager.default.temporaryDirectory.appending(path: "dieter-settings-outbox-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let outbox = DurableOutbox(
-            journal: OutboxJournal(
-                url: root.appending(path: "pending.json")))
-        let store = DieterStore(outboxOverride: outbox, restoreSync: false)
+        let core = ScriptedCoreClient()
+        let store = DieterStore(core: core, restoreSync: false)
         let card = settingsCard()
         if chat { store.selectedChatID = card.id } else { store.selectedCardID = card.id }
         var detail = Dieter_V1_CardDetail(); detail.card = card
@@ -83,13 +80,13 @@ private func settingsCard() -> Dieter_V1_Card {
         store.composerProviderOptions = ["fast_mode": "true"]
         store.composerText = "Next turn"
         await store.sendComposer()
-        let entry = try #require(outbox.entries.first)
-        let request = try Dieter_V1_SendMessageRequest(serializedBytes: entry.request)
-        #expect(request.cardID == card.id && request.provider == "codex")
-        #expect(request.model == "model-b" && request.effort == "low")
-        #expect(request.providerOptions["fast_mode"] == "true")
+        let send = try #require(
+            core.commands.compactMap { if case .sendMessage(let send) = $0.command { send } else { nil } }.first)
+        #expect(send.cardID == card.id && send.selection.provider == "codex")
+        #expect(send.selection.model == "model-b" && send.selection.effort == "low")
+        #expect(send.selection.providerOptions["fast_mode"] == "true")
+        #expect(send.parts.map(\.text) == ["Next turn"])
         #expect(store.composerText.isEmpty && store.composerModel == "model-b")
-        store.outboxTask?.cancel()
     }
 }
 

@@ -302,7 +302,6 @@ struct FilesView: View {
                 await model.openFile(path: model.selectedFilePath)
             }
         }
-        .onChange(of: model.showHiddenFiles) { _, _ in Task { await model.loadFiles() } }
         .task(id: externalActionKey) { await prepareExternalActions() }
         .sheet(isPresented: $createPresented) {
             VStack(alignment: .leading, spacing: 14) {
@@ -376,7 +375,7 @@ struct FilesView: View {
     }
 
     private var externalActionKey: String {
-        let transport = store.rpc.map { String(describing: ObjectIdentifier($0)) } ?? "none"
+        let transport = "\(store.connectionGeneration):\(store.isLocalMachine(model.target.endpointID))"
         return
             "\(model.documentKey):\(model.fileScopeGeneration):\(model.projectPath):\(model.isLive):\(store.phase.isConnected):\(model.fileDocument?.revision ?? ""):\(transport)"
     }
@@ -386,8 +385,7 @@ struct FilesView: View {
     }
 
     private var verifiedLocalTransport: Bool {
-        guard model.isLive, store.phase.isConnected, let rpc = store.rpc else { return false }
-        return rpc.endpoint.id == model.target.endpointID && rpc.isLoopbackDataPlane
+        model.isLive && store.isLocalMachine(model.target.endpointID)
     }
 
     private func prepareExternalActions() async {
@@ -397,12 +395,11 @@ struct FilesView: View {
         guard let document = model.fileDocument else { return }
         let target = model.target
         var rootPath: String? = target.conversationID.isEmpty ? model.projectPath : nil
-        if !target.conversationID.isEmpty, let rpc = store.rpc, rpc.endpoint.id == target.endpointID {
-            if let workspace = try? await rpc.workspace(cardID: target.conversationID),
-                workspace.cardID == target.conversationID, workspace.projectID == target.projectID
-            {
-                rootPath = workspace.path
-            }
+        if !target.conversationID.isEmpty,
+            let workspace = try? await store.conversationWorkspace(cardID: target.conversationID),
+            workspace.cardID == target.conversationID, workspace.projectID == target.projectID
+        {
+            rootPath = workspace.path
         }
         guard !Task.isCancelled, key == externalActionKey else { return }
         var actions = FileExternalActions.resolve(

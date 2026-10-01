@@ -3,880 +3,150 @@ import DieterAPI
 import Foundation
 import GRPCCore
 import OSLog
-import Observation
-import UniformTypeIdentifiers
-import UserNotifications
+import SharedCore
 
-private struct InitialConnectionState {
-    let health: Dieter_V1_HealthResponse
-    let state: Dieter_V1_State
-}
-
-private func compatibilityStatus(
-    _ value: Dieter_Gateway_V1_CompatibilityStatus
-) -> DieterCompatibility {
-    switch value {
-    case .compatible: .compatible
-    case .updateRequired: .updateRequired
-    case .invalidVersion: .invalidVersion
-    case .unspecified: .unknown
-    case .UNRECOGNIZED: .unknown
-    }
-}
-
-private enum ProviderQuotaClientError: LocalizedError {
-    case noGateway
-
-    var errorDescription: String? { "No gateway is configured." }
-}
-
+/// Connection commands go to the shared core, which owns gateways, routes,
+/// reconnects, and sign-in.
 extension DieterStore {
+    /// Connects to the active gateway, or to `newEndpoint`: a machine is
+    /// attached, a gateway becomes active. Returns once the core is
+    /// connected, fails, or the attempt times out.
     func connect(to newEndpoint: DieterEndpoint? = nil, automatic: Bool = false) async {
-        if let restore = connectionEffects.syncRestoreTask {
-            await restore.value
-            self.connectionEffects.syncRestoreTask = nil
+        await startCore()
+        if let daemonID = newEndpoint?.daemonID {
+            guard await perform({ $0.attachMachine = .with { $0.daemonID = daemonID } }) != nil else { return }
+            _ = await awaitCore { (session.attachedMachineID == daemonID && phase.isConnected) || settled }
+            return
         }
-        if !automatic {
-            connectionEffects.reconnectTask?.cancel()
-            connectionEffects.reconnectTask = nil
+        if let gateway = newEndpoint, gateway.credentialID != activeGateway.credentialID {
+            await useGateway(gateway)
         }
-        let requested = newEndpoint ?? endpoint
-        let preferredDaemonID = MachineRoutingPolicy.preferredDaemonID(
-            newEndpoint: newEndpoint, currentEndpoint: endpoint)
-        let explicitMachineSelection = newEndpoint?.daemonID != nil
-        let origin =
-            gatewayOrigins.first(where: { $0.credentialID == requested.credentialID })
-            ?? requested.gatewayEndpoint
-        connectionGeneration &+= 1
-        let generation = connectionGeneration
-        let preservingLiveConnection = phase.isConnected && rpc != nil
-        if !preservingLiveConnection { phase = .connecting }
-        var gatewayRPC: DieterRPC?
-        var gatewayTask: Task<Void, Never>?
-        var gatewayAuthenticated = false
-        var attemptedTarget: DieterEndpoint?
-        var discoveredDirectory: [DieterEndpoint]?
-        do {
-            let accessToken = await accessToken(for: origin)
-            let control = try environment.clients.client(endpoint: origin, accessToken: accessToken)
-            gatewayRPC = control
-            gatewayTask = Task { try? await control.run() }
-            let clientCompatibility = try await control.compatibility()
-            guard clientCompatibility.status == .compatible else {
-                throw DieterStoreConnectionError.incompatible(
-                    found: clientCompatibility.minimumReleaseVersion)
-            }
-            let daemonDirectory = try await control.daemons()
-            guard
-                ConnectionAttemptOwnership.mayMutateSharedState(
-                    attemptGeneration: generation,
-                    currentGeneration: connectionGeneration
-                )
-            else {
-                gatewayTask?.cancel()
-                control.shutdown()
-                return
-            }
-            gatewayAuthenticated = true
-            if daemonDirectory.hasGatewayInformation {
-                gatewayInformation[origin.credentialID] = daemonDirectory.gatewayInformation
-            }
-            var discovered = daemonDirectory.daemons.map {
-                DieterEndpoint(
-                    name: $0.name.isEmpty ? $0.id : $0.name,
-                    host: origin.host,
-                    port: origin.port,
-                    secure: origin.secure,
-                    daemonID: $0.id,
-                    online: MachinePresenceText.online(serverOnline: $0.online, lastSeenAt: $0.lastSeenAt),
-                    lastSeenAt: $0.lastSeenAt,
-                    releaseVersion: $0.releaseVersion,
-                    compatibility: compatibilityStatus($0.compatibility),
-                    minimumReleaseVersion: $0.minimumReleaseVersion,
-                    remoteDesktopReady: $0.remoteDesktop.ready,
-                    remoteDesktopReason: $0.remoteDesktop.reason,
-                    remoteDesktopPlatform: $0.remoteDesktop.platform
-                )
-            }
-            guard !discovered.isEmpty else {
-                throw NSError(
-                    domain: "DieterGateway", code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "No Dieter daemons are enrolled for this account."])
-            }
-            discoveredDirectory = discovered
-            if explicitMachineSelection,
-                let requestedTarget = discovered.first(where: { $0.daemonID == preferredDaemonID })
-            {
-                attemptedTarget = requestedTarget
-                if requestedTarget.compatibilityState == .incompatible {
-                    throw DieterStoreConnectionError.incompatible(found: requestedTarget.minimumReleaseVersion)
-                }
-            }
-            let targets = MachineRoutingPolicy.connectionTargets(
-                from: discovered,
-                preferredDaemonID: preferredDaemonID,
-                explicitMachineSelection: explicitMachineSelection
-            )
-            if !explicitMachineSelection,
-                targets.isEmpty,
-                let incompatible = discovered.first(where: {
-                    $0.online && $0.compatibilityState == .incompatible
-                })
-            {
-                attemptedTarget = incompatible
-                throw DieterStoreConnectionError.incompatible(found: incompatible.minimumReleaseVersion)
-            }
-            guard !targets.isEmpty else {
-                throw NSError(
-                    domain: "DieterGateway", code: 3,
-                    userInfo: [NSLocalizedDescriptionKey: "No enrolled Dieter machines are online."])
-            }
+        await perform { $0.setConnected = .with { $0.connected = true } }
+        _ = await awaitCore { phase.isConnected || settled }
+    }
 
-            var prepared: (target: DieterEndpoint, plane: DataPlaneConnection, initial: InitialConnectionState)?
-            var lastTargetError: Error?
-            for candidate in targets {
-                attemptedTarget = candidate
-                if candidate.compatibilityState == .incompatible {
-                    lastTargetError = DieterStoreConnectionError.incompatible(found: candidate.minimumReleaseVersion)
-                    break
-                }
-                do {
-                    let plane = try await selectDataPlane(
-                        gateway: control,
-                        target: candidate,
-                        gatewayAccessToken: accessToken
-                    )
-                    do {
-                        let initial = try await loadInitialConnectionState(from: plane.rpc)
-                        var connectedTarget = candidate
-                        connectedTarget.releaseVersion = initial.health.releaseVersion
-                        prepared = (connectedTarget, plane, initial)
-                        break
-                    } catch {
-                        plane.task.cancel()
-                        plane.rpc.shutdown()
-                        if let connectionError = error as? DieterStoreConnectionError,
-                            case .incompatible(let found) = connectionError
-                        {
-                            discovered = discovered.map { machine in
-                                guard machine.id == candidate.id else { return machine }
-                                var machine = machine
-                                machine.compatibility = .updateRequired
-                                machine.minimumReleaseVersion = found
-                                return machine
-                            }
-                            discoveredDirectory = discovered
-                        }
-                        lastTargetError = error
-                    }
-                } catch {
-                    lastTargetError = error
-                }
-                if explicitMachineSelection { break }
-            }
-            guard let prepared else {
-                throw lastTargetError
-                    ?? NSError(
-                        domain: "DieterGateway",
-                        code: 4,
-                        userInfo: [NSLocalizedDescriptionKey: "No compatible Dieter machine could be reached."]
-                    )
-            }
-            guard
-                ConnectionAttemptOwnership.mayMutateSharedState(
-                    attemptGeneration: generation,
-                    currentGeneration: connectionGeneration
-                )
-            else {
-                prepared.plane.task.cancel()
-                prepared.plane.rpc.shutdown()
-                gatewayTask?.cancel()
-                control.shutdown()
-                return
-            }
-            gatewayTask?.cancel()
-            control.shutdown()
-            gatewayTask = nil
-            gatewayRPC = nil
-
-            let cachedData =
-                syncDiskState.projections[prepared.target.id]?.snapshot
-            let decodedSnapshot = await snapshotDecoder.snapshot(
-                endpointID: prepared.target.id, data: cachedData)
-            guard
-                ConnectionAttemptOwnership.mayMutateSharedState(
-                    attemptGeneration: generation,
-                    currentGeneration: connectionGeneration
-                )
-            else {
-                prepared.plane.task.cancel()
-                prepared.plane.rpc.shutdown()
-                return
-            }
-
-            // Decode the destination first, then retain the outgoing machine as
-            // the final suspension before committing the switch. Otherwise a
-            // live transcript update during decoding could be lost on return.
-            try? await saveSyncPersistence()
-            guard
-                ConnectionAttemptOwnership.mayMutateSharedState(
-                    attemptGeneration: generation, currentGeneration: connectionGeneration)
-            else {
-                prepared.plane.task.cancel()
-                prepared.plane.rpc.shutdown()
-                return
-            }
-
-            let reconnectingActiveMachine = prepared.target.id == endpoint.id
-            let destinationSnapshot = reconnectingActiveMachine ? syncSnapshot : decodedSnapshot
-            let destinationData = reconnectingActiveMachine ? syncProjection.snapshot : cachedData
-
-            // Commit the route switch only after the candidate has passed Health and
-            // its initial state has loaded. Until this point the previous machine and
-            // all of its streams remain fully usable.
-            connectionEffects.stateTask?.cancel()
-            conversationTask?.cancel()
-            gitOperationTask?.cancel()
-            terminalsModel.terminalWatchTask?.cancel()
-            connectionEffects.syncTask?.cancel()
-            connectionEffects.syncRecoveryEscalationTask?.cancel()
-            connectionEffects.syncRecoveryEscalationTask = nil
-            connectionEffects.syncLivenessTask?.cancel()
-            outboxTask?.cancel()
-            connectionEffects.connectionTask?.cancel()
-            connectionEffects.directRefreshTask?.cancel()
-            connectionEffects.machineDirectoryTask?.cancel()
-            connectionEffects.machinePresenceLeaseTask?.cancel()
-            fleet.stopMachineTelemetry()
-            connectionEffects.connectionMetadataTask?.cancel()
-            terminalsModel.terminalStreamConnected = false
-            rpc?.shutdown()
-            rpc = prepared.plane.rpc
-            directCredential = prepared.plane.directCredential
-            connectionEffects.connectionTask = prepared.plane.task
-            endpoint = prepared.target
-            endpoints = (discoveredDirectory ?? []).map {
-                $0.id == prepared.target.id ? prepared.target : $0
-            }
-            machineConnectionStatuses[prepared.target.id] = prepared.plane.connection
-            machineConnectionErrors.removeValue(forKey: prepared.target.id)
-            activateSyncProjection(
-                for: prepared.target, decodedSnapshot: destinationSnapshot, decodedData: destinationData)
-            persistEndpoints()
-            startMachinePresenceLeaseMonitor()
-            if let expiresAt = prepared.plane.directTokenExpiresAt {
-                scheduleDirectRefresh(expiresAt: expiresAt, target: prepared.target)
-            }
-            self.health = prepared.initial.health
-            self.runtime = Dieter_V1_RuntimeStatus()
-            acceptState(prepared.initial.state)
-            self.harnessCatalog = harnessCatalogsByEndpoint[prepared.target.id] ?? Dieter_V1_HarnessCatalog()
-            self.boardSettings = syncSnapshot?.settings ?? Dieter_V1_Settings()
-            self.settingsOptions = Dieter_V1_SettingsOptions()
-            errorMessage = nil
-            phase = .connected(version: prepared.initial.health.releaseVersion)
-            startGlobalSync()
-            startSyncLivenessMonitor()
-            startConnectionMetadata(client: prepared.plane.rpc, endpointID: prepared.target.id)
-            conversationModel.resumeSelectedConversation(client: prepared.plane.rpc)
-            startOutboxWorker()
-            // The selected machine is live as soon as WatchSync starts.
-            // Refreshing auxiliary machines must not hold this connect attempt
-            // (and its reconnect task) open on an unrelated half-open RPC.
-            startMachineDirectoryRefresh(refreshImmediately: true)
-            Task { [weak self] in await self?.loadProviderQuotas() }
-            if section == .terminals { await loadTerminals() }
-        } catch {
-            gatewayTask?.cancel()
-            gatewayRPC?.shutdown()
-            guard
-                ConnectionAttemptOwnership.mayMutateSharedState(
-                    attemptGeneration: generation,
-                    currentGeneration: connectionGeneration
-                )
-            else {
-                connectionLogger.debug(
-                    "Ignoring failed stale connection attempt generation \(generation, privacy: .public)")
-                return
-            }
-            if let attemptedTarget {
-                machineConnectionErrors[attemptedTarget.id] = Self.connectionFailureDescription(error)
-            }
-            if preservingLiveConnection, phase.isConnected, rpc != nil {
-                if let connectionError = error as? DieterStoreConnectionError,
-                    case .incompatible(let found) = connectionError,
-                    let attemptedTarget
-                {
-                    endpoints = endpoints.map { machine in
-                        guard machine.id == attemptedTarget.id else { return machine }
-                        var machine = machine
-                        machine.compatibility = .updateRequired
-                        machine.minimumReleaseVersion = found
-                        return machine
-                    }
-                }
-                // A failed machine switch is local to that destination. Never turn a
-                // healthy machine's workspace into a global offline state or modal.
-                return
-            }
-            connectionEffects.connectionTask?.cancel()
-            connectionEffects.connectionTask = nil
-            rpc?.shutdown()
-            rpc = nil
-            directCredential = nil
-            if let discoveredDirectory { endpoints = discoveredDirectory }
-            if let connectionError = error as? DieterStoreConnectionError,
-                case .incompatible(let found) = connectionError
-            {
-                phase = .incompatible(found: found)
-                endpoint = origin
-                persistEndpoints()
-                errorMessage = nil
-                return
-            }
-            if !gatewayAuthenticated, let rpcError = error as? RPCError, rpcError.code == .unauthenticated {
-                phase = .authenticationRequired
-                errorMessage = nil
-                return
-            }
-            if hasLoadedWorkspace {
-                phase = .connecting
-                scheduleReconnect(to: requested)
-            } else {
-                phase = .failed(Self.connectionFailureDescription(error))
-                // The connection overlay already presents startup failures in
-                // context. Do not duplicate expected offline state as a modal.
-                errorMessage = nil
-            }
+    /// The core reached an outcome other than connected: it needs the user,
+    /// an update, or a machine, or it is retrying after a failed attempt.
+    private var settled: Bool {
+        switch session.phase {
+        case .authRequired, .updateRequired, .noMachine: true
+        case .reconnecting: !session.error.isEmpty
+        default: false
         }
     }
 
-    private static func connectionFailureDescription(_ error: Error) -> String {
-        if let rpcError = error as? RPCError {
-            return "gRPC \(rpcError.code): \(rpcError.message)"
-        }
-        return error.localizedDescription
-    }
-
-    private func loadInitialConnectionState(from rpc: DieterRPC) async throws
-        -> InitialConnectionState
-    {
-        let health = try await loadInitialRead("health") { try await rpc.health() }
-        guard health.status == "ok" else {
-            throw NSError(
-                domain: "DieterDaemon", code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Dieter reported an unhealthy data plane."])
-        }
-        return try await InitialConnectionState(
-            health: health,
-            state: loadInitialRead("state") { try await rpc.state() }
-        )
-    }
-
-    private func startConnectionMetadata(client: DieterRPC, endpointID: String) {
-        connectionEffects.connectionMetadataTask?.cancel()
-        connectionEffects.connectionMetadataTask = Task { [weak self] in
-            while !Task.isCancelled, let self, self.rpc === client, self.endpoint.id == endpointID {
-                // Provider discovery is auxiliary: a slow or unavailable model
-                // catalog must never delay WatchSync or tear down its route.
-                // Explicit tasks preserve the existing Swift async-let workaround.
-                let runtimeTask = Task { try await client.runtimeStatus() }
-                let harnessesTask = Task { try await client.harnesses() }
-                let optionsTask = Task { try await client.settingsOptions() }
-                do {
-                    let values = try await withTaskCancellationHandler {
-                        try await (runtimeTask.value, harnessesTask.value, optionsTask.value)
-                    } onCancel: {
-                        runtimeTask.cancel(); harnessesTask.cancel(); optionsTask.cancel()
-                    }
-                    guard !Task.isCancelled, self.rpc === client, self.endpoint.id == endpointID else { return }
-                    self.runtime = values.0
-                    self.harnessCatalog = values.1
-                    self.harnessCatalogsByEndpoint[endpointID] = values.1
-                    self.settingsOptions = values.2
-                    return
-                } catch {
-                    runtimeTask.cancel(); harnessesTask.cancel(); optionsTask.cancel()
-                    guard !Task.isCancelled, self.rpc === client else { return }
-                    connectionLogger.warning(
-                        "Connection metadata unavailable on \(endpointID, privacy: .public); retrying independently")
-                    try? await DieterTaskSleep.seconds(5)
-                }
-            }
-        }
-    }
-
-    private func loadInitialRead<Value>(
-        _ name: String,
-        operation: () async throws -> Value
-    ) async throws -> Value {
-        var failures = 0
-        while true {
-            do {
-                return try await operation()
-            } catch {
-                failures += 1
-                guard failures < 3, DieterRPCFailure.canRetryRead(error) else {
-                    throw NSError(
-                        domain: "DieterInitialConnection",
-                        code: 1,
-                        userInfo: [
-                            NSLocalizedDescriptionKey:
-                                "Initial \(name) read failed: \(DieterRPCFailure.message(for: error))",
-                            NSUnderlyingErrorKey: error,
-                        ]
-                    )
-                }
-                let delay = DieterStreamRecoveryPolicy.delay(consecutiveFailures: failures)
-                try await DieterTaskSleep.seconds(delay)
-            }
-        }
-    }
-
-    func selectDataPlane(
-        gateway: DieterRPC, target: DieterEndpoint, gatewayAccessToken: String?,
-        directCandidateScope: DirectCandidateScope = .all, refreshDirectToken: Bool = false
-    ) async throws -> DataPlaneConnection {
-        try await connections.selectDataPlane(
-            gateway: gateway, target: target, gatewayAccessToken: gatewayAccessToken,
-            directCandidateScope: directCandidateScope, refreshDirectToken: refreshDirectToken,
-            run: { [weak self] client in
-                self?.startConnectionTask(for: client) ?? ConnectionManager.run(client)
-            }
-        )
-    }
-
-    func remoteDesktopConnection(machineID: String) async throws -> RemoteDesktopSignalingConnection {
-        guard
-            let target = machines.first(where: { $0.id == machineID })
-                ?? (endpoint.id == machineID ? endpoint : nil)
-        else {
-            throw NSError(
-                domain: "DieterScreens", code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Select an enrolled Dieter machine."])
-        }
-        guard target.online else {
-            throw NSError(
-                domain: "DieterScreens", code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "\(target.name) is offline."])
-        }
-        let origin =
-            gatewayOrigins.first(where: { $0.credentialID == target.credentialID })
-            ?? target.gatewayEndpoint
-        let gatewayToken = await accessToken(for: origin)
-        let gateway = try environment.clients.client(endpoint: origin, accessToken: gatewayToken)
-        let gatewayTask = Task { try? await gateway.run() }
-        defer {
-            gatewayTask.cancel()
-            gateway.shutdown()
-        }
-        return try await connections.remoteDesktopConnection(
-            gateway: gateway, target: target, gatewayAccessToken: gatewayToken)
-    }
-
-    func startConnectionTask(for client: DieterRPC) -> Task<Void, Never> {
-        connectionEffects.runTransport(client) { [weak self] error, source in
-            self?.connectionStopped(error, client: client, source: source)
-        }
-    }
-
-    func scheduleDirectRefresh(expiresAt: String, target: DieterEndpoint) {
-        guard let expires = DieterTimestamp.date(from: expiresAt),
-            let credential = directCredential,
-            let client = rpc
-        else { return }
-        let delay = DirectCredentialRefreshPolicy.renewalDelay(expiresAt: expires, now: Date())
-        scheduleDirectRefresh(
-            after: delay,
-            expiresAt: expires,
-            target: target,
-            credential: credential,
-            client: client,
-            attempt: 0
-        )
-    }
-
-    private func scheduleDirectRefresh(
-        after delay: TimeInterval,
-        expiresAt: Date,
-        target: DieterEndpoint,
-        credential: DirectAccessCredential,
-        client: DieterRPC,
-        attempt: Int
-    ) {
-        connectionEffects.directRefreshTask?.cancel()
-        connectionEffects.directRefreshTask = Task { [weak self] in
-            try? await DieterTaskSleep.seconds(delay)
-            guard !Task.isCancelled, let self,
-                self.rpc === client,
-                self.directCredential === credential
-            else { return }
-            self.connectionEffects.directRefreshTask = nil
-            await self.refreshDirectCredential(
-                expiresAt: expiresAt,
-                target: target,
-                credential: credential,
-                client: client,
-                attempt: attempt
-            )
-        }
-    }
-
-    private func refreshDirectCredential(
-        expiresAt: Date,
-        target: DieterEndpoint,
-        credential: DirectAccessCredential,
-        client: DieterRPC,
-        attempt: Int
-    ) async {
-        let origin =
-            gatewayOrigins.first(where: { $0.credentialID == target.credentialID })
-            ?? target.gatewayEndpoint
-        let startedAt = Date()
-        do {
-            let gatewayToken = await accessToken(for: origin)
-            let gateway = try environment.clients.client(endpoint: origin, accessToken: gatewayToken)
-            let gatewayTask = Task { try? await gateway.run() }
-            defer {
-                gatewayTask.cancel()
-                gateway.shutdown()
-            }
-            guard let daemonID = target.daemonID else {
-                throw NSError(
-                    domain: "DieterGateway", code: 5,
-                    userInfo: [NSLocalizedDescriptionKey: "No routed Dieter machine is available."])
-            }
-            let token = try await gateway.daemonAccessToken(daemonID: daemonID)
-            guard token.tokenType == "Bearer" else {
-                throw NSError(
-                    domain: "DieterGateway", code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "Gateway returned an unsupported daemon token."])
-            }
-            guard !Task.isCancelled, rpc === client, directCredential === credential else { return }
-            let current = credential.snapshot()
-            if DirectCredentialRefreshPolicy.requiresConnectionReplacement(
-                currentGeneration: current.daemonGeneration,
-                renewedGeneration: token.daemonGeneration
-            ) {
-                connectionLogger.notice(
-                    "Direct credential generation changed for \(target.id, privacy: .public); rebuilding the data plane"
-                )
-                connectionStopped(
-                    NSError(
-                        domain: "DieterTransport", code: 2,
-                        userInfo: [NSLocalizedDescriptionKey: "The daemon connection generation changed."]),
-                    client: client,
-                    source: "direct-token-generation"
-                )
-                return
-            }
-            credential.update(
-                token: token.accessToken,
-                expiresAt: token.expiresAt,
-                daemonGeneration: token.daemonGeneration
-            )
-            connectionLogger.debug(
-                "Renewed direct credential for \(target.id, privacy: .public) in \(Self.latencyMilliseconds(since: startedAt), privacy: .public) ms without replacing streams"
-            )
-            scheduleDirectRefresh(expiresAt: token.expiresAt, target: target)
-        } catch {
-            guard !Task.isCancelled, rpc === client, directCredential === credential else { return }
-            if let delay = DirectCredentialRefreshPolicy.retryDelay(
-                attempt: attempt,
-                expiresAt: expiresAt,
-                now: Date()
-            ) {
-                connectionLogger.warning(
-                    "Direct credential renewal for \(target.id, privacy: .public) failed; retrying in \(delay, privacy: .public)s: \(DieterRPCFailure.message(for: error), privacy: .public)"
-                )
-                scheduleDirectRefresh(
-                    after: delay,
-                    expiresAt: expiresAt,
-                    target: target,
-                    credential: credential,
-                    client: client,
-                    attempt: attempt + 1
-                )
-            } else {
-                connectionStopped(error, client: client, source: "direct-token-expired")
-            }
-        }
-    }
-
+    /// Opens the gateway's GitHub sign-in in the browser; the callback URL
+    /// returns through `completeAuthentication(url:)`.
     func signIn() async {
-        let target = endpoint
-        let generation = connectionGeneration
-        do {
-            _ = try await authentication.signIn(to: target.gatewayEndpoint)
-            guard endpoint.id == target.id, generation == connectionGeneration else { return }
-            await connect(to: target)
-        } catch {
-            guard !DieterRPCFailure.isCancellation(error), endpoint.id == target.id,
-                generation == connectionGeneration
-            else { return }
-            errorMessage = "Could not sign in: \(error.localizedDescription)"
-        }
+        await startCore()
+        guard
+            let started = await perform({ $0.beginSignIn = .with { $0.gatewayURL = activeGateway.address } }),
+            let url = URL(string: started.signInStarted.authorizeURL)
+        else { return }
+        if !NSWorkspace.shared.open(url) { errorMessage = "Could not open the browser to sign in." }
     }
 
     func completeAuthentication(url: URL) {
-        guard !authentication.complete(url: url) else { return }
-        let generation = connectionGeneration
+        guard url.scheme == "dieter-mac", url.host == "oauth" else { return }
         Task { [weak self] in
             guard let self else { return }
+            await self.startCore()
             do {
-                guard let endpoint = try await self.authentication.resumePending(url: url) else { return }
-                guard generation == self.connectionGeneration else { return }
-                await self.connect(to: endpoint)
+                try await self.core.dispatch { $0.completeSignIn = .with { $0.callbackURL = url.absoluteString } }
             } catch {
-                guard generation == self.connectionGeneration, !DieterRPCFailure.isCancellation(error)
-                else { return }
-                self.errorMessage = "Could not finish sign-in: \(error.localizedDescription)"
+                self.errorMessage = "Could not finish sign-in: \((error as? CoreFailure)?.message ?? error.localizedDescription)"
             }
         }
     }
 
     func signOut() async {
-        sharedNavigation.clearAccount()
-        let target = endpoint
-        authentication.cancel()
-        do { try await environment.credentials.remove(for: target.credentialID) } catch {
-            errorMessage = "Could not remove the saved sign-in: \(error.localizedDescription)"
-            return
-        }
-        guard endpoint.credentialID == target.credentialID else { return }
-        disconnect()
-        phase = endpoint.secure ? .authenticationRequired : .disconnected
-    }
-
-    func connectionStopped(_ error: Error, client: DieterRPC, source: String = "rpc") {
-        guard !Task.isCancelled else { return }
-        guard rpc === client else { return }
-        connectionEffects.syncRecoveryEscalationTask?.cancel()
-        connectionEffects.syncRecoveryEscalationTask = nil
-        guard hasLoadedWorkspace else {
-            phase = .failed(Self.connectionFailureDescription(error))
-            return
-        }
-        // A lost daemon is connectivity state, not an application error. Keep
-        // the cached projection visible and let the workspace badge report the
-        // interruption while the normal reconnect loop rebuilds the streams.
-        errorMessage = nil
-        if connectionRecoveryStartedAt == nil {
-            connectionRecoveryStartedAt = Date()
-            connectionRecoverySource = source
-        }
-        connectionLogger.warning(
-            "Connection recovery requested by \(source, privacy: .public) on \(self.endpoint.id, privacy: .public): \(Self.connectionFailureDescription(error), privacy: .public)"
-        )
-        phase = .connecting
-        scheduleReconnect(to: endpoint)
-    }
-
-    func scheduleReconnect(to target: DieterEndpoint) {
-        guard connectionEffects.reconnectTask == nil else { return }
-        connectionEffects.reconnectTask = Task { [weak self] in
-            var delay = 1.0
-            while !Task.isCancelled, let self {
-                await self.connect(to: target, automatic: true)
-                if self.phase.isConnected {
-                    self.connectionEffects.reconnectTask = nil
-                    return
-                }
-                try? await DieterTaskSleep.seconds(delay)
-                guard !Task.isCancelled else { return }
-                delay = min(15, delay * 1.8)
-            }
-        }
+        await perform { $0.signOut = ClientSignOut() }
     }
 
     func disconnect() {
-        connections.invalidateTemporaryLeases()
-        connectionGeneration &+= 1
-        connectionEffects.cancelConnection()
-        conversationTask?.cancel()
-        gitOperationTask?.cancel()
-        terminalsModel.terminalWatchTask?.cancel()
-        outboxTask?.cancel()
-        directCredential = nil
-        fleet.stopMachineTelemetry()
-        terminalsModel.terminalStreamConnected = false
-        rpc?.shutdown()
-        rpc = nil
-        lastSyncFrameAt = nil
-        connectionRecoveryStartedAt = nil
-        connectionRecoverySource = ""
-        globalSyncing = false
-        endpoints = endpoints.map { machine in
-            var machine = machine
-            if machine.daemonID != nil { machine.online = false }
-            return machine
-        }
-        phase = .disconnected
+        Task { await perform { $0.setConnected = .with { $0.connected = false } } }
     }
 
+    /// Forgets every cached projection and reloads the workspace from scratch.
     func cleanSync() async {
-        let gateway = activeGateway
-        disconnect()
-        syncDiskState.clearProjections()
-        syncProjection = .empty
-        syncSnapshot = nil
-        syncStateDirty = false
-        clearDeploymentWorkspace()
-        do {
-            try await syncPersistence.save(syncDiskState)
-        } catch {
-            show(error)
-            return
-        }
-        await connect(to: gateway)
+        await perform { $0.resync = ClientResync() }
     }
 
     func chooseGateway(_ gateway: DieterEndpoint) async {
         guard gateway.daemonID == nil else { return }
-        if !gatewayOrigins.contains(where: { $0.credentialID == gateway.credentialID }) {
-            gatewayOrigins.append(gateway)
-        }
-        if gateway.credentialID != activeGateway.credentialID {
-            if syncStateDirty { try? await saveSyncPersistence() }
-            clearDeploymentWorkspace()
-        }
-        endpoint = gateway
-        await connect(to: gateway)
+        await useGateway(gateway)
+        await connect()
     }
 
     func saveEndpoint(_ endpoint: DieterEndpoint) async {
-        if let index = gatewayOrigins.firstIndex(where: {
+        var gateways = gatewayOrigins
+        if let index = gateways.firstIndex(where: {
             $0.credentialID == endpoint.credentialID || $0.name == endpoint.name
         }) {
-            gatewayOrigins[index] = endpoint
+            gateways[index] = endpoint
         } else {
-            gatewayOrigins.append(endpoint)
+            gateways.append(endpoint)
         }
-        if endpoint.credentialID != activeGateway.credentialID {
-            if syncStateDirty { try? await saveSyncPersistence() }
-            clearDeploymentWorkspace()
-        }
-        persistEndpoints()
-        await connect(to: endpoint)
-    }
-
-    func clearDeploymentWorkspace() {
-        state = Dieter_V1_State()
-        projectDirectory.removeAll()
-        projectReplicaEndpointIDs.removeAll()
-        harnessCatalogsByEndpoint.removeAll()
-        navigationBoards.removeAll()
-        replica.retiredBoards.removeAll()
-        machineSyncIssues.removeAll()
-        navigationCards.removeAll()
-        chats.removeAll()
-        chatProjects.removeAll()
-        schedules.removeAll()
-        scheduleRuns.removeAll()
-        schedulesLoading = false
-        schedulesLoadingMore = false
-        scheduleRunsLoading = false
-        scheduleRunsLoadingMore = false
-        schedulesTotalCount = 0
-        schedulesNextPageToken = ""
-        scheduleRunsNextPageToken = ""
-        schedulesLoadedProjectID = ""
-        schedulesLoadedEndpointID = ""
-        selectedProjectID = ""
-        selectedBoardID = ""
-        resetFileSurface()
-        bindSchedules()
-        chatsRead.cancel()
-        terminalsRead.cancel()
-        chatsRequestGeneration &+= 1
-        terminalsModel.terminalRequestGeneration &+= 1
-        archiveRequestGeneration &+= 1
-        chatsLoading = false
-        terminalsModel.terminalLoading = false
-        archiveLoading = false
-        chatsError = nil
-        terminalsModel.terminalError = nil
-        archiveError = nil
-        schedulesError = nil
-        fleet.reset()
-        quotas.reset()
-        terminalOverview.reset()
-        closeConversation()
-        syncProjection = .empty
-        syncSnapshot = nil
-        syncStateDirty = false
+        guard await setGateways(gateways, active: endpoint) else { return }
+        await connect()
     }
 
     func deleteEndpoint(_ endpoint: DieterEndpoint) {
         guard endpoint.daemonID == nil, gatewayOrigins.count > 1 else { return }
-        gatewayOrigins.removeAll { $0.credentialID == endpoint.credentialID }
-        persistEndpoints()
+        let remaining = gatewayOrigins.filter { $0.credentialID != endpoint.credentialID }
+        Task { await setGateways(remaining, active: nil) }
+    }
+
+    /// Makes `gateway` active, adding it to the configured gateways.
+    private func useGateway(_ gateway: DieterEndpoint) async {
+        if gatewayOrigins.contains(where: { $0.credentialID == gateway.credentialID }) {
+            await perform { $0.selectGateway = .with { $0.origin = gateway.credentialID } }
+        } else {
+            await setGateways(gatewayOrigins + [gateway], active: gateway)
+        }
+    }
+
+    @discardableResult
+    private func setGateways(_ gateways: [DieterEndpoint], active: DieterEndpoint?) async -> Bool {
+        await perform {
+            $0.setGateways = .with { command in
+                command.gateways = gateways.map { gateway in
+                    .with {
+                        $0.url = gateway.address
+                        $0.name = gateway.name
+                    }
+                }
+                command.activeOrigin = active?.credentialID ?? ""
+            }
+        } != nil
     }
 
     func revokeDaemon(_ endpoint: DieterEndpoint) async {
-        guard let daemonID = endpoint.daemonID, let rpc else { return }
-        do {
-            try await rpc.revokeDaemon(daemonID: daemonID)
-            endpoints.removeAll { $0.daemonID == daemonID }
-            projectReplicaEndpointIDs = projectReplicaEndpointIDs.filter { $0.value != endpoint.id }
-            persistEndpoints()
-            await connect(to: endpoints.first(where: \.online) ?? gatewayOrigins[0])
-        } catch { show(error) }
+        guard let daemonID = endpoint.daemonID else { return }
+        await perform { $0.revokeMachine = .with { $0.daemonID = daemonID } }
     }
 
     func renameMachine(_ endpoint: DieterEndpoint, name: String) async {
         let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let daemonID = endpoint.daemonID, !normalized.isEmpty else { return }
-        let origin =
-            gatewayOrigins.first(where: { $0.credentialID == endpoint.credentialID })
-            ?? endpoint.gatewayEndpoint
-        do {
-            let client = try environment.clients.client(
-                endpoint: origin, accessToken: await accessToken(for: origin))
-            let runner = Task { try? await client.run() }
-            defer {
-                runner.cancel()
-                client.shutdown()
+        await perform {
+            $0.renameMachine = .with {
+                $0.daemonID = daemonID
+                $0.name = normalized
             }
-            _ = try await client.renameDaemon(daemonID: daemonID, name: normalized)
-            await refreshDaemonPresence()
-            persistEndpoints()
-        } catch { show(error) }
-    }
-
-    func persistEndpoints() {
-        guard persistConnectionSelection else { return }
-        if let data = try? JSONEncoder().encode(gatewayOrigins) {
-            environment.defaults.set(data, forKey: "DieterEndpoints")
-        }
-        if let data = try? JSONEncoder().encode(endpoint) {
-            environment.defaults.set(data, forKey: "DieterActiveEndpoint")
         }
     }
 
+    /// Shared board edits go through the core, which reaches every machine;
+    /// this only reports when the workspace is offline.
     @discardableResult
     func ensureReplicaConnection(_ projectID: String, reportOffline: Bool = true) async -> Bool {
         guard !Task.isCancelled else { return false }
-        guard let target = replica(forProjectID: projectID) else { return true }
-        guard target.compatibilityState != .incompatible else {
-            machineConnectionErrors[target.id] = target.incompatibilityDescription
-            return false
+        if phase.isConnected { return true }
+        if reportOffline {
+            errorMessage = "Dieter is offline. Changes to this project are available once it reconnects."
         }
-        guard target.online else {
-            if reportOffline {
-                errorMessage =
-                    "\(target.name) is offline. Start Dieter on that machine to open this project."
-            }
-            return false
-        }
-        if target.id == endpoint.id, phase.isConnected, rpc != nil { return true }
-        selectedProjectID = projectID
-        await connect(to: target)
-        let connected = !Task.isCancelled && phase.isConnected && endpoint.id == target.id && rpc != nil
-        if !connected, reportOffline, !Task.isCancelled {
-            errorMessage = machineConnectionErrors[target.id] ?? "Could not connect to \(target.name). Try again."
-        }
-        return connected
+        return false
     }
 
     func cachedHarnessCatalog(forProjectID projectID: String) -> Dieter_V1_HarnessCatalog? {
@@ -890,6 +160,7 @@ extension DieterStore {
         )
     }
 
+    /// The agents available on the machine of the project's chosen checkout.
     func loadHarnessCatalog(forProjectID projectID: String) async throws -> Dieter_V1_HarnessCatalog {
         try Task.checkCancellation()
         guard let checkout = checkout(forProjectID: projectID) else {
@@ -897,270 +168,35 @@ extension DieterStore {
                 domain: "DieterHarnessCatalog", code: 2,
                 userInfo: [NSLocalizedDescriptionKey: "Choose a machine and checkout to load models."])
         }
-        let endpointID = endpoints.first { $0.daemonID == checkout.daemonID }?.id ?? "unavailable-checkout"
-        if let cached = harnessCatalogsByEndpoint[endpointID], !cached.harnesses.isEmpty {
-            return cached
-        }
-        if endpointID == endpoint.id, phase.isConnected, let rpc {
-            do {
-                let catalog = try await rpc.harnesses()
-                try Task.checkCancellation()
-                if self.rpc === rpc, endpoint.id == endpointID { harnessCatalog = catalog }
-                harnessCatalogsByEndpoint[endpointID] = catalog
-                return catalog
-            } catch {
-                guard DieterRPCFailure.canRetryRead(error) else { throw error }
-                connectionLogger.info(
-                    "Active harness catalog read failed transiently; retrying on a temporary route without replacing the data plane"
-                )
-            }
-        }
-        guard let machine = endpoints.first(where: { $0.id == endpointID }), machine.online else {
+        guard let machine = endpoints.first(where: { $0.daemonID == checkout.daemonID }), machine.online else {
             throw NSError(
                 domain: "DieterHarnessCatalog", code: 2,
                 userInfo: [NSLocalizedDescriptionKey: "The selected checkout’s machine is offline."])
         }
-        let catalog: Dieter_V1_HarnessCatalog
-        do {
-            catalog = try await readHarnessCatalog(on: machine)
-        } catch {
-            guard DieterRPCFailure.canRetryRead(error) else { throw error }
-            catalog = try await readHarnessCatalog(on: machine)
+        if let cached = harnessCatalogsByEndpoint[machine.id], !cached.harnesses.isEmpty { return cached }
+        try await core.dispatch { $0.ensureMetadata = .with { $0.daemonID = checkout.daemonID } }
+        _ = await awaitCore(timeout: .seconds(15)) {
+            harnessCatalogsByEndpoint[machine.id] != nil || metadataError(checkout.daemonID) != nil
         }
-        harnessCatalogsByEndpoint[endpointID] = catalog
-        return catalog
+        try Task.checkCancellation()
+        if let catalog = harnessCatalogsByEndpoint[machine.id] { return catalog }
+        throw NSError(
+            domain: "DieterHarnessCatalog", code: 3,
+            userInfo: [
+                NSLocalizedDescriptionKey: metadataError(checkout.daemonID)
+                    ?? "The machine did not list its agents in time."
+            ])
     }
 
-    private func readHarnessCatalog(on machine: DieterEndpoint) async throws -> Dieter_V1_HarnessCatalog {
-        let plane = try await selectDirectoryDataPlane(for: machine)
-        do {
-            let catalog = try await plane.rpc.harnesses()
-            try Task.checkCancellation()
-            plane.release()
-            return catalog
-        } catch {
-            // A failed read must not put its cancelled transport back in the
-            // idle pool for the next model load or user action.
-            plane.release(reusable: false)
-            throw error
-        }
-    }
-
-    func refreshMachineDirectory(includeArchivedChats: Bool = false) async {
-        let generation = connectionGeneration
-        let origin = activeGateway.credentialID
-        // The active machine is owned by WatchSync. Polling it here used to
-        // replace the live snapshot while retaining its cursor, so later
-        // deltas could be reduced against state from a different point in time.
-        let onlineMachines = machines.filter {
-            $0.online && $0.compatibilityState != .incompatible && $0.id != endpoint.id
-        }
-        guard !onlineMachines.isEmpty else { return }
-
-        let snapshots = await withTaskGroup(of: MachineSnapshot?.self) { group in
-            var next = 0
-            var snapshots: [MachineSnapshot] = []
-            for _ in 0..<min(3, onlineMachines.count) {
-                let machine = onlineMachines[next]
-                next += 1
-                group.addTask {
-                    try? await self.loadMachine(machine, includeArchivedChats: includeArchivedChats)
-                }
-            }
-            for await snapshot in group {
-                if let snapshot { snapshots.append(snapshot) }
-                if !Task.isCancelled, next < onlineMachines.count {
-                    let machine = onlineMachines[next]
-                    next += 1
-                    group.addTask {
-                        try? await self.loadMachine(machine, includeArchivedChats: includeArchivedChats)
-                    }
-                }
-            }
-            return snapshots
-        }
-        guard !Task.isCancelled, generation == connectionGeneration,
-            origin == activeGateway.credentialID,
-            !snapshots.isEmpty
-        else { return }
-
-        var persistenceChanged = false
-        for snapshot in snapshots {
-            if machineConnectionStatuses[snapshot.endpoint.id] != snapshot.connection {
-                machineConnectionStatuses[snapshot.endpoint.id] = snapshot.connection
-            }
-            if !snapshot.unchanged {
-                persistenceChanged = await persistInactiveMachineSnapshot(snapshot) || persistenceChanged
-                guard !Task.isCancelled, generation == connectionGeneration,
-                    origin == activeGateway.credentialID
-                else {
-                    return
-                }
-            }
-        }
-
-        let changedSnapshots = snapshots.filter { !$0.unchanged }
-        guard !changedSnapshots.isEmpty else { return }
-
-        let current = MachineDirectoryProjection(
-            projects: projectDirectory,
-            projectReplicaEndpointIDs: projectReplicaEndpointIDs,
-            boards: navigationBoards,
-            cards: navigationCards,
-            chats: chats,
-            retiredBoards: replica.retiredBoards
-        )
-        let next = MachineDirectoryReducer.merging(current, snapshots: changedSnapshots)
-        replica.accept(next)
-        refreshReplicaPresentation()
-        rebuildOutboxOverlays()
-        if current != next { updateSelectedState() }
-        if persistenceChanged { await scheduleSyncPersistence() }
-    }
-
-    @discardableResult
-    func persistInactiveMachineSnapshot(_ machine: MachineSnapshot) async -> Bool {
-        guard machine.endpoint.id != endpoint.id else { return false }
-        let generation = connectionGeneration
-        let origin = activeGateway.credentialID
-        let current = syncDiskState.projections[machine.endpoint.id] ?? .empty
-        let next = await Task.detached(priority: .utility) {
-            DieterSyncProjectionCache.replacingMetadata(
-                in: current,
-                projects: machine.projects,
-                boards: machine.boards,
-                cards: machine.cards,
-                chats: machine.chats,
-                cursor: machine.cursor,
-                archives: machine.archives
-            )
-        }.value
-        guard !Task.isCancelled, generation == connectionGeneration,
-            origin == activeGateway.credentialID,
-            machine.endpoint.id != endpoint.id,
-            syncDiskState.projections[machine.endpoint.id]?.cursor == current.cursor,
-            syncDiskState.projections[machine.endpoint.id]?.snapshot == current.snapshot,
-            current.cursor != next.cursor || current.snapshot != next.snapshot
-        else { return false }
-        syncDiskState.projections[machine.endpoint.id] = next
-        syncStateDirty = true
-        return true
-    }
-
-    func startMachineDirectoryRefresh(refreshImmediately: Bool = false) {
-        connectionEffects.startDirectory(
-            refreshImmediately: refreshImmediately,
-            presence: { [weak self] in await self?.refreshDaemonPresence() },
-            directory: { [weak self] in
-                guard let self else { return }
-                await self.refreshMachineDirectory()
-                guard !Task.isCancelled else { return }
-                await self.loadProviderQuotas()
-            })
-    }
-
-    func startMachinePresenceLeaseMonitor() {
-        connectionEffects.startPresence { [weak self] now in
-            guard let self else { return 5 }
-            let next = MachinePresenceText.applyingExpirations(to: self.endpoints, relativeTo: now)
-            if next != self.endpoints { self.endpoints = next }
-            if let active = next.first(where: { $0.id == self.endpoint.id }), active != self.endpoint {
-                self.endpoint = active
-            }
-            return MachinePresenceText.nextExpiration(in: next, relativeTo: now)
-                .map { max(0.05, min(5, $0.timeIntervalSince(now) + 0.05)) } ?? 5
-        }
-    }
-
-    /// Directory refreshes are independent RPCs and may themselves stall on a
-    /// half-open transport. Keep sync liveness on its own task so those calls
-    /// can never prevent recovery of the stream which owns the visible board.
-    /// Reopening WatchSync on the same transport is insufficient: a half-open
-    /// HTTP/2 connection can accept the new subscription without delivering a
-    /// frame, leaving the app in "Syncing" forever. Rebuild the data plane after
-    /// three missed heartbeats instead.
-    var syncTransportIsStale: Bool {
-        guard let activity = syncLastActivity else { return true }
-        return activity.duration(to: ContinuousClock.now) >= syncTransportTimeout
-    }
-
-    func startSyncLivenessMonitor() {
-        connectionEffects.startLiveness { [weak self] in
-            guard let self else { return true }
-            guard self.phase.isConnected, let rpc = self.rpc, self.syncTransportIsStale else { return false }
-            self.connectionStopped(DieterStoreConnectionError.syncTimedOut, client: rpc, source: "watch-sync-liveness")
-            return true
-        }
-    }
-
-    /// Keep a healthy stream across activation; only stale transport evidence
-    /// warrants reconnecting the shared data plane.
+    /// Keeps connection state current when the app returns to the foreground.
     func applicationDidBecomeActive() {
-        guard phase.isConnected, let rpc else { return }
-        if syncTransportIsStale {
-            connectionStopped(
-                DieterStoreConnectionError.syncTimedOut,
-                client: rpc,
-                source: "activation-liveness"
-            )
-            return
-        }
-        if connectionEffects.syncTask == nil { startGlobalSync() }
-        conversationModel.resumeSelectedConversation(client: rpc)
+        Task { await perform { $0.setForeground = .with { $0.foreground = true } } }
     }
 
-    func refreshDaemonPresence() async {
-        let generation = connectionGeneration
-        guard let origin = gatewayOrigins.first(where: { $0.credentialID == endpoint.credentialID })
-        else { return }
-        do {
-            let client = try environment.clients.client(
-                endpoint: origin, accessToken: await accessToken(for: origin))
-            let runner = Task { try? await client.run() }
-            defer {
-                runner.cancel()
-                client.shutdown()
-            }
-            let directory = try await client.daemons()
-            guard !Task.isCancelled, generation == connectionGeneration,
-                origin.credentialID == activeGateway.credentialID
-            else { return }
-            if directory.hasGatewayInformation {
-                gatewayInformation[origin.credentialID] = directory.gatewayInformation
-            }
-            let previous = Dictionary(
-                uniqueKeysWithValues: endpoints.compactMap { item in item.daemonID.map { ($0, item) } })
-            endpoints = directory.daemons.map { daemon in
-                var item =
-                    previous[daemon.id]
-                    ?? DieterEndpoint(
-                        name: daemon.name.isEmpty ? daemon.id : daemon.name,
-                        host: origin.host,
-                        port: origin.port,
-                        secure: origin.secure,
-                        daemonID: daemon.id
-                    )
-                item.name = daemon.name.isEmpty ? daemon.id : daemon.name
-                item.online = MachinePresenceText.online(
-                    serverOnline: daemon.online, lastSeenAt: daemon.lastSeenAt)
-                item.lastSeenAt = daemon.lastSeenAt
-                item.releaseVersion = daemon.releaseVersion
-                item.compatibility = compatibilityStatus(daemon.compatibility)
-                item.minimumReleaseVersion = daemon.minimumReleaseVersion
-                item.remoteDesktopReady = daemon.remoteDesktop.ready
-                item.remoteDesktopReason = daemon.remoteDesktop.reason
-                item.remoteDesktopPlatform = daemon.remoteDesktop.platform
-                return item
-            }
-            if let refreshedActive = endpoints.first(where: { $0.id == endpoint.id }) {
-                endpoint = refreshedActive
-            }
-            if endpoints.contains(where: { $0.online && machineOutboxSummaries[$0.id] != nil }) {
-                startOutboxWorker()
-            }
-        } catch {
-            // Keep the last known directory during a transient gateway loss.
-        }
+    /// The Mac stays connected in the background; see `startCore()`. Draft
+    /// text typed in the last moments is saved now.
+    func applicationDidResignActive() {
+        Task { await composerDrafts.save() }
     }
 
     func loadProviderQuotas(requestRefresh: Bool = false) async { await quotas.load(requestRefresh: requestRefresh) }
@@ -1170,113 +206,6 @@ extension DieterStore {
         await quotas.setInclusion(provider: provider, accountKey: accountKey, included: included)
     }
     func consumeProviderQuotaReset(accountKey: String) async { await quotas.consumeReset(accountKey: accountKey) }
-    func providerQuotaClient() async throws -> FeatureClientLease<any ProviderQuotaRPC> {
-        guard
-            let origin = gatewayOrigins.first(where: { $0.credentialID == activeGateway.credentialID })
-                ?? gatewayOrigins.first
-        else { throw ProviderQuotaClientError.noGateway }
-        let client = try environment.clients.client(endpoint: origin, accessToken: await accessToken(for: origin))
-        let runner = Task { try? await client.run() }
-        return FeatureClientLease(
-            client: client,
-            release: {
-                runner.cancel(); client.shutdown()
-            })
-    }
-
-    func loadMachine(_ machine: DieterEndpoint, includeArchivedChats: Bool) async throws
-        -> MachineSnapshot
-    {
-        let client: DieterRPC
-        var lease: DataPlaneLease?
-        var selectedConnection: MachineConnectionStatus?
-        if machine.id == endpoint.id, let rpc {
-            client = rpc
-        } else {
-            let dataPlane = try await selectDirectoryDataPlane(for: machine)
-            client = dataPlane.rpc
-            lease = dataPlane
-            selectedConnection = dataPlane.connection
-        }
-        defer { lease?.release() }
-
-        let started = Date()
-        var request = Dieter_V1_GetStateRequest()
-        request.allProjects = true
-        if !includeArchivedChats, let cursorData = syncDiskState.projections[machine.id]?.cursor,
-            let cursor = try? Dieter_V1_SyncCursor(serializedBytes: cursorData)
-        {
-            request.ifNotModified = cursor
-        }
-        let root = try await client.state(request)
-        machineSyncIssues[machine.id] =
-            root.peerSyncIssues.isEmpty
-            ? nil
-            : "Shared updates are delayed with \(root.peerSyncIssues.count) peer(s). Boards and cards may be out of date."
-        let connection = MachineConnectionStatus(
-            route: selectedConnection?.route
-                ?? machineConnectionStatuses[machine.id]?.route
-                ?? (lease != nil ? .gateway : .local),
-            latencyMilliseconds: Self.latencyMilliseconds(since: started)
-        )
-        let cursor = root.cursor.epoch.isEmpty ? nil : try? root.cursor.serializedData()
-        if root.notModified {
-            return MachineSnapshot(
-                endpoint: machine,
-                connection: connection,
-                projects: [], boards: [], cards: [], chats: [],
-                cursor: cursor,
-                unchanged: true
-            )
-        }
-
-        let projects = root.projects.filter { !$0.archived }
-        var boards = root.boards
-        var cards = root.cards
-        var chats = root.chats
-        if includeArchivedChats {
-            let chatResponse = try await client.chats(includeArchived: true)
-            chats = chatResponse.chats
-        }
-        return MachineSnapshot(
-            endpoint: machine,
-            connection: connection,
-            projects: projects,
-            boards: Array(boards.reduce(into: [String: Dieter_V1_Board]()) { $0[$1.id] = $1 }.values),
-            cards: Array(cards.reduce(into: [String: Dieter_V1_Card]()) { $0[$1.id] = $1 }.values),
-            chats: chats,
-            cursor: cursor,
-            archives: root.archives
-        )
-    }
-
-    func selectDirectoryDataPlane(for machine: DieterEndpoint) async throws -> DataPlaneLease {
-        guard machine.daemonID != nil else {
-            throw NSError(
-                domain: "DieterGateway", code: 5,
-                userInfo: [NSLocalizedDescriptionKey: "Machine endpoint is missing its daemon identity."])
-        }
-        guard machine.compatibilityState != .incompatible else {
-            throw DieterStoreConnectionError.incompatible(found: machine.minimumReleaseVersion)
-        }
-        let origin =
-            gatewayOrigins.first(where: { $0.credentialID == machine.credentialID })
-            ?? machine.gatewayEndpoint
-        let gatewayAccessToken = await accessToken(for: origin)
-        return try await connections.temporaryLease(target: machine, accessToken: gatewayAccessToken) {
-            let gateway = try self.environment.clients.client(
-                endpoint: origin, accessToken: gatewayAccessToken)
-            let gatewayTask = Task { try? await gateway.run() }
-            defer {
-                gatewayTask.cancel()
-                gateway.shutdown()
-            }
-            return try await self.selectDataPlane(
-                gateway: gateway, target: machine, gatewayAccessToken: gatewayAccessToken,
-                directCandidateScope: .loopbackOnly, refreshDirectToken: true
-            )
-        }
-    }
 
     nonisolated static func latencyMilliseconds(since started: Date) -> Int {
         max(1, Int((Date().timeIntervalSince(started) * 1_000).rounded()))

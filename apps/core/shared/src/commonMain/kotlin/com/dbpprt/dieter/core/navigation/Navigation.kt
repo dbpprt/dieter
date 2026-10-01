@@ -107,6 +107,14 @@ class NavigationLayout(private val values: Map<String, ByteString>) {
     /** Lanes show newest first unless set to ascending. */
     fun laneDescending(boardId: String, laneId: String): Boolean = string("lane.$boardId.$laneId.sort") != "ascending"
 
+    /** IDs whose `<prefix>.<id>.expanded` flag is [value]. */
+    fun flagged(prefix: String, value: Boolean): List<String> = ids(prefix, "expanded").filter { bool("$prefix.$it.expanded") == value }
+
+    /** `<board>.<lane>` → "ascending" or "descending", for every lane with a saved direction. */
+    fun laneSorts(): Map<String, String> = values.keys.filter { it.startsWith("lane.") && it.endsWith(".sort") }
+        .mapNotNull { key -> string(key)?.let { key.removePrefix("lane.").removeSuffix(".sort") to it } }
+        .toMap()
+
     companion object {
         const val PROJECT_CHAT_PREVIEW = 5
         const val MAX_FOLDER_NAME_BYTES = 256
@@ -225,6 +233,18 @@ class NavigationEditor(private val kv: SharedKv) {
             folder.copy(itemIds = if (folder.id == folderId) without + itemId else without)
         }
         editFolders(scope, folders, next)
+    }
+
+    /**
+     * Replaces [scope]'s folders with [next]: names, order, expansion, and
+     * members. Only the differences are recorded.
+     */
+    fun setFolders(scope: FolderScope, next: List<NavigationFolder>) {
+        val trimmed = next.map { it.copy(name = it.name.trim()) }
+        trimmed.forEachIndexed { index, folder ->
+            nameProblem(folder.name, trimmed.take(index))?.let { throw CoreException(FailureKind.PERMANENT, it) }
+        }
+        editFolders(scope, layout.folders(scope), trimmed)
     }
 
     fun reorderFolders(scope: FolderScope, next: List<String>) {

@@ -20,9 +20,10 @@ test *args:
 native-test:
     {{ gradle }} :shared:macosArm64Test :apple:assembleDieterSharedDebugXCFramework
 
-# Drive DieterShared from Swift against an isolated gateway and daemon.
+# Drive DieterShared from Swift through the Mac app's bridge (SharedCore)
+# against an isolated gateway and daemon.
 apple-test: native-test
-    {{ core_root }}/harness/apple/run-tests.sh
+    just mac core-test
 
 # Run the Android variant (OkHttp transport) on the host JVM against an isolated gateway.
 android-test:

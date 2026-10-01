@@ -14,7 +14,7 @@ import Testing
     let file = directory.appendingPathComponent(filename)
     try Data("# Document".utf8).write(to: file)
     let model = FilesModel()
-    model.bind(target: WorkspaceTarget(endpointID: "local", projectID: "project"), client: nil)
+    model.bind(target: WorkspaceTarget(endpointID: "local", projectID: "project"), core: nil)
     model.selectedFilePath = filename
     var document = Dieter_V1_FileDocument()
     document.path = filename; document.name = filename; document.content = "# Document"

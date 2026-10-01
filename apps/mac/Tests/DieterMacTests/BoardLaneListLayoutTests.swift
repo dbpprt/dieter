@@ -240,8 +240,8 @@ import Testing
             repeating: "This summary stays visible while another machine refreshes. ", count: 3)
         cards[index].updatedAt = "2026-09-23T09:00:00Z"
     }
-    var full = Dieter_V1_GlobalSnapshot(); full.state = store.state; full.state.cards = cards
-    store.applyGlobalSnapshot(full, endpointID: owner.id)
+    var full = store.state; full.cards = cards
+    store.foldFixture(full, daemonID: "owner")
     let root = NSHostingView(rootView: AnyView(BoardLaneNavigationFixture().environment(store)))
     root.sizingOptions = []
     let window = boardLaneFixtureWindow(root: root, width: 300, height: 1000)
@@ -250,14 +250,11 @@ import Testing
     let table = try #require(boardLaneNativeTable(in: root))
     let frames = cards.indices.map { table.rect(ofRow: $0) }
     let cells = try cards.indices.map { try #require(table.view(atColumn: 0, row: $0, makeIfNecessary: false)) }
-    var replicated = full
-    replicated.state.cards = cards.map { card in
-        var card = card; card.summary = ""; card.updatedAt = ""; return card
-    }
+    // The core merges a peer's partial cards with the owner's details; what it
+    // republishes for another reporting replica must not re-render the lane.
     BoardRenderingDiagnostics.start()
     for index in 0..<6 {
-        let remote = index.isMultiple(of: 2)
-        store.applyGlobalSnapshot(remote ? replicated : full, endpointID: remote ? peer.id : owner.id)
+        store.foldFixture(full, daemonID: index.isMultiple(of: 2) ? "peer" : "owner")
         store.selectedCardID = cards[index % cards.count].id
         await settleBoardLane(root)
         #expect(store.boardCards == cards)

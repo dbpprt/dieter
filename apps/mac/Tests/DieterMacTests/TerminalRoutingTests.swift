@@ -1,179 +1,188 @@
 import DieterAPI
 import DieterCore
 import Foundation
-import GRPCCore
+import SharedCore
 import Testing
 @testable import DieterMac
 
-private actor TerminalRoutingFixture: TerminalsRPC {
-    private(set) var createRequests: [Dieter_V1_CreateTerminalRequest] = []
-    private(set) var watchRequests: [UInt64] = []
-    private let expireWatch: Bool
-    private let suspendCreate: Bool
-    private var creation: CheckedContinuation<Dieter_V1_Terminal, Error>?
-    init(expireWatch: Bool = false, suspendCreate: Bool = false) {
-        self.expireWatch = expireWatch
-        self.suspendCreate = suspendCreate
+@MainActor private func waitForTerminals(_ condition: () -> Bool) async throws {
+    for _ in 0..<1_000 {
+        if condition() { return }
+        try await Task.sleep(nanoseconds: 1_000_000)
     }
-
-    func failCreation() { creation?.resume(throwing: RPCError(code: .aborted, message: "retired creation")) }
-
-    func terminals(projectID: String, cardID: String) async throws -> Dieter_V1_TerminalsResponse {
-        var first = Dieter_V1_Terminal()
-        first.id = "first"
-        first.name = "First"
-        first.status = "running"
-        var second = Dieter_V1_Terminal()
-        second.id = "second"
-        second.name = "Second"
-        second.status = "running"
-        var response = Dieter_V1_TerminalsResponse()
-        response.terminals = [first, second]
-        return response
-    }
-
-    func createTerminal(_ request: Dieter_V1_CreateTerminalRequest) async throws -> Dieter_V1_Terminal {
-        createRequests.append(request)
-        if suspendCreate { return try await withCheckedThrowingContinuation { creation = $0 } }
-        var terminal = Dieter_V1_Terminal()
-        terminal.id = "machine-home"
-        terminal.name = request.name
-        terminal.status = "running"
-        return terminal
-    }
-
-    func watchTerminal(
-        id: String, after: UInt64,
-        receive: @escaping @Sendable (Dieter_V1_TerminalFrame) async -> Void
-    ) async throws {
-        guard expireWatch else { return }
-        watchRequests.append(after)
-        var frame = Dieter_V1_TerminalFrame()
-        frame.sequence = after + 1
-        frame.terminal.id = id
-        frame.terminal.name = id
-        frame.terminal.status = "running"
-        frame.data = Data("output".utf8)
-        await receive(frame)
-        if watchRequests.count == 1 { throw RPCError(code: .deadlineExceeded, message: "bearer expired") }
-        try await Task.sleep(for: .seconds(60))
-    }
-
-    func writeTerminal(id: String, data: Data) async throws -> Dieter_V1_Terminal { .init() }
-    func resizeTerminal(id: String, columns: Int, rows: Int) async throws -> Dieter_V1_Terminal { .init() }
-    func renameTerminal(id: String, name: String) async throws -> Dieter_V1_Terminal { .init() }
-    func closeTerminal(id: String) async throws {}
+    throw CocoaError(.coderValueNotFound)
 }
 
-@Test(.timeLimit(.minutes(1)), arguments: [false, true]) @MainActor
-func retiredOverviewCreationReturnsLeaseAndIgnoresLateFailure(suspendAcquisition: Bool) async {
-    let machine = DieterEndpoint(name: "Fixture", host: "127.0.0.1", port: 4242)
-    let client = TerminalRoutingFixture(suspendCreate: true)
-    var acquisition: CheckedContinuation<Void, Never>?
-    var returned = 0
-    var errors = 0
-    let overview = TerminalOverviewModel(
-        terminalsModel: TerminalsModel(), machines: { [machine] }, available: { _ in true }, active: { true },
-        acquire: { _ in
-            if suspendAcquisition { await withCheckedContinuation { acquisition = $0 } }
-            return FeatureClientLease(client: client, release: { returned += 1 })
-        }, reportError: { _ in errors += 1 })
-    let creation = Task {
-        await overview.createOverviewTerminal(
-            projectID: "", checkoutID: "", machineID: machine.id, machineHome: true,
-            name: "Fixture", shell: "", workingDirectory: "")
+private func terminal(_ id: String, status: String = "running") -> Dieter_V1_Terminal {
+    .with {
+        $0.id = id
+        $0.name = id
+        $0.status = status
     }
-    if suspendAcquisition {
-        while acquisition == nil { await Task.yield() }
-    } else {
-        while await client.createRequests.isEmpty { await Task.yield() }
-    }
-    overview.reset()
-    if suspendAcquisition { acquisition?.resume() } else { await client.failCreation() }
-    await creation.value
-    #expect(await client.createRequests.count == (suspendAcquisition ? 0 : 1))
-    #expect(errors == 0)
-    #expect(returned == 1)
-    #expect(overview.terminalOverviewEntries.isEmpty)
 }
 
-@Test @MainActor func terminalWatchResumesDeliveredSequenceAfterCredentialExpiry() async throws {
-    let rpc = TerminalRoutingFixture(expireWatch: true)
-    let model = TerminalsModel()
+@Test @MainActor func terminalsBindTheirTargetAndSendCommandsInOrder() async throws {
+    let core = ScriptedCoreClient(), model = TerminalsModel()
+    let target = ClientTerminalTarget.with {
+        $0.daemonID = "machine"
+        $0.kind = .card
+        $0.projectID = "project"
+        $0.cardID = "card"
+    }
+    core.handler = { _ in
+        .with {
+            $0.terminals = .with {
+                $0.target = target
+                $0.terminals = [terminal("shell")]
+                $0.selectedID = "shell"
+            }
+        }
+    }
     model.active = true
-    defer { model.active = false }
-    model.bind(target: WorkspaceTarget(endpointID: "fixture", projectID: ""), client: rpc)
+    model.bind(
+        target: WorkspaceTarget(endpointID: "gateway#machine", projectID: "project", conversationID: "card"), core: core)
     await model.loadTerminals()
-    let deadline = Date().addingTimeInterval(3)
-    while await rpc.watchRequests.count < 2, Date() < deadline {
-        try await Task.sleep(for: .milliseconds(10))
-    }
-    #expect(await rpc.watchRequests == [0, 1])
-    #expect(model.terminalSequences["first"] == 2)
-}
-
-@MainActor
-@Test func terminalSelectionPersistsPerMachineAcrossModelRecreation() async throws {
-    let suiteName = "TerminalRoutingTests.\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suiteName))
-    defer { defaults.removePersistentDomain(forName: suiteName) }
-    let rpc = TerminalRoutingFixture()
-    let home = WorkspaceTarget(endpointID: "home", projectID: "")
-    let office = WorkspaceTarget(endpointID: "office", projectID: "")
-
-    let firstModel = TerminalsModel(selectionDefaults: defaults)
-    firstModel.bind(target: home, client: rpc)
-    await firstModel.loadTerminals()
-    firstModel.selectTerminal("second")
-    firstModel.bind(target: office, client: rpc)
-    await firstModel.loadTerminals()
-    #expect(firstModel.selectedTerminalID == "first")
-    firstModel.bind(target: home, client: rpc)
-    await firstModel.loadTerminals()
-    #expect(firstModel.selectedTerminalID == "second")
-
-    let restoredModel = TerminalsModel(selectionDefaults: defaults)
-    restoredModel.bind(target: home, client: rpc)
-    await restoredModel.loadTerminals()
-    #expect(restoredModel.selectedTerminalID == "second")
-}
-
-@MainActor
-@Test func terminalModelForwardsMachineHomeScope() async throws {
-    let rpc = TerminalRoutingFixture()
-    let model = TerminalsModel()
-    model.bind(target: WorkspaceTarget(endpointID: "home", projectID: ""), client: rpc)
-
-    await model.createTerminal(
-        projectID: "", machineHome: true, name: "Home shell", shell: "zsh", workingDirectory: "~")
-
-    let request = try #require(await rpc.createRequests.last)
-    #expect(request.machineHome)
-    #expect(request.projectID.isEmpty)
-    #expect(request.cardID.isEmpty)
-    #expect(request.workingDirectory == "~")
-}
-
-@Test func terminalOverviewCombinesMachinesAndKeepsAStableSelection() throws {
-    func entry(machineID: String, machineName: String, terminalID: String, createdAt: String) -> TerminalOverviewEntry {
-        var terminal = Dieter_V1_Terminal()
-        terminal.id = terminalID
-        terminal.name = terminalID
-        terminal.createdAt = createdAt
-        return TerminalOverviewEntry(machineID: machineID, machineName: machineName, terminal: terminal)
-    }
-
-    let office = entry(
-        machineID: "office", machineName: "mb-office", terminalID: "terminal-office",
-        createdAt: "2026-09-13T12:00:00Z")
-    let home = entry(
-        machineID: "home", machineName: "mini-home", terminalID: "terminal-home",
-        createdAt: "2026-09-13T11:00:00Z")
-    let values = TerminalOverviewCatalog.sorted([office, home])
-
-    #expect(values.map(\.id) == [home.id, office.id])
-    #expect(TerminalOverviewCatalog.selection(in: values, currentID: office.id)?.id == office.id)
+    model.sendTerminalInput(id: "shell", data: Data("ls\n".utf8))
+    model.sendTerminalInput(id: "shell", data: Data("pwd\n".utf8))
+    await model.resizeTerminal(id: "shell", columns: 90, rows: 25)
+    await model.renameTerminal(id: "shell", name: "  build  ")
     #expect(
-        TerminalOverviewCatalog.selection(in: values, currentID: "missing", preferredMachineID: "home")?.id
-            == home.id)
+        core.commands.map(\.terminals.action) == [
+            .bind(target), .active(.with { $0.on = true }), .load(ClientTerminalStep()),
+            .input(.with { $0.data = Data("ls\n".utf8) }), .input(.with { $0.data = Data("pwd\n".utf8) }),
+            .grid(.with { $0.columns = 90; $0.rows = 25 }),
+            .rename(.with { $0.terminalID = "shell"; $0.name = "build" }),
+        ])
+    #expect(Set(core.commands.map(\.terminals.scope)).count == 1)
+    #expect(model.selectedTerminal?.id == "shell")
+}
+
+@Test @MainActor func terminalOutputFeedsTheScreenInOrderAndAResetReplacesIt() async throws {
+    let core = ScriptedCoreClient(), model = TerminalsModel()
+    let target = ClientTerminalTarget.with { $0.daemonID = "machine" }
+    model.bind(target: WorkspaceTarget(endpointID: "gateway#machine", projectID: ""), core: core)
+    await model.loadTerminals()
+    let scope = try #require(core.commands.first?.terminals.scope)
+    func emit(_ output: [(String, Bool)], terminals: [Dieter_V1_Terminal] = [terminal("shell")]) {
+        core.emit(.terminals, scope: scope) {
+            $0.terminals = .with {
+                $0.target = target
+                $0.terminals = terminals
+                $0.selectedID = terminals.first?.id ?? ""
+                $0.output = output.map { text, reset in
+                    .with {
+                        $0.terminalID = "shell"
+                        $0.reset = reset
+                        $0.data = Data(text.utf8)
+                    }
+                }
+            }
+        }
+    }
+    emit([("a", true)])
+    emit([("b", false), ("c", false)])
+    try await waitForTerminals { model.terminalScreens["shell"]?.data == Data("abc".utf8) }
+    emit([("fresh", true)])
+    try await waitForTerminals { model.terminalScreens["shell"]?.data == Data("fresh".utf8) }
+    // A slice for another target is stale.
+    core.emit(.terminals, scope: scope) {
+        $0.terminals = .with {
+            $0.target = .with { $0.daemonID = "other" }
+            $0.terminals = [terminal("elsewhere")]
+        }
+    }
+    #expect(model.terminals.map(\.id) == ["shell"])
+    // A closed terminal's screen goes with it.
+    emit([], terminals: [])
+    #expect(model.terminalScreens.isEmpty)
+}
+
+@Test @MainActor func overviewEntriesNameTheirMachinesAndTheTerminalsFollowTheSelection() async throws {
+    let core = ScriptedCoreClient(), terminals = TerminalsModel()
+    var errors: [String] = []
+    let overview = TerminalOverviewModel(
+        terminalsModel: terminals, core: core, endpointID: { "gateway#\($0)" }, active: { true },
+        reportError: { errors.append($0) })
+    let slice = ClientTerminalOverviewSlice.with {
+        $0.entries = [
+            .with {
+                $0.id = "home|t1"
+                $0.daemonID = "home"
+                $0.machineName = "mini-home"
+                $0.terminal = terminal("t1")
+            },
+            .with {
+                $0.id = "office|t2"
+                $0.daemonID = "office"
+                $0.machineName = "mb-office"
+                $0.terminal = terminal("t2")
+            },
+        ]
+        $0.selectedID = "office|t2"
+        $0.errors = ["broken": "unreachable"]
+        $0.terminals = .with {
+            $0.target = .with { $0.daemonID = "office" }
+            $0.terminals = [terminal("t2")]
+            $0.selectedID = "t2"
+        }
+    }
+    core.handler = { command in
+        if case .terminalOverview? = command.command { return .with { $0.terminalOverview = slice } }
+        return .with { $0.done = ClientDone() }
+    }
+
+    await overview.loadTerminalOverview(preferredMachineID: "gateway#office")
+    let load = try #require(core.commands.first { if case .terminalOverview? = $0.command { true } else { false } })
+    #expect(load.terminalOverview.load.preferredDaemonID == "office")
+    #expect(overview.terminalOverviewEntries.map(\.id) == ["gateway#home|t1", "gateway#office|t2"])
+    #expect(overview.selectedTerminalOverviewID == "gateway#office|t2")
+    #expect(overview.terminalOverviewError == "broken: unreachable")
+    #expect(terminals.target.endpointID == "gateway#office")
+    #expect(terminals.machineName == "mb-office")
+    #expect(terminals.selectedTerminalID == "t2")
+
+    await overview.selectTerminalOverviewEntry("gateway#home|t1")
+    #expect(core.commands.last?.terminalOverview.select.terminalID == "home|t1")
+
+    // The followed terminals take commands under the overview's scope.
+    terminals.active = true
+    terminals.sendTerminalInput(id: "t2", data: Data("x".utf8))
+    await terminals.renameTerminal(id: "t2", name: "renamed")
+    let terminalCommands = core.commands.filter { if case .terminals? = $0.command { true } else { false } }
+    #expect(terminalCommands.allSatisfy { $0.terminals.scope == load.terminalOverview.scope })
+    #expect(terminalCommands.contains { $0.terminals.action == .input(.with { $0.data = Data("x".utf8) }) })
+    #expect(errors.isEmpty)
+}
+
+@Test @MainActor func overviewCreatesAMachineHomeTerminalOnTheChosenMachine() async throws {
+    let core = ScriptedCoreClient(), terminals = TerminalsModel()
+    var errors: [String] = []
+    let overview = TerminalOverviewModel(
+        terminalsModel: terminals, core: core, endpointID: { "gateway#\($0)" }, active: { true },
+        reportError: { errors.append($0) })
+    var unavailable = true
+    core.handler = { command in
+        guard case .terminalOverview? = command.command else { return .with { $0.done = ClientDone() } }
+        if unavailable { throw CoreFailure(kind: .transient, message: "The selected machine is unavailable.") }
+        return .with { $0.terminalOverview = ClientTerminalOverviewSlice() }
+    }
+    terminals.createTerminalPresented = true
+    func create() async {
+        await overview.createOverviewTerminal(
+            projectID: "", checkoutID: "", machineID: "gateway#home", machineHome: true, name: "Home shell",
+            shell: "zsh", workingDirectory: "~")
+    }
+
+    await create()
+    #expect(errors == ["The selected machine is unavailable."])
+    #expect(terminals.createTerminalPresented, "a failed creation keeps the form")
+
+    unavailable = false
+    await create()
+    let request = try #require(core.commands.last?.terminalOverview.create)
+    #expect(request.daemonID == "home")
+    #expect(request.machineHome)
+    #expect(request.workingDirectory == "~")
+    #expect(request.name == "Home shell")
+    #expect(!terminals.createTerminalPresented)
 }

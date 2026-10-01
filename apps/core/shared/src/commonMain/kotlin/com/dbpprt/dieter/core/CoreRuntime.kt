@@ -307,6 +307,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
      * starts from scratch. Undelivered changes, drafts, and navigation stay.
      */
     suspend fun resync() = onCore {
+        connection.forgetViews()
         val cache = storageFor(accounts.state.value.active)
         cache.names().filter { it.startsWith("feed-") || it.startsWith(DirectoryPoller.CACHE_PREFIX) }.forEach(cache::delete)
         workspace.clear()

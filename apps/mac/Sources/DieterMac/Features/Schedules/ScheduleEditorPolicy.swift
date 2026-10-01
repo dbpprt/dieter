@@ -1,17 +1,6 @@
 import DieterAPI
 import SwiftUI
 
-enum ScheduleEditorPreviewDebounce {
-    static func wait() async -> Bool {
-        do {
-            try await DieterTaskSleep.milliseconds(300)
-            return !Task.isCancelled
-        } catch {
-            return false
-        }
-    }
-}
-
 enum ScheduleEditorDraft {
     static func make(from schedule: Dieter_V1_Schedule?) -> Dieter_V1_ScheduleDraft {
         var draft = Dieter_V1_ScheduleDraft()

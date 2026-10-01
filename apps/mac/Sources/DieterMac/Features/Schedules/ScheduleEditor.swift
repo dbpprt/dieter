@@ -7,8 +7,7 @@ struct ScheduleEditor: View {
     @Environment(\.dismiss) private var dismiss
     let schedule: Dieter_V1_Schedule?
     @State private var draft: Dieter_V1_ScheduleDraft
-    @State private var preview: [String] = []
-    @State private var previewError = ""
+    @State private var saveError = ""
     @State private var cadence: ScheduleCadence
     @State private var runTime: Date
     @State private var weekday: Int
@@ -45,6 +44,8 @@ struct ScheduleEditor: View {
     }
 
     private var previewKey: String { "\(cron)|\(draft.timezone)" }
+    private var preview: [String] { context.target.projectID == model.target.projectID ? model.schedulePreview : [] }
+    private var previewError: String { saveError.isEmpty ? model.schedulePreviewError ?? "" : saveError }
 
     private var canSave: Bool {
         !saving && !draft.boardID.isEmpty
@@ -348,26 +349,11 @@ struct ScheduleEditor: View {
                 draft.providerOptions = ProviderOptionValues.defaults(for: harness, model: draft.model)
             }
         }
-        .task(id: previewKey) {
-            guard await ScheduleEditorPreviewDebounce.wait() else { return }
-            await previewRuns()
+        .onChange(of: previewKey, initial: true) {
+            guard context.target.projectID == model.target.projectID else { return }
+            model.previewSchedule(cron: cron, timezone: draft.timezone)
         }
-    }
-
-    private func previewRuns() async {
-        guard !cron.isEmpty, !draft.timezone.isEmpty else { return }
-        let key = previewKey
-        guard context.target == model.target else { return }
-        do {
-            let result = try await model.previewSchedule(cron: cron, timezone: draft.timezone) ?? []
-            guard !Task.isCancelled, key == previewKey, context.target == model.target else { return }
-            preview = result
-            previewError = ""
-        } catch {
-            guard !Task.isCancelled, key == previewKey, context.target == model.target else { return }
-            preview = []
-            previewError = error.localizedDescription
-        }
+        .onDisappear { model.closeEditor() }
     }
 
     private func insert(_ variable: String, into field: TemplateField) {
@@ -394,7 +380,7 @@ struct ScheduleEditor: View {
         if saved {
             dismiss()
         } else {
-            previewError =
+            saveError =
                 model.errorMessage ?? "This project is no longer connected. Close the editor and reconnect."
         }
     }

@@ -304,11 +304,9 @@ struct ProjectWorkspacesSheet: View {
             if let candidate {
                 Button(candidateKind.title, role: candidateKind.destructive ? .destructive : nil) {
                     let cardID = candidate.cardID
-                    let kind = candidateKind
+                    let discard = candidateKind == .discard
                     self.candidate = nil
-                    Task {
-                        if await store.startGitOperation(kind, cardID: cardID) { await store.loadProjectWorkspaces() }
-                    }
+                    Task { await store.removeProjectWorkspace(cardID: cardID, discard: discard) }
                 }
             }
             Button("Cancel", role: .cancel) { candidate = nil }

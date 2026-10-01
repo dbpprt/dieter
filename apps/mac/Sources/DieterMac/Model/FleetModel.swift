@@ -2,7 +2,11 @@ import DieterAPI
 import DieterCore
 import Foundation
 import Observation
+import SharedCore
 
+/// The machine popover: the selected machine's live telemetry, which the
+/// shared core reads every 2 s while shown, and its power and update
+/// operations. Machines are keyed by their machine ID, as the views use them.
 @MainActor @Observable final class FleetModel {
     var selectedMachineID: String?
     var machineInformation: [String: Dieter_V1_MachineInformation] = [:]
@@ -12,40 +16,36 @@ import Observation
     var machineInformationError: String?
     var machineOperationMessage: String?
     var machineOperationInFlight = false
-    var machineTelemetryTask: Task<Void, Never>?
-    var machineInformationGeneration: UInt64 = 0
 
-    private var selectionGeneration: UInt64 = 0
-    private var operationID: UUID?
     private let directory: () -> [DieterEndpoint]
-    private let acquire: @MainActor (DieterEndpoint) async throws -> FeatureClientLease<any MachineTelemetryRPC>
+    private let core: CoreClient
     private let reportError: (Error) -> Void
-    private let clock: ClientClock
+    @ObservationIgnored private var subscription: SliceSubscription?
+    @ObservationIgnored private var shownResult = ""
+    /// Selections reach the core in the order they were made.
+    @ObservationIgnored private var queued: Task<Void, Never>?
     private var machines: [DieterEndpoint] { directory() }
-    init(
-        machines: @escaping () -> [DieterEndpoint],
-        acquire: @escaping @MainActor (DieterEndpoint) async throws -> FeatureClientLease<any MachineTelemetryRPC>,
-        reportError: @escaping (Error) -> Void, clock: ClientClock = .live
-    ) {
-        directory = machines; self.acquire = acquire; self.reportError = reportError; self.clock = clock
+
+    init(machines: @escaping () -> [DieterEndpoint], core: CoreClient, reportError: @escaping (Error) -> Void) {
+        directory = machines
+        self.core = core
+        self.reportError = reportError
     }
+
     func reset() {
         dismissMachinePopover()
         machineInformation = [:]; machineCPUHistory = [:]; machineGPUHistory = [:]
         machineOperationMessage = nil; machineOperationInFlight = false
     }
+
     func openMachine(_ machine: DieterEndpoint) async {
         if selectedMachineID == machine.id {
             dismissMachinePopover()
             return
         }
-        stopMachineTelemetry()
         selectedMachineID = machine.id
         machineInformationError = nil
-        let selection = selectionGeneration
         await refreshMachineInformation(machineID: machine.id)
-        guard selection == selectionGeneration, selectedMachineID == machine.id else { return }
-        startMachineTelemetry(machineID: machine.id)
     }
 
     func dismissMachinePopover() {
@@ -60,33 +60,18 @@ import Observation
     }
 
     func startMachineTelemetry(machineID: String) {
-        machineTelemetryTask?.cancel()
-        machineTelemetryTask = Task { [weak self, clock] in
-            while !Task.isCancelled {
-                try? await clock.sleep(.seconds(2))
-                guard let self, !Task.isCancelled, self.selectedMachineID == machineID else { return }
-                await self.refreshMachineInformation(machineID: machineID)
-            }
-        }
+        Task { await refreshMachineInformation(machineID: machineID) }
     }
 
     func stopMachineTelemetry() {
-        machineInformationGeneration &+= 1
-        selectionGeneration &+= 1
-        operationID = nil; machineOperationInFlight = false
-        machineTelemetryTask?.cancel()
-        machineTelemetryTask = nil
         machineInformationLoading = false
+        enqueue { $0.select = ClientTelemetrySelect() }
     }
 
+    /// Shows the machine through the core, which reads it now and every 2 s.
     func refreshMachineInformation(machineID: String) async {
         guard selectedMachineID == machineID else { return }
-        machineInformationGeneration &+= 1
-        let generation = machineInformationGeneration
-        guard
-            let machine = machines.first(where: { $0.id == machineID })
-
-        else {
+        guard let machine = machines.first(where: { $0.id == machineID }) else {
             machineInformationError = "This machine is no longer enrolled."
             return
         }
@@ -98,55 +83,24 @@ import Observation
             machineInformationError = machine.incompatibilityDescription
             return
         }
+        guard let daemonID = machine.daemonID else { return }
+        subscribe()
         machineInformationLoading = machineInformation[machineID] == nil
-        defer { if generation == machineInformationGeneration { machineInformationLoading = false } }
-
-        var borrowedPlane: FeatureClientLease<any MachineTelemetryRPC>?
-        do {
-            let client: any MachineTelemetryRPC
-            let plane = try await acquire(machine)
-            borrowedPlane = plane
-            client = plane.client
-            defer {
-                borrowedPlane?.release()
+        enqueue {
+            $0.select = .with {
+                $0.daemonID = daemonID
+                $0.active = true
             }
-            let information = try await client.machineInformation()
-            guard selectedMachineID == machineID, generation == machineInformationGeneration else {
-                return
-            }
-            machineInformation[machineID] = information
-            var history = machineCPUHistory[machineID, default: []]
-            history.append(information.cpuUsagePercent)
-            if history.count > 12 { history.removeFirst(history.count - 12) }
-            machineCPUHistory[machineID] = history
-            var gpuHistory = machineGPUHistory[machineID, default: [:]]
-            let liveGPUIds = Set(information.gpu.devices.map(\.id))
-            gpuHistory = gpuHistory.filter { liveGPUIds.contains($0.key) }
-            for gpu in information.gpu.devices where gpu.hasUtilizationPercent {
-                var values = gpuHistory[gpu.id, default: []]
-                values.append(gpu.utilizationPercent)
-                if values.count > 12 { values.removeFirst(values.count - 12) }
-                gpuHistory[gpu.id] = values
-            }
-            machineGPUHistory[machineID] = gpuHistory
-            machineInformationError = nil
-        } catch is CancellationError {
-        } catch {
-            guard selectedMachineID == machineID, generation == machineInformationGeneration else {
-                return
-            }
-            machineInformationError = DieterRPCFailure.message(for: error)
         }
+        await queued?.value
     }
 
-    func performMachineOperation(
-        _ action: Dieter_V1_MachineOperationAction,
-        confirmation: String
-    ) async {
-        guard let machineID = selectedMachineID,
-            let machine = machines.first(where: { $0.id == machineID })
-
-        else { return }
+    /// Restarts, shuts down, or updates the selected machine; the core keeps
+    /// one idempotency key per confirmed action.
+    func performMachineOperation(_ action: Dieter_V1_MachineOperationAction, confirmation: String) async {
+        guard let machineID = selectedMachineID, let machine = machines.first(where: { $0.id == machineID }) else {
+            return
+        }
         guard machine.online else {
             reportError(
                 NSError(
@@ -154,39 +108,64 @@ import Observation
                     userInfo: [NSLocalizedDescriptionKey: "\(machine.name) is offline."]))
             return
         }
-        guard !machineOperationInFlight else { return }
-        let operation = UUID()
-        operationID = operation
-        machineOperationInFlight = true
-        defer { if operationID == operation { machineOperationInFlight = false; operationID = nil } }
         guard machine.compatibilityState != .incompatible else {
             machineOperationMessage = machine.incompatibilityDescription
             return
         }
-        var borrowedPlane: FeatureClientLease<any MachineTelemetryRPC>?
+        guard !machineOperationInFlight else { return }
+        machineOperationInFlight = true
+        defer { machineOperationInFlight = false }
         do {
-            let client: any MachineTelemetryRPC
-            let plane = try await acquire(machine)
-            borrowedPlane = plane
-            client = plane.client
-            defer {
-                borrowedPlane?.release()
+            let result = try await core.dispatch(.with { $0.telemetry = .with { $0.perform = .with { $0.action = action } } })
+            if case .machineOperation(let response)? = result.result, selectedMachineID == machineID {
+                machineOperationMessage = response.message.isEmpty ? "Machine operation accepted." : response.message
             }
-            guard !Task.isCancelled, operationID == operation, selectedMachineID == machineID else {
-                return
-            }
-            let response = try await client.performMachineOperation(action, confirmation: confirmation)
-            guard !Task.isCancelled, operationID == operation, selectedMachineID == machineID else {
-                return
-            }
-            machineOperationMessage = response.message
-        } catch is CancellationError {
         } catch {
-            guard !Task.isCancelled, operationID == operation, selectedMachineID == machineID else {
-                return
-            }
+            guard selectedMachineID == machineID else { return }
             reportError(error)
         }
     }
 
+    private func subscribe() {
+        guard subscription == nil else { return }
+        subscription = SliceSubscription(client: core, slice: .telemetry, scope: "") { [weak self] update in
+            guard let self, case .telemetry(let slice) = update.value else { return }
+            self.fold(slice)
+        }
+    }
+
+    private func fold(_ slice: ClientTelemetrySlice) {
+        for (daemonID, readings) in slice.machines {
+            guard let machineID = machines.first(where: { $0.daemonID == daemonID })?.id else { continue }
+            if readings.hasInformation, machineInformation[machineID] != readings.information {
+                machineInformation[machineID] = readings.information
+            }
+            if machineCPUHistory[machineID] != readings.cpuHistory { machineCPUHistory[machineID] = readings.cpuHistory }
+            let gpu = readings.gpuHistory.mapValues(\.values)
+            if machineGPUHistory[machineID] != gpu { machineGPUHistory[machineID] = gpu }
+            guard machineID == selectedMachineID else { continue }
+            let loading = readings.loading && !readings.hasInformation
+            if machineInformationLoading != loading { machineInformationLoading = loading }
+            let error = readings.error.isEmpty ? nil : readings.error
+            if machineInformationError != error { machineInformationError = error }
+        }
+        if !slice.operationResult.isEmpty, slice.operationResult != shownResult {
+            shownResult = slice.operationResult
+            machineOperationMessage = slice.operationResult
+        }
+    }
+
+    private func enqueue(_ build: (inout ClientTelemetryCommand) -> Void) {
+        var command = ClientTelemetryCommand()
+        build(&command)
+        let sent = command, previous = queued, core = core
+        queued = Task { [weak self] in
+            await previous?.value
+            do {
+                _ = try await core.dispatch(.with { $0.telemetry = sent })
+            } catch {
+                self?.machineInformationError = (error as? CoreFailure)?.message ?? error.localizedDescription
+            }
+        }
+    }
 }

@@ -1,9 +1,10 @@
 import DieterAPI
 import DieterCore
 import Foundation
-import GRPCCore
 import Observation
+import SharedCore
 
+/// One terminal in the account-wide overview.
 struct TerminalOverviewEntry: Identifiable, Equatable, Sendable {
     let machineID: String
     let machineName: String
@@ -16,38 +17,22 @@ struct TerminalOverviewEntry: Identifiable, Equatable, Sendable {
     }
 }
 
-enum TerminalOverviewCatalog {
-    static func sorted(_ entries: [TerminalOverviewEntry]) -> [TerminalOverviewEntry] {
-        entries.sorted {
-            if $0.terminal.createdAt != $1.terminal.createdAt {
-                return $0.terminal.createdAt < $1.terminal.createdAt
-            }
-            let machineOrder = $0.machineName.localizedCaseInsensitiveCompare($1.machineName)
-            if machineOrder != .orderedSame { return machineOrder == .orderedAscending }
-            return $0.id < $1.id
-        }
-    }
-
-    static func selection(
-        in entries: [TerminalOverviewEntry], currentID: String?, preferredMachineID: String? = nil
-    ) -> TerminalOverviewEntry? {
-        if let currentID, let current = entries.first(where: { $0.id == currentID }) { return current }
-        if let preferredMachineID,
-            let preferred = entries.first(where: { $0.machineID == preferredMachineID })
-        {
-            return preferred
-        }
-        return entries.first
-    }
-}
-
+/// The terminals of a machine, project, or conversation, kept by the shared
+/// core on the machine that runs them. Only the selected terminal of an
+/// active surface streams; hiding it never stops a shell. SwiftTerm is fed
+/// from the output the core sends, paced by the output accumulator.
 @MainActor @Observable
 final class TerminalsModel {
-    private static let selectionDefaultsKey = "DieterSelectedTerminalsByTarget"
     private(set) var target = WorkspaceTarget(endpointID: "", projectID: "")
     var machineName = "Machine"
     var isLive = false
-    var active = false { didSet { if !active { stopTerminalWatch() } } }
+    var active = false {
+        didSet {
+            guard active != oldValue else { return }
+            let on = active
+            send { $0.active = .with { $0.on = on } }
+        }
+    }
     var terminalScopeCardID: String?
     var terminals: [Dieter_V1_Terminal] = []
     var selectedTerminalID: String?
@@ -57,302 +42,208 @@ final class TerminalsModel {
     var terminalError: String?
     var errorMessage: String?
     var createTerminalPresented = false
-    @ObservationIgnored var terminalRequestGeneration: UInt64 = 0
-    @ObservationIgnored var terminalWatchTask: Task<Void, Never>?
-    @ObservationIgnored var terminalSequences: [String: UInt64] = [:]
-    @ObservationIgnored let terminalsRead = OwnedRead<Dieter_V1_TerminalsResponse>()
-    @ObservationIgnored let terminalInputForwarder = TerminalInputForwarder()
     @ObservationIgnored var terminalOutputAccumulator = TerminalOutputAccumulator()
-    @ObservationIgnored private var rpc: (any TerminalsRPC)?
-    @ObservationIgnored private var bindingGeneration: UInt64 = 0
-    @ObservationIgnored private var watchGeneration: UInt64 = 0
-    @ObservationIgnored private let selectionDefaults: UserDefaults?
-    @ObservationIgnored private var selectedTerminalIDs: [String: String]
     @ObservationIgnored var onCreated: @MainActor () -> Void = {}
-    @ObservationIgnored var onTerminalChanged: @MainActor (String, String, Dieter_V1_Terminal?) -> Void = { _, _, _ in }
+    @ObservationIgnored private var core: CoreClient?
+    @ObservationIgnored private let ownScope = "terminals-\(UUID().uuidString)"
+    /// The surface commands address: this model's own, or an overview's.
+    @ObservationIgnored private var scope = ""
+    @ObservationIgnored private var subscription: SliceSubscription?
+    /// What the own surface was last told to show; its slices for another are stale.
+    @ObservationIgnored private var bound = ClientTerminalTarget()
+    /// The latest command sent without waiting; later commands wait for it,
+    /// so input and binds reach the core in order.
+    @ObservationIgnored private var queued: Task<Void, Never>?
+    @ObservationIgnored private var pendingOutput: [ClientTerminalOutput] = []
+    @ObservationIgnored private var draining: Task<Void, Never>?
+    @ObservationIgnored private var outputGeneration: UInt64 = 0
 
     var selectedTerminal: Dieter_V1_Terminal? { terminals.first { $0.id == selectedTerminalID } }
 
-    init(selectionDefaults: UserDefaults? = nil) {
-        self.selectionDefaults = selectionDefaults
-        selectedTerminalIDs =
-            selectionDefaults?.dictionary(forKey: Self.selectionDefaultsKey) as? [String: String] ?? [:]
+    /// Shows `target`'s terminals through a surface of this model's own: the
+    /// conversation's when it names one, else the project's or the machine's.
+    func bind(target: WorkspaceTarget, core: CoreClient?) {
+        let following = scope != ownScope
+        if subscription == nil, let core {
+            self.core = core
+            subscription = SliceSubscription(client: core, slice: .terminals, scope: ownScope) { [weak self] update in
+                guard let self, case .terminals(let slice) = update.value else { return }
+                self.fold(slice)
+            }
+        }
+        scope = ownScope
+        guard following || self.target != target else { return }
+        self.target = target
+        reset()
+        bound = ClientTerminalTarget.with {
+            $0.daemonID = target.daemonID
+            $0.kind =
+                !target.conversationID.isEmpty ? .card : target.projectID.isEmpty ? .machine : .project
+            $0.projectID = target.projectID
+            $0.checkoutID = target.checkoutID
+            $0.cardID = target.conversationID
+        }
+        let bind = bound, on = active
+        send { $0.bind = bind }
+        send { $0.active = .with { $0.on = on } }
     }
 
-    func bind(target: WorkspaceTarget, client: (any TerminalsRPC)?) {
-        guard self.target != target || rpc !== client else { return }
-        let sameTarget = self.target == target
-        rememberSelection()
-        bindingGeneration &+= 1; terminalRequestGeneration &+= 1
-        stopTerminalWatch(); terminalsRead.cancel(); terminalInputForwarder.suspend()
-        self.target = target; rpc = client
-        terminalLoading = false; terminalError = nil; errorMessage = nil
-        if !sameTarget {
-            terminals = []; selectedTerminalID = selectedTerminalIDs[selectionKey(target)]; terminalScreens = [:]
-            terminalSequences = [:]
-            terminalOutputAccumulator = TerminalOutputAccumulator()
+    /// Shows the overview's selected machine: the overview folds its slices
+    /// here, and commands address the overview's surface.
+    func follow(overviewScope: String, core: CoreClient) {
+        subscription?.close()
+        subscription = nil
+        self.core = core
+        if scope != overviewScope {
+            scope = overviewScope
+            bound = ClientTerminalTarget()
+            reset()
+        }
+        // A reopened overview starts inactive.
+        let on = active
+        send { $0.active = .with { $0.on = on } }
+    }
+
+    private func reset() {
+        terminals = []; selectedTerminalID = nil; terminalScreens = [:]
+        terminalLoading = false; terminalError = nil; errorMessage = nil; terminalStreamConnected = false
+        outputGeneration &+= 1
+        pendingOutput = []; draining = nil
+        terminalOutputAccumulator = TerminalOutputAccumulator()
+    }
+
+    /// Folds a surface. The overview passes the machine it shows; the own
+    /// surface ignores slices for a previous target.
+    func fold(_ slice: ClientTerminalsSlice, target shown: WorkspaceTarget? = nil) {
+        if let shown {
+            if target != shown {
+                target = shown
+                terminalScreens = [:]
+                outputGeneration &+= 1
+                pendingOutput = []; draining = nil
+                terminalOutputAccumulator = TerminalOutputAccumulator()
+            }
+        } else {
+            guard slice.target == bound else { return }
+        }
+        if terminals != slice.terminals { terminals = slice.terminals }
+        let selected = slice.selectedID.isEmpty ? nil : slice.selectedID
+        if selectedTerminalID != selected { selectedTerminalID = selected }
+        if terminalLoading != slice.loading { terminalLoading = slice.loading }
+        let error = slice.error.isEmpty ? nil : slice.error
+        if terminalError != error { terminalError = error }
+        if terminalStreamConnected != slice.streamConnected { terminalStreamConnected = slice.streamConnected }
+        let live = Set(slice.terminals.map(\.id))
+        if terminalScreens.keys.contains(where: { !live.contains($0) }) {
+            terminalScreens = terminalScreens.filter { live.contains($0.key) }
+        }
+        enqueue(slice.output)
+    }
+
+    /// Applies output in the order it arrived; the accumulator paces redraws.
+    private func enqueue(_ output: [ClientTerminalOutput]) {
+        guard !output.isEmpty else { return }
+        pendingOutput.append(contentsOf: output)
+        guard draining == nil else { return }
+        let generation = outputGeneration, accumulator = terminalOutputAccumulator
+        draining = Task { [weak self] in
+            while let self, generation == self.outputGeneration, !self.pendingOutput.isEmpty {
+                let next = self.pendingOutput.removeFirst()
+                await accumulator.enqueue(
+                    terminalID: next.terminalID, data: next.data, screenReset: next.reset,
+                    current: self.terminalScreens[next.terminalID] ?? TerminalScreenState()
+                ) { [weak self] id, screen in
+                    guard let self, generation == self.outputGeneration else { return }
+                    self.terminalScreens[id] = screen
+                }
+            }
+            if let self, generation == self.outputGeneration { self.draining = nil }
         }
     }
 
-    private func report(_ error: Error) {
-        guard !DieterRPCFailure.isCancellation(error) else { return }
-        errorMessage = DieterRPCFailure.message(for: error)
+    /// Sends a command without waiting for it, after those sent before.
+    private func send(_ build: @escaping (inout ClientTerminalsCommand) -> Void) {
+        guard core != nil, !scope.isEmpty else { return }
+        let previous = queued
+        queued = Task { [weak self] in
+            await previous?.value
+            await self?.run(afterQueued: false, build)
+        }
+    }
+
+    /// Runs a command; the own surface folds the result so callers read its
+    /// effect. A failure shows as the error message.
+    @discardableResult
+    private func run(
+        afterQueued: Bool = true, _ build: (inout ClientTerminalsCommand) -> Void
+    ) async -> ClientResult? {
+        guard let core, !scope.isEmpty else { return nil }
+        if afterQueued, let queued { await queued.value }
+        var command = ClientTerminalsCommand()
+        command.scope = scope
+        build(&command)
+        let sent = command
+        do {
+            let result = try await core.dispatch(.with { $0.terminals = sent })
+            if case .terminals(let slice)? = result.result, sent.scope == ownScope, scope == ownScope { fold(slice) }
+            return result
+        } catch let failure as CoreFailure {
+            if sent.scope == scope { errorMessage = failure.message }
+            return nil
+        } catch {
+            return nil
+        }
     }
 
     func loadTerminals(selecting preferredID: String? = nil) async {
-        guard let rpc else { return }
-        terminalRequestGeneration &+= 1
-        let generation = terminalRequestGeneration
-        let scope = terminalScopeCardID
-        let projectID = scope == nil ? "" : target.projectID
-        terminalLoading = true
-        terminalError = nil
-        defer { if generation == terminalRequestGeneration { terminalLoading = false } }
-        do {
-            let response = try await terminalsRead.value(key: "\(ObjectIdentifier(rpc)):\(projectID):\(scope ?? "")") {
-                try await rpc.terminals(projectID: projectID, cardID: scope ?? "")
-            }
-            guard self.rpc === rpc, generation == terminalRequestGeneration,
-                terminalScopeCardID == scope, scope == nil || target.projectID == projectID
-            else { return }
-            let values = response.terminals
-            terminals = values
-            let liveIDs = Set(values.map(\.id))
-            terminalScreens = terminalScreens.filter { liveIDs.contains($0.key) }
-            terminalSequences = terminalSequences.filter { liveIDs.contains($0.key) }
-            await terminalOutputAccumulator.retain(terminalIDs: liveIDs)
-            guard self.rpc === rpc, generation == terminalRequestGeneration else { return }
-            if let preferredID {
-                selectedTerminalID = preferredID
-            } else if selectedTerminalID.flatMap({ id in values.first(where: { $0.id == id }) }) == nil {
-                selectedTerminalID = values.first?.id
-            }
-            rememberSelection()
-            startTerminalWatch()
-        } catch {
-            guard self.rpc === rpc, generation == terminalRequestGeneration else { return }
-            if !DieterRPCFailure.isCancellation(error) { terminalError = DieterRPCFailure.message(for: error) }
-        }
+        await run { $0.load = ClientTerminalStep() }
+        if let preferredID { await run { $0.select = .with { $0.terminalID = preferredID } } }
     }
 
     func selectTerminal(_ id: String) {
         guard terminals.contains(where: { $0.id == id }) else { return }
         selectedTerminalID = id
-        rememberSelection()
-        startTerminalWatch()
+        send { $0.select = .with { $0.terminalID = id } }
     }
 
-    func installTerminals(_ values: [Dieter_V1_Terminal], selectedID: String?) {
-        terminals = values.sorted {
-            if $0.createdAt == $1.createdAt { return $0.id < $1.id }
-            return $0.createdAt < $1.createdAt
-        }
-        selectedTerminalID =
-            selectedID.flatMap { id in values.contains(where: { $0.id == id }) ? id : nil }
-            ?? values.first?.id
-        rememberSelection()
-        startTerminalWatch()
-    }
-
-    func createTerminal(
-        projectID: String, machineHome: Bool = false, name: String, shell: String, workingDirectory: String
-    ) async {
-        guard let rpc else { return }
-        var request = Dieter_V1_CreateTerminalRequest()
-        request.projectID = projectID
-        request.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        request.shell = shell
-        request.workingDirectory = workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-        request.columns = 120
-        request.rows = 36
-        request.cardID = terminalScopeCardID ?? ""
-        request.machineHome = machineHome
-        let binding = bindingGeneration
-        do {
-            let value = try await rpc.createTerminal(request)
-            guard binding == bindingGeneration else { return }
-            upsertTerminal(value)
-            selectedTerminalID = value.id
-            rememberSelection()
-            terminalSequences[value.id] = 0
-            terminalScreens[value.id] = TerminalScreenState()
-            await terminalOutputAccumulator.seed(terminalID: value.id)
-            guard binding == bindingGeneration else { return }
-            createTerminalPresented = false
-            onCreated()
-            startTerminalWatch()
-        } catch {
-            if binding == bindingGeneration { report(error) }
-        }
-    }
-
-    func sendTerminalInput(id: String, data: Data) {
-        guard let rpc,
-            !data.isEmpty,
-            terminals.first(where: { $0.id == id })?.status == "running"
-        else { return }
-        terminalInputForwarder.enqueue(endpointID: target.endpointID, id: id, data: data, rpc: rpc) {
-            [weak self] message in
-            guard let self, self.rpc === rpc, self.terminals.contains(where: { $0.id == id }) else { return }
-            self.errorMessage = "Terminal input could not be forwarded: \(message)"
-        }
-    }
-
-    func resizeTerminal(id: String, columns: Int, rows: Int) async {
-        guard let rpc,
-            columns >= 2, rows >= 2,
-            terminals.first(where: { $0.id == id })?.status == "running"
-        else { return }
-        let binding = bindingGeneration
-        do {
-            let value = try await rpc.resizeTerminal(id: id, columns: columns, rows: rows)
-            guard binding == bindingGeneration, self.rpc === rpc, terminals.contains(where: { $0.id == id }) else {
-                return
+    /// Creates a terminal in this surface and selects it.
+    func createTerminal(name: String, shell: String, workingDirectory: String) async {
+        let result = await run { command in
+            command.create = .with {
+                $0.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                $0.shell = shell
+                $0.workingDirectory = workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+                $0.columns = 120
+                $0.rows = 36
             }
-            upsertTerminal(value)
-        } catch  where DieterRPCFailure.isCancellation(error) {} catch {
-            guard binding == bindingGeneration, terminals.contains(where: { $0.id == id }) else { return }
-            report(error)
         }
+        guard case .terminal(let created)? = result?.result else { return }
+        if !terminals.contains(where: { $0.id == created.id }) { terminals.append(created) }
+        selectedTerminalID = created.id
+        createTerminalPresented = false
+        onCreated()
+    }
+
+    /// Input for the selected, running terminal, delivered in order.
+    func sendTerminalInput(id: String, data: Data) {
+        guard !data.isEmpty, id == selectedTerminalID, selectedTerminal?.status == "running" else { return }
+        send { $0.input = .with { $0.data = data } }
+    }
+
+    /// The visible grid of the selected terminal; the machine resizes shortly after the last change.
+    func resizeTerminal(id: String, columns: Int, rows: Int) async {
+        guard id == selectedTerminalID, columns >= 2, rows >= 2, selectedTerminal?.status == "running" else { return }
+        send { $0.grid = .with { $0.columns = Int32(columns); $0.rows = Int32(rows) } }
     }
 
     func renameTerminal(id: String, name: String) async {
-        guard let rpc else { return }
         let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
-        let binding = bindingGeneration
-        do {
-            let updated = try await rpc.renameTerminal(id: id, name: value)
-            guard binding == bindingGeneration, self.rpc === rpc, terminals.contains(where: { $0.id == id }) else {
-                return
-            }
-            upsertTerminal(updated)
-        } catch { if binding == bindingGeneration { report(error) } }
+        await run { command in command.rename = .with { $0.terminalID = id; $0.name = value } }
     }
 
+    /// Ends the shell and forgets its scrollback.
     func closeTerminal(id: String) async {
-        guard let rpc else { return }
-        let binding = bindingGeneration
-        do {
-            try await rpc.closeTerminal(id: id)
-            guard binding == bindingGeneration, self.rpc === rpc else { return }
-            terminals.removeAll { $0.id == id }
-            terminalScreens.removeValue(forKey: id)
-            terminalSequences.removeValue(forKey: id)
-            await terminalOutputAccumulator.remove(terminalID: id)
-            onTerminalChanged(target.endpointID, id, nil)
-            guard binding == bindingGeneration, self.rpc === rpc else { return }
-            if selectedTerminalID == id {
-                selectedTerminalID = terminals.first?.id
-                rememberSelection()
-                startTerminalWatch()
-            }
-        } catch { if binding == bindingGeneration { report(error) } }
+        await run { command in command.close = .with { $0.terminalID = id } }
     }
-
-    func startTerminalWatch() {
-        stopTerminalWatch()
-        let binding = bindingGeneration
-        let watcher = watchGeneration
-        guard active,
-            let id = selectedTerminalID,
-            terminals.contains(where: { $0.id == id }),
-            let rpc
-        else { return }
-        let after = terminalSequences[id] ?? 0
-        terminalWatchTask = Task { [weak self] in
-            guard let self else { return }
-            var delay = 0.5
-            while !Task.isCancelled, self.bindingGeneration == binding, self.watchGeneration == watcher,
-                self.rpc === rpc, self.selectedTerminalID == id
-            {
-                do {
-                    self.terminalStreamConnected = true
-                    try await rpc.watchTerminal(id: id, after: self.terminalSequences[id] ?? after) {
-                        [weak self] frame in
-                        await self?.acceptTerminalFrame(frame, terminalID: id, binding: binding, watcher: watcher)
-                    }
-                    guard !Task.isCancelled, self.bindingGeneration == binding, self.watchGeneration == watcher else {
-                        return
-                    }
-                    self.terminalStreamConnected = false
-                } catch  where DieterRPCFailure.isCancellation(error) {
-                    return
-                } catch {
-                    guard self.bindingGeneration == binding, self.watchGeneration == watcher else { return }
-                    self.terminalStreamConnected = false
-                    if let rpcError = error as? RPCError, rpcError.code == .notFound {
-                        self.terminals.removeAll { $0.id == id }
-                        self.onTerminalChanged(self.target.endpointID, id, nil)
-                        self.selectedTerminalID = self.terminals.first?.id
-                        self.rememberSelection()
-                        return
-                    }
-                }
-                try? await DieterTaskSleep.seconds(delay)
-                delay = min(5, delay * 1.8)
-            }
-        }
-    }
-
-    func acceptTerminalFrame(
-        _ frame: Dieter_V1_TerminalFrame, terminalID: String, binding: UInt64? = nil, watcher: UInt64? = nil
-    ) async {
-        guard binding == nil || binding == bindingGeneration, watcher == nil || watcher == watchGeneration else {
-            return
-        }
-        let currentBinding = bindingGeneration
-        guard frame.hasTerminal, frame.terminal.id == terminalID else { return }
-        upsertTerminal(frame.terminal)
-        if !terminalStreamConnected { terminalStreamConnected = true }
-        terminalSequences[terminalID] = max(terminalSequences[terminalID] ?? 0, frame.sequence)
-        guard frame.screenReset || !frame.data.isEmpty else { return }
-        await terminalOutputAccumulator.enqueue(
-            terminalID: terminalID,
-            data: frame.data,
-            screenReset: frame.screenReset,
-            current: terminalScreens[terminalID] ?? TerminalScreenState()
-        ) { [weak self] id, screen in
-            guard let self, self.bindingGeneration == currentBinding, self.terminals.contains(where: { $0.id == id })
-            else { return }
-            self.terminalScreens[id] = screen
-        }
-    }
-
-    func upsertTerminal(_ value: Dieter_V1_Terminal) {
-        if let index = terminals.firstIndex(where: { $0.id == value.id }) {
-            guard terminals[index] != value else { return }
-            terminals[index] = value
-        } else {
-            terminals.append(value)
-        }
-        terminals.sort {
-            if $0.createdAt == $1.createdAt { return $0.id < $1.id }
-            return $0.createdAt < $1.createdAt
-        }
-        onTerminalChanged(target.endpointID, value.id, value)
-    }
-
-    func stopTerminalWatch() {
-        watchGeneration &+= 1
-        terminalWatchTask?.cancel()
-        terminalWatchTask = nil
-        terminalStreamConnected = false
-    }
-
-    private func selectionKey(_ target: WorkspaceTarget) -> String {
-        "\(target.endpointID)|\(target.projectID)|\(target.conversationID)"
-    }
-
-    private func rememberSelection() {
-        let key = selectionKey(target)
-        guard !target.endpointID.isEmpty else { return }
-        if let selectedTerminalID {
-            selectedTerminalIDs[key] = selectedTerminalID
-        } else {
-            selectedTerminalIDs.removeValue(forKey: key)
-        }
-        selectionDefaults?.set(selectedTerminalIDs, forKey: Self.selectionDefaultsKey)
-    }
-
 }

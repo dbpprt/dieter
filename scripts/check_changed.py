@@ -197,7 +197,12 @@ def plan_checks(root, paths, packages=None):
     kmp = schema or fixture or any(p.startswith("apps/core/") or p == "just/core.just" for p in code)
     # The Android app compiles the core from source, so core changes rebuild it.
     android = kmp or brand or any(p.startswith(("apps/android/", "native/android-webrtc/")) or p == "just/android.just" for p in code)
-    mac_suites = affected_mac_smoke_suites(code)
+    # The Mac app links the core (DieterShared) through its SharedCore bridge,
+    # so core changes rebuild it and can change any Mac surface.
+    shared_core = kmp or any(p.startswith(("apps/mac/Sources/SharedCore/", "apps/mac/Tests/SharedCoreTests/"))
+                             or p == "apps/mac/scripts/shared-framework.sh" for p in code)
+    mac = mac or shared_core
+    mac_suites = MAC_SMOKE_SUITES if kmp else affected_mac_smoke_suites(code)
     if any(p.startswith(("tools/e2e/", "tests/e2e/cases/mac/")) or p in {"tests/e2e/schema.json", "just/e2e.just"} for p in code):
         mac_suites = MAC_SMOKE_SUITES
     android_integration = android and (schema or fixture or brand or any(
@@ -259,6 +264,8 @@ def plan_checks(root, paths, packages=None):
         add("just", "core", "test")
         add("just", "core", "android-test")
         add("just", "core", "apple-test")
+    if shared_core:
+        add("just", "mac", "core-test")
     if ios:
         add("just", "ios", "build")
     if ios or any(p.startswith(("tools/e2e/", "tests/e2e/cases/ios/")) or p in {"tests/e2e/schema.json", "just/e2e.just"} for p in code):

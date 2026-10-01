@@ -3,18 +3,14 @@ import DieterAPI
 import DieterCore
 import Foundation
 import Observation
+import SharedCore
 
 struct ConversationContentScope {
     let target: WorkspaceTarget
     let rootPath: String
-    let client: any FilesRPC
     var card: Dieter_V1_Card? = nil
     var doneLaneID: String? = nil
     var machineName = "Machine"
-    var terminalsClient: (any TerminalsRPC)? = nil
-    var worktreeClient: (any WorktreeRPC)? = nil
-    var projectChangesClient: (any ProjectChangesRPC)? = nil
-    var processesClient: (any ProcessesRPC)? = nil
     var workspaceMode = "worktree"
     var projectName = "Project"
 }
@@ -107,6 +103,8 @@ final class ConversationContentModel {
     private(set) var error: String?
     private(set) var confirming = false
     @ObservationIgnored private let emptyFiles = FilesModel()
+    /// The shared core, which reaches each tab's files on their machine.
+    @ObservationIgnored var core: CoreClient?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var openTask: Task<Void, Never>?
     @ObservationIgnored private var bindingTask: Task<Void, Never>?
@@ -121,7 +119,6 @@ final class ConversationContentModel {
     }
     @ObservationIgnored var onReviewCard: @MainActor (Dieter_V1_Card) -> Void = { _ in }
     @ObservationIgnored var onReviewOperationFinished: @MainActor (WorkspaceTarget) async -> Void = { _ in }
-    @ObservationIgnored var onReviewTransportFailure: @MainActor (Error, any WorktreeRPC) -> Void = { _, _ in }
     @ObservationIgnored var prepareScope: @MainActor (String) async throws -> ConversationContentScope = { _ in
         throw CocoaError(.fileReadNoPermission)
     }
@@ -389,13 +386,9 @@ final class ConversationContentModel {
                 let scope = try await prepareScope(id)
                 guard owns(request, id) else { return false }
                 bind(tab, scope: scope)
-                if kind == .terminal, scope.terminalsClient == nil { throw ConversationPanelUnavailable(kind: kind) }
-                if kind == .processes, scope.processesClient == nil { throw ConversationPanelUnavailable(kind: kind) }
-                if kind == .review,
-                    (tab.usesProjectReview ? scope.projectChangesClient == nil : scope.worktreeClient == nil)
-                {
-                    throw ConversationPanelUnavailable(kind: kind)
-                }
+                if kind == .terminal, core == nil { throw ConversationPanelUnavailable(kind: kind) }
+                if kind == .processes, core == nil { throw ConversationPanelUnavailable(kind: kind) }
+                if kind == .review, core == nil { throw ConversationPanelUnavailable(kind: kind) }
             }
             if kind == .terminal {
                 await tab.terminals.loadTerminals()
@@ -407,9 +400,7 @@ final class ConversationContentModel {
                     tab.terminalID = existing.id
                     tab.terminals.selectTerminal(existing.id)
                 } else if tab.terminals.terminalError == nil {
-                    await tab.terminals.createTerminal(
-                        projectID: tab.terminals.target.projectID, name: "Terminal", shell: "",
-                        workingDirectory: ".")
+                    await tab.terminals.createTerminal(name: "Terminal", shell: "", workingDirectory: ".")
                     guard owns(request, id) else { return false }
                     tab.terminalID = tab.terminals.selectedTerminalID
                 }
@@ -484,14 +475,11 @@ final class ConversationContentModel {
         bindingTask?.cancel(); bindingTask = nil
         for tab in tabs {
             guard let scope = tab.scope else { continue }
-            tab.files.bind(target: scope.target, client: nil)
             tab.files.isLive = false
             tab.terminals.active = false
-            tab.terminals.bind(target: scope.target, client: nil)
             tab.terminals.isLive = false
             tab.processes.active = false
-            tab.processes.bind(target: scope.target, client: nil)
-            tab.review.bind(target: scope.target, client: nil, card: scope.card, doneLaneID: scope.doneLaneID)
+            tab.review.active = false
             tab.projectReview.disconnect()
             tab.transportsLive = false
             tab.transportRevision += 1
@@ -530,14 +518,11 @@ final class ConversationContentModel {
     func rebindRetainedTabs(scope: ConversationContentScope) {
         for tab in tabs where tab.scope?.target == scope.target {
             guard tab.rootPath == scope.rootPath else {
-                tab.files.bind(target: tab.files.target, client: nil)
                 tab.files.isLive = false; tab.terminals.active = false; tab.transportsLive = false
-                tab.terminals.bind(target: tab.terminals.target, client: nil)
                 tab.terminals.isLive = false
                 tab.processes.active = false
-                tab.processes.bind(target: scope.target, client: nil)
                 tab.projectReview.disconnect()
-                tab.review.bind(target: scope.target, client: nil, card: scope.card, doneLaneID: scope.doneLaneID)
+                tab.review.active = false
                 tab.error =
                     "The conversation workspace moved. Close this tab and reopen the file to use its new location."
                 continue
@@ -575,26 +560,26 @@ final class ConversationContentModel {
         tab.transportsLive = true
         tab.transportRevision += 1
         tab.usesProjectReview = ConversationWorkspaceMode.projectMode(scope.workspaceMode) == .project
-        if let client = scope.projectChangesClient {
-            tab.projectReview.bind(projectID: scope.target.projectID, client: client)
+        if let core {
+            tab.projectReview.bind(
+                projectID: scope.target.projectID, checkoutID: scope.card?.checkoutID ?? "",
+                daemonID: scope.target.daemonID, core: core)
         }
         tab.terminals.active = false
-        tab.files.bind(target: scope.target, client: scope.client)
+        tab.files.bind(target: scope.target, core: core)
         tab.files.isLive = true; tab.files.fileScopeCardID = scope.target.conversationID
         tab.files.projectPath = scope.rootPath
-        tab.tree.bind(target: scope.target, client: scope.client)
-        tab.terminals.bind(target: scope.target, client: scope.terminalsClient)
-        tab.processes.bind(target: scope.target, client: scope.processesClient)
+        tab.tree.bind(target: scope.target, core: core)
+        tab.terminals.bind(target: scope.target, core: core)
+        tab.processes.bind(target: scope.target, core: core)
         tab.terminals.terminalScopeCardID = scope.target.conversationID
         tab.terminals.machineName = scope.machineName
-        tab.terminals.isLive = scope.terminalsClient != nil
-        tab.review.bind(
-            target: scope.target, client: scope.worktreeClient, card: scope.card, doneLaneID: scope.doneLaneID)
+        tab.terminals.isLive = core != nil
+        tab.review.bind(target: scope.target, core: core, card: scope.card, doneLaneID: scope.doneLaneID)
         tab.review.authorName = NSFullUserName()
         tab.review.onSendMessage = onReviewSendMessage
         tab.review.onCard = onReviewCard
         tab.review.onOperationFinished = onReviewOperationFinished
-        tab.review.onTransportFailure = onReviewTransportFailure
         tab.review.onOpenFiles = { [weak self, weak tab] _, path in
             guard let self, let tab else { return }
             if let path {
@@ -630,9 +615,7 @@ final class ConversationContentModel {
             tab.processes.active =
                 !suspended && isOpen && tab.transportsLive && tab.id == selectedTabID && tab.kind == .processes
             let active = !suspended && isOpen && tab.transportsLive && tab.id == selectedTabID && tab.kind == .terminal
-            let wasActive = tab.terminals.active
             tab.terminals.active = active
-            if active && !wasActive { tab.terminals.startTerminalWatch() }
         }
     }
 

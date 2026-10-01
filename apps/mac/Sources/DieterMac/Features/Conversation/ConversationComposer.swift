@@ -18,12 +18,7 @@ struct ConversationComposer: View {
     private var model: Dieter_V1_HarnessModel? {
         harness?.models.first { $0.id == context.composerModel }
     }
-    private var working: Bool {
-        ConversationActivityPresentation.isActive(
-            conversationStatus: context.conversation?.conversation.status ?? "",
-            cardRuntime: (context.selectedCard ?? context.selectedDetail?.card)?.runtime ?? ""
-        )
-    }
+    private var working: Bool { context.model.state.activeTurn }
     private var hasDraft: Bool {
         !context.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !context.composerAttachments.isEmpty

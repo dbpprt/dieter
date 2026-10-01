@@ -28,16 +28,19 @@ func TestMacReportsRequireEveryAssertion(t *testing.T) {
 	}
 }
 func TestMacNativeContract(t *testing.T) {
-	if err := validateMacNative(Native{Suite: "sidebar", Checks: []string{"prepare.window", "verify.restore"}}, "none"); err != nil {
+	if err := validateMacNative(Native{Suite: "sidebar", Checks: []string{"prepare.window", "verify.restore"}}, "gateway"); err != nil {
 		t.Fatal(err)
 	}
 	for _, n := range []Native{{Suite: "unknown", Checks: []string{"unknown.x"}}, {Suite: "sidebar"}, {Suite: "sidebar", Checks: []string{"wrong.x"}}, {Suite: "sidebar", Checks: []string{"prepare.x", "prepare.x"}}} {
-		if validateMacNative(n, "none") == nil {
+		if validateMacNative(n, "gateway") == nil {
 			t.Fatalf("accepted %+v", n)
 		}
 	}
 	if validateMacNative(Native{Suite: "core", Checks: []string{"core.window"}}, "none") == nil {
 		t.Fatal("wrong fixture")
+	}
+	if validateMacNative(Native{Suite: "sidebar", Checks: []string{"prepare.window"}}, "none") == nil {
+		t.Fatal("the sidebar needs a gateway for shared navigation")
 	}
 }
 func TestSharedRunnerStopsAfterCleanupFailure(t *testing.T) {

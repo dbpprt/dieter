@@ -155,7 +155,7 @@
                 }
             }
             do {
-                guard let rpc = store.rpc else { throw CocoaError(.fileReadUnknown) }
+                guard let rpc = await store.fixtureRPC() else { throw CocoaError(.fileReadUnknown) }
                 var request = Dieter_V1_ReadFileRequest()
                 request.projectID = tab.files.target.projectID
                 request.cardID = tab.files.target.conversationID
@@ -225,7 +225,7 @@
             }
             let button = nativeButton(identifier, in: window)
             let enabled = button?.isEnabled
-            let expectedEnabled = store.rpc?.isLoopbackDataPlane == true
+            let expectedEnabled = store.isLocalMachine(store.endpoint.id)
             let name = tab.files.fileDocument?.name ?? "unknown"
             results["content-finder-\(name)"] =
                 ready && enabled == expectedEnabled

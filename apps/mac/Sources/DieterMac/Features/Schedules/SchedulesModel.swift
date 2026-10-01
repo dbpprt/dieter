@@ -2,6 +2,7 @@ import DieterAPI
 import DieterCore
 import Foundation
 import Observation
+import SharedCore
 
 struct ScheduleEditorContext {
     let target: WorkspaceTarget
@@ -11,15 +12,9 @@ struct ScheduleEditorContext {
     let harnessCatalog: Dieter_V1_HarnessCatalog
 }
 
-@MainActor
-struct ScheduleOwnerConnection {
-    let reader: any DieterScheduleRPC
-    let writer: any ScheduleCommandsRPC
-    let detail: (String) async throws -> Dieter_V1_Schedule
-    let release: () -> Void
-    var catalog: (() async throws -> Dieter_V1_HarnessCatalog)? = nil
-}
-
+/// The shown project's schedules, kept by the shared core: lists come from
+/// any replica, and definitions, run history, and every change go to the
+/// machine that owns the schedule.
 @MainActor @Observable
 final class SchedulesModel {
     private(set) var target = WorkspaceTarget(endpointID: "", projectID: "")
@@ -35,317 +30,211 @@ final class SchedulesModel {
     var schedulesNextPageToken = ""
     var scheduleRunsNextPageToken = ""
     var schedulesLoadedProjectID = ""
-    var schedulesLoadedEndpointID = ""
     var schedulesError: String?
     var errorMessage: String?
-    @ObservationIgnored var ownerConnection: ((String, String) async throws -> ScheduleOwnerConnection)?
-    @ObservationIgnored private var reader: (any DieterScheduleRPC)?
-    @ObservationIgnored private var writer: (any ScheduleCommandsRPC)?
-    private(set) var connectionGeneration: UInt64 = 0
-    @ObservationIgnored private var schedulesRequestGeneration: UInt64 = 0
-    @ObservationIgnored private var scheduleRunsRequestGeneration: UInt64 = 0
-    @ObservationIgnored private let schedulesRead = OwnedRead<Dieter_V1_SchedulesResponse>()
+    /// Next occurrences (RFC 3339) of the editor's timing, and why there are none.
+    private(set) var schedulePreview: [String] = []
+    private(set) var schedulePreviewError: String?
+    /// The agents of a machine, by daemon, once the core has read them.
+    @ObservationIgnored var catalog: (String) async -> Dieter_V1_HarnessCatalog? = { _ in nil }
+    @ObservationIgnored private var core: CoreClient?
+    @ObservationIgnored private var subscription: SliceSubscription?
+    /// The project the core was last told to show; slices for another are stale.
+    @ObservationIgnored private var bound = ""
+    @ObservationIgnored private var queued: Task<Void, Never>?
 
-    var schedulesAreLoaded: Bool {
-        !target.projectID.isEmpty && schedulesLoadedProjectID == target.projectID
-            && schedulesLoadedEndpointID == target.endpointID
-    }
+    var schedulesAreLoaded: Bool { !target.projectID.isEmpty && schedulesLoadedProjectID == target.projectID }
     var selectedSchedule: Dieter_V1_Schedule? {
         guard schedulesAreLoaded else { return nil }
         return schedules.first { $0.id == selectedScheduleID }
     }
 
-    func bind(target: WorkspaceTarget, reader: (any DieterScheduleRPC)?, writer: (any ScheduleCommandsRPC)?) {
-        guard self.target != target || self.reader !== reader || self.writer !== writer else { return }
-        let sameTarget = self.target == target
-        self.target = target; self.reader = reader; self.writer = writer
-        connectionGeneration &+= 1; schedulesRequestGeneration &+= 1; scheduleRunsRequestGeneration &+= 1
-        schedulesRead.cancel()
-        schedulesLoading = false; schedulesLoadingMore = false; scheduleRunsLoading = false;
-        scheduleRunsLoadingMore = false
-        schedulesError = nil; errorMessage = nil
-        if !sameTarget {
-            schedules = []; scheduleRuns = []; selectedScheduleID = nil
-            schedulesTotalCount = 0; schedulesNextPageToken = ""; scheduleRunsNextPageToken = ""
-            schedulesLoadedProjectID = ""; schedulesLoadedEndpointID = ""
+    /// Shows `target`'s project; the core reaches each schedule's machine.
+    func bind(target: WorkspaceTarget, core: CoreClient?) {
+        if subscription == nil, let core {
+            self.core = core
+            subscription = SliceSubscription(client: core, slice: .schedules, scope: "") { [weak self] update in
+                guard let self, case .schedules(let slice) = update.value else { return }
+                self.fold(slice)
+            }
+        }
+        let sameProject = self.target.projectID == target.projectID
+        self.target = target
+        guard !sameProject || bound != target.projectID else { return }
+        bound = target.projectID
+        schedules = []; scheduleRuns = []; selectedScheduleID = nil
+        schedulesTotalCount = 0; schedulesNextPageToken = ""; scheduleRunsNextPageToken = ""
+        schedulesLoadedProjectID = ""; schedulesError = nil; errorMessage = nil
+        let project = bound
+        send { $0.bind = .with { $0.projectID = project } }
+    }
+
+    private func fold(_ slice: ClientSchedulesSlice) {
+        guard slice.projectID == bound else { return }
+        if schedules != slice.schedules { schedules = slice.schedules }
+        if scheduleRuns != slice.runs { scheduleRuns = slice.runs }
+        let selected = slice.selectedID.isEmpty ? nil : slice.selectedID
+        if selectedScheduleID != selected { selectedScheduleID = selected }
+        if schedulesLoading != slice.loading { schedulesLoading = slice.loading }
+        if schedulesLoadingMore != slice.loadingMore { schedulesLoadingMore = slice.loadingMore }
+        if scheduleRunsLoading != slice.runsLoading { scheduleRunsLoading = slice.runsLoading }
+        if scheduleRunsLoadingMore != slice.runsLoadingMore { scheduleRunsLoadingMore = slice.runsLoadingMore }
+        if schedulesTotalCount != Int(slice.totalCount) { schedulesTotalCount = Int(slice.totalCount) }
+        if schedulesNextPageToken != slice.nextPageToken { schedulesNextPageToken = slice.nextPageToken }
+        if scheduleRunsNextPageToken != slice.runsNextPageToken { scheduleRunsNextPageToken = slice.runsNextPageToken }
+        let loaded = slice.loaded ? slice.projectID : ""
+        if schedulesLoadedProjectID != loaded { schedulesLoadedProjectID = loaded }
+        let error = slice.error.isEmpty ? nil : slice.error
+        if schedulesError != error { schedulesError = error }
+        let actionError = slice.actionError.isEmpty ? nil : slice.actionError
+        if errorMessage != actionError { errorMessage = actionError }
+        if schedulePreview != slice.preview { schedulePreview = slice.preview }
+        let previewError = slice.previewError.isEmpty ? nil : slice.previewError
+        if schedulePreviewError != previewError { schedulePreviewError = previewError }
+    }
+
+    /// Sends a command without waiting for it, after those sent before.
+    private func send(_ build: @escaping (inout ClientSchedulesCommand) -> Void) {
+        guard core != nil else { return }
+        let previous = queued
+        queued = Task { [weak self] in
+            await previous?.value
+            await self?.run(afterQueued: false, build)
         }
     }
 
-    private func report(_ error: Error) {
-        guard !DieterRPCFailure.isCancellation(error) else { return }
-        errorMessage = DieterRPCFailure.message(for: error)
+    /// Runs a command and folds the schedules it returns; a failure shows as
+    /// the error message.
+    @discardableResult
+    private func run(
+        afterQueued: Bool = true, _ build: (inout ClientSchedulesCommand) -> Void
+    ) async -> ClientResult? {
+        guard let core else { return nil }
+        if afterQueued, let queued { await queued.value }
+        var command = ClientSchedulesCommand()
+        build(&command)
+        let sent = command, project = bound
+        do {
+            let result = try await core.dispatch(.with { $0.schedules = sent })
+            if case .schedules(let slice)? = result.result { fold(slice) }
+            return result
+        } catch let failure as CoreFailure {
+            if project == bound { errorMessage = failure.message }
+            return nil
+        } catch {
+            return nil
+        }
     }
 
     func loadSchedules() async {
         guard !target.projectID.isEmpty else { return }
-        let projectID = target.projectID
-        let endpointID = target.endpointID
-        let binding = connectionGeneration
-        guard let client = reader else { return }
-
-        schedulesRequestGeneration &+= 1
-        let generation = schedulesRequestGeneration
-        schedulesLoading = true
-        schedulesError = nil
-        schedulesLoadingMore = false
-        schedulesNextPageToken = ""
-        if !schedulesAreLoaded {
-            schedules = []
-            scheduleRuns = []
-            selectedScheduleID = nil
-        }
-
-        do {
-            let response = try await schedulesRead.value(key: "\(connectionGeneration):\(endpointID):\(projectID)") {
-                try await client.schedules(projectID: projectID, pageSize: schedulePageSize, pageToken: "")
-            }
-            guard binding == connectionGeneration, generation == schedulesRequestGeneration,
-                target.projectID == projectID, target.endpointID == endpointID
-            else { return }
-            schedules = response.schedules
-            schedulesTotalCount = Int(response.totalCount)
-            schedulesNextPageToken = response.nextPageToken
-            schedulesLoadedProjectID = projectID
-            schedulesLoadedEndpointID = endpointID
-            schedulesLoading = false
-            if selectedScheduleID == nil || !schedules.contains(where: { $0.id == selectedScheduleID }) {
-                selectedScheduleID = schedules.first?.id
-            }
-            guard let selectedScheduleID else {
-                scheduleRunsRequestGeneration &+= 1
-                scheduleRuns = []
-                scheduleRunsLoading = false
-                return
-            }
-            await loadScheduleRuns(for: selectedScheduleID)
-        } catch {
-            guard binding == connectionGeneration, generation == schedulesRequestGeneration,
-                target.projectID == projectID, target.endpointID == endpointID
-            else { return }
-            schedulesLoading = false
-            if !DieterRPCFailure.isCancellation(error) { schedulesError = DieterRPCFailure.message(for: error) }
-        }
+        await run { $0.load = ClientScheduleStep() }
     }
 
     func loadMoreSchedules() async {
-        guard schedulesAreLoaded, !schedulesLoading, !schedulesLoadingMore,
-            !schedulesNextPageToken.isEmpty,
-            let client = reader
-        else { return }
-        let projectID = target.projectID
-        let endpointID = target.endpointID
-        let binding = connectionGeneration
-        let pageToken = schedulesNextPageToken
-        let generation = schedulesRequestGeneration
-        schedulesLoadingMore = true
-        do {
-            let response = try await client.schedules(
-                projectID: projectID, pageSize: schedulePageSize, pageToken: pageToken)
-            guard binding == connectionGeneration, generation == schedulesRequestGeneration,
-                target.projectID == projectID, target.endpointID == endpointID
-            else { return }
-            let existing = Set(schedules.map(\.id))
-            schedules.append(contentsOf: response.schedules.filter { !existing.contains($0.id) })
-            schedulesTotalCount = Int(response.totalCount)
-            schedulesNextPageToken = response.nextPageToken
-            schedulesLoadingMore = false
-        } catch {
-            guard binding == connectionGeneration, generation == schedulesRequestGeneration,
-                target.projectID == projectID, target.endpointID == endpointID
-            else { return }
-            schedulesLoadingMore = false
-            report(error)
+        guard schedulesAreLoaded, !schedulesLoading, !schedulesLoadingMore, !schedulesNextPageToken.isEmpty else {
+            return
         }
+        await run { $0.loadMore = ClientScheduleStep() }
     }
 
+    /// The owner's full definition for the editor; replicas only list a summary.
     func editorSchedule(_ schedule: Dieter_V1_Schedule) async -> Dieter_V1_Schedule? {
-        do {
-            guard let ownerConnection else { return schedule }
-            let connection = try await ownerConnection(schedule.ownerDaemonID, schedule.checkoutID)
-            defer { connection.release() }
-            let detail = try await connection.detail(schedule.id)
-            upsertLoadedSchedule(detail)
-            return detail
-        } catch { report(error); return nil }
+        let result = await run { command in command.details = .with { $0.scheduleID = schedule.id } }
+        guard case .schedule(let full)? = result?.result else { return nil }
+        return full
     }
 
     func selectSchedule(_ id: String) async {
         guard schedulesAreLoaded, schedules.contains(where: { $0.id == id }) else { return }
         selectedScheduleID = id
-        await loadScheduleRuns(for: id)
+        await run { command in command.select = .with { $0.scheduleID = id } }
     }
 
     func loadScheduleRuns(for scheduleID: String, appending: Bool = false) async {
-        guard let client = reader else { return }
-        let projectID = target.projectID
-        let endpointID = target.endpointID
-        let binding = connectionGeneration
-        if !appending { scheduleRunsRequestGeneration &+= 1 }
-        let generation = scheduleRunsRequestGeneration
-        let pageToken = appending ? scheduleRunsNextPageToken : ""
-        if appending {
-            guard !scheduleRunsLoading, !scheduleRunsLoadingMore, !pageToken.isEmpty else { return }
-            scheduleRunsLoadingMore = true
+        if appending, scheduleID == selectedScheduleID {
+            await loadMoreScheduleRuns()
         } else {
-            scheduleRuns.removeAll()
-            scheduleRunsNextPageToken = ""
-            scheduleRunsLoading = true
-            scheduleRunsLoadingMore = false
-        }
-        do {
-            let schedule = schedules.first { $0.id == scheduleID }
-            let owner = try await ownerConnection?(schedule?.ownerDaemonID ?? "", schedule?.checkoutID ?? "")
-            defer { owner?.release() }
-            let response = try await (owner?.reader ?? client).scheduleRuns(
-                id: scheduleID, pageSize: schedulePageSize, pageToken: pageToken)
-            guard binding == connectionGeneration, generation == scheduleRunsRequestGeneration,
-                target.projectID == projectID, target.endpointID == endpointID,
-                selectedScheduleID == scheduleID
-            else { return }
-            if appending {
-                let existing = Set(scheduleRuns.map(\.id))
-                scheduleRuns.append(contentsOf: response.runs.filter { !existing.contains($0.id) })
-            } else {
-                scheduleRuns = response.runs
-            }
-            scheduleRunsNextPageToken = response.nextPageToken
-            scheduleRunsLoading = false
-            scheduleRunsLoadingMore = false
-        } catch {
-            guard binding == connectionGeneration, generation == scheduleRunsRequestGeneration,
-                target.projectID == projectID, target.endpointID == endpointID,
-                selectedScheduleID == scheduleID
-            else { return }
-            scheduleRunsLoading = false
-            scheduleRunsLoadingMore = false
-            report(error)
+            await run { command in command.select = .with { $0.scheduleID = scheduleID } }
         }
     }
 
     func loadMoreScheduleRuns() async {
-        guard let selectedScheduleID else { return }
-        await loadScheduleRuns(for: selectedScheduleID, appending: true)
+        guard selectedScheduleID != nil, !scheduleRunsLoading, !scheduleRunsLoadingMore,
+            !scheduleRunsNextPageToken.isEmpty
+        else { return }
+        await run { $0.loadMoreRuns = ClientScheduleStep() }
     }
 
-    func upsertLoadedSchedule(_ schedule: Dieter_V1_Schedule) {
-        let existingIndex = schedules.firstIndex(where: { $0.id == schedule.id })
-        if let existingIndex {
-            schedules[existingIndex] = schedule
-        } else {
-            schedules.append(schedule)
-            schedulesTotalCount += 1
-        }
-        schedules.sort {
-            let nameOrder = $0.name.localizedCaseInsensitiveCompare($1.name)
-            return nameOrder == .orderedSame ? $0.id < $1.id : nameOrder == .orderedAscending
-        }
-    }
-
+    /// The editor for `schedule` (or a new one) on its checkout's machine,
+    /// with that machine's agents.
     func editorContext(schedule: Dieter_V1_Schedule?, base: ScheduleEditorContext) async -> ScheduleEditorContext? {
-        guard let ownerConnection else { return base }
-        do {
-            let checkoutID = schedule?.checkoutID ?? base.target.checkoutID
-            let owner = try await ownerConnection(schedule?.ownerDaemonID ?? "", checkoutID)
-            defer { owner.release() }
-            let catalog = try await owner.catalog?() ?? base.harnessCatalog
-            return ScheduleEditorContext(
-                target: WorkspaceTarget(
-                    endpointID: base.target.endpointID, projectID: base.target.projectID, checkoutID: checkoutID),
-                projectName: base.projectName, boards: base.boards,
-                selectedBoardID: schedule?.boardID ?? base.selectedBoardID, harnessCatalog: catalog)
-        } catch { report(error); return nil }
+        let checkoutID = schedule?.checkoutID ?? base.target.checkoutID
+        let owner = schedule?.ownerDaemonID ?? ""
+        return ScheduleEditorContext(
+            target: WorkspaceTarget(
+                endpointID: base.target.endpointID, projectID: base.target.projectID, checkoutID: checkoutID),
+            projectName: base.projectName, boards: base.boards,
+            selectedBoardID: schedule?.boardID ?? base.selectedBoardID,
+            harnessCatalog: (owner.isEmpty ? nil : await catalog(owner)) ?? base.harnessCatalog)
     }
 
+    /// Creates on the chosen checkout's machine, or updates on the owner.
+    /// False when it failed or the project changed meanwhile.
     @discardableResult
     func saveSchedule(id: String?, draft: Dieter_V1_ScheduleDraft, expectedTarget: WorkspaceTarget? = nil) async -> Bool
     {
-        guard
-            expectedTarget == nil
-                || (expectedTarget?.projectID == target.projectID && expectedTarget?.endpointID == target.endpointID),
-            draft.projectID == target.projectID,
-            let rpc = writer
+        guard expectedTarget == nil || expectedTarget?.projectID == target.projectID,
+            draft.projectID == target.projectID
         else { return false }
-        let binding = connectionGeneration
-        var request = Dieter_V1_SaveScheduleRequest(); request.scheduleID = id ?? ""; request.schedule = draft
-        do {
-            let schedule = schedules.first { $0.id == id }
-            let owner = try await ownerConnection?(schedule?.ownerDaemonID ?? "", draft.checkoutID)
-            defer { owner?.release() }
-            let rpc = owner?.writer ?? rpc
-            let saved = try await (id == nil ? rpc.createSchedule(request) : rpc.updateSchedule(request))
-            guard binding == connectionGeneration else { return false }
-            upsertLoadedSchedule(saved)
-            selectedScheduleID = saved.id
-            await loadScheduleRuns(for: saved.id)
-            return true
-        } catch {
-            if binding == connectionGeneration { report(error) }
+        let project = bound
+        let result = await run { command in
+            command.save = .with {
+                $0.draft = draft
+                $0.scheduleID = id ?? ""
+                $0.checkoutID = draft.checkoutID
+            }
+        }
+        guard case .schedule(let saved)? = result?.result, project == bound, saved.projectID == project else {
             return false
         }
+        selectedScheduleID = saved.id
+        return true
     }
 
     func toggleSchedule(_ schedule: Dieter_V1_Schedule) async {
-        guard schedule.projectID == target.projectID, let rpc = writer else { return }
-        let binding = connectionGeneration
-        do {
-            let owner = try await ownerConnection?(schedule.ownerDaemonID, schedule.checkoutID)
-            defer { owner?.release() }
-            let rpc = owner?.writer ?? rpc
-            let saved = try await rpc.setScheduleEnabled(id: schedule.id, enabled: !schedule.enabled)
-            guard binding == connectionGeneration else { return }
-            upsertLoadedSchedule(saved)
-        } catch { if binding == connectionGeneration { report(error) } }
+        guard schedule.projectID == target.projectID else { return }
+        await run { command in
+            command.setEnabled = .with {
+                $0.scheduleID = schedule.id
+                $0.enabled = !schedule.enabled
+            }
+        }
     }
 
     func runSchedule(_ schedule: Dieter_V1_Schedule) async {
-        guard schedule.projectID == target.projectID, let rpc = writer else { return }
-        let binding = connectionGeneration
-        do {
-            let owner = try await ownerConnection?(schedule.ownerDaemonID, schedule.checkoutID)
-            defer { owner?.release() }
-            let rpc = owner?.writer ?? rpc
-            _ = try await rpc.runSchedule(id: schedule.id)
-            guard binding == connectionGeneration else { return }
-            selectedScheduleID = schedule.id
-            await loadScheduleRuns(for: schedule.id)
-        } catch { if binding == connectionGeneration { report(error) } }
+        guard schedule.projectID == target.projectID else { return }
+        await run { command in command.runNow = .with { $0.scheduleID = schedule.id } }
     }
 
     func deleteSchedule(_ schedule: Dieter_V1_Schedule) async {
-        guard schedule.projectID == target.projectID, let rpc = writer else { return }
-        let binding = connectionGeneration
-        do {
-            let owner = try await ownerConnection?(schedule.ownerDaemonID, schedule.checkoutID)
-            defer { owner?.release() }
-            let rpc = owner?.writer ?? rpc
-            try await rpc.deleteSchedule(id: schedule.id)
-            guard binding == connectionGeneration else { return }
-            let removed = schedules.contains { $0.id == schedule.id }
-            schedules.removeAll { $0.id == schedule.id }
-            if removed { schedulesTotalCount = max(0, schedulesTotalCount - 1) }
-            if selectedScheduleID == schedule.id {
-                selectedScheduleID = schedules.first?.id
-                scheduleRuns = []
-                scheduleRunsNextPageToken = ""
-            }
-            if schedules.isEmpty && !schedulesNextPageToken.isEmpty {
-                await loadMoreSchedules()
-                guard binding == connectionGeneration else { return }
-                selectedScheduleID = schedules.first?.id
-            }
-            if let selectedScheduleID, scheduleRuns.isEmpty {
-                await loadScheduleRuns(for: selectedScheduleID)
-            }
-        } catch { if binding == connectionGeneration { report(error) } }
+        guard schedule.projectID == target.projectID else { return }
+        await run { command in command.delete = .with { $0.scheduleID = schedule.id } }
     }
 
-    func previewSchedule(cron: String, timezone: String, count: Int32 = 5) async throws -> [String]? {
-        guard let rpc = writer, !cron.isEmpty, !timezone.isEmpty else { return nil }
-        var request = Dieter_V1_PreviewScheduleRequest()
-        request.cron = cron
-        request.timezone = timezone
-        request.count = count
-        return try await rpc.previewSchedule(request).times
+    /// Previews the editor's timing; the core debounces and publishes the
+    /// occurrences in `schedulePreview`.
+    func previewSchedule(cron: String, timezone: String) {
+        send { command in
+            command.preview = .with {
+                $0.cron = cron
+                $0.timezone = timezone
+            }
+        }
     }
 
+    /// Drops the editor's preview.
+    func closeEditor() {
+        send { $0.closeEditor = ClientScheduleStep() }
+    }
 }

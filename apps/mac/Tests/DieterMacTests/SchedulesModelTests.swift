@@ -36,7 +36,8 @@ private actor ScheduleMutationFixture: DieterScheduleRPC, ScheduleCommandsRPC {
 
 @Test @MainActor func scheduleSaveCannotSelectOrInsertIntoAnotherProjectAfterNavigation() async throws {
     let client = ScheduleMutationFixture(), model = SchedulesModel()
-    model.bind(target: .init(endpointID: "machine", projectID: "A"), reader: client, writer: client)
+    let core = SchedulesCoreDouble.core(reader: client, writer: client)
+    model.bind(target: .init(endpointID: "machine", projectID: "A"), core: core)
     await model.loadSchedules()
     var draft = Dieter_V1_ScheduleDraft(); draft.projectID = "A"
     let value = draft
@@ -46,7 +47,7 @@ private actor ScheduleMutationFixture: DieterScheduleRPC, ScheduleCommandsRPC {
         try await Task.sleep(nanoseconds: 1_000_000)
     }
     #expect(await client.waiting)
-    model.bind(target: .init(endpointID: "machine", projectID: "B"), reader: client, writer: client)
+    model.bind(target: .init(endpointID: "machine", projectID: "B"), core: core)
     await model.loadSchedules()
     await client.finish()
     #expect(await save.value == false)

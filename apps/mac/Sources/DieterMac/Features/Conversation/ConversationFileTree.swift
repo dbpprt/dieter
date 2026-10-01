@@ -2,8 +2,11 @@ import DieterAPI
 import DieterCore
 import Foundation
 import Observation
+import SharedCore
 import SwiftUI
 
+/// A conversation workspace's lazily expanded folder tree, kept by the
+/// shared core on the machine that holds the files.
 @MainActor @Observable
 final class ConversationFileTreeModel {
     struct Row: Identifiable {
@@ -16,9 +19,19 @@ final class ConversationFileTreeModel {
     private(set) var expanded: Set<String> = [""]
     private(set) var loading: Set<String> = []
     var error: String?
-    var showHidden = false
-    @ObservationIgnored private var client: (any FilesRPC)?
-    @ObservationIgnored private var generation = 0
+    var showHidden = false {
+        didSet {
+            guard showHidden != oldValue, !folding else { return }
+            let on = showHidden
+            enqueue { $0.showHidden = .with { $0.on = on } }
+        }
+    }
+    @ObservationIgnored private var core: CoreClient?
+    @ObservationIgnored private let scope = "tree-\(UUID().uuidString)"
+    @ObservationIgnored private var subscription: SliceSubscription?
+    @ObservationIgnored private var folding = false
+    /// The latest command sent without waiting; later commands wait for it.
+    @ObservationIgnored private var queued: Task<Void, Never>?
 
     var rows: [Row] {
         var result: [Row] = []
@@ -34,54 +47,77 @@ final class ConversationFileTreeModel {
         return result
     }
 
-    func bind(target: WorkspaceTarget, client: any FilesRPC) {
-        guard self.target != target || self.client !== client else { return }
-        generation &+= 1
-        self.target = target; self.client = client
+    func bind(target: WorkspaceTarget, core: CoreClient?) {
+        if subscription == nil, let core {
+            self.core = core
+            subscription = SliceSubscription(client: core, slice: .fileTree, scope: scope) { [weak self] update in
+                guard let self, case .fileTree(let slice) = update.value else { return }
+                self.fold(slice)
+            }
+        }
+        guard self.target != target else { return }
+        self.target = target
         folders = [:]; expanded = [""]; loading = []; error = nil
+        enqueue {
+            $0.bind = .with {
+                $0.daemonID = target.daemonID
+                $0.projectID = target.projectID
+                $0.cardID = target.conversationID
+            }
+        }
+    }
+
+    private func fold(_ slice: ClientFileTreeSlice) {
+        folding = true
+        defer { folding = false }
+        let next = Dictionary(slice.folders.map { ($0.path, $0.entries) }, uniquingKeysWith: { _, latest in latest })
+        if folders != next { folders = next }
+        let open = Set(slice.expanded)
+        if expanded != open { expanded = open }
+        let busy = Set(slice.loading)
+        if loading != busy { loading = busy }
+        let failure = slice.error.isEmpty ? nil : slice.error
+        if error != failure { error = failure }
+        if showHidden != slice.showHidden { showHidden = slice.showHidden }
+    }
+
+    /// Sends a command without waiting for it, after those sent before.
+    private func enqueue(_ build: @escaping (inout ClientFileTreeCommand) -> Void) {
+        let previous = queued
+        queued = Task { [weak self] in
+            await previous?.value
+            await self?.send(afterQueued: false, build)
+        }
+    }
+
+    private func send(afterQueued: Bool = true, _ build: (inout ClientFileTreeCommand) -> Void) async {
+        guard let core else { return }
+        if afterQueued, let queued { await queued.value }
+        var tree = ClientFileTreeCommand()
+        tree.scope = scope
+        build(&tree)
+        let command = ClientCommand.with { $0.fileTree = tree }
+        do {
+            if case .fileTree(let slice) = try await core.dispatch(command).result { fold(slice) }
+        } catch let failure as CoreFailure {
+            self.error = failure.message
+        } catch {}
     }
 
     func load(_ path: String = "", force: Bool = false) async {
-        guard let client, !loading.contains(path), force || folders[path] == nil else { return }
-        let token = generation
-        var request = Dieter_V1_ListFilesRequest()
-        request.projectID = target.projectID; request.cardID = target.conversationID
-        request.path = path; request.showHidden = showHidden
-        loading.insert(path)
-        defer { if token == generation { loading.remove(path) } }
-        do {
-            let value = try await client.listFiles(request)
-            guard token == generation, !Task.isCancelled else { return }
-            folders[path] = value.entries.sorted { a, b in
-                if (a.kind == "directory") != (b.kind == "directory") { return a.kind == "directory" }
-                return a.name.localizedStandardCompare(b.name) == .orderedAscending
-            }
-            error = nil
-        } catch {
-            guard token == generation, !Task.isCancelled else { return }
-            if !DieterRPCFailure.isCancellation(error) { self.error = DieterRPCFailure.message(for: error) }
-        }
+        await send { command in command.load = .with { $0.path = path } }
     }
 
     func toggle(_ path: String) async {
-        if expanded.contains(path) { expanded.remove(path) } else { expanded.insert(path); await load(path) }
+        await send { command in command.toggle = .with { $0.path = path } }
     }
 
     func reveal(_ path: String) async {
-        await load()
-        let parts = path.split(separator: "/").dropLast()
-        var parent = ""
-        for component in parts {
-            parent = parent.isEmpty ? String(component) : parent + "/" + component
-            expanded.insert(parent)
-            await load(parent)
-        }
+        await send { command in command.reveal = .with { $0.path = path } }
     }
 
     func refresh() async {
-        generation &+= 1
-        folders = [:]; loading = []
-        for path in expanded.sorted() { await load(path) }
+        await send { $0.refresh = ClientFilesStep() }
     }
 }
 
@@ -171,7 +207,6 @@ struct ConversationFileNavigator: View {
         .accessibilityIdentifier("conversation.content.files.navigator")
         .smokeTarget("conversation.content.files.navigator")
         .task(id: tab.transportRevision) { await tab.tree.reveal(selectedPath) }
-        .onChange(of: tab.tree.showHidden) { _, _ in Task { await tab.tree.refresh() } }
     }
 
     private func fileRow(_ row: ConversationFileTreeModel.Row) -> some View {

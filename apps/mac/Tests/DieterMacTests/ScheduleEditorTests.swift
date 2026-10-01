@@ -59,13 +59,4 @@ final class ScheduleEditorTests: XCTestCase {
 
         XCTAssertEqual(draft, expected)
     }
-
-    func testScheduleEditorPreviewDebounceStopsWhenCancelled() async {
-        let debounce = Task { await ScheduleEditorPreviewDebounce.wait() }
-        await Task.yield()
-        debounce.cancel()
-        let completed = await debounce.value
-
-        XCTAssertFalse(completed)
-    }
 }

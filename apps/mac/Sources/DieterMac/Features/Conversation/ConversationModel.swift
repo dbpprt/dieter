@@ -2,15 +2,11 @@ import DieterAPI
 import DieterCore
 import Foundation
 import Observation
-import OSLog
+import SharedCore
 
-private let conversationConnectionLogger = Logger(
-    subsystem: "com.dbpprt.dieter.mac",
-    category: "ConversationConnection"
-)
-
-/// Owns one conversation read/watch/history lifecycle. Navigation and cache
-/// persistence are effects supplied by the app composition boundary.
+/// The selected conversation, as the shared core presents it: its live
+/// window with this Mac's pending sends merged in, history paging, and read
+/// state. The core owns the stream, retries, and the transcript cache.
 @MainActor @Observable
 final class ConversationModel {
     @ObservationIgnored var presentSnapshot: (Dieter_V1_ConversationSnapshot) -> Dieter_V1_ConversationSnapshot = { $0 }
@@ -45,55 +41,135 @@ final class ConversationModel {
     var conversationLoading = false
     var conversationSyncing = false
     var conversationLastRefreshedAt: Date?
-    @ObservationIgnored let conversationRead = OwnedRead<Dieter_V1_ConversationSnapshot>()
-    @ObservationIgnored var conversationTask: Task<Void, Never>?
-    @ObservationIgnored var conversationHistoryRequestID: UUID?
-    @ObservationIgnored private var retryTask: Task<Void, Never>?
-    @ObservationIgnored private var rpc: (any ConversationRPC)?
-    @ObservationIgnored private var endpointID = ""
+    /// A message this Mac sent has not been answered yet.
+    var awaitingReply = false
+    /// A failed turn's retry was sent and has not run yet.
+    var retrying = false
+    /// The core's reading of the last turn's failure.
+    var turnFailure: ClientTurnFailure?
+    /// What the conversation shows besides its transcript: work, live
+    /// activity, and what can be done next, as the core presents it.
+    var state = ClientConversationState()
+    @ObservationIgnored var core: CoreClient?
+    /// Synthetic earlier history UI fixtures render ahead of the core's.
+    @ObservationIgnored var fixtureHistory: [Dieter_V1_UiMessage] = []
     @ObservationIgnored var onAccepted: @MainActor (Dieter_V1_ConversationSnapshot, Bool) -> Void = { _, _ in }
-    @ObservationIgnored var onSnapshot: @MainActor (Dieter_V1_ConversationSnapshot, String, Date) async -> Void = {
-        _, _, _ in
-    }
-    @ObservationIgnored var onTransportFailure: @MainActor (Error, any ConversationRPC) -> Void = { _, _ in }
     @ObservationIgnored var onContentPresentation: @MainActor (Dieter_V1_ContentPresentation, String) -> Void = {
         _, _ in
     }
+    @ObservationIgnored private var subscription: SliceSubscription?
+    @ObservationIgnored private(set) var observedCardID: String?
+    @ObservationIgnored private var slice: ClientConversationSlice?
+    @ObservationIgnored private var updates: UInt64 = 0
     @ObservationIgnored private var presentedContentIDs: Set<String> = []
     @ObservationIgnored private var presentedContentOrder: [String] = []
 
-    func markResponseSeen() async {
-        guard let rpc, let card = conversation?.detail.card,
-            card.id == (selectedCardID ?? selectedChatID),
-            card.responseSeq > card.seenResponseSeq,
-            (conversation?.conversation.lastSeq ?? 0) >= card.responseSeq,
-            conversation?.conversation.messages.contains(where: { $0.id == card.responseMessageID }) == true,
-            !browsingEarlierHistory
-        else { return }
-        do {
-            let updated = try await rpc.markConversationRead(cardID: card.id, responseSeq: card.responseSeq)
-            guard self.rpc === rpc, var snapshot = conversation,
-                snapshot.detail.card.id == card.id,
-                snapshot.detail.card.responseSeq == updated.responseSeq,
-                snapshot.detail.card.updatedAt <= updated.updatedAt
-            else { return }
-            snapshot.detail.card = updated
-            await acceptConversation(snapshot, chat: updated.scope == "chat")
-        } catch {
-            // Leave the reply unread; a later visible refresh can retry the receipt.
+    /// Observes `cardID` through the core, which opens it on the machine that
+    /// runs it; nil stops observing. Cached messages show at once.
+    func observe(_ cardID: String?) {
+        guard cardID != observedCardID else { return }
+        subscription?.close()
+        subscription = nil
+        slice = nil
+        fixtureHistory = []
+        state = ClientConversationState()
+        turnFailure = nil
+        observedCardID = cardID
+        guard let cardID, let core else { return }
+        subscription = SliceSubscription(
+            client: core, slice: .conversation, scope: cardID,
+            onReset: { [weak self] in self?.slice = nil }
+        ) { [weak self] update in
+            self?.fold(update, cardID: cardID)
         }
     }
 
-    func bind(client: (any ConversationRPC)?, endpointID: String) {
-        guard rpc !== client || self.endpointID != endpointID else { return }
-        conversationRead.cancel(); conversationTask?.cancel(); conversationTask = nil
-        retryTask?.cancel(); retryTask = nil
-        conversationHistoryRequestID = nil; conversationHistoryLoading = false
-        rpc = client; self.endpointID = endpointID
+    private func fold(_ update: ClientUpdate, cardID: String) {
+        guard observedCardID == cardID else { return }
+        switch update.value {
+        case .conversation(let value):
+            slice = value
+        case .conversationDelta(let delta):
+            guard var value = slice else { return }
+            value.card = delta.card
+            value.conversation = delta.conversation
+            value.messages = KeyedList.apply(
+                value.messages, upserted: delta.upsertedMessages, removed: delta.removedMessageIds,
+                order: delta.orderChanged ? delta.messageOrder : nil, key: \.id)
+            value.loading = delta.loading
+            value.syncing = delta.syncing
+            value.error = delta.error
+            value.pending = delta.pending
+            value.hasEarlier_p = delta.hasEarlier_p
+            value.loadingEarlier = delta.loadingEarlier
+            value.browsingEarlier = delta.browsingEarlier
+            value.awaitingReply = delta.awaitingReply
+            value.retrying = delta.retrying
+            value.refreshedAtMillis = delta.refreshedAtMillis
+            if delta.hasTurnFailure { value.turnFailure = delta.turnFailure } else { value.clearTurnFailure() }
+            value.project = delta.project
+            value.board = delta.board
+            value.page = delta.page
+            if !delta.cardID.isEmpty { value.cardID = delta.cardID }
+            value.daemonID = delta.daemonID
+            value.earlierCount = delta.earlierCount
+            value.state = delta.state
+            slice = value
+        case .failure(let failure):
+            conversationError = failure.message
+            conversationLoading = false
+            return
+        default:
+            return
+        }
+        updates &+= 1
+        if let slice { present(slice) }
+    }
+
+    private func present(_ slice: ClientConversationSlice) {
+        // The core's messages are loaded history followed by the live window.
+        let earlier = min(max(0, Int(slice.earlierCount)), slice.messages.count)
+        var snapshot = Dieter_V1_ConversationSnapshot()
+        snapshot.detail.card = slice.card
+        snapshot.detail.project = slice.project
+        snapshot.detail.board = slice.board
+        snapshot.conversation = slice.conversation
+        snapshot.conversation.messages = Array(slice.messages.dropFirst(earlier))
+        snapshot.page = slice.page
+        let hasContent = slice.hasCard || slice.hasConversation || !slice.messages.isEmpty
+        let older = fixtureHistory + slice.messages.prefix(earlier)
+        if olderConversationMessages != older { olderConversationMessages = older }
+        if hasContent {
+            let presented = presentSnapshot(snapshot)
+            if conversation != presented { conversation = presented }
+            if selectedDetail != snapshot.detail { selectedDetail = snapshot.detail }
+        }
+        if browsingEarlierHistory != slice.browsingEarlier { browsingEarlierHistory = slice.browsingEarlier }
+        if conversationHistoryHasMore != slice.hasEarlier_p { conversationHistoryHasMore = slice.hasEarlier_p }
+        if conversationHistoryLoading != slice.loadingEarlier { conversationHistoryLoading = slice.loadingEarlier }
+        let total = max(Int(slice.page.total), slice.messages.count)
+        if conversationHistoryTotal != total { conversationHistoryTotal = total }
+        let start = slice.browsingEarlier ? conversationHistoryStart : max(0, Int(slice.page.start) - earlier)
+        if conversationHistoryStart != start { conversationHistoryStart = start }
+        let error = slice.error.isEmpty ? nil : slice.error
+        if conversationError != error { conversationError = error }
+        let loading = slice.loading && !hasContent
+        if conversationLoading != loading { conversationLoading = loading }
+        if conversationSyncing != slice.syncing { conversationSyncing = slice.syncing }
+        let refreshed =
+            slice.refreshedAtMillis > 0 ? Date(timeIntervalSince1970: Double(slice.refreshedAtMillis) / 1_000) : nil
+        if conversationLastRefreshedAt != refreshed { conversationLastRefreshedAt = refreshed }
+        if awaitingReply != slice.awaitingReply { awaitingReply = slice.awaitingReply }
+        if retrying != slice.retrying { retrying = slice.retrying }
+        let failure = slice.hasTurnFailure ? slice.turnFailure : nil
+        if turnFailure != failure { turnFailure = failure }
+        if state != slice.state { state = slice.state }
+        if hasContent, slice.hasCard { onAccepted(snapshot, slice.card.scope == "chat" && slice.card.boardID.isEmpty) }
+        presentContent(from: slice.conversation, daemonID: slice.daemonID)
     }
 
     func refreshConversationPresentationState(invalidate: Bool = false) {
-        let live = browsingEarlierHistory ? [] : conversation?.conversation.messages ?? []
+        let live = conversation?.conversation.messages ?? []
         let liveIDs = Set(live.lazy.map(\.id).filter { !$0.isEmpty })
         var seen = Set<String>()
         let history = olderConversationMessages.filter { $0.id.isEmpty || !liveIDs.contains($0.id) }
@@ -103,469 +179,93 @@ final class ConversationModel {
         if messagesChanged || invalidate { conversationPresentationRevision &+= 1 }
     }
 
-    nonisolated static func isExpectedCancellation(_ error: Error) -> Bool { DieterRPCFailure.isCancellation(error) }
-
-    func fetchConversation(
-        cardID: String,
-        chat: Bool,
-        rpc: any ConversationRPC,
-        recoveryAttempts: Int = 0,
-        preferStream: Bool = false
-    ) async {
-        let selectionGeneration = conversationSelectionGeneration
-        let openedAt = Date()
-        do {
-            if preferStream {
-                startConversationWatch(
-                    cardID: cardID, rpc: rpc, selectionGeneration: selectionGeneration,
-                    initialSequence: 0, requireSnapshot: true)
-                // Give the already-open stream a chance before spending a second
-                // RPC on the same cold projection. A slow stream still gets a
-                // bounded unary hedge; cached sequence never hides fresh metadata.
-                try await DieterTaskSleep.milliseconds(500)
-                guard !Task.isCancelled, self.rpc === rpc, selectionGeneration == conversationSelectionGeneration,
-                    (selectedCardID ?? selectedChatID) == cardID
-                else { return }
-                if let refreshed = conversationLastRefreshedAt, refreshed >= openedAt { return }
-            }
-            let snapshot = try await conversationRead.value(key: "\(ObjectIdentifier(rpc)):\(cardID)") {
-                try await rpc.conversation(cardID: cardID, limit: conversationPageSize, before: nil)
-            }
-            guard self.rpc === rpc else { return }
-            guard selectionGeneration == conversationSelectionGeneration, (selectedCardID ?? selectedChatID) == cardID
-            else { return }
-            await acceptConversation(snapshot, chat: chat)
-            guard self.rpc === rpc, selectionGeneration == conversationSelectionGeneration,
-                (selectedCardID ?? selectedChatID) == cardID
-            else { return }
-            if !preferStream {
-                startConversationWatch(
-                    cardID: cardID,
-                    rpc: rpc,
-                    selectionGeneration: selectionGeneration,
-                    initialSequence: snapshot.conversation.lastSeq
-                )
-            }
-        } catch {
-            // The hedge may finish after the stream. Its late failure must
-            // not restart a healthy subscription or put fresh content back
-            // into an error/refreshing state.
-            if preferStream, self.rpc === rpc, selectionGeneration == conversationSelectionGeneration,
-                (selectedCardID ?? selectedChatID) == cardID,
-                let refreshed = conversationLastRefreshedAt, refreshed >= openedAt,
-                !conversationSyncing
-            {
-                return
-            }
-            switch DieterConversationOpenFailurePolicy.disposition(
-                for: error,
-                selectionMatches: selectionGeneration == conversationSelectionGeneration && self.rpc === rpc
-                    && (selectedCardID ?? selectedChatID) == cardID,
-                recoveryAttempts: recoveryAttempts
-            ) {
-            case .ignore:
-                return
-            case .retry:
-                retryTask?.cancel()
-                retryTask = Task { @MainActor [weak self] in
-                    let delay = DieterStreamRecoveryPolicy.delay(
-                        consecutiveFailures: recoveryAttempts + 1)
-                    try? await DieterTaskSleep.seconds(delay)
-                    guard let self, selectionGeneration == self.conversationSelectionGeneration,
-                        (self.selectedCardID ?? self.selectedChatID) == cardID
-                    else { return }
-                    guard let currentRPC = self.rpc else {
-                        self.conversationLoading = false
-                        self.conversationSyncing = false
-                        return
-                    }
-                    await self.fetchConversation(
-                        cardID: cardID,
-                        chat: chat,
-                        rpc: currentRPC,
-                        recoveryAttempts: recoveryAttempts + 1,
-                        preferStream: preferStream
-                    )
-                }
-            case .report:
-                conversationError = DieterRPCFailure.message(for: error)
-                conversationLoading = false
-                conversationSyncing = false
-                if DieterRPCFailure.isAuthenticationFailure(error) {
-                    onTransportFailure(error, rpc)
-                } else {
-                    conversationError = "Could not open this conversation: \(DieterRPCFailure.message(for: error))"
-                }
-            }
-        }
-    }
-
-    private func startConversationWatch(
-        cardID: String,
-        rpc: any ConversationRPC,
-        selectionGeneration: UInt64,
-        initialSequence: Int64,
-        requireSnapshot: Bool = false
-    ) {
-        conversationTask?.cancel()
-        conversationTask = Task { [weak self] in
-            var consecutiveFailures = 0
-            while !Task.isCancelled, let self,
-                self.rpc === rpc,
-                selectionGeneration == self.conversationSelectionGeneration,
-                (self.selectedCardID ?? self.selectedChatID) == cardID
-            {
-                let after = requireSnapshot ? 0 : (self.conversation?.conversation.lastSeq ?? initialSequence)
-                let attemptStartedAt = Date()
-                var failure: Error?
-                do {
-                    try await rpc.watchConversation(cardID: cardID, after: after) { [weak self] update in
-                        await self?.applyConversationUpdate(
-                            update,
-                            cardID: cardID,
-                            client: rpc,
-                            selectionGeneration: selectionGeneration
-                        )
-                    }
-                    guard !Task.isCancelled else { return }
-                } catch {
-                    guard !Task.isCancelled else { return }
-                    failure = error
-                }
-                guard self.rpc === rpc,
-                    selectionGeneration == self.conversationSelectionGeneration,
-                    (self.selectedCardID ?? self.selectedChatID) == cardID
-                else { return }
-                if let failure, !DieterRPCFailure.canRetryRead(failure) {
-                    self.conversationSyncing = false
-                    if DieterRPCFailure.isAuthenticationFailure(failure) {
-                        self.onTransportFailure(failure, rpc)
-                    } else {
-                        self.conversationError =
-                            "Conversation updates paused: \(DieterRPCFailure.message(for: failure))"
-                    }
-                    return
-                }
-                let receivedUpdate = self.conversationLastRefreshedAt.map { $0 >= attemptStartedAt } ?? false
-                consecutiveFailures = receivedUpdate ? 1 : consecutiveFailures + 1
-                let delay = DieterStreamRecoveryPolicy.delay(consecutiveFailures: consecutiveFailures)
-                self.conversationSyncing = true
-                conversationConnectionLogger.info(
-                    "Conversation stream for \(cardID, privacy: .public) ended; resubscribing after \(delay, privacy: .public)s on the existing data plane"
-                )
-                try? await DieterTaskSleep.seconds(delay)
-            }
-        }
-    }
-
-    /// Rebuild the selected conversation read and stream after the store has
-    /// committed a replacement data-plane client. WatchSync only carries a
-    /// bounded set of recent conversations, so it cannot restore this stream.
-    func resumeSelectedConversation(client: any ConversationRPC) {
-        guard rpc === client, let cardID = selectedCardID ?? selectedChatID,
-            DieterConversationID.isServerBacked(cardID)
-        else { return }
-        conversationTask?.cancel()
-        conversationSyncing = true
-        conversationTask = Task { @MainActor [weak self] in
-            guard let self, self.rpc === client,
-                (self.selectedCardID ?? self.selectedChatID) == cardID
-            else { return }
-            await self.fetchConversation(
-                cardID: cardID,
-                chat: self.selectedChatID == cardID,
-                rpc: client
-            )
-        }
-    }
-
-    func acceptConversation(
-        _ snapshot: Dieter_V1_ConversationSnapshot,
-        chat: Bool,
-        refreshedAt: Date? = Date(),
-        cache: Bool = true
-    ) async {
-        let snapshot = TranscriptFreshness.merging(snapshot, with: conversation)
-        if conversation != snapshot {
-            resetConversationHistory(from: snapshot)
-            conversation = presentSnapshot(snapshot)
-        }
+    /// Shows a conversation this Mac holds locally (a creation still in the
+    /// outbox, or a fixture) until the core presents the real one.
+    func acceptConversation(_ snapshot: Dieter_V1_ConversationSnapshot, chat: Bool) {
+        let presented = presentSnapshot(snapshot)
+        if conversation != presented { conversation = presented }
         if selectedDetail != snapshot.detail { selectedDetail = snapshot.detail }
         conversationLoading = false
         conversationError = nil
-        conversationSyncing = false
-        conversationLastRefreshedAt = refreshedAt
         onAccepted(snapshot, chat)
-        // Cached snapshots can belong to a connection that is still switching.
-        // Only authoritative reads and watch updates may present workspace UI.
-        if cache { presentContent(from: snapshot.conversation) }
-        if cache, let refreshedAt { await onSnapshot(snapshot, endpointID, refreshedAt) }
+    }
+
+    /// Marks the visible reply as read; the core sends the receipt.
+    func markResponseSeen() async {
+        // Directory metadata can announce a reply before its transcript frame
+        // arrives; only a reply actually shown counts as seen.
+        guard let core, let card = conversation?.detail.card,
+            card.id == (selectedCardID ?? selectedChatID),
+            card.responseSeq > card.seenResponseSeq,
+            (conversation?.conversation.lastSeq ?? 0) >= card.responseSeq,
+            conversation?.conversation.messages.contains(where: { $0.id == card.responseMessageID }) == true,
+            !browsingEarlierHistory
+        else { return }
+        _ = try? await core.dispatch { $0.markCardRead = .with { $0.cardID = card.id } }
     }
 
     @discardableResult
     func loadEarlierMessages() async -> Bool {
-        guard !conversationHistoryLoading,
-            conversationHistoryHasMore,
-            conversationHistoryStart > 0,
-            let cardID = selectedCardID ?? selectedChatID,
-            let rpc
-        else { return false }
-        let requestID = UUID()
-        conversationHistoryRequestID = requestID
-        conversationHistoryLoading = true
-        defer {
-            if conversationHistoryRequestID == requestID {
-                conversationHistoryRequestID = nil
-                conversationHistoryLoading = false
-            }
-        }
-        do {
-            let liveIDs = Set(conversation?.conversation.messages.map(\.id) ?? [])
-            var seen = liveIDs.union(olderConversationMessages.lazy.map(\.id).filter { !$0.isEmpty })
-            var merged = olderConversationMessages
-            var cursor = conversationHistoryStart
-            var total = conversationHistoryTotal
-            var hasMore = conversationHistoryHasMore
-            var added = 0
-
-            // A byte-bounded server response can legally contain fewer than
-            // the requested messages. Keep reading contiguous pages until the
-            // user gets a useful window, or the real beginning is reached.
-            while hasMore, cursor > 0, added < Int(conversationPageSize) {
-                let page = try await rpc.conversation(
-                    cardID: cardID,
-                    limit: conversationPageSize,
-                    before: Int32(cursor)
-                )
-                guard self.rpc === rpc, conversationHistoryRequestID == requestID,
-                    (selectedCardID ?? selectedChatID) == cardID
-                else { return false }
-                let pageStart = Int(page.page.start)
-                let pageEnd = Int(page.page.end)
-                guard pageEnd == cursor, pageStart < cursor,
-                    page.conversation.cardID.isEmpty || page.conversation.cardID == cardID
-                else {
-                    conversationError = "Conversation history changed. Jump to latest to refresh it."
-                    return false
-                }
-                let novel = page.conversation.messages.filter { message in
-                    message.id.isEmpty || seen.insert(message.id).inserted
-                }
-                merged = novel + merged
-                added += novel.count
-                cursor = pageStart
-                total = max(total, Int(page.page.total))
-                hasMore = page.page.hasMore_p && cursor > 0
-            }
-            guard added > 0 else { return false }
-            let window = TranscriptRetention.window(merged, keepingEarlier: true)
-            if window.removed > 0 { browsingEarlierHistory = true }
-            olderConversationMessages = window.messages
-            conversationHistoryStart = cursor
-            conversationHistoryTotal = total
-            conversationHistoryHasMore = hasMore
-            return true
-        } catch {
-            guard self.rpc === rpc, conversationHistoryRequestID == requestID,
-                (selectedCardID ?? selectedChatID) == cardID
-            else { return false }
-            conversationError = "Could not load earlier messages: \(DieterRPCFailure.message(for: error))"
-            return false
-        }
+        guard !conversationHistoryLoading, conversationHistoryHasMore else { return false }
+        return await page { command, cardID in command.loadEarlierMessages = .with { $0.cardID = cardID } }
     }
 
-    /// Advance through a detached retained window without joining it to a
-    /// noncontiguous live tail. The same bounded history RPC serves both edges.
     @discardableResult
     func loadLaterMessages() async -> Bool {
-        guard browsingEarlierHistory, !conversationHistoryLoading,
-            let cardID = selectedCardID ?? selectedChatID, let rpc
-        else { return false }
-        let end = conversationHistoryStart + olderConversationMessages.count
-        let total = max(conversationHistoryTotal, Int(conversation?.page.total ?? 0))
-        guard end < total else {
-            browsingEarlierHistory = false
-            return false
-        }
-        let requestID = UUID()
-        conversationHistoryRequestID = requestID
-        conversationHistoryLoading = true
-        defer {
-            if conversationHistoryRequestID == requestID {
-                conversationHistoryRequestID = nil
-                conversationHistoryLoading = false
-            }
-        }
+        guard browsingEarlierHistory, !conversationHistoryLoading else { return false }
+        return await page { command, cardID in command.loadLaterMessages = .with { $0.cardID = cardID } }
+    }
+
+    func returnToLatest() {
+        guard let core, let cardID = observedCardID else { return }
+        Task { _ = try? await core.dispatch { $0.returnToLatest = .with { $0.cardID = cardID } } }
+    }
+
+    /// Loads a page, then waits for the update that carries it, so the
+    /// caller's render window can extend over the new messages.
+    private func page(_ build: (inout ClientCommand, String) -> Void) async -> Bool {
+        guard let core, let cardID = observedCardID else { return false }
+        var command = ClientCommand()
+        build(&command, cardID)
+        let before = updates
+        let count = conversationMessages.count
         do {
-            let page = try await rpc.conversation(
-                cardID: cardID, limit: conversationPageSize,
-                before: Int32(min(total, end + Int(conversationPageSize))))
-            guard self.rpc === rpc, conversationHistoryRequestID == requestID,
-                (selectedCardID ?? selectedChatID) == cardID
-            else { return false }
-            let pageStart = Int(page.page.start)
-            // A concurrently rewritten transcript must never leave an
-            // invisible gap between retained and newly fetched messages.
-            guard pageStart <= end else {
-                conversationError = "Conversation history changed. Jump to latest to refresh it."
-                return false
+            let result = try await core.dispatch(command)
+            guard result.pageLoaded.loaded, observedCardID == cardID else { return false }
+            let deadline = ContinuousClock.now + .seconds(2)
+            while observedCardID == cardID, updates == before || conversationMessages.count == count,
+                ContinuousClock.now < deadline
+            {
+                try await Task.sleep(for: .milliseconds(16))
             }
-            let pageEnd = pageStart + page.conversation.messages.count
-            guard pageEnd > end else { return false }
-            let liveStart = conversation.map { Int($0.page.start) } ?? total
-            let reconnectsLive = pageEnd >= liveStart
-            let liveIDs = reconnectsLive ? Set(conversation?.conversation.messages.map(\.id) ?? []) : []
-            var seen = Set<String>()
-            let merged = (olderConversationMessages + page.conversation.messages).filter { message in
-                (message.id.isEmpty || !liveIDs.contains(message.id))
-                    && (message.id.isEmpty || seen.insert(message.id).inserted)
-            }
-            let window = TranscriptRetention.window(merged, keepingEarlier: false)
-            olderConversationMessages = window.messages
-            conversationHistoryStart += window.removed
-            conversationHistoryHasMore = conversationHistoryStart > 0
-            conversationHistoryTotal = max(total, Int(page.page.total))
-            if reconnectsLive { browsingEarlierHistory = false }
-            return true
+            return observedCardID == cardID
         } catch {
-            guard self.rpc === rpc, conversationHistoryRequestID == requestID,
-                (selectedCardID ?? selectedChatID) == cardID
-            else { return false }
-            conversationError = "Could not load later messages: \(DieterRPCFailure.message(for: error))"
+            guard observedCardID == cardID, !(error is CancellationError) else { return false }
+            conversationError = (error as? CoreFailure)?.message ?? error.localizedDescription
             return false
         }
     }
 
-    func resetConversationHistory(from snapshot: Dieter_V1_ConversationSnapshot? = nil) {
-        conversationHistoryRequestID = nil
-        browsingEarlierHistory = false
+    /// When the current turn started, as the core reads it.
+    var turnStartedAt: Date? {
+        state.turnStartedAtMillis > 0 ? Date(timeIntervalSince1970: Double(state.turnStartedAtMillis) / 1_000) : nil
+    }
+
+    func resetConversationHistory() {
         olderConversationMessages = []
-        conversationHistoryStart = Int(snapshot?.page.start ?? 0)
-        conversationHistoryTotal = Int(snapshot?.page.total ?? 0)
-        conversationHistoryHasMore = snapshot?.page.hasMore_p ?? false
+        conversationHistoryStart = 0
+        conversationHistoryTotal = 0
+        conversationHistoryHasMore = false
         conversationHistoryLoading = false
+        browsingEarlierHistory = false
     }
 
-    func applyConversationUpdate(
-        _ update: Dieter_V1_ConversationUpdate, cardID: String,
-        client: (any ConversationRPC)? = nil, selectionGeneration: UInt64? = nil
-    ) async {
-        if let client, rpc !== client { return }
-        if let selectionGeneration, selectionGeneration != conversationSelectionGeneration { return }
-        guard (selectedCardID ?? selectedChatID) == cardID else { return }
-        let previous = conversation
-        apply(update)
-        if update.hasSnapshot, let conversation {
-            conversationRead.cancel()
-            conversationLoading = false
-            conversationError = nil
-            onAccepted(conversation, selectedChatID == cardID)
-        }
-        conversationSyncing = false
-        conversationLastRefreshedAt = Date()
-        if let conversation, conversation != previous {
-            await onSnapshot(conversation, endpointID, Date())
-        }
-    }
-
-    // Splits the client's contiguous transcript at the first message the
-    // replacement window still contains; nil when the windows are disjoint.
-    nonisolated static func retainedHistoryPrefix(
-        current: [Dieter_V1_UiMessage],
-        replacementIDs: Set<String>
-    ) -> [Dieter_V1_UiMessage]? {
-        guard let overlap = current.firstIndex(where: { !$0.id.isEmpty && replacementIDs.contains($0.id) }) else {
-            return nil
-        }
-        return current[..<overlap].filter { !$0.id.isEmpty }
-    }
-
-    func apply(_ incoming: Dieter_V1_ConversationUpdate) {
-        let log = MacPerformanceSignposts.conversation
-        let signpostID = OSSignpostID(log: log)
-        os_signpost(.begin, log: log, name: "Apply conversation update", signpostID: signpostID)
-        defer { os_signpost(.end, log: log, name: "Apply conversation update", signpostID: signpostID) }
-        var update = incoming
-        if update.hasSnapshot {
-            update.snapshot = TranscriptFreshness.merging(update.snapshot, with: conversation)
-            // The replacement snapshot only carries the server's bounded
-            // window. Messages the client already has that precede the new
-            // window slide into local history so the transcript never loses
-            // content; with no overlap the retained prefix would leave an
-            // unfillable gap, so history resets to the new page instead.
-            let replacementIDs = Set(update.snapshot.conversation.messages.lazy.map(\.id).filter { !$0.isEmpty })
-            if !browsingEarlierHistory,
-                let retained = Self.retainedHistoryPrefix(current: conversationMessages, replacementIDs: replacementIDs)
-            {
-                olderConversationMessages = retained
-            } else if !browsingEarlierHistory {
-                olderConversationMessages = []
-            }
-            trimStreamingHistory()
-            let presented = presentSnapshot(update.snapshot)
-            if conversation != presented { conversation = presented }
-            if selectedDetail != update.snapshot.detail { selectedDetail = update.snapshot.detail }
-            if olderConversationMessages.isEmpty {
-                conversationHistoryStart = Int(update.snapshot.page.start)
-                conversationHistoryHasMore = update.snapshot.page.hasMore_p
-            }
-            conversationHistoryTotal = max(conversationHistoryTotal, Int(update.snapshot.page.total))
-            presentContent(from: update.snapshot.conversation)
-            return
-        }
-        guard var snapshot = conversation else { return }
-        var value = snapshot.conversation
-        guard
-            !TranscriptFreshness.isOlder(
-                sequence: update.lastSeq, updatedAt: update.updatedAt, than: value)
-        else { return }
-        let removedIDs = Set(update.removedMessageIds)
-        // Removed ids are almost always the window sliding forward during a
-        // streaming turn, not deletions; keep those messages as history so
-        // they don't vanish from the visible transcript.
-        if !browsingEarlierHistory, !removedIDs.isEmpty {
-            let known = Set(olderConversationMessages.lazy.map(\.id))
-            let slidOut = value.messages.filter { removedIDs.contains($0.id) && !known.contains($0.id) }
-            olderConversationMessages.append(contentsOf: slidOut)
-            trimStreamingHistory()
-        }
-        var messages = value.messages.filter { !removedIDs.contains($0.id) }
-        for changed in update.changedMessages {
-            if let index = messages.firstIndex(where: { $0.id == changed.id }) {
-                messages[index] = changed
-            } else {
-                messages.append(changed)
-            }
-        }
-        value.messages = messages
-        if !update.status.isEmpty { value.status = update.status }
-        value.pendingTools = update.pendingTools; value.queue = update.queue
-        value.draftAttachments = update.draftAttachments
-        value.lastSeq = update.lastSeq; value.updatedAt = update.updatedAt
-        value.subagents = update.subagents; value.taskPlans = update.taskPlans
-        if update.hasPresentedContent { value.presentedContent = update.presentedContent }
-        value.applyProviderStatus(from: update)
-        snapshot.conversation = value
-        if update.hasDetail { snapshot.detail = update.detail; selectedDetail = update.detail }
-        if update.hasPage {
-            snapshot.page = update.page
-            if olderConversationMessages.isEmpty {
-                conversationHistoryStart = Int(update.page.start)
-                conversationHistoryHasMore = update.page.hasMore_p
-            }
-            conversationHistoryTotal = max(conversationHistoryTotal, Int(update.page.total))
-        }
-        let presented = presentSnapshot(snapshot)
-        if conversation != presented { conversation = presented }
-        presentContent(from: value)
-    }
-
-    private func presentContent(from value: Dieter_V1_Conversation) {
+    private func presentContent(from value: Dieter_V1_Conversation, daemonID: String) {
         let presentation = value.presentedContent
-        guard !endpointID.isEmpty, !presentation.id.isEmpty,
-            let selectedID = selectedCardID ?? selectedChatID, value.cardID == selectedID
+        guard !presentation.id.isEmpty, let selectedID = selectedCardID ?? selectedChatID,
+            value.cardID == selectedID || observedCardID == selectedID
         else { return }
-        let key = [endpointID, selectedID, presentation.id].map { "\($0.utf8.count):\($0)" }.joined()
+        let key = [daemonID, selectedID, presentation.id].map { "\($0.utf8.count):\($0)" }.joined()
         guard presentedContentIDs.insert(key).inserted else { return }
         presentedContentOrder.append(key)
         if presentedContentOrder.count > 512 {
@@ -573,18 +273,4 @@ final class ConversationModel {
         }
         onContentPresentation(presentation, selectedID)
     }
-
-    func returnToLatest() {
-        resetConversationHistory(from: conversation)
-    }
-
-    private func trimStreamingHistory() {
-        guard !browsingEarlierHistory, !olderConversationMessages.isEmpty else { return }
-        let window = TranscriptRetention.window(olderConversationMessages, keepingEarlier: false)
-        guard window.removed > 0 else { return }
-        olderConversationMessages = window.messages
-        conversationHistoryStart += window.removed
-        conversationHistoryHasMore = true
-    }
-
 }

@@ -65,9 +65,7 @@ final class ConversationContext {
     var selectedDetail: Dieter_V1_CardDetail? { model.selectedDetail }
     var composerProviderLocked: Bool {
         let card = selectedCard ?? selectedDetail?.card
-        return card?.initialPromptSentAt.isEmpty == false || !conversationMessages.isEmpty
-            || ConversationActivityPresentation.isActive(
-                conversationStatus: conversation?.conversation.status ?? "", cardRuntime: card?.runtime ?? "")
+        return card?.initialPromptSentAt.isEmpty == false || !conversationMessages.isEmpty || model.state.activeTurn
     }
     func canChangeComposerSelection(_ capability: String) -> Bool {
         ConversationSelectionPolicy.canChange(

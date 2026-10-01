@@ -6,7 +6,7 @@ struct CommandPalette: View {
     @Environment(DieterStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
-    @State private var index = TaskSearchIndex()
+    @State private var hits: [ClientSearchHit] = []
     @State private var selection = 0
     @FocusState private var searchFocused: Bool
 
@@ -48,13 +48,13 @@ struct CommandPalette: View {
         }.map { position, command in
             Result(id: "command-\(position)", title: command.0, subtitle: "Command", icon: command.1, action: command.2)
         }
-        let tasks = index.search(query).map { document in
+        let tasks = hits.map { hit in
             Result(
-                id: document.id, title: document.title.isEmpty ? "Untitled task" : document.title,
-                subtitle: document.location.isEmpty ? "Chat" : document.location,
-                icon: document.isChat ? "bubble.left" : "rectangle.on.rectangle"
+                id: hit.cardID, title: hit.title.isEmpty ? "Untitled task" : hit.title,
+                subtitle: hit.location.isEmpty ? "Chat" : hit.location,
+                icon: hit.chat ? "bubble.left" : "rectangle.on.rectangle"
             ) {
-                Task { await store.openConversation(cardID: document.id, chat: document.isChat) }
+                Task { await store.openConversation(cardID: hit.cardID, chat: hit.chat) }
             }
         }
         return tasks + matchingCommands
@@ -128,7 +128,7 @@ struct CommandPalette: View {
         .dieterGlass(.regular, in: RoundedRectangle(cornerRadius: 22))
         .presentationBackground(.clear)
         .background(SheetOutsideClickDismissal(enabled: true) { dismiss() })
-        .task(id: catalogRevision) { await rebuildIndex() }
+        .task(id: "\(catalogRevision)|\(query)") { await search() }
         .onChange(of: query) { _, _ in selection = 0 }
         .onChange(of: rows.map(\.id)) { _, _ in selection = 0 }
         .onAppear { searchFocused = true }
@@ -141,35 +141,16 @@ struct CommandPalette: View {
         }
     }
 
-    private func rebuildIndex() async {
-        let projects = Array(store.projectDirectory.values) + store.state.projects
-        let boards = store.navigationBoards.values.flatMap { $0 } + store.state.boards
-        let cards = store.synchronizedCardValues()
-        guard
-            let next = try? await BackgroundPreparation.run({
-                TaskSearchIndex(
-                    documents: CommandPaletteCatalog.documents(
-                        projects: projects, boards: boards, cards: cards))
-            }), !Task.isCancelled
+    /// Tasks and chats matching the query, ranked by the core.
+    private func search() async {
+        let query = query
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            hits = []
+            return
+        }
+        guard let result = try? await store.core.dispatch({ $0.search = .with { $0.query = query } }),
+            !Task.isCancelled, query == self.query
         else { return }
-        index = next
-    }
-}
-
-enum CommandPaletteCatalog {
-    static func documents(
-        projects: [Dieter_V1_Project],
-        boards: [Dieter_V1_Board],
-        cards: [Dieter_V1_Card]
-    ) -> [TaskSearchIndex.Document] {
-        let projects = Dictionary(projects.map { ($0.id, $0.name) }, uniquingKeysWith: { _, new in new })
-        let boards = Dictionary(boards.map { ($0.id, $0.name) }, uniquingKeysWith: { _, new in new })
-        return cards.map { card in
-            TaskSearchIndex.Document(
-                id: card.id, title: card.title,
-                text: card.initialPrompt + " " + card.summary,
-                location: [projects[card.projectID], boards[card.boardID]].compactMap { $0 }.joined(separator: " · "),
-                updatedAt: card.updatedAt, archived: card.archived, isChat: card.scope == "chat")
-        }.sorted { $0.id == $1.id ? $0.updatedAt < $1.updatedAt : $0.id < $1.id }
+        hits = result.searchResults.hits
     }
 }

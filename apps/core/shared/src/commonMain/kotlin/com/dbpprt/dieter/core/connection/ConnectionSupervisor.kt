@@ -21,6 +21,7 @@ import com.dbpprt.dieter.core.sync.FeedConfig
 import com.dbpprt.dieter.core.sync.FeedStatus
 import com.dbpprt.dieter.core.sync.MachineFreshness
 import com.dbpprt.dieter.core.sync.PollerConfig
+import com.dbpprt.dieter.api.gateway.v1.GatewayInformation
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -109,6 +110,9 @@ class ConnectionSupervisor(
 
     private val mutableMachines = MutableStateFlow(MachineDirectory())
     val machines: StateFlow<MachineDirectory> = mutableMachines.asStateFlow()
+    private val mutableGatewayInformation = MutableStateFlow<GatewayInformation?>(null)
+    /** The active gateway's build, once it has described itself. */
+    val gatewayInformation: StateFlow<GatewayInformation?> = mutableGatewayInformation.asStateFlow()
 
     private val mutableActive = MutableStateFlow<ActiveSession?>(null)
     val active: StateFlow<ActiveSession?> = mutableActive.asStateFlow()
@@ -178,6 +182,16 @@ class ConnectionSupervisor(
         }
     }
 
+    /**
+     * Forgets the active gateway's in-memory machine views, so the next
+     * session reads every machine from scratch instead of resuming after
+     * cursors whose projections are gone. Call [restart] afterwards.
+     */
+    fun forgetViews() {
+        gatewayScope?.feeds?.values?.forEach(Feed::discard)
+        gatewayScope = null
+    }
+
     /** Restarts the session, e.g. after sign-in or an explicit machine choice. */
     fun restart() {
         restarts.update { it + 1 }
@@ -187,11 +201,18 @@ class ConnectionSupervisor(
         mutableMachines.value = MachineDirectory(machines, clock.now())
     }
 
+    /** Reads the directory from [session], with the gateway's build. */
+    private suspend fun refreshMachines(session: GatewaySession) {
+        setMachines(session.machines())
+        session.information?.let { mutableGatewayInformation.value = it }
+    }
+
     private fun prepareGateway(gateway: Gateway): GatewayScope {
         gatewayScope?.takeIf { it.gateway == gateway }?.let { return it }
         sessions.attach(null)
         store.clear()
         mutableMachines.value = MachineDirectory()
+        mutableGatewayInformation.value = null
         val storage = storageFor(gateway)
         val poller = DirectoryPoller(sessions, storage, store, config.poller, clock, logger)
         val prepared = GatewayScope(gateway, storage, poller)
@@ -223,7 +244,7 @@ class ConnectionSupervisor(
             try {
                 publish(ConnectionState(if (attempt == 0) ConnectionPhase.CONNECTING else ConnectionPhase.RECONNECTING, gateway.gateway))
                 session.verify()
-                setMachines(session.machines())
+                refreshMachines(session)
                 runSession(gateway, session) { attempt = 0 }
                 error("the session loop ended")
             } catch (cancelled: CancellationException) {
@@ -297,7 +318,7 @@ class ConnectionSupervisor(
             } catch (error: Throwable) {
                 // A daemon can reject an expired daemon token too; only the gateway decides whether the session is gone.
                 session.verify()
-                setMachines(session.machines())
+                refreshMachines(session)
                 val wait = Backoff.CONNECTION.delay(attempt++)
                 logger.info(TAG, "feed for ${target.id} ended: ${Failures.message(error)}; retrying in $wait")
                 publish(
@@ -331,6 +352,7 @@ class ConnectionSupervisor(
                 session.presence(config.presenceHeartbeat).collectLatest { machines ->
                     attempt = 0
                     setMachines(machines)
+                    session.information?.let { mutableGatewayInformation.value = it }
                     delay(config.presenceHeartbeat * 2)
                     error("presence stream stalled")
                 }
@@ -340,7 +362,7 @@ class ConnectionSupervisor(
                 logger.debug(TAG, "presence stream ended: ${Failures.message(error)}")
             }
             delay(Backoff.CONNECTION.delay(attempt++))
-            runCatching { setMachines(session.machines()) }.onFailure { if (it is CancellationException) throw it }
+            runCatching { refreshMachines(session) }.onFailure { if (it is CancellationException) throw it }
         }
     }
 

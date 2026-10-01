@@ -81,6 +81,8 @@ final class RemoteDesktopMetalView: NSView, RTCVideoRenderer {
     }
 
     func decodeHandler() -> @Sendable (RTCVideoFrame) -> Void { renderer.decodeHandler() }
+    /// Presentation counters, readable from the statistics thread.
+    nonisolated var renderSnapshot: RemoteDesktopRenderSnapshot { renderer.snapshot }
     nonisolated func renderFrame(_ frame: RTCVideoFrame?) { if let frame { renderer.offer(frame) } }
 
     private func updateSize(_ size: CGSize) {

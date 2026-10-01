@@ -131,8 +131,16 @@ import Testing
 }
 
 @Test @MainActor func quickTaskDraftResetsForSubmissionAndNewAppSession() {
-    let defaults = UserDefaults(suiteName: "quick-task-tests-" + UUID().uuidString)!
-    let draft = QuickTaskFormState(defaults: defaults)
+    // Choices are remembered through the shared core; a new session adopts them.
+    var remembered = ClientCreationSlice()
+    let draft = QuickTaskFormState()
+    draft.remember = { change in
+        if change.hasSelection { remembered.selection = change.selection }
+        if !change.projectID.isEmpty {
+            remembered.projectID = change.projectID
+            if !change.boardID.isEmpty { remembered.boards[change.projectID] = change.boardID }
+        }
+    }
     draft.story = "Investigate this page"
     draft.sourceURL = "https://example.com/issue"
     draft.draftProjectID = "project"
@@ -145,7 +153,11 @@ import Testing
     draft.initialized = true
     let image = Dieter_V1_MessagePart()
     draft.attachments = [image]
-    let newSession = QuickTaskFormState(defaults: defaults)
+    let newSession = QuickTaskFormState()
+    var echoed = 0
+    newSession.remember = { _ in echoed += 1 }
+    newSession.adopt(remembered)
+    #expect(echoed == 0, "adopting what the core remembers sends nothing back")
     #expect(newSession.draftProjectID == "project" && newSession.draftBoardID == "board")
     #expect(newSession.providerOptions["fast_mode"] == "true")
     #expect(newSession.provider == "codex" && newSession.model == "gpt-5.6-sol" && newSession.effort == "high")

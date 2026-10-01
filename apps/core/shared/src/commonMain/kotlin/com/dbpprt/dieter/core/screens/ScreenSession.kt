@@ -41,6 +41,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import okio.ByteString
@@ -205,7 +207,10 @@ class ScreenSession(
     private var clipboardRevision = ""
     private var clipboardStamp: Long? = null
     private var clipboardGrant = -1L
-    private var clipboardBusy = false
+    /** One clipboard exchange at a time; the background sync skips while one runs. */
+    private val clipboardExchange = Mutex()
+    /** A user copy, cut, paste, or sharing change is pending; a second one is refused. */
+    private var clipboardOperation = false
 
     private fun now() = clock.now()
 
@@ -220,6 +225,9 @@ class ScreenSession(
         mutableView.update { it.copy(codecFallbackReason = null) }
         beginAttempt()
     }
+
+    /** The signaling route's client while a session runs, e.g. for resolution matching. */
+    fun routeClient(): com.dbpprt.dieter.api.v1.DieterServiceClient? = route?.client
 
     fun disconnect() {
         recoveryJob?.cancel()
@@ -673,11 +681,14 @@ class ScreenSession(
         configurationPending = false
         refreshPending = false
         clipboardAssembler = null
+        // An exchange waiting for this session's reply fails now, releasing the
+        // exchange lock, rather than holding the next session until it times out.
+        clipboardReply?.completeExceptionally(IllegalStateException("Clipboard transfer interrupted"))
         clipboardReply = null
         clipboardRevision = ""
         clipboardStamp = null
         clipboardGrant = -1
-        clipboardBusy = false
+        clipboardOperation = false
     }
 
     // --- Engine events ------------------------------------------------------------------
@@ -967,37 +978,42 @@ class ScreenSession(
         )
     }
 
-    /** Copy, cut, or paste on the host, as Command-C/X/V would. */
+    /**
+     * Copy, cut, or paste on the host, as Command-C/X/V would. It waits for a
+     * background sync exchange in flight, then reads the current clipboard.
+     */
     suspend fun performClipboard(operation: String) {
         val local = localClipboard ?: return
-        if (clipboardBusy) return mutableView.update { it.copy(clipboardError = "A clipboard operation is still in progress") }
-        clipboardBusy = true
+        if (clipboardOperation) return mutableView.update { it.copy(clipboardError = "A clipboard operation is still in progress") }
+        clipboardOperation = true
         mutableView.update { it.copy(clipboardBusy = true) }
         try {
-            val binary = view.value.capabilities?.binary_clipboard_supported == true
-            val request = when (operation) {
-                "paste" -> {
-                    val (text, items) = local.read(binary = true) ?: ("" to emptyList())
-                    if (items.isNotEmpty() && !binary) return mutableView.update { it.copy(clipboardError = "Update the daemon to paste images and files") }
-                    ClipboardContent.validate(text, items)?.let { return mutableView.update { state -> state.copy(clipboardError = it) } }
-                    clipboardRequest(RemoteDesktopClipboardRequest.Action.PASTE, text, items)
+            clipboardExchange.withLock {
+                val binary = view.value.capabilities?.binary_clipboard_supported == true
+                val request = when (operation) {
+                    "paste" -> {
+                        val (text, items) = local.read(binary = true) ?: ("" to emptyList())
+                        if (items.isNotEmpty() && !binary) return mutableView.update { it.copy(clipboardError = "Update the daemon to paste images and files") }
+                        ClipboardContent.validate(text, items)?.let { return mutableView.update { state -> state.copy(clipboardError = it) } }
+                        clipboardRequest(RemoteDesktopClipboardRequest.Action.PASTE, text, items)
+                    }
+                    "cut" -> clipboardRequest(RemoteDesktopClipboardRequest.Action.CUT)
+                    else -> clipboardRequest(RemoteDesktopClipboardRequest.Action.COPY)
+                } ?: return
+                val stamp = local.stamp()
+                val response = exchange(request)
+                if (operation != "paste" && (response.has_text || response.items.isNotEmpty()) && view.value.clipboardEnabled && local.stamp() == stamp) {
+                    local.apply(response.text, response.items)
+                    clipboardStamp = local.stamp()
                 }
-                "cut" -> clipboardRequest(RemoteDesktopClipboardRequest.Action.CUT)
-                else -> clipboardRequest(RemoteDesktopClipboardRequest.Action.COPY)
-            } ?: return
-            val stamp = local.stamp()
-            val response = exchange(request)
-            if (operation != "paste" && (response.has_text || response.items.isNotEmpty()) && view.value.clipboardEnabled && local.stamp() == stamp) {
-                local.apply(response.text, response.items)
-                clipboardStamp = local.stamp()
+                if (response.revision.isNotEmpty()) clipboardRevision = response.revision
+                mutableView.update { it.copy(clipboardError = null, clipboardOperations = it.clipboardOperations + 1) }
             }
-            if (response.revision.isNotEmpty()) clipboardRevision = response.revision
-            mutableView.update { it.copy(clipboardError = null, clipboardOperations = it.clipboardOperations + 1) }
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             mutableView.update { it.copy(clipboardError = error.message ?: "Clipboard transfer failed") }
         } finally {
-            clipboardBusy = false
+            clipboardOperation = false
             mutableView.update { it.copy(clipboardBusy = false) }
         }
     }
@@ -1008,18 +1024,21 @@ class ScreenSession(
      */
     suspend fun setClipboardEnabled(enabled: Boolean) {
         preferences = preferences.copy(clipboard = enabled)
-        if (clipboardBusy) return mutableView.update { it.copy(clipboardError = "A clipboard operation is still in progress") }
-        val request = clipboardRequest(RemoteDesktopClipboardRequest.Action.CONFIGURE)?.copy(enabled = enabled) ?: return
-        clipboardBusy = true
+        if (clipboardOperation) return mutableView.update { it.copy(clipboardError = "A clipboard operation is still in progress") }
+        clipboardRequest(RemoteDesktopClipboardRequest.Action.CONFIGURE) ?: return
+        clipboardOperation = true
         mutableView.update { it.copy(clipboardBusy = true) }
         try {
-            exchange(request)
-            mutableView.update { it.copy(clipboardEnabled = enabled, clipboardError = null) }
+            clipboardExchange.withLock {
+                val request = clipboardRequest(RemoteDesktopClipboardRequest.Action.CONFIGURE)?.copy(enabled = enabled) ?: return
+                exchange(request)
+                mutableView.update { it.copy(clipboardEnabled = enabled, clipboardError = null) }
+            }
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             mutableView.update { it.copy(clipboardError = error.message ?: "Clipboard sharing could not be updated") }
         } finally {
-            clipboardBusy = false
+            clipboardOperation = false
             mutableView.update { it.copy(clipboardBusy = false) }
         }
     }
@@ -1031,13 +1050,13 @@ class ScreenSession(
             while (attemptToken == token) {
                 delay(CLIPBOARD_POLL)
                 val current = state ?: continue
-                if (!view.value.clipboardEnabled || !view.value.controlActive || clipboardBusy || engine?.isOpen(ScreenChannels.CLIPBOARD) != true) continue
+                if (!view.value.clipboardEnabled || !view.value.controlActive || clipboardOperation || engine?.isOpen(ScreenChannels.CLIPBOARD) != true) continue
                 if (clipboardGrant != current.control_generation) {
                     clipboardGrant = current.control_generation
                     clipboardRevision = ""
                     clipboardStamp = local.stamp()
                 }
-                clipboardBusy = true
+                if (!clipboardExchange.tryLock()) continue
                 try {
                     val stamp = local.stamp()
                     if (clipboardStamp != null && stamp != clipboardStamp) {
@@ -1061,7 +1080,7 @@ class ScreenSession(
                     if (error is CancellationException) throw error
                     mutableView.update { it.copy(clipboardError = error.message) }
                 } finally {
-                    clipboardBusy = false
+                    clipboardExchange.unlock()
                 }
             }
         }

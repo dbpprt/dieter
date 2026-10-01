@@ -6,7 +6,6 @@ struct ScreensView: View {
     @Bindable var model: ScreensModel
     let machines: [DieterEndpoint]
     let initialMachineID: String
-    let makeConnection: @MainActor (String) async throws -> RemoteDesktopSignalingConnection
 
     var showInDieter: @MainActor () -> Void = {}
 
@@ -96,9 +95,7 @@ struct ScreensView: View {
         }
         .background(DieterTheme.background)
         .sheet(isPresented: $model.createScreenSharePresented) {
-            NewScreenShareSheet(
-                model: model, machines: machines, initialMachineID: initialMachineID,
-                makeConnection: makeConnection)
+            NewScreenShareSheet(model: model, machines: machines, initialMachineID: initialMachineID)
         }
     }
 
@@ -136,11 +133,7 @@ struct ScreensView: View {
                 .buttonStyle(DieterSecondaryButtonStyle())
                 .accessibilityIdentifier("screens.disconnect")
         default:
-            Button("Connect") {
-                session.connect { [makeConnection, machineID = session.machineID] in
-                    try await makeConnection(machineID)
-                }
-            }
+            Button("Connect") { session.connect() }
             .buttonStyle(DieterPrimaryButtonStyle())
             .disabled(selectedMachine?.online != true)
             .accessibilityIdentifier("screens.connect")
@@ -400,7 +393,6 @@ private struct NewScreenShareSheet: View {
     @Bindable var model: ScreensModel
     let machines: [DieterEndpoint]
     let initialMachineID: String
-    let makeConnection: @MainActor (String) async throws -> RemoteDesktopSignalingConnection
     @State private var machineID = ""
 
     private var selectedMachine: DieterEndpoint? { machines.first { $0.id == machineID } }
@@ -433,10 +425,7 @@ private struct NewScreenShareSheet: View {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Connect") {
                     guard let machine = selectedMachine else { return }
-                    model.createSession(machineID: machine.id, machineName: machine.name) {
-                        [makeConnection, machineID = machine.id] in
-                        try await makeConnection(machineID)
-                    }
+                    model.createSession(machineID: machine.id, daemonID: machine.daemonID ?? "", machineName: machine.name)
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
@@ -483,7 +472,7 @@ struct ScreenShareOptions: View {
             }
             Divider()
             if !controller.keyboardCaptureStatus.isEmpty { Text(controller.keyboardCaptureStatus) }
-            if !controller.displayMatching.status.isEmpty { Text(controller.displayMatching.status) }
+            if !controller.displayMatchingStatus.isEmpty { Text(controller.displayMatchingStatus) }
             Button("Automatic quality") { controller.configure(quality: .auto) }
             Button("Prefer sharp text") { controller.configure(quality: .detail) }
             Button("Prefer responsive motion") { controller.configure(quality: .motion) }
@@ -503,13 +492,11 @@ struct ScreenShareOptions: View {
                     "Share clipboard",
                     isOn: Binding(
                         get: { controller.clipboardEnabled },
-                        set: {
-                            controller.clipboardEnabled = $0; controller.clipboard.setEnabled($0)
-                        })
+                        set: { controller.setClipboardEnabled($0) })
                 ).disabled(!controller.controlActive)
-                Button("Copy from remote") { controller.clipboard.copySelection() }.disabled(
+                Button("Copy from remote") { controller.performClipboard("copy") }.disabled(
                     !controller.controlActive || !controller.clipboardEnabled || controller.clipboardBusy)
-                Button("Paste to remote") { controller.clipboard.paste() }.disabled(
+                Button("Paste to remote") { controller.performClipboard("paste") }.disabled(
                     !controller.controlActive || !controller.clipboardEnabled || controller.clipboardBusy)
                 if !controller.clipboardError.isEmpty { Text(controller.clipboardError) }
             }

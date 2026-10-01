@@ -1034,7 +1034,7 @@ private struct ConnectionConcept: View {
 
 struct NotificationSettings: View {
     @Environment(DieterStore.self) private var store
-    @State private var enabled = UserDefaults.standard.bool(forKey: "DieterNotifications")
+    @State private var enabled = false
 
     var body: some View {
         SettingsPage {
@@ -1042,8 +1042,10 @@ struct NotificationSettings: View {
                 SettingsPanel(title: "Agent activity", subtitle: "Choose whether Dieter can alert you outside the app.")
                 {
                     Toggle("Show macOS notifications", isOn: $enabled)
+                        .onAppear { enabled = store.notificationsEnabled }
                         .onChange(of: enabled) { _, value in
-                            UserDefaults.standard.set(value, forKey: "DieterNotifications")
+                            guard value != store.notificationsEnabled else { return }
+                            store.notificationsEnabled = value
                             if value { store.requestNotifications() }
                         }
                     Divider().overlay(DieterTheme.border)

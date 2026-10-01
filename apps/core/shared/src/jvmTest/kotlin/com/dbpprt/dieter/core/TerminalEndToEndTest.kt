@@ -1,5 +1,8 @@
 package com.dbpprt.dieter.core
 
+import com.dbpprt.dieter.core.runtime.CoreException
+import com.dbpprt.dieter.core.terminals.TerminalInputPumps
+import com.dbpprt.dieter.core.terminals.TerminalKey
 import com.dbpprt.dieter.core.terminals.TerminalScope
 import com.dbpprt.dieter.core.terminals.TerminalScopeKind
 import com.dbpprt.dieter.core.testing.EndToEnd
@@ -7,8 +10,12 @@ import com.dbpprt.dieter.core.testing.await
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 
 /** TERM scenarios: a real shell on the disposable daemon's machine home and project checkout. */
 class TerminalEndToEndTest : EndToEnd() {
@@ -58,6 +65,67 @@ class TerminalEndToEndTest : EndToEnd() {
         runtime.onCore { terminals.close(created.id) }
         assertTrue(terminals.view.value.terminals.none { it.id == created.id })
         assertEquals(null, terminals.view.value.selectedId)
+    }
+
+    @Test
+    fun aNewSurfaceSelectsTheTerminalLastSelectedForItsScope() = e2e {
+        val fixture = fixture()
+        val runtime = runtime(fixture)
+        runtime.awaitConnected()
+        val scope = TerminalScope(fixture.daemonId, TerminalScopeKind.MACHINE)
+        val first = runtime.terminals()
+        runtime.onCore {
+            first.bind(scope)
+            first.load()
+        }
+        val older = runtime.onCore { first.create(name = "older", shell = "sh") }
+        val newer = runtime.onCore { first.create(name = "newer", shell = "sh") }
+        runtime.onCore { first.select(older.id) }
+
+        val second = runtime.terminals()
+        runtime.onCore {
+            second.bind(scope)
+            second.load()
+        }
+        assertEquals(older.id, second.view.value.selectedId, "the remembered terminal, not the first listed")
+        runtime.onCore {
+            second.close(older.id)
+            second.close(newer.id)
+        }
+    }
+
+    @Test
+    fun inputIsBoundedAndAnUnconfirmedWriteIsNeverResent() = e2e {
+        val fixture = fixture()
+        val runtime = runtime(fixture)
+        runtime.awaitConnected()
+        val pumps = runtime.terminalPumps
+        val failures = MutableStateFlow<List<String>>(emptyList())
+        val report: (String) -> Unit = { message -> failures.update { it + message } }
+
+        // Input is admitted whole or not at all within the shared budget.
+        runtime.onCore {
+            assertFailsWith<CoreException> {
+                pumps.send(TerminalKey(fixture.daemonId, "missing"), ByteArray(TerminalInputPumps.MAX_BUDGET_BYTES.toInt() + 1), report)
+            }
+        }
+        // A write the machine rejects may still have been delivered: it is
+        // reported once, and the input queued with it is dropped, not resent.
+        runtime.onCore {
+            pumps.send(TerminalKey(fixture.daemonId, "missing"), "first".encodeToByteArray(), report)
+            pumps.send(TerminalKey(fixture.daemonId, "missing"), "second".encodeToByteArray(), report)
+        }
+        failures.await(20.seconds) { it.isNotEmpty() }
+        delay(500)
+        assertEquals(1, failures.value.size, "failures: ${failures.value}")
+        assertTrue(failures.value.single().endsWith("Unconfirmed input was not resent."), failures.value.single())
+
+        // At most eight terminals receive input at once.
+        runtime.onCore {
+            repeat(TerminalInputPumps.MAX_PUMPS) { pumps.send(TerminalKey(fixture.daemonId, "pump-$it"), byteArrayOf(1)) {} }
+            assertFailsWith<CoreException> { pumps.send(TerminalKey(fixture.daemonId, "pump-extra"), byteArrayOf(1)) {} }
+            pumps.cancelAll()
+        }
     }
 
     @Test

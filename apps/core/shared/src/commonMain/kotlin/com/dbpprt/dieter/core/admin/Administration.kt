@@ -38,6 +38,13 @@ import com.dbpprt.dieter.api.v1.UpdateProjectRequest
 import com.dbpprt.dieter.api.v1.UpdatePromptSettingsRequest
 import com.dbpprt.dieter.api.v1.UpdateSettingsRequest
 import com.dbpprt.dieter.api.v1.ValidationCommand
+import com.dbpprt.dieter.api.v1.ConversationRef
+import com.dbpprt.dieter.api.v1.FileDocument
+import com.dbpprt.dieter.api.v1.ListChatsRequest
+import com.dbpprt.dieter.api.v1.ReadFileRequest
+import com.dbpprt.dieter.api.v1.UpdateConversationWorkspaceRequest
+import com.dbpprt.dieter.api.v1.Workspace
+import com.dbpprt.dieter.core.composition.WorkspaceMode
 import com.dbpprt.dieter.core.runtime.CoreException
 import com.dbpprt.dieter.core.runtime.FailureKind
 import com.dbpprt.dieter.core.runtime.withDeadline
@@ -310,6 +317,47 @@ class Administration(private val sessions: MachineSessions, private val store: W
             it.PutPeerRecord().execute(
                 PutPeerRecordRequest(kind = record.kind, id = record.id, value_json = if (deleted) ByteString.EMPTY else valueJson ?: ByteString.EMPTY, deleted = deleted, expected_revision = record.revision),
             )
+        }
+
+    // --- Conversations and files ---------------------------------------------------------
+
+    /** The machine that runs [cardId]: its owner, else its checkout's machine. */
+    private fun ownerOf(cardId: String): String {
+        val directory = store.directoryProjection
+        val card = directory.item(cardId) ?: throw CoreException(FailureKind.PERMANENT, "The conversation is no longer available.")
+        return card.owner_daemon_id.ifEmpty { null }
+            ?: directory.projects[card.project_id]?.checkouts?.firstOrNull { it.id == card.checkout_id }?.daemon_id?.ifEmpty { null }
+            ?: throw CoreException(FailureKind.TRANSIENT, "The conversation's machine is unavailable.")
+    }
+
+    /** A conversation's workspace, provisioning it when needed. */
+    suspend fun conversationWorkspace(cardId: String): Workspace =
+        call(AdminRoute.Target(ownerOf(cardId)), CREATE_DEADLINE) { it.GetWorkspace().execute(ConversationRef(card_id = cardId)) }
+
+    /** Changes a conversation's workspace before its first turn, on the machine that owns it. */
+    suspend fun updateConversationWorkspace(cardId: String, mode: WorkspaceMode, branch: String, baseBranch: String, baseRemote: String, publishMode: String): Card {
+        val daemon = ownerOf(cardId)
+        val worktree = mode == WorkspaceMode.WORKTREE
+        val card = call(AdminRoute.Target(daemon)) {
+            it.UpdateConversationWorkspace().execute(
+                UpdateConversationWorkspaceRequest(
+                    card_id = cardId, mode = mode.wire, branch = if (worktree) branch.trim() else "", base_branch = if (worktree) baseBranch.trim() else "",
+                    base_remote = baseRemote.trim(), remote_publish_mode = publishMode.trim(),
+                ),
+            )
+        }
+        store.foldCard(card, daemon)
+        return card
+    }
+
+    /** A machine's archived chats; live chats are in the workspace. */
+    suspend fun archivedChats(daemonId: String): List<Card> =
+        call(AdminRoute.Target(daemonId)) { it.ListChats().execute(ListChatsRequest(include_archived = true)) }.chats.filter { it.archived }
+
+    /** One file of a checkout, or of a conversation's workspace when [cardId] is set. */
+    suspend fun readFile(daemonId: String, projectId: String, checkoutId: String, cardId: String, path: String): FileDocument =
+        call(AdminRoute.Target(daemonId), CREATE_DEADLINE) {
+            it.ReadFile().execute(ReadFileRequest(project_id = projectId, checkout_id = if (cardId.isEmpty()) checkoutId else "", card_id = cardId, path = path))
         }
 
     /** Archived cards and projects plus settings, read together for the Archives view. */

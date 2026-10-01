@@ -19,7 +19,7 @@ struct DieterMacApp: App {
     private var islandEnabled = DieterIslandPreferences.defaultEnabled
 
     init() {
-        let store = DieterStore()
+        let store = DieterStore(liveCore: true)
         _store = State(initialValue: store)
         islandController = DieterIslandController(store: store)
         #if DIETER_UI_SMOKE
@@ -448,56 +448,30 @@ struct MenuBarContent: View {
         (store.state.cards + store.chats).reduce(0) { $0 + $1.activeSubagents.count }
     }
 
+    /// What needs you or awaits review, then failures and results from the
+    /// last six hours, as the shared core classifies activity.
     private var events: [MenuBarEvent] {
-        let boardNames = Dictionary(
-            store.state.boards.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
-        var rows: [MenuBarEvent] = []
-        for card in store.state.cards where card.lane.caseInsensitiveCompare("review") == .orderedSame {
-            rows.append(
-                MenuBarEvent(
-                    id: "review-\(card.id)",
-                    symbol: "exclamationmark.circle",
-                    tint: DieterTheme.amber,
-                    title: "Ready for review",
-                    subtitle: [card.title, boardNames[card.boardID] ?? ""].filter { !$0.isEmpty }.joined(
-                        separator: " · "),
-                    timestamp: MenuBarEvent.parse(card.runtimeUpdatedAt) ?? MenuBarEvent.parse(card.updatedAt),
-                    cardID: card.id,
-                ))
+        let entries = store.inboxEntries
+        let actionable = entries.filter { $0.needsYou || $0.kind == .review }
+        let recent = entries.filter { entry in
+            [.failed, .recent].contains(entry.kind)
+                && entry.at.map { Date().timeIntervalSince($0) <= 6 * 3_600 } == true
         }
-        for card in store.state.cards + store.chats where card.lane.caseInsensitiveCompare("review") != .orderedSame {
-            let (symbol, tint, title): (String, Color, String)
-            switch card.runtime.lowercased() {
-            case "waiting_for_user", "needs_input":
-                (symbol, tint, title) = ("questionmark.circle", DieterTheme.amber, "Needs you")
-            case "completed", "done": (symbol, tint, title) = ("checkmark.circle", DieterTheme.eyes, "Finished")
-            case "failed", "error": (symbol, tint, title) = ("xmark.circle", DieterTheme.coral, "Failed")
-            default: continue
-            }
-            let timestamp = MenuBarEvent.parse(card.runtimeUpdatedAt) ?? MenuBarEvent.parse(card.updatedAt)
-            // Keep terminal outcomes fresh; stale done cards would crowd out actionable rows.
-            if title != "Needs you", let timestamp, Date().timeIntervalSince(timestamp) > 6 * 3_600 { continue }
-            rows.append(
-                MenuBarEvent(
-                    id: "runtime-\(card.id)",
-                    symbol: symbol,
-                    tint: tint,
-                    title: title,
-                    subtitle: [card.title, boardNames[card.boardID] ?? ""].filter { !$0.isEmpty }.joined(
-                        separator: " · "),
-                    timestamp: timestamp,
-                    cardID: card.id,
-                ))
+        return (actionable + recent).prefix(4).map { entry in
+            let (symbol, tint, title): (String, Color, String) =
+                switch entry.kind {
+                case .answer: ("questionmark.circle", DieterTheme.amber, "Needs you")
+                case .unread: ("envelope.badge", DieterTheme.amber, "Unread reply")
+                case .review: ("exclamationmark.circle", DieterTheme.amber, "Ready for review")
+                case .failed: ("xmark.circle", DieterTheme.coral, "Failed")
+                case .recent, .running: ("checkmark.circle", DieterTheme.eyes, "Finished")
+                }
+            return MenuBarEvent(
+                id: "\(entry.kind)-\(entry.id)", symbol: symbol, tint: tint, title: title,
+                subtitle: [entry.card.title, store.board(id: entry.card.boardID)?.name ?? ""].filter { !$0.isEmpty }
+                    .joined(separator: " · "),
+                timestamp: entry.at, cardID: entry.id)
         }
-        // Actionable rows (review, needs-you) outrank terminal outcomes regardless of age.
-        let actionable = Set(["Ready for review", "Needs you"])
-        return Array(
-            rows.sorted {
-                let lhsActionable = actionable.contains($0.title)
-                if lhsActionable != actionable.contains($1.title) { return lhsActionable }
-                return ($0.timestamp ?? .distantPast) > ($1.timestamp ?? .distantPast)
-            }.prefix(4),
-        )
     }
 }
 
@@ -519,10 +493,6 @@ private struct MenuBarEvent: Identifiable {
         case ..<86_400: return "\(seconds / 3_600)h"
         default: return "\(seconds / 86_400)d"
         }
-    }
-
-    static func parse(_ value: String) -> Date? {
-        DieterTimestamp.date(from: value)
     }
 }
 

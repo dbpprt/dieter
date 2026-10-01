@@ -321,6 +321,12 @@ jobs:
         with:
           path: apps/mac/.build/dieter-local
           key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.5-dieter-mac-release-v1-${{ hashFiles('apps/mac/Package.swift', 'apps/mac/Package.resolved', 'apps/mac/Vendor/**/Package.swift') }}
+      # The release app links the shared Kotlin core, built here in release mode.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
       - name: Build release app
         run: just mac build release
       - name: Set app version

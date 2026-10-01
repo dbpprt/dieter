@@ -2,3 +2,5 @@
 build/
 *.xcworkspace/xcuserdata/
 .swiftpm/xcode/package.xcworkspace/xcuserdata/
+# The shared core framework, assembled by scripts/shared-framework.sh.
+Frameworks/

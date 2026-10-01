@@ -53,10 +53,48 @@ build configuration="debug":
     CONFIGURATION="{{ configuration }}" DIETER_RELEASE_VERSION="$release_version" \
         DIETER_SWIFT_SCRATCH_PATH="$PWD/{{ app_scratch }}" {{ app_root }}/scripts/build.sh
 
+# Assemble the shared core's DieterShared.xcframework when the core changed.
+shared-framework configuration="debug" platforms="macos":
+    {{ app_root }}/scripts/shared-framework.sh {{ configuration }} {{ platforms }}
+
+# Drive the shared core from Swift against a disposable isolated gateway.
+core-test filter="SharedCoreIntegrationTests|AppSessionCoreIntegrationTests":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    {{ app_root }}/scripts/shared-framework.sh debug macos
+    work=$(mktemp -d "${TMPDIR:-/tmp}/dieter-mac-core.XXXXXX")
+    fixture_pid=""
+    cleanup() { [[ -n "$fixture_pid" ]] && kill "$fixture_pid" 2>/dev/null || true; rm -rf "$work"; }
+    trap cleanup EXIT INT TERM
+    go build -o "$work/isolated-gateway" ./scripts/isolated-gateway
+    DIETER_HARNESS_RUNTIME_DIR="$PWD/internal/harness/runtime" \
+        "$work/isolated-gateway" -addr 127.0.0.1:0 -home "$work/fixture" -direct-route live >"$work/stdout" 2>"$work/fixture.log" &
+    fixture_pid=$!
+    for _ in $(seq 600); do
+        grep -qx READY "$work/stdout" && break
+        kill -0 "$fixture_pid" 2>/dev/null || { tail -50 "$work/fixture.log" >&2; exit 1; }
+        sleep 0.1
+    done
+    grep -qx READY "$work/stdout" || { echo "the isolated gateway did not start" >&2; tail -50 "$work/fixture.log" >&2; exit 1; }
+    while IFS= read -r line; do export "$line"; done < <(grep '^DIETER_ISOLATED_[A-Z_]*=' "$work/stdout")
+    arguments=(
+        test
+        --package-path "{{ app_root }}"
+        --scratch-path "$PWD/{{ test_scratch }}"
+        --only-use-versions-from-resolved-file
+        --manifest-cache local
+        --disable-index-store
+        --no-parallel
+        --filter "{{ filter }}"
+    )
+    if [[ -n "${DIETER_SWIFT_JOBS:-}" ]]; then arguments+=(--jobs "$DIETER_SWIFT_JOBS"); fi
+    swift "${arguments[@]}"
+
 # Run Mac unit tests with an optional Swift Testing filter.
 test filter="":
     #!/usr/bin/env bash
     set -euo pipefail
+    {{ app_root }}/scripts/shared-framework.sh debug macos
     arguments=(
         test
         --package-path "{{ app_root }}"

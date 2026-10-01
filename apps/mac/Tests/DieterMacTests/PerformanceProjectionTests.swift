@@ -79,69 +79,6 @@ import Testing
     #expect(expired.first?.online == false)
 }
 
-@Test @MainActor func messageOnlySyncReplayDoesNotRecomputeIslandOrRewriteProjection() async {
-    let root = FileManager.default.temporaryDirectory
-        .appending(path: "dieter-sync-replay-\(UUID().uuidString)", directoryHint: .isDirectory)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let persistence = DieterSyncPersistence(root: root)
-    let store = DieterStore(syncPersistenceOverride: persistence, restoreSync: false)
-
-    var project = Dieter_V1_Project()
-    project.id = "project-one"
-    project.name = "One"
-    var card = Dieter_V1_Card()
-    card.id = "card-one"
-    card.projectID = project.id
-    card.boardID = "board-one"
-    card.title = "Streaming conversation"
-    card.runtime = "running"
-    card.runtimeUpdatedAt = "2026-08-30T12:00:00.000Z"
-    var snapshot = Dieter_V1_GlobalSnapshot()
-    snapshot.state.projects = [project]
-    snapshot.state.cards = [card]
-    var initial = Dieter_V1_SyncFrame()
-    initial.snapshot = snapshot
-    initial.cursor.epoch = "epoch-one"
-    initial.cursor.sequence = 1
-    await store.applySyncFrame(initial, endpointID: store.endpoint.id)
-
-    let islandRevision = store.islandActivityProjectionRevision
-    let initialPersistence = await persistence.metrics()
-    #expect(store.islandActivity.runningCount == 1)
-    #expect(initialPersistence.acceptedSaveCount == 1)
-
-    store.selectedCardID = card.id
-    for sequence in 2...1_001 {
-        var message = Dieter_V1_UiMessage()
-        message.id = "message-\(sequence)"
-        message.role = "assistant"
-        var conversation = Dieter_V1_ConversationSnapshot()
-        conversation.detail.card = card
-        conversation.conversation.cardID = card.id
-        conversation.conversation.messages = [message]
-        var delta = Dieter_V1_GlobalDelta()
-        delta.conversations = [conversation]
-        var frame = Dieter_V1_SyncFrame()
-        frame.delta = delta
-        frame.cursor.epoch = "epoch-one"
-        frame.cursor.sequence = UInt64(sequence)
-        await store.applySyncFrame(frame, endpointID: store.endpoint.id)
-    }
-
-    let finalPersistence = await persistence.metrics()
-    #expect(store.islandActivityProjectionRevision == islandRevision)
-    #expect(finalPersistence.acceptedSaveCount == 1)
-
-    var heartbeat = Dieter_V1_SyncFrame()
-    heartbeat.heartbeat = true
-    heartbeat.cursor.epoch = "epoch-one"
-    heartbeat.cursor.sequence = 1_002
-    await store.applySyncFrame(heartbeat, endpointID: store.endpoint.id)
-    let heartbeatPersistence = await persistence.metrics()
-    #expect(heartbeatPersistence.acceptedSaveCount == 1)
-    while await persistence.metrics().writeCount == 0 { await Task.yield() }
-}
-
 @Test func persistenceKeepsOnlyOneSupersedingPendingWrite() async throws {
     let root = FileManager.default.temporaryDirectory
         .appending(path: "dieter-sync-coalescing-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -255,7 +192,7 @@ import Testing
     newComment.line = 1
 
     let projection = WorkspaceDiffProjection.build(
-        patch: patch,
+        lines: DiffFixtures.parse(patch),
         path: "Sample.swift",
         commitSHA: "",
         split: false,
@@ -403,4 +340,28 @@ private actor TerminalFrameClock {
         pending?.resume()
         pending = nil
     }
+}
+
+@Test @MainActor func unchangedWorkspaceFoldsDoNotRecomputeTheIsland() {
+    let store = DieterStore(restoreSync: false)
+    var project = Dieter_V1_Project()
+    project.id = "project-one"
+    project.name = "One"
+    var card = Dieter_V1_Card()
+    card.id = "card-one"
+    card.projectID = project.id
+    card.boardID = "board-one"
+    card.title = "Streaming conversation"
+    card.runtime = "running"
+    card.runtimeUpdatedAt = "2026-08-30T12:00:00.000Z"
+    var state = Dieter_V1_State()
+    state.projects = [project]
+    state.cards = [card]
+    store.foldFixture(state)
+    let islandRevision = store.islandActivityProjectionRevision
+    #expect(store.islandActivity.runningCount == 1)
+    // Transcript traffic arrives on the conversation slice; the workspace the
+    // core republishes alongside it is unchanged and must stay cheap.
+    for _ in 0..<1_000 { store.foldFixture(state) }
+    #expect(store.islandActivityProjectionRevision == islandRevision)
 }

@@ -41,7 +41,7 @@ struct ProjectChangesView: View {
             return "\(ObjectIdentifier(model))|\(bindingRevision)|\(active)|\(isLive)|\(scenePhase)"
         }
         return
-            "\(store.selectedProjectID)|\(store.checkout(forProjectID: store.selectedProjectID)?.id ?? "")|\(store.endpoint.id)|\(store.connectionGeneration)|\(store.phase.isConnected)|\(scenePhase)"
+            "\(store.selectedProjectID)|\(store.checkout(forProjectID: store.selectedProjectID)?.id ?? "")|\(store.phase.isConnected)|\(scenePhase)"
     }
     private var ready: Bool {
         injectedModel != nil ? !model.projectID.isEmpty : model.projectID == store.selectedProjectID
@@ -73,19 +73,19 @@ struct ProjectChangesView: View {
         .task(id: targetKey) {
             guard active, scenePhase == .active else { model.suspend(); return }
             if injectedModel == nil {
-                guard await store.ensureCheckoutConnection(store.selectedProjectID), let rpc = store.rpc else {
+                // The core reaches the checkout's machine whichever one is attached.
+                guard let checkout = store.checkout(forProjectID: store.selectedProjectID) else {
                     model.suspend(); return
                 }
-                model.bind(projectID: store.selectedProjectID, client: rpc)
+                model.bind(
+                    projectID: store.selectedProjectID, checkoutID: checkout.id, daemonID: checkout.daemonID,
+                    core: store.core)
             } else if !isLive {
                 model.suspend(); return
             }
+            // An active surface refreshes itself.
+            model.active = true
             await model.refresh()
-            while !Task.isCancelled {
-                try? await DieterTaskSleep.seconds(2)
-                guard !Task.isCancelled else { return }
-                await model.refresh()
-            }
         }
         .onDisappear { model.suspend() }
         .confirmationDialog(
@@ -421,7 +421,8 @@ struct ProjectChangesView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         WorkspaceDiffContent(
-                            diff: diff, split: diffMode == "Split", comments: [], canComment: false,
+                            diff: diff, lines: model.diffLines, split: diffMode == "Split", comments: [],
+                            canComment: false,
                             addComment: { _ in }, loadMore: { model.loadMore() }, loadingMore: model.diffLoading,
                             reviewSection: selection.section
                         )

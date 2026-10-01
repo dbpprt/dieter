@@ -2,6 +2,7 @@ import AppKit
 import DieterCore
 import Foundation
 import Observation
+import SharedCore
 
 struct ScreenShareInactivityPreferences: Equatable {
     static let defaultMinutes = 30
@@ -30,13 +31,13 @@ struct ScreenShareInactivityPreferences: Equatable {
 final class ScreenShareSession: Identifiable {
     let id: String
     let machineID: String
+    let daemonID: String
     let machineName: String
     let controller: RemoteDesktopController
     var isDetached = false
     var matchClientResolution = false
     @ObservationIgnored lazy var videoSurface = RemoteDesktopInputView(
         renderer: controller.renderer, controller: controller)
-    @ObservationIgnored private var connectionFactory: (@MainActor () async throws -> RemoteDesktopSignalingConnection)?
     private(set) var inactivityMessage: String?
     @ObservationIgnored private var timeoutMinutes: Int?
     @ObservationIgnored private var lastActivityAt = Date()
@@ -45,11 +46,12 @@ final class ScreenShareSession: Identifiable {
     @ObservationIgnored private let monitorsInactivity: Bool
 
     init(
-        id: String = UUID().uuidString.lowercased(), machineID: String, machineName: String,
+        id: String = UUID().uuidString.lowercased(), machineID: String, daemonID: String = "", machineName: String,
         controller: RemoteDesktopController = RemoteDesktopController(), monitorsInactivity: Bool = true
     ) {
         self.id = id
         self.machineID = machineID
+        self.daemonID = daemonID
         self.machineName = machineName
         self.controller = controller
         self.monitorsInactivity = monitorsInactivity
@@ -66,22 +68,25 @@ final class ScreenShareSession: Identifiable {
         }
     }
 
-    func connect(
-        makeConnection: @escaping @MainActor () async throws -> RemoteDesktopSignalingConnection
-    ) {
-        connectionFactory = makeConnection
+    func connect() {
         inactivityMessage = nil
         lastActivityAt = Date()
-        _ = controller.connect(machineName: machineName, makeConnection: makeConnection)
+        controller.connect(daemonID: daemonID, machineName: machineName)
         startInactivityMonitorIfNeeded()
     }
 
-    func reconnect() { if let connectionFactory { connect(makeConnection: connectionFactory) } }
+    func reconnect() { connect() }
 
     func disconnect() {
         cancelInactivityMonitor()
         inactivityMessage = nil
         controller.disconnect()
+    }
+
+    /// Ends the session and releases its core surface and renderer.
+    func close() {
+        cancelInactivityMonitor()
+        controller.close()
     }
 
     func configureInactivityTimeout(enabled: Bool, minutes: Int) {
@@ -147,6 +152,10 @@ final class ScreenShareSession: Identifiable {
 @Observable
 final class ScreensModel {
     private let defaults: UserDefaults
+    /// The shared core and the Mac's media engine; absent in tests that
+    /// script sessions directly.
+    @ObservationIgnored var core: CoreClient?
+    @ObservationIgnored var media: CoreScreenMedia?
     var sessions: [ScreenShareSession] = []
     var selectedSessionID: String?
     var createScreenSharePresented = false
@@ -200,11 +209,10 @@ final class ScreensModel {
     }
 
     @discardableResult
-    func createSession(
-        machineID: String, machineName: String,
-        makeConnection: @escaping @MainActor () async throws -> RemoteDesktopSignalingConnection
-    ) -> ScreenShareSession {
-        let session = ScreenShareSession(machineID: machineID, machineName: machineName)
+    func createSession(machineID: String, daemonID: String, machineName: String) -> ScreenShareSession {
+        let session = ScreenShareSession(
+            machineID: machineID, daemonID: daemonID, machineName: machineName,
+            controller: RemoteDesktopController(core: core, media: media))
         session.matchClientResolution = matchClientResolution
         session.videoSurface.captureKeyboard = captureFullscreenKeyboard
         session.configureInactivityTimeout(
@@ -212,7 +220,7 @@ final class ScreensModel {
         sessions.append(session)
         selectedSessionID = session.id
         createScreenSharePresented = false
-        session.connect(makeConnection: makeConnection)
+        session.connect()
         return session
     }
 
@@ -231,7 +239,7 @@ final class ScreensModel {
         }()
         detachedWindows.removeValue(forKey: id)?.dispose()
         sessions[index].isDetached = false
-        sessions[index].disconnect()
+        sessions[index].close()
         sessions.remove(at: index)
         if wasSelected { selectedSessionID = replacementID }
     }

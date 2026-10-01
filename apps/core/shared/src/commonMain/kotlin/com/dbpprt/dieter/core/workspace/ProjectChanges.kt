@@ -35,6 +35,23 @@ import kotlinx.coroutines.launch
 /** Which half of a project change: HEAD to index, or index to working tree. */
 enum class ChangeSection(val wire: String) { STAGED("staged"), UNSTAGED("unstaged") }
 
+object ProjectChangesRules {
+    /**
+     * Where a selection goes after a refresh: the same half if the file still
+     * has it, else the file's other half (staging or unstaging moved it),
+     * else nowhere.
+     */
+    fun follow(changes: Changeset, path: String, section: ChangeSection): Pair<String, ChangeSection>? {
+        val file = changes.files.firstOrNull { it.path == path } ?: return null
+        return when {
+            if (section == ChangeSection.STAGED) file.staged else file.unstaged -> path to section
+            file.staged -> path to ChangeSection.STAGED
+            file.unstaged -> path to ChangeSection.UNSTAGED
+            else -> null
+        }
+    }
+}
+
 data class ProjectChangesView(
     val projectId: String? = null,
     val checkoutId: String? = null,
@@ -136,11 +153,13 @@ class ProjectChanges(private val sessions: MachineSessions, private val store: W
             val previous = view.value.changes
             if (previous?.revision != changes.revision) diffCache.clear()
             mutableView.update { it.copy(changes = changes, refreshing = false, refreshError = null, needsReconciliation = false) }
-            val selection = view.value.selection?.takeIf { (path, section) ->
-                changes.files.any { it.path == path && (if (section == ChangeSection.STAGED) it.staged else it.unstaged) }
-            }
+            val current = view.value.selection
+            val selection = current?.let { (path, section) -> ProjectChangesRules.follow(changes, path, section) }
             if (selection == null) {
                 mutableView.update { it.copy(selection = null, diff = null, diffLines = emptyList()) }
+            } else if (selection != current) {
+                mutableView.update { it.copy(selection = selection, diff = null, diffLines = emptyList()) }
+                loadDiff(selection, reload = true)
             } else if (previous?.revision != changes.revision) {
                 loadDiff(selection, reload = true)
             }

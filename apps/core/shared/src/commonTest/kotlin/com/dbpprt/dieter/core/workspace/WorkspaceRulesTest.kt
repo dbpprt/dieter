@@ -1,6 +1,8 @@
 package com.dbpprt.dieter.core.workspace
 
 import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.ChangedFile
+import com.dbpprt.dieter.api.v1.Changeset
 import com.dbpprt.dieter.api.v1.GitOperation
 import com.dbpprt.dieter.api.v1.GitOperationLogEntry
 import com.dbpprt.dieter.api.v1.PullRequestSummary
@@ -35,6 +37,16 @@ class WorkspaceRulesTest {
     }
 
     @Test
+    fun anEmptyAddedOrContextLineIsALineButThePatchTerminatorIsNot() {
+        val added = UnifiedDiff.parse("@@ -0,0 +1,2 @@\n+new line\n+\n")
+        assertTrue(added.none { it.kind == DiffLineKind.CONTEXT })
+        assertEquals(listOf(1, 2), added.filter { it.kind == DiffLineKind.ADDITION }.map { it.newLine })
+        val context = UnifiedDiff.parse("@@ -1 +1 @@\n \n")
+        assertEquals(DiffLineKind.CONTEXT, context.last().kind)
+        assertEquals(1, context.last().newLine)
+    }
+
+    @Test
     fun displayFoldsLongContextAndCountsSkippedLines() {
         val context = (1..40).joinToString("\n") { " line $it" }
         val lines = UnifiedDiff.parse("@@ -1,41 +1,41 @@\n$context\n-a\n+b\n@@ -300,2 +300,2 @@\n x\n-y")
@@ -63,6 +75,23 @@ class WorkspaceRulesTest {
         commits: Boolean = false, remote: Boolean = false, auth: Boolean = false, pr: Boolean = false, dirty: Boolean = false,
         branch: String = "feature", base: String = "main", publish: String = "manual",
     ) = WorkspaceAvailability(agent, operation, state, mode, changed, commits, remote, auth, pr, dirty, branch, base, publish)
+
+    @Test
+    fun aProjectDirectoryPublishesOnlyAReviewBranchAndPushBaseMergesLocally() {
+        val feature = availability(mode = WorkspaceMode.PROJECT, commits = true, remote = true, auth = true, branch = "feature/direct", base = "main")
+        assertTrue(feature.allows("push"))
+        assertTrue(feature.allows("create_pr"))
+        assertFalse(feature.allows("merge_local"))
+        assertFalse(feature.allows("discard"))
+        assertFalse(feature.allowsMergeFlow)
+        val base = availability(mode = WorkspaceMode.PROJECT, commits = true, remote = true, auth = true, branch = "main", base = "main")
+        assertFalse(base.allows("push"))
+        assertFalse(base.allows("create_pr"))
+        val pushBase = availability(commits = true, remote = true, auth = true, publish = "push_base")
+        assertTrue(pushBase.allowsMergeFlow)
+        assertTrue(pushBase.allows("merge_local"))
+        assertFalse(pushBase.allows("create_pr"))
+    }
 
     @Test
     fun actionsFollowTheWorkspaceRules() {
@@ -139,5 +168,16 @@ class WorkspaceRulesTest {
         assertEquals("Validation working directories must stay inside the workspace.", ValidationCommandDraft.problem(listOf(draft.copy(workingDirectory = "a\\..\\b"))))
         assertEquals("Environment entries must use KEY=VALUE, one per line.", ValidationCommandDraft.problem(listOf(draft.copy(environment = "=bad"))))
         assertNull(ValidationCommandDraft.problem(listOf(draft)))
+    }
+
+    @Test
+    fun aSelectedFileFollowsItselfBetweenTheStagedAndUnstagedHalves() {
+        val readme = ChangedFile(path = "README.md", staged = true)
+        val partial = ChangedFile(path = "notes.txt", staged = true, unstaged = true)
+        val changes = Changeset(files = listOf(readme, partial))
+        assertEquals("README.md" to ChangeSection.STAGED, ProjectChangesRules.follow(changes, "README.md", ChangeSection.UNSTAGED), "staging moves the selection")
+        assertEquals("README.md" to ChangeSection.STAGED, ProjectChangesRules.follow(changes, "README.md", ChangeSection.STAGED))
+        assertEquals("notes.txt" to ChangeSection.UNSTAGED, ProjectChangesRules.follow(changes, "notes.txt", ChangeSection.UNSTAGED), "a half that still exists stays")
+        assertNull(ProjectChangesRules.follow(changes, "gone.txt", ChangeSection.UNSTAGED), "a file that left the changes clears the selection")
     }
 }

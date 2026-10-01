@@ -24,17 +24,6 @@ enum RemoteDesktopVideoGeometry {
             width: fitted.width, height: fitted.height)
     }
 
-    static func requestedSize(points: CGSize, scale: CGFloat) -> CGSize? {
-        guard valid(points), scale.isFinite, scale > 0 else { return nil }
-        let pixels = CGSize(width: points.width * scale, height: points.height * scale)
-        guard valid(pixels) else { return nil }
-        // Match the settled backing size, subject to codec bounds and even
-        // dimensions. The controller already debounces live resize requests.
-        return CGSize(
-            width: max(640, min(3840, floor(pixels.width / 2) * 2)),
-            height: max(360, min(2160, floor(pixels.height / 2) * 2)))
-    }
-
     private static func valid(_ size: CGSize) -> Bool {
         size.width.isFinite && size.height.isFinite && size.width > 0 && size.height > 0
     }

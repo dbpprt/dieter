@@ -42,7 +42,7 @@
             _ store: DieterStore, _ window: NSWindow, _ cardID: String,
             _ results: inout [String: String], _ output: URL
         ) async {
-            guard let rpc = store.rpc else { results["content-processes"] = "failed: machine unavailable"; return }
+            guard let rpc = await store.fixtureRPC() else { results["content-processes"] = "failed: machine unavailable"; return }
             let content = store.conversationContext.content
             var executionID: String?
             do {
@@ -191,7 +191,7 @@
                 let resolved = await wait {
                     external?.submenu?.items.contains(where: { $0.title == "Loading…" }) == false
                 }
-                let remoteCorrect = store.rpc?.isLoopbackDataPlane == true || finder?.isEnabled == false
+                let remoteCorrect = store.isLocalMachine(store.endpoint.id) || finder?.isEnabled == false
                 results["content-link-context-menu"] =
                     external?.submenu != nil && finder != nil && resolved && remoteCorrect
                     ? "passed" : "failed: external submenu/Finder missing or remote file enabled"
@@ -304,7 +304,7 @@
             let saveClicked = NativeUIAccessibility.click("conversation.content.save", in: window)
             let saved = await wait { !tab.dirty && !tab.files.saving }
             do {
-                guard let rpc = store.rpc else { throw CocoaError(.fileReadNoPermission) }
+                guard let rpc = await store.fixtureRPC() else { throw CocoaError(.fileReadNoPermission) }
                 var read = Dieter_V1_ReadFileRequest()
                 read.projectID = tab.files.target.projectID; read.cardID = cardID; read.path = "side-by-side-smoke.md"
                 let document = try await rpc.readFile(read)
@@ -370,7 +370,7 @@
             _ store: DieterStore, _ window: NSWindow, _ cardID: String, _ results: inout [String: String]
         ) async {
             do {
-                guard let rpc = store.rpc else { throw CocoaError(.fileReadUnknown) }
+                guard let rpc = await store.fixtureRPC() else { throw CocoaError(.fileReadUnknown) }
                 let model = store.conversationContext.content
                 let projectID = model.files.target.projectID
                 var directory = Dieter_V1_CreateFileRequest()
@@ -633,7 +633,7 @@
             let closed = NativeUIAccessibility.click("conversation.content.tab.\(tab.id.uuidString).close", in: window)
             _ = await wait { !model.tabs.contains(where: { $0.id == tab.id }) }
             do {
-                guard let rpc = store.rpc else { throw CocoaError(.fileReadUnknown) }
+                guard let rpc = await store.fixtureRPC() else { throw CocoaError(.fileReadUnknown) }
                 let sessions = try await rpc.terminals(projectID: tab.terminals.target.projectID, cardID: cardID)
                 results["content-terminal-survives-tab-close"] =
                     closed && sessions.terminals.contains { $0.id == terminalID && $0.status == "running" }
@@ -700,11 +700,11 @@
                     return tab.projectReview.projectID == tab.scope?.target.projectID
                         && tab.projectReview.selection?.path == "side-by-side-smoke.swift"
                         && tab.projectReview.diff?.cardID.isEmpty == true
-                        && tab.projectReview.diff?.patch.contains("smokeLine42") == true
+                        && tab.projectReview.diffLines.contains { $0.text.contains("smokeLine42") }
                 }
                 return tab.review.target.conversationID == cardID
                     && tab.review.selectedChangePath == "side-by-side-smoke.swift"
-                    && tab.review.conversationDiff?.patch.contains("smokeLine42") == true
+                    && tab.review.diffLines.contains { $0.text.contains("smokeLine42") }
             }
             results["content-review-scoped-diff"] =
                 clicked && diff
@@ -721,7 +721,7 @@
             _ results: inout [String: String], _ output: URL
         ) async {
             do {
-                guard let rpc = store.rpc else { throw CocoaError(.fileReadUnknown) }
+                guard let rpc = await store.fixtureRPC() else { throw CocoaError(.fileReadUnknown) }
                 let model = store.conversationContext.content
                 model.hide()
                 var request = Dieter_V1_PresentConversationContentRequest()
@@ -752,7 +752,7 @@
             // assets only in this driver's disposable workspace, then exercise
             // their normal scoped file reads and native renderers.
             do {
-                guard let rpc = store.rpc else { throw CocoaError(.fileReadUnknown) }
+                guard let rpc = await store.fixtureRPC() else { throw CocoaError(.fileReadUnknown) }
                 let workspace = try await rpc.workspace(cardID: cardID)
                 let root = URL(fileURLWithPath: workspace.path, isDirectory: true).resolvingSymlinksInPath()
                 guard let fixturePath = NativeTestSupport.argument("--ui-smoke-fixture-root") else {
