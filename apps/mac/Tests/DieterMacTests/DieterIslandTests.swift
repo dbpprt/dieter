@@ -15,28 +15,31 @@ import Testing
     #expect(DieterIslandPreferences.isEnabled(in: defaults))
 }
 
-@Test func islandActivityCountsRunningReviewAndOnlyTodaysCompletedCards() {
-    let now = Date(timeIntervalSince1970: 1_787_853_600)  // 2026-08-27 18:00:00 UTC
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-
-    func card(_ id: String, runtime: String, lane: String, updatedAt: String) -> Dieter_V1_Card {
-        var card = Dieter_V1_Card()
-        card.id = id; card.title = id; card.runtime = runtime; card.lane = lane; card.runtimeUpdatedAt = updatedAt
-        return card
+@Test @MainActor func islandUsesInboxKindsOrderingAndFullCountsBeforeLimitingRows() {
+    let store = DieterStore(restoreSync: false)
+    store.activityRows = ["RECENT", "FAILED", "REVIEW", "UNREAD", "ANSWER", "RUNNING"].map { kind in
+        .with {
+            $0.card.id = kind
+            $0.card.title = kind
+            $0.card.scope = kind == "ANSWER" ? "chat" : "board"
+            $0.kind = kind
+            $0.detail = "Inbox detail for \(kind)"
+        }
     }
-    let activity = DieterIslandActivity.resolve(
-        cards: [
-            card("running", runtime: "running", lane: "running", updatedAt: "2026-08-27T11:58:00Z"),
-            card("review", runtime: "waiting_for_user", lane: "review", updatedAt: "2026-08-27T11:00:00Z"),
-            card("done-today", runtime: "completed", lane: "done", updatedAt: "2026-08-27T09:00:00Z"),
-            card("done-yesterday", runtime: "completed", lane: "done", updatedAt: "2026-08-26T09:00:00Z"),
-        ], now: now, calendar: calendar)
-
+    let activity = store.islandActivity
     #expect(activity.runningCount == 1)
-    #expect(activity.reviewCount == 1)
-    #expect(activity.doneTodayCount == 1)
-    #expect(activity.items.map(\.cardID) == ["running", "review", "done-today"])
+    #expect(activity.attentionCount == 2)
+    #expect(activity.recentCount == 3)
+    #expect(activity.items.map(\.cardID) == ["RUNNING", "UNREAD", "ANSWER", "RECENT"])
+    #expect(activity.items.map(\.kind) == [.running, .unread, .answer, .recent])
+    #expect(activity.items[2].chat)
+    #expect(activity.items[1].detail == "Inbox detail for UNREAD")
+    // A seen response moves out of attention using the same core update as Inbox.
+    store.activityRows[3].kind = "REVIEW"
+    #expect(store.islandActivity.attentionCount == 1)
+    #expect(store.islandActivity.recentCount == 4)
+    store.activityRows = []
+    #expect(store.islandActivity == .empty)
 }
 
 @Test @MainActor func islandCardProjectionIncludesUnopenedProjectsAndOptimisticSelectedCards() {
@@ -79,9 +82,9 @@ import Testing
     #expect(notched.notchWidth == 204)
     #expect(notched.windowFrame(expanded: false).midX == screen.midX)
     #expect(notched.windowFrame(expanded: false).maxY == screen.maxY)
-    #expect(notched.collapsedSize == CGSize(width: 336, height: 42))
-    #expect(notched.expandedSize(itemCount: 1) == CGSize(width: 600, height: 220))
-    #expect(notched.expandedSize(itemCount: 4) == CGSize(width: 600, height: 412))
+    #expect(notched.collapsedSize == CGSize(width: 356, height: 42))
+    #expect(notched.expandedSize(itemCount: 1) == CGSize(width: 600, height: 258))
+    #expect(notched.expandedSize(itemCount: 4) == CGSize(width: 600, height: 450))
 
     let external = DieterIslandDisplayGeometry.resolve(
         screenFrame: screen,
@@ -94,6 +97,27 @@ import Testing
     #expect(external.collapsedSize == CGSize(width: 270, height: 38))
     #expect(external.windowFrame(expanded: false).maxX == visible.maxX - 12)
     #expect(external.windowFrame(expanded: false).maxY == visible.maxY - 8)
+}
+
+@Test func islandContentClearsNotchesAcrossDisplayCoordinatesAndSafeAreaHeights() {
+    for top: CGFloat in [32, 38, 48] {
+        let geometry = DieterIslandDisplayGeometry.resolve(
+            screenFrame: CGRect(x: -1512, y: 1080, width: 1512, height: 982),
+            visibleFrame: CGRect(x: -1512, y: 1080, width: 1512, height: 930),
+            safeAreaTop: top, auxiliaryLeftWidth: 646, auxiliaryRightWidth: 646)
+        let collapsed = geometry.windowFrame(expanded: false)
+        let notchLeft = geometry.screenFrame.midX - geometry.notchWidth / 2
+        let notchRight = geometry.screenFrame.midX + geometry.notchWidth / 2
+        #expect(collapsed.minX + DieterIslandLayout.collapsedWingWidth <= notchLeft)
+        #expect(collapsed.maxX - DieterIslandLayout.collapsedWingWidth >= notchRight)
+        for count in [0, 1, 4] {
+            let expanded = geometry.windowFrame(expanded: true, activityItemCount: count)
+            let contentTop = expanded.maxY - geometry.expandedTopInset
+            #expect(contentTop < geometry.screenFrame.maxY - top)
+            #expect(
+                expanded.height - geometry.expandedTopInset == DieterIslandLayout.expandedSize(itemCount: count).height)
+        }
+    }
 }
 
 @Test func islandExpandedHeightFitsItsRowsAndStaysBounded() {

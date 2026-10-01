@@ -60,6 +60,7 @@ struct DieterIslandDrag {
 
 /// Keep the native panel exactly as tall as the SwiftUI sections it contains.
 enum DieterIslandLayout {
+    static let collapsedWingWidth: CGFloat = 76
     static let expandedWidth: CGFloat = 600
     static let horizontalInset: CGFloat = 20
     static let headerHeight: CGFloat = 56
@@ -92,6 +93,9 @@ struct DieterIslandDisplayGeometry: Equatable {
     let visibleFrame: CGRect
     let hasPhysicalNotch: Bool
     let notchWidth: CGFloat
+    let safeAreaTop: CGFloat
+
+    var expandedTopInset: CGFloat { hasPhysicalNotch ? safeAreaTop + 6 : 0 }
 
     static func resolve(
         screenFrame: CGRect,
@@ -111,18 +115,20 @@ struct DieterIslandDisplayGeometry: Equatable {
             screenFrame: screenFrame,
             visibleFrame: visibleFrame,
             hasPhysicalNotch: hasNotch,
-            notchWidth: calculatedWidth
+            notchWidth: calculatedWidth,
+            safeAreaTop: max(0, safeAreaTop)
         )
     }
 
     var collapsedSize: CGSize {
         hasPhysicalNotch
-            ? CGSize(width: max(300, notchWidth + 132), height: 42)
+            ? CGSize(width: notchWidth + DieterIslandLayout.collapsedWingWidth * 2, height: max(42, safeAreaTop))
             : CGSize(width: 270, height: 38)
     }
 
     func expandedSize(itemCount: Int) -> CGSize {
-        DieterIslandLayout.expandedSize(itemCount: itemCount)
+        let content = DieterIslandLayout.expandedSize(itemCount: itemCount)
+        return CGSize(width: content.width, height: content.height + expandedTopInset)
     }
 
     func windowFrame(expanded: Bool, activityItemCount: Int = 4, edge: DieterIslandEdge = .right) -> CGRect {
@@ -347,6 +353,8 @@ final class DieterIslandController: NSObject {
         let newGeometry = display.geometry
         geometry = newGeometry
         presentation.hasPhysicalNotch = newGeometry.hasPhysicalNotch
+        presentation.notchWidth = newGeometry.notchWidth
+        presentation.expandedTopInset = newGeometry.expandedTopInset
         presentation.displays = displays
         presentation.preferredDisplayID = preferredID
         presentation.currentDisplayID = display.id

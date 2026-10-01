@@ -271,12 +271,12 @@ command and slice covered.
 5. **Activity surfaces and notifications.** The island counts, the menu-bar
    events, and the inbox. Notifications are posted by the core through the
    sink.
-   - **As built.** The inbox and the menu-bar events read the activity
+   - **As built.** The inbox, Island, and menu-bar events read the activity
      slice; the core classifies each conversation's latest activity. The
-     Mac derives menu-bar events from those rows with the core's rule.
+     Island uses Inbox's Running, Needs attention, and Recent groups, and
+     opens conversations in Inbox. The Mac derives menu-bar events from
+     those rows with the core's rule.
      Notifications are posted by the core through `CoreUserNotifications`.
-   - **Deviation.** The Island resolver stays in Swift: it needs local day
-     boundaries, and the core has no calendar dependency yet.
 6. **Files and file tree.** The NSTextView editor stays native.
    - **As built.** Files and the conversation file tree are scoped
      surfaces: a view observes `SLICE_FILES` or `SLICE_FILE_TREE` with a

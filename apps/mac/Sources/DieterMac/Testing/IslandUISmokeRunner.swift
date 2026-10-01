@@ -2,6 +2,7 @@
     import AppKit
     import DieterAPI
     import Foundation
+    import ScreenCaptureKit
 
     @MainActor
     enum IslandUISmokeRunner {
@@ -17,45 +18,47 @@
             controller.setEnabled(true)
             let appeared = await waitUntil { controller.isVisible }
             if appeared, let window = controller.islandWindow {
-                capture(window, to: output.appending(path: "island-collapsed.png"))
+                await capture(window, to: output.appending(path: "island-collapsed.png"))
             }
 
             controller.setExpanded(true, animated: false)
             let expandedSettled = await waitForExpandedLayout(controller: controller, activity: store.islandActivity)
             let expandedSize = controller.islandWindow?.frame.size ?? .zero
             let expandedCount = store.islandActivity.items.count
-            let expectedExpandedSize = DieterIslandLayout.expandedSize(itemCount: 3)
+            let expectedExpandedSize = expectedPanelSize(controller: controller, itemCount: 3)
             let expanded =
                 expandedSettled && controller.isExpanded && expandedCount == 3
                 && expandedSize == expectedExpandedSize
             let expandedInsets = sectionInsets(controller: controller, activity: store.islandActivity)
             if let window = controller.islandWindow {
-                capture(window, to: output.appending(path: "island-expanded.png"))
+                await capture(window, to: output.appending(path: "island-expanded.png"))
             }
 
             store.state.cards = Array(store.state.cards.prefix(1))
+            store.activityRows = Array(store.activityRows.prefix(1))
             let singleItemSettled = await waitForExpandedLayout(controller: controller, activity: store.islandActivity)
             let singleItemSize = controller.islandWindow?.frame.size ?? .zero
             let singleItemCount = store.islandActivity.items.count
-            let expectedSingleItemSize = DieterIslandLayout.expandedSize(itemCount: 1)
+            let expectedSingleItemSize = expectedPanelSize(controller: controller, itemCount: 1)
             let singleItemExpanded =
                 singleItemSettled && controller.isExpanded && singleItemCount == 1
                 && singleItemSize == expectedSingleItemSize
             let singleItemInsets = sectionInsets(controller: controller, activity: store.islandActivity)
             if let window = controller.islandWindow {
-                capture(window, to: output.appending(path: "island-expanded-single.png"))
+                await capture(window, to: output.appending(path: "island-expanded-single.png"))
             }
 
             store.state.cards = []
+            store.activityRows = []
             let emptySettled = await waitForExpandedLayout(controller: controller, activity: store.islandActivity)
             let emptySize = controller.islandWindow?.frame.size ?? .zero
             let emptyCount = store.islandActivity.items.count
-            let expectedEmptySize = DieterIslandLayout.expandedSize(itemCount: 0)
+            let expectedEmptySize = expectedPanelSize(controller: controller, itemCount: 0)
             let emptyExpanded =
                 emptySettled && controller.isExpanded && emptyCount == 0 && emptySize == expectedEmptySize
             let emptyInsets = sectionInsets(controller: controller, activity: store.islandActivity)
             if let window = controller.islandWindow {
-                capture(window, to: output.appending(path: "island-expanded-empty.png"))
+                await capture(window, to: output.appending(path: "island-expanded-empty.png"))
             }
 
             let captureDestination = installNavigationFixture(in: store)
@@ -86,6 +89,7 @@
             controller.installCaptureFixture(
                 file: captureFile,
                 browser: CaptureBrowserContext(url: "http://127.0.0.1:4018/commitments/3", browser: true))
+            _ = await waitForExpandedLayout(controller: controller, activity: store.islandActivity)
             let captureClicked =
                 controller.islandWindow.map { NativeUIAccessibility.click("island.capture-task", in: $0) }
                 ?? false
@@ -115,7 +119,7 @@
                     .write(
                         to: output.appending(path: "capture-draft-accessibility.txt"), atomically: true,
                         encoding: .utf8)
-                capture(draftWindow, to: output.appending(path: "capture-task-draft.png"))
+                await capture(draftWindow, to: output.appending(path: "capture-task-draft.png"))
                 markupChecks = await AttachmentMarkupUISmoke.captureInspector(window: draftWindow, output: output)
                 draftWindow.close()
             }
@@ -130,21 +134,21 @@
             let restored = await waitUntil { controller.isVisible }
 
             let navigation = installNavigationFixture(in: store)
-            await store.openConversation(cardID: navigation.cardID)
+            let boardClicked = await clickActivity(navigation.cardID, store: store, controller: controller)
             let boardCardOpened =
-                store.section == .board && store.selectedProjectID == navigation.projectID
+                boardClicked && store.section == .inbox && store.selectedProjectID == navigation.projectID
                 && store.selectedBoardID == navigation.boardID && store.selectedCardID == navigation.cardID
                 && store.selectedChatID == nil
-            await store.openConversation(cardID: navigation.chatID)
+            let chatClicked = await clickActivity(navigation.chatID, store: store, controller: controller)
             let chatOpened =
-                store.section == .chats && store.selectedProjectID == navigation.projectID
+                chatClicked && store.section == .inbox && store.selectedProjectID == navigation.projectID
                 && store.selectedCardID == nil && store.selectedChatID == navigation.chatID
 
             store.openSettings(section: .island)
             try? await DieterTaskSleep.milliseconds(450)
             let settingsVisible = store.section == .settings && store.settingsSection == .island
             if let window = NSApp.windows.first(where: { $0.title == "Dieter" && $0.isVisible }) {
-                capture(window, to: output.appending(path: "island-settings.png"))
+                await capture(window, to: output.appending(path: "island-settings.png"))
             }
             let displayChecks = await checkDisplayMovement(
                 controller: controller, activity: store.islandActivity, defaults: defaults, output: output)
@@ -180,8 +184,9 @@
                     "settings-toggle-on": restored
                         ? "passed" : "failed: re-enabling the preference did not restore the island",
                     "open-board-card": boardCardOpened
-                        ? "passed" : "failed: activity did not route to its project and board",
-                    "open-chat": chatOpened ? "passed" : "failed: activity did not route to Chats",
+                        ? "passed" : "failed: island card click did not open its conversation in Inbox",
+                    "open-chat": chatOpened
+                        ? "passed" : "failed: island chat click did not open its conversation in Inbox",
                     "settings-page": settingsVisible
                         ? "passed" : "failed: Island was not the active Settings destination",
                 ].merging(displayChecks) { _, checked in checked }.merging(markupChecks) { _, checked in checked },
@@ -267,11 +272,11 @@
             results["display-picker"] =
                 choicesReady ? "passed" : "failed: expanded=\(expandedSettled), ready=\(ready), opened=\(opened)"
             guard choicesReady else {
-                writeDisplayDiagnostics(targetID, in: window, controller: controller, output: output)
+                await writeDisplayDiagnostics(targetID, in: window, controller: controller, output: output)
                 return results
             }
             if let popover = NativeUIAccessibility.find("island.display-options", in: window)?.recordedWindow {
-                capture(popover, to: output.appending(path: "island-display-options.png"))
+                await capture(popover, to: output.appending(path: "island-display-options.png"))
             }
             let selected = NativeUIAccessibility.click(targetID, in: window)
             let moved = await waitUntil {
@@ -292,7 +297,7 @@
             results["display-placement"] =
                 placed
                 ? "passed" : "failed: island frame=\(window.frame), display frame=\(target.geometry.screenFrame)"
-            capture(window, to: output.appending(path: "island-moved-display.png"))
+            await capture(window, to: output.appending(path: "island-moved-display.png"))
 
             let automaticReady = await waitForIslandTarget("island.display-picker", in: window, activate: true)
             let reopened = automaticReady && NativeUIAccessibility.press("island.display-picker", in: window)
@@ -320,7 +325,7 @@
                 automaticClicked && automaticRestored
                 ? "passed"
                 : "failed: clicked=\(automaticClicked), current=\(controller.currentDisplayID ?? "nil"), saved=\(DieterIslandPreferences.displayID(in: defaults) ?? "nil"), expected=\(automaticDisplay?.id ?? "nil")"
-            capture(window, to: output.appending(path: "island-automatic-display.png"))
+            await capture(window, to: output.appending(path: "island-automatic-display.png"))
             return results
         }
 
@@ -363,7 +368,7 @@
             var stableSamples = 0
             return await waitUntil(timeout: 5) {
                 guard controller.isExpanded, let window = controller.islandWindow,
-                    window.frame.size == DieterIslandLayout.expandedSize(itemCount: activity.items.count),
+                    window.frame.size == expectedPanelSize(controller: controller, itemCount: activity.items.count),
                     sectionInsets(controller: controller, activity: activity) == "passed"
                 else {
                     stableSamples = 0
@@ -382,7 +387,7 @@
 
         private static func writeDisplayDiagnostics(
             _ identifier: String, in window: NSWindow, controller: DieterIslandController, output: URL
-        ) {
+        ) async {
             let targets = ["island.display-picker", "island.display-options", identifier].map { id in
                 guard let target = NativeUIAccessibility.find(id, in: window) else { return "\(id): absent" }
                 return
@@ -396,7 +401,7 @@
                 + targets + windows
             try? details.joined(separator: "\n").write(
                 to: output.appending(path: "island-display-picker-diagnostics.txt"), atomically: true, encoding: .utf8)
-            capture(window, to: output.appending(path: "island-display-picker-failed.png"))
+            await capture(window, to: output.appending(path: "island-display-picker-failed.png"))
         }
 
         private static func sectionIdentifiers(activity: DieterIslandActivity) -> [String] {
@@ -425,6 +430,13 @@
                 if abs(frame.minX - expected.minX) > 1 || abs(frame.maxX - expected.maxX) > 1 {
                     failures.append("\(identifier) horizontal bounds \(frame.minX)...\(frame.maxX)")
                 }
+            }
+            if let display = controller.availableDisplays.first(where: { $0.id == controller.currentDisplayID }),
+                display.geometry.hasPhysicalNotch,
+                let header = NativeUIAccessibility.find("island.header", in: window)?.recordedFrame,
+                header.maxY > display.geometry.screenFrame.maxY - display.geometry.safeAreaTop
+            {
+                failures.append("header intersects the physical notch")
             }
             return failures.isEmpty
                 ? "passed"
@@ -463,6 +475,13 @@
             done.runtimeUpdatedAt = now
             store.state.boards = [board]
             store.state.cards = [running, review, done]
+            store.activityRows = zip([running, review, done], ["RUNNING", "ANSWER", "RECENT"]).map { card, kind in
+                .with {
+                    $0.card = card; $0.kind = kind
+                    $0.detail = card.summary.isEmpty ? "Latest conversation activity" : card.summary
+                    $0.atMillis = Int64(Date().timeIntervalSince1970 * 1000)
+                }
+            }
             store.phase = .connected(version: "island-smoke")
         }
 
@@ -490,7 +509,34 @@
             store.navigationBoards[project.id] = [board]
             store.navigationCards[project.id] = [card]
             store.chats = [chat]
+            store.activityRows = [card, chat].map { card in
+                .with {
+                    $0.card = card; $0.kind = "UNREAD"; $0.detail = "Unread reply"
+                }
+            }
             return (project.id, board.id, card.id, chat.id)
+        }
+
+        private static func clickActivity(
+            _ id: String, store: DieterStore, controller: DieterIslandController
+        ) async -> Bool {
+            controller.setExpanded(true, animated: false)
+            guard await waitForExpandedLayout(controller: controller, activity: store.islandActivity),
+                let window = controller.islandWindow,
+                NativeUIAccessibility.click("island.activity-row.\(id)", in: window)
+            else { return false }
+            return await waitUntil {
+                let collapsedSize = controller.availableDisplays.first {
+                    $0.id == controller.currentDisplayID
+                }?.geometry.collapsedSize
+                return store.section == .inbox && (store.selectedCardID ?? store.selectedChatID) == id
+                    && !controller.isExpanded && controller.islandWindow?.frame.size == collapsedSize
+            }
+        }
+
+        private static func expectedPanelSize(controller: DieterIslandController, itemCount: Int) -> CGSize {
+            controller.availableDisplays.first { $0.id == controller.currentDisplayID }?.geometry.expandedSize(
+                itemCount: itemCount) ?? DieterIslandLayout.expandedSize(itemCount: itemCount)
         }
 
         private static func waitUntil(
@@ -510,13 +556,42 @@
             NativeTestSupport.outputDirectory(flag: "--island-ui-smoke-output")
         }
 
-        private static func capture(_ window: NSWindow, to url: URL) {
-            guard let view = window.contentView,
-                let representation = view.bitmapImageRepForCachingDisplay(in: view.bounds)
-            else { return }
-            view.cacheDisplay(in: view.bounds, to: representation)
-            guard let data = representation.representation(using: .png, properties: [:]) else { return }
-            try? data.write(to: url, options: .atomic)
+        private static func capture(_ window: NSWindow, to url: URL) async {
+            guard CGPreflightScreenCaptureAccess() else {
+                try? "Screen Recording permission unavailable".write(
+                    to: url.appendingPathExtension("txt"), atomically: true, encoding: .utf8)
+                return
+            }
+            let windowID = CGWindowID(window.windowNumber)
+            var completed = false
+            var failure = "Timed out capturing the fixture window"
+            let attempt = Task { @MainActor in
+                defer { completed = true }
+                do {
+                    let content = try await SCShareableContent.currentProcess
+                    guard let target = content.windows.first(where: { $0.windowID == windowID && $0.isOnScreen })
+                    else { failure = "Fixture window was not on screen"; return }
+                    let filter = SCContentFilter(desktopIndependentWindow: target)
+                    let configuration = SCStreamConfiguration()
+                    let scale = CGFloat(filter.pointPixelScale)
+                    configuration.width = max(1, Int((filter.contentRect.width * scale).rounded(.up)))
+                    configuration.height = max(1, Int((filter.contentRect.height * scale).rounded(.up)))
+                    configuration.showsCursor = false
+                    configuration.ignoreShadowsSingleWindow = true
+                    configuration.captureResolution = .best
+                    let image = try await SCScreenshotManager.captureImage(
+                        contentFilter: filter, configuration: configuration)
+                    guard !Task.isCancelled else { return }
+                    let bitmap = NSBitmapImageRep(cgImage: image)
+                    guard let data = bitmap.representation(using: .png, properties: [:]) else { return }
+                    try data.write(to: url, options: .atomic)
+                    failure = ""
+                } catch { failure = error.localizedDescription }
+            }
+            if !(await waitUntil(timeout: 8) { completed }) { attempt.cancel() }
+            if !failure.isEmpty {
+                try? failure.write(to: url.appendingPathExtension("txt"), atomically: true, encoding: .utf8)
+            }
         }
 
         private static func writeReport(_ values: [String: String], to directory: URL) {

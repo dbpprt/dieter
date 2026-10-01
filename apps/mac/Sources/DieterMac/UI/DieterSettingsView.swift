@@ -1073,14 +1073,14 @@ struct IslandSettings: View {
             VStack(spacing: 14) {
                 SettingsPanel(
                     title: "Dieter Island",
-                    subtitle: "See active turns and reviews without leaving the app you are working in."
+                    subtitle: "See running conversations and replies needing attention while you work."
                 ) {
                     Toggle("Show live activity around the notch", isOn: $enabled)
                         .font(.system(size: 12, weight: .semibold))
                         .toggleStyle(.switch)
                         .accessibilityIdentifier("settings.island.enabled")
                     Text(
-                        "Hover the Island to expand a compact activity list. Choose a conversation to jump back into the same durable Dieter session."
+                        "Hover the Island to expand a compact activity list. Choose a card or chat to open its conversation in Inbox."
                     )
                     .font(.caption)
                     .foregroundStyle(DieterTheme.tertiary)
@@ -1126,7 +1126,7 @@ struct IslandSettings: View {
                 }
                 SettingsPanel(title: "Activity source") {
                     Text(
-                        "The Island uses the same bounded synchronized card stream as Dieter's board and menu bar. It does not start another connection or duplicate notifications."
+                        "The Island shows the same running conversations, replies needing attention, and recent activity as Inbox."
                     )
                     .font(.caption)
                     .foregroundStyle(DieterTheme.tertiary)
