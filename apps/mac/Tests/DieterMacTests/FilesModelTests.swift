@@ -105,7 +105,9 @@ private actor FilesFixture: FilesRPC {
     let core = ScriptedCoreClient(), model = FilesModel()
     core.handler = { command in
         var slice = ClientFilesSlice()
-        slice.target = .with { $0.daemonID = "machine"; $0.projectID = "project" }
+        slice.target = .with {
+            $0.daemonID = "machine"; $0.projectID = "project"
+        }
         switch command.files.action {
         case .navigate(let path)?: slice.directory = path.path; slice.canGoBack = true
         case .back?: slice.canGoForward = true
@@ -122,7 +124,10 @@ private actor FilesFixture: FilesRPC {
     #expect(model.fileNavigation == ProjectFileNavigation(canGoBack: false, canGoForward: true))
     #expect(
         core.commands.map(\.files.action) == [
-            .bind(.with { $0.daemonID = "machine"; $0.projectID = "project" }),
+            .bind(
+                .with {
+                    $0.daemonID = "machine"; $0.projectID = "project"
+                }),
             .navigate(.with { $0.path = "apps" }), .back(ClientFilesStep()),
         ])
 }
@@ -135,14 +140,18 @@ private actor FilesFixture: FilesRPC {
     let scope = try #require(core.commands.first?.files.scope)
     core.emit(.files, scope: scope) {
         $0.files = .with {
-            $0.target = .with { $0.daemonID = "machine"; $0.projectID = "A" }
+            $0.target = .with {
+                $0.daemonID = "machine"; $0.projectID = "A"
+            }
             $0.directory = "stale"
         }
     }
     #expect(model.filePath == "")
     core.emit(.files, scope: scope) {
         $0.files = .with {
-            $0.target = .with { $0.daemonID = "machine"; $0.projectID = "B" }
+            $0.target = .with {
+                $0.daemonID = "machine"; $0.projectID = "B"
+            }
             $0.directory = "current"
         }
     }

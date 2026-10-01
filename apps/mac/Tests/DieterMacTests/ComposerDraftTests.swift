@@ -36,7 +36,9 @@ import Testing
                 return .with {
                     $0.drafts.drafts = saved.map { key, text in
                         let parts = key.split(separator: "/").map(String.init)
-                        return .with { $0.daemonID = parts[0]; $0.cardID = parts[1]; $0.text = text }
+                        return .with {
+                            $0.daemonID = parts[0]; $0.cardID = parts[1]; $0.text = text
+                        }
                     }
                 }
             default: break

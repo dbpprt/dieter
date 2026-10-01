@@ -346,7 +346,9 @@ private final class HEVCTransportFeedback: @unchecked Sendable {
     }
 
     func update(_ value: Dieter_V1_RemoteDesktopReceiverFeedback) {
-        lock.withLock { feedback = value; measurement &+= 1 }
+        lock.withLock {
+            feedback = value; measurement &+= 1
+        }
     }
 
     func acknowledge(_ values: [Dieter_V1_RemoteDesktopReference]) {
@@ -354,7 +356,11 @@ private final class HEVCTransportFeedback: @unchecked Sendable {
         queue.async { [weak self] in self?.send() }
     }
 
-    func stop() { lock.withLock { timer?.cancel(); timer = nil; channel = nil } }
+    func stop() {
+        lock.withLock {
+            timer?.cancel(); timer = nil; channel = nil
+        }
+    }
 
     private func send() {
         lock.withLock {

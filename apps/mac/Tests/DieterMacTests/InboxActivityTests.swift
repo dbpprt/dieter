@@ -48,7 +48,6 @@ struct InboxActivityTests {
         #expect(InboxActivity.timeline(entries: entries, now: now, hours: 6).contains { $0.id == "old" })
     }
 
-
     @Test func inboxEntriesComeFromTheCoresActivityRows() {
         let store = DieterStore(restoreSync: false)
         store.activityRows = [
@@ -64,7 +63,9 @@ struct InboxActivityTests {
                 $0.detail = "Running tests"
                 $0.startedAtMillis = 1_799_999_000_000
             },
-            .with { $0.card = card("unknown", runtime: "idle"); $0.kind = "SOMETHING_NEW" },
+            .with {
+                $0.card = card("unknown", runtime: "idle"); $0.kind = "SOMETHING_NEW"
+            },
         ]
         let entries = store.inboxEntries
         #expect(entries.map(\.id) == ["needs", "busy"], "kinds this Mac does not know are skipped")

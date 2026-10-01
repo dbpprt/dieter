@@ -54,7 +54,8 @@ extension DieterStore {
             do {
                 try await self.core.dispatch { $0.completeSignIn = .with { $0.callbackURL = url.absoluteString } }
             } catch {
-                self.errorMessage = "Could not finish sign-in: \((error as? CoreFailure)?.message ?? error.localizedDescription)"
+                self.errorMessage =
+                    "Could not finish sign-in: \((error as? CoreFailure)?.message ?? error.localizedDescription)"
             }
         }
     }

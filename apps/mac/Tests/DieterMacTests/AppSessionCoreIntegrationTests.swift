@@ -104,7 +104,9 @@ final class AppSessionCoreIntegrationTests {
         }
         let card = try #require(store.state.cards.first { $0.title == "From the Mac session" })
         await store.rename(card, title: "Renamed by the Mac session")
-        try await wait("renamed") { store.state.cards.contains { $0.id == card.id && $0.title == "Renamed by the Mac session" } }
+        try await wait("renamed") {
+            store.state.cards.contains { $0.id == card.id && $0.title == "Renamed by the Mac session" }
+        }
         let labelLane = try #require(store.selectedBoard?.lanes.first { ![card.lane, "running"].contains($0.id) })
         await store.move(card, lane: labelLane.id)
         // The core shows the move at once and keeps it pending until the machine confirms it.
@@ -129,7 +131,9 @@ final class AppSessionCoreIntegrationTests {
         store.composerText = "second"
         await store.sendComposer()
         #expect(store.composerText.isEmpty)
-        try await wait("second reply", timeout: .seconds(60)) { replies() >= 2 && idle() && !store.conversationModel.awaitingReply }
+        try await wait("second reply", timeout: .seconds(60)) {
+            replies() >= 2 && idle() && !store.conversationModel.awaitingReply
+        }
         #expect(
             store.conversationMessages.filter { $0.role == "user" }.flatMap(\.parts).map(\.text) == ["first", "second"])
         let chat = try #require(store.chats.first { $0.id == chatID })
@@ -161,7 +165,9 @@ final class AppSessionCoreIntegrationTests {
         let relaunched = try launch(root: root, suite: suite)
         await relaunched.startCore()
         try await wait("cached workspace") {
-            relaunched.navigationCards[project]?.contains { $0.id == card.id && $0.title == "Renamed by the Mac session" } == true
+            relaunched.navigationCards[project]?.contains {
+                $0.id == card.id && $0.title == "Renamed by the Mac session"
+            } == true
         }
         await relaunched.connect()
         #expect(relaunched.phase.isConnected)

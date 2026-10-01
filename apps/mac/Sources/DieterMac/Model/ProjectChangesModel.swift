@@ -94,7 +94,8 @@ final class ProjectChangesModel {
         if self.changes != changes { self.changes = changes }
         let reported =
             slice.hasSelection
-            ? ProjectChangeSelection(path: slice.selection.path, section: slice.selection.staged ? "staged" : "unstaged")
+            ? ProjectChangeSelection(
+                path: slice.selection.path, section: slice.selection.staged ? "staged" : "unstaged")
             : nil
         // The core answered for the requested file (it may have followed it to
         // the other half), or the file is gone.
@@ -126,8 +127,11 @@ final class ProjectChangesModel {
         if self.notice != notice { self.notice = notice }
         // The view opens on the first change rather than an empty diff.
         if selection == nil, pendingKind == nil, let changes,
-            let first = changes.files.first(where: \.unstaged).map({ ProjectChangeSelection(path: $0.path, section: "unstaged") })
-                ?? changes.files.first(where: \.staged).map({ ProjectChangeSelection(path: $0.path, section: "staged") })
+            let first = changes.files.first(where: \.unstaged).map({
+                ProjectChangeSelection(path: $0.path, section: "unstaged")
+            })
+                ?? changes.files.first(where: \.staged).map({ ProjectChangeSelection(path: $0.path, section: "staged") }
+                )
         {
             select(first)
         }

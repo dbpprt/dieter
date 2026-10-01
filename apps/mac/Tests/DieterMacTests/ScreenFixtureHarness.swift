@@ -45,7 +45,8 @@ final class ScreenFixtureRoutes: NSObject, NativeScreenFixture, @unchecked Senda
         }
         guard available else { return nil }
         return NativeScreenFixtureRoute(
-            url: fixture.url, token: fixture.token, certificatePem: String(decoding: fixture.certificate, as: UTF8.self),
+            url: fixture.url, token: fixture.token,
+            certificatePem: String(decoding: fixture.certificate, as: UTF8.self),
             rtc: fixture.rtc, label: "Fixture loopback")
     }
 }

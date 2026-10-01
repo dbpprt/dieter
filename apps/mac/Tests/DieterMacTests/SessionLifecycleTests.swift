@@ -76,8 +76,12 @@ private func actionName(_ action: ClientScreenCommand.OneOf_Action?) -> String {
             $0.controlActive = true
             $0.canTransferControl = true
             $0.routeLabel = "Direct"
-            $0.capabilities = .with { $0.maxFps = 120; $0.platform = "darwin"; $0.clipboardSupported = true }
-            $0.state = .with { $0.codec = "H264"; $0.displayGeneration = 3; $0.controlActive = true }
+            $0.capabilities = .with {
+                $0.maxFps = 120; $0.platform = "darwin"; $0.clipboardSupported = true
+            }
+            $0.state = .with {
+                $0.codec = "H264"; $0.displayGeneration = 3; $0.controlActive = true
+            }
             $0.cursorImage = png
             $0.cursorWidth = 16
             $0.cursorHeight = 16
@@ -87,7 +91,9 @@ private func actionName(_ action: ClientScreenCommand.OneOf_Action?) -> String {
             $0.cursorX = 0.25
             $0.cursorY = 0.75
             $0.clipboardEnabled = true
-            $0.preferences = .with { $0.codec = .auto; $0.maxFps = 90; $0.quality = .detail }
+            $0.preferences = .with {
+                $0.codec = .auto; $0.maxFps = 90; $0.quality = .detail
+            }
             $0.displayStatus = "Matched: 1512 × 982"
         }
     }
@@ -177,7 +183,8 @@ private func actionName(_ action: ClientScreenCommand.OneOf_Action?) -> String {
     ]
     let names: [String] = sent.map(actionName)
     #expect(names == expected)
-    guard case .pointer(let pointer)? = sent[0], case .button(let button)? = sent[1], case .scroll(let scroll)? = sent[2],
+    guard case .pointer(let pointer)? = sent[0], case .button(let button)? = sent[1],
+        case .scroll(let scroll)? = sent[2],
         case .key(let key)? = sent[3], case .text(let text)? = sent[4], case .control(let control)? = sent[6],
         case .clipboard(let clipboard)? = sent[7], case .matchDisplay(let match)? = sent[8],
         case .matchDisplay(let stop)? = sent[9], case .preferences(let preferences)? = sent[10]

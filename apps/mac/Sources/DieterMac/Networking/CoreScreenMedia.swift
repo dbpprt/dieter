@@ -55,7 +55,8 @@ final class CoreScreenMedia: NSObject, NativeScreenMedia, Sendable {
     /// What this Mac can decode, as libwebrtc names it; probed once.
     private static let receiveCodecs: [ClientRtpCodec] = {
         let factory = RTCPeerConnectionFactory(
-            encoderFactory: RTCDefaultVideoEncoderFactory(), decoderFactory: RemoteDesktopDecoderFactory(enableHEVC: true))
+            encoderFactory: RTCDefaultVideoEncoderFactory(),
+            decoderFactory: RemoteDesktopDecoderFactory(enableHEVC: true))
         return factory.rtpReceiverCapabilities(forKind: kRTCMediaStreamTrackKindVideo).codecs.map { codec in
             ClientRtpCodec.with {
                 $0.name = codec.name
@@ -161,7 +162,8 @@ final class CoreScreenMediaEngine: NSObject, NativeScreenMediaEngine, @unchecked
                 guard let self, !self.isClosed else { return }
                 self.events.value.hevcUnavailable(reason: "HEVC decoder unavailable")
             })
-        let factory = RTCPeerConnectionFactory(encoderFactory: RTCDefaultVideoEncoderFactory(), decoderFactory: decoders)
+        let factory = RTCPeerConnectionFactory(
+            encoderFactory: RTCDefaultVideoEncoderFactory(), decoderFactory: decoders)
         self.factory = factory
         let rtc = RTCConfiguration()
         rtc.sdpSemantics = .unifiedPlan
@@ -250,7 +252,8 @@ final class CoreScreenMediaEngine: NSObject, NativeScreenMediaEngine, @unchecked
 
     func addRemoteCandidate(candidate: Data, completion: any NativeScreenDoneCompletion) {
         let completion = NativeCallback(completion)
-        guard let peer, !isClosed, let value = try? Dieter_V1_RemoteDesktopICECandidate(serializedBytes: candidate) else {
+        guard let peer, !isClosed, let value = try? Dieter_V1_RemoteDesktopICECandidate(serializedBytes: candidate)
+        else {
             completion.value.completed(error: "Invalid ICE candidate")
             return
         }
@@ -295,10 +298,13 @@ final class CoreScreenMediaEngine: NSObject, NativeScreenMediaEngine, @unchecked
             completion.value.completed(
                 sample: NativeReceiverSample(
                     atMillis: Int64(ProcessInfo.processInfo.systemUptime * 1000),
-                    framesDecoded: number(inbound, "framesDecoded"), totalDecodeTime: number(inbound, "totalDecodeTime"),
+                    framesDecoded: number(inbound, "framesDecoded"),
+                    totalDecodeTime: number(inbound, "totalDecodeTime"),
                     jitterBufferEmittedCount: number(inbound, "jitterBufferEmittedCount"),
-                    jitterBufferDelay: number(inbound, "jitterBufferDelay"), packetsLost: number(inbound, "packetsLost"),
-                    packetsReceived: number(inbound, "packetsReceived"), presented: Int64(clamping: rendered.framesPresented),
+                    jitterBufferDelay: number(inbound, "jitterBufferDelay"),
+                    packetsLost: number(inbound, "packetsLost"),
+                    packetsReceived: number(inbound, "packetsReceived"),
+                    presented: Int64(clamping: rendered.framesPresented),
                     renderMilliseconds: rendered.totalRenderMilliseconds, jitterSeconds: number(inbound, "jitter"),
                     roundTripSeconds: number(pair, "currentRoundTripTime"),
                     decoderImplementation: inbound["decoderImplementation"] as? String ?? ""))
@@ -411,7 +417,9 @@ private final class CoreScreenPeerDelegate: NSObject, RTCPeerConnectionDelegate,
     }
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
     // The host never opens channels; refuse any it tries.
-    func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) { dataChannel.close() }
+    func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {
+        dataChannel.close()
+    }
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
         engine?.peerChanged(newState)
     }

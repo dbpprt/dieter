@@ -124,7 +124,8 @@ import SharedCore
 
     private func fold(_ slice: ClientTerminalOverviewSlice) {
         let entries = slice.entries.map {
-            TerminalOverviewEntry(machineID: endpointID($0.daemonID), machineName: $0.machineName, terminal: $0.terminal)
+            TerminalOverviewEntry(
+                machineID: endpointID($0.daemonID), machineName: $0.machineName, terminal: $0.terminal)
         }
         if terminalOverviewEntries != entries { terminalOverviewEntries = entries }
         let selected = slice.entries.first { $0.id == slice.selectedID }.map {

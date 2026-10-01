@@ -40,7 +40,8 @@ private func terminal(_ id: String, status: String = "running") -> Dieter_V1_Ter
     }
     model.active = true
     model.bind(
-        target: WorkspaceTarget(endpointID: "gateway#machine", projectID: "project", conversationID: "card"), core: core)
+        target: WorkspaceTarget(endpointID: "gateway#machine", projectID: "project", conversationID: "card"), core: core
+    )
     await model.loadTerminals()
     model.sendTerminalInput(id: "shell", data: Data("ls\n".utf8))
     model.sendTerminalInput(id: "shell", data: Data("pwd\n".utf8))
@@ -50,8 +51,14 @@ private func terminal(_ id: String, status: String = "running") -> Dieter_V1_Ter
         core.commands.map(\.terminals.action) == [
             .bind(target), .active(.with { $0.on = true }), .load(ClientTerminalStep()),
             .input(.with { $0.data = Data("ls\n".utf8) }), .input(.with { $0.data = Data("pwd\n".utf8) }),
-            .grid(.with { $0.columns = 90; $0.rows = 25 }),
-            .rename(.with { $0.terminalID = "shell"; $0.name = "build" }),
+            .grid(
+                .with {
+                    $0.columns = 90; $0.rows = 25
+                }),
+            .rename(
+                .with {
+                    $0.terminalID = "shell"; $0.name = "build"
+                }),
         ])
     #expect(Set(core.commands.map(\.terminals.scope)).count == 1)
     #expect(model.selectedTerminal?.id == "shell")

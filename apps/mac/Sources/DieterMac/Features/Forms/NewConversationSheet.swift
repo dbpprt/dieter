@@ -374,12 +374,13 @@ struct NewConversationSheet: View {
     private func submit() async {
         guard canSubmit else { return }
         submitting = true
-        store.rememberCreation(ConversationCreationPreferences(
-            provider: provider,
-            model: model,
-            effort: effort,
-            workspaceMode: workspaceDraft.mode
-        ))
+        store.rememberCreation(
+            ConversationCreationPreferences(
+                provider: provider,
+                model: model,
+                effort: effort,
+                workspaceMode: workspaceDraft.mode
+            ))
         let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         await store.createConversation(

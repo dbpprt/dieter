@@ -91,7 +91,9 @@ import SharedCore
     }
 
     private func require(_ surface: Surface) throws -> ClientFilesTarget {
-        guard let target = surface.target else { throw CoreFailure(kind: .permanent, message: "Choose a project first.") }
+        guard let target = surface.target else {
+            throw CoreFailure(kind: .permanent, message: "Choose a project first.")
+        }
         return target
     }
 

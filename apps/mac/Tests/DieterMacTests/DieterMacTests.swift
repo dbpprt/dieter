@@ -1630,7 +1630,9 @@ private func terminalKeyEvent(
     let store = DieterStore(restoreSync: false)
     store.foldCreation(
         .with {
-            $0.selection = .with { $0.provider = "codex"; $0.model = "sol"; $0.effort = "xhigh" }
+            $0.selection = .with {
+                $0.provider = "codex"; $0.model = "sol"; $0.effort = "xhigh"
+            }
             $0.workspaceMode = "project"
         })
     let restored = store.creationPreferences

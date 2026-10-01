@@ -30,7 +30,9 @@ extension DieterStore {
             }
         } catch {
             guard generation == chatsRequestGeneration else { return }
-            if !Self.isExpectedCancellation(error) { chatsError = (error as? CoreFailure)?.message ?? error.localizedDescription }
+            if !Self.isExpectedCancellation(error) {
+                chatsError = (error as? CoreFailure)?.message ?? error.localizedDescription
+            }
         }
     }
 

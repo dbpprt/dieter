@@ -206,7 +206,6 @@ extension DieterStore {
         } != nil
     }
 
-
     func acceptWorkspaceCard(_ card: Dieter_V1_Card, sourceDaemonID: String? = nil) {
         let card = replica.retainingOwnerDetails([card], sourceDaemonID: sourceDaemonID ?? endpoint.daemonID)[0]
         replica.upsert(card)
@@ -220,7 +219,6 @@ extension DieterStore {
             conversation = snapshot
         }
     }
-
 
     func listProjectDirectories(path: String, machineID: String) async throws
         -> Dieter_V1_DirectoryListing

@@ -51,7 +51,9 @@ import SharedCore
                 update(scope) { view in
                     view.terminals = listed
                     view.error = ""
-                    if !listed.contains(where: { $0.id == view.selectedID }) { view.selectedID = listed.first?.id ?? "" }
+                    if !listed.contains(where: { $0.id == view.selectedID }) {
+                        view.selectedID = listed.first?.id ?? ""
+                    }
                 }
             } catch {
                 update(scope) { $0.error = error.localizedDescription }
@@ -65,7 +67,8 @@ import SharedCore
             request.machineHome = target.kind == .machine
             request.name = create.name
             request.shell = create.shell
-            request.workingDirectory = create.workingDirectory.isEmpty && target.kind == .card ? "." : create.workingDirectory
+            request.workingDirectory =
+                create.workingDirectory.isEmpty && target.kind == .card ? "." : create.workingDirectory
             request.columns = create.columns
             request.rows = create.rows
             let created = try await rpc.createTerminal(request)
@@ -79,7 +82,9 @@ import SharedCore
         case .rename(let rename)?:
             let renamed = try await rpc.renameTerminal(id: rename.terminalID, name: rename.name)
             update(scope) { view in
-                if let index = view.terminals.firstIndex(where: { $0.id == renamed.id }) { view.terminals[index] = renamed }
+                if let index = view.terminals.firstIndex(where: { $0.id == renamed.id }) {
+                    view.terminals[index] = renamed
+                }
             }
         case .close(let terminal)?:
             try await rpc.closeTerminal(id: terminal.terminalID)

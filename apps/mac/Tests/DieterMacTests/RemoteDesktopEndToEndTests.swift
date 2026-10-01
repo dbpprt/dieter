@@ -66,7 +66,8 @@ import Testing
     defer { clientClipboard.releaseGlobally() }
     let core = try ScreenFixtureCore(
         fixture,
-        clipboard: CoreScreenClipboard(pasteboard: clientClipboard, stagingDirectory: output.appending(path: "clipboard")))
+        clipboard: CoreScreenClipboard(
+            pasteboard: clientClipboard, stagingDirectory: output.appending(path: "clipboard")))
     let routes = core.routes
     let controller = core.controller()
     defer {
@@ -433,7 +434,11 @@ import Testing
         for image in [true, false] {
             let data = image ? png : try Data(contentsOf: binary)
             clientClipboard.clearContents()
-            if image { clientClipboard.setData(png, forType: .png) } else { clientClipboard.writeObjects([binary] as [NSURL]) }
+            if image {
+                clientClipboard.setData(png, forType: .png)
+            } else {
+                clientClipboard.writeObjects([binary] as [NSURL])
+            }
             try await clipboardOperation("binary paste", timeout: 8) { controller.performClipboard("paste") }
             let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
             try await screenWait("owned native app consumed binary paste", timeout: 5) {
@@ -699,7 +704,6 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
     Thread.sleep(forTimeInterval: 0.25)
 }
 
-
 // Companion for the emulator fixture: it stays connected while Android changes
 // quality, transfers control, expires its own session, and reconnects repeatedly.
 @Test(
@@ -710,7 +714,8 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
     let environment = ProcessInfo.processInfo.environment
     guard let path = environment["DIETER_TEST_SCREEN_COMPANION"] else { return }
     let root = URL(fileURLWithPath: path).deletingLastPathComponent()
-    let fixture = try JSONDecoder().decode(ScreenFixtureConnection.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+    let fixture = try JSONDecoder().decode(
+        ScreenFixtureConnection.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
     let (rpc, rpcTask) = try screenFixtureRPC(fixture)
     defer { rpcTask.cancel() }
     let core = try ScreenFixtureCore(fixture, clipboard: CoreScreenClipboard())
@@ -905,7 +910,8 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
     surface.scrollWheel(with: try #require(NSEvent(cgEvent: scroll)))
     try await Task.sleep(for: .milliseconds(300))
     #expect(
-        controller.sessionState.lastInputOrdinal == releasedAck, "Release shortcut must pause pointer input until clicked")
+        controller.sessionState.lastInputOrdinal == releasedAck,
+        "Release shortcut must pause pointer input until clicked")
     detached.makeFirstResponder(surface)
     try await screenWait("refocused control", timeout: 4) { controller.controlActive }
     let fullscreen = try await measureScreenInputResponse(controller, x: 0.01, y: 0.01) {

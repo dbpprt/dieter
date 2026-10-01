@@ -33,9 +33,15 @@ private func reviewTarget(_ card: String = "c_card") -> ClientReviewTarget {
             $0.daemonID = "machine"
             $0.selectedPath = "a.swift"
             $0.diffRows = [
-                .with { $0.id = 0; $0.kind = .hunk; $0.text = "@@ -1 +1 @@" },
-                .with { $0.id = 1; $0.kind = .deletion; $0.text = "-old"; $0.oldLine = 1 },
-                .with { $0.id = 2; $0.kind = .addition; $0.text = "+new"; $0.newLine = 1 },
+                .with {
+                    $0.id = 0; $0.kind = .hunk; $0.text = "@@ -1 +1 @@"
+                },
+                .with {
+                    $0.id = 1; $0.kind = .deletion; $0.text = "-old"; $0.oldLine = 1
+                },
+                .with {
+                    $0.id = 2; $0.kind = .addition; $0.text = "+new"; $0.newLine = 1
+                },
             ]
             $0.availability = .with {
                 $0.allowed = ["commit", "merge_local"]
@@ -72,7 +78,12 @@ private func reviewTarget(_ card: String = "c_card") -> ClientReviewTarget {
         switch command.review.action {
         case .addComment?: .with { $0.changeComment = .with { $0.id = "comment" } }
         case .merge?: .with { $0.outcome = .with { $0.succeeded = true } }
-        case .start?: .with { $0.gitOperation = .with { $0.id = "op"; $0.status = "running" } }
+        case .start?:
+            .with {
+                $0.gitOperation = .with {
+                    $0.id = "op"; $0.status = "running"
+                }
+            }
         default: .with { $0.done = ClientDone() }
         }
     }
@@ -86,8 +97,18 @@ private func reviewTarget(_ card: String = "c_card") -> ClientReviewTarget {
             strategy: "squash", subject: "Ship it", body: "", validate: true, removeWorkspace: true,
             moveCardToDone: false))
     let actions = core.commands.map(\.review.action)
-    #expect(actions.contains(.addComment(.with { $0.rowID = 7; $0.body = "Looks good"; $0.author = "Reviewer" })))
-    #expect(actions.contains(.start(.with { $0.kind = "validate"; $0.parameters = ["fetch": "false"] })))
+    #expect(
+        actions.contains(
+            .addComment(
+                .with {
+                    $0.rowID = 7; $0.body = "Looks good"; $0.author = "Reviewer"
+                })))
+    #expect(
+        actions.contains(
+            .start(
+                .with {
+                    $0.kind = "validate"; $0.parameters = ["fetch": "false"]
+                })))
     #expect(
         actions.contains(
             .merge(
@@ -119,8 +140,12 @@ private func reviewTarget(_ card: String = "c_card") -> ClientReviewTarget {
             $0.daemonID = "machine"
             $0.changes = .with {
                 $0.files = [
-                    .with { $0.path = "staged.swift"; $0.staged = true },
-                    .with { $0.path = "edited.swift"; $0.unstaged = true },
+                    .with {
+                        $0.path = "staged.swift"; $0.staged = true
+                    },
+                    .with {
+                        $0.path = "edited.swift"; $0.unstaged = true
+                    },
                 ]
             }
         }
@@ -152,7 +177,13 @@ private func reviewTarget(_ card: String = "c_card") -> ClientReviewTarget {
                     $0.projectID = "project"
                     $0.checkoutID = "checkout"
                     $0.daemonID = "machine"
-                    $0.changes = .with { $0.files = [.with { $0.path = "a.swift"; $0.staged = true }] }
+                    $0.changes = .with {
+                        $0.files = [
+                            .with {
+                                $0.path = "a.swift"; $0.staged = true
+                            }
+                        ]
+                    }
                 }
             }
         }

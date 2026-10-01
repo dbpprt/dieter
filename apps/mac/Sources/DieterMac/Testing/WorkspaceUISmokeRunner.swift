@@ -336,7 +336,9 @@
             store: DieterStore, window: NSWindow, project: Dieter_V1_Project,
             results: inout [String: String], output: URL
         ) async {
-            guard let rpc = await store.fixtureRPC() else { results["project-changes"] = "failed: RPC unavailable"; return }
+            guard let rpc = await store.fixtureRPC() else {
+                results["project-changes"] = "failed: RPC unavailable"; return
+            }
             try? "# Isolated E2E\n\nProject checkout local edit.\n".write(
                 toFile: project.path + "/README.md", atomically: true, encoding: .utf8)
             try? "temporary project note\n".write(

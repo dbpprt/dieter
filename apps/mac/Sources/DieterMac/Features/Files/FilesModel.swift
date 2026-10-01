@@ -150,7 +150,11 @@ final class FilesModel {
         } catch let failure as CoreFailure {
             guard generation == fileScopeGeneration else { return nil }
             if failure.kind == .conflict { conflict = true }
-            if document || failure.kind == .conflict { fileError = failure.message } else { filesError = failure.message }
+            if document || failure.kind == .conflict {
+                fileError = failure.message
+            } else {
+                filesError = failure.message
+            }
             return nil
         } catch {
             return nil

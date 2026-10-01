@@ -15,7 +15,9 @@ import Testing
     snapshot.detail.card.responseSeq = 40
     snapshot.detail.card.responseMessageID = "reply"
     model.conversation = snapshot
-    func receipts() -> [String] { core.commands.compactMap { if case .markCardRead(let read) = $0.command { read.cardID } else { nil } } }
+    func receipts() -> [String] {
+        core.commands.compactMap { if case .markCardRead(let read) = $0.command { read.cardID } else { nil } }
+    }
     await model.markResponseSeen()
     #expect(receipts().isEmpty)
     snapshot.conversation.messages = [fixtureMessage("reply", role: "assistant")]

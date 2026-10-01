@@ -444,7 +444,9 @@ extension WorkspaceReplica {
         var cards: [String: [Dieter_V1_Card]] = [:]
         var chats: [Dieter_V1_Card] = []
         for card in slice.cards {
-            if card.scope == "chat", card.boardID.isEmpty { chats.append(card) } else {
+            if card.scope == "chat", card.boardID.isEmpty {
+                chats.append(card)
+            } else {
                 cards[card.projectID, default: []].append(card)
             }
         }

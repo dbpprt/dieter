@@ -24,7 +24,8 @@ import Testing
     @Test func processesFollowTheConversationsMachineAndIgnoreAnotherTarget() async {
         let core = ScriptedCoreClient()
         let model = ConversationProcessesModel()
-        model.bind(target: .init(endpointID: "origin#daemon-a", projectID: "project", conversationID: "card"), core: core)
+        model.bind(
+            target: .init(endpointID: "origin#daemon-a", projectID: "project", conversationID: "card"), core: core)
         model.active = true
         await settle(model)
         guard case .bind(let bind)? = sent(core).last?.action else {
@@ -49,7 +50,8 @@ import Testing
         #expect(String(decoding: model.stdout, as: UTF8.self) == "ready\n" && model.outputTruncated)
 
         // A late slice for the previous conversation never crosses over.
-        model.bind(target: .init(endpointID: "origin#daemon-b", projectID: "project", conversationID: "next"), core: core)
+        model.bind(
+            target: .init(endpointID: "origin#daemon-b", projectID: "project", conversationID: "next"), core: core)
         core.emit(.processes, scope: scope) {
             $0.processes = .with {
                 $0.daemonID = "daemon-a"; $0.projectID = "project"; $0.cardID = "card"
@@ -63,7 +65,8 @@ import Testing
     @Test func hidingOnlyDeactivatesAndStopIsExplicit() async {
         let core = ScriptedCoreClient()
         let model = ConversationProcessesModel()
-        model.bind(target: .init(endpointID: "origin#daemon-a", projectID: "project", conversationID: "card"), core: core)
+        model.bind(
+            target: .init(endpointID: "origin#daemon-a", projectID: "project", conversationID: "card"), core: core)
         model.active = true
         await settle(model)
         let scope = sent(core)[0].scope
@@ -81,11 +84,13 @@ import Testing
         #expect(!hidden.active)
 
         await model.stopSelected()
-        #expect(!sent(core).contains { if case .stop? = $0.action { true } else { false } }, "a hidden view cannot stop")
+        #expect(
+            !sent(core).contains { if case .stop? = $0.action { true } else { false } }, "a hidden view cannot stop")
         model.active = true
         model.select("done")
         await model.stopSelected()
-        #expect(!sent(core).contains { if case .stop? = $0.action { true } else { false } }, "only a running process stops")
+        #expect(
+            !sent(core).contains { if case .stop? = $0.action { true } else { false } }, "only a running process stops")
         model.select("own")
         await model.stopSelected()
         #expect(sent(core).filter { if case .stop? = $0.action { true } else { false } }.count == 1)
@@ -94,13 +99,16 @@ import Testing
     @Test func releasingTheModelReleasesTheCoreSurface() async {
         let core = ScriptedCoreClient()
         var model: ConversationProcessesModel? = ConversationProcessesModel()
-        model?.bind(target: .init(endpointID: "origin#daemon-a", projectID: "project", conversationID: "card"), core: core)
+        model?.bind(
+            target: .init(endpointID: "origin#daemon-a", projectID: "project", conversationID: "card"), core: core)
         model?.active = true
         await model?.refresh()
         let scope = sent(core)[0].scope
         #expect(core.isObserved(.processes, scope: scope))
         model = nil
-        for _ in 0..<50 where core.isObserved(.processes, scope: scope) { try? await Task.sleep(for: .milliseconds(10)) }
+        for _ in 0..<50 where core.isObserved(.processes, scope: scope) {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
         #expect(!core.isObserved(.processes, scope: scope))
         #expect(!sent(core).contains { if case .stop? = $0.action { true } else { false } })
     }

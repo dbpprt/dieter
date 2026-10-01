@@ -494,12 +494,13 @@ struct StandaloneChatStartView: View {
             !harnessCatalogLoading, harnessCatalogError == nil, harness != nil
         else { return }
         submitting = true
-        store.rememberCreation(ConversationCreationPreferences(
-            provider: provider,
-            model: model,
-            effort: effort,
-            workspaceMode: workspaceDraft.mode
-        ))
+        store.rememberCreation(
+            ConversationCreationPreferences(
+                provider: provider,
+                model: model,
+                effort: effort,
+                workspaceMode: workspaceDraft.mode
+            ))
         let firstLine =
             text.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init)
             ?? attachments.first?.filename ?? "New chat"

@@ -42,7 +42,9 @@
             _ store: DieterStore, _ window: NSWindow, _ cardID: String,
             _ results: inout [String: String], _ output: URL
         ) async {
-            guard let rpc = await store.fixtureRPC() else { results["content-processes"] = "failed: machine unavailable"; return }
+            guard let rpc = await store.fixtureRPC() else {
+                results["content-processes"] = "failed: machine unavailable"; return
+            }
             let content = store.conversationContext.content
             var executionID: String?
             do {

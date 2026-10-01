@@ -134,9 +134,9 @@ struct ScreensView: View {
                 .accessibilityIdentifier("screens.disconnect")
         default:
             Button("Connect") { session.connect() }
-            .buttonStyle(DieterPrimaryButtonStyle())
-            .disabled(selectedMachine?.online != true)
-            .accessibilityIdentifier("screens.connect")
+                .buttonStyle(DieterPrimaryButtonStyle())
+                .disabled(selectedMachine?.online != true)
+                .accessibilityIdentifier("screens.connect")
         }
     }
 
@@ -425,7 +425,8 @@ private struct NewScreenShareSheet: View {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Connect") {
                     guard let machine = selectedMachine else { return }
-                    model.createSession(machineID: machine.id, daemonID: machine.daemonID ?? "", machineName: machine.name)
+                    model.createSession(
+                        machineID: machine.id, daemonID: machine.daemonID ?? "", machineName: machine.name)
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)

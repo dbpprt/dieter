@@ -116,7 +116,8 @@ import SharedCore
         machineOperationInFlight = true
         defer { machineOperationInFlight = false }
         do {
-            let result = try await core.dispatch(.with { $0.telemetry = .with { $0.perform = .with { $0.action = action } } })
+            let result = try await core.dispatch(
+                .with { $0.telemetry = .with { $0.perform = .with { $0.action = action } } })
             if case .machineOperation(let response)? = result.result, selectedMachineID == machineID {
                 machineOperationMessage = response.message.isEmpty ? "Machine operation accepted." : response.message
             }
@@ -140,7 +141,9 @@ import SharedCore
             if readings.hasInformation, machineInformation[machineID] != readings.information {
                 machineInformation[machineID] = readings.information
             }
-            if machineCPUHistory[machineID] != readings.cpuHistory { machineCPUHistory[machineID] = readings.cpuHistory }
+            if machineCPUHistory[machineID] != readings.cpuHistory {
+                machineCPUHistory[machineID] = readings.cpuHistory
+            }
             let gpu = readings.gpuHistory.mapValues(\.values)
             if machineGPUHistory[machineID] != gpu { machineGPUHistory[machineID] = gpu }
             guard machineID == selectedMachineID else { continue }

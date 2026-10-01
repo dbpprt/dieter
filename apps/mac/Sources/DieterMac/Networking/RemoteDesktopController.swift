@@ -189,7 +189,9 @@ final class RemoteDesktopController {
         if clipboardEnabled != slice.clipboardEnabled { clipboardEnabled = slice.clipboardEnabled }
         if clipboardError != slice.clipboardError { clipboardError = slice.clipboardError }
         if clipboardBusy != slice.clipboardBusy { clipboardBusy = slice.clipboardBusy }
-        if clipboardOperations != Int(slice.clipboardOperations) { clipboardOperations = Int(slice.clipboardOperations) }
+        if clipboardOperations != Int(slice.clipboardOperations) {
+            clipboardOperations = Int(slice.clipboardOperations)
+        }
         let preferences = slice.preferences
         if codecPreference != preferences.codec { codecPreference = preferences.codec }
         if preferences.maxFps > 0, preferredMaxFPS != preferences.maxFps { preferredMaxFPS = preferences.maxFps }
@@ -215,7 +217,11 @@ final class RemoteDesktopController {
     func sendPointerMove(x: CGFloat, y: CGFloat) {
         onUserActivity()
         guard controlActive else { return }
-        send { $0.pointer = .with { $0.x = Double(x); $0.y = Double(y) } }
+        send {
+            $0.pointer = .with {
+                $0.x = Double(x); $0.y = Double(y)
+            }
+        }
     }
 
     func sendPointerButton(
@@ -306,7 +312,9 @@ final class RemoteDesktopController {
         onUserActivity()
         if let displayID { self.displayID = displayID }
         if let quality { self.quality = quality }
-        if let maxFPS { preferredMaxFPS = max(1, min(120, min(maxFPS, capabilities.maxFps > 0 ? capabilities.maxFps : 60))) }
+        if let maxFPS {
+            preferredMaxFPS = max(1, min(120, min(maxFPS, capabilities.maxFps > 0 ? capabilities.maxFps : 60)))
+        }
         if displayID != nil || quality != nil || maxFPS != nil { sendPreferences() }
         if refresh { send { $0.refresh = ClientScreenStep() } }
     }

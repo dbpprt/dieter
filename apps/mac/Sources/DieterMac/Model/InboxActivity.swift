@@ -87,9 +87,12 @@ extension DieterStore {
     var inboxEntries: [InboxActivityEntry] {
         activityRows.compactMap { row in
             guard let kind = InboxActivityKind(core: row.kind) else { return nil }
-            func date(_ millis: Int64) -> Date? { millis > 0 ? Date(timeIntervalSince1970: Double(millis) / 1_000) : nil }
+            func date(_ millis: Int64) -> Date? {
+                millis > 0 ? Date(timeIntervalSince1970: Double(millis) / 1_000) : nil
+            }
             return InboxActivityEntry(
-                card: row.card, kind: kind, at: date(row.atMillis), start: date(row.startedAtMillis), detail: row.detail)
+                card: row.card, kind: kind, at: date(row.atMillis), start: date(row.startedAtMillis), detail: row.detail
+            )
         }
     }
 }

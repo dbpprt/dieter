@@ -63,7 +63,9 @@ final class QuickTaskFormState {
         if provider != creation.selection.provider { provider = creation.selection.provider }
         if model != creation.selection.model { model = creation.selection.model }
         if effort != creation.selection.effort { effort = creation.selection.effort }
-        if providerOptions != creation.selection.providerOptions { providerOptions = creation.selection.providerOptions }
+        if providerOptions != creation.selection.providerOptions {
+            providerOptions = creation.selection.providerOptions
+        }
     }
 
     func selectProject(_ id: String, boardIDs: [String]) {

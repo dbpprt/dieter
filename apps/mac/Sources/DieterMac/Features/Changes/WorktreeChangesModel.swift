@@ -138,7 +138,8 @@ final class WorktreeChangesModel {
         if surfaceRemoved != slice.surfaceRemoved { surfaceRemoved = slice.surfaceRemoved }
         let step = WorkspaceMergeStep(rawValue: slice.mergeStep)
         if mergeFlowStep != step { mergeFlowStep = step }
-        let next = slice.hasAvailability ? WorkspaceActionAvailability(slice.availability) : WorkspaceActionAvailability()
+        let next =
+            slice.hasAvailability ? WorkspaceActionAvailability(slice.availability) : WorkspaceActionAvailability()
         if availability != next { availability = next }
         if !slice.toast.isEmpty, slice.toast != shownToast {
             shownToast = slice.toast

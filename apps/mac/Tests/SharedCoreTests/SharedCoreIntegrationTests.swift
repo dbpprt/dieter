@@ -37,41 +37,44 @@ struct SharedCoreIntegrationTests {
         var subscriptions: [SliceSubscription] = []
 
         init(_ core: CoreClient) {
-            subscriptions.append(SliceSubscription(client: core, slice: .session) { [unowned self] update in
-                if case .session(let value) = update.value { session = value }
-            })
-            subscriptions.append(SliceSubscription(client: core, slice: .workspace) { [unowned self] update in
-                switch update.value {
-                case .workspace(let value): workspace = value
-                case .workspaceDelta(let delta):
-                    workspace.projects = delta.projects
-                    workspace.boards = delta.boards
-                    workspace.cards = KeyedList.apply(
-                        workspace.cards, upserted: delta.upsertedCards, removed: delta.removedCardIds,
-                        order: delta.orderChanged ? delta.cardOrder : nil, key: \.id)
-                    workspace.pendingCardIds = delta.pendingCardIds
-                    workspace.loaded = delta.loaded
-                default: break
-                }
-            })
+            subscriptions.append(
+                SliceSubscription(client: core, slice: .session) { [unowned self] update in
+                    if case .session(let value) = update.value { session = value }
+                })
+            subscriptions.append(
+                SliceSubscription(client: core, slice: .workspace) { [unowned self] update in
+                    switch update.value {
+                    case .workspace(let value): workspace = value
+                    case .workspaceDelta(let delta):
+                        workspace.projects = delta.projects
+                        workspace.boards = delta.boards
+                        workspace.cards = KeyedList.apply(
+                            workspace.cards, upserted: delta.upsertedCards, removed: delta.removedCardIds,
+                            order: delta.orderChanged ? delta.cardOrder : nil, key: \.id)
+                        workspace.pendingCardIds = delta.pendingCardIds
+                        workspace.loaded = delta.loaded
+                    default: break
+                    }
+                })
         }
 
         func observeConversation(_ core: CoreClient, _ cardID: String) {
-            subscriptions.append(SliceSubscription(client: core, slice: .conversation, scope: cardID) { [unowned self] update in
-                switch update.value {
-                case .conversation(let value): conversation = value
-                case .conversationDelta(let delta):
-                    guard var slice = conversation else { return }
-                    slice.card = delta.card
-                    slice.conversation = delta.conversation
-                    if !delta.cardID.isEmpty { slice.cardID = delta.cardID }
-                    slice.messages = KeyedList.apply(
-                        slice.messages, upserted: delta.upsertedMessages, removed: delta.removedMessageIds,
-                        order: delta.orderChanged ? delta.messageOrder : nil, key: \.id)
-                    conversation = slice
-                default: break
-                }
-            })
+            subscriptions.append(
+                SliceSubscription(client: core, slice: .conversation, scope: cardID) { [unowned self] update in
+                    switch update.value {
+                    case .conversation(let value): conversation = value
+                    case .conversationDelta(let delta):
+                        guard var slice = conversation else { return }
+                        slice.card = delta.card
+                        slice.conversation = delta.conversation
+                        if !delta.cardID.isEmpty { slice.cardID = delta.cardID }
+                        slice.messages = KeyedList.apply(
+                            slice.messages, upserted: delta.upsertedMessages, removed: delta.removedMessageIds,
+                            order: delta.orderChanged ? delta.messageOrder : nil, key: \.id)
+                        conversation = slice
+                    default: break
+                    }
+                })
         }
 
         var resubscriptions: Int { subscriptions.map(\.resubscriptions).reduce(0, +) }
@@ -144,8 +147,14 @@ struct SharedCoreIntegrationTests {
             }
         }
         let cardID = try #require(folded.workspace.cards.first { $0.title == "From the Mac through DieterShared" }?.id)
-        try await core.dispatch { $0.renameCard = .with { $0.cardID = cardID; $0.title = "Renamed on the Mac" } }
-        try await wait("renamed") { folded.workspace.cards.contains { $0.id == cardID && $0.title == "Renamed on the Mac" } }
+        try await core.dispatch {
+            $0.renameCard = .with {
+                $0.cardID = cardID; $0.title = "Renamed on the Mac"
+            }
+        }
+        try await wait("renamed") {
+            folded.workspace.cards.contains { $0.id == cardID && $0.title == "Renamed on the Mac" }
+        }
 
         let chat = try await core.dispatch {
             $0.createConversation = .with {
@@ -163,15 +172,27 @@ struct SharedCoreIntegrationTests {
         }
         folded.observeConversation(core, chat.card.id)
         func replies() -> Int { folded.conversation?.messages.filter { $0.role == "assistant" }.count ?? 0 }
-        func idle() -> Bool { !["running", "starting"].contains(folded.conversation?.conversation.status ?? "running") }
+        func idle() -> Bool {
+            !["running", "starting"].contains(folded.conversation?.conversation.status ?? "running")
+        }
         try await wait("first reply", timeout: .seconds(60)) { replies() >= 1 && idle() }
         let conversationCard = try #require(folded.conversation?.cardID)
         #expect(conversationCard.hasPrefix("c_"), "deltas carry the server ID once the creation is accepted")
         try await core.dispatch {
-            $0.sendMessage = .with { $0.cardID = conversationCard; $0.parts = [.with { $0.type = "text"; $0.text = "second" }] }
+            $0.sendMessage = .with {
+                $0.cardID = conversationCard;
+                $0.parts = [
+                    .with {
+                        $0.type = "text"; $0.text = "second"
+                    }
+                ]
+            }
         }
         try await wait("second reply", timeout: .seconds(60)) { replies() >= 2 && idle() }
-        #expect(folded.conversation?.messages.filter { $0.role == "user" }.flatMap(\.parts).map(\.text) == ["first", "second"])
+        #expect(
+            folded.conversation?.messages.filter { $0.role == "user" }.flatMap(\.parts).map(\.text) == [
+                "first", "second",
+            ])
         #expect(folded.resubscriptions == 0)
         folded.close()
         await host.shutdown()
@@ -181,7 +202,9 @@ struct SharedCoreIntegrationTests {
         let restarted = try self.host(root: root, defaults: defaults)
         let refolded = Folded(restarted.client)
         await restarted.start()
-        try await wait("cached workspace") { refolded.workspace.cards.contains { $0.id == cardID && $0.title == "Renamed on the Mac" } }
+        try await wait("cached workspace") {
+            refolded.workspace.cards.contains { $0.id == cardID && $0.title == "Renamed on the Mac" }
+        }
         try await wait("signed in") { refolded.session.signedIn }
         refolded.close()
         await restarted.shutdown()

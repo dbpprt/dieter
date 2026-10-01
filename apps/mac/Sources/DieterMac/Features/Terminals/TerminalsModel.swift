@@ -233,13 +233,21 @@ final class TerminalsModel {
     /// The visible grid of the selected terminal; the machine resizes shortly after the last change.
     func resizeTerminal(id: String, columns: Int, rows: Int) async {
         guard id == selectedTerminalID, columns >= 2, rows >= 2, selectedTerminal?.status == "running" else { return }
-        send { $0.grid = .with { $0.columns = Int32(columns); $0.rows = Int32(rows) } }
+        send {
+            $0.grid = .with {
+                $0.columns = Int32(columns); $0.rows = Int32(rows)
+            }
+        }
     }
 
     func renameTerminal(id: String, name: String) async {
         let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
-        await run { command in command.rename = .with { $0.terminalID = id; $0.name = value } }
+        await run { command in
+            command.rename = .with {
+                $0.terminalID = id; $0.name = value
+            }
+        }
     }
 
     /// Ends the shell and forgets its scrollback.

@@ -77,7 +77,8 @@ struct CoreSessionAdapterTests {
 
     @Test func machineQueuesShowWhatIsWaitingAndWhy() {
         let machine = DieterEndpoint(
-            name: "Offline", host: "gateway.getdieter.com", port: 443, secure: true, daemonID: "d_offline", online: false)
+            name: "Offline", host: "gateway.getdieter.com", port: 443, secure: true, daemonID: "d_offline",
+            online: false)
         store.endpoints = [machine]
         store.foldOutbox(
             .with {
@@ -128,7 +129,11 @@ struct CoreSessionAdapterTests {
             .with {
                 $0.phase = .connected
                 $0.gatewayOrigin = "https://gateway.getdieter.com:443"
-                $0.gateways = [.with { $0.origin = "https://gateway.getdieter.com:443"; $0.name = "Dieter Gateway"; $0.active = true }]
+                $0.gateways = [
+                    .with {
+                        $0.origin = "https://gateway.getdieter.com:443"; $0.name = "Dieter Gateway"; $0.active = true
+                    }
+                ]
                 $0.attachedMachineID = "d_mac"
                 $0.machines = [
                     .with {
@@ -138,11 +143,14 @@ struct CoreSessionAdapterTests {
                     },
                     .with {
                         $0.id = "d_old"; $0.name = "Old"; $0.online = true; $0.route = "Relay"
-                        $0.compatibility = "COMPATIBILITY_STATUS_UPDATE_REQUIRED"; $0.incompatibility = "Update required"
+                        $0.compatibility = "COMPATIBILITY_STATUS_UPDATE_REQUIRED";
+                        $0.incompatibility = "Update required"
                         $0.syncWarnings = ["Shared updates are delayed"]
                     },
                 ]
-                $0.feed = .with { $0.live = true; $0.daemonID = "d_mac"; $0.lastAppliedAtMillis = 1_000 }
+                $0.feed = .with {
+                    $0.live = true; $0.daemonID = "d_mac"; $0.lastAppliedAtMillis = 1_000
+                }
             })
         #expect(store.phase == .connected(version: "0.4.340"))
         #expect(store.endpoint.daemonID == "d_mac")
@@ -174,7 +182,14 @@ struct CoreSessionAdapterTests {
         await store.move(card, lane: "review", afterCardID: "c_before")
         let move = commands { if case .moveCard(let move) = $0 { move } else { nil } }.first
         #expect(move?.lane == "review" && move?.afterCardID == "c_before")
-        store.foldBoard(.with { $0.moves = [.with { $0.cardID = card.id; $0.lane = "review"; $0.afterCardID = "c_before" }] })
+        store.foldBoard(
+            .with {
+                $0.moves = [
+                    .with {
+                        $0.cardID = card.id; $0.lane = "review"; $0.afterCardID = "c_before"
+                    }
+                ]
+            })
         #expect(store.pendingCardMoves[card.id]?.lane == "review")
         #expect(store.movingCardIDs == [card.id])
         // A second move while one is unconfirmed is not sent.
@@ -187,11 +202,16 @@ struct CoreSessionAdapterTests {
     @Test func aCreatedConversationIsSelectedUnderItsServerIDOnceAccepted() async {
         core.handler = { command in
             guard case .createConversation = command.command else { return .with { $0.done = ClientDone() } }
-            return .with { $0.card = .with { $0.id = "local_chat"; $0.scope = "chat" } }
+            return .with {
+                $0.card = .with {
+                    $0.id = "local_chat"; $0.scope = "chat"
+                }
+            }
         }
         #expect(
             await store.createConversation(
-                title: "chat", prompt: "hi", chat: true, provider: "mock", model: "mock", effort: "low", deferred: false))
+                title: "chat", prompt: "hi", chat: true, provider: "mock", model: "mock", effort: "low", deferred: false
+            ))
         #expect(store.selectedChatID == "local_chat")
         #expect(core.isObserved(.conversation, scope: "local_chat"))
         store.foldOutbox(.with { $0.resolutions = ["local_chat": "c_chat"] })
@@ -216,7 +236,11 @@ struct CoreSessionAdapterTests {
             .with {
                 $0.projectOrder = ["b", "a"]
                 $0.expandedProjects = ["a"]
-                $0.projectFolders = [.with { $0.id = "f"; $0.name = "Work"; $0.itemIds = ["a"]; $0.expanded = true }]
+                $0.projectFolders = [
+                    .with {
+                        $0.id = "f"; $0.name = "Work"; $0.itemIds = ["a"]; $0.expanded = true
+                    }
+                ]
                 $0.pinnedChatOrder = ["c1"]
                 $0.collapsedChatSections = ["a"]
                 $0.laneSorts = ["b1.todo": "ascending"]
@@ -251,7 +275,9 @@ struct CoreSessionAdapterTests {
     @Test func creationMemoryFillsTheQuickTaskFormAndRemembersItsChanges() async {
         store.foldCreation(
             .with {
-                $0.selection = .with { $0.provider = "mock"; $0.model = "fast"; $0.effort = "low" }
+                $0.selection = .with {
+                    $0.provider = "mock"; $0.model = "fast"; $0.effort = "low"
+                }
                 $0.workspaceMode = "project"
                 $0.projectID = "p"
                 $0.boards = ["p": "b"]
@@ -260,7 +286,8 @@ struct CoreSessionAdapterTests {
         #expect(store.creationPreferences.workspaceMode == .project)
         #expect(commands { if case .rememberCreation(let remember) = $0 { remember } else { nil } }.isEmpty)
         store.quickTaskForm.model = "smart"
-        store.rememberCreation(ConversationCreationPreferences(provider: "mock", model: "smart", workspaceMode: .worktree))
+        store.rememberCreation(
+            ConversationCreationPreferences(provider: "mock", model: "smart", workspaceMode: .worktree))
         try? await Task.sleep(for: .milliseconds(50))
         let remembered = commands { if case .rememberCreation(let remember) = $0 { remember } else { nil } }
         #expect(remembered.first?.selection.model == "smart")

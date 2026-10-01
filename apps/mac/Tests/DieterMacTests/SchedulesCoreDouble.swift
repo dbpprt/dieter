@@ -58,7 +58,8 @@ import SharedCore
             request.scheduleID = save.scheduleID
             request.schedule = save.draft
             request.schedule.projectID = project
-            let saved = try await save.scheduleID.isEmpty ? writer.createSchedule(request) : writer.updateSchedule(request)
+            let saved =
+                try await save.scheduleID.isEmpty ? writer.createSchedule(request) : writer.updateSchedule(request)
             if bound == binding, saved.projectID == project {
                 upsert(saved)
                 try await select(saved.id)
@@ -136,7 +137,8 @@ import SharedCore
         view.loadingMore = false
         view.error = ""
         let existing = Set(view.schedules.map(\.id))
-        view.schedules = more ? view.schedules + response.schedules.filter { !existing.contains($0.id) } : response.schedules
+        view.schedules =
+            more ? view.schedules + response.schedules.filter { !existing.contains($0.id) } : response.schedules
         view.totalCount = response.totalCount
         view.nextPageToken = response.nextPageToken
         view.loaded = true
@@ -155,7 +157,8 @@ import SharedCore
     private func runs(more: Bool) async throws {
         let bound = binding, id = view.selectedID
         guard !id.isEmpty else { return }
-        let response = try await reader.scheduleRuns(id: id, pageSize: 50, pageToken: more ? view.runsNextPageToken : "")
+        let response = try await reader.scheduleRuns(
+            id: id, pageSize: 50, pageToken: more ? view.runsNextPageToken : "")
         guard bound == binding, view.selectedID == id else { return }
         let existing = Set(view.runs.map(\.id))
         view.runs = more ? view.runs + response.runs.filter { !existing.contains($0.id) } : response.runs

@@ -61,4 +61,3 @@ enum DiffFixtures {
         return (old, new)
     }
 }
-

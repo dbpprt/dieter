@@ -16,7 +16,9 @@ struct SharedCoreTests {
         let base = [Item(id: "a", value: 1), Item(id: "b", value: 1), Item(id: "c", value: 1)]
         // Upserts replace in place and append new keys; removals drop keys.
         #expect(
-            KeyedList.apply(base, upserted: [Item(id: "b", value: 2), Item(id: "d", value: 1)], removed: ["a"], order: nil, key: \.id)
+            KeyedList.apply(
+                base, upserted: [Item(id: "b", value: 2), Item(id: "d", value: 1)], removed: ["a"], order: nil,
+                key: \.id)
                 == [Item(id: "b", value: 2), Item(id: "c", value: 1), Item(id: "d", value: 1)])
         // An explicit order wins and ignores unknown keys.
         #expect(
@@ -26,7 +28,10 @@ struct SharedCoreTests {
 
     @Test func transportFailuresReachTheCoreAsRetryableStatuses() {
         #expect(CoreRpcBridge.status(of: RPCError(code: .notFound, message: "missing")) == (5, "missing"))
-        #expect(CoreRpcBridge.status(of: RPCError(code: .unimplemented, message: "No messages received, exactly one was expected.")).0 == 14)
+        #expect(
+            CoreRpcBridge.status(
+                of: RPCError(code: .unimplemented, message: "No messages received, exactly one was expected.")
+            ).0 == 14)
         #expect(CoreRpcBridge.status(of: RPCError(code: .unimplemented, message: "not here")).0 == 12)
         #expect(CoreRpcBridge.status(of: CancellationError()).0 == 1)
         #expect(CoreRpcBridge.status(of: RuntimeError(code: .clientIsStopped, message: "stopped")).0 == 14)
@@ -68,10 +73,12 @@ struct SharedCoreTests {
         let root = FileManager.default.temporaryDirectory.appending(path: "dieter-legacy-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let legacy = root.appending(path: "Dieter")
-        try FileManager.default.createDirectory(at: legacy.appending(path: "shared-kv"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: legacy.appending(path: "shared-kv"), withIntermediateDirectories: true)
         let credentials = root.appending(path: "gateway-sessions.json")
         try Data(#"{"https://gateway.getdieter.com:443":"t"}"#.utf8).write(to: credentials)
-        try Data(#"{"version":1,"revision":3,"entries":[]}"#.utf8).write(to: legacy.appending(path: "pending-commands.json"))
+        try Data(#"{"version":1,"revision":3,"entries":[]}"#.utf8).write(
+            to: legacy.appending(path: "pending-commands.json"))
         let cache = legacy.appending(path: "shared-kv").appending(
             path: MacLegacyInputs.sharedKvFile(account: "github:1", daemonID: "d_1"))
         try Data(#"{"entries":{},"pending":[]}"#.utf8).write(to: cache)
