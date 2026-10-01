@@ -19,6 +19,7 @@ import com.dbpprt.dieter.core.runtime.FailureKind
 import com.dbpprt.dieter.core.runtime.Failures
 import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
+import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -38,6 +39,8 @@ class GatewaySession(
     token: String,
     transport: RpcTransport,
     val clientVersion: String,
+    /** Stamps presence reports on receipt; see [com.dbpprt.dieter.core.machines.MachinePresence]. */
+    private val clock: Clock,
 ) {
     val access = GatewayAccess(gateway.httpBase, token, clientVersion)
     private val channel = transport.gateway(access)
@@ -59,7 +62,11 @@ class GatewaySession(
         classified { client.GetAccount().execute(Unit) }
     }
 
-    suspend fun machines(): List<Machine> = classified { client.ListDaemons().execute(Unit) }.daemons.map(Machine::from)
+    suspend fun machines(): List<Machine> {
+        val daemons = classified { client.ListDaemons().execute(Unit) }.daemons
+        val receivedAt = clock.now()
+        return daemons.map { Machine.from(it, receivedAt) }
+    }
 
     /** Presence updates; advisory, so callers retry independently of the feed. */
     fun presence(heartbeat: Duration): Flow<List<Machine>> = flow {
@@ -67,7 +74,10 @@ class GatewaySession(
             val call = client.WatchDaemons()
             val updates = call.executeIn(this, WatchDaemonsRequest(heartbeat_seconds = heartbeat.inWholeSeconds.toInt()))
             try {
-                for (update in updates) emit(update.daemons.map(Machine::from))
+                for (update in updates) {
+                    val receivedAt = clock.now()
+                    emit(update.daemons.map { Machine.from(it, receivedAt) })
+                }
             } finally {
                 call.cancel()
             }

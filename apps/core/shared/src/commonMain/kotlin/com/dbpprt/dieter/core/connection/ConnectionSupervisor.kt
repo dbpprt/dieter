@@ -80,6 +80,7 @@ data class SupervisorConfig(
     val clientVersion: String,
     val feed: FeedConfig = FeedConfig(),
     val poller: PollerConfig = PollerConfig(),
+    /** The gateway's presence report interval; keep three within [MachinePresence.STALE_AFTER]. */
     val presenceHeartbeat: Duration = 15.seconds,
 )
 
@@ -217,7 +218,7 @@ class ConnectionSupervisor(
                 publish(ConnectionState(ConnectionPhase.AUTH_REQUIRED, gateway.gateway))
                 awaitCancellation()
             }
-            val session = GatewaySession(gateway.gateway, token, transport, config.clientVersion)
+            val session = GatewaySession(gateway.gateway, token, transport, config.clientVersion, clock)
             sessions.attach(session)
             try {
                 publish(ConnectionState(if (attempt == 0) ConnectionPhase.CONNECTING else ConnectionPhase.RECONNECTING, gateway.gateway))
@@ -318,14 +319,20 @@ class ConnectionSupervisor(
         }
     }
 
-    /** Presence is advisory: losing this stream never tears down the feed. */
+    /**
+     * Presence is advisory: losing this stream never tears down the feed. The
+     * gateway reports every heartbeat, so a stream silent for two is restarted
+     * before its last report goes stale.
+     */
     private suspend fun watchPresence(session: GatewaySession) {
         var attempt = 0
         while (true) {
             try {
-                session.presence(config.presenceHeartbeat).collect { machines ->
+                session.presence(config.presenceHeartbeat).collectLatest { machines ->
                     attempt = 0
                     setMachines(machines)
+                    delay(config.presenceHeartbeat * 2)
+                    error("presence stream stalled")
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -337,7 +344,7 @@ class ConnectionSupervisor(
         }
     }
 
-    /** Re-publishes machines when a presence lease lapses, so "online" never lingers. */
+    /** Re-publishes machines when a presence report goes stale, so "online" never lingers. */
     private suspend fun expirePresence() {
         while (true) {
             val next = MachinePresence.nextExpiry(mutableMachines.value.all, clock.now())

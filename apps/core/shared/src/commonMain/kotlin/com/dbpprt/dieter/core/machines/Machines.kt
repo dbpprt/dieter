@@ -3,7 +3,6 @@ package com.dbpprt.dieter.core.machines
 import com.dbpprt.dieter.api.gateway.v1.CompatibilityStatus
 import com.dbpprt.dieter.api.gateway.v1.Daemon
 import com.dbpprt.dieter.api.gateway.v1.RemoteDesktopPresence
-import com.dbpprt.dieter.core.runtime.Timestamps
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
@@ -12,7 +11,7 @@ import kotlin.time.Instant
 data class Machine(
     val id: String,
     val name: String,
-    /** The gateway's tunnel flag; combined with the presence lease in [online]. */
+    /** The gateway's tunnel flag; aged by [receivedAt] in [online]. */
     val serverOnline: Boolean,
     val lastSeenAt: String,
     val releaseVersion: String,
@@ -20,10 +19,12 @@ data class Machine(
     val compatibility: CompatibilityStatus,
     val generation: Long,
     val remoteDesktop: RemoteDesktopPresence?,
+    /** When this client received the gateway's report, on the client's own clock. */
+    val receivedAt: Instant,
 ) {
     val compatible: Boolean get() = compatibility == CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE
 
-    fun online(now: Instant): Boolean = MachinePresence.online(serverOnline, lastSeenAt, now)
+    fun online(now: Instant): Boolean = MachinePresence.online(serverOnline, receivedAt, now)
 
     val incompatibilityDescription: String?
         get() = if (compatible) {
@@ -33,33 +34,33 @@ data class Machine(
         }
 
     companion object {
-        fun from(daemon: Daemon) = Machine(
+        fun from(daemon: Daemon, receivedAt: Instant) = Machine(
             id = daemon.id, name = daemon.name.ifBlank { daemon.id }, serverOnline = daemon.online,
             lastSeenAt = daemon.last_seen_at, releaseVersion = daemon.release_version,
             minimumReleaseVersion = daemon.minimum_release_version, compatibility = daemon.compatibility,
-            generation = daemon.generation, remoteDesktop = daemon.remote_desktop,
+            generation = daemon.generation, remoteDesktop = daemon.remote_desktop, receivedAt = receivedAt,
         )
     }
 }
 
 /**
- * A daemon's presence is a 30 s lease renewed by its tunnel heartbeat. The
- * gateway's online flag alone can be stale; an expired lease means offline.
+ * The gateway's online flag is authoritative: it keeps a daemon's route
+ * through three missed heartbeats. The client only ages its own copy, by when
+ * the report arrived on the client's clock. Never compare the gateway's
+ * `last_seen_at` with the device clock: a phone a few milliseconds behind
+ * would see every fresh heartbeat in the future and flap that machine offline.
  */
 object MachinePresence {
-    val OFFLINE_AFTER: Duration = 30.seconds
+    /** Three missed 15 s presence heartbeats; an older report no longer proves a machine is online. */
+    val STALE_AFTER: Duration = 45.seconds
 
-    fun online(serverOnline: Boolean, lastSeenAt: String, now: Instant): Boolean {
-        if (!serverOnline) return false
-        val seen = Timestamps.parse(lastSeenAt) ?: return true
-        val age = now - seen
-        return age >= Duration.ZERO && age < OFFLINE_AFTER
-    }
+    fun online(serverOnline: Boolean, receivedAt: Instant, now: Instant): Boolean =
+        serverOnline && now - receivedAt < STALE_AFTER
 
-    /** When the next online machine's lease expires, for re-evaluating presence. */
+    /** When the next online machine's report goes stale, for re-evaluating presence. */
     fun nextExpiry(machines: List<Machine>, now: Instant): Instant? = machines
         .filter { it.serverOnline }
-        .mapNotNull { Timestamps.parse(it.lastSeenAt)?.plus(OFFLINE_AFTER) }
+        .map { it.receivedAt + STALE_AFTER }
         .filter { it > now }
         .minOrNull()
 }

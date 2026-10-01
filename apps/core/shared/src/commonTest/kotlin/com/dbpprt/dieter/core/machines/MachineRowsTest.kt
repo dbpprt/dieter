@@ -24,6 +24,7 @@ class MachineRowsTest {
     private fun machine(id: String, name: String = id, compatibility: CompatibilityStatus = CompatibilityStatus.COMPATIBILITY_STATUS_COMPATIBLE) = Machine(
         id = id, name = name, serverOnline = true, lastSeenAt = "", releaseVersion = "1.2.0", minimumReleaseVersion = "1.3.0",
         compatibility = compatibility, generation = 1, remoteDesktop = RemoteDesktopPresence(platform = "macos", ready = false, reason = "Grant screen recording"),
+        receivedAt = Instant.DISTANT_PAST,
     )
 
     private fun row(id: String, label: String = id, online: Boolean = true, phase: MachineLink = MachineLink.PENDING) =

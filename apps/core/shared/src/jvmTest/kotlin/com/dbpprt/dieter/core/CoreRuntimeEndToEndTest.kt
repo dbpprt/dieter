@@ -13,11 +13,16 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import okio.Path.Companion.toOkioPath
 
 /** Drives the whole runtime against a disposable gateway and daemons. */
@@ -45,6 +50,31 @@ class CoreRuntimeEndToEndTest : EndToEnd() {
 
         val health = runtime.onMachine(fixture.daemonId) { it.Health().execute(Unit) }
         assertEquals("ok", health.status, "health: $health")
+    }
+
+    @Test
+    fun presenceHoldsSteadyWhateverTheDeviceClock() = e2e {
+        val fixture = fixture()
+        // A phone slightly behind the gateway, and one far ahead of it.
+        for (skew in listOf((-250).milliseconds, 10.minutes)) {
+            val clock = object : Clock {
+                override fun now() = Clock.System.now() + skew
+            }
+            val runtime = runtime(fixture, jvmTestPlatform(clock = clock))
+            runtime.awaitConnected()
+            // The relayed daemon heartbeats every few seconds; each heartbeat pushes a freshly stamped report.
+            val reports = mutableListOf<Pair<String, Boolean>>()
+            withTimeoutOrNull(20.seconds) {
+                runtime.connection.machines.first { directory ->
+                    val machine = directory.machine(fixture.daemonId) ?: return@first false
+                    reports += machine.lastSeenAt to machine.online(directory.evaluatedAt)
+                    reports.map { it.first }.distinct().size >= 3
+                }
+            }
+            assertTrue(reports.map { it.first }.distinct().size >= 3, "skew $skew saw no fresh heartbeats: $reports")
+            assertTrue(reports.all { it.second }, "skew $skew flapped: $reports")
+            assertEquals(ConnectionPhase.CONNECTED, runtime.connection.state.value.phase)
+        }
     }
 
     @Test
