@@ -3,6 +3,14 @@
     <string name="widget_label">Dieter Inbox</string>
     <string name="widget_description">Your Inbox at a glance: cards and chats that need attention, running work, and recent conversations.</string>
     <string name="widget_title_activity">Inbox</string>
+    <string name="widget_usage_label">Dieter Usage</string>
+    <string name="widget_usage_title">Usage</string>
+    <string name="widget_usage_description">Provider account usage at a glance: remaining quota per window, lowest account first, with reset times.</string>
+    <string name="widget_usage_empty_title">No usage yet</string>
+    <string name="widget_usage_empty_body">Sign in to a supported provider on a Dieter machine</string>
+    <string name="widget_usage_lowest">Lowest · %1$s</string>
+    <string name="widget_usage_hidden">+%1$d more accounts</string>
+    <string name="widget_usage_open_accounts">Open usage accounts</string>
     <string name="widget_title_last_finished">Inbox</string>
     <string name="widget_refresh">Refresh</string>
     <string name="widget_empty_title">All quiet here</string>

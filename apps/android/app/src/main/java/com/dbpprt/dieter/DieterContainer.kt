@@ -12,6 +12,7 @@ import com.dbpprt.dieter.ui.AppHost
 import com.dbpprt.dieter.ui.TaskCaptureStore
 import com.dbpprt.dieter.update.AppUpdateManager
 import com.dbpprt.dieter.widget.DieterActivityWidgetProvider
+import com.dbpprt.dieter.widget.DieterUsageWidgetProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -50,11 +51,13 @@ class DieterContainer(context: Context) : AppHost {
                 core.workspace.state.map { it.allItems },
                 core.connection.state.map { it.phase to it.gateway?.origin },
                 appPreferences.palette,
-            ) { items, connection, palette -> Triple(items, connection, palette) }
+                core.quotas.view.map { it.groups },
+            ) { items, connection, palette, quotaGroups -> listOf(items, connection, palette, quotaGroups) }
                 .distinctUntilChanged()
                 .conflate()
                 .collect {
                     DieterActivityWidgetProvider.updateAll(appContext)
+                    DieterUsageWidgetProvider.updateAll(appContext)
                     delay(1_500)
                 }
         }

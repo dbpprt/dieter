@@ -17,4 +17,8 @@
     <color name="widget_icon_bg_green">#2C2C2E</color>
     <color name="widget_icon_bg_coral">#3F2530</color>
     <color name="widget_row_highlight">#0EFFFFFF</color>
+
+    <color name="widget_usage_track">#26FFFFFF</color>
+    <color name="widget_usage_fill">#D1D1D6</color>
+    <color name="widget_usage_row_bg">#0DFFFFFF</color>
 </resources>

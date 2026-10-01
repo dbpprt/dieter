@@ -62,7 +62,8 @@ class MainActivity : ComponentActivity() {
         intent?.data?.takeIf { it.scheme == "dieter-android" && it.host == "oauth" }?.let(container::completeSignIn)
         container.requestOpen(
             cardId = intent?.getStringExtra(DieterSyncService.EXTRA_CARD_ID).orEmpty(),
-            showInbox = intent?.getBooleanExtra(com.dbpprt.dieter.widget.DieterActivityWidgetProvider.EXTRA_OPEN_INBOX, false) == true,
+            showInbox = intent?.getBooleanExtra(com.dbpprt.dieter.widget.DieterActivityWidgetProvider.EXTRA_OPEN_INBOX, false) == true ||
+                intent?.getBooleanExtra(com.dbpprt.dieter.widget.DieterUsageWidgetProvider.EXTRA_OPEN_ACCOUNTS, false) == true,
             showConnection = intent?.getBooleanExtra(DieterSyncService.EXTRA_SHOW_CONNECTION, false) == true,
         )
     }

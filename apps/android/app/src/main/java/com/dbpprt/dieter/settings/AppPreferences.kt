@@ -2,6 +2,7 @@ package com.dbpprt.dieter.settings
 
 import android.content.Context
 import com.dbpprt.dieter.widget.DieterActivityWidgetProvider
+import com.dbpprt.dieter.widget.DieterUsageWidgetProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -90,6 +91,7 @@ class AppPreferences(
         scope.launch {
             DieterLauncherIcon.apply(appContext, palette)
             DieterActivityWidgetProvider.updateAll(appContext)
+            DieterUsageWidgetProvider.updateAll(appContext)
         }
     }
 
