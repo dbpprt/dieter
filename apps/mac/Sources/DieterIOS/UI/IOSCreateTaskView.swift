@@ -11,6 +11,7 @@ import DieterCore
         @Environment(\.dismiss) private var dismiss
         @Bindable var store: IOSStore
         let chat: Bool
+        let cancelled: () -> Void
         let created: (String) -> Void
         @State private var projectID: String
         @State private var boardID: String
@@ -36,10 +37,12 @@ import DieterCore
         init(
             store: IOSStore, initialProjectID: String, initialBoardID: String?, chat: Bool,
             initialAttachments: [Dieter_V1_MessagePart] = [],
+            cancelled: @escaping () -> Void = {},
             created: @escaping (String) -> Void
         ) {
             self.store = store
             self.chat = chat
+            self.cancelled = cancelled
             self.created = created
             _projectID = State(initialValue: initialProjectID)
             _boardID = State(initialValue: initialBoardID ?? "")
@@ -183,9 +186,12 @@ import DieterCore
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { dismiss() }
-                            .disabled(submitting)
-                            .accessibilityIdentifier("ios.create.cancel")
+                        Button("Cancel") {
+                            cancelled()
+                            dismiss()
+                        }
+                        .disabled(submitting)
+                        .accessibilityIdentifier("ios.create.cancel")
                     }
                     ToolbarItemGroup(placement: .keyboard) {
                         Spacer()

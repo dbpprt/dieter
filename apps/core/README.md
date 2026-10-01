@@ -29,8 +29,13 @@ The macOS app runs on the core
 provides the native transport and platform services, and carries the legacy
 state over once through the macOS importer. Every Mac feature is a slice and
 command surface; the Mac keeps presentation, the editor, terminal rendering,
-and the WebRTC, VideoToolbox, and Metal screen engine. The iOS app does not
-link the core yet.
+and the WebRTC, VideoToolbox, and Metal screen engine.
+
+The iOS app links the generated `DieterShared.xcframework` in production. Its
+SwiftUI store dispatches the byte contract and observes shared-core slices;
+Swift is limited to UI state and native adapters for grpc-swift, Keychain,
+WebRTC rendering, and SwiftTerm. Existing iOS identity is carried over once by
+the importer.
 
 | Module | Role |
 | --- | --- |
@@ -77,21 +82,21 @@ Status key:
 | W3.2–3.3 Overlays and board | `board`, `store` | `BoardPolicyTest`, `BoardPresentationTest`, `BoardEndToEndTest` | done; move, finish, labels, pin, rename, archive, restore, cancel, and read are on the façade |
 | W3.4 Navigation | `navigation` (shared KV, folders, destinations, chat lists) | `NavigationTest`, `ChatListsTest`, `NavigationEndToEndTest` | done |
 | W3.5 Drafts and capture | `composition` (drafts, captures, task-draft editing, destinations) | `CompositionTest`, `TaskDraftsTest` | done |
-| W4 Conversation | `conversation`, `presentation`, `selection` | `ConversationReducerTest`, `PresentationTest`, `ConversationPresentationTest`, `AgentControlsTest`, `ConversationEndToEndTest` | done, façade (keyed transcript deltas, send, paging) |
+| W4 Conversation | `conversation`, `presentation`, `selection` | `ConversationReducerTest`, `PresentationTest`, `ConversationPresentationTest`, `AgentControlsTest`, `ConversationEndToEndTest` | done, façade (keyed transcript deltas, generated timeline, send, paging) |
 | W5.1 Schedules | `schedules` | `DomainRulesTest`, `DomainsEndToEndTest` | done |
-| W5.2 Terminals | `terminals` (surfaces, input pumps, replay, cross-machine overview) | `TerminalScreenTest`, `TerminalOverviewCatalogTest`, `TerminalEndToEndTest` | done |
+| W5.2 Terminals | `terminals` (surfaces, input pumps, replay, cross-machine overview) | `TerminalScreenTest`, `TerminalOverviewCatalogTest`, `TerminalEndToEndTest` | done, façade; iOS wired |
 | W5.3 Workspace and git | `workspace` | `WorkspaceRulesTest`, `WorkspacePresentationTest`, `WorkspaceEndToEndTest` | done |
-| W5.4 Files | `files` (browser, tree, syntax, drafts) | `FilesTest`, `FilesEndToEndTest` | done |
+| W5.4 Files | `files` (browser, tree, syntax, drafts) | `FilesTest`, `FilesEndToEndTest` | done, façade; iOS wired |
 | W5.5 Admin | `admin` | `AdminRulesTest`, `AdminEndToEndTest` | done |
 | W5.6 Quotas | `quotas` | `DomainRulesTest`, e2e | done |
 | W5.7 Activity and notifications | `activity`, `notifications` | `ActivityTest`, `WidgetModelTest` | done, façade (activity) |
 | W5.8 Search | `search` | `DomainRulesTest` | done |
 | W5.9 Executions | `executions` | `DomainsEndToEndTest` | done |
-| W6 Screens | `screens` (trust, session controller, recovery, input, gestures, mouse buttons, clipboard, frame gating, receiver feedback), `platform/ControlFrames.kt` | `ScreenPoliciesTest`, `ScreenFramesTest`, `MouseButtonsTest`, `ControlFramesTest`, `ScreenSessionTest` (scripted daemon and engine), `ScreenEndToEndTest` | done |
+| W6 Screens | `screens` (trust, session controller, recovery, input, gestures, mouse buttons, clipboard, frame gating, receiver feedback), `platform/ControlFrames.kt` | `ScreenPoliciesTest`, `ScreenFramesTest`, `MouseButtonsTest`, `ControlFramesTest`, `ScreenSessionTest` (scripted daemon and engine), `ScreenEndToEndTest` | done, exported native-media façade; iOS wired |
 | D7 UI contract | `client` (`ClientApi`, keyed deltas), `apple` | `KeyedTest`, `ClientApiEndToEndTest`, Swift harness | done |
 | Legacy import | `legacy` (macOS and iOS formats) | `LegacyFormatsTest`, `LegacyInputsTest`, `LegacyImportEndToEndTest` | done, façade; Android needs none |
-| F5 App integration | Android `sharedcore/` (`SharedCore`, `ConnectionPolicy`); macOS `SharedCore` and slice adapters | Android unit tests and instrumentation catalog (`tests/e2e`); `just mac test`, `just mac core-test`, `just mac screens-test` | Android and macOS on the core; iOS not yet. |
-| W7 Consolidation | — | — | Android: legacy logic, protobuf-lite, and grpc-java deleted. macOS: the legacy feature plane and Swift rule copies deleted. |
+| F5 App integration | Android `sharedcore/` (`SharedCore`, `ConnectionPolicy`); macOS `SharedCore`; iOS `IOSCoreStore`; native slice adapters | Android unit tests and instrumentation catalog (`tests/e2e`); `just mac test`, `just mac core-test`, `just mac screens-test`; iOS architecture, unit, and E2E tests | Android, macOS, and iOS on the core. |
+| W7 Consolidation | — | architecture gates and app builds | Android and iOS: duplicated reducers, routing, recovery, and protocol policy deleted. macOS: the legacy feature plane and Swift rule copies deleted. |
 
 **On the Apple façade:** every feature, as `client.proto` commands and
 slices. Screens take a `NativeScreenMedia` engine and a `NativeClipboard`

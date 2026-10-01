@@ -99,7 +99,7 @@
     struct IOSTerminalsView: View {
         @Bindable var store: IOSStore
         let backAction: (() -> Void)?
-        @State private var model = IOSTerminalsModel()
+        @State private var model: IOSTerminalsModel
         @State private var createPresented = false
         @State private var renamePresented = false
         @State private var renameValue = ""
@@ -112,6 +112,7 @@
         init(store: IOSStore, backAction: (() -> Void)? = nil) {
             self.store = store
             self.backAction = backAction
+            _model = State(initialValue: IOSTerminalsModel(store: store))
         }
 
         var body: some View {
@@ -150,13 +151,11 @@
                 }
             }
             .task(id: machine?.daemonID) {
-                model.disconnect(clear: true)
+                await model.disconnect(clear: true)
                 guard let machine else { return }
-                model.connect(machineName: machine.name) {
-                    try await store.utilityTerminalConnection()
-                }
+                await model.connect(machineID: machine.daemonID ?? machine.id)
             }
-            .onDisappear { model.disconnect() }
+            .onDisappear { Task { await model.disconnect() } }
             .refreshable { model.refresh() }
             .sheet(isPresented: $createPresented) {
                 IOSTerminalCreateView(machineName: machine?.name ?? "Machine") { name, shell, directory in

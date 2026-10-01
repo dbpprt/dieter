@@ -101,6 +101,15 @@ object ContentLinks {
 object WorkspaceImages {
     private val extensions = setOf("apng", "avif", "bmp", "gif", "heic", "heif", "ico", "jpeg", "jpg", "png", "tif", "tiff", "webp")
 
+    /** Whether [destination] names an image that may belong to a workspace. */
+    fun isWorkspaceImage(destination: String): Boolean {
+        val raw = destination.trim().removeSurrounding("<", ">")
+        if (Regex("^[A-Za-z][A-Za-z0-9+.-]*://").containsMatchIn(raw) && !raw.startsWith("file://")) return false
+        val decoded = Urls.decodePath(raw.substringBefore('#').substringBefore('?'))
+        return decoded.isNotEmpty() && decoded.none { it == '\\' || it.code < 0x20 } &&
+            decoded.substringAfterLast('.', "").lowercase() in extensions
+    }
+
     /** The workspace-relative path of an image link, or null when it is not a workspace image. */
     fun path(destination: String, workspaceRoot: String? = null): String? {
         val raw = destination.trim().removeSurrounding("<", ">")

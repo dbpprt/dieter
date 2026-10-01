@@ -34,7 +34,7 @@ class AppleLegacyInput(
 object LegacyInputs {
     fun apple(input: AppleLegacyInput): LegacyState {
         if (input.isIos) {
-            val gateway = input.iosGateway?.let { Gateway.parse(it, "Gateway") }?.migrated()?.takeIf { it.secure }
+            val gateway = input.iosGateway?.let { Gateway.parse(it, "Gateway") }?.migrated()?.takeIf { it.permitted }
                 ?: return LegacyState()
             val tokenOrigin = input.iosGateway.let { Gateway.parse(it)?.origin }
             return LegacyState(

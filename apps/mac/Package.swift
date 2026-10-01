@@ -28,14 +28,13 @@ let package = Package(
         .target(
             name: "DieterIOS",
             dependencies: [
-                "DieterCore", "DieterClient", "DieterAPI",
+                "DieterCore", "DieterClient", "DieterAPI", "DieterShared", "SharedCore",
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
                 .product(name: "Textual", package: "textual"),
                 "WebRTC",
-            ]
-        ),
+            ]),
         .testTarget(
             name: "DieterIOSTests",
             dependencies: ["DieterIOS", "DieterCore", "DieterAPI", .product(name: "GRPCCore", package: "grpc-swift-2")]),

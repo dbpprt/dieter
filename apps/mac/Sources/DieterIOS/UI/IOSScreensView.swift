@@ -2,7 +2,6 @@ import CoreGraphics
 
 #if os(iOS)
     import DieterAPI
-    import DieterClient
     import DieterCore
     import Foundation
     import SwiftUI
@@ -118,8 +117,13 @@ import CoreGraphics
         @MainActor
         struct IOSRemoteDesktopFixtureView: View {
             let encodedFixture: String
-            @State private var session = IOSRemoteDesktopSession()
+            @State private var session: IOSRemoteDesktopSession
             @State private var fixtureError = ""
+
+            init(encodedFixture: String, store: IOSStore) {
+                self.encodedFixture = encodedFixture
+                _session = State(initialValue: IOSRemoteDesktopSession(store: store))
+            }
 
             var body: some View {
                 ZStack {
@@ -168,28 +172,13 @@ import CoreGraphics
                         throw CocoaError(.fileReadCorruptFile)
                     }
                     let fixture = try JSONDecoder().decode(IOSRemoteDesktopFixture.self, from: raw)
-                    let endpoint = try fixtureEndpoint(fixture.url)
-                    let rtc = try Dieter_Gateway_V1_RTCConfiguration(serializedBytes: fixture.rtc)
-                    session.connect(machineName: "Isolated screen fixture") {
-                        let rpc = try DieterRPC(endpoint: endpoint, accessToken: fixture.token)
-                        let task = Task<Void, Never> { try? await rpc.run() }
-                        return RemoteDesktopSignalingConnection(
-                            rpc: rpc,
-                            connectionTask: task,
-                            rtcConfiguration: rtc,
-                            daemonCertificatePEM: fixture.certificate,
-                            routeLabel: "Fixture loopback")
-                    }
+                    session.connectTestFixture(
+                        machineName: "Isolated screen fixture", url: fixture.url,
+                        token: fixture.token, certificatePEM: fixture.certificate,
+                        rtc: fixture.rtc)
                 } catch {
                     fixtureError = IOSUserError.message(error)
                 }
-            }
-
-            private func fixtureEndpoint(_ value: String) throws -> DieterEndpoint {
-                guard let endpoint = DieterEndpoint.parse(value) else {
-                    throw CocoaError(.fileReadCorruptFile)
-                }
-                return endpoint
             }
         }
     #endif
@@ -200,7 +189,7 @@ import CoreGraphics
         @Environment(\.scenePhase) private var scenePhase
         @Bindable var store: IOSStore
         let backAction: (() -> Void)?
-        @State private var session = IOSRemoteDesktopSession()
+        @State private var session: IOSRemoteDesktopSession
         @State private var phoneChromeVisible = true
         @State private var phoneSettingsPresented = false
         @State private var showKeyboardAfterSettingsDismissal = false
@@ -213,6 +202,7 @@ import CoreGraphics
         init(store: IOSStore, backAction: (() -> Void)? = nil) {
             self.store = store
             self.backAction = backAction
+            _session = State(initialValue: IOSRemoteDesktopSession(store: store))
         }
 
         var body: some View {
@@ -242,7 +232,11 @@ import CoreGraphics
                 requestPhoneOrientation(.allButUpsideDown)
             }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { connectIfPossible() } else { session.disconnect() }
+                if phase == .active {
+                    if session.phase == .idle { connectIfPossible() } else { session.reconnect() }
+                } else {
+                    session.suspend()
+                }
             }
             .onChange(of: session.phase) { _, phase in
                 if phase != .streaming { phoneChromeVisible = true }
@@ -643,7 +637,7 @@ import CoreGraphics
             if manuallyDisconnected, !force { return }
             if !force, session.phase != .idle { return }
             manuallyDisconnected = false
-            session.connect(machineName: machine.name) { try await store.remoteDesktopConnection() }
+            session.connect(machineName: machine.name, daemonID: machine.daemonID ?? machine.id)
         }
 
         private func disconnectByUser() {
@@ -834,7 +828,6 @@ import CoreGraphics
 
         func releaseSession() {
             guard let session else { return }
-            if dragging { session.button(.left, down: false) }
             dragging = false
             if remoteScrolling { session.scroll(deltaX: 0, deltaY: 0, phase: 4) }
             remoteScrolling = false
@@ -965,8 +958,8 @@ import CoreGraphics
             else { return }
             let button: Dieter_V1_RemoteDesktopPointerButton.Button = rightClickArmed ? .right : .left
             session.pointer(x: point.x, y: point.y)
-            session.button(button, down: true, x: point.x, y: point.y, clickCount: 1)
-            session.button(button, down: false, x: point.x, y: point.y, clickCount: 1)
+            session.button(button, down: true, clicks: 1, x: point.x, y: point.y)
+            session.button(button, down: false, clicks: 1, x: point.x, y: point.y)
             clickSent()
         }
 
@@ -978,8 +971,8 @@ import CoreGraphics
             let button: Dieter_V1_RemoteDesktopPointerButton.Button = rightClickArmed ? .right : .left
             let clickCount = rightClickArmed ? 1 : 2
             session.pointer(x: point.x, y: point.y)
-            session.button(button, down: true, x: point.x, y: point.y, clickCount: clickCount)
-            session.button(button, down: false, x: point.x, y: point.y, clickCount: clickCount)
+            session.button(button, down: true, clicks: UInt32(clickCount), x: point.x, y: point.y)
+            session.button(button, down: false, clicks: UInt32(clickCount), x: point.x, y: point.y)
             clickSent()
         }
 
@@ -996,12 +989,12 @@ import CoreGraphics
             case .began:
                 dragging = true
                 session?.pointer(x: point.x, y: point.y)
-                session?.button(.left, down: true, x: point.x, y: point.y)
+                session?.button(.left, down: true, clicks: 1, x: point.x, y: point.y)
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             case .changed:
                 session?.pointer(x: point.x, y: point.y)
             case .ended, .cancelled, .failed:
-                if dragging { session?.button(.left, down: false, x: point.x, y: point.y) }
+                if dragging { session?.button(.left, down: false, clicks: 1, x: point.x, y: point.y) }
                 dragging = false
             default:
                 break
