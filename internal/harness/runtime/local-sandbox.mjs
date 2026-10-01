@@ -13,12 +13,16 @@ function localPath(candidate) {
 }
 
 function commandValue(command) {
+  // Bootstrap runs when a pinned recipe needs installing. Revalidate npm's
+  // package lists so an older cache cannot hide a newly published dependency,
+  // including on OMP's bounded retries. Override inherited prefer-offline too.
+  const install = 'npm install --ignore-scripts --no-audit --no-fund --prefer-online --prefer-offline=false';
   if (command.startsWith('pnpm install')) {
-    return 'npm install --ignore-scripts --no-audit --no-fund --prefer-offline';
+    return install;
   }
   const scopedInstall = command.match(/^pnpm --dir ([^ ]+) install(?: |$)/);
   if (scopedInstall) {
-    return `npm install --prefix ${scopedInstall[1]} --ignore-scripts --no-audit --no-fund --prefer-offline`;
+    return `${install} --prefix ${scopedInstall[1]}`;
   }
   return command;
 }

@@ -104,6 +104,9 @@ first OMP catalog refresh can install that pinned build and Dieter's pinned Bun;
 later refreshes reuse them. New turns pass the selected model at OMP launch rather
 than relying on OMP's narrower ACP cycling-model option; old durable sessions
 retain bounded resume compatibility.
+OMP bootstrap installs revalidate npm metadata even when the host prefers offline
+cache reads. OMP's bounded publication retries therefore observe newly published
+dependencies while retaining the exact pinned version and saved session.
 
 Provider quotas are scoped to the enrolled daemon's gateway account, not one
 daemon. Do not pass global `--machine`:
