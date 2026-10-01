@@ -268,11 +268,15 @@ class ScreenCanvasView(context: Context, val host: ScreenHost) : FrameLayout(con
         // a zoom-sized Surface or changing input/cursor coordinates.
         viewport = Viewport(m.left.roundToInt(), (height - m.top - m.remoteHeight * m.scale).roundToInt(),
             (m.remoteWidth * m.scale).roundToInt().coerceAtLeast(1), (m.remoteHeight * m.scale).roundToInt().coerceAtLeast(1))
-        // TextureView is the viewport; transform its content into the remote aspect and canvas bounds.
-        texture.setTransform(Matrix().apply {
-            setScale((m.remoteWidth * m.scale / width.coerceAtLeast(1)).toFloat(), (m.remoteHeight * m.scale / height.coerceAtLeast(1)).toFloat())
-            postTranslate(m.left.toFloat(), m.top.toFloat())
-        })
+        // Transform the composed layer, not TextureView's producer-content
+        // matrix: that matrix can remain latched to the last video buffer on
+        // a static desktop. View properties repaint zoom/pan on every UI frame
+        // and expose the parent's background outside the transformed bounds.
+        // The backing buffer and EGL viewport keep their fixed layout size.
+        texture.pivotX = 0f; texture.pivotY = 0f
+        texture.scaleX = (m.remoteWidth * m.scale / width.coerceAtLeast(1)).toFloat()
+        texture.scaleY = (m.remoteHeight * m.scale / height.coerceAtLeast(1)).toFloat()
+        texture.translationX = m.left.toFloat(); texture.translationY = m.top.toFloat()
         if (direct) surface?.let {
             // Fixed decoder-sized storage; zoom only changes compositor geometry.
             // Allocating a zoom-sized buffer would multiply bandwidth and memory.

@@ -111,7 +111,7 @@ class ScreenCapabilityPickerTest {
         compose.runOnIdle {
             assertNotSame(previousCanvas, canvas)
             assertEquals(1.25, canvas.canvasModel.zoom, .0001)
-            val matrix = (canvas.getChildAt(0) as android.view.TextureView).getTransform(null)
+            val matrix = canvas.getChildAt(0).matrix
             val bounds = android.graphics.RectF(0f, 0f, canvas.width.toFloat(), canvas.height.toFloat())
             matrix.mapRect(bounds)
             assertEquals(canvas.canvasModel.remoteWidth * canvas.canvasModel.scale, bounds.width().toDouble(), .01)
@@ -151,7 +151,7 @@ class ScreenCapabilityPickerTest {
             // Ending a session restores the fitted view, as the Screens page does.
             canvas.resetSession()
             assertTrue(canvas.canvasModel.isFitted)
-            val matrix = (canvas.getChildAt(0) as android.view.TextureView).getTransform(null)
+            val matrix = canvas.getChildAt(0).matrix
             val displayed = android.graphics.RectF(0f, 0f, canvas.width.toFloat(), canvas.height.toFloat())
             matrix.mapRect(displayed)
             assertEquals(canvas.canvasModel.left, displayed.left.toDouble(), .01)

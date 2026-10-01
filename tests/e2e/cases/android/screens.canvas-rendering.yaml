@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: screens.canvas-rendering
+platform: android
+suites: [component, functional]
+components: [screens]
+fixture: none
+timeout: 90s
+native:
+  class: com.dbpprt.dieter.screens.ScreenCanvasRenderingTest
+  methods:
+  - staticVideoPixelsFollowZoomPanAndFitWithoutStaleRegions

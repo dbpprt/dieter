@@ -72,3 +72,24 @@ Linux cannot execute that fixture and must report it as unavailable.
   Apple native frameworks/tests cannot be built or run on this Linux host.
   Full screen video/codec/recovery qualification likewise requires a macOS
   capture host; these unavailable tests are not counted as passes.
+
+## Follow-up: zoom changed geometry but left old pixels on screen
+
+The original gesture test checked the canvas model and its transform, but did not
+check video pixels. A new renderer test submits one real I420 frame through the
+Android EGL renderer, then stops delivering video. Before the fix, the first zoom
+out changed the model to 50% while PixelCopy still captured the previous fitted
+image (`tmp/e2e-1617533769`). Making the TextureView non-opaque alone did not fix
+this (`tmp/e2e-2559153852`).
+
+The video now uses the view layer's scale and translation, instead of
+`TextureView.setTransform`. Android's compositor applies these properties on UI
+frames, independently of new decoded buffers, and correctly exposes the canvas
+background as the image shrinks or moves. Layout/buffer dimensions, input
+coordinates, decoding and transport remain unchanged.
+
+`screens.canvas-rendering` samples the actual composited pixels after repeated
+zoom in/out, two-finger pinch with pan, and Fit, all without receiving another
+video frame. It checks both the displayed image and newly exposed background.
+The earlier gesture/keyboard/session tests remain in place. The first fixed
+renderer and canvas-controls run passed in `tmp/e2e-4095952655`.
