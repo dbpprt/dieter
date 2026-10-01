@@ -13,6 +13,8 @@ import com.dbpprt.dieter.ui.TaskCaptureStore
 import com.dbpprt.dieter.update.AppUpdateManager
 import com.dbpprt.dieter.widget.DieterActivityWidgetProvider
 import com.dbpprt.dieter.widget.DieterUsageWidgetProvider
+import com.dbpprt.dieter.widget.WidgetUsagePrefs
+import com.dbpprt.dieter.widget.usageSnapshots
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -51,8 +53,7 @@ class DieterContainer(context: Context) : AppHost {
                 core.workspace.state.map { it.allItems },
                 core.connection.state.map { it.phase to it.gateway?.origin },
                 appPreferences.palette,
-                core.quotas.view.map { it.groups },
-            ) { items, connection, palette, quotaGroups -> listOf(items, connection, palette, quotaGroups) }
+            ) { items, connection, palette -> listOf(items, connection, palette) }
                 .distinctUntilChanged()
                 .conflate()
                 .collect {
@@ -60,6 +61,14 @@ class DieterContainer(context: Context) : AppHost {
                     DieterUsageWidgetProvider.updateAll(appContext)
                     delay(1_500)
                 }
+        }
+        widgetScope.launch {
+            core.quotas.view.map { it.groups to it.live }.distinctUntilChanged().collect { (groups, live) ->
+                // Only an actual gateway frame can replace the persisted cache.
+                // Startup and a paused connection both begin with no live data.
+                if (live) WidgetUsagePrefs.saveCache(appContext, usageSnapshots(groups), System.currentTimeMillis())
+                DieterUsageWidgetProvider.updateAll(appContext)
+            }
         }
     }
 

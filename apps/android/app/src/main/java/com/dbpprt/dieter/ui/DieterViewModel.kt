@@ -356,7 +356,8 @@ class DieterViewModel internal constructor(
             review.setActive(false)
             projectChangesController.setActive(false)
             core.telemetry.select(core.telemetry.view.value.daemonId, active = false)
-            core.quotas.pause()
+            // Quotas belong to the app-scoped core. Its connection lifecycle
+            // pauses them; leaving this screen must not pause a widget refresh.
         }
     }
 

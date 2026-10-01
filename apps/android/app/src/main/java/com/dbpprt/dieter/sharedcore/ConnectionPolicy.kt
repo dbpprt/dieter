@@ -34,7 +34,7 @@ class ConnectionPolicy(
         val foreground: Boolean = false,
         val serviceActive: Boolean = false,
         val periodicWindow: Boolean = false,
-        val widgetRefresh: Boolean = false,
+        val widgetRefreshes: Int = 0,
     )
 
     private val appContext = context.applicationContext
@@ -58,7 +58,7 @@ class ConnectionPolicy(
         }
         scope.launch {
             combine(flags, mutableDesired, mutableMode) { flags, desired, mode ->
-                BackgroundPolicy.shouldRun(desired, mode, flags.foreground, flags.serviceActive, flags.periodicWindow, flags.widgetRefresh)
+                BackgroundPolicy.shouldRun(desired, mode, flags.foreground, flags.serviceActive, flags.periodicWindow, flags.widgetRefreshes > 0)
             }.distinctUntilChanged().collect(core::setActive)
         }
         scope.launch {
@@ -74,7 +74,15 @@ class ConnectionPolicy(
 
     fun setPeriodicWindow(value: Boolean) = flags.update { it.copy(periodicWindow = value) }
 
-    fun setWidgetRefresh(value: Boolean) = flags.update { it.copy(widgetRefresh = value) }
+    /** Both widget providers can refresh concurrently without closing each other's connection. */
+    suspend fun <T> withWidgetRefresh(block: suspend () -> T): T {
+        flags.update { it.copy(widgetRefreshes = it.widgetRefreshes + 1) }
+        try {
+            return block()
+        } finally {
+            flags.update { it.copy(widgetRefreshes = it.widgetRefreshes - 1) }
+        }
+    }
 
     fun setMode(value: BackgroundMode) {
         settings.putString(BackgroundPolicy.MODE_KEY, value.wire)

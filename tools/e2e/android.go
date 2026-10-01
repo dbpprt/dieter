@@ -303,7 +303,11 @@ func (a android) run(ctx context.Context, c Case) (result Result) {
 			result.Reason = err.Error()
 			return
 		}
-		fixture, err = startOwned(a.root, a.fixtureBinary, "--addr", "127.0.0.1:0", "--home", state)
+		fixtureArgs := []string{a.fixtureBinary, "--addr", "127.0.0.1:0", "--home", state}
+		if c.ID == "widget.usage" {
+			fixtureArgs = append(fixtureArgs, "--usage-fixture")
+		}
+		fixture, err = startOwned(a.root, fixtureArgs...)
 		if err != nil {
 			_ = os.RemoveAll(state)
 			result.Reason = err.Error()

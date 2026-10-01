@@ -17,7 +17,9 @@ import com.dbpprt.dieter.settings.AppPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
+import kotlin.time.Duration.Companion.seconds
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -40,13 +42,18 @@ open class DieterUsageWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (intent.action != ACTION_REFRESH || !refreshing.compareAndSet(false, true)) return
+        if (intent.action !in setOf(ACTION_REFRESH, AppWidgetManager.ACTION_APPWIDGET_UPDATE) ||
+            !refreshing.compareAndSet(false, true)) return
         val pending = goAsync()
         val appContext = context.applicationContext
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                updateAll(appContext)
                 val success = runCatching {
-                    withTimeout(12_000) { fetch(appContext, requestRefresh = true) }
+                    fetch(appContext, requestRefresh = intent.action == ACTION_REFRESH)
+                }.onFailure { error ->
+                    val core = (appContext as com.dbpprt.dieter.DieterApplication).container.core
+                    android.util.Log.w("UsageWidget", "Refresh failed: ${error.javaClass.simpleName}, phase=${core.connection.state.value.phase}, live=${core.quotas.view.value.live}, loading=${core.quotas.view.value.loading}")
                 }.getOrDefault(false)
                 failedRefreshAt = if (success) 0 else System.currentTimeMillis()
             } finally {
@@ -86,15 +93,24 @@ open class DieterUsageWidgetProvider : AppWidgetProvider() {
 
         /** Cheap list from the gateway snapshot store; [requestRefresh] asks providers for fresh data. */
         internal suspend fun fetch(context: Context, requestRefresh: Boolean): Boolean {
-            val core = (context.applicationContext as com.dbpprt.dieter.DieterApplication).container.core
-            val response = kotlinx.coroutines.withContext(core.scope.coroutineContext) {
-                core.quotas.load(requestRefresh)
-                core.quotas.view.value
+            val container = (context.applicationContext as com.dbpprt.dieter.DieterApplication).container
+            val core = container.core
+            if (!core.accounts.state.value.wantsConnection) return false
+            return container.policy.withWidgetRefresh {
+                withTimeout(8_000) {
+                    if (!core.connection.refreshForWidget(8.seconds)) return@withTimeout false
+                    // load() is a no-op before the quota client is attached, or
+                    // while its initial read is running. Wait for a real frame.
+                    core.quotas.view.first { it.live && !it.loading && it.mutating.isEmpty() }
+                    val response = core.onCore {
+                        if (requestRefresh) core.quotas.load(refresh = true)
+                        core.quotas.view.value
+                    }
+                    if (!response.live || response.error != null) return@withTimeout false
+                    WidgetUsagePrefs.saveCache(context, usageSnapshots(response.groups), System.currentTimeMillis())
+                    true
+                }
             }
-            if (response.error != null) return false
-            val snapshots = usageSnapshots(response.groups)
-            WidgetUsagePrefs.saveCache(context, snapshots, System.currentTimeMillis())
-            return true
         }
 
         fun render(context: Context, manager: AppWidgetManager, appWidgetId: Int, pinnedSmall: Boolean = false) {
@@ -207,7 +223,7 @@ open class DieterUsageWidgetProvider : AppWidgetProvider() {
             views.setTextViewText(R.id.widget_usage_summary, summary)
             if (Build.VERSION.SDK_INT >= 31) {
                 views.setViewVisibility(R.id.widget_usage_rows, View.GONE)
-                views.setViewVisibility(R.id.widget_usage_list, View.VISIBLE)
+                views.setViewVisibility(R.id.widget_usage_list, if (model.hasAccounts) View.VISIBLE else View.GONE)
                 val items = RemoteViews.RemoteCollectionItems.Builder().setViewTypeCount(1).setHasStableIds(true)
                 model.accounts.forEachIndexed { index, account ->
                     items.addItem(index.toLong(), usageAccountRow(context, account, darkColors))
@@ -215,7 +231,7 @@ open class DieterUsageWidgetProvider : AppWidgetProvider() {
                 views.setRemoteAdapter(R.id.widget_usage_list, items.build())
             } else {
                 views.setViewVisibility(R.id.widget_usage_list, View.GONE)
-                views.setViewVisibility(R.id.widget_usage_rows, View.VISIBLE)
+                views.setViewVisibility(R.id.widget_usage_rows, if (model.hasAccounts) View.VISIBLE else View.GONE)
                 views.removeAllViews(R.id.widget_usage_rows)
                 model.accounts.take(3).forEach { account ->
                     views.addView(R.id.widget_usage_rows, usageAccountRow(context, account, darkColors))

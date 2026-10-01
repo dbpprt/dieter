@@ -48,11 +48,8 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
                 updateAll(appContext)
                 val container = (appContext as DieterApplication).container
                 // A widget refresh connects briefly even when the app and service are not running.
-                container.policy.setWidgetRefresh(true)
-                val success = try {
+                val success = container.policy.withWidgetRefresh {
                     runCatching { container.core.connection.refreshForWidget(8.seconds) }.getOrDefault(false)
-                } finally {
-                    container.policy.setWidgetRefresh(false)
                 }
                 failedRefreshAt = if (success) 0 else System.currentTimeMillis()
                 failedRefreshGateway = snapshot(appContext).gateway

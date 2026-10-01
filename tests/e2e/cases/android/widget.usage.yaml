@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: widget.usage
+platform: android
+suites:
+- functional
+components:
+- activity
+fixture: gateway
+timeout: 180s
+native:
+  class: com.dbpprt.dieter.widget.WidgetUsageEndToEndTest
+  methods:
+  - usageWidgetsLoadLiveDataAndRefreshWhileAppOnlySyncIsSleeping
