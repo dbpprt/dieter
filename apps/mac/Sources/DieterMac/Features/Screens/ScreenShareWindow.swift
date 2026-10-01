@@ -237,7 +237,7 @@ private struct DetachedScreenShareView: View {
         .task(id: session.controller.keyboardCaptureStatus) {
             keyboardHint = session.controller.keyboardCaptureStatus
             guard !keyboardHint.isEmpty else { return }
-            do { try await Task.sleep(for: .seconds(4)) } catch { return }
+            do { try await DieterTaskSleep.seconds(4) } catch { return }
             keyboardHint = ""
         }
         .accessibilityIdentifier("screens.detached.video")

@@ -424,7 +424,7 @@ extension AppSession {
         let deadline = ContinuousClock.now + timeout
         while !condition() {
             guard !Task.isCancelled, ContinuousClock.now < deadline else { return false }
-            try? await Task.sleep(for: .milliseconds(50))
+            try? await DieterTaskSleep.milliseconds(50)
         }
         return true
     }

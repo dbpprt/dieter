@@ -124,7 +124,7 @@ final class ConversationPaneOwnedSplitController: NSSplitViewController {
             var previousWidth: CGFloat?
             var stableSamples = 0
             for _ in 0..<50 {
-                try? await Task.sleep(for: .milliseconds(20))
+                try? await DieterTaskSleep.milliseconds(20)
                 guard !Task.isCancelled, let self, self.presentationGeneration == generation,
                     self.presented, self.restorePosition
                 else { return }

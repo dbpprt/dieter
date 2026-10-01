@@ -92,7 +92,7 @@ private extension Data {
             let id = UUID()
             attemptID = id
             let timer = Task { [weak self] in
-                do { try await Task.sleep(for: .seconds(300)) } catch { return }
+                do { try await DieterTaskSleep.seconds(300) } catch { return }
                 self?.finish(id: id, result: .failure(IOSAuthenticationError.timedOut))
             }
             defer {

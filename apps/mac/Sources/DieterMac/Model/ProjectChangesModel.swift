@@ -203,7 +203,7 @@ final class ProjectChangesModel {
         if let queued { await queued.value }
         let deadline = ContinuousClock.now + .seconds(30)
         while diffLoading, ContinuousClock.now < deadline, !Task.isCancelled {
-            try? await Task.sleep(for: .milliseconds(25))
+            try? await DieterTaskSleep.milliseconds(25)
         }
     }
 

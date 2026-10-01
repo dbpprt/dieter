@@ -915,7 +915,7 @@ private final class ConversationSplitPositioningView: NSView {
             // Mounting the pane and maximizing its board parent can occur in
             // separate layout passes. Observe rather than force those passes.
             for _ in 0..<50 {
-                try? await Task.sleep(for: .milliseconds(20))
+                try? await DieterTaskSleep.milliseconds(20)
                 guard !Task.isCancelled, let self, self.generation == currentGeneration else { return }
                 guard let split = self.enclosingSplit(), split.arrangedSubviews.count == 2,
                     split.bounds.width > 0

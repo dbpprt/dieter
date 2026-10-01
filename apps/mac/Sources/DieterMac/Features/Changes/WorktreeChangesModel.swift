@@ -309,7 +309,7 @@ final class WorktreeChangesModel {
             {
                 return current.status == "succeeded"
             }
-            try? await Task.sleep(for: .milliseconds(100))
+            try? await DieterTaskSleep.milliseconds(100)
         }
         return false
     }

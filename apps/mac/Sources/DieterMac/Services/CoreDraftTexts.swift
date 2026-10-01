@@ -85,7 +85,7 @@ final class CoreDraftTexts: DraftTextStore {
     private func scheduleSave() {
         guard saving == nil else { return }
         saving = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(250))
+            try? await DieterTaskSleep.milliseconds(250)
             guard !Task.isCancelled, let self else { return }
             self.saving = nil
             await self.save()

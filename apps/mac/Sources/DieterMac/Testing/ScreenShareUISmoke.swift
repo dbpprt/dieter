@@ -99,7 +99,7 @@
                 ? "passed" : "failed: Control-Command-F did not leave full screen in the same window"
             capture(detached, to: output.appending(path: "01a-screen-floating.png"))
             store.openSettings()
-            try? await Task.sleep(for: .milliseconds(300))
+            try? await DieterTaskSleep.milliseconds(300)
             let dockButton = detached.toolbar?.items.first { $0.itemIdentifier.rawValue == "screen.dock" }
             let returned =
                 dockButton?.action.map { NSApp.sendAction($0, to: dockButton?.target, from: dockButton) } ?? false
@@ -114,7 +114,7 @@
         private static func wait(_ condition: () -> Bool) async -> Bool {
             for _ in 0..<120 {
                 if condition() { return true }
-                try? await Task.sleep(for: .milliseconds(100))
+                try? await DieterTaskSleep.milliseconds(100)
             }
             return condition()
         }
