@@ -139,7 +139,9 @@ import com.dbpprt.dieter.core.files.FileConflictException
 import com.dbpprt.dieter.core.state.CreationPreferences
 import com.dbpprt.dieter.core.store.WorkspaceView
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -365,7 +367,7 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
             command.input?.let { surface.input(it.data_.toByteArray()) }
             command.grid?.let { surface.gridChanged(it.columns, it.rows) }
             // A close or rename through the overview's terminals updates its list.
-            if (command.close != null || command.rename != null || command.load != null) overviews[command.scope]?.reconcile()
+            (command.close?.terminal_id ?: command.rename?.terminal_id)?.let { overviews[command.scope]?.follow(it) }
             return Result(terminals = terminalsSlice(surface.view.value, null))
         }
         command.review?.let { command ->
@@ -656,6 +658,14 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
             Slice.SLICE_TERMINAL_OVERVIEW -> runtime.scope.launch {
                 val overview = overviews.retain(scope)
                 val outputs = TerminalOutputs()
+                // Machines that come online, return after a restart, or failed to
+                // list are listed again while the overview is shown.
+                val relist = launch {
+                    while (true) {
+                        delay(OVERVIEW_RELIST)
+                        overview.relistIfStale()
+                    }
+                }
                 try {
                     combine(overview.view, overview.terminals.view, ::Pair).collect { (view, terminals) ->
                         emit(Update(terminal_overview = overviewSlice(view, terminalsSlice(terminals, outputs))))
@@ -1125,6 +1135,7 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
     }
 
     companion object {
+        private val OVERVIEW_RELIST = 3.seconds
         private val REVIEW_KINDS = listOf(
             "commit", "update", "validate", "merge_local", "push", "create_pr", "refresh_pr", "merge_pr",
             "adopt", "discard", "cleanup", "continue_conflict", "abort_conflict",

@@ -355,9 +355,11 @@ command and slice covered.
      changes follows itself to the other half when it is staged or unstaged
      (`ProjectChangesRules.follow`), as the legacy Mac did; clearing it made
      the header's "Stage file" act on whichever change the view fell back to.
-     The terminal overview takes the selected machine's terminals from its
-     terminals surface after a close or rename, so a closed terminal leaves
-     the overview at once.
+     A close or rename through the terminal overview's terminals shows in
+     its list at once. While shown, the overview lists again when the online
+     machines differ from those it last listed (a machine came back after a
+     restart, or could not be listed), with backoff; the legacy Mac recovered
+     through live terminal events, and the CI runner exposed the gap.
 10. **Admin, projects, checkouts, boards, labels, prompts, settings, and
     conflicts.**
     - **As built.** One `AdminCommand` covers projects, checkouts, boards,
