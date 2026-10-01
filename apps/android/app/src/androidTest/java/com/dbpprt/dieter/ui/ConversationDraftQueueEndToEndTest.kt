@@ -90,6 +90,9 @@ class ConversationDraftQueueEndToEndTest {
             container.requestOpen(cardId = first.id)
             composeRule.waitUntil(20_000) { composeRule.onAllNodesWithTag("message-input").fetchSemanticsNodes().isNotEmpty() }
             visibleNodeWithTag("message-input").performTextInput("draft for first")
+            // Keystroke by keystroke, the field never waits on the core or rewinds to an older draft.
+            for (character in ", typed fast") visibleNodeWithTag("message-input").performTextInput(character.toString())
+            visibleNodeWithTag("message-input").assertTextEquals(FIRST_DRAFT)
             composeRule.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("chat-${second.id}").fetchSemanticsNodes().isNotEmpty()
@@ -111,12 +114,12 @@ class ConversationDraftQueueEndToEndTest {
             composeRule.onNodeWithTag("nav-chats").assertIsSelected()
             composeRule.onNodeWithTag("chat-${first.id}").assertIsDisplayed().performClick()
             composeRule.waitUntil(10_000) {
-                runCatching { visibleNodeWithTag("message-input").assertTextEquals("draft for first") }.isSuccess
+                runCatching { visibleNodeWithTag("message-input").assertTextEquals(FIRST_DRAFT) }.isSuccess
             }
-            visibleNodeWithTag("message-input").assertTextEquals("draft for first")
+            visibleNodeWithTag("message-input").assertTextEquals(FIRST_DRAFT)
             composeRule.activityRule.scenario.recreate()
             composeRule.waitUntil(15_000) {
-                runCatching { visibleNodeWithTag("message-input").assertTextEquals("draft for first") }.isSuccess
+                runCatching { visibleNodeWithTag("message-input").assertTextEquals(FIRST_DRAFT) }.isSuccess
             }
             capture("conversation-draft-restored-e2e.png")
 
@@ -161,6 +164,10 @@ class ConversationDraftQueueEndToEndTest {
             }
             IsolatedCore.disconnect(container)
         }
+    }
+
+    private companion object {
+        const val FIRST_DRAFT = "draft for first, typed fast"
     }
 
     private fun createDeferredChat(

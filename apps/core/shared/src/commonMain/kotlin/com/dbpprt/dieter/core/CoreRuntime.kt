@@ -125,7 +125,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     val navigationKv = SharedKv("navigation", sessions, platform.clock, platform.logger)
     val navigation = NavigationEditor(navigationKv)
     val metadata = MachineMetadataStore(sessions, scope, platform.clock, platform.logger)
-    val drafts = ConversationDrafts(platform.clock, platform.logger)
+    val drafts = ConversationDrafts(platform.clock, platform.logger, scope)
     val captures = TaskCaptures(platform.clock, platform.logger, scope)
     val creation = CreationMemory(storage, platform.logger)
     val connection: ConnectionSupervisor = ConnectionSupervisor(
@@ -489,6 +489,9 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     /** Stops all work, persisting what the feed applied, and closes every connection. */
     suspend fun shutdown() {
         scope.coroutineContext.job.cancelAndJoin()
-        withContext(dispatcher) { sessions.closeAll() }
+        withContext(dispatcher) {
+            drafts.flush()
+            sessions.closeAll()
+        }
     }
 }

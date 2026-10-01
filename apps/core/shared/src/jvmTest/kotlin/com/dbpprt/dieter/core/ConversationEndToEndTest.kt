@@ -64,13 +64,16 @@ class ConversationEndToEndTest : EndToEnd() {
         session.view.await(30.seconds) { OutboxPolicy.isServerBacked(it.cardId) }
         session.awaitReplies(1)
         val key = DraftKey(session.view.value.daemonId!!, session.cardId)
+        val composer = runtime.onCore { runtime.drafts.editor(key) }
         for (turn in 1..3) {
-            runtime.onCore { runtime.drafts.setText(key, "turn $turn") }
+            // Keystrokes land off the core dispatcher, one by one, and the send takes all of them.
+            "turn $turn".let { text -> for (end in 1..text.length) composer.setText(text.take(end)) }
             // The composer shows the send as awaiting a reply at once, before anything streams.
             val id = runtime.onConversation(session) { sendDraft().also { assertTrue(view.value.awaitingReply) } }
             assertTrue(id != null)
             assertEquals(false, session.view.value.retrying)
-            assertEquals("", runtime.drafts.draft(key).text, "the sent text leaves the composer")
+            assertEquals("", composer.state.value.text, "the sent text leaves the composer")
+            assertEquals("", runtime.onCore { runtime.drafts.draft(key).text })
             session.awaitReplies(turn + 1)
             session.view.await(30.seconds, describe = { "reply settles the wait" }) { !it.awaitingReply }
         }

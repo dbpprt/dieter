@@ -28,10 +28,26 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
+import okio.FileSystem
+import okio.ForwardingFileSystem
+import okio.Path
 import okio.Path.Companion.toPath
 import okio.fakefilesystem.FakeFileSystem
+
+/** Counts file writes; [CoreStorage] completes each with an atomic move. */
+private class CountingFileSystem(delegate: FileSystem) : ForwardingFileSystem(delegate) {
+    var writes = 0
+
+    override fun atomicMove(source: Path, target: Path) {
+        writes++
+        super.atomicMove(source, target)
+    }
+}
 
 class CompositionTest {
     private val fileSystem = FakeFileSystem()
@@ -89,6 +105,70 @@ class CompositionTest {
         assertEquals("offline idea\n\nalready here", relaunched.draft(DraftKey("d1", "c_1")).text)
         relaunched.acceptSend(DraftKey("d1", "c_1"), relaunched.draft(DraftKey("d1", "c_1")).revision)
         assertTrue(ConversationDrafts(clock, SilentLogger).also { it.bind(storage("g")) }.state.value.isEmpty())
+    }
+
+    @Test
+    fun anEditorTypesAtOnceAndABurstIsWrittenOnce() = runTest {
+        val counting = CountingFileSystem(fileSystem)
+        val drafts = ConversationDrafts(clock, SilentLogger, backgroundScope).also { it.bind(CoreStorage(counting, "/state/typing".toPath())) }
+        val editor = drafts.editor(key)
+        val text = "typing faster than the core can echo"
+        for (end in 1..text.length) {
+            editor.setText(text.take(end))
+            assertEquals(text.take(end), editor.state.value.text, "each keystroke lands at once")
+        }
+        assertEquals(text, drafts.draft(key).text, "the core reads what the composer holds")
+        runCurrent()
+        assertEquals(text, drafts.state.value[key]?.text, "edits fold into the drafts")
+        assertEquals(0, counting.writes, "nothing is written per keystroke")
+        advanceTimeBy(ConversationDrafts.SAVE_INTERVAL)
+        runCurrent()
+        assertEquals(1, counting.writes, "a burst is written once")
+        assertEquals(text, ConversationDrafts(clock, SilentLogger).also { it.bind(storage("typing")) }.draft(key).text)
+
+        editor.setText("$text!")
+        drafts.flush()
+        assertEquals(2, counting.writes, "a flush writes pending text at once")
+        drafts.flush()
+        assertEquals(2, counting.writes, "and only when something changed")
+    }
+
+    @Test
+    fun aSendThroughAnOpenEditorClearsOnlyWhatWasSent() = runTest {
+        val drafts = ConversationDrafts(clock, SilentLogger, backgroundScope).also { it.bind(storage("g")) }
+        val editor = drafts.editor(key)
+        editor.setText("hello")
+        assertTrue(drafts.acceptSend(key, drafts.draft(key).revision))
+        assertEquals("", editor.state.value.text, "the composer clears at once")
+
+        editor.setText("next")
+        val sent = drafts.draft(key)
+        editor.setText("next, typed while sending")
+        assertFalse(drafts.acceptSend(key, sent.revision), "typing after the send is kept")
+        assertEquals("next, typed while sending", editor.state.value.text)
+
+        assertEquals(editor, drafts.editor(key), "holders share one editor")
+        drafts.release(editor)
+        editor.setText("still held")
+        runCurrent()
+        assertEquals("still held", drafts.draft(key).text, "the editor lives until its last holder lets go")
+        drafts.release(editor)
+        editor.setText("after release")
+        runCurrent()
+        assertEquals("still held", drafts.draft(key).text, "a released editor no longer writes")
+        assertEquals("still held", drafts.editor(key).state.value.text)
+    }
+
+    @Test
+    fun retargetingMovesAnOpenEditorsDraft() = runTest {
+        val drafts = ConversationDrafts(clock, SilentLogger, backgroundScope).also { it.bind(storage("g")) }
+        val local = drafts.editor(DraftKey("d1", "local_1"))
+        local.setText("offline idea")
+        drafts.retargetAll("local_1", "c_1")
+        local.setText("typed into the detached editor")
+        runCurrent()
+        assertEquals("offline idea", drafts.editor(DraftKey("d1", "c_1")).state.value.text)
+        assertEquals("", drafts.draft(DraftKey("d1", "local_1")).text)
     }
 
     @Test

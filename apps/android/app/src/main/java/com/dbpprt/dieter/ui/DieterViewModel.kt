@@ -29,6 +29,7 @@ import com.dbpprt.dieter.core.admin.BackgroundMode
 import com.dbpprt.dieter.core.board.DropAnchors
 import com.dbpprt.dieter.core.board.Lanes
 import com.dbpprt.dieter.core.composition.ConversationDraft
+import com.dbpprt.dieter.core.composition.ConversationDraftEditor
 import com.dbpprt.dieter.core.composition.Creation
 import com.dbpprt.dieter.core.composition.CreationInput
 import com.dbpprt.dieter.core.composition.DraftKey
@@ -76,13 +77,19 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Platform services the view model needs from the app. */
 interface AppHost {
@@ -113,6 +120,9 @@ class DieterViewModel internal constructor(
     private var foreground = false
     private var session: ConversationSession? = null
     private var conversationJob: Job? = null
+
+    /** The open conversation's draft; the composer types into it directly, never waiting on the core. */
+    private var composer: ConversationDraftEditor? = null
     private var machineListJob: Job? = null
     private var connectionDialogJob: Job? = null
     private val connectionPrompt = ConnectionPrompt()
@@ -341,6 +351,7 @@ class DieterViewModel internal constructor(
         machineListJob?.cancel()
         connectionDialogJob?.cancel()
         launchCore(report = false) {
+            core.drafts.flush()
             terminals.setActive(false)
             review.setActive(false)
             projectChangesController.setActive(false)
@@ -838,13 +849,23 @@ class DieterViewModel internal constructor(
             val opened = core.openConversation(cardId)
             session = opened
             core.onCore { core.visibleConversationId = opened.cardId }
-            combine(opened.view, core.drafts.state) { view, drafts ->
-                view to (view.daemonId?.let { drafts[DraftKey(it, view.cardId)] } ?: ConversationDraft())
-            }.collect { (view, draft) -> applyConversation(view, draft) }
+            // The draft follows the card from its local to its server ID.
+            opened.view.map { view -> view.daemonId?.let { DraftKey(it, view.cardId) } }.distinctUntilChanged().collectLatest { key ->
+                val editor = key?.let { core.onCore { core.drafts.editor(it) } }
+                composer = editor
+                try {
+                    combine(opened.view, editor?.state ?: flowOf(ConversationDraft())) { view, _ -> view }.collect { applyConversation(it) }
+                } finally {
+                    if (composer === editor) composer = null
+                    if (editor != null) withContext(NonCancellable) { core.onCore { core.drafts.release(editor) } }
+                }
+            }
         }
     }
 
-    private fun applyConversation(view: ConversationView, draft: ConversationDraft) {
+    private fun applyConversation(view: ConversationView) {
+        // The editor's latest, never an older value the flow captured before a keystroke.
+        val draft = composer?.state?.value ?: ConversationDraft()
         _state.update { current ->
             if (current.selectedCardId != view.cardId && core.outbox.view.value.resolve(current.selectedCardId.orEmpty()) != view.cardId) return@update current
             current.copy(
@@ -965,7 +986,11 @@ class DieterViewModel internal constructor(
         launchCore { draftKey()?.let { core.drafts.change(it) } }
     }
 
-    fun updateComposerText(value: String) = updateDraft { setText(it, value) }
+    fun updateComposerText(value: String) {
+        val editor = composer ?: return
+        editor.setText(value)
+        _state.update { it.copy(composerDraft = editor.state.value) }
+    }
 
     fun updateComposerSelection(value: HarnessSelection) = updateDraft { setSelection(it, value) }
 

@@ -8,9 +8,15 @@ import com.dbpprt.dieter.core.state.DraftText
 import com.dbpprt.dieter.core.state.DraftTexts
 import com.dbpprt.dieter.core.storage.CoreStorage
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.updateAndGet
+import kotlinx.coroutines.launch
 
 /** A conversation is identified by the machine that runs it and its ID. */
 data class DraftKey(val daemonId: String, val conversationId: String)
@@ -40,22 +46,59 @@ data class RestoredMessage(val text: String, val attachments: List<MessagePart>,
     }
 }
 
+/** [next] as a change of [current]: a text or attachment change advances the revision past both. */
+private fun revised(current: ConversationDraft, next: ConversationDraft): ConversationDraft =
+    if (next.text != current.text || next.attachments != current.attachments) next.copy(revision = maxOf(current.revision, next.revision) + 1) else next
+
+/**
+ * The draft of one open conversation. Typing applies to [state] at once, so
+ * a text field never lags or rewinds to a stale echo; the core folds each
+ * change into its drafts in the background. The core's own changes (a send,
+ * a restored queued message) apply to the same state atomically. Safe to
+ * call from any thread.
+ */
+class ConversationDraftEditor internal constructor(val key: DraftKey, initial: ConversationDraft) {
+    private val mutableState = MutableStateFlow(initial)
+    val state: StateFlow<ConversationDraft> = mutableState.asStateFlow()
+
+    fun setText(text: String): ConversationDraft = edit { it.copy(text = text) }
+
+    internal fun edit(change: (ConversationDraft) -> ConversationDraft): ConversationDraft =
+        mutableState.updateAndGet { current -> revised(current, change(current)) }
+}
+
 /**
  * Composer drafts per conversation, bounded to the 64 most recently used.
- * Only text survives a restart. Confined to the core dispatcher.
+ * Only text survives a restart; a burst of typing is written once. Confined
+ * to the core dispatcher, except for the [editor]s it hands out.
  */
-class ConversationDrafts(private val clock: Clock, private val logger: CoreLogger) {
+class ConversationDrafts(
+    private val clock: Clock,
+    private val logger: CoreLogger,
+    /** The core dispatcher's scope; editors fold their edits and text is journaled on it. Without one, text is written at once. */
+    private val scope: CoroutineScope? = null,
+) {
     private var storage: CoreStorage? = null
     private val drafts = LinkedHashMap<DraftKey, ConversationDraft>()
     private val updatedAt = HashMap<DraftKey, Long>()
+    private val editors = HashMap<DraftKey, OpenEditor>()
+    private var unsaved = false
+    private var saving: Job? = null
     private val mutableState = MutableStateFlow<Map<DraftKey, ConversationDraft>>(emptyMap())
     val state: StateFlow<Map<DraftKey, ConversationDraft>> = mutableState.asStateFlow()
 
+    private class OpenEditor(val editor: ConversationDraftEditor, val job: Job) {
+        var holders = 1
+    }
+
     fun bind(storage: CoreStorage?) {
         if (storage != null && storage.directory == this.storage?.directory) return
+        flush()
         this.storage = storage
         drafts.clear()
         updatedAt.clear()
+        editors.values.forEach { it.job.cancel() }
+        editors.clear()
         val saved = storage?.read(FILE)?.let { runCatching { DraftTexts.ADAPTER.decode(it) }.getOrNull() }
         for (draft in saved?.drafts.orEmpty().sortedBy { it.updated_at_millis }) {
             if (draft.conversation_id.isBlank() || draft.text.isEmpty()) continue
@@ -67,24 +110,61 @@ class ConversationDrafts(private val clock: Clock, private val logger: CoreLogge
         publish()
     }
 
-    /** The draft for [key]; reading it counts as use for eviction. */
+    /** The draft for [key], as its open editor holds it; reading it counts as use for eviction. */
     fun draft(key: DraftKey): ConversationDraft {
-        val draft = drafts.remove(key) ?: return ConversationDraft()
-        drafts[key] = draft
-        return draft
+        val folded = drafts.remove(key)?.also { drafts[key] = it }
+        return editors[key]?.editor?.state?.value ?: folded ?: ConversationDraft()
     }
 
-    /** Applies [change]; an empty result removes the draft. */
+    /** Applies [change], through [key]'s open editor if it has one; an empty result removes the draft. */
     fun update(key: DraftKey, change: (ConversationDraft) -> ConversationDraft): ConversationDraft {
         require(key.conversationId.isNotBlank()) { "A draft needs a conversation." }
+        editors[key]?.editor?.let { editor ->
+            val next = editor.edit(change)
+            fold(key, editor.state.value)
+            return next
+        }
         val current = draft(key)
-        var next = change(current)
-        if (next.text != current.text || next.attachments != current.attachments) next = next.copy(revision = current.revision + 1)
+        val next = revised(current, change(current))
         store(key, next, textChanged = next.text != current.text)
         return next
     }
 
     fun setText(key: DraftKey, text: String) = update(key) { it.copy(text = text) }
+
+    /**
+     * The live editor of [key]'s draft for a composer, shared until every
+     * holder has called [release]. Its edits fold into these drafts here.
+     */
+    fun editor(key: DraftKey): ConversationDraftEditor {
+        editors[key]?.let { open ->
+            open.holders++
+            return open.editor
+        }
+        require(key.conversationId.isNotBlank()) { "A draft needs a conversation." }
+        val scope = requireNotNull(scope) { "Editors need the core scope." }
+        val editor = ConversationDraftEditor(key, draft(key))
+        // No drop(1): typing that lands before the collector starts must still fold.
+        editors[key] = OpenEditor(editor, scope.launch { editor.state.collect { fold(key, it) } })
+        return editor
+    }
+
+    /** Lets go of [editor]; after its last holder, its latest draft stays here. */
+    fun release(editor: ConversationDraftEditor) {
+        val open = editors[editor.key]?.takeIf { it.editor === editor } ?: return
+        if (--open.holders > 0) return
+        editors.remove(editor.key)
+        open.job.cancel()
+        fold(editor.key, editor.state.value)
+    }
+
+    /** Writes text changed since the last save now, including typing not yet folded, e.g. before the app may be stopped. */
+    fun flush() {
+        for ((key, open) in editors.entries.toList()) fold(key, open.editor.state.value)
+        if (!unsaved) return
+        unsaved = false
+        persist()
+    }
 
     /** Adds attachments within the daemon's limits, or fails without changing the draft. */
     fun addAttachments(key: DraftKey, parts: List<MessagePart>): Result<ConversationDraft> =
@@ -96,10 +176,12 @@ class ConversationDrafts(private val clock: Clock, private val logger: CoreLogge
 
     /** Clears what was sent from revision [sentRevision]; anything typed meanwhile stays. */
     fun acceptSend(key: DraftKey, sentRevision: Long): Boolean {
-        val current = drafts[key] ?: return false
-        if (current.revision != sentRevision) return false
-        update(key) { it.copy(text = "", attachments = emptyList()) }
-        return true
+        var accepted = false
+        update(key) { current ->
+            accepted = current.hasContent && current.revision == sentRevision
+            if (accepted) current.copy(text = "", attachments = emptyList()) else current
+        }
+        return accepted
     }
 
     /** Marks a queued message as being edited; false if that edit is already running. */
@@ -123,26 +205,33 @@ class ConversationDrafts(private val clock: Clock, private val logger: CoreLogge
 
     /** Retargets [from] on every machine; local IDs are unique across machines. */
     fun retargetAll(from: String, to: String) {
-        for (key in drafts.keys.filter { it.conversationId == from }) retarget(key.daemonId, from, to)
+        for (key in (drafts.keys + editors.keys).filter { it.conversationId == from }) retarget(key.daemonId, from, to)
     }
 
-    /** Moves a local conversation's draft to its server ID, merging with any draft already there. */
+    /**
+     * Moves a local conversation's draft to its server ID, merging with any
+     * draft already there. An editor of the local ID stops following it.
+     */
     fun retarget(daemonId: String, from: String, to: String) {
         if (from.isBlank() || to.isBlank() || from == to) return
-        val old = drafts[DraftKey(daemonId, from)] ?: return
-        val key = DraftKey(daemonId, to)
-        val existing = drafts[key]
-        drafts.remove(DraftKey(daemonId, from))
-        updatedAt.remove(DraftKey(daemonId, from))
-        val merged = if (existing == null) old else ConversationDraft(
-            text = listOf(old.text, existing.text).filter { it.isNotBlank() }.joinToString("\n\n"),
-            attachments = old.attachments + existing.attachments,
-            selection = existing.selection ?: old.selection,
-            pendingQueueIds = old.pendingQueueIds + existing.pendingQueueIds,
-            revision = maxOf(old.revision, existing.revision) + 1,
-        )
-        store(key, merged, textChanged = true)
+        val source = DraftKey(daemonId, from)
+        val detached = editors.remove(source)?.also { it.job.cancel() }?.editor?.state?.value
+        val old = detached ?: drafts[source] ?: return
+        drafts.remove(source)
+        updatedAt.remove(source)
+        update(DraftKey(daemonId, to)) { existing ->
+            if (existing.isEmpty) old else ConversationDraft(
+                text = listOf(old.text, existing.text).filter { it.isNotBlank() }.joinToString("\n\n"),
+                attachments = old.attachments + existing.attachments,
+                selection = existing.selection ?: old.selection,
+                pendingQueueIds = old.pendingQueueIds + existing.pendingQueueIds,
+                revision = maxOf(old.revision, existing.revision),
+            )
+        }
     }
+
+    /** Takes an editor's latest draft into these drafts. */
+    private fun fold(key: DraftKey, draft: ConversationDraft) = store(key, draft, textChanged = draft.text != drafts[key]?.text.orEmpty())
 
     private fun store(key: DraftKey, draft: ConversationDraft, textChanged: Boolean) {
         drafts.remove(key)
@@ -153,8 +242,19 @@ class ConversationDrafts(private val clock: Clock, private val logger: CoreLogge
             if (textChanged) updatedAt[key] = clock.now().toEpochMilliseconds()
         }
         trim()
-        if (textChanged) persist()
+        if (textChanged) persistSoon()
         publish()
+    }
+
+    /** Journals text at most every [SAVE_INTERVAL], so a burst of keystrokes is written once. */
+    private fun persistSoon() {
+        unsaved = true
+        val scope = scope ?: return flush()
+        if (saving?.isActive == true) return
+        saving = scope.launch {
+            delay(SAVE_INTERVAL)
+            flush()
+        }
     }
 
     /** Evicts the least recently used drafts, sparing ones with a queue edit in flight while possible. */
@@ -181,6 +281,7 @@ class ConversationDrafts(private val clock: Clock, private val logger: CoreLogge
 
     companion object {
         const val MAX_DRAFTS = 64
+        val SAVE_INTERVAL = 500.milliseconds
         private const val FILE = "drafts.pb"
 
         /** Merges legacy composer texts into [storage]; the newest text per conversation wins. */
