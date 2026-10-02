@@ -449,7 +449,7 @@
             guard shareReady else { return }
             sharePresentationTask?.cancel()
             sharePresentationTask = Task {
-                try? await Task.sleep(for: .milliseconds(750))
+                try? await DieterTaskSleep.milliseconds(750)
                 guard !Task.isCancelled else { return }
                 presentPendingShare()
             }

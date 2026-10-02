@@ -1,3 +1,4 @@
+import DieterCore
 import Foundation
 
 enum IOSAuthenticationError: LocalizedError {
