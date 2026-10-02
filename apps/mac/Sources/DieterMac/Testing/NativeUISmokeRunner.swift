@@ -1028,20 +1028,29 @@
                 let machineVisible = NativeUIAccessibility.find("new-card.machine", in: sheet) != nil
                 results["13-new-card-machine"] =
                     machineVisible ? "passed" : "failed: execution machine selector not visible"
-                let titleField: NSTextField? = {
+                // The placeholder shows the core's preview title once a preview
+                // arrives, so the field is found by its identifier as well.
+                func findTitleField() -> NSTextField? {
                     guard let content = sheet.contentView else { return nil }
                     var pending = [content]
                     while let view = pending.popLast() {
-                        if let field = view as? NSTextField,
-                            field.isEditable,
-                            field.placeholderString == "A short name for this task"
+                        if let field = view as? NSTextField, field.isEditable,
+                            field.accessibilityIdentifier() == "new-card.title"
+                                || ["A short name for this task", "New task"].contains(field.placeholderString ?? "")
                         {
                             return field
                         }
                         pending.append(contentsOf: view.subviews)
                     }
                     return nil
-                }()
+                }
+                var titleField = findTitleField()
+                if titleField == nil {
+                    _ = await waitUntil(timeout: 3) {
+                        titleField = findTitleField()
+                        return titleField != nil
+                    }
+                }
                 var titleSpaceVisible = false
                 if let titleField, sheet.makeFirstResponder(titleField),
                     let editor = titleField.currentEditor() as? NSTextView
