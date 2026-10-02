@@ -164,7 +164,10 @@ func (r *slowCountingRunner) Run(ctx context.Context, directory string, args ...
 	r.mu.Lock()
 	r.calls++
 	r.mu.Unlock()
-	time.Sleep(25 * time.Millisecond)
+	// Callers resolve the project under the store lock one at a time first; on
+	// a loaded race-enabled runner the last ones arrive well after the first,
+	// and must still find the status read in flight or cached.
+	time.Sleep(250 * time.Millisecond)
 	return (gitexec.ExecRunner{}).Run(ctx, directory, args...)
 }
 
