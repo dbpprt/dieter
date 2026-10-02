@@ -1,5 +1,6 @@
 package com.dbpprt.dieter.core.schedules
 
+import com.dbpprt.dieter.api.v1.Harness
 import com.dbpprt.dieter.api.v1.ListScheduleRunsRequest
 import com.dbpprt.dieter.api.v1.ListSchedulesRequest
 import com.dbpprt.dieter.api.v1.PreviewScheduleRequest
@@ -9,11 +10,14 @@ import com.dbpprt.dieter.api.v1.ScheduleDraft
 import com.dbpprt.dieter.api.v1.ScheduleRef
 import com.dbpprt.dieter.api.v1.ScheduleRun
 import com.dbpprt.dieter.api.v1.SetScheduleEnabledRequest
+import com.dbpprt.dieter.client.v1.ScheduleRow
+import com.dbpprt.dieter.client.v1.ScheduleRunRow
 import com.dbpprt.dieter.core.composition.Creation
+import com.dbpprt.dieter.core.metadata.MachineMetadataStore
 import com.dbpprt.dieter.core.runtime.CoreException
+import com.dbpprt.dieter.core.runtime.Deadlines
 import com.dbpprt.dieter.core.runtime.FailureKind
 import com.dbpprt.dieter.core.runtime.Failures
-import com.dbpprt.dieter.core.runtime.withDeadline
 import com.dbpprt.dieter.core.session.MachineSessions
 import com.dbpprt.dieter.core.store.WorkspaceStore
 import kotlin.coroutines.cancellation.CancellationException
@@ -25,8 +29,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class SchedulesView(
     val projectId: String? = null,
@@ -48,18 +54,36 @@ data class SchedulesView(
     /** Next occurrences (RFC 3339, UTC) for the editor's cron and timezone. */
     val preview: List<String> = emptyList(),
     val previewError: String? = null,
+    /** A preview of the editor's timing is pending. */
+    val previewLoading: Boolean = false,
 ) {
     val presentation: SchedulesPresentation get() = SchedulePresentations.resolve(loaded, loading, schedules.isNotEmpty(), error)
     val selected: Schedule? get() = schedules.firstOrNull { it.id == selectedId }
+
+    /** "3 automations", "Loading automations…", or "Automations unavailable". */
+    val subtitle: String get() = SchedulePresentations.subtitle(loaded, totalCount, error)
+
+    /** [schedules] as rows, in the same order; [harnesses] name each owner machine's agents. */
+    fun rows(harnesses: (daemonId: String) -> List<Harness> = { emptyList() }): List<ScheduleRow> =
+        schedules.map { SchedulePresentations.row(it, harnesses(it.owner_daemon_id)) }
+
+    /** [runs] as rows, in the same order. */
+    val runRows: List<ScheduleRunRow> get() = runs.map(SchedulePresentations::runRow)
 }
 
 /**
  * Schedules of one project. Lists come from any replica; full definitions,
  * run history, and every mutation go to the machine that owns the schedule.
- * Results for a project that is no longer shown are dropped. Confined to the
- * core dispatcher.
+ * Results for a project that is no longer shown are dropped. [metadata]
+ * supplies the agents a new draft starts with; without it, drafts start
+ * without one. Confined to the core dispatcher.
  */
-class Schedules(private val sessions: MachineSessions, private val store: WorkspaceStore, private val scope: CoroutineScope) {
+class Schedules(
+    private val sessions: MachineSessions,
+    private val store: WorkspaceStore,
+    private val scope: CoroutineScope,
+    private val metadata: MachineMetadataStore? = null,
+) {
     private val mutableView = MutableStateFlow(SchedulesView())
     val view: StateFlow<SchedulesView> = mutableView.asStateFlow()
     private var binding = 0L
@@ -67,6 +91,14 @@ class Schedules(private val sessions: MachineSessions, private val store: Worksp
     private var runsRequest = 0L
     private var previewJob: Job? = null
     private var previewKey = ""
+
+    /** Shows nothing; results still in flight are dropped. */
+    fun stop() {
+        binding++
+        previewJob?.cancel()
+        previewKey = ""
+        mutableView.value = SchedulesView()
+    }
 
     /** Shows [projectId]'s schedules, or nothing. */
     fun bind(projectId: String?) {
@@ -76,15 +108,12 @@ class Schedules(private val sessions: MachineSessions, private val store: Worksp
         mutableView.value = SchedulesView(projectId = projectId)
     }
 
-    private suspend fun <T> call(daemonId: String, block: suspend (com.dbpprt.dieter.api.v1.DieterServiceClient) -> T): T =
-        withDeadline(DEADLINE) { sessions.call(daemonId, block) }
-
     private fun replica(projectId: String): String = store.directoryProjection.projectReplicas[projectId]
         ?: throw CoreException(FailureKind.TRANSIENT, "This project’s machine is unavailable.")
 
     /** The machine that owns [schedule]: its recorded owner, else its checkout's machine. */
     private fun owner(schedule: Schedule): String = schedule.owner_daemon_id.ifEmpty { null }
-        ?: store.directoryProjection.projects[schedule.project_id]?.checkouts?.firstOrNull { it.id == schedule.checkout_id }?.daemon_id?.ifEmpty { null }
+        ?: store.directoryProjection.checkoutMachine(schedule.project_id, schedule.checkout_id)
         ?: throw CoreException(FailureKind.TRANSIENT, "This schedule’s machine is unavailable")
 
     suspend fun load() = page(more = false)
@@ -102,7 +131,7 @@ class Schedules(private val sessions: MachineSessions, private val store: Worksp
         mutableView.update { if (more) it.copy(loadingMore = true) else it.copy(loading = true) }
         try {
             val token = if (more) view.value.nextPageToken else ""
-            val response = call(replica(projectId)) { it.ListSchedules().execute(ListSchedulesRequest(project_id = projectId, page_size = PAGE_SIZE, page_token = token)) }
+            val response = sessions.call(replica(projectId), Deadlines.CALL) { it.ListSchedules().execute(ListSchedulesRequest(project_id = projectId, page_size = PAGE_SIZE, page_token = token)) }
             if (bound != binding || request != listRequest) return
             mutableView.update { state ->
                 val schedules = if (more) state.schedules + response.schedules.filter { incoming -> state.schedules.none { it.id == incoming.id } } else response.schedules
@@ -140,7 +169,7 @@ class Schedules(private val sessions: MachineSessions, private val store: Worksp
         mutableView.update { if (more) it.copy(runsLoadingMore = true) else it.copy(runsLoading = true) }
         try {
             val token = if (more) view.value.runsNextPageToken else ""
-            val response = call(owner(schedule)) { it.ListScheduleRuns().execute(ListScheduleRunsRequest(schedule_id = schedule.id, page_size = PAGE_SIZE, page_token = token)) }
+            val response = sessions.call(owner(schedule), Deadlines.CALL) { it.ListScheduleRuns().execute(ListScheduleRunsRequest(schedule_id = schedule.id, page_size = PAGE_SIZE, page_token = token)) }
             if (bound != binding || request != runsRequest || view.value.selectedId != schedule.id) return
             mutableView.update { state ->
                 val runs = if (more) state.runs + response.runs.filter { incoming -> state.runs.none { it.id == incoming.id } } else response.runs
@@ -158,9 +187,36 @@ class Schedules(private val sessions: MachineSessions, private val store: Worksp
     suspend fun details(scheduleId: String): Schedule {
         val summary = view.value.schedules.firstOrNull { it.id == scheduleId } ?: throw CoreException(FailureKind.PERMANENT, "The schedule is no longer available.")
         val bound = binding
-        val full = call(owner(summary)) { it.GetSchedule().execute(ScheduleRef(schedule_id = scheduleId)) }
+        val full = sessions.call(owner(summary), Deadlines.CALL) { it.GetSchedule().execute(ScheduleRef(schedule_id = scheduleId)) }
         if (bound == binding) upsert(full)
         return full
+    }
+
+    /**
+     * The draft the editor starts with ([ScheduleDrafts.make]): [scheduleId]'s
+     * full definition from its owner, or a new schedule in [timezone] (UTC
+     * when blank) on [checkoutId] (else the project's only checkout), with
+     * the project's boards and the agents of the machine that runs it. The
+     * agents are those the machine reported within 5 s; otherwise the draft
+     * starts without one.
+     */
+    suspend fun draft(scheduleId: String?, checkoutId: String?, selectedBoardId: String?, timezone: String): ScheduleDraft {
+        val projectId = view.value.projectId ?: throw CoreException(FailureKind.PERMANENT, "This project is no longer connected. Close the editor and reconnect.")
+        val existing = scheduleId?.let { details(it) }
+        val checkout = if (existing != null) null else store.directoryProjection.projects[projectId]?.let { Creation.checkout(it, checkoutId) }
+        val machine = if (existing != null) owner(existing) else checkout?.daemon_id?.ifEmpty { null } ?: store.directoryProjection.projectReplicas[projectId]
+        val agents = machine?.let { harnesses(it) }.orEmpty()
+        val boards = store.state.value.boards[projectId].orEmpty()
+        val draft = ScheduleDrafts.make(existing, projectId, timezone.trim().ifEmpty { "UTC" }, boards, selectedBoardId, agents)
+        return if (existing != null) draft else draft.copy(checkout_id = checkout?.id ?: checkoutId.orEmpty())
+    }
+
+    /** [daemonId]'s agents once its metadata has loaded, waiting up to [CATALOG_WAIT]. */
+    private suspend fun harnesses(daemonId: String): List<Harness> {
+        val catalogs = metadata ?: return emptyList()
+        catalogs.ensure(daemonId)
+        val machines = withTimeoutOrNull(CATALOG_WAIT) { catalogs.machines.first { it[daemonId]?.loaded == true } }
+        return machines?.get(daemonId)?.harnesses?.harnesses.orEmpty()
     }
 
     /**
@@ -174,18 +230,19 @@ class Schedules(private val sessions: MachineSessions, private val store: Worksp
         previewJob?.cancel()
         val projectId = view.value.projectId ?: return
         if (cron.isBlank() || timezone.isBlank()) {
-            mutableView.update { it.copy(preview = emptyList(), previewError = null) }
+            mutableView.update { it.copy(preview = emptyList(), previewError = null, previewLoading = false) }
             return
         }
         val bound = binding
+        mutableView.update { it.copy(previewLoading = true) }
         previewJob = scope.launch {
             delay(PREVIEW_DEBOUNCE)
             try {
-                val times = call(replica(projectId)) { it.PreviewSchedule().execute(PreviewScheduleRequest(cron = cron.trim(), timezone = timezone.trim(), count = PREVIEW_COUNT)) }.times
-                if (bound == binding && previewKey == key) mutableView.update { it.copy(preview = times, previewError = null) }
+                val times = sessions.call(replica(projectId), Deadlines.CALL) { it.PreviewSchedule().execute(PreviewScheduleRequest(cron = cron.trim(), timezone = timezone.trim(), count = PREVIEW_COUNT)) }.times
+                if (bound == binding && previewKey == key) mutableView.update { it.copy(preview = times, previewError = null, previewLoading = false) }
             } catch (error: Throwable) {
                 if (error is CancellationException) throw error
-                if (bound == binding && previewKey == key) mutableView.update { it.copy(preview = emptyList(), previewError = Failures.message(error)) }
+                if (bound == binding && previewKey == key) mutableView.update { it.copy(preview = emptyList(), previewError = Failures.message(error), previewLoading = false) }
             }
         }
     }
@@ -194,7 +251,7 @@ class Schedules(private val sessions: MachineSessions, private val store: Worksp
     fun closeEditor() {
         previewJob?.cancel()
         previewKey = ""
-        mutableView.update { it.copy(preview = emptyList(), previewError = null) }
+        mutableView.update { it.copy(preview = emptyList(), previewError = null, previewLoading = false) }
     }
 
     /**
@@ -211,11 +268,11 @@ class Schedules(private val sessions: MachineSessions, private val store: Worksp
             val checkout = Creation.checkout(project, checkoutId ?: draft.checkout_id.ifEmpty { null })
                 ?: throw CoreException(FailureKind.PERMANENT, "Choose a machine and checkout for this project")
             val request = SaveScheduleRequest(schedule = ScheduleDrafts.normalized(draft, projectId, checkout.id))
-            call(checkout.daemon_id.ifEmpty { throw CoreException(FailureKind.TRANSIENT, "The checkout’s machine is unavailable") }) { it.CreateSchedule().execute(request) }
+            sessions.call(checkout.daemon_id.ifEmpty { throw CoreException(FailureKind.TRANSIENT, "The checkout’s machine is unavailable") }, Deadlines.CALL) { it.CreateSchedule().execute(request) }
         } else {
             val existing = view.value.schedules.firstOrNull { it.id == scheduleId } ?: throw CoreException(FailureKind.PERMANENT, "The schedule is no longer available.")
             val request = SaveScheduleRequest(schedule_id = scheduleId, schedule = ScheduleDrafts.normalized(draft, projectId, existing.checkout_id))
-            call(owner(existing)) { it.UpdateSchedule().execute(request) }
+            sessions.call(owner(existing), Deadlines.CALL) { it.UpdateSchedule().execute(request) }
         }
         if (bound != binding || saved.project_id != projectId) return saved
         listRequest++
@@ -225,18 +282,18 @@ class Schedules(private val sessions: MachineSessions, private val store: Worksp
     }
 
     suspend fun setEnabled(scheduleId: String, enabled: Boolean): Schedule = mutate(scheduleId) { schedule ->
-        call(owner(schedule)) { it.SetScheduleEnabled().execute(SetScheduleEnabledRequest(schedule_id = scheduleId, enabled = enabled)) }.also {
+        sessions.call(owner(schedule), Deadlines.CALL) { it.SetScheduleEnabled().execute(SetScheduleEnabledRequest(schedule_id = scheduleId, enabled = enabled)) }.also {
             listRequest++
             upsert(it)
         }
     }
 
     suspend fun runNow(scheduleId: String): ScheduleRun = mutate(scheduleId) { schedule ->
-        call(owner(schedule)) { it.RunSchedule().execute(ScheduleRef(schedule_id = scheduleId)) }.also { select(scheduleId) }
+        sessions.call(owner(schedule), Deadlines.CALL) { it.RunSchedule().execute(ScheduleRef(schedule_id = scheduleId)) }.also { select(scheduleId) }
     }
 
     suspend fun delete(scheduleId: String) = mutate(scheduleId) { schedule ->
-        call(owner(schedule)) { it.DeleteSchedule().execute(ScheduleRef(schedule_id = scheduleId)) }
+        sessions.call(owner(schedule), Deadlines.CALL) { it.DeleteSchedule().execute(ScheduleRef(schedule_id = scheduleId)) }
         mutableView.update { state ->
             val present = state.schedules.any { it.id == scheduleId }
             state.copy(schedules = state.schedules.filterNot { it.id == scheduleId }, totalCount = if (present) maxOf(0, state.totalCount - 1) else state.totalCount)
@@ -249,9 +306,10 @@ class Schedules(private val sessions: MachineSessions, private val store: Worksp
         if (state.schedules.isEmpty() && state.nextPageToken.isNotBlank()) loadMore()
     }
 
+    /** Runs a change of [scheduleId]; its failure, including a schedule that is gone, is the view's [SchedulesView.actionError]. */
     private suspend fun <T> mutate(scheduleId: String, block: suspend (Schedule) -> T): T {
-        val schedule = view.value.schedules.firstOrNull { it.id == scheduleId } ?: throw CoreException(FailureKind.PERMANENT, "The schedule is no longer available.")
         try {
+            val schedule = view.value.schedules.firstOrNull { it.id == scheduleId } ?: throw CoreException(FailureKind.PERMANENT, "The schedule is no longer available.")
             return block(schedule)
         } catch (error: Throwable) {
             if (error !is CancellationException) mutableView.update { it.copy(actionError = Failures.message(error)) }
@@ -274,6 +332,6 @@ class Schedules(private val sessions: MachineSessions, private val store: Worksp
         const val PAGE_SIZE = 50
         const val PREVIEW_COUNT = 5
         val PREVIEW_DEBOUNCE = 300.milliseconds
-        val DEADLINE = 15.seconds
+        val CATALOG_WAIT = 5.seconds
     }
 }

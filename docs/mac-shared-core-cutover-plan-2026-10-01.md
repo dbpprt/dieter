@@ -1,6 +1,9 @@
 # macOS cutover to the shared core
 
-Date: 2026-10-01. Status: in progress.
+Date: 2026-10-01. Status: complete (2026-10-02). The macOS app runs on the
+shared core; iOS has not moved. This plan is kept as the record of the
+cutover; [§7](#7-as-built) lists what was built differently, and
+[`apps/core/README.md`](../apps/core/README.md) describes the current core.
 
 The macOS app (`apps/mac`, target `DieterMac`) moves onto the shared Kotlin
 Multiplatform core (`apps/core`) the way Android did: every client rule lives
@@ -37,7 +40,8 @@ building throughout.
    - Schema-first commands and slices over the generic byte façade.
    - SwiftProtobuf stays the Mac UI model, so views keep their `Dieter_V1_*`
      types. The client schema is split into domain files under
-     `model/src/commonMain/proto/dieter/client/v1/`.
+     `model/src/commonMain/proto/dieter/client/v1/`. (As built, it stayed one
+     file, `client.proto`.)
    - Swift is generated into `apps/mac/Sources/DieterAPI/Generated` by the
      existing script, with a freshness manifest.
 2. **Presentation lives in the core.**
@@ -82,29 +86,39 @@ building throughout.
    - Nothing legacy is deleted until the stage that removes the reader.
    - The client ID (`DieterSyncClientID`) is kept, because outbox
      idempotency depends on it.
+   - *Superseded:* the import was removed before release, with no users to
+     carry over (§7).
 
 ## 3. Architecture after the cutover
+
+As built (the planned legacy inputs reader was removed, and `SharedRules`
+and `DieterTransport` were added; see §7):
 
 ```
 DieterMac (SwiftUI/AppKit views, AppKit adapters)
   └─ AppSession + feature models: thin @Observable adapters
+     (render-time rules through SharedRules)
        └─ SharedCore (Swift target)
             ├─ CoreClient: dispatch / observe; live, and a scripted fake for tests
             ├─ platform services: grpc-swift RPC bridge (gateway, relay,
             │   pinned direct TLS), WebRTC control channels, file secure store,
             │   UserDefaults settings, URLSession, CryptoKit, os_log,
             │   UserNotifications with actions, SwiftTerm and screen media sinks
-            └─ legacy inputs reader (macOS formats)
-                 └─ DieterShared.xcframework (Kotlin/Native, static, arm64)
+            ├─ DieterTransport (Swift target): WebRTC control bridge, daemon
+            │   certificate pinning, gRPC resolver targets
+            └─ DieterShared.xcframework (Kotlin/Native, static, arm64)
 ```
 
 - **Swift targets.**
   - `SharedCore` is a new library target in the Mac package. The
     `CoreBridge` code in `apps/core/harness/apple` moves into it, and the
     harness is retired.
+  - `DieterTransport` holds the native transport pieces `SharedCore` and the
+    iOS client (`DieterClient`) share.
   - The binary target is `apps/mac/Frameworks/DieterShared.xcframework`. It
-    is git-ignored and assembled by `just mac build`, `just mac test`, and
-    `just ios build` whenever its core inputs change.
+    is git-ignored and assembled by `just mac build` and `just mac test`
+    (`scripts/shared-framework.sh`) whenever its core inputs change.
+    `just ios build` does not assemble it; CI runs `just mac test` first.
 - **Threading.**
   - The core runs on its single dispatcher.
   - Slice updates are decoded off the main thread and applied on the main
@@ -138,16 +152,17 @@ and `just ios build`.
   - Make `observe` safe for unknown slices, so an old framework cannot crash
     a newer app.
   - Add the routing and transcript options the Mac needs.
-  - Add the `SharedRules` synchronous export.
+  - Add the `SharedRules` synchronous export. (Built in the rules phase
+    after step 14, §7.)
 - **`SharedCore` target.**
   - The production RPC bridge:
     - pinned direct TLS (the chain and SPIFFE checks move from `DieterRPC`
-      into a shared helper);
+      into a shared helper, as built in `DieterTransport`);
     - 32 MiB message limits;
     - grpc-swift errors mapped to gRPC status codes;
     - a bounded channel table.
   - The platform services, `CoreClient`, and slice folding.
-  - The legacy inputs reader.
+  - The legacy inputs reader. (Removed with the import, §7.)
 - **Tests.**
   - Port the harness test to `SharedCoreIntegrationTests`, run by
     `just mac core-test` against the isolated gateway, including a direct TLS
@@ -244,7 +259,9 @@ command and slice covered.
      `SetLaneDescending`, or `SetFolders`, which records only differences),
      in order. Folds from the core are not sent back. The preference value
      types stay as the views' model; the legacy `SharedKV` sync is gone from
-     the Mac (iOS still uses it).
+     the Mac. Later, `SharedKV` itself was deleted (iOS never used it), and
+     the views read the navigation slice directly and edit it with
+     `NavigationCommand` (§7).
 3. **Drafts, quick task, capture, and creation.** Deleted: `ComposerModel`
    draft logic, `QuickTaskFormState` choices, and the creation preferences.
    The screen capture and browser-URL intake stay native.
@@ -274,8 +291,8 @@ command and slice covered.
    - **As built.** The inbox, Island, and menu-bar events read the activity
      slice; the core classifies each conversation's latest activity. The
      Island uses Inbox's Running, Needs attention, and Recent groups, and
-     opens conversations in Inbox. The Mac derives menu-bar events from
-     those rows with the core's rule.
+     opens conversations in Inbox. The activity slice lists the Island and
+     menu-bar rows (`island_ids`, `menu_bar_ids`) with their wording.
      Notifications are posted by the core through `CoreUserNotifications`.
 6. **Files and file tree.** The NSTextView editor stays native.
    - **As built.** Files and the conversation file tree are scoped
@@ -328,9 +345,11 @@ command and slice covered.
      the project changed is dropped. The editor's preview is the core's,
      debounced there; the editor takes the owner machine's agents from its
      metadata.
-   - **Deviation.** The editor's timing and template helpers stay in Swift
-     until the pure helpers move (step 14); they match the core's
-     `ScheduleRules`.
+   - **Deviation (resolved).** The editor's timing and template helpers
+     stayed in Swift through step 14. The rules phase (§7) moved them to the
+     core: the editor reads cadences, time zones, the save check, and
+     template variables through `SharedRules`, and `ScheduleEditorPolicy`
+     keeps only view helpers.
    - Tests: `SchedulesCoreDouble` drives the store and model tests over the
      old RPC stubs; Mac-side request coalescing gave way to the core's
      latest-request-wins loads.
@@ -413,8 +432,9 @@ command and slice covered.
     - **Behaviour change.** Like Android, the core sends input, and syncs
       the clipboard, only while the view holds focus: hovering an unfocused
       viewer shows the host's cursor and does not move it.
-    - **Deviation.** The phase wording ("Live", "Checking machine…") stays
-      the Mac's.
+    - **Deviation (resolved).** The phase wording ("Live", "Checking
+      machine…") stayed the Mac's until the rules phase; the screen slice's
+      `phase_label` supplies it.
     - Test-only `NativeScreenFixture` lets an isolated core signal through
       the disposable native screen fixture; the gated native suite
       (`just mac screens-test`) runs through the core and the Mac engine:
@@ -444,8 +464,11 @@ command and slice covered.
       `SmokeFixturePlane`; the app itself never does.
     - **Deviation.** `FeatureCompatibility` stays: it only forwards view
       properties to the feature models and holds no transport or rules.
-      `DieterClient` stays as a module: it carries the native gRPC transport
-      and WebRTC control bridge the core uses, and the iOS client.
+      `DieterClient` stays as a module for the iOS client and the Mac's debug
+      UI smoke fixtures. The pieces the core uses (the WebRTC control bridge,
+      daemon certificate pinning, and resolver targets) moved into the leaf
+      target `DieterTransport`, which `SharedCore` depends on and
+      `DieterClient` re-exports.
 
 **Exit per step:** Mac green; the affected `just e2e run --platform mac`
 cases pass. At the end, the whole Mac smoke suite passes.
@@ -470,7 +493,7 @@ cases pass. At the end, the whole Mac smoke suite passes.
   all ten Mac e2e cases pass.
 - **Legacy import.** An integration test that seeds real legacy files, then
   checks gateways, the token, the outbox replay, navigation, drafts, and the
-  client ID.
+  client ID. (Dropped with the import, §7.)
 - **Performance.**
   - The board stress fixture and a long conversation.
   - Snapshot and delta apply are timed at the bytes boundary against the
@@ -485,7 +508,9 @@ cases pass. At the end, the whole Mac smoke suite passes.
   temporary state roots, and preference suites.
 - Nothing touches the operator's daemon or `~/.dieter`. The gated
   `DIETER_LIVE_*` tests stay off.
-- The legacy import reads, never deletes, until M3.14.
+- There is no legacy import (§7). The core reads the Swift app's state only
+  through the gateway session file it uses as its secure store, and nothing
+  deletes the Swift app's other files.
 
 ## 6. Risks
 
@@ -496,3 +521,83 @@ cases pass. At the end, the whole Mac smoke suite passes.
 | Kotlin/Native build time in the Mac loop | Freshness manifest over the core inputs; the debug framework in dev and tests, release only for release |
 | iOS build coupling through the shared package | `just ios build` in every stage's exit |
 | Concurrent edits by other agents | Stage-sized changes, rebuilt and tested per stage |
+
+## 7. As built
+
+The cutover finished on 2026-10-02. After step 14, a rules phase moved the
+rules the Mac still computed in Swift into the core and deleted the Swift
+copies and their tests (the ported tests are core tests now). It also
+removed dead code on both sides. These points differ from the plan above:
+
+- **`SharedRules` and presentation-ready slices.** Views get every rule from
+  the core in one of two ways:
+  - A value derived from slice state is a slice field the core's Kotlin views
+    compute. Examples: the conversation's `ConversationState` (whether the
+    card can start or halt, the unsent task, context usage, pending tools,
+    the composer's agent controls), timeline rows as keyed deltas, a board
+    view slice (`SLICE_BOARD_VIEW`: lanes, card flags, drops), a chats slice
+    (`SLICE_CHATS`), machine entries, review diff rows and availability,
+    schedule and quota rows, the activity slice's Island and menu-bar rows,
+    and the screen's phase wording.
+  - A pure rule a view calls while rendering is a synchronous export:
+    `SharedRules` (`apps/core/apple/.../SharedRules.kt`) forwards each call
+    to a stateless `*Exports` object in `apps/core/shared/.../client/rules/`
+    (formatting, labels, quotas, files, links, schedules, machines,
+    conversation, workspace, board, activity, navigation, and creation).
+    Inputs are primitives or encoded messages, times are epoch milliseconds
+    (0 for unknown), and outputs are primitives or encoded `dieter.client.v1`
+    messages. Swift calls `SharedRules.shared.<name>(...)` from any thread;
+    `Services/SharedRulesSupport.swift` holds the date and message
+    conversions.
+
+  Android reaches the same rules through the core's Kotlin domain APIs. The
+  core supplies English wording; the Mac formats only absolute dates in the
+  device locale. A Swift wording or rule that remains moves the same way: a
+  `SharedRules` export when a view computes it from values it holds, or a
+  slice field when it derives from slice state.
+- **Schema.** The client schema stayed one file:
+  `apps/core/model/src/commonMain/proto/dieter/client/v1/client.proto`.
+  `just mac proto-generate` copies it into `Sources/DieterAPI/client` and
+  regenerates the Swift types.
+- **No legacy import.** The importer for the macOS and iOS formats, the Swift
+  reader in `SharedCore/CoreHost.swift`, and their tests were deleted; there
+  were no users to carry over. The Mac's `gateway-sessions.json` is the core's
+  secure store, so sign-in survives. Drafts, queued commands, and device
+  preferences from the Swift app start empty, and the core keeps its own
+  client ID in its state directory.
+- **`DieterTransport`.** The WebRTC control bridge (`ControlRTCBridge`),
+  daemon certificate pinning (`DaemonCertificatePinning`, the shared helper
+  M1 planned), and gRPC resolver targets (`DieterTransportTarget`) form a
+  leaf Swift target. `SharedCore` depends on it instead of `DieterClient`, and
+  `DieterClient` re-exports it for iOS.
+- **What `DieterMac` keeps.** Presentation and thin adapters with no rules:
+  - `Services/AppSession.swift` and `Services/CoreSession.swift` fold slices
+    into the values views read.
+  - The `Model/DieterStore+*.swift` extensions send commands. They include
+    `+Connection` and `+Projection`, which step 1 planned to delete.
+  - `Services/CoreNavigation.swift` replaced `SharedNavigation.swift`.
+  - `Services/CoreDraftTexts.swift` keeps composer drafts in the core.
+  - `Services/FeatureCompatibility.swift` forwards view properties.
+  - Per-surface models: `Model/BoardProjection.swift`,
+    `Model/ChatsListModel.swift`, and `Features/Forms/CreationFormModel.swift`.
+  - `WorkspaceReplica` and `WorkspaceTarget` moved from `DieterCore` into
+    `DieterMac/Model`. The other Mac-only `DieterCore` and `DieterClient` files
+    were deleted, and the RPC protocols that only test doubles used moved into
+    the test target.
+
+  `DieterMac` uses `DieterCore` only for shared types and helpers such as
+  `DieterEndpoint`, `DieterTaskSleep`, and `RemoteDesktopKeyMap`. It uses `DieterClient` only in the debug UI smoke
+  fixtures (`Testing/SmokeFixturePlane.swift`).
+- **Still open.**
+  - iOS (`apps/ios`, `Sources/DieterIOS`) runs on `DieterCore`,
+    `DieterClient`, and `DieterAPI`, and does not link `DieterShared`. Its
+    cutover follows this plan: slice and `SharedRules` adapters, then deleting
+    `DieterCore` and `DieterClient` along with the Mac's `SmokeFixturePlane`.
+    `RemoteDesktopKeyMap.swift` and `ScreenClipboardContent.swift` stay,
+    because `native/macos-capture` compiles them by path. How the share
+    extension links the core (implementation plan §9) is undecided.
+  - The core unit tests M4 lists as missing (project changes and the review
+    merge-flow guards) are still missing; JVM end-to-end tests cover the main
+    paths.
+  - Performance and binary size were not re-measured against the legacy
+    baseline (M4).

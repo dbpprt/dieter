@@ -38,14 +38,8 @@ func TestBrandPackIsWiredIntoReleaseSurfaces(t *testing.T) {
 		"assets/brand/assets/png/app-icon-light-1024.png":                       {X: 1024, Y: 1024},
 		"assets/brand/assets/png/favicon-32.png":                                {X: 32, Y: 32},
 		"assets/brand/assets/social/og-image.png":                               {X: 1200, Y: 630},
-		"apps/android/app/src/main/res/drawable-nodpi/ic_dieter_foreground.png": {X: 1024, Y: 1024},
 		"apps/android/app/src/main/res/drawable-nodpi/ic_dieter_monochrome.png": {X: 1024, Y: 1024},
 		"apps/android/app/src/main/res/drawable-nodpi/ic_notification.png":      {X: 192, Y: 192},
-		"apps/android/app/src/main/res/mipmap-mdpi/ic_launcher.png":             {X: 48, Y: 48},
-		"apps/android/app/src/main/res/mipmap-hdpi/ic_launcher.png":             {X: 72, Y: 72},
-		"apps/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png":            {X: 96, Y: 96},
-		"apps/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png":           {X: 144, Y: 144},
-		"apps/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png":          {X: 192, Y: 192},
 	}
 	for name, want := range images {
 		assertImageSize(t, filepath.Join(root, name), want)
@@ -60,8 +54,8 @@ func TestBrandPackIsWiredIntoReleaseSurfaces(t *testing.T) {
 		`android:icon="@mipmap/ic_launcher_monochrome"`,
 		`android:roundIcon="@mipmap/ic_launcher_monochrome_round"`,
 	)
-	assertContains(t, filepath.Join(root, "apps/android/app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml"),
-		`android:drawable="@drawable/ic_dieter_foreground_layer"`,
+	assertContains(t, filepath.Join(root, "apps/android/app/src/main/res/mipmap-anydpi-v33/ic_launcher_monochrome.xml"),
+		`android:drawable="@drawable/ic_dieter_foreground_monochrome_layer"`,
 		`android:drawable="@drawable/ic_dieter_monochrome_layer"`,
 	)
 	assertContains(t, filepath.Join(root, "apps/android/app/src/main/java/com/dbpprt/dieter/ui/theme/Theme.kt"),

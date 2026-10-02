@@ -18,6 +18,60 @@ enum class FolderScope(val key: String) { PROJECTS("projects"), CHATS("chats") }
 
 data class NavigationFolder(val id: String, val name: String, val itemIds: List<String>, val expanded: Boolean = true)
 
+/** The sidebar's projects as it shows them: available projects only, in the shared order, grouped by folder. */
+data class SidebarProjects(
+    /** Every available project in the shared order. */
+    val order: List<String> = emptyList(),
+    /** Project folders in order, each with its available projects in the folder's order. */
+    val folders: List<NavigationFolder> = emptyList(),
+    /** Available projects in no folder, in the shared order. */
+    val unfiled: List<String> = emptyList(),
+    /** Pinned available projects, in pin order. */
+    val pinned: List<String> = emptyList(),
+    /** Available projects whose boards the sidebar shows. */
+    val expanded: List<String> = emptyList(),
+) {
+    companion object {
+        /**
+         * The sidebar's [available] projects under a saved layout: [savedOrder]
+         * first, then the rest in their given order; [folders] and
+         * [savedPinned] keep only available projects; [expanded] lists the
+         * projects whose boards show.
+         */
+        fun of(available: List<String>, savedOrder: List<String>, folders: List<NavigationFolder>, savedPinned: List<String>, expanded: Collection<String>): SidebarProjects {
+            val order = NavigationLayout.inOrder(available.distinct(), savedOrder)
+            val present = order.toHashSet()
+            val open = expanded.toHashSet()
+            return SidebarProjects(
+                order = order,
+                folders = folders.map { folder -> folder.copy(itemIds = folder.itemIds.filter(present::contains)) },
+                unfiled = NavigationLayout.unfiled(folders, order),
+                pinned = savedPinned.filter(present::contains),
+                expanded = order.filter(open::contains),
+            )
+        }
+    }
+}
+
+/** What the chats list reads from the navigation layout: saved orders, chat folders, and each project section's disclosure. */
+data class ChatLayout(
+    val projectOrder: List<String> = emptyList(),
+    val pinnedOrder: List<String> = emptyList(),
+    val folders: List<NavigationFolder> = emptyList(),
+    /** Projects showing all their chats instead of the preview. */
+    val showAll: Set<String> = emptySet(),
+    /** Projects whose chat section is collapsed. */
+    val collapsed: Set<String> = emptySet(),
+)
+
+// Key prefixes in the `navigation` namespace.
+private const val PROJECTS_ORDER = "projects-order"
+private const val PROJECTS_PINNED = "projects-pinned"
+private const val PINNED_ORDER = "pinned-order"
+private const val PROJECTS_DISCLOSURE = "projects-disclosure"
+private const val CHATS_SECTION = "chats-section"
+private const val CHATS_DISCLOSURE = "chats-disclosure"
+
 /**
  * The account-wide navigation layout, derived from the `navigation` namespace:
  * folders, project and pinned orders, disclosure flags, and lane sort
@@ -71,38 +125,29 @@ class NavigationLayout(private val values: Map<String, ByteString>) {
     }
 
     /** [available] projects in the shared order; unordered ones follow in their given order. */
-    fun projectOrder(available: List<String>): List<String> {
-        val present = available.toSet()
-        val preferred = ordered("projects-order").filter { it in present }
-        return preferred + available.filterNot { it in preferred.toSet() }
-    }
+    fun projectOrder(available: List<String>): List<String> = inOrder(available, ordered(PROJECTS_ORDER))
 
-    fun pinnedProjects(available: List<String>): List<String> {
-        val present = available.toSet()
-        return ordered("projects-pinned").filter { it in present }
-    }
+    /** Pinned [available] projects, in pin order. */
+    fun pinnedProjects(available: List<String>): List<String> = available.toSet().let { present -> ordered(PROJECTS_PINNED).filter(present::contains) }
 
-    /**
-     * Pinned chats: saved order first, then newly pinned chats by position,
-     * then ID. Membership comes from the cards themselves.
-     */
-    fun pinnedChats(chats: List<Card>): List<Card> {
-        val pinned = chats.filter { it.pinned }
-        val order = ordered("pinned-order")
-        if (pinned.size <= 1 || order.isEmpty()) return pinned
-        val byId = pinned.associateBy { it.id }
-        val preferred = order.distinct().mapNotNull(byId::get)
-        val placed = preferred.mapTo(HashSet()) { it.id }
-        return preferred + pinned.filterNot { it.id in placed }.sortedWith(compareBy<Card>({ it.position }, { it.id }))
-    }
+    /** The sidebar's [available] projects: the shared order, folders and their members, unfiled, pinned, and expanded ones. */
+    fun sidebarProjects(available: List<String>): SidebarProjects =
+        SidebarProjects.of(available, ordered(PROJECTS_ORDER), folders(FolderScope.PROJECTS), ordered(PROJECTS_PINNED), expandedProjects())
 
-    fun projectExpanded(projectId: String): Boolean = bool("projects-disclosure.$projectId.expanded") == true
+    /** What the chats list reads: the saved orders, chat folders, and section disclosures. */
+    fun chatLayout(): ChatLayout = ChatLayout(
+        projectOrder = savedProjectOrder(), pinnedOrder = savedPinnedChatOrder(), folders = folders(FolderScope.CHATS),
+        showAll = projectsShowingAllChats().toSet(), collapsed = collapsedChatSections().toSet(),
+    )
+
+    /** Pinned chats ([pinnedChats]) under the saved pinned order. */
+    fun pinnedChats(chats: List<Card>): List<Card> = pinnedChats(chats, ordered(PINNED_ORDER))
 
     /** A project's chat section is collapsed only by an explicit `false`. */
-    fun chatSectionCollapsed(projectId: String): Boolean = bool("chats-section.$projectId.expanded") == false
+    fun chatSectionCollapsed(projectId: String): Boolean = bool("$CHATS_SECTION.$projectId.expanded") == false
 
     /** Show all of a project's chats instead of the preview. */
-    fun chatsShowAll(projectId: String): Boolean = bool("chats-disclosure.$projectId.expanded") == true
+    fun chatsShowAll(projectId: String): Boolean = bool("$CHATS_DISCLOSURE.$projectId.expanded") == true
 
     /** Lanes show newest first unless set to ascending. */
     fun laneDescending(boardId: String, laneId: String): Boolean = string("lane.$boardId.$laneId.sort") != "ascending"
@@ -110,14 +155,45 @@ class NavigationLayout(private val values: Map<String, ByteString>) {
     /** IDs whose `<prefix>.<id>.expanded` flag is [value]. */
     fun flagged(prefix: String, value: Boolean): List<String> = ids(prefix, "expanded").filter { bool("$prefix.$it.expanded") == value }
 
-    /** `<board>.<lane>` → "ascending" or "descending", for every lane with a saved direction. */
-    fun laneSorts(): Map<String, String> = values.keys.filter { it.startsWith("lane.") && it.endsWith(".sort") }
-        .mapNotNull { key -> string(key)?.let { key.removePrefix("lane.").removeSuffix(".sort") to it } }
-        .toMap()
+    /** The saved orders, unfiltered: IDs whose item may be offline are kept. */
+    fun savedProjectOrder(): List<String> = ordered(PROJECTS_ORDER)
+
+    fun savedPinnedProjects(): List<String> = ordered(PROJECTS_PINNED)
+
+    fun savedPinnedChatOrder(): List<String> = ordered(PINNED_ORDER)
+
+    /** Projects shown expanded, chat sections collapsed, and projects listing all their chats. */
+    fun expandedProjects(): List<String> = flagged(PROJECTS_DISCLOSURE, true)
+
+    fun collapsedChatSections(): List<String> = flagged(CHATS_SECTION, false)
+
+    fun projectsShowingAllChats(): List<String> = flagged(CHATS_DISCLOSURE, true)
+
 
     companion object {
         const val PROJECT_CHAT_PREVIEW = 5
         const val MAX_FOLDER_NAME_BYTES = 256
+
+        /** [available] in [saved] order; the rest follow in their given order. */
+        fun inOrder(available: List<String>, saved: List<String>): List<String> {
+            val present = available.toSet()
+            val preferred = saved.distinct().filter { it in present }
+            val placed = preferred.toSet()
+            return preferred + available.filterNot { it in placed }
+        }
+
+        /**
+         * Pinned [chats]: [savedOrder] first, then newly pinned chats by
+         * position, then ID. Membership comes from the cards themselves.
+         */
+        fun pinnedChats(chats: List<Card>, savedOrder: List<String>): List<Card> {
+            val pinned = chats.filter { it.pinned }
+            if (pinned.size <= 1 || savedOrder.isEmpty()) return pinned
+            val byId = pinned.associateBy { it.id }
+            val preferred = savedOrder.distinct().mapNotNull(byId::get)
+            val placed = preferred.mapTo(HashSet()) { it.id }
+            return preferred + pinned.filterNot { it.id in placed }.sortedWith(compareBy<Card>({ it.position }, { it.id }))
+        }
 
         /** [available] items that no folder holds, in their given order. */
         fun unfiled(folders: List<NavigationFolder>, available: List<String>): List<String> {
@@ -135,6 +211,14 @@ class NavigationLayout(private val values: Map<String, ByteString>) {
                 add(target, id)
             }
         }
+
+        /** [order] with [id] moved right before [beforeId], or to the end when null; unchanged when [id] or a given [beforeId] is missing. */
+        fun moveBefore(order: List<String>, id: String, beforeId: String?): List<String> {
+            if (id == beforeId || id !in order) return order
+            val rest = order.filterNot { it == id }
+            val index = if (beforeId == null) rest.size else rest.indexOf(beforeId).takeIf { it >= 0 } ?: return order
+            return rest.toMutableList().apply { add(index, id) }
+        }
     }
 }
 
@@ -142,21 +226,24 @@ class NavigationLayout(private val values: Map<String, ByteString>) {
 class NavigationEditor(private val kv: SharedKv) {
     private val layout get() = NavigationLayout(kv.values.value)
 
-    fun setProjectOrder(next: List<String>) = kv.enqueue(order(layout.ordered("projects-order"), next, "projects-order", ""))
+    fun setProjectOrder(next: List<String>) = kv.enqueue(order(layout.ordered(PROJECTS_ORDER), next, PROJECTS_ORDER, ""))
 
     fun setPinnedProjects(next: List<String>) {
-        val current = layout.ordered("projects-pinned")
+        val current = layout.ordered(PROJECTS_PINNED)
         val removed = current.filterNot { it in next }
-        val intents = removed.map { delete("projects-pinned.$it.position") } + order(current.filter { it in next }, next, "projects-pinned", "")
+        val intents = removed.map { delete("$PROJECTS_PINNED.$it.position") } + order(current.filter { it in next }, next, PROJECTS_PINNED, "")
         kv.enqueue(intents)
     }
 
+    /** Pins [projectId] after the pinned projects, or unpins it; a project already so stays where it is. */
     fun pinProject(projectId: String, pinned: Boolean) {
-        val current = layout.ordered("projects-pinned")
-        setPinnedProjects(if (pinned) (current - projectId) + projectId else current - projectId)
+        if (projectId.isBlank()) return
+        val current = layout.ordered(PROJECTS_PINNED)
+        if ((projectId in current) == pinned) return
+        setPinnedProjects(if (pinned) current + projectId else current - projectId)
     }
 
-    fun setPinnedChatOrder(next: List<String>) = kv.enqueue(order(layout.ordered("pinned-order"), next, "pinned-order", ""))
+    fun setPinnedChatOrder(next: List<String>) = kv.enqueue(order(layout.ordered(PINNED_ORDER), next, PINNED_ORDER, ""))
 
     /**
      * Drops [projectId] on [targetProjectId]: within one folder, or among the
@@ -176,6 +263,32 @@ class NavigationEditor(private val kv: SharedKv) {
         if (next != displayed) setProjectOrder(next)
     }
 
+    /**
+     * Moves [projectId] right before [beforeProjectId], or to the end when
+     * null, as the sidebar shows the [available] projects: within the
+     * project's folder, or among the projects in no folder; a target in
+     * another group changes nothing. With [ungrouped], it moves in the shared
+     * order of every available project, as lists that ignore folders (the
+     * chats list) show them.
+     */
+    fun moveProjectBefore(projectId: String, beforeProjectId: String?, available: List<String>, ungrouped: Boolean = false) {
+        if (projectId.isBlank() || projectId == beforeProjectId) return
+        if (!ungrouped) {
+            val folders = layout.folders(FolderScope.PROJECTS)
+            val source = folders.firstOrNull { projectId in it.itemIds }
+            if (source != null) {
+                if (beforeProjectId != null && beforeProjectId !in source.itemIds) return
+                val next = NavigationLayout.moveBefore(source.itemIds, projectId, beforeProjectId)
+                if (next != source.itemIds) reorderFolderItems(FolderScope.PROJECTS, source.id, next)
+                return
+            }
+            if (beforeProjectId != null && folders.any { beforeProjectId in it.itemIds }) return
+        }
+        val displayed = layout.projectOrder(available.distinct())
+        val next = NavigationLayout.moveBefore(displayed, projectId, beforeProjectId)
+        if (next != displayed) setProjectOrder(next)
+    }
+
     /** Drops pinned [chatId] on [targetChatId] within the [displayed] pinned order. */
     fun movePinnedChat(chatId: String, targetChatId: String, displayed: List<String>) {
         val next = NavigationLayout.moveTo(displayed, chatId, targetChatId)
@@ -184,16 +297,16 @@ class NavigationEditor(private val kv: SharedKv) {
 
     /** Records the current pinned order once, so later pins append instead of reshuffling. */
     fun initializePinnedChatOrder(chats: List<Card>) {
-        if (layout.ordered("pinned-order").isNotEmpty()) return
+        if (layout.ordered(PINNED_ORDER).isNotEmpty()) return
         val pinned = chats.filter { it.pinned }.sortedByDescending { it.last_activity_at.ifEmpty { it.updated_at } }
         if (pinned.isNotEmpty()) setPinnedChatOrder(pinned.map { it.id })
     }
 
-    fun setProjectExpanded(projectId: String, expanded: Boolean) = kv.enqueue(listOf(put("projects-disclosure.$projectId.expanded", JsonPrimitive(expanded))))
+    fun setProjectExpanded(projectId: String, expanded: Boolean) = kv.enqueue(listOf(put("$PROJECTS_DISCLOSURE.$projectId.expanded", JsonPrimitive(expanded))))
 
-    fun setChatSectionCollapsed(projectId: String, collapsed: Boolean) = kv.enqueue(listOf(put("chats-section.$projectId.expanded", JsonPrimitive(!collapsed))))
+    fun setChatSectionCollapsed(projectId: String, collapsed: Boolean) = kv.enqueue(listOf(put("$CHATS_SECTION.$projectId.expanded", JsonPrimitive(!collapsed))))
 
-    fun setChatsShowAll(projectId: String, showAll: Boolean) = kv.enqueue(listOf(put("chats-disclosure.$projectId.expanded", JsonPrimitive(showAll))))
+    fun setChatsShowAll(projectId: String, showAll: Boolean) = kv.enqueue(listOf(put("$CHATS_DISCLOSURE.$projectId.expanded", JsonPrimitive(showAll))))
 
     fun setLaneDescending(boardId: String, laneId: String, descending: Boolean) =
         kv.enqueue(listOf(put("lane.$boardId.$laneId.sort", JsonPrimitive(if (descending) "descending" else "ascending"))))
@@ -237,20 +350,16 @@ class NavigationEditor(private val kv: SharedKv) {
 
     /**
      * Replaces [scope]'s folders with [next]: names, order, expansion, and
-     * members. Only the differences are recorded.
+     * members. An item belongs to one folder; the first listing wins. Only
+     * the differences are recorded.
      */
     fun setFolders(scope: FolderScope, next: List<NavigationFolder>) {
-        val trimmed = next.map { it.copy(name = it.name.trim()) }
+        val claimed = HashSet<String>()
+        val trimmed = next.map { folder -> folder.copy(name = folder.name.trim(), itemIds = folder.itemIds.filter { it.isNotBlank() && claimed.add(it) }) }
         trimmed.forEachIndexed { index, folder ->
             nameProblem(folder.name, trimmed.take(index))?.let { throw CoreException(FailureKind.PERMANENT, it) }
         }
         editFolders(scope, layout.folders(scope), trimmed)
-    }
-
-    fun reorderFolders(scope: FolderScope, next: List<String>) {
-        val folders = layout.folders(scope)
-        val byId = folders.associateBy { it.id }
-        editFolders(scope, folders, next.mapNotNull(byId::get) + folders.filterNot { it.id in next })
     }
 
     fun reorderFolderItems(scope: FolderScope, folderId: String, next: List<String>) {

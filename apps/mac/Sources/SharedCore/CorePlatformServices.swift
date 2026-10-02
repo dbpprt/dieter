@@ -6,8 +6,7 @@ import Synchronization
 import UserNotifications
 
 /// Gateway session tokens keyed by gateway origin (`https://host:port`), in
-/// the same 0600 JSON file the legacy app used, so both read one session.
-/// iOS keeps its Keychain store behind the same interface.
+/// one JSON file only the user can read (0600).
 package final class CoreFileSecureStore: NSObject, NativeSecureStore, Sendable {
     private let fileURL: URL
     private let lock = Mutex(())
@@ -130,10 +129,14 @@ package final class CoreUserNotifications: NSObject, NativeNotifications, Sendab
         self.isEnabled = isEnabled
     }
 
+    /// The notification center requires an app bundle; test runners and other
+    /// unbundled processes would abort on first use.
+    private static let available = Bundle.main.bundleIdentifier != nil
+
     package func post(
         key: String, role: String, title: String, text: String, expanded: String?, actions: [String], session: String?
     ) -> Bool {
-        guard isEnabled() else { return false }
+        guard Self.available, isEnabled() else { return false }
         let center = UNUserNotificationCenter.current()
         let content = UNMutableNotificationContent()
         content.title = title
@@ -162,6 +165,7 @@ package final class CoreUserNotifications: NSObject, NativeNotifications, Sendab
     }
 
     package func cancel(key: String) {
+        guard Self.available else { return }
         let center = UNUserNotificationCenter.current()
         center.removeDeliveredNotifications(withIdentifiers: [key])
         center.removePendingNotificationRequests(withIdentifiers: [key])

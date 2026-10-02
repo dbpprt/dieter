@@ -1,42 +1,27 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 import UniformTypeIdentifiers
 
 struct NewConversationSheet: View {
     @Environment(DieterStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @State private var title = ""
-    @State private var prompt = ""
-    @State private var provider = ""
-    @State private var model = ""
-    @State private var effort = ""
-    @State private var providerOptions: [String: String] = [:]
-    @State private var lane = ""
+    @State private var form = CreationFormModel(chat: false)
     @State private var workspacePickerPresented = false
-    @State private var selectedLabelIDs: Set<String> = []
-    @State private var attachments: [Dieter_V1_MessagePart] = []
     @State private var fileImporterPresented = false
     @State private var attachmentDropTargeted = false
     @State private var submitting = false
     @State private var workspaceDraft = ConversationWorkspaceDraft()
-    @State private var destinationHarnesses: [Dieter_V1_Harness] = []
-    @State private var harnessCatalogLoading = false
-    @State private var harnessCatalogError: String?
     @State private var draftInitialized = false
     @FocusState private var focusedField: Field?
 
     private enum Field { case title, prompt }
 
-    private var harness: Dieter_V1_Harness? { destinationHarnesses.first { $0.id == provider } }
-    private var selectedModel: Dieter_V1_HarnessModel? { harness?.models.first { $0.id == model } }
-    private var selectedLane: Dieter_V1_Lane? { store.selectedBoard?.lanes.first { $0.id == lane } }
+    private var preview: ClientCreationPreview { form.preview }
+    private var selectedLane: Dieter_V1_Lane? { preview.startLanes.first { $0.id == form.lane } }
     private var project: Dieter_V1_Project? { store.selectedProject }
-    private var deferred: Bool { lane.lowercased() != "running" }
-    private var canSubmit: Bool {
-        !submitting && !harnessCatalogLoading && harnessCatalogError == nil && harness != nil
-            && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
+    private var canSubmit: Bool { !submitting && form.previewed && preview.problem.isEmpty }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,14 +38,17 @@ struct NewConversationSheet: View {
             Form {
                 Section {
                     LabeledContent("Title") {
-                        TextField("Title", text: $title, prompt: Text("A short name for this task"))
-                            .labelsHidden()
-                            .textFieldStyle(.roundedBorder)
-                            .multilineTextAlignment(.leading)
-                            .focused($focusedField, equals: .title)
-                            .onSubmit { focusedField = .prompt }
-                            .accessibilityIdentifier("new-card.title")
-                            .smokeTarget("new-card.title")
+                        TextField(
+                            "Title", text: $form.intent.title,
+                            prompt: Text(preview.title.isEmpty ? "A short name for this task" : preview.title)
+                        )
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.leading)
+                        .focused($focusedField, equals: .title)
+                        .onSubmit { focusedField = .prompt }
+                        .accessibilityIdentifier("new-card.title")
+                        .smokeTarget("new-card.title")
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -76,14 +64,14 @@ struct NewConversationSheet: View {
                                 Label("Attach files…", systemImage: "paperclip")
                             }
                             .buttonStyle(.bordered).controlSize(.small)
-                            .help("Attach up to 4 files, or drop files and paste images into the task")
+                            .help("Attach files, or drop files and paste images into the task")
                             .accessibilityIdentifier("new-card.attach")
                             .smokeTarget("new-card.attach")
                             Spacer()
-                            Text("4 files · 6 MB total").font(.caption).foregroundStyle(.secondary)
+                            Text(SharedRules.shared.attachmentLimits()).font(.caption).foregroundStyle(.secondary)
                         }
-                        if !attachments.isEmpty {
-                            AttachmentPreviewStrip(attachments: $attachments)
+                        if !form.attachments.isEmpty {
+                            AttachmentPreviewStrip(attachments: $form.attachments)
                         }
                     }
                 }
@@ -97,8 +85,8 @@ struct NewConversationSheet: View {
                             )
                         }
                     }
-                    Picker("Start in", selection: $lane) {
-                        ForEach(store.selectedBoard?.lanes ?? [], id: \.id) { item in
+                    Picker("Start in", selection: Binding(get: { form.lane }, set: { form.intent.lane = $0 })) {
+                        ForEach(preview.startLanes, id: \.id) { item in
                             Text(item.name).tag(item.id)
                         }
                     }
@@ -117,54 +105,27 @@ struct NewConversationSheet: View {
                             .smokeTarget("new-card.workspace")
                             .help("Configure the branch, base and publishing options")
                     }
-                    .help(workspaceDraft.mode.detail)
+                    .help(preview.workspaceDetail)
 
-                    if harnessCatalogLoading {
+                    if preview.catalog == .none {
                         HStack(spacing: 8) {
                             ProgressView().controlSize(.small)
-                            Text("Loading available models…").foregroundStyle(.secondary)
+                            Text(
+                                preview.destinationStatus.isEmpty ? "Loading agent models…" : preview.destinationStatus
+                            )
+                            .foregroundStyle(.secondary)
                         }
                         .accessibilityIdentifier("new-card.harness-loading")
-                    } else if let harnessCatalogError {
-                        HStack(alignment: .top) {
-                            Label(harnessCatalogError, systemImage: "exclamationmark.triangle")
+                    } else {
+                        if !preview.offlineHint.isEmpty {
+                            Label(preview.offlineHint, systemImage: "exclamationmark.triangle")
                                 .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
-                            Spacer()
-                            Button("Retry") { Task { await loadDestinationHarnesses() } }
-                                .accessibilityIdentifier("new-card.harness-retry")
+                                .accessibilityIdentifier("new-card.harness-error")
                         }
-                        .accessibilityIdentifier("new-card.harness-error")
-                    } else {
-                        Picker("Provider", selection: providerSelection) {
-                            ForEach(destinationHarnesses, id: \.id) { item in
-                                Text(item.name).tag(item.id)
-                            }
+                        AgentPickerFields(controls: preview.agent) { choice in
+                            Task { await form.refresh(choice: choice) }
                         }
-                        .disabled(destinationHarnesses.count < 2)
-                        .accessibilityIdentifier("new-card.provider")
-                        .smokeTarget("new-card.provider")
-                        Picker("Model", selection: modelSelection) {
-                            if harness?.models.isEmpty != false { Text("Provider default").tag("") }
-                            ForEach(harness?.models ?? [], id: \.id) { item in
-                                Text(item.name).tag(item.id)
-                            }
-                        }
-                        .disabled(harness?.models.isEmpty != false)
-                        .accessibilityIdentifier("new-card.model")
-                        .smokeTarget("new-card.model")
-                        if let efforts = selectedModel?.efforts, !efforts.isEmpty {
-                            Picker("Reasoning", selection: $effort) {
-                                Text("Default").tag("")
-                                ForEach(efforts, id: \.self) { Text($0.capitalized).tag($0) }
-                            }
-                            .accessibilityIdentifier("new-card.reasoning")
-                            .smokeTarget("new-card.reasoning")
-                        }
-                        ProviderOptionFields(
-                            options: ProviderOptionValues.options(for: harness, model: model),
-                            values: $providerOptions
-                        )
                         .toggleStyle(.switch)
                     }
 
@@ -194,9 +155,14 @@ struct NewConversationSheet: View {
 
             Divider()
             HStack(spacing: 10) {
-                Text(deferred ? "Saves a draft. Run it when you're ready." : "The agent will start right away.")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(
+                    !preview.problem.isEmpty
+                        ? preview.problem
+                        : (preview.defersStart
+                            ? "Saves a draft. Run it when you're ready." : "The agent will start right away.")
+                )
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 if submitting { ProgressView().controlSize(.small) }
                 Button("Cancel") { dismiss() }
@@ -204,12 +170,12 @@ struct NewConversationSheet: View {
                     .keyboardShortcut(.cancelAction)
                     .disabled(submitting)
                     .accessibilityIdentifier("new-card.cancel")
-                Button(deferred ? "Save to \(selectedLane?.name ?? "board")" : "Start task") {
+                Button(preview.defersStart ? "Save to \(selectedLane?.name ?? "board")" : "Start task") {
                     Task { await submit() }
                 }
                 .buttonStyle(DieterGlassButtonStyle(prominent: true))
                 .keyboardShortcut(.return, modifiers: .command)
-                .help("\(deferred ? "Save card" : "Start task") (⌘Return)")
+                .help("\(preview.defersStart ? "Save card" : "Start task") (⌘Return)")
                 .disabled(!canSubmit)
                 .accessibilityIdentifier("new-card.create")
                 .smokeTarget("new-card.create")
@@ -221,21 +187,33 @@ struct NewConversationSheet: View {
         .sheet(isPresented: $workspacePickerPresented) {
             ConversationWorkspacePickerSheet(project: project, draft: $workspaceDraft)
         }
-        .attachmentIntake(store: store, importerPresented: $fileImporterPresented, attachments: $attachments)
+        .attachmentIntake(store: store, importerPresented: $fileImporterPresented, attachments: $form.attachments)
         .task {
-            // Establish focus before the asynchronous catalog request; its
-            // completion must not take focus away from a task being edited.
+            // Establish focus before the asynchronous preview; its completion
+            // must not take focus away from a task being edited.
             if focusedField == nil { focusedField = .title }
             initializeDraft()
-            await loadDestinationHarnesses()
         }
-        .onChange(of: store.checkout(forProjectID: project?.id ?? "")?.id) { _, _ in
-            Task { await loadDestinationHarnesses() }
+        .task(
+            id: PreviewKey(intent: form.intent, attachments: form.attachments.count)
+        ) {
+            form.attach(store.core)
+            await form.refresh()
         }
+        .onChange(of: store.checkout(forProjectID: project?.id ?? "")?.id, initial: true) { _, id in
+            form.intent.checkoutID = id ?? ""
+        }
+        .onChange(of: workspaceDraft, initial: true) { _, draft in draft.apply(to: &form.intent) }
+    }
+
+    /// What a preview depends on: the choices and how many files are attached.
+    private struct PreviewKey: Equatable {
+        let intent: ClientCreationIntent
+        let attachments: Int
     }
 
     private var taskEditor: some View {
-        TextEditor(text: $prompt)
+        TextEditor(text: $form.intent.prompt)
             .font(.body)
             .focused($focusedField, equals: .prompt)
             .onKeyPress(.tab, phases: .down) { event in
@@ -252,7 +230,7 @@ struct NewConversationSheet: View {
             .frame(height: 96)
             .background(.background, in: RoundedRectangle(cornerRadius: 6))
             .overlay(alignment: .topLeading) {
-                if prompt.isEmpty {
+                if form.intent.prompt.isEmpty {
                     Text("Describe the outcome, context, and anything the agent should know…")
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 11).padding(.vertical, 8)
@@ -273,53 +251,31 @@ struct NewConversationSheet: View {
             .smokeTarget("new-card.prompt")
             .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
                 Task {
-                    do { attachments = try await store.attachmentParts(providers, appendingTo: attachments) } catch {
+                    do {
+                        form.attachments = try await store.attachmentParts(providers, appendingTo: form.attachments)
+                    } catch {
                         store.show(error)
                     }
                 }
             }
     }
 
-    private var providerSelection: Binding<String> {
-        Binding(
-            get: { provider },
-            set: { id in
-                guard let item = destinationHarnesses.first(where: { $0.id == id }),
-                    let selection = HarnessSelection(provider: id).resolved(in: [item])
-                else { return }
-                provider = selection.provider
-                model = selection.model
-                effort =
-                    item.models.first(where: { $0.id == model })?.efforts.contains(selection.effort) == true
-                    ? selection.effort : ""
-                providerOptions = selection.providerOptions
-            })
-    }
-
-    private var modelSelection: Binding<String> {
-        Binding(
-            get: { model },
-            set: { id in
-                model = id
-                effort = harness?.models.first(where: { $0.id == id })?.defaultEffort ?? ""
-                providerOptions = ProviderOptionValues.normalized(for: harness, model: id, saved: providerOptions)
-            })
-    }
-
     private func labelSelection(_ id: String) -> Binding<Bool> {
         Binding(
-            get: { selectedLabelIDs.contains(id) },
+            get: { form.intent.labelIds.contains(id) },
             set: { selected in
-                if selected { selectedLabelIDs.insert(id) } else { selectedLabelIDs.remove(id) }
+                form.intent.labelIds.removeAll { $0 == id }
+                if selected { form.intent.labelIds = (form.intent.labelIds + [id]).sorted() }
             })
     }
 
     private func initializeDraft() {
         guard !draftInitialized else { return }
         draftInitialized = true
-        workspaceDraft.mode =
-            store.creationPreferences.workspaceMode
-        if lane.isEmpty { lane = store.selectedBoard?.lanes.first?.id ?? "todo" }
+        form.attach(store.core)
+        form.intent.projectID = store.selectedProjectID
+        form.intent.boardID = store.selectedBoardID
+        workspaceDraft.mode = ConversationWorkspaceMode.projectMode(store.creationMemory.workspaceMode)
         if workspaceDraft.baseBranch.isEmpty { workspaceDraft.baseBranch = project?.baseBranch ?? "" }
         if workspaceDraft.baseRemote.isEmpty {
             let boardRemote = store.selectedBoard?.baseRemote ?? ""
@@ -330,73 +286,10 @@ struct NewConversationSheet: View {
         }
     }
 
-    private func loadDestinationHarnesses() async {
-        guard let projectID = project?.id, !projectID.isEmpty else {
-            harnessCatalogError = "Choose a project before creating a card."
-            return
-        }
-        harnessCatalogLoading = true
-        harnessCatalogError = nil
-        defer { harnessCatalogLoading = false }
-        do {
-            destinationHarnesses = try await store.loadHarnessCatalog(forProjectID: projectID).harnesses
-        } catch {
-            harnessCatalogError = DieterRPCFailure.message(for: error)
-            destinationHarnesses = []
-            return
-        }
-        guard !destinationHarnesses.isEmpty else {
-            harnessCatalogError = "No providers are available on the selected machine."
-            return
-        }
-        let initializing = provider.isEmpty
-        let preferences =
-            initializing
-            ? store.creationPreferences
-            : ConversationCreationPreferences(
-                provider: provider, model: model, effort: effort, workspaceMode: workspaceDraft.mode)
-        guard let selection = preferences.resolved(in: destinationHarnesses),
-            let harness = destinationHarnesses.first(where: { $0.id == selection.provider })
-        else { return }
-        let previousProvider = provider
-        provider = selection.provider
-        model = selection.model
-        effort =
-            harness.models.first(where: { $0.id == model })?.efforts.contains(selection.effort) == true
-            ? selection.effort : ""
-        providerOptions = ProviderOptionValues.normalized(
-            for: harness,
-            model: model,
-            saved: previousProvider == selection.provider ? providerOptions : [:]
-        )
-    }
-
     private func submit() async {
         guard canSubmit else { return }
         submitting = true
-        store.rememberCreation(
-            ConversationCreationPreferences(
-                provider: provider,
-                model: model,
-                effort: effort,
-                workspaceMode: workspaceDraft.mode
-            ))
-        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        await store.createConversation(
-            title: cleanTitle,
-            prompt: cleanPrompt.isEmpty ? cleanTitle : cleanPrompt,
-            attachments: attachments,
-            chat: false,
-            provider: provider,
-            model: model,
-            effort: effort,
-            providerOptions: providerOptions,
-            deferred: deferred,
-            lane: lane,
-            labelIDs: Array(selectedLabelIDs).sorted(),
-            workspace: workspaceDraft
-        )
+        _ = await form.create(using: store)
         submitting = false
     }
 }

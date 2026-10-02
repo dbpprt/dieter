@@ -156,9 +156,7 @@ final class AttachmentMarkupDocument {
         guard let data = bitmap.representation(using: .png, properties: [:]) else {
             throw AttachmentMarkupError.invalidImage
         }
-        guard data.count <= AttachmentLoader.maximumBytes else {
-            throw DieterAttachmentError.fileTooLarge(original.filename)
-        }
+        try AttachmentLoader.checkLimits(names: [original.filename], sizes: [Int64(data.count)])
         var result = original
         result.data = data
         result.url = ""

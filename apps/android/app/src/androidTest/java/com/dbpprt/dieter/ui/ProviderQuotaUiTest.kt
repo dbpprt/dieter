@@ -1,21 +1,20 @@
 package com.dbpprt.dieter.ui
 
-import android.graphics.Bitmap
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.api.gateway.v1.*
 import com.dbpprt.dieter.ui.theme.DieterTheme
+import com.dbpprt.dieter.e2e.Evidence
+import com.dbpprt.dieter.e2e.saveEvidence
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -135,11 +134,5 @@ class ProviderQuotaUiTest {
         compose.onNodeWithText("0%").assertDoesNotExist()
     }
 
-    private fun capture(name: String) {
-        compose.waitForIdle()
-        val directory = File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null), "usage-evidence").apply { mkdirs() }
-        File(directory, name).outputStream().use {
-            compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it)
-        }
-    }
+    private fun capture(name: String) = compose.onRoot().saveEvidence(name, File(Evidence.directory, "usage-evidence"))
 }

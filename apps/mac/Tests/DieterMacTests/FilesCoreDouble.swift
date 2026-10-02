@@ -87,6 +87,7 @@ import SharedCore
         }
         var slice = surface.view
         slice.documentUnchanged = false
+        slice.documentKey = Self.documentKey(slice)
         return .with { $0.files = slice }
     }
 
@@ -207,6 +208,15 @@ import SharedCore
             slice.documentUnchanged = true
         }
         surface.published = .some(document)
+        slice.documentKey = Self.documentKey(slice)
         core?.emit(.files, scope: scope) { $0.files = slice }
+    }
+
+    /// A key per target and selected path, as the core gives every document.
+    private static func documentKey(_ slice: ClientFilesSlice) -> String {
+        guard slice.hasTarget, !slice.selectedPath.isEmpty else { return "" }
+        let target = slice.target
+        return [target.daemonID, target.projectID, target.checkoutID, target.cardID, slice.selectedPath]
+            .map { "\($0.utf8.count):\($0)" }.joined()
     }
 }

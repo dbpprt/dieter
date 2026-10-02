@@ -4,8 +4,10 @@ package com.dbpprt.dieter.ui
 
 import androidx.compose.runtime.collectAsState
 import com.dbpprt.dieter.core.admin.Labels
-import com.dbpprt.dieter.core.board.BoardFilters
-import com.dbpprt.dieter.core.board.CardOperation
+import com.dbpprt.dieter.core.activity.Activity
+import com.dbpprt.dieter.core.board.BoardTarget
+import com.dbpprt.dieter.core.board.BoardView
+import com.dbpprt.dieter.core.board.BoardViews
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
@@ -34,7 +36,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyListScope
 import com.dbpprt.dieter.core.board.LaneKind
-import com.dbpprt.dieter.core.board.Lanes
 import com.dbpprt.dieter.core.board.ProjectOverview
 import com.dbpprt.dieter.core.board.ProjectSort
 import com.dbpprt.dieter.core.board.ProjectTap
@@ -66,7 +67,6 @@ import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Tune
@@ -85,7 +85,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SheetValue
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -132,8 +131,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.core.graphics.toColorInt
-import com.dbpprt.dieter.core.navigation.NavigationLayout
 import com.dbpprt.dieter.core.presentation.Ages
+import com.dbpprt.dieter.core.presentation.Counts
 import com.dbpprt.dieter.core.state.CaptureDraft
 import com.dbpprt.dieter.ui.theme.DieterAmber
 import com.dbpprt.dieter.ui.theme.DieterEyes
@@ -252,15 +251,12 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
     var sortMenuOpen by remember { mutableStateOf(false) }
     var topSortMenuOpen by remember { mutableStateOf(false) }
     var expandedProjectIDs by remember { mutableStateOf(emptySet<String>()) }
-    val projectDragState = remember { ProjectDragState() }
+    val projectDragState = remember { ReorderDragState() }
     val haptic = LocalHapticFeedback.current
     val boardsByProject = remember(state.spaceBoards) { state.spaceBoards.groupBy(Board::project_id) }
     val cardsByProject = remember(state.spaceCards) { state.spaceCards.groupBy(BoardCard::project_id) }
-    val visibleProjects = remember(state.projects, boardsByProject, cardsByProject, query, sort) {
-        ProjectOverview.visible(state.projects, boardsByProject, cardsByProject, query, sort)
-    }
-    val pinnedProjects = remember(state.projects, state.pinnedProjectOrder) {
-        orderedPinnedProjects(state.projects, state.pinnedProjectOrder)
+    val sections = remember(state.projects, boardsByProject, cardsByProject, state.projectFolders, state.pinnedProjectOrder, query, sort) {
+        ProjectOverview.sections(state.projects, boardsByProject, cardsByProject, state.projectFolders, state.pinnedProjectOrder, query, sort)
     }
 
     Column(modifier) {
@@ -288,7 +284,6 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
         }
         NavigationSyncStatus(state)
         if (searchOpen) CompactSearchField(query, { query = it }, "Search projects and boards")
-        if (state.spacesLoading) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = DieterShell)
         SurfaceErrorBanner(state.error, model::clearError)
         if (!state.connected && state.projects.isEmpty() && state.projectFolders.isEmpty()) {
             ConnectionEmptyState(state, model)
@@ -300,7 +295,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                 contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(7.dp),
             ) {
-                if (query.isBlank() && pinnedProjects.isNotEmpty()) {
+                if (sections.pinned.isNotEmpty()) {
                     item(key = "project-pinned-label") {
                         ListSectionLabel("Pinned", Modifier.padding(horizontal = 20.dp))
                     }
@@ -310,7 +305,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             modifier = Modifier.fillMaxWidth().testTag("project-pinned"),
                         ) {
-                            items(pinnedProjects, key = { it.id }) { project ->
+                            items(sections.pinned, key = { it.id }) { project ->
                                 PinnedProjectCard(
                                     project = project,
                                     checkoutLabel = state.projectCheckoutLabel(project),
@@ -338,7 +333,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "ALL PROJECTS  ·  ${state.projectFolders.size} ${plural(state.projectFolders.size, "folder")}".uppercase(),
+                            "ALL PROJECTS  ·  ${Counts.of(state.projectFolders.size, "folder")}".uppercase(),
                             color = DieterMuted,
                             fontSize = 10.sp,
                             letterSpacing = 1.15.sp,
@@ -371,7 +366,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                 }
                 fun LazyListScope.projectItems(projects: List<Project>, nested: Boolean = false) {
                     items(projects, key = { it.id }) { project ->
-                        val dragged = projectDragState.projectId == project.id
+                        val dragged = projectDragState.itemId == project.id
                         var originInRoot by remember(project.id) { mutableStateOf(Offset.Zero) }
                         val projectBoards = boardsByProject[project.id].orEmpty()
                         DisposableEffect(projectDragState, project.id) {
@@ -388,7 +383,7 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                             boards = projectBoards,
                             cards = cardsByProject[project.id].orEmpty(),
                             dragged = dragged,
-                            dropTarget = projectDragState.targetProjectId == project.id,
+                            dropTarget = projectDragState.targetId == project.id,
                             nested = nested,
                             expanded = project.id in expandedProjectIDs,
                             onOpenBoard = { board -> model.openBoard(project.id, board.id) },
@@ -437,43 +432,33 @@ internal fun SpacesOverview(state: DieterUiState, model: DieterViewModel, modifi
                         )
                     }
                 }
-                val projectsByID = visibleProjects.associateBy { it.id }
-                state.projectFolders.forEach { folder ->
-                    val members = ProjectOverview.visible(folder.itemIds.mapNotNull(projectsByID::get), boardsByProject, cardsByProject, "", sort)
-                    if (query.isBlank() || members.isNotEmpty()) {
-                        item(key = "project-folder-${folder.id}") {
-                            val folderBoards = members.flatMap { boardsByProject[it.id].orEmpty() }
-                            val attentionBoards = ProjectOverview.boardsInReview(folderBoards, members.flatMap { cardsByProject[it.id].orEmpty() })
-                            Surface(
-                                color = DieterSurface,
-                                shape = RoundedCornerShape(11.dp),
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                            ) {
-                                NavigationFolderHeader(
-                                    folder,
-                                    attentionBoards.takeIf { it > 0 } ?: members.size,
-                                    FolderScope.PROJECTS,
-                                    state.projectFolders,
-                                    model,
-                                    revealSearchResults = query.isNotBlank(),
-                                    summary = buildString {
-                                        append(members.size).append(" ").append(plural(members.size, "project"))
-                                        if (attentionBoards > 0) append(" · ").append(attentionBoards).append(" need review")
-                                        else append(" · ").append(folderBoards.size).append(" ").append(plural(folderBoards.size, "board"))
-                                    },
-                                )
-                            }
-                        }
-                        if (folder.expanded || query.isNotBlank()) {
-                            if (members.isEmpty()) item(key = "project-folder-empty-${folder.id}") {
-                                Text("No projects in this folder", color = DieterMuted, modifier = Modifier.padding(horizontal = 32.dp, vertical = 6.dp))
-                            }
-                            projectItems(members, nested = true)
+                sections.folders.forEach { group ->
+                    val folder = group.folder
+                    item(key = "project-folder-${folder.id}") {
+                        Surface(
+                            color = DieterSurface,
+                            shape = RoundedCornerShape(11.dp),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                        ) {
+                            NavigationFolderHeader(
+                                folder,
+                                group.count,
+                                FolderScope.PROJECTS,
+                                state.projectFolders,
+                                model,
+                                revealSearchResults = query.isNotBlank(),
+                                summary = group.summary,
+                            )
                         }
                     }
+                    if (group.showProjects) {
+                        if (group.projects.isEmpty()) item(key = "project-folder-empty-${folder.id}") {
+                            Text("No projects in this folder", color = DieterMuted, modifier = Modifier.padding(horizontal = 32.dp, vertical = 6.dp))
+                        }
+                        projectItems(group.projects, nested = true)
+                    }
                 }
-                val unfiled = NavigationLayout.unfiled(state.projectFolders, visibleProjects.map { it.id }).mapNotNull(projectsByID::get)
-                projectItems(unfiled)
+                projectItems(sections.unfiled)
                 item {
                     Surface(
                         onClick = { model.openSurface(AppSurface.NEW_PROJECT) },
@@ -541,7 +526,7 @@ private fun ProjectOverviewStatus(state: DieterUiState) {
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
-            "${state.projects.size} ${plural(state.projects.size, "project")} · ${state.projectFolders.size} ${plural(state.projectFolders.size, "folder")} · ",
+            "${ProjectOverview.summary(state.projects.size, state.projectFolders.size)} · ",
             color = DieterMuted,
             fontSize = 11.sp,
         )
@@ -631,12 +616,12 @@ internal fun PinnedProjectCard(
             if (boards.size > 2 || chatCount > 0) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        if (boards.size > 2) "+${boards.size - 2} ${plural(boards.size - 2, "board")}" else "",
+                        if (boards.size > 2) "+${Counts.of(boards.size - 2, "board")}" else "",
                         color = DieterMuted,
                         fontSize = 10.sp,
                         modifier = Modifier.weight(1f),
                     )
-                    if (chatCount > 0) Text("$chatCount ${plural(chatCount, "chat")}", color = DieterMuted, fontSize = 10.sp)
+                    if (chatCount > 0) Text(Counts.of(chatCount, "chat"), color = DieterMuted, fontSize = 10.sp)
                 }
             }
         }
@@ -705,7 +690,7 @@ internal fun CompactProjectRow(
                                 }
                             }
                         }
-                        Text("${boards.size} ${plural(boards.size, "board")} · $checkoutLabel",
+                        Text("${Counts.of(boards.size, "board")} · $checkoutLabel",
                             color = DieterMuted, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                     ProjectActivityBars(cards)
@@ -769,11 +754,17 @@ private fun ProjectBoardRow(board: Board, cards: List<BoardCard>, onOpenBoard: (
             BoardMark(stableAccent(board.id), Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text(board.name, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            when {
-                review > 0 -> Text("$review review", color = DieterAmber, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                running > 0 -> Text("$running running", color = DieterRunning, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                else -> Text("${cards.size} ${plural(cards.size, "card")}", color = DieterMuted, fontSize = 10.sp)
-            }
+            Text(
+                ProjectOverview.boardSummary(cards),
+                color = when {
+                    review > 0 -> DieterAmber
+                    running > 0 -> DieterRunning
+                    else -> DieterMuted
+                },
+                fontSize = 10.sp,
+                fontWeight = if (review > 0 || running > 0) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 1,
+            )
             Spacer(Modifier.width(5.dp))
             Icon(Icons.Outlined.ChevronRight, null, tint = DieterMuted, modifier = Modifier.size(15.dp))
         }
@@ -795,156 +786,62 @@ private fun ProjectActivityBars(cards: List<BoardCard>) {
     }
 }
 
-internal class ProjectDragState {
-    private val projectBounds = mutableStateMapOf<String, Rect>()
+/** Long-press reordering in a list: the dragged row and the row under the pointer. */
+internal class ReorderDragState {
+    private val bounds = mutableStateMapOf<String, Rect>()
 
-    var projectId by mutableStateOf<String?>(null)
+    var itemId by mutableStateOf<String?>(null)
         private set
-    var targetProjectId by mutableStateOf<String?>(null)
+    var targetId by mutableStateOf<String?>(null)
         private set
     var offsetY by mutableFloatStateOf(0f)
         private set
     private var pointerInRoot by mutableStateOf(Offset.Unspecified)
 
-    fun register(projectId: String, bounds: Rect) {
-        projectBounds[projectId] = bounds
+    fun register(id: String, bounds: Rect) {
+        this.bounds[id] = bounds
         updateTarget()
     }
 
-    fun unregister(projectId: String) {
-        projectBounds.remove(projectId)
+    fun unregister(id: String) {
+        bounds.remove(id)
         updateTarget()
     }
 
-    fun start(projectId: String, pointerInRoot: Offset) {
-        this.projectId = projectId
+    fun start(id: String, pointerInRoot: Offset) {
+        itemId = id
         this.pointerInRoot = pointerInRoot
         offsetY = 0f
         updateTarget()
     }
 
     fun moveBy(amount: Offset) {
-        if (projectId == null || !pointerInRoot.isSpecified) return
+        if (itemId == null || !pointerInRoot.isSpecified) return
         pointerInRoot += amount
         offsetY += amount.y
         updateTarget()
     }
 
     fun finish(): Pair<String, String>? {
-        val result = projectId?.let { source -> targetProjectId?.let { target -> source to target } }
+        val result = itemId?.let { source -> targetId?.let { target -> source to target } }
         reset()
         return result
     }
 
     fun reset() {
-        projectId = null
-        targetProjectId = null
+        itemId = null
+        targetId = null
         pointerInRoot = Offset.Unspecified
         offsetY = 0f
     }
 
     private fun updateTarget() {
-        val source = projectId
-        targetProjectId = if (source == null || !pointerInRoot.isSpecified) {
+        val source = itemId
+        targetId = if (source == null || !pointerInRoot.isSpecified) {
             null
         } else {
-            projectBounds.entries.firstOrNull { (id, bounds) -> id != source && bounds.contains(pointerInRoot) }?.key
+            bounds.entries.firstOrNull { (id, area) -> id != source && area.contains(pointerInRoot) }?.key
         }
-    }
-}
-
-internal class PinnedChatDragState {
-    private val chatBounds = mutableStateMapOf<String, Rect>()
-
-    var chatId by mutableStateOf<String?>(null)
-        private set
-    var targetChatId by mutableStateOf<String?>(null)
-        private set
-    var offsetY by mutableFloatStateOf(0f)
-        private set
-    private var pointerInRoot by mutableStateOf(Offset.Unspecified)
-
-    fun register(chatId: String, bounds: Rect) {
-        chatBounds[chatId] = bounds
-        updateTarget()
-    }
-
-    fun unregister(chatId: String) {
-        chatBounds.remove(chatId)
-        updateTarget()
-    }
-
-    fun start(chatId: String, pointerInRoot: Offset) {
-        this.chatId = chatId
-        this.pointerInRoot = pointerInRoot
-        offsetY = 0f
-        updateTarget()
-    }
-
-    fun moveBy(amount: Offset) {
-        if (chatId == null || !pointerInRoot.isSpecified) return
-        pointerInRoot += amount
-        offsetY += amount.y
-        updateTarget()
-    }
-
-    fun finish(): Pair<String, String>? {
-        val result = chatId?.let { source -> targetChatId?.let { target -> source to target } }
-        reset()
-        return result
-    }
-
-    fun reset() {
-        chatId = null
-        targetChatId = null
-        pointerInRoot = Offset.Unspecified
-        offsetY = 0f
-    }
-
-    private fun updateTarget() {
-        val source = chatId
-        targetChatId = if (source == null || !pointerInRoot.isSpecified) {
-            null
-        } else {
-            chatBounds.entries.firstOrNull { (id, bounds) -> id != source && bounds.contains(pointerInRoot) }?.key
-        }
-    }
-}
-
-@Composable
-internal fun ProjectReplicaBadge(host: ProjectReplica) {
-    Surface(shape = RoundedCornerShape(50), color = (if (host.online) DieterEyes else DieterMuted).copy(alpha = 0.1f)) {
-        Row(Modifier.padding(horizontal = 7.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(5.dp).background(if (host.online) DieterEyes else DieterMuted, CircleShape))
-            Spacer(Modifier.width(5.dp))
-            Text(host.hostname, color = DieterMuted, fontSize = 9.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-        }
-    }
-}
-
-@Composable
-internal fun BoardProgress(board: Board, cards: List<BoardCard>) {
-    val counts = board.lanes.map { lane -> lane.id to cards.count { it.lane == lane.id } }
-    val nonZero = counts.filter { it.second > 0 }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.weight(1f).height(5.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (nonZero.isEmpty()) {
-                Box(Modifier.weight(1f).fillMaxHeight().clip(CircleShape).background(DieterOutline))
-            } else {
-                nonZero.forEach { (lane, count) ->
-                    Box(
-                        Modifier.weight(count.toFloat()).fillMaxHeight().clip(CircleShape)
-                            .background(laneColor(lane)),
-                    )
-                }
-            }
-        }
-        Text(
-            nonZero.joinToString(" · ") { (lane, count) -> "$count ${lane.replace('_', ' ')}" }.ifBlank { "empty" },
-            color = DieterMuted,
-            fontSize = 10.sp,
-            maxLines = 1,
-        )
     }
 }
 
@@ -952,14 +849,13 @@ internal fun BoardProgress(board: Board, cards: List<BoardCard>) {
 internal fun BoardDetailHeader(
     state: DieterUiState,
     model: DieterViewModel,
+    summary: String,
     onOpenSwitcher: () -> Unit,
     onToggleSearch: () -> Unit,
     compactContent: (@Composable () -> Unit)? = null,
 ) {
     val board = state.board
     var menuOpen by remember { mutableStateOf(false) }
-    val boardCards = state.cards.filter { it.board_id == state.selectedBoardId }
-    val reviews = ProjectOverview.reviews(boardCards)
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(
@@ -985,7 +881,7 @@ internal fun BoardDetailHeader(
                         Icon(Icons.Outlined.KeyboardArrowDown, null, tint = DieterMuted, modifier = Modifier.size(18.dp))
                     }
                     Text(
-                        "${state.project?.name?.lowercase() ?: "project"} · ${boardCards.size} ${plural(boardCards.size, "conversation")} · $reviews ${if (reviews == 1) "needs" else "need"} you",
+                        summary,
                         color = DieterMuted,
                         fontSize = 11.sp,
                         maxLines = 2,
@@ -1187,14 +1083,12 @@ internal fun stableAccent(id: String): Color {
     return runCatching { Color(Labels.stable(id).toColorInt()) }.getOrDefault(DieterShellDeep)
 }
 
-internal fun laneColor(lane: String): Color = when (Lanes.kind(lane)) {
+internal fun laneColor(kind: LaneKind): Color = when (kind) {
     LaneKind.REVIEW -> DieterAmber
     LaneKind.DONE -> DieterEyes
     LaneKind.RUNNING -> DieterRunning
     LaneKind.OTHER -> DieterMuted.copy(alpha = 0.58f)
 }
-
-internal fun plural(count: Int, word: String): String = if (count == 1) word else "${word}s"
 
 @Composable
 internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier, showAllLanes: Boolean = false) {
@@ -1206,8 +1100,21 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
     val labelDragState = remember(state.selectedBoardId) { BoardLabelDragState() }
     var boardListOrigin by remember { mutableStateOf(Offset.Zero) }
     val dragPreviewOffsetPx = with(LocalDensity.current) { 18.dp.roundToPx() }
-    val boardCards = remember(state.cards, state.selectedBoardId, selectedLabelId, selectedMachineId, query) {
-        BoardFilters.cards(state.cards, state.selectedBoardId, selectedMachineId, selectedLabelId, query)
+    val view = remember(
+        state.cards, state.board, state.selectedBoardId, selectedLabelId, selectedMachineId, query, state.cardOperations,
+        state.pendingCardMoves, state.startingCardIds, state.pendingCardIds, state.failedOutboxIds, state.navigationLayout,
+    ) {
+        BoardViews.build(
+            target = BoardTarget(boardId = state.selectedBoardId, machineId = selectedMachineId.orEmpty(), labelId = selectedLabelId, query = query),
+            board = state.board,
+            items = state.cards,
+            operations = state.cardOperations,
+            moves = state.pendingCardMoves,
+            startingCardIds = state.startingCardIds,
+            pendingCardIds = state.pendingCardIds,
+            failedCardIds = state.failedOutboxIds,
+            laneDescending = { lane -> state.navigationLayout.laneDescending(state.selectedBoardId, lane) },
+        )
     }
     val retiredBoard = state.board?.takeIf { it.retired }
     if (retiredBoard != null) {
@@ -1243,10 +1150,8 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
             BoardDetailHeader(
                 state = state,
                 model = model,
-                onOpenSwitcher = {
-                    model.refreshSpaces()
-                    switcherOpen = true
-                },
+                summary = view.summary(state.project?.name?.lowercase() ?: "board"),
+                onOpenSwitcher = { switcherOpen = true },
                 onToggleSearch = { searchOpen = !searchOpen },
                 compactContent = if (showAllLanes) filters else null,
             )
@@ -1256,14 +1161,13 @@ internal fun BoardList(state: DieterUiState, model: DieterViewModel, modifier: M
             }
             if (searchOpen) CompactSearchField(query, { query = it }, "Search this board")
             if (!showAllLanes) filters()
-            if (!showAllLanes) LaneTabs(state, model, boardCards)
-            val lanes = state.board?.lanes.orEmpty()
-            if (state.loading && lanes.isEmpty()) {
+            if (!showAllLanes) LaneTabs(state, model, view.lanes)
+            if (state.loading && state.board == null) {
                 LoadingState()
-            } else if (lanes.isEmpty()) {
+            } else if (view.lanes.isEmpty()) {
                 EmptyList("No workflow lanes", "This board does not have a configured workflow.", Icons.Outlined.ViewKanban)
             } else {
-                BoardLanePager(state, model, lanes, boardCards, labelDragState, Modifier.weight(1f), showAllLanes)
+                BoardLanePager(state, model, view, labelDragState, Modifier.weight(1f), showAllLanes)
             }
         }
         FloatingActionButton(
@@ -1461,8 +1365,7 @@ internal fun QuickTaskPopover(
 internal fun BoardLanePager(
     state: DieterUiState,
     model: DieterViewModel,
-    lanes: List<com.dbpprt.dieter.api.v1.Lane>,
-    boardCards: List<BoardCard>,
+    view: BoardView,
     labelDragState: BoardLabelDragState,
     modifier: Modifier = Modifier,
     showAllLanes: Boolean = false,
@@ -1486,14 +1389,15 @@ internal fun BoardLanePager(
     var movingCard by remember(state.selectedBoardId) { mutableStateOf<BoardCard?>(null) }
     var editingCard by remember(state.selectedBoardId) { mutableStateOf<BoardCard?>(null) }
     var activityNow by remember { mutableStateOf(Instant.now()) }
-    val laneIds = lanes.map { it.id }
+    val lanes = view.lanes
+    val laneIds = lanes.map { it.lane.id }
     val selectedLane by rememberUpdatedState(state.selectedLane)
-    val selectedPage = lanes.indexOfFirst { it.id == state.selectedLane }.coerceAtLeast(0)
+    val selectedPage = lanes.indexOfFirst { it.lane.id == state.selectedLane }.coerceAtLeast(0)
     val pagerState = rememberPagerState(initialPage = selectedPage, pageCount = { lanes.size })
 
     LaunchedEffect(laneIds, state.selectedLane, showAllLanes) {
         if (showAllLanes) return@LaunchedEffect
-        val page = lanes.indexOfFirst { it.id == state.selectedLane }.coerceAtLeast(0)
+        val page = lanes.indexOfFirst { it.lane.id == state.selectedLane }.coerceAtLeast(0)
         if (pagerState.currentPage != page) pagerState.animateScrollToPage(page)
     }
     LaunchedEffect(pagerState, laneIds, showAllLanes) {
@@ -1501,7 +1405,7 @@ internal fun BoardLanePager(
         snapshotFlow { pagerState.settledPage }
             .distinctUntilChanged()
             .collect { page ->
-                val lane = lanes.getOrNull(page)?.id ?: return@collect
+                val lane = lanes.getOrNull(page)?.lane?.id ?: return@collect
                 if (lane != selectedLane) model.selectLane(lane)
             }
     }
@@ -1513,15 +1417,14 @@ internal fun BoardLanePager(
     }
 
     val laneContent: @Composable (Int) -> Unit = { page ->
-        val lane = lanes[page]
-        val descending = state.navigationLayout.laneDescending(state.selectedBoardId, lane.id)
-        val visible = remember(boardCards, lane.id, descending, state.pendingCardMoves) {
-            Lanes.ordered(boardCards.filter { card -> card.lane == lane.id }, state.pendingCardMoves, descending)
-        }
+        val laneView = lanes[page]
+        val lane = laneView.lane
+        val descending = laneView.descending
+        val visible = laneView.cards
         DisposableEffect(cardDragState, lane.id) {
             onDispose { cardDragState.unregisterLane(lane.id) }
         }
-        val dropTargeted = cardDragState.targetLaneId == lane.id && cardDragState.card?.lane != lane.id
+        val dropTargeted = cardDragState.targetLaneId == lane.id && cardDragState.card?.lane?.equals(lane.id, ignoreCase = true) != true
         Column(Modifier.fillMaxSize()
             .onGloballyPositioned { if (showAllLanes) cardDragState.registerLane(lane.id, it.boundsInRoot()) }
             .then(if (dropTargeted) Modifier.background(DieterEyes.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
@@ -1530,7 +1433,7 @@ internal fun BoardLanePager(
         ) {
             if (showAllLanes) {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 16.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(7.dp).background(laneColor(lane.id), CircleShape))
+                    Box(Modifier.size(7.dp).background(laneColor(laneView.kind), CircleShape))
                     Text(lane.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f).padding(start = 8.dp))
                     Text(visible.size.toString(), style = MaterialTheme.typography.labelMedium, color = DieterMuted)
                     LaneSortButton(lane.name, descending, { model.toggleLaneSort(state.selectedBoardId, lane.id) }, compact = true)
@@ -1558,14 +1461,14 @@ internal fun BoardLanePager(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     items(visible, key = { it.id }) { card ->
+                        val cardState = view.cards[card.id]
                         SwipeableWorkCard(
                             card = card,
                             machineName = state.machineLabel(card.owner_daemon_id),
-                            board = state.board,
+                            board = view.board,
                             selected = card.id == state.selectedCardId,
-                            pending = card.id in state.pendingCardIds ||
-                                state.cardOperations[card.id] == CardOperation.MOVING,
-                            operation = state.cardOperations[card.id],
+                            pending = cardState?.pending == true,
+                            operation = cardState?.operation,
                             operationError = state.cardOperationErrors[card.id],
                             activityNow = activityNow,
                             revealed = revealedCardId == card.id,
@@ -1602,11 +1505,11 @@ internal fun BoardLanePager(
             // Keep the source composed while edge scrolling the four workflow lanes.
             Row(Modifier.fillMaxSize().horizontalScroll(laneRowState).padding(horizontal = 8.dp)) {
                 lanes.indices.forEach { page ->
-                    Box(Modifier.width(laneWidth).fillMaxHeight().testTag("tablet-lane-${lanes[page].id}")) { laneContent(page) }
+                    Box(Modifier.width(laneWidth).fillMaxHeight().testTag("tablet-lane-${lanes[page].lane.id}")) { laneContent(page) }
                 }
             }
             cardDragState.card?.let { dragged ->
-                val targetName = lanes.firstOrNull { it.id == cardDragState.targetLaneId && it.id != dragged.lane }?.name
+                val targetName = lanes.map { it.lane }.firstOrNull { it.id == cardDragState.targetLaneId && !it.id.equals(dragged.lane, ignoreCase = true) }?.name
                 val previewWidth = minOf(240.dp, maxWidth)
                 val previewWidthPx = with(LocalDensity.current) { previewWidth.toPx() }
                 Surface(
@@ -1624,20 +1527,20 @@ internal fun BoardLanePager(
                     shadowElevation = 8.dp,
                 ) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(dragged.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                        Text(Activity.title(dragged), maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
                         Text(targetName?.let { "Move to $it" } ?: "Drag to another lane", color = DieterEyes, fontSize = 12.sp)
                     }
                 }
             }
         }
     } else {
-        HorizontalPager(state = pagerState, modifier = modifier.fillMaxWidth(), key = { lanes[it].id }) { laneContent(it) }
+        HorizontalPager(state = pagerState, modifier = modifier.fillMaxWidth(), key = { lanes[it].lane.id }) { laneContent(it) }
     }
 
     movingCard?.let { card ->
         MoveCardSheet(
             card = card,
-            lanes = lanes,
+            lanes = lanes.map { it.lane },
             onDismiss = { movingCard = null },
             onMove = { lane ->
                 movingCard = null

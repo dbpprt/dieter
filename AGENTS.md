@@ -64,8 +64,8 @@ instead of disrupting a running operator app. Full checks below remain for CI
 and explicitly requested repository-wide validation.
 
 The shared Kotlin client core in `apps/core` has its own checks: `just core
-test` (JVM unit and isolated end-to-end tests), `just core android-test`, and,
-on macOS, `just core apple-test`. See `apps/core/README.md`.
+test` (JVM unit and isolated end-to-end tests over the OkHttp transport that
+Android shares) and, on macOS, `just core apple-test`. See `apps/core/README.md`.
 
 Android builds use Android Studio's bundled JBR. If `JAVA_HOME` is absent or
 points to a removed Homebrew JDK, use:

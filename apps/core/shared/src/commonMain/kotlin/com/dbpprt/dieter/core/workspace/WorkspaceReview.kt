@@ -23,18 +23,16 @@ import com.dbpprt.dieter.core.board.Lanes
 import com.dbpprt.dieter.core.composition.WorkspaceMode
 import com.dbpprt.dieter.core.runtime.Backoff
 import com.dbpprt.dieter.core.runtime.CoreException
+import com.dbpprt.dieter.core.runtime.Deadlines
 import com.dbpprt.dieter.core.runtime.FailureKind
 import com.dbpprt.dieter.core.runtime.Failures
-import com.dbpprt.dieter.core.runtime.withDeadline
 import com.dbpprt.dieter.core.session.MachineSessions
 import com.dbpprt.dieter.core.store.WorkspaceStore
 import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.TimeSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
@@ -74,9 +72,32 @@ data class WorkspaceReviewView(
     val surfaceRemoved: Boolean = false,
     val mergeStep: MergeStep? = null,
     val toast: String? = null,
+    /** Diffs are laid out side by side rather than unified. */
+    val split: Boolean = false,
+    /** [diffLines] laid out for [split]; a new instance whenever the lines or the layout change. */
+    val layout: DiffLayout = DiffLayout.EMPTY,
 ) {
-    val operationActive: Boolean get() = GitOperations.isActive(operation) || submitting || needsReconciliation
-    val conflicted: Boolean get() = workspace?.state == "conflicted" || operation?.status == "waiting_for_resolution"
+    /** An operation runs or a start is unsettled; one stopped on a conflict counts as [conflicted] instead. */
+    val operationActive: Boolean get() = (GitOperations.isActive(operation) && operation?.status != GitOperations.WAITING) || submitting || needsReconciliation
+    val conflicted: Boolean get() = workspace?.state == "conflicted" || operation?.status == GitOperations.WAITING
+
+    /** A whole commit is shown: the diff has a row per file and takes no comments. */
+    val wholeCommit: Boolean get() = selectedPath.isNullOrEmpty() && !selectedCommit.isNullOrEmpty()
+
+    /** Another page of the diff can load. */
+    val diffMore: Boolean get() = DiffPages.hasMore(diff)
+
+    /** The diff stops at [DiffPages.LIMIT]; [DiffPages.TOO_LARGE] says so instead of loading more. */
+    val diffTooLarge: Boolean get() = diff?.truncated == true && !diffMore
+
+    /** [lines] as the shown diff, laid out for this view. */
+    fun withDiffLines(lines: List<DiffLine>): WorkspaceReviewView = copy(diffLines = lines, layout = DiffLayout.of(lines, split, wholeCommit))
+
+    /** What [card]'s workspace allows now; a start in flight or one awaiting reconciliation blocks every operation. */
+    fun availability(card: Card): WorkspaceAvailability = WorkspaceAvailability.of(card, workspace, changeset, scm, operation, submitting || needsReconciliation)
+
+    /** A comment attaches to a numbered line of one file's diff, never to a whole commit. */
+    fun canComment(line: DiffLine): Boolean = !selectedPath.isNullOrEmpty() && selectedCommit == null && ReviewComments.anchor(line) != null
 }
 
 /**
@@ -111,7 +132,19 @@ class WorkspaceReview(
         watcher?.cancel()
         watchedId = null
         cursor = 0
-        mutableView.value = WorkspaceReviewView(cardId = cardId, daemonId = daemonId, needsReconciliation = cardId != null)
+        mutableView.value = WorkspaceReviewView(cardId = cardId, daemonId = daemonId, needsReconciliation = cardId != null, split = current.split)
+    }
+
+    /** Lays diffs out side by side ([split]) or unified; the view keeps the choice across conversations. */
+    fun setLayout(split: Boolean) = mutableView.update { if (it.split == split) it else it.copy(split = split).withDiffLines(it.diffLines) }
+
+    /** The reviewed card as the workspace shows it, when known. */
+    fun card(): Card? = view.value.cardId?.let { store.state.value.card(it) }
+
+    /** Stops refreshing and following operations; nothing is shown. */
+    fun stop() {
+        setActive(false)
+        bind(null, null)
     }
 
     /** Visible and foregrounded: refresh every 5 s, including while idle. */
@@ -135,9 +168,6 @@ class WorkspaceReview(
         val daemon = state.daemonId ?: throw CoreException(FailureKind.TRANSIENT, "The conversation's machine is unavailable.")
         return card to daemon
     }
-
-    private suspend fun <T> call(daemonId: String, timeout: Duration, block: suspend (com.dbpprt.dieter.api.v1.DieterServiceClient) -> T): T =
-        withDeadline(timeout) { sessions.call(daemonId, block) }
 
     /**
      * Reads the workspace and changeset. A refresh requested while one runs
@@ -167,20 +197,20 @@ class WorkspaceReview(
         mutableView.update { it.copy(loading = it.workspace == null) }
         try {
             val (workspace, changeset) = coroutineScope {
-                val workspace = async { call(daemonId, PROVISION_TIMEOUT) { it.GetWorkspace().execute(ConversationRef(card_id = cardId)) } }
-                val changeset = async { call(daemonId, READ_TIMEOUT) { it.GetChangeset().execute(GetChangesetRequest(card_id = cardId)) } }
+                val workspace = async { sessions.call(daemonId, Deadlines.PROVISION) { it.GetWorkspace().execute(ConversationRef(card_id = cardId)) } }
+                val changeset = async { sessions.call(daemonId, Deadlines.READ) { it.GetChangeset().execute(GetChangesetRequest(card_id = cardId)) } }
                 workspace.await() to changeset.await()
             }
             if (!owns(bound)) return
             val previous = view.value
             val revisionChanged = previous.changeset?.revision != changeset.revision
             val comments = if (revisionChanged) {
-                runCatching { call(daemonId, READ_TIMEOUT) { it.ListChangeComments().execute(ListChangeCommentsRequest(card_id = cardId, revision = changeset.revision)) }.comments }
+                runCatching { sessions.call(daemonId, Deadlines.READ) { it.ListChangeComments().execute(ListChangeCommentsRequest(card_id = cardId, revision = changeset.revision)) }.comments }
                     .onFailure { if (it is CancellationException) throw it }.getOrDefault(emptyList())
             } else {
                 previous.comments
             }
-            val scm = previous.scm ?: runCatching { call(daemonId, READ_TIMEOUT) { it.GetSCMCapabilities().execute(ConversationRef(card_id = cardId)) } }
+            val scm = previous.scm ?: runCatching { sessions.call(daemonId, Deadlines.READ) { it.GetSCMCapabilities().execute(ConversationRef(card_id = cardId)) } }
                 .onFailure { if (it is CancellationException) throw it }.getOrNull()
             if (!owns(bound)) return
             mutableView.update {
@@ -216,7 +246,7 @@ class WorkspaceReview(
         val path = state.selectedPath?.takeIf { selected -> files.any { it.path == selected } || commit != null }
         val nextPath = path ?: if (commit == null) files.firstOrNull()?.path else null
         if (nextPath == null && commit == null) {
-            mutableView.update { it.copy(selectedPath = null, selectedCommit = null, diff = null, diffLines = emptyList()) }
+            mutableView.update { it.copy(selectedPath = null, selectedCommit = null, diff = null).withDiffLines(emptyList()) }
             return
         }
         val moved = nextPath != state.selectedPath || commit != state.selectedCommit
@@ -226,13 +256,14 @@ class WorkspaceReview(
 
     /** Shows [path] (or a whole commit when [commit] is set and [path] is empty). */
     suspend fun select(path: String?, commit: String? = null) {
-        mutableView.update { it.copy(selectedPath = path, selectedCommit = commit, diff = null, diffLines = emptyList()) }
+        mutableView.update { it.copy(selectedPath = path, selectedCommit = commit, diff = null).withDiffLines(emptyList()) }
         loadDiff(append = false, retryStale = true)
     }
 
+    /** Loads the next page while one is left; a diff at [DiffPages.LIMIT] stays as it is ([WorkspaceReviewView.diffTooLarge]). */
     suspend fun loadMoreDiff() {
         val state = view.value
-        if (state.diffLoading || state.diff?.truncated != true) return
+        if (state.diffLoading || !state.diffMore) return
         loadDiff(append = true, retryStale = true)
     }
 
@@ -246,19 +277,13 @@ class WorkspaceReview(
         val request = ++diffRequest
         mutableView.update { it.copy(diffLoading = true) }
         try {
-            val diffRequestMessage = GetDiffRequest(
-                card_id = cardId, path = path, commit_sha = commit, expected_revision = changeset.revision,
-                offset = if (append) state.diff?.next_offset ?: 0 else 0, limit = DIFF_PAGE,
-            )
-            val page = call(daemonId, READ_TIMEOUT) { client ->
-                if (commit.isNotEmpty()) client.GetCommitDiff().execute(diffRequestMessage) else client.GetFileDiff().execute(diffRequestMessage)
-            }
+            val loaded = if (append) state.diff else null
+            val combined = DiffPages.read(sessions, daemonId, GetDiffRequest(card_id = cardId, path = path, commit_sha = commit, expected_revision = changeset.revision), loaded)
             val current = view.value
             if (!owns(bound) || request != diffRequest || current.changeset?.revision != changeset.revision ||
-                current.selectedPath.orEmpty() != path || current.selectedCommit.orEmpty() != commit
+                current.selectedPath.orEmpty() != path || current.selectedCommit.orEmpty() != commit || (append && current.diff != loaded)
             ) return
-            val combined = if (append && current.diff != null) page.copy(patch = current.diff.patch + page.patch) else page
-            mutableView.update { it.copy(diff = combined, diffLines = UnifiedDiff.parse(combined.patch), diffLoading = false) }
+            mutableView.update { it.copy(diff = combined, diffLoading = false).withDiffLines(UnifiedDiff.parse(combined.patch)) }
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             if (owns(bound) && request == diffRequest) mutableView.update { it.copy(diffLoading = false) }
@@ -280,10 +305,10 @@ class WorkspaceReview(
         val state = view.value
         val path = state.selectedPath.orEmpty()
         val changeset = state.changeset ?: return null
-        if (path.isEmpty() || body.isBlank() || state.selectedCommit != null) return null
+        if (body.isBlank() || !state.canComment(line)) return null
         val (side, lineNumber) = ReviewComments.anchor(line) ?: return null
         val bound = binding
-        val comment = call(daemonId, READ_TIMEOUT) {
+        val comment = sessions.call(daemonId, Deadlines.READ) {
             it.AddChangeComment().execute(
                 AddChangeCommentRequest(card_id = cardId, path = path, side = side, line = lineNumber, body = body.trim(), author = author, revision = changeset.revision),
             )
@@ -292,10 +317,8 @@ class WorkspaceReview(
         return comment
     }
 
-    fun availability(card: Card): WorkspaceAvailability {
-        val state = view.value
-        return WorkspaceAvailability.of(card, state.workspace, state.changeset, state.scm, state.operation, state.submitting || state.needsReconciliation)
-    }
+    /** Starts the operation [form] describes; a pull request merge is pinned to the card's pull request head. */
+    suspend fun start(form: GitOperationForm): GitOperation? = start(form.kind, form.parameters(card()?.pull_request?.head_sha.orEmpty()))
 
     /** Starts a Git operation against the current revision. Never retried automatically. */
     suspend fun start(kind: String, parameters: Map<String, String> = emptyMap()): GitOperation? {
@@ -304,7 +327,7 @@ class WorkspaceReview(
         val bound = binding
         mutableView.update { it.copy(submitting = true, error = null) }
         try {
-            val operation = call(daemonId, READ_TIMEOUT) {
+            val operation = sessions.call(daemonId, Deadlines.READ) {
                 it.StartGitOperation().execute(StartGitOperationRequest(card_id = cardId, kind = kind, expected_revision = view.value.changeset?.revision.orEmpty(), parameters = parameters))
             }
             if (!owns(bound)) return operation
@@ -326,7 +349,7 @@ class WorkspaceReview(
         val (cardId, daemonId) = target()
         val bound = binding
         val observed = if (view.value.operation?.id == id) view.value.operation else runCatching {
-            call(daemonId, READ_TIMEOUT) { it.GetGitOperation().execute(GitOperationRef(operation_id = id)) }
+            sessions.call(daemonId, Deadlines.READ) { it.GetGitOperation().execute(GitOperationRef(operation_id = id)) }
         }.onFailure { if (it is CancellationException) throw it }.getOrNull()
         if (!owns(bound) || observed == null || observed.card_id != cardId) return
         if (view.value.operation?.id != id) {
@@ -394,7 +417,7 @@ class WorkspaceReview(
         if (watchedId == id) watchedId = null
         if (operation.status == "succeeded" && operation.kind in GitOperations.REMOVES_WORKSPACE) {
             mutableView.update {
-                it.copy(workspace = null, changeset = null, diff = null, diffLines = emptyList(), comments = emptyList(), selectedPath = null, selectedCommit = null, surfaceRemoved = true)
+                it.copy(workspace = null, changeset = null, diff = null, comments = emptyList(), selectedPath = null, selectedCommit = null, surfaceRemoved = true).withDiffLines(emptyList())
             }
             return
         }
@@ -402,28 +425,29 @@ class WorkspaceReview(
         refresh()
     }
 
-    /** Cancels a running operation; one waiting on a conflict is aborted instead. */
+    /**
+     * Cancels a running operation. One waiting on a conflict is refused, as
+     * the daemon refuses it: it is continued or aborted (`abort_conflict`).
+     */
     suspend fun cancelOperation() {
         val (_, daemonId) = target()
         val operation = view.value.operation ?: return
-        if (!GitOperations.isActive(operation) || operation.status == "waiting_for_resolution") return
+        if (operation.status == GitOperations.WAITING) throw CoreException(FailureKind.PERMANENT, "Abort the conflicted operation instead.")
+        if (!GitOperations.isActive(operation)) return
         val bound = binding
-        val canceled = call(daemonId, READ_TIMEOUT) { it.CancelGitOperation().execute(GitOperationRef(operation_id = operation.id)) }
+        val canceled = sessions.call(daemonId, Deadlines.READ) { it.CancelGitOperation().execute(GitOperationRef(operation_id = operation.id)) }
         if (owns(bound)) mutableView.update { it.copy(operation = canceled) }
     }
 
-    /** Waits for [id] to settle, surviving dropped streams; true when it succeeded. */
-    private suspend fun awaitSuccess(id: String, bound: Long): Boolean {
+    /** Waits for [operation] to settle or stop on a conflict, surviving dropped streams; true when it succeeded. */
+    private suspend fun awaitSuccess(operation: GitOperation, bound: Long): Boolean {
         val daemonId = view.value.daemonId ?: return false
-        val started = TimeSource.Monotonic.markNow()
-        while (owns(bound) && started.elapsedNow() < MERGE_DEADLINE) {
-            val observed = view.value.operation?.takeIf { it.id == id && it.status !in GitOperations.ACTIVE - "waiting_for_resolution" }
-                ?: runCatching { call(daemonId, READ_TIMEOUT) { it.GetGitOperation().execute(GitOperationRef(operation_id = id)) } }
-                    .onFailure { if (it is CancellationException) throw it }.getOrNull()
-            if (observed != null && (observed.status in GitOperations.TERMINAL || observed.status == "waiting_for_resolution")) return observed.status == "succeeded"
-            delay(MERGE_POLL)
-        }
-        return false
+        val last = sessions.followGitOperation(
+            daemonId, operation, MERGE_POLL, keep = { owns(bound) },
+            settled = { it.status in GitOperations.TERMINAL || it.status == "waiting_for_resolution" },
+            streamed = { view.value.operation }, retryReads = true,
+        )
+        return owns(bound) && last.status == "succeeded"
     }
 
     /**
@@ -450,23 +474,23 @@ class WorkspaceReview(
             if (view.value.workspace?.dirty == true) {
                 mutableView.update { it.copy(mergeStep = MergeStep.COMMIT) }
                 val commit = start("commit", mapOf("subject" to subject.trim(), "body" to body, "stage_all" to "true")) ?: return false
-                if (!awaitSuccess(commit.id, bound)) return false
+                if (!awaitSuccess(commit, bound)) return false
                 refresh()
             }
             if (!owns(bound)) return false
             mutableView.update { it.copy(mergeStep = MergeStep.MERGE) }
             val merge = start("merge_local", mapOf("strategy" to strategy.wire, "subject" to subject.trim(), "validate" to validate.toString())) ?: return false
-            if (!awaitSuccess(merge.id, bound)) return false
+            if (!awaitSuccess(merge, bound)) return false
             if (removeWorkspace) {
                 if (!owns(bound)) return false
                 mutableView.update { it.copy(mergeStep = MergeStep.CLEANUP) }
                 refresh()
                 val cleanup = start("cleanup") ?: return false
-                if (!awaitSuccess(cleanup.id, bound)) return false
+                if (!awaitSuccess(cleanup, bound)) return false
             }
             var moved = false
             val card = store.directoryProjection.item(cardId)
-            if (moveToDone && card != null && card.scope != "chat") {
+            if (moveToDone && card != null && WorkspaceStatus.movesToDone(card)) {
                 val done = Lanes.done(store.directoryProjection.board(card.board_id))
                 if (done != null && !card.lane.equals(done.id, ignoreCase = true)) {
                     try {
@@ -490,7 +514,7 @@ class WorkspaceReview(
     suspend fun updateSettings(mode: WorkspaceMode, branch: String = "", baseBranch: String = "", baseRemote: String = "", publishMode: String = "") {
         val (cardId, daemonId) = target()
         val worktree = mode == WorkspaceMode.WORKTREE
-        val card = call(daemonId, READ_TIMEOUT) {
+        val card = sessions.call(daemonId, Deadlines.READ) {
             it.UpdateConversationWorkspace().execute(
                 UpdateConversationWorkspaceRequest(
                     card_id = cardId, mode = mode.wire, branch = if (worktree) branch.trim() else "", base_branch = if (worktree) baseBranch.trim() else "",
@@ -508,12 +532,8 @@ class WorkspaceReview(
     fun clearError() = mutableView.update { it.copy(error = null) }
 
     companion object {
-        const val DIFF_PAGE = 1 shl 20
         const val HEARTBEAT_MS = 15_000
         private val REFRESH = 5.seconds
-        private val READ_TIMEOUT = 30.seconds
-        private val PROVISION_TIMEOUT = 60.seconds
-        private val MERGE_DEADLINE = 3600.seconds
         private val MERGE_POLL = 400.milliseconds
     }
 }

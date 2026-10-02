@@ -1,47 +1,50 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import Observation
 import SwiftUI
 
+/// What the island shows of the Inbox, as the shared core picks it: running
+/// work, then what waits for the user, then the rest, with counts over
+/// every row.
 struct DieterIslandActivity: Equatable {
     struct Item: Identifiable, Equatable {
         let id: String
         let cardID: String
         let chat: Bool
         let kind: InboxActivityKind
+        let kindLabel: String
         let title: String
         let detail: String
         let provider: String
-        let timestamp: Date?
+        /// When the row's time was, in epoch milliseconds; 0 when unknown.
+        let shownAtMillis: Int64
     }
 
-    let runningCount: Int
-    let attentionCount: Int
-    let recentCount: Int
-    let subagentCount: Int
-    let items: [Item]
+    var runningCount = 0
+    var attentionCount = 0
+    var recentCount = 0
+    var subagentCount = 0
+    var accessibilityLabel = ""
+    var items: [Item] = []
 
-    static let empty = resolve(entries: [])
+    static let empty = DieterIslandActivity()
 
-    /// Use the same classification, section order, and recency as Inbox.
-    static func resolve(entries: [InboxActivityEntry]) -> Self {
-        let running = entries.filter(\.running)
-        let attention = entries.filter(\.needsYou)
-        let recent = entries.filter { !$0.running && !$0.needsYou }
-        return Self(
-            runningCount: running.count,
-            attentionCount: attention.count,
-            recentCount: recent.count,
-            subagentCount: entries.reduce(0) { $0 + $1.card.activeSubagents.count },
-            items: (running + attention + recent).prefix(DieterIslandLayout.maximumVisibleRows).map { entry in
-                Item(
-                    id: entry.id, cardID: entry.id, chat: entry.card.scope == "chat", kind: entry.kind,
-                    title: entry.card.title.isEmpty ? "Untitled conversation" : entry.card.title,
-                    detail: entry.detail, provider: entry.card.provider,
-                    timestamp: entry.running ? entry.start ?? entry.at : entry.at
-                )
-            }
-        )
+    init() {}
+
+    init(_ slice: ClientActivitySlice) {
+        runningCount = Int(slice.summary.running)
+        attentionCount = Int(slice.summary.attention)
+        recentCount = Int(slice.summary.recent)
+        subagentCount = Int(slice.summary.subagents)
+        accessibilityLabel = slice.islandAccessibility
+        let rows = Dictionary(slice.rows.map { ($0.card.id, $0) }, uniquingKeysWith: { first, _ in first })
+        items = slice.islandIds.compactMap { rows[$0] }.map { row in
+            Item(
+                id: row.card.id, cardID: row.card.id, chat: row.chat,
+                kind: InboxActivityKind(core: row.kind) ?? .recent, kindLabel: row.kindLabel, title: row.title,
+                detail: row.detail, provider: row.card.provider, shownAtMillis: row.shownAtMillis)
+        }
     }
 }
 
@@ -432,9 +435,7 @@ struct DieterIslandView: View {
     private var connectionSymbol: String { store.phase.isConnected ? "checkmark" : "wifi.slash" }
     private var connectionColor: Color { store.phase.isConnected ? DieterTheme.eyes : DieterTheme.coral }
 
-    private var collapsedAccessibilityLabel: String {
-        "Dieter Island. \(activity.runningCount) running, \(activity.attentionCount) need attention, \(activity.recentCount) recent."
-    }
+    private var collapsedAccessibilityLabel: String { activity.accessibilityLabel }
 
     private func open(_ item: DieterIslandActivity.Item) {
         store.reopenWorkspaceWindow()
@@ -525,7 +526,7 @@ private struct IslandActivityRow: View {
         }
     }
 
-    private var status: String { item.kind.label.uppercased() }
+    private var status: String { item.kindLabel.uppercased() }
 
     var body: some View {
         Button(action: action) {
@@ -571,8 +572,10 @@ private struct IslandActivityRow: View {
                     .padding(.horizontal, 7)
                     .frame(height: 23)
                     .background(color.opacity(0.11), in: Capsule())
-                if let timestamp = item.timestamp {
-                    Text(relativeAge(since: timestamp))
+                let age = SharedRules.shared.compactAge(
+                    sinceMillis: item.shownAtMillis, nowMillis: Date.now.epochMillis)
+                if !age.isEmpty {
+                    Text(age)
                         .font(.system(size: 9.5))
                         .foregroundStyle(.white.opacity(0.3))
                 }
@@ -596,16 +599,6 @@ private struct IslandActivityRow: View {
         .shadow(color: item.kind == .running ? color.opacity(0.08) : .clear, radius: 10)
         .onHover { isHovering = $0 }
         .animation(.easeOut(duration: 0.14), value: isHovering)
-    }
-
-    private func relativeAge(since timestamp: Date) -> String {
-        let seconds = max(0, Int(Date().timeIntervalSince(timestamp)))
-        switch seconds {
-        case ..<60: return "now"
-        case ..<3_600: return "\(seconds / 60)m"
-        case ..<86_400: return "\(seconds / 3_600)h"
-        default: return "\(seconds / 86_400)d"
-        }
     }
 }
 

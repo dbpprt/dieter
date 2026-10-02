@@ -1,16 +1,15 @@
 package com.dbpprt.dieter.screens
 
-import android.graphics.Bitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.api.v1.RemoteDesktopRenderMeasurement
+import com.dbpprt.dieter.e2e.Evidence
 import com.dbpprt.dieter.api.v1.RemoteDesktopSessionState
 import com.dbpprt.dieter.core.screens.ScreenPhase
 import com.dbpprt.dieter.core.machines.MachineRow
 import com.dbpprt.dieter.ui.ScreenWorkspace
 import com.dbpprt.dieter.ui.theme.DieterTheme
-import java.io.File
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -161,7 +160,7 @@ class ScreenRecoveryEndToEndTest {
                 })
                 fault("none")
                 val capture = captureScreenFixture()
-                File(context.getExternalFilesDir(null), "screen-recovery-$codec.png").outputStream().use { capture.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                Evidence.save(capture, "screen-recovery-$codec.png")
             } finally {
                 compose.runOnIdle { if (media.decodedOutputObserver === observer) media.decodedOutputObserver = previousObserver }
             }
@@ -180,8 +179,7 @@ class ScreenRecoveryEndToEndTest {
             compose.onNodeWithContentDescription("Screen quality").performClick()
             compose.onNodeWithText("HEVC · up to 1080p60").performClick()
             exercise("H265")
-            File(context.getExternalFilesDir(null), "screen-recovery.json").writeText(
-                JSONObject().put("schemaVersion", 1).put("cases", results).toString())
+            Evidence.text("screen-recovery.json", JSONObject().put("schemaVersion", 1).put("cases", results).toString())
         } finally {
             fault("none")
             compose.runOnIdle { host.close() }

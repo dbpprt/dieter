@@ -19,14 +19,11 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.core.machines.MachineRow
-import com.dbpprt.dieter.core.CoreRuntime
 import com.dbpprt.dieter.core.screens.Point
+import com.dbpprt.dieter.e2e.Evidence
+import com.dbpprt.dieter.e2e.TestCore
 import com.dbpprt.dieter.screens.ScreenCanvasView
 import com.dbpprt.dieter.screens.ScreenHost
-import com.dbpprt.dieter.sharedcore.SharedCore
-import java.io.File
-import java.util.UUID
-import kotlinx.coroutines.runBlocking
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
@@ -46,7 +43,7 @@ class ScreenCapabilityPickerTest {
     @get:Rule
     val compose = createComposeRule()
     @get:Rule val testName = org.junit.rules.TestName()
-    private val cores = mutableListOf<CoreRuntime>()
+    private val cores = mutableListOf<TestCore>()
     private var previousIme: String? = null
     private var fixtureImeWasEnabled = false
     private val fixtureIme get() = "${InstrumentationRegistry.getInstrumentation().context.packageName}/com.dbpprt.dieter.screens.DockedTestIme"
@@ -75,15 +72,13 @@ class ScreenCapabilityPickerTest {
 
     /** A screen host over an isolated core whose routes never connect. */
     private fun host(attempts: java.util.concurrent.atomic.AtomicInteger? = null): ScreenHost {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val core = SharedCore.create(context, null, File(context.noBackupFilesDir, "screen-picker-${UUID.randomUUID()}")).also { cores += it }
-        return ScreenHost(context, core) { { attempts?.incrementAndGet(); awaitCancellation() } }
+        val core = TestCore().also { cores += it }
+        return ScreenHost(core.context, core.core) { { attempts?.incrementAndGet(); awaitCancellation() } }
     }
 
-    @org.junit.After fun shutdown() = runBlocking { cores.forEach { it.shutdown() } }
+    @org.junit.After fun shutdown() = cores.forEach { it.close(); it.delete() }
 
     @Test fun canvasControlsAndTouchEventsKeepZoomAnchoredAndFitRecoverable() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
         val host = host()
         lateinit var canvas: ScreenCanvasView
         var generation by mutableIntStateOf(0)
@@ -164,11 +159,7 @@ class ScreenCapabilityPickerTest {
         compose.onNodeWithTag("screen-fit").performClick()
         compose.waitUntil { canvas.canvasModel.isFitted }
         val capture = com.dbpprt.dieter.screens.captureScreenFixture()
-        try {
-            java.io.File(context.getExternalFilesDir(null), "screen-canvas-controls.png").outputStream().use {
-                capture.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
-            }
-        } finally { capture.recycle() }
+        try { Evidence.save(capture, "screen-canvas-controls.png") } finally { capture.recycle() }
         compose.onNodeWithText("Fit · 100%").assertIsDisplayed()
         repeat(7) {
             val expected = (canvas.canvasModel.zoom / 1.25).coerceAtLeast(.25)
@@ -203,7 +194,7 @@ class ScreenCapabilityPickerTest {
                 remoteDesktopReady = true,
                 remoteDesktopPlatform = "darwin",
             ),
-            MachineRow(id = "offline", label = "Offline host", address = "isolated", online = false),
+            MachineRow(id = "offline", label = "Offline host", address = "isolated", daemonId = "daemon-offline", online = false),
         )
         val host = host()
         compose.setContent {
@@ -213,6 +204,8 @@ class ScreenCapabilityPickerTest {
         }
 
         compose.onNodeWithTag("screen-machine-offline").assertIsNotEnabled()
+        compose.onNodeWithText("Screen sharing unavailable").assertIsDisplayed()
+        compose.onNodeWithText("macOS").assertIsDisplayed()
         compose.onNodeWithTag("screen-machine-linux").assertIsEnabled().performClick()
         compose.onNodeWithText("No supported graphical login session is active").assertIsDisplayed()
         compose.onNodeWithTag("screen-connect").assertIsEnabled()
@@ -234,7 +227,7 @@ class ScreenCapabilityPickerTest {
         assertTrue(top("screen-machine-a") < top("screen-machine-z"))
         compose.runOnIdle { machines = initial.reversed().map { it.copy(latencyMs = 42, online = it.id != "a") } }
         assertTrue(top("screen-machine-a") < top("screen-machine-z"))
-        capture("screen-machines.png")
+        Evidence.display("screen-machines.png")
         compose.onNodeWithTag("screen-machine-z").performClick()
         val canvas = compose.runOnIdle { findCanvas() }
         compose.runOnIdle {
@@ -257,7 +250,7 @@ class ScreenCapabilityPickerTest {
         try {
             compose.waitUntil(20_000) { ViewCompat.getRootWindowInsets(canvas)?.getInsets(WindowInsetsCompat.Type.ime())?.bottom?.let { it > 100 } == true }
         } catch (failure: Throwable) {
-            capture("screen-keyboard-failure.png")
+            Evidence.display("screen-keyboard-failure.png")
             throw AssertionError("Docked test IME did not appear: ${ViewCompat.getRootWindowInsets(canvas)?.getInsets(WindowInsetsCompat.Type.ime())}", failure)
         }
         // Insets are published before the IME's animated window reaches its
@@ -268,7 +261,7 @@ class ScreenCapabilityPickerTest {
             assertTrue(ViewCompat.getRootWindowInsets(canvas)?.isVisible(WindowInsetsCompat.Type.ime()) == true)
             assertEquals(before, listOf(canvas.width.toDouble(), canvas.height.toDouble(), canvas.canvasModel.scale, canvas.canvasModel.panX, canvas.canvasModel.panY))
         }
-        capture("screen-keyboard.png")
+        Evidence.display("screen-keyboard.png")
         compose.onNodeWithContentDescription("Hide keyboard").assertIsDisplayed()
         assertTrue(compose.onNodeWithTag("screen-keyboard").fetchSemanticsNode().boundsInRoot.bottom < accessoryBottom - 100)
         compose.runOnIdle { canvas.showKeyboard(false) }
@@ -303,7 +296,7 @@ class ScreenCapabilityPickerTest {
         compose.runOnIdle { assertEquals("b", selected) }
         compose.onNodeWithTag("terminal-machine").performClick()
         assertEquals(first, positions())
-        capture("terminal-machine-picker.png")
+        Evidence.display("terminal-machine-picker.png")
     }
 
     private fun findCanvas(): ScreenCanvasView {
@@ -314,15 +307,4 @@ class ScreenCapabilityPickerTest {
         }
         return requireNotNull(WindowInspector.getGlobalWindowViews().firstNotNullOfOrNull(::find))
     }
-
-    private fun capture(name: String) {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val output = InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")?.let(::File)
-            ?: requireNotNull(instrumentation.targetContext.getExternalFilesDir(null))
-        output.mkdirs()
-        val bitmap = instrumentation.uiAutomation.takeScreenshot()
-        try { File(output, name).outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) } }
-        finally { bitmap.recycle() }
-    }
-
 }

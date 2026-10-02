@@ -232,7 +232,7 @@ struct ConversationPaneSurfaceBar: View {
     var showsKanban = true
 
     private var standalone: Bool {
-        (context.selectedCard ?? context.selectedDetail?.card)?.scope == "chat"
+        context.model.state.chat
     }
 
     var body: some View {
@@ -295,7 +295,7 @@ struct ConversationPaneWorkspaceBar: View {
     var showsKanban = true
 
     private var standalone: Bool {
-        (context.selectedCard ?? context.selectedDetail?.card)?.scope == "chat"
+        context.model.state.chat
     }
 
     var body: some View {

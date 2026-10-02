@@ -88,26 +88,17 @@
                 }
                 // Modern Save panels host their controls in another process.
                 // AppKit intentionally cannot accept them through panel.ok(_:).
-                // Send a native event only to this isolated smoke app; capture
-                // runs also allow the external UI driver to press the real button.
+                // Send a native event only to this isolated smoke app.
                 trace.record("destination ready: \(destinationReady)", panel: panel, owner: window)
                 let submitted = destinationReady && submitNativeReturn(panel: panel, owner: window)
                 trace.record("posted native Return: \(submitted)", panel: panel, owner: window)
-                var dismissed = await NativeUIAccessibility.wait(timeout: 5) {
+                let dismissed = await NativeUIAccessibility.wait(timeout: 5) {
                     window.attachedSheet == nil && !panel.isVisible
                 }
-                if destinationReady, !dismissed {
-                    await requestExportCapture(
-                        panel: panel, owner: window, format: format, destination: destination,
-                        output: output, trace: trace)
-                    dismissed = window.attachedSheet == nil && !panel.isVisible
-                }
                 trace.record("sheet dismissed: \(dismissed)", panel: panel, owner: window)
-                if destinationReady, !dismissed,
-                    ProcessInfo.processInfo.environment["DIETER_CONTENT_CAPTURE"] != "1"
-                {
+                if destinationReady, !dismissed {
                     results["content-export-\(format.rawValue)"] =
-                        "skipped: native Save sheet and destination verified; export acceptance requires the external UI driver in a capture run"
+                        "skipped: native Save sheet and destination verified; the sheet did not accept the posted Return"
                     panel.cancel(nil)
                     let cancelled = await NativeUIAccessibility.wait(timeout: 5) {
                         !panel.isVisible && window.attachedSheet == nil
@@ -184,34 +175,6 @@
             let pid = ProcessInfo.processInfo.processIdentifier
             down.postToPid(pid); up.postToPid(pid)
             return true
-        }
-
-        private static func requestExportCapture(
-            panel: NSSavePanel, owner: NSWindow, format: MarkdownFileExport.Format,
-            destination: URL, output: URL, trace: NativeExportSmokeTrace
-        ) async {
-            guard ProcessInfo.processInfo.environment["DIETER_CONTENT_CAPTURE"] == "1" else { return }
-            let phase = "export-\(format.rawValue)"
-            let request = output.appending(path: "capture-request.json")
-            let acknowledgement = output.appending(path: "capture-ack-\(phase)")
-            try? FileManager.default.removeItem(at: acknowledgement)
-            let marker = [
-                "phase": phase, "windowNumber": String(panel.windowNumber),
-                "ownerWindowNumber": String(owner.windowNumber),
-                "suggestedFilename": destination.lastPathComponent, "destination": destination.path,
-                "action": "Click the visible Export button, then acknowledge. Do not cancel the Save panel.",
-            ]
-            if let data = try? JSONSerialization.data(withJSONObject: marker, options: [.prettyPrinted, .sortedKeys]) {
-                try? data.write(to: request, options: .atomic)
-            }
-            trace.record("awaiting external Export click", panel: panel, owner: owner)
-            defer { try? FileManager.default.removeItem(at: request) }
-            // Acknowledging a screenshot is insufficient: require the actual
-            // Save sheet to close, then verify the exported bytes below.
-            _ = await NativeUIAccessibility.wait(timeout: 60) {
-                !panel.isVisible && owner.attachedSheet == nil
-            }
-            trace.record("external capture finished", panel: panel, owner: owner)
         }
 
         static func finderAvailability(

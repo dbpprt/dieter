@@ -25,8 +25,8 @@ class DieterCredentialStore(context: Context) {
             decrypted.remove(endpointID)
             return null
         }
-        // SharedPreferences is process-shared. Compare the encrypted value so
-        // another repository's sign-in/sign-out cannot leave this cache stale.
+        // SharedPreferences is process-shared. Compare the encrypted value so a
+        // sign-in or sign-out through another store instance cannot leave this cache stale.
         decrypted[endpointID]?.let { if (it.encoded == encoded) return it.token }
         val token = runCatching {
             val bytes = Base64.decode(encoded, Base64.NO_WRAP)

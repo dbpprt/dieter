@@ -23,9 +23,9 @@ import androidx.compose.ui.test.performTextInput
 import com.dbpprt.dieter.core.composition.TaskDraftEditor
 import com.dbpprt.dieter.core.composition.TaskDrafts
 import com.dbpprt.dieter.core.composition.WorkspaceMode
+import com.dbpprt.dieter.core.machines.MachineRow
 import com.dbpprt.dieter.core.selection.AgentControls
 import com.dbpprt.dieter.core.state.CaptureDraft
-import com.dbpprt.dieter.ui.ProjectReplica
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Lane
@@ -107,8 +107,8 @@ class QuickTaskAndTerminalCreationTest {
         val laptopProject = Project(id = "p1", name = "Dieter", path = "/Users/me/Development/dieter")
         val studioProject = Project(id = "p2", name = "Dieter", path = "/Users/me/Development/dieter")
         val hosts = mapOf(
-            "p1" to ProjectReplica("endpoint-1", "daemon-1", "Laptop", online = true),
-            "p2" to ProjectReplica("endpoint-2", "daemon-2", "Studio", online = true),
+            "p1" to MachineRow("daemon-1", "Laptop", "", daemonId = "daemon-1"),
+            "p2" to MachineRow("daemon-2", "Studio", "", daemonId = "daemon-2"),
         )
         var selectedProjectId by mutableStateOf("p1")
 

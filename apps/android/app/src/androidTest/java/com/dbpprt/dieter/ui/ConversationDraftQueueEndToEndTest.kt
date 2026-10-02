@@ -1,12 +1,10 @@
 package com.dbpprt.dieter.ui
 
 import android.Manifest
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.assertTextEquals
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -23,7 +21,6 @@ import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.text.AnnotatedString
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
@@ -32,13 +29,12 @@ import com.dbpprt.dieter.api.v1.CreateConversationRequest
 import com.dbpprt.dieter.api.v1.MessagePart
 import com.dbpprt.dieter.api.v1.SendMessageRequest
 import com.dbpprt.dieter.e2e.IsolatedCore
-import java.io.File
+import com.dbpprt.dieter.e2e.saveEvidence
 import java.util.UUID
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
@@ -55,9 +51,6 @@ class ConversationDraftQueueEndToEndTest {
 
     @Test
     fun draftsSurviveNavigationAndQueuedEditRestoresTheServerMessage() {
-        val arguments = InstrumentationRegistry.getArguments()
-        val token = arguments.getString("isolatedGatewayToken").orEmpty()
-        assumeTrue("Pass isolatedGatewayToken for the isolated gateway", token.isNotBlank())
         val application = composeRule.activity.application as DieterApplication
         val container = application.container
         val core = container.core
@@ -121,7 +114,7 @@ class ConversationDraftQueueEndToEndTest {
             composeRule.waitUntil(15_000) {
                 runCatching { visibleNodeWithTag("message-input").assertTextEquals(FIRST_DRAFT) }.isSuccess
             }
-            capture("conversation-draft-restored-e2e.png")
+            composeRule.onRoot().saveEvidence("conversation-draft-restored-e2e.png")
 
             val queueCard = IsolatedCore.createConversation(
                 container,
@@ -151,9 +144,9 @@ class ConversationDraftQueueEndToEndTest {
             }
             visibleNodeWithTag("message-input").assertTextEquals("queued text to edit")
             assertTrue(IsolatedCore.conversation(container, queueCard.id, daemonId).conversation?.queue.orEmpty().isEmpty())
-            capture("queued-message-restored-to-composer-e2e.png")
+            composeRule.onRoot().saveEvidence("queued-message-restored-to-composer-e2e.png")
         } catch (error: Throwable) {
-            runCatching { capture("conversation-draft-queue-failure.png") }
+            runCatching { composeRule.onRoot().saveEvidence("conversation-draft-queue-failure.png") }
             throw error
         } finally {
             createdIds.asReversed().forEach { id ->
@@ -181,22 +174,6 @@ class ConversationDraftQueueEndToEndTest {
         CreateConversationRequest(project_id = projectId, title = "$title ${UUID.randomUUID().toString().take(8)}", prompt = "Deferred composer draft fixture", provider = provider, model = model, defer_start = true, workspace_mode = "project"),
         chat = true,
     )
-
-    private fun capture(name: String) {
-        val arguments = InstrumentationRegistry.getArguments()
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val directory = arguments.getString("additionalTestOutputDir")
-            ?.takeIf(String::isNotBlank)?.let(::File)
-            ?: requireNotNull(context.getExternalFilesDir(null))
-        directory.mkdirs()
-        File(directory, name).outputStream().use { output ->
-            composeRule.onRoot().captureToImage().asAndroidBitmap().compress(
-                android.graphics.Bitmap.CompressFormat.PNG,
-                100,
-                output,
-            )
-        }
-    }
 
     private fun clickVisibleNodeWithTag(tag: String) {
         visibleNodeWithTag(tag).performClick()

@@ -6,13 +6,14 @@ import com.dbpprt.dieter.api.v1.Changeset
 import com.dbpprt.dieter.api.v1.GitOperation
 import com.dbpprt.dieter.api.v1.GitOperationLogEntry
 import com.dbpprt.dieter.api.v1.PullRequestSummary
+import com.dbpprt.dieter.api.v1.SCMCapabilities
 import com.dbpprt.dieter.api.v1.ValidationCommand
+import com.dbpprt.dieter.api.v1.Workspace
 import com.dbpprt.dieter.api.v1.WorkspaceSummary
 import com.dbpprt.dieter.core.composition.WorkspaceMode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -44,30 +45,6 @@ class WorkspaceRulesTest {
         val context = UnifiedDiff.parse("@@ -1 +1 @@\n \n")
         assertEquals(DiffLineKind.CONTEXT, context.last().kind)
         assertEquals(1, context.last().newLine)
-    }
-
-    @Test
-    fun displayFoldsLongContextAndCountsSkippedLines() {
-        val context = (1..40).joinToString("\n") { " line $it" }
-        val lines = UnifiedDiff.parse("@@ -1,41 +1,41 @@\n$context\n-a\n+b\n@@ -300,2 +300,2 @@\n x\n-y")
-        val rows = DiffDisplay.rows(lines, split = false)
-        val fold = rows.filterIsInstance<DiffRow.Fold>().single()
-        assertEquals(30, fold.count, "a run between a hunk and a change keeps five lines on each side")
-        assertEquals(listOf(0, 258), rows.filterIsInstance<DiffRow.Hunk>().map { it.skippedLines })
-        assertEquals("-1,41 +1,41", rows.filterIsInstance<DiffRow.Hunk>().first().text)
-        assertEquals("-1,2 +1,2 fun x", DiffDisplay.hunkText("@@ -1,2 +1,2 @@ fun x"))
-
-        val short = DiffDisplay.rows(UnifiedDiff.parse("@@ -1,3 +1,3 @@\n a\n b\n-c\n+d"), split = false)
-        assertTrue(short.none { it is DiffRow.Fold })
-
-        val split = DiffDisplay.rows(UnifiedDiff.parse("@@ -1,3 +1,4 @@\n-a\n-b\n+c\n+d\n+e\n x"), split = true)
-        val pairs = split.filterIsInstance<DiffRow.Pair>()
-        assertEquals(4, pairs.size)
-        assertEquals(listOf(true, true, false, true), pairs.map { it.old != null })
-
-        val whole = DiffDisplay.rows(UnifiedDiff.parse("diff --git a/x b/src/x.kt\n@@ -1 +1 @@\n-a\n+b\ndiff --git a/y b/y.kt\n@@ -1 +1 @@\n-c\n+d"), split = false, wholeCommit = true)
-        assertEquals(listOf("src/x.kt", "y.kt"), whole.filterIsInstance<DiffRow.File>().map { it.path })
-        assertEquals(mapOf(1 to (1 to 1)), DiffDisplay.hunkDeltas(UnifiedDiff.parse("h\n@@ -1 +1 @@\n-a\n+b")).filterKeys { it == 1 })
     }
 
     private fun availability(
@@ -117,11 +94,47 @@ class WorkspaceRulesTest {
         assertFalse(availability().allowsMergeFlow)
         assertFalse(availability(changed = 1, mode = WorkspaceMode.PROJECT).allowsMergeFlow)
         assertFalse(availability(changed = 1, publish = "push_base").allowsMergeFlow)
-        val derived = WorkspaceAvailability.of(Card(runtime = "idle", workspace_mode = "legacy", workspace = WorkspaceSummary(ahead = 2, mode = "worktree")), null, null, null, GitOperation(status = "running"))
+        val derived = WorkspaceAvailability.of(Card(runtime = "idle", workspace_mode = "other", workspace = WorkspaceSummary(ahead = 2, mode = "worktree")), null, null, null, GitOperation(status = "running"))
         assertTrue(derived.hasCommits)
         assertTrue(derived.operationActive)
         assertEquals(WorkspaceMode.WORKTREE, derived.mode)
         assertEquals(WorkspaceMode.PROJECT, WorkspaceMode.parse("main"))
+    }
+
+    @Test
+    fun anOperationWaitingOnAConflictLeavesTheConflictActionsAndTheMergeFlowOpen() {
+        // The daemon keeps the stopped operation as the workspace's current one and admits continue or abort beside it.
+        val card = Card(runtime = "idle", workspace_mode = "worktree", workspace = WorkspaceSummary(mode = "worktree", state = "conflicted", ahead = 1))
+        val waiting = WorkspaceAvailability.of(card, Workspace(mode = "worktree", state = "conflicted", branch = "feature", base_branch = "main"), null, null, GitOperation(status = "waiting_for_resolution"))
+        assertFalse(waiting.operationActive)
+        assertTrue(waiting.conflicted)
+        assertTrue(waiting.allows("continue_conflict"))
+        assertTrue(waiting.allows("abort_conflict"))
+        assertFalse(waiting.allows("update"), "only the conflict actions while conflicted")
+        assertTrue(waiting.allowsMergeFlow, "the merge sheet resolves the conflict")
+        assertFalse(WorkspaceAvailability.of(card, null, null, null, GitOperation(status = "waiting_for_resolution"), submitting = true).allows("abort_conflict"), "not while a start is in flight")
+        val stopped = WorkspaceAvailability.of(Card(runtime = "idle", workspace_mode = "worktree"), Workspace(mode = "worktree", state = "ready"), null, null, GitOperation(status = "waiting_for_resolution"))
+        assertTrue(stopped.conflicted, "a waiting operation alone makes the workspace conflicted")
+        assertTrue(stopped.allows("continue_conflict"))
+
+        val review = WorkspaceReviewView(operation = GitOperation(status = "waiting_for_resolution"))
+        assertFalse(review.operationActive)
+        assertTrue(review.conflicted)
+        assertTrue(WorkspaceReviewView(operation = GitOperation(status = "running")).operationActive)
+    }
+
+    @Test
+    fun aBlockedPullRequestCannotMerge() {
+        val open = PullRequestSummary(number = 7, state = "open", mergeable = true, checks_state = "passed")
+        fun availability(pr: PullRequestSummary) =
+            WorkspaceAvailability.of(Card(runtime = "idle", workspace_mode = "worktree", pull_request = pr), null, null, SCMCapabilities(authenticated = true), null)
+        assertTrue(availability(open).allows("merge_pr"))
+        assertTrue(availability(open).allows("refresh_pr"))
+        val running = availability(open.copy(checks_state = "running"))
+        assertFalse(running.allows("merge_pr"))
+        assertEquals("waiting on checks", running.pullRequestBlocked)
+        assertTrue(running.allows("refresh_pr"))
+        assertFalse(availability(open.copy(draft = true)).allows("merge_pr"))
     }
 
     @Test
@@ -141,10 +154,15 @@ class WorkspaceRulesTest {
 
     @Test
     fun pullRequestsAndBadges() {
+        // The daemon reports checks as "passed", "running", or "failed".
         assertEquals("draft", PullRequests.mergeBlockedReason(PullRequestSummary(state = "open", draft = true, mergeable = true)))
         assertEquals("already merged", PullRequests.mergeBlockedReason(PullRequestSummary(state = "MERGED")))
-        assertEquals("checks failed", PullRequests.mergeBlockedReason(PullRequestSummary(state = "open", checks_state = "failure", mergeable = true)))
-        assertNull(PullRequests.mergeBlockedReason(PullRequestSummary(state = "open", checks_state = "success", mergeable = true)))
+        assertEquals("already closed", PullRequests.mergeBlockedReason(PullRequestSummary(state = "closed", draft = true)))
+        assertEquals("checks failed", PullRequests.mergeBlockedReason(PullRequestSummary(state = "open", checks_state = "failed", mergeable = true)))
+        assertEquals("waiting on checks", PullRequests.mergeBlockedReason(PullRequestSummary(state = "open", checks_state = "running", mergeable = true)))
+        assertEquals("not mergeable", PullRequests.mergeBlockedReason(PullRequestSummary(state = "open", checks_state = "passed")))
+        assertNull(PullRequests.mergeBlockedReason(PullRequestSummary(state = "open", checks_state = "passed", mergeable = true)))
+        assertEquals(listOf("running", "failed", "passed", ""), listOf("pending", "FAILURE", "success", "unknown").map { PullRequests.checks(PullRequestSummary(checks_state = it)) }, "other providers' words read the same")
         assertTrue(PullRequests.canAskAgent(PullRequestSummary(state = "open", review_decision = "changes_requested")))
 
         assertNull(WorkspaceBadge.of(Card()))
@@ -154,6 +172,58 @@ class WorkspaceRulesTest {
         assertEquals("Conflicts", WorkspaceBadge.of(Card(workspace_mode = "worktree", workspace = WorkspaceSummary(state = "conflicted", changed_files = 3)))!!.title)
         assertEquals("3 changed", WorkspaceBadge.of(Card(workspace_mode = "worktree", workspace = WorkspaceSummary(changed_files = 3)))!!.title)
         assertEquals("Project", WorkspaceBadge.of(Card(workspace_mode = "main"))!!.title)
+        val withPullRequest = WorkspaceBadge.of(Card(workspace_mode = "worktree", workspace_branch = "feature/x", pull_request = PullRequestSummary(number = 12), workspace = WorkspaceSummary(changed_files = 2)))!!
+        assertEquals("PR #12", withPullRequest.title)
+        assertEquals("feature/x", withPullRequest.fullTitle, "a conversation's header names the branch")
+        assertEquals("Workspace: Worktree · feature/x · PR #12", withPullRequest.accessibilityLabel)
+        assertEquals("Conflicts", WorkspaceBadge.of(Card(workspace_mode = "worktree", workspace = WorkspaceSummary(state = "conflicted")))!!.fullTitle)
+        assertEquals("Worktree", WorkspaceBadge.of(Card(workspace_mode = "worktree", workspace = WorkspaceSummary(changed_files = 3)))!!.fullTitle)
+    }
+
+    /** Ported from Android's `WorkspaceCardBadgeTest`: a conflict outranks a pull request, which outranks changes. */
+    @Test
+    fun cardBadgesRankConflictsAbovePullRequestsAboveChanges() {
+        val summary = WorkspaceSummary(mode = "worktree", branch = "feature/card-branches", state = "conflicted", changed_files = 3)
+        val conflicted = WorkspaceBadge.of(Card(workspace_mode = "worktree", workspace = summary, pull_request = PullRequestSummary(number = 42)))!!
+        assertEquals("Conflicts", conflicted.title)
+        assertTrue(conflicted.conflicted)
+        val pullRequest = WorkspaceBadge.of(Card(workspace_mode = "worktree", workspace = summary.copy(state = "ready"), pull_request = PullRequestSummary(number = 42)))!!
+        assertEquals("PR #42", pullRequest.title)
+        assertFalse(pullRequest.conflicted)
+        assertEquals("Worktree", WorkspaceBadge.of(Card(workspace_mode = "worktree"))!!.title)
+        assertEquals("Project", WorkspaceBadge.of(Card(workspace_mode = "branch"))!!.title)
+    }
+
+    @Test
+    fun pullRequestsReadAsTheReviewShowsThem() {
+        val running = PullRequests.view(PullRequestSummary(number = 142, url = "https://x/142", state = "open", mergeable = true, checks_state = "running", review_decision = "review_required", last_synced_at = "2026-10-01T10:00:00Z"))!!
+        assertEquals("Open", running.stateLabel)
+        assertEquals(StatusTone.SUCCESS, running.stateTone)
+        assertEquals("waiting on checks", running.mergeBlockedReason)
+        assertEquals(listOf("checks running" to StatusTone.ACTIVE, "review requested" to StatusTone.WARNING), running.signals.map { it.text to it.tone })
+        assertFalse(running.canAskAgent)
+        assertEquals("2026-10-01T10:00:00Z", running.lastSyncedAt)
+
+        val failing = PullRequests.view(PullRequestSummary(number = 142, state = "open", mergeable = true, checks_state = "failed", review_decision = "changes_requested"))!!
+        assertTrue(failing.canAskAgent)
+        assertEquals("checks failed", failing.mergeBlockedReason)
+        assertEquals(listOf(StatusTone.DANGER, StatusTone.WARNING), failing.signals.map { it.tone })
+        assertTrue(failing.askAgentPrompt.contains("#142"))
+        assertTrue(failing.askAgentPrompt.contains("failing checks and requested review changes"))
+
+        val ready = PullRequests.view(PullRequestSummary(number = 1, state = "open", mergeable = true, checks_state = "passed", review_decision = "approved"))!!
+        assertNull(ready.mergeBlockedReason)
+        assertFalse(ready.canAskAgent)
+        assertEquals(listOf("checks passed", "approved"), ready.signals.map { it.text })
+        assertEquals("Pull request #1 needs attention: please address the open review feedback, push the fixes to the pull request branch, and summarize what changed.", PullRequests.askAgentPrompt(PullRequestSummary(number = 1)))
+
+        val merged = PullRequests.view(PullRequestSummary(number = 3, state = "merged", checks_state = "passed"))!!
+        assertEquals("Merged" to StatusTone.NEUTRAL, merged.stateLabel to merged.stateTone)
+        assertEquals("already merged", merged.mergeBlockedReason)
+        assertEquals("Closed" to StatusTone.DANGER, PullRequests.stateLabel(PullRequestSummary(state = "closed")) to PullRequests.stateTone(PullRequestSummary(state = "closed")))
+        assertEquals("Draft" to StatusTone.NEUTRAL, PullRequests.stateLabel(PullRequestSummary(state = "open", draft = true)) to PullRequests.stateTone(PullRequestSummary(state = "open", draft = true)))
+        assertNull(PullRequests.view(PullRequestSummary(number = 0)))
+        assertNull(PullRequests.view(null))
     }
 
     @Test

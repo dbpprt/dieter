@@ -16,6 +16,7 @@ import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.Assume.assumeTrue
 
 /**
  * The isolated gateway the e2e runner starts on the host and reverses to the
@@ -30,8 +31,18 @@ object IsolatedCore {
 
     val token: String get() = requireNotNull(arguments.getString("isolatedGatewayToken"))
 
-    /** Signs in, keeps the app in the foreground connection mode, and waits for the fixture workspace. */
+    /** The fixture daemon's machine ID. */
+    val machineId: String get() = requireNotNull(arguments.getString("isolatedMachineId"))
+
+    /** The fixture daemon's seeded board. */
+    val boardId: String get() = requireNotNull(arguments.getString("isolatedBoardId"))
+
+    /**
+     * Signs in, keeps the app in the foreground connection mode, and waits for the fixture workspace.
+     * Skips the calling test when the runner started no isolated gateway.
+     */
     fun connect(container: DieterContainer, timeout: Duration = 30.seconds): WorkspaceView = runBlocking {
+        assumeTrue("Needs the isolated gateway that `just e2e run` starts", !arguments.getString("isolatedGatewayToken").isNullOrBlank())
         container.core.adoptSession(gateway, token)
         container.policy.setForeground(true)
         withTimeout(timeout) {

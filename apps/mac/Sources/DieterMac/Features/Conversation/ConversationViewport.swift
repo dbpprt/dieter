@@ -9,22 +9,6 @@ enum ConversationQueuePresentation {
         let attachments: [Dieter_V1_MessagePart]
     }
 
-    static func deliveredMessages(
-        _ messages: [Dieter_V1_UiMessage],
-        whileQueued queue: [Dieter_V1_QueuedMessage]
-    ) -> [Dieter_V1_UiMessage] {
-        let queuedIDs = Set(queue.lazy.map(\.id).filter { !$0.isEmpty })
-        return messages.filter { !queuedIDs.contains($0.id) }
-    }
-
-    static func canSteer(
-        messageID: String,
-        queue: [Dieter_V1_QueuedMessage],
-        agentIsWorking: Bool
-    ) -> Bool {
-        agentIsWorking && !messageID.isEmpty && queue.first?.id == messageID
-    }
-
     static func editableDraft(for message: Dieter_V1_QueuedMessage) -> EditableDraft {
         let textParts = message.parts.filter { $0.type == "text" }.map(\.text)
         let text = textParts.isEmpty ? message.text : textParts.joined()

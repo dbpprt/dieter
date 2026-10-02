@@ -1,7 +1,5 @@
 package com.dbpprt.dieter.ui
 
-import android.content.Context
-import android.graphics.Bitmap
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -9,9 +7,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -19,23 +15,16 @@ import androidx.compose.ui.test.onRoot
 import androidx.lifecycle.ViewModelStore
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.machines.MachineRow
 import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.e2e.TestCore
-import com.dbpprt.dieter.ui.ProjectReplica
-import com.dbpprt.dieter.settings.AppPreferences
+import com.dbpprt.dieter.e2e.saveEvidence
 import com.dbpprt.dieter.core.navigation.NavigationFolder
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.Project
-import java.io.File
-import java.lang.reflect.Proxy
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import org.junit.After
-import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
@@ -51,8 +40,6 @@ class ProjectOverviewVisualTest {
 
     @Before fun setup() {
         assumeTrue("Use the isolated screen fixture app", (context.packageName.endsWith(".e2e")))
-        context.getSharedPreferences("dieter_shared_kv", Context.MODE_PRIVATE).edit().clear()
-            .putString("activeAccount", "project-overview-fixture").commit()
         core = TestCore(navigationAccount = "component-fixture")
         compose.runOnUiThread {
             model = core.viewModel()
@@ -89,11 +76,7 @@ class ProjectOverviewVisualTest {
         compose.onNodeWithText("PINNED").assertIsDisplayed()
         compose.onNodeWithText("Clients").assertIsDisplayed()
         compose.onNodeWithTag("space-project-kannacli").assertIsDisplayed()
-
-        val file = File(context.getExternalFilesDir(null), "projects-redesign.png")
-        file.outputStream().use { output ->
-            assertTrue(compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, output))
-        }
+        compose.onRoot().saveEvidence("projects-redesign.png")
     }
 
     private val projects = listOf(
@@ -139,8 +122,17 @@ class ProjectOverviewVisualTest {
         spaceCards = cards,
         selectedProjectId = "dieter",
         projectReplicas = projects.associate { project ->
-            project.id to ProjectReplica("fixture", "fixture", if (project.id == "atlas") "mbp-home" else "mini-home", project.id != "experiments")
+            project.id to when (project.id) {
+                "atlas" -> "mbp-home"
+                "experiments" -> "mini-lab"
+                else -> "mini-home"
+            }
         },
+        endpointConnections = listOf(
+            MachineRow("mbp-home", "mbp-home", "", daemonId = "mbp-home"),
+            MachineRow("mini-home", "mini-home", "", daemonId = "mini-home"),
+            MachineRow("mini-lab", "mini-lab", "", daemonId = "mini-lab", online = false),
+        ),
     )
 
     private fun project(id: String, name: String) = Project(id = id, name = name, path = "/home/demo/Development/$name")

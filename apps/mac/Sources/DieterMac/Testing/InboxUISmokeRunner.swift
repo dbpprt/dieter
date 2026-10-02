@@ -227,7 +227,7 @@
             let finishClicked = await click("inbox.finish.\(review.id)", window)
             let finished = await NativeUIAccessibility.wait {
                 store.inboxEntries.contains { $0.id == review.id && $0.card.lane == "done" && !$0.needsYou }
-                    && store.pendingCardMoves[review.id] == nil
+                    && !store.movingCardIDs.contains(review.id)
                     && !visible("inbox.finish.\(review.id)", window)
             }
             record(

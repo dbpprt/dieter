@@ -1,22 +1,32 @@
 package com.dbpprt.dieter.core.admin
 
+import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.Checkout
 import com.dbpprt.dieter.api.v1.MachineInformation
 import com.dbpprt.dieter.api.v1.MachineOperationAction
 import com.dbpprt.dieter.api.v1.MachineOperationCapability
 import com.dbpprt.dieter.api.v1.PeerSyncDiagnostic
 import com.dbpprt.dieter.api.v1.PeerVersion
+import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.core.outbox.MachineOutboxSummary
 import com.dbpprt.dieter.core.outbox.OutboxView
+import com.dbpprt.dieter.core.runtime.CoreException
+import com.dbpprt.dieter.core.store.WorkspaceStore
+import com.dbpprt.dieter.core.sync.MachineSnapshot as SyncedMachine
 import com.dbpprt.dieter.core.testing.MemoryDeviceSettings
+import com.dbpprt.dieter.core.testing.offlineSessions
+import com.dbpprt.dieter.core.workspace.ValidationCommandDraft
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
+import kotlinx.coroutines.test.runTest
 import okio.ByteString.Companion.encodeUtf8
 
 class AdminRulesTest {
@@ -28,6 +38,12 @@ class AdminRulesTest {
         assertNull(Labels.validate("urgent", ""))
         assertEquals("label color must be a hex color such as #6558df", Labels.validate("urgent", "#zzzzzz"))
         assertEquals("label name is required", Labels.validate(" ", ""))
+        assertNull(Labels.validate("urgent", "#7C5CFF"), "a custom color outside the palette is valid")
+        assertNull(Labels.validate("urgent", " #7c5cff "), "surrounding spaces are trimmed")
+        assertEquals("label color must be a hex color such as #6558df", Labels.validate("urgent", "#abc"), "the daemon needs six digits")
+        assertEquals("label color must be a hex color such as #6558df", Labels.validate("urgent", "7c5cff"), "the daemon needs the leading #")
+        assertEquals(Labels.PALETTE.size, Labels.PALETTE.map { it.lowercase() }.toSet().size)
+        assertTrue(Labels.PALETTE.all { Labels.validate("x", it) == null })
     }
 
     @Test
@@ -66,6 +82,75 @@ class AdminRulesTest {
     }
 
     @Test
+    fun workflowsAndProjectDefaultsReadTheSameOnEveryForm() {
+        assertEquals(listOf("With review", "Direct to done"), Administration.WORKFLOWS.map(Administration::workflowTitle))
+        assertEquals("custom", Administration.workflowTitle("custom"))
+        assertEquals("Todo → Running → Review → Done", Administration.workflowLanes("review"))
+        assertEquals("Todo → Running → Done", Administration.workflowLanes("direct"))
+        assertEquals("Review keeps completed agent work waiting for your approval.", Administration.workflowDetail("review"))
+        assertEquals("Direct moves completed work straight to Done.", Administration.workflowDetail("direct"))
+        assertEquals(Administration.DEFAULT_WORKFLOW, Administration.WORKFLOWS.first())
+        assertEquals(Administration.DEFAULT_PUBLISH_MODE, Administration.PUBLISH_MODES.first())
+        assertEquals(Administration.DEFAULT_ARCHIVE_POLICY, Administration.ARCHIVE_POLICIES.first())
+        assertEquals("Main", Administration.DEFAULT_BOARD_NAME)
+
+        assertEquals(listOf("origin", "main"), listOf(Administration.baseRemote(Project()), Administration.baseBranch(Project())))
+        assertEquals(listOf("upstream", "trunk"), listOf(Administration.baseRemote(Project(base_remote = "upstream")), Administration.baseBranch(Project(base_branch = "trunk"))))
+        assertEquals("fork", Administration.boardRemote(Board(base_remote = "fork"), Project(base_remote = "upstream")))
+        assertEquals("upstream", Administration.boardRemote(Board(), Project(base_remote = "upstream")), "a board without a remote uses its project's")
+        assertEquals("", Administration.boardRemote(Board(), null))
+        assertEquals("manual", Administration.publishMode(Board()))
+        assertEquals("pull_request", Administration.publishMode(Board(remote_publish_mode = "pull_request")))
+    }
+
+    @Test
+    fun projectFormsNeedTheirRequiredFields() {
+        val valid = listOf(ValidationCommandDraft(executable = "go"))
+        val invalid = listOf(ValidationCommandDraft())
+        assertTrue(Administration.canCreateProject("/repo", "main", valid))
+        assertTrue(Administration.canCreateProject("/repo", "main", emptyList()))
+        assertFalse(Administration.canCreateProject(" ", "main", valid))
+        assertFalse(Administration.canCreateProject("/repo", " ", valid))
+        assertFalse(Administration.canCreateProject("/repo", "main", invalid), "every validation command needs an executable")
+        assertTrue(Administration.canSaveProject("Dieter", "main", valid))
+        assertFalse(Administration.canSaveProject(" ", "main", valid))
+        assertFalse(Administration.canSaveProject("Dieter", "", valid))
+        assertFalse(Administration.canSaveProject("Dieter", "main", invalid))
+    }
+
+    @Test
+    fun projectFormsAreCheckedBeforeAnyMachineIsCalled() = runTest {
+        val store = WorkspaceStore().apply {
+            applyMachines(
+                listOf(
+                    SyncedMachine(
+                        "d1",
+                        projects = listOf(Project(id = "p", name = "Dieter", checkouts = listOf(Checkout(id = "c1", project_id = "p", daemon_id = "d1")))),
+                        boards = emptyList(),
+                        cards = emptyList(),
+                        chats = emptyList(),
+                    ),
+                ),
+            )
+        }
+        val admin = Administration(offlineSessions(), store) { null }
+        assertEquals(
+            "The project is no longer available.",
+            assertFailsWith<CoreException> { admin.saveProject("gone", "Dieter", "", "", "origin", "main", null, null) }.message,
+        )
+        assertEquals(
+            "Enter a workspace base branch.",
+            assertFailsWith<CoreException> { admin.saveProject("p", "Dieter", "", "", "origin", " ", "c1", null) }.message,
+        )
+        assertEquals(
+            "Every validation command needs an executable.",
+            assertFailsWith<CoreException> { admin.saveProject("p", "Dieter", "", "", "origin", "main", "c1", listOf(ValidationCommandDraft())) }.message,
+        )
+        assertEquals("Choose a folder for the project.", assertFailsWith<CoreException> { admin.createProject("d1", " ") }.message)
+        assertEquals("Enter a workspace base branch.", assertFailsWith<CoreException> { admin.createProject("d1", "/repo", baseBranch = "") }.message)
+    }
+
+    @Test
     fun hostnamesNormalizeLikeTheDaemon() {
         assertEquals(listOf("[::1]:4018", "example.com", "localhost:3000"), Hostnames.normalize(listOf("Example.COM.", "localhost:3000", "[::1]:4018", "example.com", " ")).getOrThrow())
         assertTrue(Hostnames.normalize(listOf("https://example.com/path")).isFailure)
@@ -83,22 +168,22 @@ class AdminRulesTest {
         assertEquals("template contains a malformed variable", PromptTemplates.validate("{{card.title} }"))
         assertEquals("template must contain {{project.instructions_block}} exactly once", PromptTemplates.validate("{{labels.instructions_block}}", context = true))
         assertEquals("template exceeds 32 KiB", PromptTemplates.validate("x".repeat(33 * 1024)))
-        assertEquals(3, PromptTemplates.estimatedTokens("123456789"))
     }
 
     @Test
-    fun machineOperationsPreferExplicitCapabilities() {
-        val legacy = MachineInformation(supports_restart = true)
-        assertTrue(MachineOperations.available(legacy, MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART))
-        assertFalse(MachineOperations.available(legacy, MachineOperationAction.MACHINE_OPERATION_ACTION_UPDATE_DAEMON))
-        val explicit = legacy.copy(operation_capabilities = listOf(MachineOperationCapability(action = MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART, supported = true, authorized = false, unavailable_reason = "interactive PolicyKit authorization is required")))
+    fun machineOperationsFollowTheReportedCapabilities() {
+        // Only the reported capabilities count, never the restart and shutdown flags.
+        val flags = MachineInformation(supports_restart = true, supports_shutdown = true)
+        assertFalse(MachineOperations.available(flags, MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART))
+        assertFalse(MachineOperations.available(flags, MachineOperationAction.MACHINE_OPERATION_ACTION_SHUTDOWN))
+        val explicit = flags.copy(operation_capabilities = listOf(MachineOperationCapability(action = MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART, supported = true, authorized = false, unavailable_reason = "interactive PolicyKit authorization is required")))
         assertFalse(MachineOperations.available(explicit, MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART))
         assertEquals("interactive PolicyKit authorization is required", MachineOperations.unavailableReason(explicit, MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART))
         assertFalse(MachineOperations.available(null, MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART))
         assertEquals("SHUT DOWN", MachineOperations.confirmation(MachineOperationAction.MACHINE_OPERATION_ACTION_SHUTDOWN))
-        val authorized = legacy.copy(operation_capabilities = listOf(MachineOperationCapability(action = MachineOperationAction.MACHINE_OPERATION_ACTION_UPDATE_DAEMON, supported = true, authorized = true)))
+        val authorized = flags.copy(operation_capabilities = listOf(MachineOperationCapability(action = MachineOperationAction.MACHINE_OPERATION_ACTION_UPDATE_DAEMON, supported = true, authorized = true)))
         assertTrue(MachineOperations.available(authorized, MachineOperationAction.MACHINE_OPERATION_ACTION_UPDATE_DAEMON))
-        assertFalse(MachineOperations.available(MachineInformation(supports_restart = true, supports_shutdown = false), MachineOperationAction.MACHINE_OPERATION_ACTION_SHUTDOWN))
+        assertFalse(MachineOperations.available(authorized, MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART))
     }
 
     @Test

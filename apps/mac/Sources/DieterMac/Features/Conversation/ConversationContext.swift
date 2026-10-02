@@ -14,7 +14,6 @@ final class ConversationContext {
     @ObservationIgnored var card: () -> Dieter_V1_Card?
     @ObservationIgnored var catalog: () -> Dieter_V1_HarnessCatalog
     @ObservationIgnored var projectID: () -> String
-    @ObservationIgnored var reasoning: () -> Bool
     @ObservationIgnored var pendingMessage: (String) -> Bool
     @ObservationIgnored var acceptedItem: (String) -> Bool
     @ObservationIgnored var failedItem: (String) -> Bool
@@ -23,19 +22,18 @@ final class ConversationContext {
     init(
         model: ConversationModel, composer: ComposerModel, worktreeChanges: WorktreeChangesModel,
         card: @escaping () -> Dieter_V1_Card?, catalog: @escaping () -> Dieter_V1_HarnessCatalog,
-        projectID: @escaping () -> String, reasoning: @escaping () -> Bool,
+        projectID: @escaping () -> String,
         pendingMessage: @escaping (String) -> Bool, acceptedItem: @escaping (String) -> Bool,
         failedItem: @escaping (String) -> Bool, creationError: @escaping (String) -> String?
     ) {
         self.model = model; self.composer = composer; self.worktreeChanges = worktreeChanges
-        self.card = card; self.catalog = catalog; self.projectID = projectID; self.reasoning = reasoning
+        self.card = card; self.catalog = catalog; self.projectID = projectID
         self.pendingMessage = pendingMessage; self.acceptedItem = acceptedItem; self.failedItem = failedItem;
         self.creationError = creationError
     }
     var selectedCard: Dieter_V1_Card? { card() }
     var selectedProjectID: String { projectID() }
     var harnessCatalog: Dieter_V1_HarnessCatalog { catalog() }
-    var showReasoning: Bool { reasoning() }
     var workspaceToast: WorkspaceToast? { worktreeChanges.workspaceToast }
     func isPendingMessage(_ id: String) -> Bool { pendingMessage(id) }
     func isAcceptedOutboxItem(_ id: String) -> Bool { acceptedItem(id) }
@@ -49,34 +47,22 @@ final class ConversationContext {
     var conversationLastRefreshedAt: Date? { model.conversationLastRefreshedAt }
     var conversationLoading: Bool { model.conversationLoading }
     var conversationMessages: [Dieter_V1_UiMessage] { model.conversationMessages }
-    var liveActivityMessages: [Dieter_V1_UiMessage] {
-        guard let conversation = conversation?.conversation else { return [] }
-        let queuedIDs = Set(conversation.queue.map(\.id))
-        // The displayed snapshot can contain local outbox overlays, even while
-        // browsing earlier history. Those sends have not started a turn yet.
-        return conversation.messages.filter {
-            !queuedIDs.contains($0.id) && !isPendingMessage($0.id) && !isFailedOutboxItem($0.id)
-        }
-    }
     var conversationPresentationRevision: Int { model.conversationPresentationRevision }
     var conversationSyncing: Bool { model.conversationSyncing }
     var selectedCardID: String? { model.selectedCardID }
     var selectedChatID: String? { model.selectedChatID }
     var selectedDetail: Dieter_V1_CardDetail? { model.selectedDetail }
-    var composerProviderLocked: Bool {
-        let card = selectedCard ?? selectedDetail?.card
-        return card?.initialPromptSentAt.isEmpty == false || !conversationMessages.isEmpty || model.state.activeTurn
+    /// The composer's agent pickers as the core shows them; nil until the
+    /// conversation's card and machine are known.
+    var agentControls: ClientAgentControlsState? {
+        #if DIETER_UI_SMOKE
+            if let fixture = model.agentFixture { return fixture }
+        #endif
+        return model.state.hasAgent ? model.state.agent : nil
     }
-    func canChangeComposerSelection(_ capability: String) -> Bool {
-        ConversationSelectionPolicy.canChange(
-            capability, harness: harnessCatalog.harnesses.first { $0.id == composerProvider },
-            conversationLocked: composerProviderLocked)
-    }
-    func selectComposerModel(_ value: Dieter_V1_HarnessModel) {
-        composer.draft.selectModel(
-            value, harness: harnessCatalog.harnesses.first { $0.id == composerProvider },
-            allowsEffortChange: canChangeComposerSelection("effort-selection"))
-    }
+    @ObservationIgnored var onChooseAgent: (ClientAgentChoice.OneOf_Choice) async -> Void = { _ in }
+    /// Changes the composer's agent; the core checks the pickers allow it.
+    func chooseAgent(_ choice: ClientAgentChoice.OneOf_Choice) async { await onChooseAgent(choice) }
     var composerText: String {
         get { composer.draft.text }
         set { composer.draft.text = newValue }
@@ -84,22 +70,6 @@ final class ConversationContext {
     var composerAttachments: [Dieter_V1_MessagePart] {
         get { composer.draft.attachments }
         set { composer.draft.attachments = newValue }
-    }
-    var composerEffort: String {
-        get { composer.draft.effort }
-        set { composer.draft.effort = newValue }
-    }
-    var composerModel: String {
-        get { composer.draft.model }
-        set { composer.draft.model = newValue }
-    }
-    var composerProvider: String {
-        get { composer.draft.provider }
-        set { composer.draft.provider = newValue }
-    }
-    var composerProviderOptions: [String: String] {
-        get { composer.draft.providerOptions }
-        set { composer.draft.providerOptions = newValue }
     }
     @ObservationIgnored var onAddAttachments: ([URL]) -> Void = { _ in }
     func addAttachments(_ urls: [URL]) { onAddAttachments(urls) }
@@ -131,14 +101,17 @@ final class ConversationContext {
     func openWorkspaceTerminal(card: Dieter_V1_Card) async { await onOpenWorkspaceTerminal(card) }
     @ObservationIgnored var onPin: (Dieter_V1_Card, Bool) async -> Void = { _, _ in }
     func pin(_ card: Dieter_V1_Card, pinned: Bool) async { await onPin(card, pinned) }
-    @ObservationIgnored var onRetryFailedTurn: (ConversationTurnFailure) async -> Bool = { _ in false }
-    func retryFailedTurn(_ failure: ConversationTurnFailure) async -> Bool { await onRetryFailedTurn(failure) }
+    @ObservationIgnored var onRetryFailedTurn: (ClientTurnFailure) async -> Bool = { _ in false }
+    func retryFailedTurn(_ failure: ClientTurnFailure) async -> Bool { await onRetryFailedTurn(failure) }
     @ObservationIgnored var onRetryOutboxItem: (String) async -> Void = { _ in }
     func retryOutboxItem(_ id: String) async { await onRetryOutboxItem(id) }
     @ObservationIgnored var onRemoveQueuedMessage: (Dieter_V1_QueuedMessage, Bool) async -> Bool = { _, _ in false }
     func removeQueuedMessage(_ message: Dieter_V1_QueuedMessage, edit: Bool) async -> Bool {
         await onRemoveQueuedMessage(message, edit)
     }
+    @ObservationIgnored var onSteer: (String) async -> Void = { _ in }
+    /// Lets the queued message `messageID` interrupt the running turn now.
+    func steer(messageID: String) async { await onSteer(messageID) }
     @ObservationIgnored var onSendComposer: () async -> Void = {}
     func sendComposer() async { await onSendComposer() }
     @ObservationIgnored var onShow: (Error) -> Void = { _ in }

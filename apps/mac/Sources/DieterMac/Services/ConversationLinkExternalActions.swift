@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 extension DieterStore {
     @MainActor
     func externalConversationLink(_ url: URL, cardID: String) async -> ConversationLinkExternalTarget {
-        let isWeb = ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+        let isWeb = ConversationContentLink.isWeb(url)
         guard (selectedCardID ?? selectedChatID) == cardID, phase.isConnected else {
             return .unavailable("This conversation's machine is unavailable.", isFile: !isWeb)
         }
@@ -98,9 +98,7 @@ extension DieterStore {
                         $0.path = path
                     }
                 }.fileDocument
-                let bytes = ProjectFilePresentation.bytes(
-                    binary: document.binary, content: document.content, data: document.data)
-                try bytes.write(to: destination, options: .atomic)
+                try document.bytes.write(to: destination, options: .atomic)
             } catch {
                 self?.errorMessage =
                     "Could not download \(filename): \((error as? CoreFailure)?.message ?? error.localizedDescription)"

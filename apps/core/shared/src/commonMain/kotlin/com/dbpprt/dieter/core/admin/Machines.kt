@@ -14,6 +14,7 @@ import com.dbpprt.dieter.core.board.Runtimes
 import com.dbpprt.dieter.core.outbox.OutboxView
 import com.dbpprt.dieter.core.platform.DeviceSettings
 import com.dbpprt.dieter.core.runtime.CoreException
+import com.dbpprt.dieter.core.runtime.Deadlines
 import com.dbpprt.dieter.core.runtime.FailureKind
 import com.dbpprt.dieter.core.runtime.Failures
 import com.dbpprt.dieter.core.runtime.Timestamps
@@ -26,16 +27,16 @@ import kotlin.time.Instant
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 /** What is known about one machine: its latest information and recent load. */
 data class MachineSnapshot(
@@ -75,6 +76,17 @@ class MachineTelemetry(private val sessions: MachineSessions, private val scope:
     private var generation = 0L
     private var pendingKey: Pair<MachineOperationAction, String>? = null
 
+    /** Stops polling; what was read stays. */
+    fun stop() = select(null, active = false)
+
+    /** Account or gateway changed: forget every machine read so far. */
+    fun reset() {
+        generation++
+        poller?.cancel()
+        pendingKey = null
+        mutableView.value = TelemetryView()
+    }
+
     /** Shows [daemonId] while [active]; switching machines resets the operation state, not what was read. */
     fun select(daemonId: String?, active: Boolean) {
         if (daemonId != view.value.daemonId) {
@@ -111,7 +123,7 @@ class MachineTelemetry(private val sessions: MachineSessions, private val scope:
         if (view.value.machines[daemonId]?.loading == true) return
         change(daemonId) { it.copy(loading = true, error = null) }
         try {
-            val info = withDeadline(15.seconds) { sessions.call(daemonId) { it.GetMachineInformation().execute(Unit) } }
+            val info = sessions.call(daemonId, Deadlines.CALL) { it.GetMachineInformation().execute(Unit) }
             change(daemonId) { state ->
                 val gpuHistory = info.gpu?.devices.orEmpty().associate { device ->
                     val previous = state.gpuHistory[device.id].orEmpty()
@@ -125,8 +137,14 @@ class MachineTelemetry(private val sessions: MachineSessions, private val scope:
         }
     }
 
-    private fun change(daemonId: String, update: (MachineSnapshot) -> MachineSnapshot) =
-        mutableView.update { it.copy(machines = it.machines + (daemonId to update(it.machines[daemonId] ?: MachineSnapshot()))) }
+    /** Updates [daemonId]'s snapshot; beyond [MAX_MACHINES] the least recently read machine other than the shown one goes. */
+    private fun change(daemonId: String, update: (MachineSnapshot) -> MachineSnapshot) = mutableView.update { state ->
+        val machines = LinkedHashMap(state.machines)
+        val next = update(machines.remove(daemonId) ?: MachineSnapshot())
+        machines[daemonId] = next
+        machines.keys.filter { it != daemonId && it != state.daemonId }.take(maxOf(0, machines.size - MAX_MACHINES)).forEach(machines::remove)
+        state.copy(machines = machines)
+    }
 
     /**
      * Restarts, shuts down, or updates the machine. The idempotency key is
@@ -145,9 +163,9 @@ class MachineTelemetry(private val sessions: MachineSessions, private val scope:
             var attempt = 0
             while (true) {
                 try {
-                    val response = withDeadline(60.seconds) { sessions.call(daemonId) { it.PerformMachineOperation().execute(request) } }
+                    val response = sessions.call(daemonId, Deadlines.PROVISION) { it.PerformMachineOperation().execute(request) }
                     pendingKey = null
-                    if (bound == generation) mutableView.update { it.copy(operationResult = response.message.ifEmpty { "Machine operation accepted." }) }
+                    if (bound == generation) mutableView.update { it.copy(operationResult = MachineOperations.resultMessage(response)) }
                     return response
                 } catch (error: Throwable) {
                     if (error is CancellationException) throw error
@@ -163,6 +181,7 @@ class MachineTelemetry(private val sessions: MachineSessions, private val scope:
     private companion object {
         val INTERVAL = 2.seconds
         const val HISTORY = 12
+        const val MAX_MACHINES = 64
         const val PARALLEL_READS = 4
     }
 }
@@ -175,20 +194,53 @@ object MachineOperations {
         else -> ""
     }
 
-    /** Explicit capabilities win; older daemons only report restart and shutdown flags. */
-    fun available(info: MachineInformation?, action: MachineOperationAction): Boolean {
-        info ?: return false
-        info.operation_capabilities.firstOrNull { it.action == action }?.let { return it.supported && it.authorized }
-        return when (action) {
-            MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART -> info.supports_restart
-            MachineOperationAction.MACHINE_OPERATION_ACTION_SHUTDOWN -> info.supports_shutdown
-            else -> false
-        }
-    }
+    /** The daemon reports every operation it can run, and whether this machine authorizes it. */
+    fun available(info: MachineInformation?, action: MachineOperationAction): Boolean =
+        info?.operation_capabilities?.firstOrNull { it.action == action }?.let { it.supported && it.authorized } == true
 
     fun unavailableReason(info: MachineInformation?, action: MachineOperationAction): String? =
         info?.operation_capabilities?.firstOrNull { it.action == action && !(it.supported && it.authorized) }?.unavailable_reason?.ifEmpty { null }
+
+    /** What a performed operation reports: the daemon's message, else that it was accepted. */
+    fun resultMessage(response: MachineOperationResponse?): String = response?.message?.ifBlank { null } ?: "Machine operation accepted."
+
+    /** The operations a machine's actions menu offers, in menu order. */
+    val ACTIONS: List<MachineOperationAction> = listOf(
+        MachineOperationAction.MACHINE_OPERATION_ACTION_UPDATE_DAEMON,
+        MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART,
+        MachineOperationAction.MACHINE_OPERATION_ACTION_SHUTDOWN,
+    )
+
+    /** Each of [ACTIONS] and whether [info] offers it; empty before information arrives. */
+    fun availability(info: MachineInformation?): List<OperationAvailability> =
+        if (info == null) emptyList() else ACTIONS.map { OperationAvailability(it, available(info, it), unavailableReason(info, it).orEmpty()) }
+
+    /** How an operation reads in the actions menu and its confirmation. */
+    fun copy(action: MachineOperationAction): OperationCopy = when (action) {
+        MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART -> OperationCopy(
+            title = "Restart machine", button = "Restart", menuTitle = "Restart…",
+            explanation = "Active Dieter turns will be suspended while the machine restarts. It will reconnect after Dieter starts again.",
+            destructive = true,
+        )
+        MachineOperationAction.MACHINE_OPERATION_ACTION_SHUTDOWN -> OperationCopy(
+            title = "Shut down machine", button = "Shut Down", menuTitle = "Shut Down…",
+            explanation = "Active Dieter turns will be suspended and the machine will remain offline until somebody turns it on again.",
+            destructive = true,
+        )
+        MachineOperationAction.MACHINE_OPERATION_ACTION_UPDATE_DAEMON -> OperationCopy(
+            title = "Update Dieter daemon", button = "Update", menuTitle = "Update Dieter…",
+            explanation = "The machine’s managed service will verify and install the latest Dieter release, restart, and reconnect automatically. Active turns will be suspended during the restart.",
+            destructive = false,
+        )
+        else -> OperationCopy(title = "", button = "", menuTitle = "", explanation = "", destructive = false)
+    }
 }
+
+/** Whether a machine offers [action]; [unavailableReason] is the daemon's reason when it does not, possibly empty. */
+data class OperationAvailability(val action: MachineOperationAction, val available: Boolean, val unavailableReason: String)
+
+/** An operation's wording: the confirmation's [title] and [button], its [menuTitle], and what it does. */
+data class OperationCopy(val title: String, val button: String, val menuTitle: String, val explanation: String, val destructive: Boolean)
 
 /** Gateway-side machine management: rename and revoke. */
 object MachineAdmin {
@@ -196,12 +248,12 @@ object MachineAdmin {
     suspend fun rename(gateway: GatewayServiceClient, daemonId: String, name: String): Daemon {
         val trimmed = name.trim()
         if (trimmed.isEmpty() || trimmed.length > 80) throw CoreException(FailureKind.PERMANENT, "daemon name is required and must be at most 80 characters")
-        return withDeadline(15.seconds) { gateway.RenameDaemon().execute(RenameDaemonRequest(daemon_id = daemonId, name = trimmed)) }
+        return withDeadline(Deadlines.CALL) { gateway.RenameDaemon().execute(RenameDaemonRequest(daemon_id = daemonId, name = trimmed)) }
     }
 
     /** The machine loses gateway and direct access until it is enrolled again. */
     suspend fun revoke(gateway: GatewayServiceClient, daemonId: String) {
-        withDeadline(15.seconds) { gateway.RevokeDaemon().execute(DaemonRef(daemon_id = daemonId)) }
+        withDeadline(Deadlines.CALL) { gateway.RevokeDaemon().execute(DaemonRef(daemon_id = daemonId)) }
     }
 }
 

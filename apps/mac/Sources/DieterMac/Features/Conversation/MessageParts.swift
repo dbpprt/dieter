@@ -2,83 +2,14 @@ import DieterAPI
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ToolCallGroupSummary: Equatable {
-    let edits: Int
-    let commands: Int
-    let otherTools: Int
-
-    init(toolNames: [String]) {
-        var edits = 0
-        var commands = 0
-        var otherTools = 0
-        for toolName in toolNames {
-            switch Self.category(for: toolName) {
-            case .edit: edits += 1
-            case .command: commands += 1
-            case .other: otherTools += 1
-            }
-        }
-        self.edits = edits
-        self.commands = commands
-        self.otherTools = otherTools
-    }
-
-    var title: String {
-        var components: [String] = []
-        if edits > 0 { components.append("\(edits) edit\(edits == 1 ? "" : "s")") }
-        if commands > 0 { components.append("\(commands) command\(commands == 1 ? "" : "s")") }
-        if otherTools > 0 { components.append("\(otherTools) tool call\(otherTools == 1 ? "" : "s")") }
-        return components.isEmpty ? "Tool calls" : components.joined(separator: ", ")
-    }
-
-    private enum Category { case edit, command, other }
-
-    private static func category(for toolName: String) -> Category {
-        let normalized =
-            toolName
-            .lowercased()
-            .split(whereSeparator: { $0 == "." || $0 == "/" })
-            .last
-            .map(String.init) ?? ""
-        if ["edit", "apply_patch", "patch", "write_file", "multi_edit", "str_replace_editor"].contains(normalized) {
-            return .edit
-        }
-        if ["bash", "shell", "command", "exec", "exec_command", "write_stdin", "terminal"].contains(normalized) {
-            return .command
-        }
-        return .other
-    }
-}
-
+/// A prose, attachment, or other part of a message.
 struct MessagePartView: View {
-    @Environment(ConversationContext.self) private var context
     let messageID: String
     let part: Dieter_V1_MessagePart
     let inUserBubble: Bool
-    @State private var reasoningExpanded = false
 
     var body: some View {
         switch part.type.lowercased() {
-        case "reasoning", "thinking":
-            if context.showReasoning {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.16)) { reasoningExpanded.toggle() }
-                } label: {
-                    VStack(alignment: .leading, spacing: 7) {
-                        HStack(spacing: 7) {
-                            Image(systemName: reasoningExpanded ? "chevron.down" : "chevron.right").font(
-                                .system(size: 8, weight: .bold))
-                            Text("Reasoning").font(.caption.weight(.medium))
-                        }.foregroundStyle(DieterTheme.tertiary)
-                        if reasoningExpanded {
-                            Text(part.text).font(.caption).foregroundStyle(DieterTheme.subtle).lineSpacing(3)
-                                .padding(.leading, 15)
-                        }
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                }.buttonStyle(.plain)
-            }
-        case "tool", "tool-call", "tool_call", "dynamic-tool":
-            ToolCallView(messageID: messageID, part: part)
         case "image":
             if let image = attachmentImage {
                 previewableAttachmentImage(image)
@@ -147,18 +78,30 @@ struct AttachmentImageButton: View {
     }
 }
 
+/// A tool call with the status and title the core gives its step; its full
+/// input and output load when expanded.
 struct ToolCallView: View {
     @Environment(ConversationContext.self) private var context
     let messageID: String
     let part: Dieter_V1_MessagePart
+    let step: ClientTimelineStep
     @State private var expanded = false
     @State private var output: Dieter_V1_ToolOutput?
     @State private var loading = false
 
-    private var completed: Bool {
-        ["completed", "success", "done", "output-available"].contains(part.state.lowercased())
+    private var completed: Bool { step.toolStatus == .completed }
+    private var needsAttention: Bool { [.failed, .needsApproval, .denied].contains(step.toolStatus) }
+
+    private var statusLabel: String {
+        switch step.toolStatus {
+        case .running: "running"
+        case .completed: "completed"
+        case .failed: "failed"
+        case .needsApproval: "needs approval"
+        case .denied: "denied"
+        default: "tool"
+        }
     }
-    private var needsAttention: Bool { ConversationActivityGrouping.needsAttention(part) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -175,27 +118,21 @@ struct ToolCallView: View {
                         .system(size: 11, weight: .medium)
                     ).foregroundStyle(
                         needsAttention ? DieterTheme.amber : (completed ? DieterTheme.eyes : DieterTheme.shell))
-                    Text(part.effectiveToolName.isEmpty ? "Command" : part.effectiveToolName).font(
+                    Text(step.toolTitle).font(
                         .caption.monospaced().weight(.medium)
                     ).lineLimit(1)
                     Spacer()
                     if loading {
                         ProgressView().controlSize(.mini)
                     } else {
-                        Text(
-                            part.state == "output-error"
-                                ? "failed"
-                                : (part.state.isEmpty
-                                    ? (part.hasOutput_p ? "output available" : "tool")
-                                    : part.state.replacingOccurrences(of: "_", with: " "))
-                        ).font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                        Text(statusLabel).font(.caption2).foregroundStyle(DieterTheme.tertiary)
                     }
                 }
                 .padding(.horizontal, 10).frame(height: 34)
                 .contentShape(Rectangle())
             }.buttonStyle(.plain)
 
-            if needsAttention, !ConversationActivityGrouping.isActivity(part), !part.errorText.isEmpty {
+            if !step.routine, !part.errorText.isEmpty {
                 Text(part.errorText).font(.caption.monospaced()).foregroundStyle(DieterTheme.coral)
                     .padding(.horizontal, 10).padding(.bottom, 10)
             }
@@ -206,9 +143,7 @@ struct ToolCallView: View {
                     if !input.isEmpty { CodeBlock(title: "Input", value: input) }
                     if !result.isEmpty { CodeBlock(title: "Output", value: result) }
                     let error = output?.errorText ?? part.errorText
-                    if !error.isEmpty,
-                        !(needsAttention && !ConversationActivityGrouping.isActivity(part) && error == part.errorText)
-                    {
+                    if !error.isEmpty, !(!step.routine && error == part.errorText) {
                         Text(error).font(.caption.monospaced()).foregroundStyle(DieterTheme.coral)
                     }
                 }
@@ -230,44 +165,6 @@ struct ToolCallView: View {
             )
         } catch { context.show(error) }
         loading = false
-    }
-}
-
-struct ToolCallGroupView: View {
-    let items: [ConversationToolCall]
-    @State private var expanded = false
-
-    private var title: String { ToolCallGroupSummary(toolNames: items.map(\.part.effectiveToolName)).title }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.16)) { expanded.toggle() }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(DieterTheme.tertiary)
-                    Text(title)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(DieterTheme.subtle)
-                    Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(expanded ? "Collapse" : "Expand") \(title)")
-
-            if expanded {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(items) { item in
-                        ToolCallView(messageID: item.messageID, part: item.part)
-                    }
-                }
-                .padding(.leading, 14)
-            }
-        }
     }
 }
 
@@ -301,11 +198,11 @@ struct PendingToolRow: View {
     }
 }
 
+/// Running tool calls the transcript has not finished, under the core's summary.
 struct PendingToolGroupView: View {
+    let title: String
     let tools: [Dieter_V1_PendingTool]
     @State private var expanded = false
-
-    private var title: String { ToolCallGroupSummary(toolNames: tools.map(\.toolName)).title }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {

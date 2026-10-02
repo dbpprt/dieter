@@ -50,27 +50,6 @@ actor TerminalOutputAccumulator {
         }
     }
 
-    func retain(terminalIDs: Set<String>) {
-        for id in screens.keys where !terminalIDs.contains(id) {
-            screens.removeValue(forKey: id)
-            scheduledFlushes.removeValue(forKey: id)?.cancel()
-        }
-    }
-
-    func seed(terminalID: String, screen: TerminalScreenState = TerminalScreenState()) {
-        screens[terminalID] = screen
-    }
-
-    func remove(terminalID: String) {
-        screens.removeValue(forKey: terminalID)
-        scheduledFlushes.removeValue(forKey: terminalID)?.cancel()
-    }
-
-    func flushNow(terminalID: String) -> TerminalScreenState? {
-        scheduledFlushes.removeValue(forKey: terminalID)?.cancel()
-        return screens[terminalID]
-    }
-
     private func flush(terminalID: String, publish: Publish) async {
         scheduledFlushes.removeValue(forKey: terminalID)
         guard let screen = screens[terminalID] else { return }

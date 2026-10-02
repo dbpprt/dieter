@@ -1,7 +1,6 @@
 import AppKit
 import DieterAPI
 import Foundation
-import GRPCCore
 import OSLog
 import SharedCore
 
@@ -58,10 +57,6 @@ extension DieterStore {
                     "Could not finish sign-in: \((error as? CoreFailure)?.message ?? error.localizedDescription)"
             }
         }
-    }
-
-    func signOut() async {
-        await perform { $0.signOut = ClientSignOut() }
     }
 
     func disconnect() {
@@ -138,55 +133,16 @@ extension DieterStore {
         }
     }
 
-    /// Shared board edits go through the core, which reaches every machine;
-    /// this only reports when the workspace is offline.
+    /// Shared project and board edits go through the core, which reaches the
+    /// machines that hold them; this only reports when the Mac is offline.
     @discardableResult
-    func ensureReplicaConnection(_ projectID: String, reportOffline: Bool = true) async -> Bool {
+    func ensureConnected(reportOffline: Bool = true) async -> Bool {
         guard !Task.isCancelled else { return false }
         if phase.isConnected { return true }
         if reportOffline {
             errorMessage = "Dieter is offline. Changes to this project are available once it reconnects."
         }
         return false
-    }
-
-    func cachedHarnessCatalog(forProjectID projectID: String) -> Dieter_V1_HarnessCatalog? {
-        let checkout = checkout(forProjectID: projectID)
-        let endpointID = endpoints.first { $0.daemonID == checkout?.daemonID }?.id ?? "unavailable-checkout"
-        return ConversationHarnessCatalogDirectory.catalog(
-            endpointID: endpointID,
-            activeEndpointID: endpoint.id,
-            activeCatalog: harnessCatalog,
-            catalogsByEndpoint: harnessCatalogsByEndpoint
-        )
-    }
-
-    /// The agents available on the machine of the project's chosen checkout.
-    func loadHarnessCatalog(forProjectID projectID: String) async throws -> Dieter_V1_HarnessCatalog {
-        try Task.checkCancellation()
-        guard let checkout = checkout(forProjectID: projectID) else {
-            throw NSError(
-                domain: "DieterHarnessCatalog", code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "Choose a machine and checkout to load models."])
-        }
-        guard let machine = endpoints.first(where: { $0.daemonID == checkout.daemonID }), machine.online else {
-            throw NSError(
-                domain: "DieterHarnessCatalog", code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "The selected checkout’s machine is offline."])
-        }
-        if let cached = harnessCatalogsByEndpoint[machine.id], !cached.harnesses.isEmpty { return cached }
-        try await core.dispatch { $0.ensureMetadata = .with { $0.daemonID = checkout.daemonID } }
-        _ = await awaitCore(timeout: .seconds(15)) {
-            harnessCatalogsByEndpoint[machine.id] != nil || metadataError(checkout.daemonID) != nil
-        }
-        try Task.checkCancellation()
-        if let catalog = harnessCatalogsByEndpoint[machine.id] { return catalog }
-        throw NSError(
-            domain: "DieterHarnessCatalog", code: 3,
-            userInfo: [
-                NSLocalizedDescriptionKey: metadataError(checkout.daemonID)
-                    ?? "The machine did not list its agents in time."
-            ])
     }
 
     /// Keeps connection state current when the app returns to the foreground.
@@ -208,11 +164,4 @@ extension DieterStore {
     }
     func consumeProviderQuotaReset(accountKey: String) async { await quotas.consumeReset(accountKey: accountKey) }
 
-    nonisolated static func latencyMilliseconds(since started: Date) -> Int {
-        max(1, Int((Date().timeIntervalSince(started) * 1_000).rounded()))
-    }
-
-    nonisolated static func parseTimestamp(_ value: String) -> Date? {
-        DieterTimestamp.date(from: value)
-    }
 }

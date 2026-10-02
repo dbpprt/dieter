@@ -2,6 +2,7 @@ package com.dbpprt.dieter.core.files
 
 import com.dbpprt.dieter.api.v1.CreateFileRequest
 import com.dbpprt.dieter.api.v1.DeleteFileRequest
+import com.dbpprt.dieter.api.v1.DieterServiceClient
 import com.dbpprt.dieter.api.v1.FileDocument
 import com.dbpprt.dieter.api.v1.FileEntry
 import com.dbpprt.dieter.api.v1.ListFilesRequest
@@ -9,14 +10,13 @@ import com.dbpprt.dieter.api.v1.MoveFileRequest
 import com.dbpprt.dieter.api.v1.ReadFileRequest
 import com.dbpprt.dieter.api.v1.SaveFileRequest
 import com.dbpprt.dieter.core.runtime.CoreException
+import com.dbpprt.dieter.core.runtime.Deadlines
 import com.dbpprt.dieter.core.runtime.FailureKind
 import com.dbpprt.dieter.core.runtime.Failures
-import com.dbpprt.dieter.core.runtime.withDeadline
 import com.dbpprt.dieter.core.session.MachineSessions
 import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,6 +56,18 @@ data class FilesView(
 ) {
     /** The draft differs from the version last read or saved. */
     val dirty: Boolean get() = document != null && !document.binary && draft != document.content
+
+    /** Identifies the selected file's native editor buffer; "" without a target. */
+    val documentKey: String get() = target?.documentKey(selectedPath).orEmpty()
+
+    /** How to show the open document; null without one. */
+    val renderer: FilePaths.Renderer? get() = document?.let { FilePaths.renderer(it) }
+
+    /** The open document's language, e.g. "Swift" or "Plain text"; "" without one. */
+    val languageName: String get() = document?.let { codeLanguageForPath(it.name).displayName }.orEmpty()
+
+    /** "Markdown", the open document's media type, or "Unknown type"; "" without one. */
+    val typeLabel: String get() = document?.let { FilePaths.typeLabel(it.name, it.mime_type) }.orEmpty()
 }
 
 /** Back and forward folder history, each bounded to 100 entries. */
@@ -120,9 +132,13 @@ object FilePaths {
 
     fun join(directory: String, name: String): String = listOf(directory.trim('/'), name.trim('/')).filter { it.isNotBlank() }.joinToString("/")
 
+    /** One more than the number of line feeds: "" is one line, "a\nb\n" three. */
     fun countLines(text: String): Int = 1 + text.count { it == '\n' }
 
-    /** The UTF-16 range of 1-based [line] without its terminator; out-of-range lines clamp. */
+    /**
+     * The UTF-16 range of 1-based [line] without its terminator; `\n`, `\r`,
+     * and `\r\n` end a line, and out-of-range lines clamp to the first or last.
+     */
     fun lineRange(line: Int, text: String): IntRange {
         val starts = mutableListOf(0)
         var index = 0
@@ -152,21 +168,55 @@ object FilePaths {
 
     enum class Renderer { PDF, IMAGE, UNSUPPORTED, MARKDOWN, TEXT }
 
-    fun renderer(document: FileDocument): Renderer {
-        val extension = document.name.substringAfterLast('.', "").lowercase()
-        val mime = document.mime_type.substringBefore(';').trim().lowercase()
+    fun renderer(document: FileDocument): Renderer = renderer(document.name, document.mime_type, document.binary)
+
+    /**
+     * How a file is shown, from its name or path and media type: a PDF, then
+     * an image, then any other binary file is unsupported, then Markdown,
+     * else text.
+     */
+    fun renderer(path: String, mimeType: String, binary: Boolean): Renderer {
+        val name = path.substringAfterLast('/')
+        val extension = name.substringAfterLast('.', "").lowercase()
+        val mime = mimeType.substringBefore(';').trim().lowercase()
         return when {
             extension == "pdf" || mime == "application/pdf" -> Renderer.PDF
-            isImage(document.name, document.mime_type) -> Renderer.IMAGE
-            document.binary -> Renderer.UNSUPPORTED
-            codeLanguageForPath(document.name) == CodeLanguage.MARKDOWN -> Renderer.MARKDOWN
+            isImage(name, mime) -> Renderer.IMAGE
+            binary -> Renderer.UNSUPPORTED
+            codeLanguageForPath(name) == CodeLanguage.MARKDOWN -> Renderer.MARKDOWN
             else -> Renderer.TEXT
         }
     }
 
+    /** A listing entry that is a folder. */
+    fun isDirectory(entry: FileEntry): Boolean = entry.kind == "directory"
+
+    enum class Icon { DIRECTORY, IMAGE, MARKDOWN, CODE, TEXT }
+
+    /** [entry]'s listing icon ([icon]). */
+    fun icon(entry: FileEntry): Icon = icon(entry.name, isDirectory(entry))
+
+    /** A listing row's icon: a folder, an image, Markdown, a file in a known language, else text. */
+    fun icon(name: String, directory: Boolean): Icon = when {
+        directory -> Icon.DIRECTORY
+        isImage(name, "") -> Icon.IMAGE
+        else -> when (codeLanguageForPath(name)) {
+            CodeLanguage.MARKDOWN -> Icon.MARKDOWN
+            CodeLanguage.PLAIN_TEXT -> Icon.TEXT
+            else -> Icon.CODE
+        }
+    }
+
+    /** "Markdown" for Markdown files, else the media type, or "Unknown type" without one. */
+    fun typeLabel(name: String, mimeType: String): String = when {
+        codeLanguageForPath(name) == CodeLanguage.MARKDOWN -> "Markdown"
+        mimeType.isEmpty() -> "Unknown type"
+        else -> mimeType
+    }
+
     /** Finder-like order: directories first, then names with digit runs compared numerically. */
     val naturalOrder: Comparator<FileEntry> = Comparator { a, b ->
-        val directories = (b.kind == "directory").compareTo(a.kind == "directory")
+        val directories = isDirectory(b).compareTo(isDirectory(a))
         if (directories != 0) directories else natural(a.name, b.name)
     }
 
@@ -218,10 +268,7 @@ class Files(private val sessions: MachineSessions) {
 
     private fun target(): FilesTarget = view.value.target ?: throw CoreException(FailureKind.PERMANENT, "Choose a project first.")
 
-    private suspend fun <T> call(block: suspend (com.dbpprt.dieter.api.v1.DieterServiceClient) -> T): T {
-        val target = target()
-        return withDeadline(DEADLINE) { sessions.call(target.daemonId, block) }
-    }
+    private suspend fun <T> call(block: suspend (DieterServiceClient) -> T): T = sessions.call(target().daemonId, Deadlines.READ, block)
 
     /** Lists [path] (the current folder by default). */
     suspend fun load(path: String = view.value.directory): Boolean {
@@ -395,10 +442,6 @@ class Files(private val sessions: MachineSessions) {
         reads++
         mutableView.update { it.copy(selectedPath = "", document = null, draft = "", documentLoading = false, documentError = null, conflict = false) }
     }
-
-    private companion object {
-        val DEADLINE = 30.seconds
-    }
 }
 
 /** A lazily expanded folder tree for a conversation's workspace. */
@@ -419,7 +462,7 @@ class FileTree(private val sessions: MachineSessions) {
                 for (entry in folders[path].orEmpty()) {
                     if (rows.size >= MAX_ROWS) return
                     rows += Row(entry, depth)
-                    if (entry.kind == "directory" && entry.path in expanded) walk(entry.path, depth + 1)
+                    if (FilePaths.isDirectory(entry) && entry.path in expanded) walk(entry.path, depth + 1)
                 }
             }
             walk("", 0)
@@ -446,9 +489,7 @@ class FileTree(private val sessions: MachineSessions) {
         val bound = generation
         mutableView.update { it.copy(loading = it.loading + path) }
         try {
-            val listing = withDeadline(30.seconds) {
-                sessions.call(target.daemonId) { it.ListFiles().execute(ListFilesRequest(project_id = target.projectId, card_id = target.cardId, path = path, show_hidden = view.value.showHidden)) }
-            }
+            val listing = sessions.call(target.daemonId, Deadlines.READ) { it.ListFiles().execute(ListFilesRequest(project_id = target.projectId, card_id = target.cardId, path = path, show_hidden = view.value.showHidden)) }
             if (bound != generation) return
             mutableView.update { it.copy(folders = it.folders + (path to listing.entries.sortedWith(FilePaths.naturalOrder)), loading = it.loading - path, error = null) }
         } catch (error: Throwable) {

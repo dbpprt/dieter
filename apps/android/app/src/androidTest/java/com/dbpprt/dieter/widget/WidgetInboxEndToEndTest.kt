@@ -7,7 +7,6 @@ import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.res.Configuration
-import android.graphics.Bitmap
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -31,6 +30,7 @@ import com.dbpprt.dieter.api.v1.GetCardRequest
 import com.dbpprt.dieter.core.admin.BackgroundMode
 import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.e2e.IsolatedCore
+import com.dbpprt.dieter.e2e.Evidence
 import com.dbpprt.dieter.e2e.TestCore
 import com.dbpprt.dieter.settings.DieterPalette
 import com.dbpprt.dieter.api.v1.CreateConversationRequest
@@ -41,7 +41,6 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
-import java.io.File
 
 /** Real Android AppWidgetService + RemoteViews + PendingIntents and a disposable daemon. */
 class WidgetInboxEndToEndTest {
@@ -57,7 +56,6 @@ class WidgetInboxEndToEndTest {
 
     @Test fun widgetTracksInboxAndRefreshesWhileAppOnlySyncIsSleeping() {
         check(context.packageName == "com.dbpprt.dieter.e2e")
-        val args = InstrumentationRegistry.getArguments()
         val container = (compose.activity.application as DieterApplication).container
         val core = container.core
         val originalMode = container.policy.mode.value
@@ -70,10 +68,10 @@ class WidgetInboxEndToEndTest {
             val connected = IsolatedCore.connect(container)
             runBlocking {
                 withTimeout(30_000) {
-                    core.connection.machines.first { directory -> directory.all.any { it.id == args.getString("isolatedMachineId") && it.online(directory.evaluatedAt) } }
+                    core.connection.machines.first { directory -> directory.all.any { it.id == IsolatedCore.machineId && it.online(directory.evaluatedAt) } }
                 }
             }
-            val board = connected.boards.values.flatten().first { it.id == args.getString("isolatedBoardId") }
+            val board = connected.boards.values.flatten().first { it.id == IsolatedCore.boardId }
             runBlocking {
                 otherDevice.core.adoptSession(IsolatedCore.gateway, IsolatedCore.token)
                 otherDevice.core.setActive(true)
@@ -163,10 +161,9 @@ class WidgetInboxEndToEndTest {
             compose.onNodeWithTag("nav-activity").assertIsSelected()
             compose.onNodeWithTag("activity-feed").assertIsDisplayed()
         } catch (failure: Throwable) {
-            File(context.getExternalFilesDir(null), "widget-failure-state.txt").writeText(
-                "phase=${core.connection.state.value.phase}\n" + cards().joinToString("\n") {
-                    "${it.title}: runtime=${it.runtime}, response=${it.response_seq}, seen=${it.seen_response_seq}"
-                })
+            Evidence.text("widget-failure-state.txt", "phase=${core.connection.state.value.phase}\n" + cards().joinToString("\n") {
+                "${it.title}: runtime=${it.runtime}, response=${it.response_seq}, seen=${it.seen_response_seq}"
+            })
             if (::widgetView.isInitialized) runCatching { capture("widget-failure") }.onFailure(failure::addSuppressed)
             throw failure
         } finally {
@@ -240,10 +237,8 @@ class WidgetInboxEndToEndTest {
         }
         check(drawn.await(3, java.util.concurrent.TimeUnit.SECONDS)) { "Widget frame was not drawn" }
         instrumentation.uiAutomation.waitForIdle(300, 3_000)
-        val bitmap = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
-        try { File(context.getExternalFilesDir(null), "$name.png").outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) } }
-        finally { bitmap.recycle() }
-        File(context.getExternalFilesDir(null), "$name.txt").writeText(widgetTexts().joinToString("\n"))
+        Evidence.display("$name.png")
+        Evidence.text("$name.txt", widgetTexts().joinToString("\n"))
     }
     private fun shell(command: String): String =
         instrumentation.uiAutomation.executeShellCommand(command).use { descriptor ->

@@ -21,7 +21,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 if (core.onBoard { finish(cardId) } && tag != null) {
-                    NotificationManagerCompat.from(context).cancel(tag, AndroidNotifications.idFor(tag))
+                    NotificationManagerCompat.from(context).cancel(tag, AndroidNotifications.CONTENT_ID)
                 }
             } catch (_: Exception) {
                 // Leave the notification in place; the user can still open the card.

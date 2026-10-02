@@ -1,10 +1,9 @@
 package com.dbpprt.dieter.core.testing
 
-import com.dbpprt.dieter.core.platform.AuthHttp
 import com.dbpprt.dieter.core.platform.OkHttpAuthHttp
 import com.dbpprt.dieter.core.platform.OkHttpRpcTransport
 import com.dbpprt.dieter.core.platform.Platform
-import com.dbpprt.dieter.core.platform.RpcTransport
+import com.dbpprt.dieter.core.platform.SignatureVerifier
 import com.dbpprt.dieter.core.runtime.CoreLogger
 import java.nio.file.Files
 import kotlin.time.Clock
@@ -23,10 +22,9 @@ object PrintLogger : CoreLogger {
 fun jvmTestPlatform(
     stateDirectory: Path = Files.createTempDirectory("dieter-core-state").toOkioPath(),
     secureStore: MemorySecureStore = MemorySecureStore(),
-    transport: RpcTransport = OkHttpRpcTransport(),
-    http: AuthHttp = OkHttpAuthHttp(),
     clock: Clock = Clock.System,
+    signatures: SignatureVerifier? = JcaSignatureVerifier,
 ): Platform = Platform(
-    transport = transport, secureStore = secureStore, settings = MemoryDeviceSettings(), http = http,
-    fileSystem = FileSystem.SYSTEM, stateDirectory = stateDirectory, signatures = JcaSignatureVerifier, logger = PrintLogger, clock = clock,
+    transport = OkHttpRpcTransport(), secureStore = secureStore, settings = MemoryDeviceSettings(), http = OkHttpAuthHttp(),
+    fileSystem = FileSystem.SYSTEM, stateDirectory = stateDirectory, signatures = signatures, logger = PrintLogger, clock = clock,
 )

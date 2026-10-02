@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterShared
 import Foundation
 import SharedCore
 @testable import DieterMac
@@ -22,8 +23,36 @@ extension AppSession {
     }
 }
 
+extension AppSession {
+    /// Shows `cards` on `board` as the core's board view lays them out. The
+    /// board must be selected.
+    func showBoardFixture(_ board: Dieter_V1_Board, cards: [Dieter_V1_Card]) {
+        foldBoardView(
+            ClientBoardViewSlice(
+                rules: SharedRules.shared.boardView(
+                    board: board.rulesData, cards: ClientCards.with { $0.cards = cards }.rulesData,
+                    target: ClientBoardViewTarget.with { $0.boardID = board.id }.rulesData)))
+    }
+}
+
+extension AppSession {
+    /// Lists the session's chats in the chats pane as the core lays them
+    /// out, every project's chats shown in full.
+    func showChatsFixture() {
+        var layout = navigation
+        layout.chatsShowAll = Array(Set(chats.map(\.projectID))).sorted()
+        chatsList.fold(
+            ClientChatsSlice(
+                rules: SharedRules.shared.chatList(
+                    chats: ClientCards.with { $0.cards = chats }.rulesData,
+                    projects: ClientProjects.with { $0.projects = projects }.rulesData,
+                    navigation: layout.rulesData, query: "", archived: false)))
+    }
+}
+
 extension ScriptedCoreClient {
-    /// Publishes a full conversation slice for `cardID`, as the core would.
+    /// Publishes a full conversation slice for `cardID`, as the core would;
+    /// a slice without rows gets one row per message, as the fixture builder lays them out.
     func emitConversation(
         _ cardID: String, daemonID: String = "fixture", _ build: (inout ClientConversationSlice) -> Void = { _ in }
     ) {
@@ -34,6 +63,10 @@ extension ScriptedCoreClient {
             slice.card.id = cardID
             slice.conversation.cardID = cardID
             build(&slice)
+            if slice.timeline.isEmpty {
+                let queued = Set(slice.conversation.queue.map(\.id))
+                slice.timeline = ConversationTimelineFixture.rows(slice.messages, queued: queued)
+            }
             update.conversation = slice
         }
     }
@@ -55,7 +88,6 @@ extension ConversationModel {
     /// Resets paging to `snapshot`'s live window, as a fresh open would.
     func resetHistory(to snapshot: Dieter_V1_ConversationSnapshot) {
         resetConversationHistory()
-        conversationHistoryStart = Int(snapshot.page.start)
         conversationHistoryTotal = Int(snapshot.page.total)
         conversationHistoryHasMore = snapshot.page.hasMore_p
     }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -80,6 +81,40 @@ func TestAffectedNativePlatforms(t *testing.T) {
 	}
 	if len(affected(cases, []string{"api/proto/dieter/v1/dieter.proto"})) != 2 {
 		t.Fatal("shared schema must select both")
+	}
+}
+
+func TestAffectedSharedCore(t *testing.T) {
+	cases := []Case{
+		{ID: "mac", Platform: "mac"},
+		{ID: "android", Platform: "android"},
+		{ID: "android-machines", Platform: "android", Components: []string{"machines"}},
+		{ID: "ios", Platform: "ios"},
+	}
+	for _, tc := range []struct {
+		path string
+		want []string
+	}{
+		{"apps/core/shared/src/commonMain/kotlin/com/dbpprt/dieter/core/machines/MachineRows.kt", []string{"mac", "android", "android-machines"}},
+		{"apps/core/shared/src/jvmSharedMain/kotlin/com/dbpprt/dieter/core/platform/OkHttpTransport.kt", []string{"mac", "android", "android-machines"}},
+		{"apps/core/model/src/commonMain/proto/dieter/client/v1/client.proto", []string{"mac", "android", "android-machines"}},
+		{"apps/core/gradle/libs.versions.toml", []string{"mac", "android", "android-machines"}},
+		{"apps/core/build-logic/src/main/kotlin/dieter.kmp.gradle.kts", []string{"mac", "android", "android-machines"}},
+		{"apps/core/apple/src/appleMain/kotlin/com/dbpprt/dieter/shared/DieterShared.kt", []string{"mac"}},
+		{"apps/core/apple/build.gradle.kts", []string{"mac"}},
+		{"apps/core/shared/src/appleMain/kotlin/com/dbpprt/dieter/core/runtime/CoreLock.apple.kt", []string{"mac"}},
+		{"apps/core/shared/src/commonTest/kotlin/com/dbpprt/dieter/core/machines/MachineRowsTest.kt", nil},
+		{"apps/core/shared/src/jvmTest/kotlin/com/dbpprt/dieter/core/OutboxEndToEndTest.kt", nil},
+		{"apps/core/testing/src/jvmMain/kotlin/com/dbpprt/dieter/core/testing/IsolatedGateway.kt", nil},
+		{"apps/core/README.md", nil},
+	} {
+		got := []string{}
+		for _, c := range affected(cases, []string{tc.path}) {
+			got = append(got, c.ID)
+		}
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("%s selected %v, want %v", tc.path, got, tc.want)
+		}
 	}
 }
 

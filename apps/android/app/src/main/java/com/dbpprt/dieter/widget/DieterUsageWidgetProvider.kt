@@ -13,20 +13,26 @@ import android.widget.RemoteViews
 import com.dbpprt.dieter.MainActivity
 import com.dbpprt.dieter.R
 import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.quotas.QuotaLevel
+import com.dbpprt.dieter.core.quotas.UsageWidget
+import com.dbpprt.dieter.core.quotas.UsageWidgetAccount
+import com.dbpprt.dieter.core.quotas.UsageWidgetModel
 import com.dbpprt.dieter.settings.AppPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
+import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Home-screen usage widget for every Dieter account: a small 2×2 headline
  * variant and a larger per-account variant. Data comes from the gateway's
- * normalized credential-free provider quota snapshots; the last result is
- * cached in [WidgetUsagePrefs] because the gateway stores no client state.
+ * normalized credential-free provider quota snapshots; the last fetched
+ * groups and their fetch time are cached in [WidgetUsagePrefs] because the
+ * gateway stores no client state. The core's [UsageWidget] builds the rows.
  */
 open class DieterUsageWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
@@ -107,7 +113,7 @@ open class DieterUsageWidgetProvider : AppWidgetProvider() {
                         core.quotas.view.value
                     }
                     if (!response.live || response.error != null) return@withTimeout false
-                    WidgetUsagePrefs.saveCache(context, usageSnapshots(response.groups), System.currentTimeMillis())
+                    WidgetUsagePrefs.saveCache(context, response.groups, System.currentTimeMillis())
                     true
                 }
             }
@@ -121,13 +127,12 @@ open class DieterUsageWidgetProvider : AppWidgetProvider() {
             // provider infers the variant from the widget's current bounds.
             val small = pinnedSmall || minWidth in 1 until 180 || minHeight in 1 until 180
 
-            val (cached, fetchedAtMs) = WidgetUsagePrefs.cachedSnapshots(context)
-            val model = buildUsageModel(
-                snapshots = cached,
-                fetchedAtMs = fetchedAtMs,
+            val model = UsageWidget.build(
+                groups = WidgetUsagePrefs.cachedGroups(context),
+                fetchedTime = widgetTime(WidgetUsagePrefs.fetchedAt(context)),
                 connected = connected(context),
                 small = small,
-                maxAccounts = 6,
+                now = Clock.System.now(),
             )
             val views = renderViews(context, model, small)
             views.setOnClickPendingIntent(R.id.widget_usage_refresh, PendingIntent.getBroadcast(context, 11,
@@ -140,7 +145,7 @@ open class DieterUsageWidgetProvider : AppWidgetProvider() {
             manager.updateAppWidget(appWidgetId, views)
         }
 
-        private fun renderViews(context: Context, model: WidgetUsageModel, small: Boolean): RemoteViews {
+        private fun renderViews(context: Context, model: UsageWidgetModel, small: Boolean): RemoteViews {
             val palette = AppPreferences.selectedPalette(context)
             val colors = palette.tokens
             val darkColors = palette.widgetUsesDarkColors(context)
@@ -166,7 +171,7 @@ open class DieterUsageWidgetProvider : AppWidgetProvider() {
             views.setTextViewText(R.id.widget_usage_empty_body, model.emptyBody)
             views.setTextViewText(R.id.widget_usage_status, when {
                 refreshing.get() -> "Refreshing…"
-                failedRefreshAt > 0 && failedRefreshAt > WidgetUsagePrefs.cachedSnapshots(context).second -> "Couldn’t refresh"
+                failedRefreshAt > 0 && failedRefreshAt > WidgetUsagePrefs.fetchedAt(context) -> "Couldn’t refresh"
                 else -> model.statusText
             })
             views.setTextColor(R.id.widget_usage_status, mutedColor)
@@ -188,7 +193,7 @@ open class DieterUsageWidgetProvider : AppWidgetProvider() {
         private fun renderSmall(
             context: Context,
             views: RemoteViews,
-            model: WidgetUsageModel,
+            model: UsageWidgetModel,
             darkColors: Boolean,
             textColor: Int,
             mutedColor: Int,
@@ -200,7 +205,7 @@ open class DieterUsageWidgetProvider : AppWidgetProvider() {
                 else -> "–"
             }
             views.setTextViewText(R.id.widget_usage_percent, percentText)
-            views.setTextColor(R.id.widget_usage_percent, severityColor(model, darkColors, textColor))
+            views.setTextColor(R.id.widget_usage_percent, levelColor(model.level, darkColors, textColor))
             views.setTextViewText(R.id.widget_usage_source, when {
                 lowest != null -> context.getString(R.string.widget_usage_lowest, lowest.source)
                 model.hasAccounts -> "Percentages not reported"
@@ -209,13 +214,13 @@ open class DieterUsageWidgetProvider : AppWidgetProvider() {
             views.setTextColor(R.id.widget_usage_source, mutedColor)
             views.setInt(R.id.widget_usage_bar, "setMax", 100)
             views.setInt(R.id.widget_usage_bar, "setProgress", lowest?.remainingPercent ?: 0)
-            severityTint(views, R.id.widget_usage_bar, model.lowest?.remainingPercent, darkColors, mutedColor)
+            levelTint(views, R.id.widget_usage_bar, model.level, darkColors, mutedColor)
             views.setTextViewText(R.id.widget_usage_reset, lowest?.resetLine.orEmpty())
             views.setTextColor(R.id.widget_usage_reset, mutedColor)
         }
 
         /** Large variant: one row per account, most constrained window binding. */
-        private fun renderLarge(context: Context, views: RemoteViews, model: WidgetUsageModel, darkColors: Boolean) {
+        private fun renderLarge(context: Context, views: RemoteViews, model: UsageWidgetModel, darkColors: Boolean) {
             val summary = listOfNotNull(
                 model.summary.takeIf { model.hasAccounts },
                 context.getString(R.string.widget_usage_hidden, model.hiddenAccounts).takeIf { model.hiddenAccounts > 0 },
@@ -239,7 +244,7 @@ open class DieterUsageWidgetProvider : AppWidgetProvider() {
             }
         }
 
-        private fun usageAccountRow(context: Context, account: WidgetUsageAccount, darkColors: Boolean): RemoteViews {
+        private fun usageAccountRow(context: Context, account: UsageWidgetAccount, darkColors: Boolean): RemoteViews {
             val palette = AppPreferences.selectedPalette(context)
             val colors = palette.tokens
             val views = RemoteViews(context.packageName, R.layout.widget_usage_row)
@@ -247,12 +252,12 @@ open class DieterUsageWidgetProvider : AppWidgetProvider() {
             views.setTextColor(R.id.widget_usage_row_provider, colors.textForAppearanceInt(darkColors))
             val percent = account.remainingPercent
             views.setTextViewText(R.id.widget_usage_row_percent, if (percent != null) "$percent%" else "—")
-            views.setTextColor(R.id.widget_usage_row_percent, severityColor(account, darkColors, colors.textForAppearanceInt(darkColors)))
+            views.setTextColor(R.id.widget_usage_row_percent, levelColor(account.level, darkColors, colors.textForAppearanceInt(darkColors)))
             views.setTextViewText(R.id.widget_usage_row_title, account.title)
             views.setTextColor(R.id.widget_usage_row_title, colors.mutedForAppearanceInt(darkColors))
             views.setInt(R.id.widget_usage_row_bar, "setMax", 100)
             views.setInt(R.id.widget_usage_row_bar, "setProgress", percent ?: 0)
-            severityTint(views, R.id.widget_usage_row_bar, percent, darkColors, colors.mutedForAppearanceInt(darkColors))
+            levelTint(views, R.id.widget_usage_row_bar, account.level, darkColors, colors.mutedForAppearanceInt(darkColors))
             views.setTextViewText(R.id.widget_usage_row_reset,
                 account.availabilityText ?: account.resetLine.ifEmpty { "Percentages not reported" })
             views.setTextColor(R.id.widget_usage_row_reset, colors.mutedForAppearanceInt(darkColors))
@@ -263,28 +268,18 @@ open class DieterUsageWidgetProvider : AppWidgetProvider() {
             return views
         }
 
-        private fun severityColor(account: WidgetUsageAccount, darkColors: Boolean, fallback: Int): Int = when {
-            account.availabilityText != null -> fallback
-            (account.remainingPercent ?: 100) <= 10 -> if (darkColors) 0xFFF1868E.toInt() else 0xFFBA1A1A.toInt()
-            (account.remainingPercent ?: 100) <= 30 -> if (darkColors) 0xFFE2BE6A.toInt() else 0xFF805500.toInt()
-            else -> fallback
+        /** The colour of a quota [level]: coral when critical, amber when low, [fallback] otherwise. */
+        private fun levelColor(level: QuotaLevel, darkColors: Boolean, fallback: Int): Int = when (level) {
+            QuotaLevel.CRITICAL -> if (darkColors) 0xFFF1868E.toInt() else 0xFFBA1A1A.toInt()
+            QuotaLevel.LOW -> if (darkColors) 0xFFE2BE6A.toInt() else 0xFF805500.toInt()
+            QuotaLevel.NORMAL, QuotaLevel.UNKNOWN -> fallback
         }
 
-        private fun severityColor(model: WidgetUsageModel, darkColors: Boolean, fallback: Int): Int {
-            val account = WidgetUsageAccount("", "", model.lowest?.remainingPercent, "", null)
-            return severityColor(account, darkColors, fallback)
-        }
-
-        /** Severity-tinted progress: coral ≤10%, amber ≤30%, palette-muted otherwise. */
-        private fun severityTint(views: RemoteViews, viewId: Int, percent: Int?, darkColors: Boolean, fallback: Int) {
-            val color = when {
-                (percent ?: 100) <= 10 -> if (darkColors) 0xFFF1868E.toInt() else 0xFFBA1A1A.toInt()
-                (percent ?: 100) <= 30 -> if (darkColors) 0xFFE2BE6A.toInt() else 0xFF805500.toInt()
-                else -> fallback
-            }
+        /** Level-tinted progress, palette-muted unless low or critical. */
+        private fun levelTint(views: RemoteViews, viewId: Int, level: QuotaLevel, darkColors: Boolean, fallback: Int) {
             if (Build.VERSION.SDK_INT >= 31) {
                 views.setColorStateList(viewId, "setProgressTintList",
-                    android.content.res.ColorStateList.valueOf(color))
+                    android.content.res.ColorStateList.valueOf(levelColor(level, darkColors, fallback)))
             }
         }
 

@@ -251,6 +251,18 @@ private struct NativeBoardLaneList: NSViewRepresentable {
     var widthDidChange: (() -> Void)?
     var applyMeasuredHeights: (() -> Bool)?
     private var measuredWidth: CGFloat?
+
+    // Reloads rebuild every visible card; the lane applies identity diffs instead.
+    override func reloadData() {
+        BoardRenderingDiagnostics.record(.fullReload)
+        super.reloadData()
+    }
+
+    override func reloadData(forRowIndexes rowIndexes: IndexSet, columnIndexes: IndexSet) {
+        BoardRenderingDiagnostics.record(.reloadedRows, count: rowIndexes.count)
+        super.reloadData(forRowIndexes: rowIndexes, columnIndexes: columnIndexes)
+    }
+
     override func layout() {
         let previous = measuredWidth
         measuredWidth = bounds.width
@@ -332,7 +344,7 @@ struct BoardLaneRow: View {
     var body: some View {
         VStack(spacing: 0) {
             LaneInsertionTarget(laneID: laneID, beforeCardID: card.id)
-            BoardCardView(card: card, board: board)
+            BoardCardView(card: card, board: board, laneID: laneID)
                 .opacity(store.movingCardIDs.contains(card.id) ? 0.48 : 1)
             if isLast {
                 LaneInsertionTarget(laneID: laneID, beforeCardID: nil)

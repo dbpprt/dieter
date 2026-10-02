@@ -1,9 +1,10 @@
 import DieterAPI
+import DieterShared
 import SwiftUI
 
 struct InboxFeed: View {
     @Environment(DieterStore.self) private var store
-    let onOpen: (Dieter_V1_Card) -> Void
+    let onOpen: (InboxActivityEntry) -> Void
     @State private var query = ""
     @State private var projectID = ""
     @State private var hours = 1
@@ -17,24 +18,28 @@ struct InboxFeed: View {
         let live = store.workspaceIsLive
         // With no recorded sync time, use recorded activity rather than advancing
         // a cached running interval to the wall clock.
-        let cachedNow = store.lastSyncedAt ?? entries.compactMap(\.at).max() ?? .distantPast
+        let cachedNow =
+            store.lastSyncedAt ?? entries.map(\.row.atMillis).max().flatMap { Date(epochMillis: $0) } ?? .distantPast
         VStack(spacing: 0) {
             header(entries: filtered, projects: projects, selectedProject: selectedProject)
             Divider().overlay(DieterTheme.border)
             TimelineView(.periodic(from: .now, by: 15)) { clock in
                 let now = live ? clock.date : cachedNow
-                let intervals = InboxActivity.timeline(entries: filtered, now: now, hours: hours)
+                let intervals = timeline(filtered, now: now)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 7) {
                         timelineSummary(intervals: intervals, live: live)
                         if filtered.isEmpty {
                             emptyState(filtered: !query.isEmpty || !selectedProject.isEmpty)
                         } else {
-                            section("Running", id: "running", entries: filtered.filter(\.running), now: now)
-                            section("Needs attention", id: "needs-you", entries: filtered.filter(\.needsYou), now: now)
                             section(
-                                "Recent", id: "recent", entries: filtered.filter { !$0.needsYou && !$0.running },
+                                "Running", id: "running", entries: filtered.filter { $0.section == .running }, now: now)
+                            section(
+                                "Needs attention", id: "needs-you",
+                                entries: filtered.filter { $0.section == .attention },
                                 now: now)
+                            section(
+                                "Recent", id: "recent", entries: filtered.filter { $0.section == .recent }, now: now)
                         }
                     }
                     .padding(12)
@@ -54,14 +59,23 @@ struct InboxFeed: View {
     }
 
     private func filteredEntries(_ entries: [InboxActivityEntry], projectID: String) -> [InboxActivityEntry] {
-        let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return entries.filter { entry in
+        entries.filter { entry in
             (projectID.isEmpty || entry.card.projectID == projectID)
-                && (search.isEmpty
-                    || [
-                        entry.card.title, store.projectDirectory[entry.card.projectID]?.name ?? "",
-                        store.board(id: entry.card.boardID)?.name ?? "",
-                    ].contains { $0.localizedCaseInsensitiveContains(search) })
+                && SharedRules.shared.activityMatches(
+                    query: query, title: entry.card.title, projectName: entry.row.projectName,
+                    boardName: entry.row.boardName)
+        }
+    }
+
+    /// Each entry's bar on the last `hours`, in the feed's order; entries
+    /// outside the window have none.
+    private func timeline(_ entries: [InboxActivityEntry], now: Date) -> [InboxTimelineBar] {
+        entries.compactMap { entry in
+            let bar = ClientActivityTimelineBar(
+                rules: SharedRules.shared.timelineBar(
+                    startMillis: entry.row.startedAtMillis, atMillis: entry.row.atMillis, running: entry.running,
+                    nowMillis: now.epochMillis, hours: Int32(hours)))
+            return bar.shown ? InboxTimelineBar(entry: entry, bar: bar) : nil
         }
     }
 
@@ -122,7 +136,7 @@ struct InboxFeed: View {
         .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 12)
     }
 
-    private func timelineSummary(intervals: [InboxActivityInterval], live: Bool) -> some View {
+    private func timelineSummary(intervals: [InboxTimelineBar], live: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 5) {
                 Circle().fill(live ? DieterTheme.eyes : DieterTheme.amber).frame(width: 5, height: 5)
@@ -215,19 +229,20 @@ private struct InboxActivityRow: View {
     @Environment(DieterStore.self) private var store
     let entry: InboxActivityEntry
     let now: Date
-    let onOpen: (Dieter_V1_Card) -> Void
+    let onOpen: (InboxActivityEntry) -> Void
     @State private var renamePresented = false
     @State private var editPresented = false
     @State private var renameText = ""
 
     var body: some View {
-        if entry.card.scope == "chat" {
+        if entry.row.chat {
             row.modifier(ChatContextMenu(card: entry.card))
         } else {
+            let board = store.board(id: entry.card.boardID)
             row.modifier(
                 BoardCardContextMenu(
-                    card: entry.card, currentBoard: store.board(id: entry.card.boardID),
-                    open: { onOpen(entry.card) },
+                    card: entry.card, currentBoard: board, flags: store.cardFlags(entry.card, board: board),
+                    open: { onOpen(entry) },
                     renamePresented: $renamePresented, editPresented: $editPresented, renameText: $renameText
                 )
             )
@@ -239,30 +254,30 @@ private struct InboxActivityRow: View {
         let accent = inboxAccent(entry.kind)
         return ZStack(alignment: .bottomTrailing) {
             Button {
-                onOpen(entry.card)
+                onOpen(entry)
             } label: {
                 HStack(alignment: .top, spacing: 9) {
                     RoundedRectangle(cornerRadius: 2).fill(accent).frame(width: 3)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(
-                            entry.card.title.isEmpty
-                                ? "Untitled \(entry.card.scope == "chat" ? "chat" : "card")" : entry.card.title
-                        )
-                        .font(.system(size: 13, weight: .semibold)).lineLimit(2)
-                        .foregroundStyle(DieterTheme.text)
-                        .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                        Text(entry.row.title)
+                            .font(.system(size: 13, weight: .semibold)).lineLimit(2)
+                            .foregroundStyle(DieterTheme.text)
+                            .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                         Text(metadata)
                             .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
                         if entry.running {
-                            Text(entry.detail).font(.system(size: 11))
+                            Text(entry.row.detail).font(.system(size: 11))
                                 .foregroundStyle(DieterTheme.subtle).lineLimit(1)
                         }
                         HStack(spacing: 5) {
                             Image(systemName: statusSymbol(entry.kind)).font(.system(size: 9, weight: .semibold))
-                            Text(entry.kind.label).font(.system(size: 10, weight: .medium))
+                            Text(entry.row.kindLabel).font(.system(size: 10, weight: .medium))
                             Spacer(minLength: 4)
-                            Text(InboxActivity.age(entry.running ? entry.start : entry.at, now: now))
-                                .font(.system(size: 9, design: .monospaced)).foregroundStyle(DieterTheme.tertiary)
+                            Text(
+                                SharedRules.shared.activityAge(
+                                    atMillis: entry.row.shownAtMillis, nowMillis: now.epochMillis, suffix: false)
+                            )
+                            .font(.system(size: 9, design: .monospaced)).foregroundStyle(DieterTheme.tertiary)
                             if entry.canFinish { Color.clear.frame(width: 62, height: 20) }
                         }
                         .foregroundStyle(accent)
@@ -286,7 +301,7 @@ private struct InboxActivityRow: View {
             .accessibilityIdentifier("inbox.row.\(entry.id)").smokeTarget("inbox.row.\(entry.id)")
             if entry.canFinish {
                 Button {
-                    Task { await store.move(entry.card, lane: "done") }
+                    Task { await store.finish(entry.card) }
                 } label: {
                     Label("Finish", systemImage: "checkmark")
                         .font(.system(size: 10, weight: .semibold))
@@ -296,7 +311,7 @@ private struct InboxActivityRow: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(store.movingCardIDs.contains(entry.id) || !store.projectIsAvailable(entry.card.projectID))
-                .accessibilityLabel("Finish \(entry.card.title)")
+                .accessibilityLabel("Finish \(entry.row.title)")
                 .accessibilityIdentifier("inbox.finish.\(entry.id)").smokeTarget("inbox.finish.\(entry.id)")
                 .padding(10)
             }
@@ -305,10 +320,9 @@ private struct InboxActivityRow: View {
     }
 
     private var metadata: String {
-        var parts = [store.projectDirectory[entry.card.projectID]?.name ?? ""]
-        if entry.card.scope != "chat" { parts.append(store.board(id: entry.card.boardID)?.name ?? "") }
-        parts.append(entry.card.scope == "chat" ? "Chat" : "Card")
-        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
+        let chat = entry.row.chat
+        return [entry.row.projectName, chat ? "" : entry.row.boardName, chat ? "Chat" : "Card"]
+            .filter { !$0.isEmpty }.joined(separator: " · ")
     }
 }
 
@@ -333,8 +347,15 @@ private func statusSymbol(_ kind: InboxActivityKind) -> String {
     }
 }
 
+/// An entry's bar on the Inbox timeline.
+private struct InboxTimelineBar: Identifiable {
+    let entry: InboxActivityEntry
+    let bar: ClientActivityTimelineBar
+    var id: String { entry.id }
+}
+
 private struct InboxTimelineChart: View {
-    let intervals: [InboxActivityInterval]
+    let intervals: [InboxTimelineBar]
 
     var body: some View {
         Canvas { context, size in
@@ -349,10 +370,10 @@ private struct InboxTimelineChart: View {
             let rowHeight = size.height / CGFloat(max(1, intervals.count))
             for (index, interval) in intervals.enumerated() {
                 let y = rowHeight * (CGFloat(index) + 0.5)
-                let left = 4 + width * interval.from
-                let right = 4 + width * interval.to
+                let left = 4 + width * interval.bar.startFraction
+                let right = 4 + width * interval.bar.endFraction
                 let color = inboxAccent(interval.entry.kind)
-                if interval.point {
+                if interval.bar.point {
                     context.fill(
                         Path(ellipseIn: CGRect(x: right - 3, y: y - 3, width: 6, height: 6)), with: .color(color))
                 } else {

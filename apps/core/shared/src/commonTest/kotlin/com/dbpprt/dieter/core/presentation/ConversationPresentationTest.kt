@@ -7,8 +7,12 @@ import com.dbpprt.dieter.api.v1.ChangedFile
 import com.dbpprt.dieter.api.v1.Changeset
 import com.dbpprt.dieter.api.v1.Conversation
 import com.dbpprt.dieter.api.v1.ConversationSnapshot
+import com.dbpprt.dieter.api.v1.Harness
+import com.dbpprt.dieter.api.v1.HarnessCatalog
+import com.dbpprt.dieter.api.v1.HarnessModel
 import com.dbpprt.dieter.api.v1.Lane
 import com.dbpprt.dieter.api.v1.MessagePart
+import com.dbpprt.dieter.api.v1.PendingTool
 import com.dbpprt.dieter.api.v1.QueuedMessage
 import com.dbpprt.dieter.api.v1.Subagent
 import com.dbpprt.dieter.api.v1.TaskPlan
@@ -54,12 +58,14 @@ class ConversationPresentationTest {
         operation: CardOperation? = null,
         awaitingReply: Boolean = false,
         retrying: Boolean = false,
+        harnesses: HarnessCatalog? = null,
+        showReasoning: Boolean = false,
     ): ConversationPresentation {
         val view = ConversationView(
             cardId = "c", presented = ConversationSnapshot(detail = CardDetail(card = card), conversation = conversation),
             loading = false, awaitingReply = awaitingReply, retrying = retrying,
         )
-        return ConversationPresenter.present(view, outbox, board, operation)
+        return ConversationPresenter.present(view, outbox, board, operation, showReasoning, harnesses = harnesses)
     }
 
     @Test
@@ -98,6 +104,7 @@ class ConversationPresentationTest {
         assertEquals(DeliveryState.FAILED, presentation.delivery("failed"))
         assertEquals(DeliveryState.SYNCED, presentation.delivery("u"))
         assertEquals(DeliveryState.LOCAL, present(started, outbox = OutboxView(pendingMessageIds = setOf("pending"))).delivery("pending"))
+        assertEquals(DeliveryState.QUEUED, Delivery.state("m", setOf("m"), emptySet(), emptySet(), queued = setOf("m")))
         assertTrue(presentation.unconfirmed("pending"))
         assertFalse(presentation.unconfirmed("failed"), "a failed send shows its error instead")
         assertFalse(presentation.unconfirmed("u"))
@@ -141,13 +148,11 @@ class ConversationPresentationTest {
 
     @Test
     fun onlyAnUnsentBoardTaskIsAnEditableDraft() {
-        assertEquals("Verify the native flow", ConversationPresenter.unsentTask(todo))
-        val sent = todo.copy(initial_prompt_sent_at = "2026-08-17T08:00:00Z")
-        assertNull(ConversationPresenter.unsentTask(sent))
-        assertFalse(CardPolicy.canEditDraft(sent))
-        assertNull(ConversationPresenter.unsentTask(todo.copy(scope = "chat")))
-        assertNull(ConversationPresenter.unsentTask(todo.copy(initial_prompt = " ")))
+        assertTrue(CardPolicy.canEditDraft(todo))
+        assertFalse(CardPolicy.canEditDraft(todo.copy(initial_prompt_sent_at = "2026-08-17T08:00:00Z")))
+        assertFalse(CardPolicy.canEditDraft(todo.copy(scope = "chat")))
         assertFalse(CardPolicy.canEditDraft(todo.copy(initial_prompt = " ")))
+        assertFalse(CardPolicy.canEditDraft(todo.copy(lane = "review")), "editing stays narrower than showing the unsent task")
         assertFalse(CardPolicy.canEditDraft(todo.copy(merged_into_card_id = "other")))
     }
 
@@ -202,7 +207,7 @@ class ConversationPresentationTest {
     fun taskPlanProgressCountsFinishedWorkAndShowsActiveForms() {
         val tasks = listOf(
             TaskPlanItem(content = "Write tests", status = "completed"),
-            TaskPlanItem(content = "Drop legacy path", status = "abandoned"),
+            TaskPlanItem(content = "Drop the old path", status = "abandoned"),
             TaskPlanItem(content = "Verify", active_form = "Verifying", status = "in_progress"),
             TaskPlanItem(content = "Ship", status = "pending"),
         )
@@ -211,7 +216,7 @@ class ConversationPresentationTest {
         assertEquals(TaskPlans.Progress(completed = 2, total = 4, active = false), TaskPlans.progress(plan.copy(state = "completed")))
         assertFalse(TaskPlans.progress(TaskPlan(state = "active", phases = listOf(TaskPlanPhase(tasks = tasks.take(2))))).active, "nothing is in progress")
         assertEquals(listOf(true, true, false, false), tasks.map(TaskPlans::finished))
-        assertEquals(listOf("Write tests", "Drop legacy path", "Verifying", "Ship"), tasks.map(TaskPlans::text))
+        assertEquals(listOf("Write tests", "Drop the old path", "Verifying", "Ship"), tasks.map(TaskPlans::text))
         assertEquals("Verify", TaskPlans.text(tasks[2].copy(active_form = " ")))
     }
 
@@ -221,6 +226,7 @@ class ConversationPresentationTest {
         assertFalse(CardDetails.showsTabs(Card(id = "local_1", scope = "chat"), emptyList()), "a chat still being created has nothing to show")
         assertTrue(CardDetails.showsTabs(Card(id = "c_1", scope = "chat"), emptyList()))
         assertTrue(CardDetails.showsTabs(Card(id = "local_1", scope = "chat"), listOf(Subagent(id = "worker"))))
+        assertTrue(CardDetails.showsTabs(Card(id = "local_1", scope = "chat", board_id = "b"), emptyList()), "a chat filed on a board shows its tabs like a card")
 
         val worktree = Card(workspace_mode = "worktree", workspace = WorkspaceSummary(changed_files = 3))
         val reviewed = Changeset(files = listOf(ChangedFile(path = "a.kt")))
@@ -228,5 +234,95 @@ class ConversationPresentationTest {
         assertEquals(1, CardDetails.changedFiles(worktree, reviewed), "the reviewed changeset is newer than the summary")
         assertEquals(0, CardDetails.changedFiles(Card(workspace_mode = "worktree"), null))
         assertEquals(0, CardDetails.changedFiles(worktree.copy(workspace_mode = "project"), reviewed), "a project-directory conversation has no changes of its own")
+    }
+
+    @Test
+    fun aStartStillInTheOutboxShowsAsStartingUntilSyncReportsTheTurn() {
+        val outbox = OutboxView(startingCardIds = setOf("c"))
+        val pending = present(todo, outbox = outbox)
+        assertTrue(pending.starting)
+        assertFalse(pending.canStart, "a second Start would only repeat the pending one")
+        assertEquals("running", pending.card?.lane, "the card shows as it will look once started")
+        assertEquals("starting", pending.runtime)
+        assertTrue(pending.activeTurn && pending.working)
+        assertEquals("Starting agent…", pending.liveActivity.english())
+        assertTrue(ConversationPresenter.startPending(todo, outbox))
+        val state = ConversationPresenter.state(pending)
+        assertTrue(state.starting && !state.can_start)
+
+        val reported = present(todo.copy(initial_prompt_sent_at = "2026-09-30T10:00:00Z", lane = "running", runtime = "running"), outbox = outbox)
+        assertFalse(reported.starting, "sync reported the turn while the accepted start lingers")
+        assertFalse(present(todo, outbox = OutboxView(startingCardIds = setOf("other"))).starting)
+        assertTrue(present(todo, outbox = OutboxView(startingCardIds = setOf("server"), resolutions = mapOf("c" to "server"))).starting, "a start retargeted to the server ID")
+        assertTrue(present(todo).canStart, "nothing in flight")
+    }
+
+    @Test
+    fun anyTaskNeverSentShowsUntilAUserMessageExists() {
+        assertEquals("Verify the native flow", ConversationPresenter.unsentTask(todo, emptyList()))
+        assertEquals("Verify the native flow", present(todo.copy(lane = "review")).unsentTask, "a card moved on without starting still shows its task")
+        assertEquals("Verify the native flow", present(todo.copy(merged_into_card_id = "other")).unsentTask)
+        assertNull(present(todo.copy(initial_prompt = "  ")).unsentTask, "a blank task shows nothing")
+        val chat = todo.copy(scope = "chat")
+        assertEquals("Verify the native flow", present(chat).unsentTask)
+        assertNull(present(chat, Conversation(messages = listOf(user("first")))).unsentTask, "a chat being created already shows its first message")
+        assertNull(present(started).unsentTask)
+        assertTrue(ConversationPresenter.state(present(todo, Conversation(draft_attachments = listOf(MessagePart(type = "file", filename = "brief.pdf"))))).unsent_attachments)
+        assertFalse(ConversationPresenter.state(present(started, Conversation(draft_attachments = listOf(MessagePart(type = "file", filename = "brief.pdf"))))).unsent_attachments)
+    }
+
+    @Test
+    fun contextUsageFallsBackToTheCatalogAndSurvivesANewTurn() {
+        val catalog = HarnessCatalog(
+            harnesses = listOf(Harness(id = "codex", default_model = "sol", models = listOf(HarnessModel(id = "sol", context_window = 200_000), HarnessModel(id = "luna", context_window = 400_000)))),
+        )
+        val step = assistant("a", MessagePart(type = "text", text = "Done"), metadata = """{"usage":{"totalTokens":60000},"modelId":"luna"}""")
+        val conversation = Conversation(messages = listOf(user("u"), step))
+        assertEquals(ContextUsage(60_000, 400_000, "luna"), present(started, conversation, harnesses = catalog).contextUsage, "the reported model's window")
+        val unlisted = assistant("a", metadata = """{"usage":{"totalTokens":60000},"modelId":"claude-opus-4-1"}""")
+        assertEquals(200_000L, present(started, Conversation(messages = listOf(unlisted)), harnesses = catalog).contextUsage?.windowTokens, "the card's model, here the harness default")
+        assertEquals(400_000L, present(started.copy(model = "luna"), Conversation(messages = listOf(unlisted)), harnesses = catalog).contextUsage?.windowTokens)
+        assertNull(present(started, conversation).contextUsage, "no catalog and no reported window")
+        val reportedWindow = assistant("a", metadata = """{"usage":{"totalTokens":60000},"contextWindowTokens":1000000,"modelId":"luna"}""")
+        assertEquals(1_000_000L, present(started, Conversation(messages = listOf(reportedWindow)), harnesses = catalog).contextUsage?.windowTokens, "the step's own window wins")
+
+        val newTurn = Conversation(messages = listOf(user("u"), step, user("u2", "2026-09-30T10:05:00Z")))
+        assertEquals(60_000L, present(started, newTurn, harnesses = catalog).contextUsage?.usedTokens, "a new turn keeps the last reported usage")
+        val state = ConversationPresenter.state(present(started, conversation, harnesses = catalog))
+        assertEquals(60_000L, state.context_used_tokens)
+        assertEquals(400_000L, state.context_window_tokens)
+        assertEquals(15, state.context_percent)
+        assertFalse(state.context_near_limit)
+        val full = assistant("a", metadata = """{"usage":{"totalTokens":380000},"modelId":"luna"}""")
+        assertTrue(ConversationPresenter.state(present(started, Conversation(messages = listOf(full)), harnesses = catalog)).context_near_limit)
+        assertEquals(0, ConversationPresenter.state(present(started)).context_percent)
+    }
+
+    @Test
+    fun haltChatPendingToolsAndReasoningTravelWithTheState() {
+        assertTrue(present(started).canHalt, "a running agent can be halted")
+        assertFalse(present(started, operation = CardOperation.CANCELLING).canHalt, "not while it is stopping")
+        assertFalse(present(started.copy(runtime = "idle"), Conversation(status = "idle")).canHalt)
+        assertTrue(present(started.copy(runtime = "idle"), Conversation(status = "waiting_for_user")).canHalt, "an agent waiting for input")
+        assertTrue(present(todo.copy(scope = "chat")).chat)
+        assertFalse(present(todo).chat)
+        assertFalse(present(todo.copy(scope = "chat", board_id = "b")).chat, "a chat filed on a board is a card")
+
+        val pending = listOf(PendingTool(id = "p1", tool_call_id = "done", tool_name = "bash"), PendingTool(id = "p2", tool_call_id = "next", tool_name = "read_file"))
+        val conversation = Conversation(
+            status = "running", pending_tools = pending,
+            messages = listOf(user("u"), assistant("a", MessagePart(type = "dynamic-tool", tool_call_id = "done", tool_name = "bash", state = "output-available"))),
+        )
+        val presented = present(started, conversation)
+        assertEquals(listOf("p2"), presented.pendingTools.map { it.id }, "the transcript finished the first one")
+        assertEquals("1 read", presented.pendingToolsSummary)
+        assertNull(present(started).pendingToolsSummary)
+        val state = ConversationPresenter.state(presented)
+        assertEquals("1 read", state.pending_tools_summary)
+        assertEquals(listOf("p2"), state.pending_tool_ids)
+        assertTrue(state.can_halt)
+        assertFalse(state.chat)
+        assertFalse(state.show_reasoning)
+        assertTrue(ConversationPresenter.state(present(started, showReasoning = true)).show_reasoning)
     }
 }

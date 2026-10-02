@@ -1,7 +1,6 @@
 package com.dbpprt.dieter.core.outbox
 
 import com.dbpprt.dieter.api.v1.Board
-import com.dbpprt.dieter.core.board.CardPolicy
 import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.ConversationSnapshot
 import com.dbpprt.dieter.api.v1.CreateConversationRequest
@@ -9,6 +8,7 @@ import com.dbpprt.dieter.api.v1.HarnessSelection
 import com.dbpprt.dieter.api.v1.MessagePart
 import com.dbpprt.dieter.api.v1.SendMessageRequest
 import com.dbpprt.dieter.api.v1.StartCardRequest
+import com.dbpprt.dieter.core.board.CardPolicy
 import com.dbpprt.dieter.core.journal.OutboxEntry
 import com.dbpprt.dieter.core.journal.OutboxJournal
 import com.dbpprt.dieter.core.journal.OutboxKind
@@ -58,6 +58,11 @@ data class OutboxView(
     val resolutions: Map<String, String> = emptyMap(),
     /** The journal could not be written; nothing new is accepted until it can. */
     val storageError: String? = null,
+    /**
+     * Cards whose start waits in the outbox or was accepted and not synced
+     * yet (not failed); they show as starting until sync reports the turn.
+     */
+    val startingCardIds: Set<String> = emptySet(),
 ) {
     fun failure(id: String): String? =
         entries.firstOrNull { id in OutboxPolicy.presentationIds(it) && it.state == OutboxState.OUTBOX_STATE_FAILED }?.last_error
@@ -410,6 +415,7 @@ class Outbox(
             machines = OutboxPolicy.summaries(current),
             resolutions = journal.resolutions,
             storageError = storageError,
+            startingCardIds = current.filter { it.kind == OutboxKind.OUTBOX_KIND_START_CARD && it.state != OutboxState.OUTBOX_STATE_FAILED }.mapTo(HashSet()) { it.optimistic_id },
         )
     }
 
@@ -437,10 +443,9 @@ class Outbox(
 
     private fun daemonForCreate(request: CreateConversationRequest): String {
         val directory = store.directoryProjection
-        val project = directory.projects[request.project_id]
         if (request.checkout_id.isNotEmpty()) {
-            project?.checkouts?.firstOrNull { it.id == request.checkout_id }?.daemon_id?.ifEmpty { null }?.let { return it }
-            throw CoreException(FailureKind.TRANSIENT, "The checkout's machine is unavailable; keep the draft and reconnect.")
+            return directory.checkoutMachine(request.project_id, request.checkout_id)
+                ?: throw CoreException(FailureKind.TRANSIENT, "The checkout's machine is unavailable; keep the draft and reconnect.")
         }
         return directory.projectReplicas[request.project_id]
             ?: throw CoreException(FailureKind.TRANSIENT, "The project's machine is unavailable; keep the draft and reconnect.")
@@ -451,10 +456,7 @@ class Outbox(
         val directory = store.directoryProjection
         val card = directory.allItems.firstOrNull { it.id == cardId }
             ?: throw CoreException(FailureKind.PERMANENT, "The conversation is no longer available.")
-        card.owner_daemon_id.ifEmpty { null }?.let { return it }
-        val project = directory.projects[card.project_id]
-        project?.checkouts?.firstOrNull { it.id == card.checkout_id }?.daemon_id?.ifEmpty { null }?.let { return it }
-        return directory.projectReplicas[card.project_id]
+        return directory.owner(card) ?: directory.projectReplicas[card.project_id]
             ?: throw CoreException(FailureKind.TRANSIENT, "The conversation's machine is unavailable; reconnect and try again.")
     }
 
@@ -471,35 +473,6 @@ class Outbox(
         const val FILE = "outbox.pb"
         const val VERSION = 1
 
-        /**
-         * Merges a legacy app's pending commands into the journal in [storage]
-         * (one gateway's outbox scope). Commands already present are kept;
-         * acknowledged creates are resolved, so dependent sends follow them.
-         * Returns how many entries were added.
-         */
-        fun importInto(storage: CoreStorage, entries: List<OutboxEntry>, nowMillis: Long): Int {
-            val existing = storage.read(FILE)?.let { OutboxJournal.ADAPTER.decode(it) } ?: OutboxJournal(version = VERSION)
-            if (existing.version > VERSION) return 0
-            val known = existing.entries.mapTo(HashSet()) { it.command_id }
-            val added = entries.filter { it.command_id.isNotEmpty() && known.add(it.command_id) }
-                .map { if (it.server_id.isNotEmpty() && it.accepted_at_millis == 0L) it.copy(accepted_at_millis = nowMillis) else it }
-            if (added.isEmpty()) return 0
-            var merged = (existing.entries + added).sortedBy { it.created_at_millis }.takeLast(MAX_ENTRIES)
-            val resolutions = LinkedHashMap<String, String>()
-            for (id in existing.resolution_order) existing.resolutions[id]?.let { resolutions[id] = it }
-            for (entry in added) {
-                if (!entry.createsConversation || entry.server_id.isEmpty() || entry.server_id == entry.optimistic_id) continue
-                merged = OutboxPolicy.retargetDependencies(merged, entry.optimistic_id, entry.server_id)
-                resolutions.remove(entry.optimistic_id)
-                resolutions[entry.optimistic_id] = entry.server_id
-            }
-            while (resolutions.size > MAX_RESOLUTIONS) resolutions.remove(resolutions.keys.first())
-            val journal = OutboxJournal(
-                version = VERSION, revision = existing.revision + 1, entries = merged, resolutions = resolutions, resolution_order = resolutions.keys.toList(),
-            )
-            storage.write(FILE, OutboxJournal.ADAPTER.encode(journal))
-            return added.size
-        }
         const val MAX_ENTRIES = 1_000
         const val MAX_BYTES = 64 * 1024 * 1024
         const val MAX_RESOLUTIONS = 256

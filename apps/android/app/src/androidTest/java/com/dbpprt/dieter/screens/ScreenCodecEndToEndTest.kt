@@ -1,15 +1,14 @@
 package com.dbpprt.dieter.screens
 
-import android.graphics.Bitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.api.v1.RemoteDesktopRenderMeasurement
+import com.dbpprt.dieter.e2e.Evidence
 import com.dbpprt.dieter.core.screens.ScreenPhase
 import com.dbpprt.dieter.core.machines.MachineRow
 import com.dbpprt.dieter.ui.ScreenWorkspace
 import com.dbpprt.dieter.ui.theme.DieterTheme
-import java.io.File
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
@@ -52,7 +51,7 @@ class ScreenCodecEndToEndTest {
             compose.waitUntil(5_000) { view().state?.render_measurement == endpoint }
             assertEquals(endpoint, view().state?.render_measurement)
             assertTrue("JNI decode-completion statistics must advance", host.stats.value.decodedFrames > 0)
-            File(context.getExternalFilesDir(null), "screen-decoder-$codec.json").writeText(JSONObject(mapOf(
+            Evidence.text("screen-decoder-$codec.json", JSONObject(mapOf(
                 "schemaVersion" to 1, "sessionId" to view().sessionId,
                 "codec" to codec, "implementation" to status.implementation, "hardware" to status.hardware,
                 "lowLatencyRequested" to status.lowLatencyRequested, "lowLatencyAccepted" to status.lowLatencyAccepted,
@@ -117,7 +116,7 @@ class ScreenCodecEndToEndTest {
             if (hevc) {
                 waitVideo("H265")
                 val hevcCapture = captureScreenFixture()
-                File(context.getExternalFilesDir(null), "screen-hevc.png").outputStream().use { hevcCapture.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                Evidence.save(hevcCapture, "screen-hevc.png")
                 // Strict HEVC cannot silently accept the H.264-only 120fps mode.
                 choose("Up to 120 fps")
             }
@@ -132,7 +131,7 @@ class ScreenCodecEndToEndTest {
             }
             waitVideo("H264")
             val capture = captureScreenFixture()
-            File(context.getExternalFilesDir(null), "screen-codec.png").outputStream().use { capture.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            Evidence.save(capture, "screen-codec.png")
         } finally {
             compose.runOnIdle { host.close() }
             fixture.close()

@@ -6,25 +6,6 @@ enum ComposerReturnPolicy {
     static func sendsMessage(shiftPressed: Bool) -> Bool { !shiftPressed }
 }
 
-enum ConversationRefreshText {
-    static func label(lastRefreshedAt: Date?, syncing: Bool, now: Date = Date()) -> String {
-        guard let lastRefreshedAt else { return syncing ? "Refreshing…" : "Not refreshed yet" }
-        let seconds = max(0, now.timeIntervalSince(lastRefreshedAt))
-        let freshness: String
-        switch seconds {
-        case ..<60:
-            freshness = "just now"
-        case ..<3_600:
-            freshness = "\(Int(seconds / 60))m ago"
-        case ..<86_400:
-            freshness = "\(Int(seconds / 3_600))h ago"
-        default:
-            freshness = lastRefreshedAt.formatted(date: .abbreviated, time: .shortened)
-        }
-        return "Last refreshed \(freshness)" + (syncing ? " · Refreshing…" : "")
-    }
-}
-
 enum ConversationSurfaceStyle: Equatable {
     case canvas
     case inherited
@@ -40,20 +21,13 @@ struct ConversationView: View {
 
     private var conversationID: String { context.selectedCardID ?? context.selectedChatID ?? "" }
 
-    private var standalone: Bool {
-        (context.selectedCard ?? context.selectedDetail?.card)?.scope == "chat"
-    }
+    /// A standalone chat, as the core reads the conversation.
+    private var standalone: Bool { context.model.state.chat }
 
     private var card: Dieter_V1_Card? { context.selectedCard ?? context.selectedDetail?.card }
-    private var startingCard: Bool { card.map { $0.runtime == "starting" } ?? false }
-    private var canStartCard: Bool {
-        guard let card else { return false }
-        return BoardCardStartPolicy.canStart(
-            card,
-            board: context.selectedDetail?.board,
-            hasDraftAttachments: !(context.conversation?.conversation.draftAttachments.isEmpty ?? true)
-        )
-    }
+    /// A Start is in flight, from this device or still in the outbox.
+    private var startingCard: Bool { context.model.state.starting }
+    private var canStartCard: Bool { context.model.state.canStart }
 
     @ViewBuilder var body: some View {
         @Bindable var content = context.content

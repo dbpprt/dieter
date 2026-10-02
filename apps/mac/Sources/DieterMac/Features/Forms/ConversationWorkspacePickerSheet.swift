@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 
 struct ConversationWorkspacePickerSheet: View {
@@ -118,7 +119,7 @@ struct ConversationWorkspacePickerSheet: View {
 
     private var abbreviatedProjectPath: String {
         guard let path = project?.path, !path.isEmpty else { return "the registered Git checkout" }
-        return (path as NSString).abbreviatingWithTildeInPath
+        return SharedRules.shared.compactPath(path: path)
     }
 
     private var workspaceDetail: String {

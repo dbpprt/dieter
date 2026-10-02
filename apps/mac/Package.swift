@@ -43,7 +43,7 @@ let package = Package(
             name: "DieterClientTests",
             dependencies: [
                 "DieterClient", "DieterCore", "DieterAPI",
-                .product(name: "X509", package: "swift-certificates"),
+                .product(name: "GRPCCore", package: "grpc-swift-2"),
             ]
         ),
         .target(
@@ -54,15 +54,24 @@ let package = Package(
         .target(
             name: "DieterClient",
             dependencies: [
-                "WebRTC",
-                "DieterCore", "DieterAPI",
-                .product(name: "X509", package: "swift-certificates"),
+                "DieterTransport", "DieterCore", "DieterAPI",
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
                 .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             ]),
-        .testTarget(name: "DieterCoreTests", dependencies: ["DieterCore", "DieterAPI"]),
+        // The native transport pieces both clients share: the WebRTC control
+        // channel, daemon certificate pinning, and gRPC resolver targets.
+        .target(
+            name: "DieterTransport",
+            dependencies: [
+                "WebRTC", "DieterAPI",
+                .product(name: "X509", package: "swift-certificates"),
+                .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
+            ]),
+        .testTarget(
+            name: "DieterCoreTests",
+            dependencies: ["DieterCore", "DieterAPI", .product(name: "GRPCCore", package: "grpc-swift-2")]),
         // The shared Kotlin core (apps/core), assembled into Frameworks/ by
         // scripts/shared-framework.sh; `just mac build|test` and `just ios build`
         // refresh it when the core changes.
@@ -72,7 +81,7 @@ let package = Package(
         .target(
             name: "SharedCore",
             dependencies: [
-                "DieterShared", "DieterAPI", "DieterClient",
+                "DieterShared", "DieterAPI", "DieterTransport",
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
@@ -80,8 +89,9 @@ let package = Package(
         .testTarget(
             name: "SharedCoreTests",
             dependencies: [
-                "SharedCore", "DieterAPI", "DieterClient",
+                "SharedCore", "DieterShared", "DieterTransport", "DieterAPI",
                 .product(name: "GRPCCore", package: "grpc-swift-2"),
+                .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
             ]),
         .target(
             name: "DieterAPI",
@@ -102,11 +112,11 @@ let package = Package(
         .executableTarget(
             name: "DieterMac",
             dependencies: [
+                // DieterClient serves only the DEBUG UI smoke fixtures
+                // (Testing/SmokeFixturePlane.swift); SwiftPM cannot scope a
+                // dependency to one configuration.
                 "DieterCore", "DieterClient",
                 "DieterAPI", "SharedCore", "DieterShared",
-                .product(name: "GRPCCore", package: "grpc-swift-2"),
-                .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
-                .product(name: "GRPCProtobuf", package: "grpc-swift-protobuf"),
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
                 .product(name: "MarkdownEngine", package: "swift-markdown-engine"),
@@ -135,9 +145,10 @@ let package = Package(
         .testTarget(
             name: "DieterMacTests",
             dependencies: [
-                "DieterMac", "SharedCore", "DieterShared",
+                "DieterMac", "SharedCore", "DieterShared", "DieterClient",
                 .product(name: "MarkdownEngine", package: "swift-markdown-engine"),
                 "DieterAPI",
+                .product(name: "GRPCCore", package: "grpc-swift-2"),
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
             ]
         ),

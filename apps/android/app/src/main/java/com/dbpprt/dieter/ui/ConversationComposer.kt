@@ -2,15 +2,13 @@
 
 package com.dbpprt.dieter.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,22 +19,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.AttachFile
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.PhotoLibrary
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -46,44 +38,53 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dbpprt.dieter.api.v1.HarnessCatalog
 import com.dbpprt.dieter.api.v1.HarnessSelection
+import com.dbpprt.dieter.api.v1.MessagePart
 import com.dbpprt.dieter.core.composition.Attachments
 import com.dbpprt.dieter.core.composition.ConversationDraft
 import com.dbpprt.dieter.core.presentation.ContextUsage
+import com.dbpprt.dieter.core.presentation.ConversationPresentation
 import com.dbpprt.dieter.core.presentation.TokenCounts
 import com.dbpprt.dieter.core.selection.AgentControls
-import com.dbpprt.dieter.core.selection.Selections
-import com.dbpprt.dieter.ui.theme.DieterShell
+import com.dbpprt.dieter.ui.theme.DieterAbyss
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.ui.theme.DieterPane
+import com.dbpprt.dieter.ui.theme.DieterShell
+import com.dbpprt.dieter.ui.theme.DieterShellTint
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
-import com.dbpprt.dieter.api.v1.MessagePart
-import kotlinx.coroutines.delay
-import java.time.Instant
-import java.util.Locale
-import com.dbpprt.dieter.ui.theme.DieterShellTint
-import com.dbpprt.dieter.ui.theme.DieterAbyss
+
+/**
+ * The open conversation composer's agent pickers: the composer's choice
+ * while it differs from the card's agent, else the card's agent, against
+ * the conversation machine's [catalog]. Null until the card and the catalog
+ * are known.
+ */
+internal fun composerAgent(state: DieterUiState, presentation: ConversationPresentation, catalog: HarnessCatalog?): AgentControls? {
+    val card = presentation.card ?: return null
+    val harnesses = catalog?.harnesses.orEmpty()
+    if (harnesses.isEmpty()) return null
+    return AgentControls.forComposer(state.composerDraft.selection, card, harnesses, hasMessages = presentation.loadedMessages > 0)
+        .copy(enabled = !state.working)
+}
 
 @Composable
 internal fun AttachmentPickerSheet(
@@ -243,7 +244,8 @@ internal fun MessageComposer(
     attachments: List<MessagePart> = emptyList(),
     error: String? = null,
     onValueChange: (String) -> Unit,
-    onSelectionChange: (HarnessSelection) -> Unit = {},
+    /** A picker choice: the next selection, computed from the core's current pickers. */
+    onChoose: ((AgentControls) -> HarnessSelection) -> Unit = {},
     onAttach: (() -> Unit)? = null,
     onRemoveAttachment: (Int) -> Unit = {},
     onSend: () -> Unit,
@@ -285,7 +287,7 @@ internal fun MessageComposer(
                             controls.harnesses.forEach { harness ->
                                 DropdownMenuItem(text = { Text(harness.name) }, enabled = controls.providerEnabled, onClick = {
                                     providerMenu = false
-                                    onSelectionChange(controls.choosingProvider(harness))
+                                    onChoose { it.choosingProvider(harness) }
                                 })
                             }
                         }
@@ -296,7 +298,7 @@ internal fun MessageComposer(
                             controls.harness?.models.orEmpty().forEach { harnessModel ->
                                 DropdownMenuItem(text = { Text(harnessModel.name) }, enabled = controls.modelEnabled, onClick = {
                                     modelMenu = false
-                                    onSelectionChange(controls.choosingModel(harnessModel.id))
+                                    onChoose { it.choosingModel(harnessModel.id) }
                                 })
                             }
                         }
@@ -305,14 +307,10 @@ internal fun MessageComposer(
                         Box {
                             ComposerSettingPill(controls.effortLabel, enabled = controls.effortEnabled) { effortMenu = true }
                             DropdownMenu(effortMenu, { effortMenu = false }) {
-                                DropdownMenuItem(text = { Text("Default") }, enabled = controls.effortEnabled, onClick = {
-                                    effortMenu = false
-                                    onSelectionChange(controls.choosingEffort(Selections.DEFAULT_EFFORT))
-                                })
-                                controls.efforts.forEach { option ->
+                                controls.effortChoices.forEach { option ->
                                     DropdownMenuItem(text = { Text(option.name) }, enabled = controls.effortEnabled, onClick = {
                                         effortMenu = false
-                                        onSelectionChange(controls.choosingEffort(option.id))
+                                        onChoose { it.choosingEffort(option.id) }
                                     })
                                 }
                             }
@@ -323,7 +321,7 @@ internal fun MessageComposer(
                             option = option,
                             value = controls.optionValue(option),
                             enabled = controls.optionEnabled(option),
-                            onValueChange = { id, next -> onSelectionChange(controls.settingOption(id, next)) },
+                            onValueChange = { id, next -> onChoose { it.settingOption(id, next) } },
                         )
                     }
                 }

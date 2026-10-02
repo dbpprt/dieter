@@ -1,5 +1,18 @@
 # Android agent development cycle
 
+The Android app is presentation only: Compose UI plus thin Android adapters
+(the transport's TLS providers, Keystore credentials, WebRTC/MediaCodec screen
+media, the Termux renderer, notifications, widgets, the sideload updater, and
+the background service).
+Every rule (wording, counts, enablement, ordering, decisions, defaults, and
+parsing), the client logic, and the OkHttp transport live in the shared Kotlin
+core under [`apps/core`](../core/README.md), which this build includes from
+source. Call the core's Kotlin domain APIs directly; the `client/rules/*Exports`
+objects exist for Swift. Add or change a rule in the core with core tests, then
+render it here. View mechanics (layout, animation, focus, and the conversation
+scroll policy), gesture geometry, locale formatting, colours, and icons stay in
+the app.
+
 Use the real native app in the visible local Android emulator for every Android
 change. The standard AVD is `Pixel_9_API_37_1`; reuse it when it is already
 running instead of starting a headless or disposable emulator. Keep this as the
@@ -162,19 +175,34 @@ task, and archive the test card after verification.
 
 ## Checks before handoff
 
-Run the narrow unit tests while iterating, then the Android unit suite and debug
-build before installing the final APK:
+`just check-changed --dry-run` lists the checks a change needs. Run the narrow
+unit tests while iterating. When the change touches the shared core (a rule,
+client logic, sync, the outbox, routing, or the OkHttp transport), run its JVM
+unit and isolated end-to-end tests, and on macOS its native tests, because the
+Mac app links the same core:
+
+```sh
+just core test
+just core native-test
+```
+
+Then run the Android unit suite, lint, and debug build before installing the
+final APK:
 
 ```sh
 just android test
+just android lint
 just android build
 ```
 
-When the change touches transport behavior, also run the isolated real-process
-instrumentation suite against disposable daemon/gateway fixtures:
+Run the affected device cases against disposable daemon/gateway fixtures through
+the shared runner. `--changed` selects every case of the suite for a core
+change. Changes to the Android connection adapters (`sharedcore/`, the
+background service) also need the separate sync suite:
 
 ```sh
-just e2e run --suite functional
+just e2e run --suite functional --changed
+just e2e run --suite sync
 ```
 
 After reinstalling, repeat the original interaction in the visible emulator,

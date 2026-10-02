@@ -1,4 +1,5 @@
 import AppKit
+import DieterAPI
 import SwiftUI
 import Testing
 @testable import DieterMac
@@ -20,7 +21,11 @@ private func writeWorkspaceFreshnessPreview(_ image: NSImage, to path: String) t
         let preview = ZStack {
             DieterTheme.surface
             WorkspaceFreshnessBanner(
-                freshness: .syncing,
+                notice: .with {
+                    $0.title = "Reconnecting"
+                    $0.detail = "Cached conversations stay available while Dieter reconnects."
+                    $0.working = true
+                },
                 lastSyncedAt: lastUpdate
             )
         }

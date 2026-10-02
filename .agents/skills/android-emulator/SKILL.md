@@ -31,8 +31,8 @@ Do not delete snapshots, userdata, Gradle caches, or app data during routine
 diagnosis.
 
 Use the confirmed `just android gradle-stop` only when a diagnosed Gradle
-daemon problem warrants stopping shared build workers. Regenerate fallback
-brand assets with `just android sync-brand`.
+daemon problem warrants stopping shared build workers. Regenerate the
+themed-icon mark, notification mark, and font with `just android sync-brand`.
 
 ## Start and validate the visible AVD
 
@@ -150,8 +150,8 @@ just e2e run --suite performance
 
 Read `tests/e2e/README.md` for the catalog and driver contract. All ordinary
 journeys are YAML; native component, codec, sync, and performance assertions
-remain native tests with exact methods listed in the catalog. Legacy Android
-Just test recipes only delegate here. Do not add another script launcher.
+remain native tests with exact methods listed in the catalog. Device execution
+goes only through `just e2e run`; do not add another script launcher.
 
 The runner builds/installs once per variant, verifies APK hashes for warm reuse,
 starts fresh fixture/app state per case, and writes JSON/JUnit plus screenshots

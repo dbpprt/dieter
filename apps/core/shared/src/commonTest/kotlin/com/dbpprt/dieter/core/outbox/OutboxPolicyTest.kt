@@ -1,12 +1,10 @@
 package com.dbpprt.dieter.core.outbox
 
-import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.CardDetail
 import com.dbpprt.dieter.api.v1.Conversation
 import com.dbpprt.dieter.api.v1.ConversationSnapshot
 import com.dbpprt.dieter.api.v1.CreateConversationRequest
-import com.dbpprt.dieter.api.v1.Lane
 import com.dbpprt.dieter.api.v1.MessagePart
 import com.dbpprt.dieter.api.v1.QueuedMessage
 import com.dbpprt.dieter.api.v1.SendMessageRequest
@@ -93,16 +91,6 @@ class OutboxPolicyTest {
         assertEquals("c_other", OutboxPolicy.sendRequest(retargeted[1])!!.card_id)
         assertEquals("c_1", OutboxPolicy.startRequest(retargeted[2])!!.card_id)
         assertEquals("c_1", retargeted[2].optimistic_id)
-    }
-
-    @Test
-    fun retargetingNeverDuplicatesARow() {
-        val local = Card(id = "local_1", title = "draft")
-        val server = Card(id = "c_1", title = "server")
-        assertEquals(listOf(server), OutboxPolicy.retargetedCards(listOf(local, server), "local_1", "c_1"))
-        assertEquals(listOf(Card(id = "c_1", title = "draft")), OutboxPolicy.retargetedCards(listOf(local), "local_1", "c_1"))
-        assertEquals(listOf(server), OutboxPolicy.retargetedCards(listOf(local), "local_1", "c_1", authoritative = server))
-        assertEquals(listOf(server), OutboxPolicy.retargetedCards(listOf(server, server.copy(title = "dup")), "local_1", "c_1"))
     }
 
     @Test
@@ -195,5 +183,50 @@ class OutboxPolicyTest {
         assertEquals(1, summaries.getValue("d2").itemCount)
         assertTrue(summaries.getValue("d2").failed)
         assertEquals(60.seconds, OutboxPolicy.backoff(3, "no space left on device"))
+    }
+
+    @Test
+    fun machineQueuesShowWhatIsWaitingAndWhy() {
+        val retrying = MachineOutboxSummary(messageCount = 1, changeCount = 1, retrying = true, failed = false)
+        assertEquals("2 items queued", retrying.queuedLabel)
+        assertEquals("2 items queued — delivers when it reconnects.", retrying.deliveryLabel)
+        assertEquals(DeliveryPhase.RETRYING, retrying.phase(machineOnline = false))
+        assertEquals("Retrying delivery to Studio", retrying.title("Studio", machineOnline = false))
+        assertEquals("2 items queued · Trying again automatically", retrying.detail("Studio", machineOnline = false))
+        assertEquals("Try Again", retrying.retryTitle(machineOnline = false))
+        assertEquals(" · retrying", retrying.statusSuffix)
+        assertFalse(retrying.storageBanner)
+
+        val waiting = MachineOutboxSummary(messageCount = 1, changeCount = 0, retrying = false, failed = false)
+        assertEquals("1 message queued", waiting.queuedLabel)
+        assertEquals(DeliveryPhase.WAITING, waiting.phase(machineOnline = false))
+        assertEquals("Waiting for Studio", waiting.title("Studio", machineOnline = false))
+        assertEquals("1 message queued · Sends when it reconnects", waiting.detail("Studio", machineOnline = false))
+        assertEquals("Retry Now", waiting.retryTitle(machineOnline = false))
+        assertEquals(" · queued", waiting.statusSuffix)
+        assertEquals(DeliveryPhase.SENDING, waiting.phase(machineOnline = true))
+        assertEquals("Delivering to Studio", waiting.title("Studio", machineOnline = true))
+        assertEquals("1 message queued · Sending now", waiting.detail("Studio", machineOnline = true))
+        assertEquals("", waiting.retryTitle(machineOnline = true))
+        assertEquals("3 changes queued", MachineOutboxSummary(0, 3, retrying = false, failed = false).queuedLabel)
+
+        // A full disk outranks retrying, and online machines still wait for space.
+        val storage = retrying.copy(failureMessage = "insufficient free disk space to start an agent turn")
+        assertEquals(DeliveryPhase.WAITING_FOR_STORAGE, storage.phase(machineOnline = true))
+        assertEquals("Low disk space on Studio", storage.title("Studio", machineOnline = true))
+        assertEquals("2 items queued. Free disk space on Studio; retries automatically every minute.", storage.detail("Studio", machineOnline = true))
+        assertEquals("Retry Now", storage.retryTitle(machineOnline = true))
+        assertEquals(" · low disk space", storage.statusSuffix)
+        assertTrue(storage.storageBanner)
+
+        // A rejection outranks everything and shows the daemon's reason.
+        val failed = storage.copy(failed = true, failureMessage = "The machine rejected the request.")
+        assertEquals(DeliveryPhase.FAILED, failed.phase(machineOnline = true))
+        assertEquals("Delivery to Studio failed", failed.title("Studio", machineOnline = true))
+        assertEquals("The machine rejected the request.", failed.detail("Studio", machineOnline = true))
+        assertEquals("2 items queued · Try again when the machine is available", failed.copy(failureMessage = null).detail("Studio", machineOnline = true))
+        assertEquals("Try Again", failed.retryTitle(machineOnline = true))
+        assertEquals(" · attention needed", failed.statusSuffix)
+        assertFalse(failed.storageBanner)
     }
 }

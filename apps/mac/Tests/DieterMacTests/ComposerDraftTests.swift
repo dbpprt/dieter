@@ -8,8 +8,8 @@ import Testing
 
 @Test @MainActor func composerDraftsStayWithTheirConversationAndSendRevision() {
     let model = ComposerModel()
-    let first = DieterCore.WorkspaceTarget(endpointID: "machine", projectID: "", conversationID: "A")
-    let second = DieterCore.WorkspaceTarget(endpointID: "machine", projectID: "", conversationID: "B")
+    let first = WorkspaceTarget(endpointID: "machine", projectID: "", conversationID: "A")
+    let second = WorkspaceTarget(endpointID: "machine", projectID: "", conversationID: "B")
     model.select(first); model.draft.text = "A"
     let pending = model.draft, revision = model.draft.revision
     model.select(second); model.draft.text = "B"
@@ -47,8 +47,8 @@ import Testing
         }
         return core
     }
-    let card = DieterCore.WorkspaceTarget(endpointID: "gateway#machine", projectID: "", conversationID: "card")
-    let chat = DieterCore.WorkspaceTarget(endpointID: "gateway#machine", projectID: "", conversationID: "chat")
+    let card = WorkspaceTarget(endpointID: "gateway#machine", projectID: "", conversationID: "card")
+    let chat = WorkspaceTarget(endpointID: "gateway#machine", projectID: "", conversationID: "chat")
 
     let drafts = CoreDraftTexts(core: core())
     let model = ComposerModel(store: drafts)
@@ -78,7 +78,6 @@ import Testing
 @Test func unrelatedResourceLimitsAndInvalidInputAreNotDiskPressure() {
     for message in ["concurrent stream limit reached", "global capacity exceeded", "invalid model"] {
         #expect(!DieterRPCFailure.isInsufficientStorage(message))
-        #expect(DieterOutboxPolicy.backoff(after: 1, lastError: message) == 2)
     }
     #expect(DieterRPCFailure.isPermanent(RPCError(code: .invalidArgument, message: "invalid model")))
     #expect(DieterRPCFailure.isPermanent(RPCError(code: .permissionDenied, message: "no space left on device")))

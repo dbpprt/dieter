@@ -99,14 +99,6 @@
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
 
-            // Focused iteration still uses the driver's isolated daemon and
-            // real native workspace. The default suite retains every journey.
-            if ProcessInfo.processInfo.environment["DIETER_CONTENT_ONLY"] == "1" {
-                await ConversationContentUISmoke.run(store: store, window: window, results: &results, output: output)
-                writeReport(results, to: output)
-                return
-            }
-
             guard let cardID = await openConversationWithReasoningAndTools(store) else {
                 results["conversation"] = "failed: no conversation with reasoning and tool parts found"
                 writeReport(results, to: output)
@@ -115,26 +107,27 @@
             results["conversation"] = cardID
             try? await DieterTaskSleep.seconds(1)
 
-            let messages = store.conversation?.conversation.messages ?? []
-            let shownItems = ConversationTimelineItem.group(messages, showReasoning: true)
-            let hiddenItems = ConversationTimelineItem.group(messages, showReasoning: false)
-            let shownGroups = shownItems.filter(\.isToolCallGroup).count
-            let hiddenGroups = hiddenItems.filter(\.isToolCallGroup).count
-            let hiddenTools = hiddenItems.filter(\.isToolCallGroup).map { $0.toolCalls.count }
-            results["grouping-shown"] = "\(shownGroups) tool groups of \(shownItems.count) items"
-            results["grouping-hidden"] = "\(hiddenGroups) tool groups of \(hiddenItems.count) items"
-            results["grouping-collapses"] =
-                hiddenTools.contains(where: { $0 > 1 }) || hiddenGroups <= shownGroups
-                ? "passed"
-                : "failed: hiding reasoning did not consolidate tool calls"
-
+            // The core regroups the transcript for the reasoning preference.
             store.showReasoning = true
             try? await DieterTaskSleep.seconds(1)
+            let shownRows = store.conversationModel.timeline
             capture(window, to: output.appending(path: "01-reasoning-on.png"))
 
             store.showReasoning = false
             try? await DieterTaskSleep.seconds(1)
+            let hiddenRows = store.conversationModel.timeline
             capture(window, to: output.appending(path: "02-reasoning-off.png"))
+            let shownGroups = shownRows.filter(\.activity).count
+            let hiddenGroups = hiddenRows.filter(\.activity).count
+            let hiddenTools = hiddenRows.filter(\.activity).map {
+                $0.groups.flatMap(\.steps).filter { $0.kind == .tool }.count
+            }
+            results["grouping-shown"] = "\(shownGroups) activity rows of \(shownRows.count) rows"
+            results["grouping-hidden"] = "\(hiddenGroups) activity rows of \(hiddenRows.count) rows"
+            results["grouping-collapses"] =
+                hiddenTools.contains(where: { $0 > 1 }) || hiddenGroups <= shownGroups
+                ? "passed"
+                : "failed: hiding reasoning did not consolidate tool calls"
 
             store.showReasoning = true
             try? await DieterTaskSleep.milliseconds(400)
@@ -198,7 +191,7 @@
                 return
             }
             store.showReasoning = true
-            let identifier = "conversation.activity.message:message_reasoning_one"
+            let identifier = "conversation.activity.tools:message_reasoning_one"
             let labelID = identifier + ".label"
             let contentID = identifier + ".content"
             let ready = await prepareComposerWindow(window)
@@ -372,7 +365,7 @@
             try? await DieterTaskSleep.seconds(1)
             capture(window, to: output.appending(path: "08-turn-failed.png"))
 
-            let failure = store.conversationModel.turnFailure.map(ConversationTurnFailure.init)
+            let failure = store.conversationModel.turnFailure
             results["turn-failure"] =
                 failure != nil && NativeUIAccessibility.find("conversation.failure.view-log", in: window) != nil
                 ? "passed" : "failed: failure presentation was not rendered"
@@ -634,14 +627,13 @@
             let originalWidth = column.frame.width
             let widths: [CGFloat] =
                 scope == "card" ? [460, 320] : [conversationContentWidth(split: split, column: column)]
-            let harness = store.harnessCatalog.harnesses.first { $0.id == store.composerProvider }
-            let model = harness?.models.first { $0.id == store.composerModel }
+            let controls = store.conversationContext.agentControls ?? ClientAgentControlsState()
             var identifiers = [
                 "conversation.composer", "conversation.attach", "conversation.provider",
                 "conversation.model", "conversation.stop", "conversation.send",
             ]
-            if model?.efforts.isEmpty == false { identifiers.append("conversation.reasoning") }
-            let options = ProviderOptionValues.options(for: harness, model: store.composerModel)
+            if !controls.efforts.isEmpty { identifiers.append("conversation.reasoning") }
+            let options = controls.options
             if options.contains(where: { $0.id == "fast_mode" }) { identifiers.append("conversation.fast-mode") }
             if options.contains(where: { $0.id != "fast_mode" }) {
                 identifiers.append("conversation.additional-options")
@@ -869,12 +861,11 @@
                 return
             }
             let originalCatalog = store.harnessCatalog
-            let originalSelection = store.composer.draft.selection
             let originalWidth = column.frame.width
             defer {
                 window.makeFirstResponder(nil)
                 store.harnessCatalog = originalCatalog
-                store.composer.draft.selection = originalSelection
+                store.conversationModel.agentFixture = nil
                 setColumnWidth(originalWidth, split: split, column: column)
             }
             var mode = Dieter_V1_ProviderOption()
@@ -904,10 +895,13 @@
             fast.mutable = true
             store.harnessCatalog.harnesses[index].options.append(contentsOf: [mode, note, fast])
             let harness = store.harnessCatalog.harnesses[index]
-            store.composerProvider = harness.id
-            store.composerModel = harness.defaultModel
-            store.composerEffort = harness.models.first(where: { $0.id == harness.defaultModel })?.defaultEffort ?? ""
-            store.composerProviderOptions = ["fast_mode": "false"]
+            // The core knows the machine's real catalog only; show the pickers over this one.
+            store.conversationModel.agentFixture = AgentControlFields.controls(
+                .with {
+                    $0.provider = harness.id
+                    $0.model = harness.defaultModel
+                    $0.providerOptions = ["fast_mode": "false"]
+                }, catalog: store.harnessCatalog)
             setConversationContentWidth(320, split: split, column: column)
             let resized = await NativeUIAccessibility.wait(timeout: 5) {
                 abs(conversationContentWidth(split: split, column: column) - 320) < 2
@@ -1420,13 +1414,9 @@
                 try? await DieterTaskSleep.milliseconds(600)
                 capture(window, to: output.appending(path: "06b-queued-message-\(appearance.rawValue).png"))
             }
-            let delivered = ConversationQueuePresentation.deliveredMessages(
-                snapshot.conversation.messages,
-                whileQueued: snapshot.conversation.queue
-            )
+            let rows = store.conversationModel.timeline
             results["queued-message-visible"] =
-                delivered.count == snapshot.conversation.messages.count - 1
-                    && !delivered.contains { $0.id == queued.id }
+                !rows.contains { $0.messageIds.contains(queued.id) }
                     && snapshot.conversation.queue.map(\.id) == [queued.id]
                 ? "passed"
                 : "failed: accepted queued content was not retained for presentation"
@@ -1800,8 +1790,8 @@
                     try? await DieterTaskSleep.milliseconds(500)
                     waited += 1
                 }
-                if store.conversationHistoryTotal > bestTotal {
-                    bestTotal = store.conversationHistoryTotal
+                if store.conversationModel.conversationHistoryTotal > bestTotal {
+                    bestTotal = store.conversationModel.conversationHistoryTotal
                     bestID = cardID
                 }
             }
@@ -1820,7 +1810,7 @@
             try? await DieterTaskSleep.seconds(5)
             let loaded = store.conversationMessages.count
             progress(
-                "history: \(loaded) of \(store.conversationHistoryTotal) messages loaded after settling",
+                "history: \(loaded) of \(store.conversationModel.conversationHistoryTotal) messages loaded after settling",
                 in: output)
             capture(window, to: output.appending(path: "05-long-history.png"))
             results["history-bounded"] =
@@ -2039,33 +2029,6 @@
             }
         }
 
-        /// Editable SwiftUI controls must receive their click from the application
-        /// event queue. Sending it reentrantly from the smoke task can block while
-        /// AppKit installs the field editor.
-        private static func postClick(window: NSWindow, x: CGFloat, distanceFromTop: CGFloat) {
-            guard let content = window.contentView else { return }
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
-            let location = NSPoint(x: x, y: content.bounds.height - distanceFromTop)
-            let timestamp = ProcessInfo.processInfo.systemUptime
-            for type in [NSEvent.EventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
-                guard
-                    let event = NSEvent.mouseEvent(
-                        with: type,
-                        location: location,
-                        modifierFlags: [],
-                        timestamp: timestamp,
-                        windowNumber: window.windowNumber,
-                        context: nil,
-                        eventNumber: 0,
-                        clickCount: type == .mouseMoved ? 0 : 1,
-                        pressure: type == .leftMouseDown ? 1 : 0
-                    )
-                else { continue }
-                NSApp.postEvent(event, atStart: false)
-            }
-        }
-
         /// Opens recently updated conversations until one contains both reasoning
         /// and tool parts, preferring the transcript a person would have open.
         private static func openConversationWithReasoningAndTools(_ store: DieterStore) async -> String? {
@@ -2084,7 +2047,10 @@
                 let reasoning = parts.filter {
                     ["reasoning", "thinking"].contains($0.type.lowercased()) && !$0.text.isEmpty
                 }
-                let tools = parts.filter(ConversationMessagePartGroup.isToolCall)
+                let tools = parts.filter {
+                    let type = $0.type.lowercased()
+                    return ["tool", "tool_call", "dynamic-tool"].contains(type) || type.hasPrefix("tool-")
+                }
                 if !reasoning.isEmpty && tools.count >= 2 { return cardID }
             }
             return await installSyntheticFixture(store)

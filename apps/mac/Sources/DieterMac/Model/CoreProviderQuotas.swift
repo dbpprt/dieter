@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterShared
 import Foundation
 import Observation
 import SharedCore
@@ -8,6 +9,8 @@ import SharedCore
 @MainActor @Observable
 final class CoreProviderQuotas {
     private(set) var providerQuotaGroups: [Dieter_Gateway_V1_ProviderQuotaGroup] = []
+    /// The groups as views show them, in the same order.
+    private(set) var providerQuotaRows: [ClientQuotaGroupRow] = []
     private(set) var providerQuotasLoading = false
     private(set) var providerQuotaError: String?
     private(set) var providerQuotaMutatingAccounts: Set<String> = []
@@ -31,6 +34,7 @@ final class CoreProviderQuotas {
     private func fold(_ slice: ClientQuotasSlice) {
         guard !installed else { return }
         if providerQuotaGroups != slice.groups { providerQuotaGroups = slice.groups }
+        if providerQuotaRows != slice.groupRows { providerQuotaRows = slice.groupRows }
         if providerQuotasLoading != slice.loading { providerQuotasLoading = slice.loading }
         let error = slice.error.isEmpty ? nil : slice.error
         if providerQuotaError != error { providerQuotaError = error }
@@ -38,10 +42,15 @@ final class CoreProviderQuotas {
         if providerQuotaMutatingAccounts != mutating { providerQuotaMutatingAccounts = mutating }
     }
 
-    /// Shows fixture groups, e.g. in UI smoke runs.
-    func install(_ groups: [Dieter_Gateway_V1_ProviderQuotaGroup]) {
+    /// Shows fixture groups the core does not watch, as its rows lay them
+    /// out, e.g. in UI smoke runs.
+    func install(groups: [Dieter_Gateway_V1_ProviderQuotaGroup]) {
         installed = true
         providerQuotaGroups = groups
+        providerQuotaRows =
+            ClientQuotaGroupRows(
+                rules: SharedRules.shared.quotaRows(groups: ClientQuotaGroupList.with { $0.groups = groups }.rulesData)
+            ).rows
     }
 
     func load(requestRefresh: Bool = false) async {

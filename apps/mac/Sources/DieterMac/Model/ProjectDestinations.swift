@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterShared
 import Foundation
 
 struct ProjectDestination: Identifiable, Equatable {
@@ -15,7 +16,7 @@ struct ProjectDestination: Identifiable, Equatable {
     var machineStatus: String { machineOnline ? "Online" : "Offline" }
 
     var detail: String {
-        let path = ((checkout?.path ?? "") as NSString).abbreviatingWithTildeInPath
+        let path = SharedRules.shared.compactPath(path: checkout?.path ?? "")
         return path.isEmpty ? machineStatus : "\(machineStatus) · \(path)"
     }
 }

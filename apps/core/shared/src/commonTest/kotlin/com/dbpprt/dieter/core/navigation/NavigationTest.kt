@@ -3,46 +3,29 @@ package com.dbpprt.dieter.core.navigation
 import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.KVEntry
 import com.dbpprt.dieter.api.v1.PeerVersion
-import com.dbpprt.dieter.core.platform.DaemonTokenSource
-import com.dbpprt.dieter.core.platform.DirectTarget
-import com.dbpprt.dieter.core.platform.GatewayAccess
-import com.dbpprt.dieter.core.platform.RpcChannel
-import com.dbpprt.dieter.core.platform.RpcTransport
-import com.dbpprt.dieter.core.routing.RouteSelector
-import com.dbpprt.dieter.core.routing.RoutingPolicy
-import com.dbpprt.dieter.core.routing.WebRtcCooldown
 import com.dbpprt.dieter.core.runtime.CoreException
 import com.dbpprt.dieter.core.runtime.SilentLogger
-import com.dbpprt.dieter.core.session.MachineSessions
 import com.dbpprt.dieter.core.storage.CoreStorage
+import com.dbpprt.dieter.core.testing.offlineSessions
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Clock
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import okio.ByteString
 import okio.ByteString.Companion.encodeUtf8
 import okio.Path.Companion.toPath
 import okio.fakefilesystem.FakeFileSystem
 
 class NavigationTest {
-    private object Offline : RpcTransport {
-        override fun gateway(access: GatewayAccess): RpcChannel = error("offline")
-        override fun relay(access: GatewayAccess, daemonId: String): RpcChannel = error("offline")
-        override fun direct(target: DirectTarget, tokens: DaemonTokenSource): RpcChannel = error("offline")
-    }
-
     private val fileSystem = FakeFileSystem()
 
     /** A namespace bound to an account but never connected: edits stay pending and project locally. */
     private fun offlineKv(account: String = "acct"): SharedKv {
         val storage = CoreStorage(fileSystem, "/state".toPath())
         storage.write("kv-active-navigation.pb", KvActive.ADAPTER.encode(KvActive(account = account)))
-        val sessions = MachineSessions(RouteSelector(Offline, null, RoutingPolicy(false), WebRtcCooldown(Clock.System), SilentLogger), CoroutineScope(Dispatchers.Unconfined))
-        return SharedKv("navigation", sessions, Clock.System, SilentLogger).also { it.bind(storage) }
+        return SharedKv("navigation", offlineSessions(), Clock.System, SilentLogger).also { it.bind(storage) }
     }
 
     private fun layout(kv: SharedKv) = NavigationLayout(kv.values.value)
@@ -143,10 +126,10 @@ class NavigationTest {
     }
 
     @Test
-    fun flagsHaveTheirLegacyDefaults() {
+    fun flagsHaveTheirDefaults() {
         val kv = offlineKv()
         val editor = NavigationEditor(kv)
-        assertFalse(layout(kv).projectExpanded("p"))
+        assertFalse("p" in layout(kv).expandedProjects())
         assertFalse(layout(kv).chatSectionCollapsed("p"))
         assertFalse(layout(kv).chatsShowAll("p"))
         assertTrue(layout(kv).laneDescending("b", "todo"))
@@ -154,7 +137,7 @@ class NavigationTest {
         editor.setChatSectionCollapsed("p", true)
         editor.setChatsShowAll("p", true)
         editor.setLaneDescending("b", "todo", false)
-        assertTrue(layout(kv).projectExpanded("p"))
+        assertTrue("p" in layout(kv).expandedProjects())
         assertTrue(layout(kv).chatSectionCollapsed("p"))
         assertTrue(layout(kv).chatsShowAll("p"))
         assertFalse(layout(kv).laneDescending("b", "todo"))
@@ -169,6 +152,133 @@ class NavigationTest {
         assertFalse(NavigationLayout(restored.values.value).laneDescending("b", "l"))
         val anonymous = offlineKv(account = "")
         assertFailsWith<CoreException> { NavigationEditor(anonymous).setLaneDescending("b", "l", false) }
+    }
+
+    /** Ported from the Mac's `sidebarProjectPreferencesReorderAndReconcileAvailableProjects`. */
+    @Test
+    fun projectsMoveBeforeATargetOrToTheEnd() {
+        val kv = offlineKv()
+        val editor = NavigationEditor(kv)
+        val available = listOf("p_one", "p_two", "p_three")
+        editor.setProjectOrder(listOf("p_two", "p_missing", "p_one"))
+        assertEquals(listOf("p_two", "p_one", "p_three"), layout(kv).projectOrder(available))
+        editor.moveProjectBefore("p_three", "p_two", available)
+        assertEquals(listOf("p_three", "p_two", "p_one"), layout(kv).projectOrder(available))
+        editor.moveProjectBefore("p_three", null, available)
+        assertEquals(listOf("p_two", "p_one", "p_three"), layout(kv).projectOrder(available))
+        assertEquals(listOf("p_one", "p_four"), layout(kv).projectOrder(listOf("p_one", "p_four")))
+        assertTrue("p_missing" in layout(kv).savedProjectOrder(), "a project whose machine is offline keeps its place")
+        val pending = kv.status.value.pending
+        editor.moveProjectBefore("p_one", "p_one", available)
+        editor.moveProjectBefore("p_one", "gone", available)
+        editor.moveProjectBefore("p_one", "p_three", available)
+        assertEquals(pending, kv.status.value.pending, "a move onto itself, onto an unknown target, or to where it is records nothing")
+    }
+
+    @Test
+    fun projectsMoveWithinTheirFolderOrAmongUnfiledProjects() {
+        val kv = offlineKv()
+        val editor = NavigationEditor(kv)
+        val available = listOf("p1", "p2", "p3", "u1", "u2")
+        val folder = editor.createFolder(FolderScope.PROJECTS, "Work")
+        for (id in listOf("p1", "p2", "p3")) editor.moveToFolder(FolderScope.PROJECTS, id, folder)
+        editor.moveProjectBefore("p3", "p1", available)
+        assertEquals(listOf("p3", "p1", "p2"), layout(kv).folders(FolderScope.PROJECTS).single().itemIds)
+        editor.moveProjectBefore("p3", null, available)
+        assertEquals(listOf("p1", "p2", "p3"), layout(kv).folders(FolderScope.PROJECTS).single().itemIds, "the end of its folder")
+        editor.moveProjectBefore("u2", "u1", available)
+        assertEquals(listOf("u2", "u1"), layout(kv).sidebarProjects(available).unfiled)
+        val pending = kv.status.value.pending
+        editor.moveProjectBefore("u1", "p1", available)
+        editor.moveProjectBefore("p1", "u1", available)
+        assertEquals(pending, kv.status.value.pending, "a target in another group changes nothing")
+        editor.moveProjectBefore("u1", "p1", available, ungrouped = true)
+        assertEquals(listOf("u1", "p1", "p2", "p3", "u2"), layout(kv).projectOrder(available), "lists without folders move in the shared order")
+        assertEquals(listOf("p1", "p2", "p3"), layout(kv).folders(FolderScope.PROJECTS).single().itemIds)
+    }
+
+    /** Ported from the Mac's `sidebarProjectPreferencesRetainOrderAndExpandedState`. */
+    @Test
+    fun theSidebarShowsAvailableProjectsInTheirGroups() {
+        val kv = offlineKv()
+        val editor = NavigationEditor(kv)
+        val available = listOf("p_one", "p_two", "p_three")
+        editor.moveProjectBefore("p_three", "p_one", available)
+        editor.setProjectExpanded("p_two", true)
+        editor.pinProject("p_two", true)
+        editor.pinProject("offline", true)
+        val folder = editor.createFolder(FolderScope.PROJECTS, "Clients")
+        editor.moveToFolder(FolderScope.PROJECTS, "offline", folder)
+        editor.moveToFolder(FolderScope.PROJECTS, "p_one", folder)
+        val sidebar = layout(kv).sidebarProjects(available)
+        assertEquals(listOf("p_three", "p_one", "p_two"), sidebar.order)
+        assertEquals(listOf(NavigationFolder(folder, "Clients", listOf("p_one"))), sidebar.folders, "members whose machine is offline are left out")
+        assertEquals(listOf("p_three", "p_two"), sidebar.unfiled)
+        assertEquals(listOf("p_two"), sidebar.pinned)
+        assertEquals(listOf("p_two"), sidebar.expanded)
+        assertEquals(listOf("p_two", "offline"), layout(kv).savedPinnedProjects())
+    }
+
+    @Test
+    fun pinningAPinnedProjectKeepsItsPlace() {
+        val kv = offlineKv()
+        val editor = NavigationEditor(kv)
+        editor.pinProject("a", true)
+        editor.pinProject("b", true)
+        val pending = kv.status.value.pending
+        editor.pinProject("a", true)
+        editor.pinProject("c", false)
+        editor.pinProject(" ", true)
+        assertEquals(pending, kv.status.value.pending)
+        assertEquals(listOf("a", "b"), layout(kv).pinnedProjects(listOf("a", "b", "c")))
+    }
+
+    /** Ported from the Mac's `pinnedChatsKeepSavedLocationsAndAppendNewPinsDeterministically` and `pinnedChatPreferencesMatchAndroidDropTargetMovement`. */
+    @Test
+    fun pinnedChatsMoveOntoTheirTarget() {
+        val kv = offlineKv()
+        val editor = NavigationEditor(kv)
+        val first = Card(id = "c_first", pinned = true, position = 30, last_activity_at = "2026-01-03T00:00:00Z")
+        val second = Card(id = "c_second", pinned = true, position = 10, last_activity_at = "2026-01-02T00:00:00Z")
+        val third = Card(id = "c_third", pinned = true, position = 20, last_activity_at = "2026-01-01T00:00:00Z")
+        val chats = listOf(first, second, third)
+        editor.initializePinnedChatOrder(chats)
+        fun shown() = layout(kv).pinnedChats(chats).map { it.id }
+        editor.movePinnedChat(first.id, second.id, shown())
+        assertEquals(listOf("c_second", "c_first", "c_third"), shown())
+        editor.movePinnedChat(third.id, second.id, shown())
+        assertEquals(listOf("c_third", "c_second", "c_first"), shown())
+
+        val saved = NavigationLayout(mapOf("pinned-order.c_first.position" to position("", "a"), "pinned-order.c_second.position" to position("", "b")))
+        val newPin = Card(id = "c_new", pinned = true, position = 20)
+        assertEquals(listOf("c_first", "c_second", "c_new"), saved.pinnedChats(listOf(newPin, first, second)).map { it.id })
+        assertEquals(listOf("c_first", "c_second", "c_new"), saved.pinnedChats(listOf(second, first, newPin)).map { it.id }, "activity never reshuffles")
+    }
+
+    /** Ported from the Mac's `navigationFoldersRepairDuplicateMembershipWhenLoading`. */
+    @Test
+    fun replacingFoldersKeepsAnItemInItsFirstFolder() {
+        val kv = offlineKv()
+        NavigationEditor(kv).setFolders(
+            FolderScope.CHATS,
+            listOf(NavigationFolder("first", "First", listOf("shared", "one")), NavigationFolder("second", "Second", listOf("shared", "two"))),
+        )
+        val folders = layout(kv).folders(FolderScope.CHATS)
+        assertEquals(listOf("shared", "one"), folders[0].itemIds)
+        assertEquals(listOf("two"), folders[1].itemIds)
+    }
+
+    /** Ported from the Mac's `navigationFoldersCreateMoveRenameCollapseDeleteAndEncode`. */
+    @Test
+    fun foldersRejectOversizedRenamesAndUnfileItems() {
+        val kv = offlineKv()
+        val editor = NavigationEditor(kv)
+        val work = editor.createFolder(FolderScope.CHATS, "Work")
+        assertFailsWith<CoreException> { editor.renameFolder(FolderScope.CHATS, work, "界".repeat(86)) }
+        editor.moveToFolder(FolderScope.CHATS, "c1", work)
+        editor.moveToFolder(FolderScope.CHATS, "c1", null)
+        assertEquals(emptyList(), layout(kv).folders(FolderScope.CHATS).single().itemIds)
+        assertEquals(listOf("c1", "c2"), layout(kv).unfiled(FolderScope.CHATS, listOf("c1", "c2")))
     }
 
     @Test

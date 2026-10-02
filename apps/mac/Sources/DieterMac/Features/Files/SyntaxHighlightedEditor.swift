@@ -1,4 +1,6 @@
 import AppKit
+import DieterAPI
+import DieterShared
 import SwiftUI
 
 struct SyntaxHighlightedEditor: NSViewRepresentable {
@@ -60,24 +62,10 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
     }
 
     /// Link line numbers are one-based; out-of-range links reveal the nearest
-    /// available line. NSString keeps the selection in NSTextView's UTF-16 units.
+    /// available line, as the shared core measures it in UTF-16 units.
     static func range(ofLine line: Int, in text: String) -> NSRange {
-        let source = text as NSString
-        var location = 0
-        var currentLine = 1
-        while currentLine < max(1, line), location < source.length {
-            let next = NSMaxRange(source.lineRange(for: NSRange(location: location, length: 0)))
-            guard next > location else { break }
-            if next == source.length {
-                let finalCharacter = source.character(at: source.length - 1)
-                if finalCharacter != 0x0A && finalCharacter != 0x0D { break }
-            }
-            location = next
-            currentLine += 1
-        }
-        var start = 0, end = 0, contentsEnd = 0
-        source.getLineStart(&start, end: &end, contentsEnd: &contentsEnd, for: NSRange(location: location, length: 0))
-        return NSRange(location: start, length: contentsEnd - start)
+        let packed = SharedRules.shared.fileLineRange(text: text, line: Int32(clamping: line))
+        return NSRange(location: Int(packed >> 32), length: Int(packed & 0xFFFF_FFFF))
     }
 
     static func dismantleNSView(_ container: SyntaxEditorContainer, coordinator: Coordinator) {
@@ -95,7 +83,7 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
         weak var textView: NSTextView?
         weak var container: SyntaxEditorContainer?
         var isApplyingUpdate = false
-        private var highlightedLanguage: ProjectFileLanguage?
+        private var highlightedFilename: String?
         private var pendingEditedRange: NSRange?
         private var pendingLineDelta = 0
         private var fullHighlightTask: Task<Void, Never>?
@@ -158,14 +146,12 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
 
         func highlight(force: Bool) {
             guard isActive else { needsFullHighlight = true; return }
-            guard let textView, let storage = textView.textStorage else { return }
-            let language = ProjectFileLanguage.detect(filename: parent.filename)
-            guard force || needsFullHighlight || highlightedLanguage != language else { return }
-            highlightedLanguage = language
+            guard let textView, textView.textStorage != nil else { return }
+            guard force || needsFullHighlight || highlightedFilename != parent.filename else { return }
+            highlightedFilename = parent.filename
             needsFullHighlight = false
             textView.typingAttributes = FileSyntaxHighlighter.baseAttributes
-            guard storage.length <= FileSyntaxHighlighter.backgroundFullHighlightLimit else { return }
-            scheduleFullHighlight(language: language, delayNanoseconds: 0)
+            scheduleFullHighlight(delayNanoseconds: 0)
         }
 
         private func highlightEditedRange(_ editedRange: NSRange?) {
@@ -175,20 +161,22 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
             let safeLocation = min(editedRange.location, source.length)
             let safeLength = min(editedRange.length, source.length - safeLocation)
             let lineRange = source.lineRange(for: NSRange(location: safeLocation, length: safeLength))
-            let language = ProjectFileLanguage.detect(filename: parent.filename)
             FileSyntaxHighlighter.apply(
-                FileSyntaxHighlightPlanner.build(source: storage.string, language: language, requestedRange: lineRange),
+                FileSyntaxHighlightPlan.lex(source.substring(with: lineRange), path: parent.filename, in: lineRange),
                 to: storage
             )
-            guard storage.length <= FileSyntaxHighlighter.backgroundFullHighlightLimit else { return }
-            scheduleFullHighlight(language: language, delayNanoseconds: 550_000_000)
+            scheduleFullHighlight(delayNanoseconds: 550_000_000)
         }
 
-        private func scheduleFullHighlight(language: ProjectFileLanguage, delayNanoseconds: UInt64) {
+        private func scheduleFullHighlight(delayNanoseconds: UInt64) {
             guard isActive else { return }
             guard let storage = textView?.textStorage else { return }
             fullHighlightTask?.cancel()
-            let source = storage.string
+            // The core lexes at most the first 200,000 characters; only those cross over.
+            let source = storage.string as NSString
+            let range = NSRange(location: 0, length: min(source.length, FileSyntaxHighlightPlan.limit))
+            let text = source.substring(with: range)
+            let filename = parent.filename
             let revision = parent.session.revision
             let documentKey = parent.documentKey
             fullHighlightTask = Task { @MainActor [weak self] in
@@ -197,7 +185,7 @@ struct SyntaxHighlightedEditor: NSViewRepresentable {
                 }
                 guard !Task.isCancelled, self?.isActive == true else { return }
                 let plan = await Task.detached(priority: .userInitiated) {
-                    FileSyntaxHighlightPlanner.build(source: source, language: language)
+                    FileSyntaxHighlightPlan.lex(text, path: filename, in: range)
                 }.value
                 guard !Task.isCancelled,
                     let self,
@@ -316,19 +304,30 @@ final class SyntaxEditorTextView: NSTextView {
     }
 }
 
+/// The shared core's highlight spans for one range of a document.
+struct FileSyntaxHighlightPlan: Sendable {
+    /// The most characters the core lexes; text beyond stays plain.
+    static let limit = 200_000
+
+    let range: NSRange
+    /// Packed (start, length, kind) triples in document UTF-16 offsets.
+    let spans: [Int32]
+
+    /// Lexes [text], which starts at [range]'s location in the document.
+    static func lex(_ text: String, path: String, in range: NSRange) -> FileSyntaxHighlightPlan {
+        MacPerformanceSignposts.measure("Syntax highlight plan", log: MacPerformanceSignposts.editor) {
+            let highlights = ClientSyntaxHighlights(
+                rules: SharedRules.shared.syntaxHighlights(text: text, path: path, offset: Int32(range.location)))
+            return FileSyntaxHighlightPlan(range: range, spans: highlights.spans)
+        }
+    }
+}
+
 @MainActor
 private enum FileSyntaxHighlighter {
-    static let backgroundFullHighlightLimit = 180_000
     static let baseFont = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .regular)
     static let boldFont = NSFont.monospacedSystemFont(ofSize: 12.5, weight: .semibold)
     static let foreground = NSColor.textColor
-    static let keyword = NSColor.systemPurple
-    static let string = NSColor.systemGreen
-    static let comment = NSColor.secondaryLabelColor
-    static let number = NSColor.systemOrange
-    static let function = NSColor.systemBlue
-    static let type = NSColor.systemTeal
-    static let property = NSColor.systemPink
 
     static var baseAttributes: [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
@@ -340,30 +339,35 @@ private enum FileSyntaxHighlighter {
 
     static func apply(_ plan: FileSyntaxHighlightPlan, to storage: NSTextStorage) {
         let fullRange = NSRange(location: 0, length: storage.length)
-        let range = NSIntersectionRange(NSRange(location: plan.location, length: plan.length), fullRange)
+        let range = NSIntersectionRange(plan.range, fullRange)
         storage.beginEditing()
         storage.setAttributes(baseAttributes, range: range)
         guard range.length > 0 else { storage.endEditing(); return }
-        for run in plan.runs {
-            let runRange = NSIntersectionRange(NSRange(location: run.location, length: run.length), fullRange)
-            guard runRange.length > 0 else { continue }
-            storage.addAttribute(.foregroundColor, value: color(for: run.style), range: runRange)
-            if run.style == .keywordBold {
-                storage.addAttribute(.font, value: boldFont, range: runRange)
-            }
+        var index = 0
+        while index + 2 < plan.spans.count {
+            let span = NSRange(location: Int(plan.spans[index]), length: Int(plan.spans[index + 1]))
+            let kind = ClientSyntaxKind(rawValue: Int(plan.spans[index + 2])) ?? .unspecified
+            index += 3
+            let spanRange = NSIntersectionRange(span, range)
+            guard spanRange.length > 0, let color = color(for: kind) else { continue }
+            storage.addAttribute(.foregroundColor, value: color, range: spanRange)
+            storage.addAttribute(.font, value: bold(kind) ? boldFont : baseFont, range: spanRange)
         }
         storage.endEditing()
     }
 
-    private static func color(for style: FileSyntaxHighlightStyle) -> NSColor {
-        switch style {
-        case .number: number
-        case .type: type
-        case .function: function
-        case .keyword, .keywordBold: keyword
-        case .property: property
-        case .string: string
-        case .comment: comment
+    private static func bold(_ kind: ClientSyntaxKind) -> Bool { kind == .keyword || kind == .heading }
+
+    private static func color(for kind: ClientSyntaxKind) -> NSColor? {
+        switch kind {
+        case .keyword, .heading, .tag: .systemPurple
+        case .string: .systemGreen
+        case .comment: .secondaryLabelColor
+        case .number, .constant, .annotation, .emphasis: .systemOrange
+        case .function, .link: .systemBlue
+        case .type: .systemTeal
+        case .property, .attribute, .variable: .systemPink
+        default: nil
         }
     }
 }

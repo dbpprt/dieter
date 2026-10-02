@@ -37,7 +37,7 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
     let messages = [user, assistant]
 
     for showReasoning in [true, false] {
-        let store = DieterStore(restoreSync: false)
+        let store = DieterStore(liveEnvironment: false)
         store.showReasoning = showReasoning
         var conversation = Dieter_V1_ConversationSnapshot()
         conversation.detail.card.id = "c_render"
@@ -55,16 +55,10 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
         #expect(renderer.nsImage != nil, "timeline must render with showReasoning=\(showReasoning)")
     }
 
-    let hidden = ConversationMessagePartGroup.group(assistant.parts, showReasoning: false)
-    #expect(hidden.count == 2)
-    #expect(hidden[0].isToolCallGroup)
-    #expect(hidden[0].parts.map(\.toolName) == ["Read", "Edit", "Bash"])
-    let shown = ConversationMessagePartGroup.group(assistant.parts, showReasoning: true)
-    #expect(shown.filter(\.isToolCallGroup).count == 2)
 }
 
 @Test @MainActor func conversationViewSettlesAfterUnrelatedMachineDirectoryInvalidation() {
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
     var activeProject = Dieter_V1_Project()
     activeProject.id = "project-active"
     activeProject.name = "Active"

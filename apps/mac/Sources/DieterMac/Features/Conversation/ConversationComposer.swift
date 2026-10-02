@@ -12,12 +12,6 @@ struct ConversationComposer: View {
     @State private var historyNavigation = ComposerHistoryNavigation()
     @State private var queueRecallID: UUID?
 
-    private var harness: Dieter_V1_Harness? {
-        context.harnessCatalog.harnesses.first { $0.id == context.composerProvider }
-    }
-    private var model: Dieter_V1_HarnessModel? {
-        harness?.models.first { $0.id == context.composerModel }
-    }
     private var working: Bool { context.model.state.activeTurn }
     private var hasDraft: Bool {
         !context.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -36,18 +30,14 @@ struct ConversationComposer: View {
             if let queue = context.conversation?.conversation.queue, !queue.isEmpty {
                 QueuedMessageTray(
                     messages: queue,
-                    agentIsWorking: working,
+                    steerableID: context.model.state.steerableID,
                     onEdit: { message in
                         await editQueuedMessage(message)
                     },
                     onRemove: { message in
                         _ = await context.removeQueuedMessage(message, edit: false)
                     },
-                    onSteer: {
-                        if let card = context.selectedCard ?? context.selectedDetail?.card {
-                            await context.cancel(card)
-                        }
-                    }
+                    onSteer: { await context.steer(messageID: context.model.state.steerableID) }
                 )
                 .disabled(
                     queue.contains { context.isPendingMessage($0.id) }
@@ -92,32 +82,16 @@ struct ConversationComposer: View {
                         identifierPrefix: "conversation", identity: conversationID,
                         isEnabled: !captureInProgress, onUpload: onUploadFile, onCapture: captureScreenshot
                     )
-                    providerMenu(compact: metrics.compact)
-                    modelMenu(compact: metrics.compact)
-                        .layoutPriority(1)
-                    if let efforts = model?.efforts, !efforts.isEmpty {
-                        reasoningMenu(efforts: efforts, compact: metrics.compact)
-                    }
-                    ComposerProviderOptions(
-                        options: ProviderOptionValues.options(for: harness, model: context.composerModel),
-                        values: Binding(
-                            get: { context.composerProviderOptions },
-                            set: { context.composerProviderOptions = $0 }
-                        ),
-                        conversationLocked: context.composerProviderLocked,
-                        identity: conversationID,
-                        identifierPrefix: "conversation"
-                    )
-                    .smokeTarget("conversation.provider-options")
-                    .fixedSize()
+                    let controls = context.agentControls ?? ClientAgentControlsState()
+                    AgentComposerMenus(
+                        controls: controls, compact: metrics.compact, identifierPrefix: "conversation",
+                        identity: conversationID
+                    ) { choice in Task { await context.chooseAgent(choice) } }
                     Spacer(minLength: 0)
-                    if metrics.width >= 560,
-                        let usage = ConversationContextUsage.latest(
-                            messages: context.conversation?.conversation.messages ?? [],
-                            fallbackWindow: Int64(model?.contextWindow ?? 0)
-                        )
+                    if metrics.width >= 560, context.model.state.contextUsedTokens > 0,
+                        context.model.state.contextWindowTokens > 0
                     {
-                        ContextUsageIndicator(usage: usage)
+                        ContextUsageIndicator(state: context.model.state)
                     }
                     composerActions
                 }
@@ -253,63 +227,5 @@ struct ConversationComposer: View {
                 .smokeTarget("conversation.send")
         }
         .fixedSize()
-    }
-
-    private func providerMenu(compact: Bool) -> some View {
-        ComposerSelectionMenu(
-            title: harness?.name ?? context.composerProvider, symbol: "cpu", help: "Provider", compact: compact,
-            maximumWidth: 100
-        ) {
-            ForEach(context.harnessCatalog.harnesses, id: \.id) { item in
-                Button(item.name) {
-                    guard let selection = HarnessSelection(provider: item.id).resolved(in: [item]) else {
-                        return
-                    }
-                    context.composerProvider = selection.provider
-                    context.composerModel = selection.model
-                    context.composerEffort = selection.effort
-                    context.composerProviderOptions = selection.providerOptions
-                }
-            }
-        }
-        .accessibilityLabel("Provider: \(harness?.name ?? context.composerProvider)")
-        .accessibilityIdentifier("conversation.provider")
-        .smokeTarget("conversation.provider")
-        .disabled(context.composerProviderLocked)
-    }
-
-    private func modelMenu(compact: Bool) -> some View {
-        let name = model?.name ?? context.composerModel
-        return ComposerSelectionMenu(
-            title: compact ? name.replacingOccurrences(of: "GPT-", with: "") : name,
-            symbol: "sparkles", help: "Model"
-        ) {
-            ForEach(harness?.models ?? [], id: \.id) { item in
-                Button(item.name) {
-                    context.selectComposerModel(item)
-                }
-            }
-        }
-        .accessibilityLabel("Model: \(model?.name ?? context.composerModel)")
-        .accessibilityIdentifier("conversation.model")
-        .smokeTarget("conversation.model")
-        .disabled(!context.canChangeComposerSelection("model-selection"))
-    }
-
-    private func reasoningMenu(efforts: [String], compact: Bool) -> some View {
-        ComposerSelectionMenu(
-            title: context.composerEffort.isEmpty ? "Default" : context.composerEffort.capitalized,
-            symbol: "sparkles", help: "Reasoning", compact: compact, maximumWidth: 80
-        ) {
-            ForEach(efforts, id: \.self) { value in
-                Button(value.capitalized) { context.composerEffort = value }
-            }
-        }
-        .accessibilityLabel(
-            "Reasoning: \(context.composerEffort.isEmpty ? "Default" : context.composerEffort.capitalized)"
-        )
-        .accessibilityIdentifier("conversation.reasoning")
-        .smokeTarget("conversation.reasoning")
-        .disabled(!context.canChangeComposerSelection("effort-selection"))
     }
 }

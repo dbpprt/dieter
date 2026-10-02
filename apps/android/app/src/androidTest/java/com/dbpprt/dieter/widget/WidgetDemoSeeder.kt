@@ -2,7 +2,6 @@ package com.dbpprt.dieter.widget
 
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
-import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.api.v1.Board
@@ -61,9 +60,6 @@ class WidgetDemoSeeder {
         val core = SharedCore.create(context, null)
         core.storageFor(core.accounts.state.value.active).write(DirectoryPoller.cacheName(daemonId), State.ADAPTER.encode(state))
         runBlocking { core.setConnected(false) }
-        context.getSharedPreferences("dieter_widget", Context.MODE_PRIVATE).edit()
-            .putLong("last_sync_at", now.toEpochMilli())
-            .commit()
     }
 
     @Test

@@ -287,8 +287,7 @@ func TestAndroidNativeCoverageInventory(t *testing.T) {
 		}
 	}
 	exceptions := map[string]bool{
-		"runFlow":    true,
-		"seedAndPin": true, // UsageWidgetDemoSeeder is manual widget preview tooling.
+		"runFlow": true,
 	}
 	method := regexp.MustCompile(`@Test\s+(?:public\s+)?(?:fun|void)\s+(\w+)`)
 	err = filepath.WalkDir(filepath.Join(root, "apps/android/app/src/androidTest"), func(path string, d os.DirEntry, err error) error {

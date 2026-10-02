@@ -15,9 +15,10 @@ import com.dbpprt.dieter.api.gateway.v1.WatchProviderQuotasRequest
 import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.core.runtime.Backoff
 import com.dbpprt.dieter.core.runtime.CoreLogger
+import com.dbpprt.dieter.core.runtime.Deadlines
 import com.dbpprt.dieter.core.runtime.Failures
-import com.dbpprt.dieter.core.runtime.withDeadline
 import com.dbpprt.dieter.core.runtime.Timestamps
+import com.dbpprt.dieter.core.runtime.withDeadline
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -107,7 +108,7 @@ class ProviderQuotas(private val logger: CoreLogger) {
         val read = ++readId
         mutableView.update { it.copy(loading = true) }
         try {
-            val groups = withDeadline(DEADLINE) {
+            val groups = withDeadline(Deadlines.CALL) {
                 if (refresh) gateway.RefreshProviderQuotas().execute(RefreshProviderQuotasRequest()).groups
                 else gateway.ListProviderQuotas().execute(ListProviderQuotasRequest()).groups
             }
@@ -150,7 +151,7 @@ class ProviderQuotas(private val logger: CoreLogger) {
         readId++ // A read started before the mutation must not overwrite its result.
         mutableView.update { it.copy(mutating = it.mutating + accountKey, loading = false) }
         try {
-            val (groups, _) = withDeadline(DEADLINE) { call(gateway) }
+            val (groups, _) = withDeadline(Deadlines.CALL) { call(gateway) }
             if (bound == generation) mutableView.update { state -> state.copy(groups = sorted(state.groups.filter { it.provider != provider } + groups), error = null) }
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
@@ -179,7 +180,6 @@ class ProviderQuotas(private val logger: CoreLogger) {
 
     companion object {
         const val HEARTBEAT_SECONDS = 15
-        private val DEADLINE = 15.seconds
         private val CLEAN_END_RETRY = 250.milliseconds
         private val WATCH_BACKOFF = Backoff(750.milliseconds, 10.seconds)
         private const val TAG = "Quotas"
@@ -187,6 +187,9 @@ class ProviderQuotas(private val logger: CoreLogger) {
 }
 
 enum class QuotaLevel { CRITICAL, LOW, NORMAL, UNKNOWN }
+
+/** One row of an account's details; [monetary] rows show a balance or spend, which some views leave out. */
+data class QuotaDetailLine(val label: String, val text: String, val monetary: Boolean = false)
 
 /** Quota presentation computed once for every client. */
 object Quotas {
@@ -203,7 +206,10 @@ object Quotas {
     }
 
     /** Stale when the account's freshness window has passed or is unknown. */
-    fun stale(account: ProviderQuotaSnapshot, now: Instant): Boolean = Timestamps.parse(account.fresh_until)?.let { it <= now } ?: true
+    fun stale(account: ProviderQuotaSnapshot, now: Instant): Boolean = stale(Timestamps.parse(account.fresh_until), now)
+
+    /** Stale from [freshUntil] on, and always when it is unknown, as the gateway judges it. */
+    fun stale(freshUntil: Instant?, now: Instant): Boolean = freshUntil?.let { it <= now } ?: true
 
     fun available(account: ProviderQuotaSnapshot): Boolean = account.availability == ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_AVAILABLE
 
@@ -242,21 +248,44 @@ object Quotas {
     /** Shown instead of windows when none report a limit. */
     fun status(account: ProviderQuotaSnapshot): String = account.status_code.ifBlank { "No numeric limit reported" }.replace('_', ' ')
 
+    /** The warning for numbers that may be out of date. */
+    const val STALE = "Last reported · refresh pending"
+
     /** A warning above the windows: unavailable accounts, else stale numbers; null when current. */
-    fun warning(account: ProviderQuotaSnapshot, now: Instant): String? = when {
-        !available(account) -> availability(account.availability)
-        stale(account, now) -> "Last reported · refresh pending"
+    fun warning(account: ProviderQuotaSnapshot, now: Instant): String? =
+        warning(if (available(account)) "" else availability(account.availability), Timestamps.parse(account.fresh_until), now)
+
+    /** [unavailable] (the availability of an unavailable account, else empty) first, then [STALE]; null when current. */
+    fun warning(unavailable: String, freshUntil: Instant?, now: Instant): String? = when {
+        unavailable.isNotEmpty() -> unavailable
+        stale(freshUntil, now) -> STALE
         else -> null
     }
 
     /** Label and value rows of an account's details; balances only where money may be shown. */
-    fun details(account: ProviderQuotaSnapshot, monetary: Boolean): List<Pair<String, String>> = buildList {
-        add("Account" to maskedKey(account))
-        account.credits?.takeIf { monetary }?.let { add("Credits" to if (it.unlimited) "Unlimited" else it.balance.ifBlank { "Available" }) }
-        account.spend_allowance?.takeIf { monetary }?.let { spend ->
-            add("Spend" to listOf(spend.used, spend.limit).filter { it.isNotBlank() }.joinToString(" / ").ifBlank { "Reported" })
+    fun details(account: ProviderQuotaSnapshot, monetary: Boolean): List<Pair<String, String>> =
+        detailLines(account).filter { monetary || !it.monetary }.map { it.label to it.text }
+
+    /** Every detail row of an account, each marked when it shows money. */
+    fun detailLines(account: ProviderQuotaSnapshot): List<QuotaDetailLine> = buildList {
+        add(QuotaDetailLine("Account", maskedKey(account)))
+        account.credits?.let { add(QuotaDetailLine("Credits", if (it.unlimited) "Unlimited" else it.balance.ifBlank { "Available" }, monetary = true)) }
+        account.spend_allowance?.let { spend ->
+            add(QuotaDetailLine("Spend", listOf(spend.used, spend.limit).filter { it.isNotBlank() }.joinToString(" / ").ifBlank { "Reported" }, monetary = true))
         }
-        account.reset_credits?.let { add("Reset credits" to "${it.available_count} available") }
+        account.reset_credits?.let { add(QuotaDetailLine("Reset credits", "${it.available_count} available")) }
+    }
+
+    /**
+     * One line for a tooltip or accessibility label: the provider, the email
+     * (else [accountLabel]), and the remaining percentage, or the
+     * availability when no window reports one, e.g.
+     * "OpenAI · dev@example.com · 45% remaining".
+     */
+    fun summaryLine(provider: ProviderQuotaProvider, account: ProviderQuotaSnapshot): String {
+        val who = account.display_email.ifBlank { accountLabel(account) }
+        val state = remaining(account)?.let { "${it.coerceIn(0, 100)}% remaining" } ?: availability(account.availability)
+        return "${providerName(provider)} · $who · $state"
     }
 
     fun availability(value: ProviderQuotaAvailability): String = when (value) {

@@ -3,6 +3,7 @@
 package com.dbpprt.dieter.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -22,16 +23,19 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Photo
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
@@ -58,30 +62,28 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.dbpprt.dieter.core.navigation.Destination
+import com.dbpprt.dieter.api.v1.FileDocument
+import com.dbpprt.dieter.core.files.FilePaths
+import com.dbpprt.dieter.core.presentation.ByteSizes
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.settings.DEFAULT_PANE_LEADING_FRACTION
 import com.dbpprt.dieter.ui.theme.DieterShellTint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-
-internal enum class ProjectFilesTab(val wire: String, val label: String) {
-    FILES("browse", "Files"),
-    CHANGES("changes", "Changes"),
-    ;
-
-    companion object {
-        fun resolve(value: String): ProjectFilesTab = if (value == CHANGES.wire) CHANGES else FILES
-    }
-}
+import kotlinx.coroutines.withContext
 
 @Composable
 fun FilesScreen(
@@ -91,7 +93,7 @@ fun FilesScreen(
     contentPadding: PaddingValues,
 ) {
     val tabs = ProjectFilesTab.entries
-    val selectedTab = ProjectFilesTab.resolve(state.projectFilesMode)
+    val selectedTab = state.projectFilesMode
     val selectedIndex = tabs.indexOf(selectedTab)
     val pagerState = rememberPagerState(initialPage = selectedIndex, pageCount = { tabs.size })
     val scope = rememberCoroutineScope()
@@ -114,15 +116,15 @@ fun FilesScreen(
         snapshotFlow { pagerState.settledPage }
             .distinctUntilChanged()
             .collect { page ->
-                val mode = tabs[page].wire
+                val mode = tabs[page]
                 if (mode != currentMode) model.setProjectFilesMode(mode)
             }
     }
     BackHandler(
-        enabled = state.projectFilesMode == ProjectFilesTab.CHANGES.wire && (state.projectChanges.selection != null) ||
-            state.projectFilesMode == ProjectFilesTab.FILES.wire && state.fileDocument == null && state.filePath.isNotBlank(),
+        enabled = state.projectFilesMode == ProjectFilesTab.CHANGES && (state.projectChanges.selection != null) ||
+            state.projectFilesMode == ProjectFilesTab.FILES && state.fileDocument == null && state.filePath.isNotBlank(),
     ) {
-        if (state.projectFilesMode == ProjectFilesTab.CHANGES.wire) model.closeProjectDiff()
+        if (state.projectFilesMode == ProjectFilesTab.CHANGES) model.closeProjectDiff()
         else model.openParentDirectory()
     }
 
@@ -201,7 +203,7 @@ private fun ProjectFilesPage(
             state = state,
             model = model,
             expanded = expanded,
-            active = state.projectFilesMode == ProjectFilesTab.CHANGES.wire,
+            active = state.projectFilesMode == ProjectFilesTab.CHANGES,
             modifier = modifier,
         )
     } else if (!expanded && state.fileDocument != null) {
@@ -286,23 +288,20 @@ internal fun FileList(state: DieterUiState, model: DieterViewModel, modifier: Mo
                     }
                 }
                 items(entries, key = { it.path }) { entry ->
+                    val directory = FilePaths.isDirectory(entry)
                     Row(
                         Modifier.fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
                             .clickable {
-                                if (entry.kind == "directory") model.openDirectory(entry.path) else model.openFile(entry.path)
+                                if (directory) model.openDirectory(entry.path) else model.openFile(entry.path)
                             }
                             .padding(start = if (state.filePath.isBlank()) 42.dp else 12.dp, end = 12.dp, top = 11.dp, bottom = 11.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            if (entry.kind == "directory") Icons.Outlined.Folder else Icons.Outlined.Description,
-                            null,
-                            tint = DieterShell,
-                        )
+                        Icon(fileIcon(FilePaths.icon(entry)), null, tint = DieterShell)
                         Spacer(Modifier.width(14.dp))
                         Text(entry.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (entry.kind == "directory") Icon(Icons.Outlined.ChevronRight, null, tint = DieterMuted)
+                        if (directory) Icon(Icons.Outlined.ChevronRight, null, tint = DieterMuted)
                     }
                 }
             }
@@ -325,6 +324,8 @@ internal fun FilePreview(
     showBack: Boolean = true,
 ) {
     val document = state.fileDocument ?: return
+    val renderer = FilePaths.renderer(document)
+    val editable = renderer == FilePaths.Renderer.TEXT || renderer == FilePaths.Renderer.MARKDOWN
     val syntaxTransformation = remember(document.path) {
         CodeSyntaxVisualTransformation(document.path, MaxEditableSyntaxHighlightCharacters)
     }
@@ -344,7 +345,7 @@ internal fun FilePreview(
                 Text(document.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(document.path, color = DieterMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            if (!document.binary) {
+            if (editable) {
                 IconButton(onClick = { showMove = true }) { Icon(Icons.AutoMirrored.Outlined.DriveFileMove, "Move or rename") }
                 IconButton(onClick = { confirmDelete = true }) { Icon(Icons.Outlined.DeleteOutline, "Delete") }
                 if (state.fileConflict) TextButton(onClick = model::reloadFile, enabled = !state.working) { Text("Reload") }
@@ -353,8 +354,8 @@ internal fun FilePreview(
             if (!showBack) IconButton(onClick = ::close) { Icon(Icons.Outlined.Close, "Close") }
         }
         HorizontalDivider(color = DieterOutline)
-        if (document.binary) {
-            EmptyList("Binary file", "${document.mime_type} · ${document.size} bytes", Icons.Outlined.Description)
+        if (!editable) {
+            FileWithoutEditor(document, renderer)
         } else {
             OutlinedTextField(
                 value = state.fileDraft,
@@ -403,4 +404,41 @@ internal fun FilePreview(
             model.deleteFile(document.path, recursive = false)
         }
     }
+}
+
+/** A file the editor does not open: an image it can decode, else its type and size. */
+@Composable
+private fun FileWithoutEditor(document: FileDocument, renderer: FilePaths.Renderer) {
+    var decoding by remember(document.path, document.revision) { mutableStateOf(renderer == FilePaths.Renderer.IMAGE) }
+    var image by remember(document.path, document.revision) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(document.path, document.revision, renderer) {
+        if (renderer == FilePaths.Renderer.IMAGE) {
+            image = withContext(Dispatchers.Default) { decodeImage(FilePaths.bytes(document).toByteArray(), maxDimension = 2400) }?.asImageBitmap()
+        }
+        decoding = false
+    }
+    val bitmap = image
+    when {
+        decoding -> LoadingState()
+        bitmap != null -> Image(
+            bitmap = bitmap,
+            contentDescription = document.name,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize().padding(12.dp).testTag("file-image"),
+        )
+        else -> EmptyList(
+            if (document.binary) "Binary file" else "No preview",
+            "${FilePaths.typeLabel(document.name, document.mime_type)} · ${ByteSizes.format(document.size)}",
+            Icons.Outlined.Description,
+        )
+    }
+}
+
+/** The listing glyph for each of the core's file icons. */
+private fun fileIcon(icon: FilePaths.Icon): ImageVector = when (icon) {
+    FilePaths.Icon.DIRECTORY -> Icons.Outlined.Folder
+    FilePaths.Icon.IMAGE -> Icons.Outlined.Photo
+    FilePaths.Icon.MARKDOWN -> Icons.AutoMirrored.Outlined.Article
+    FilePaths.Icon.CODE -> Icons.Outlined.Code
+    FilePaths.Icon.TEXT -> Icons.Outlined.Description
 }

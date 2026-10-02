@@ -46,100 +46,16 @@ struct BoardLabelDragPayload: Sendable {
     }
 }
 
-enum BoardLabelAssignment {
-    static func adding(_ labelID: String, to ids: [String]) -> [String] {
-        ids.contains(labelID) ? ids : ids + [labelID]
-    }
-}
-
-enum BoardCardEditingPolicy {
-    static func canEditDraft(_ card: Dieter_V1_Card) -> Bool {
-        card.lane.caseInsensitiveCompare("todo") == .orderedSame && card.mergedIntoCardID.isEmpty
-            && card.initialPromptSentAt.isEmpty
-            && !card.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-}
-
-enum BoardCardStartPolicy {
-    static func runningLaneID(in board: Dieter_V1_Board?) -> String? {
-        guard let board else { return nil }
-        return board.lanes.first { $0.id.caseInsensitiveCompare("running") == .orderedSame }?.id
-            ?? board.lanes.first { $0.name.caseInsensitiveCompare("running") == .orderedSame }?.id
-    }
-
-    static func canStart(
-        _ card: Dieter_V1_Card,
-        board: Dieter_V1_Board?,
-        hasDraftAttachments: Bool = false
-    ) -> Bool {
-        card.scope == "board" && card.lane.caseInsensitiveCompare("todo") == .orderedSame
-            && card.mergedIntoCardID.isEmpty && card.initialPromptSentAt.isEmpty
-            && (!card.initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                || hasDraftAttachments)
-            && runningLaneID(in: board) != nil
-    }
-
-    static func optimisticCard(
-        _ card: Dieter_V1_Card,
-        board: Dieter_V1_Board?,
-        hasDraftAttachments: Bool = false
-    ) -> Dieter_V1_Card? {
-        guard canStart(card, board: board, hasDraftAttachments: hasDraftAttachments),
-            let runningLaneID = runningLaneID(in: board)
-        else { return nil }
-        var card = card
-        card.lane = runningLaneID
-        card.runtime = "starting"
-        return card
-    }
-}
-
-enum BoardDropOrdering {
-    static func neighbors(
-        before target: String?, movingCardID: String, cards: [Dieter_V1_Card],
-        direction: BoardCardSortDirection, moves: [String: OptimisticCardMove] = [:]
-    ) -> (after: String, before: String) {
-        let visible = BoardCardOrdering.sorted(
-            cards.filter { $0.id != movingCardID }, direction: direction, moves: moves)
-        let index = target.flatMap { id in visible.firstIndex { $0.id == id } } ?? visible.count
-        let preceding = index > 0 ? visible[index - 1].id : ""
-        let following = index < visible.count ? visible[index].id : ""
-        return direction == .ascending ? (preceding, following) : (following, preceding)
-    }
-
-}
-
+/// A lane's shared sort as its button shows it.
 enum BoardCardSortDirection {
     case descending
     case ascending
 
+    init(descending: Bool) { self = descending ? .descending : .ascending }
+
     var toggled: Self { self == .descending ? .ascending : .descending }
     var title: String { self == .descending ? "Reverse board order" : "Board order" }
     var systemImage: String { self == .descending ? "arrow.down" : "arrow.up" }
-}
-
-enum BoardCardOrdering {
-    static func sorted(
-        _ cards: [Dieter_V1_Card],
-        direction: BoardCardSortDirection = .descending,
-        moves: [String: OptimisticCardMove] = [:]
-    ) -> [Dieter_V1_Card] {
-        var ordered = cards.sorted { left, right in
-            if left.orderKey != right.orderKey { return left.orderKey < right.orderKey }
-            if left.orderKey.isEmpty, left.position != right.position { return left.position < right.position }
-            return left.id < right.id
-        }
-        for (id, move) in moves.sorted(by: { $0.key < $1.key }) {
-            guard let index = ordered.firstIndex(where: { $0.id == id && $0.lane == move.lane }) else { continue }
-            let card = ordered.remove(at: index)
-            let insertion =
-                ordered.firstIndex { $0.id == move.beforeCardID }
-                ?? ordered.firstIndex { $0.id == move.afterCardID }.map { $0 + 1 }
-                ?? ordered.count
-            ordered.insert(card, at: insertion)
-        }
-        return direction == .ascending ? ordered : ordered.reversed()
-    }
 }
 
 enum KanbanLaneSizing {

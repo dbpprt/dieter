@@ -50,7 +50,6 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaAvailability
 import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaGroup
 import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaProvider
 import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaSnapshot
@@ -64,8 +63,6 @@ import com.dbpprt.dieter.ui.theme.DieterOpenAIQuota
 import com.dbpprt.dieter.ui.theme.DieterRunning
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
-import java.time.Duration
-import java.time.Instant
 import kotlin.time.Clock
 
 @Composable

@@ -1,7 +1,6 @@
 package com.dbpprt.dieter.e2e
 
 import android.Manifest
-import android.graphics.Bitmap
 import android.os.SystemClock
 import androidx.compose.ui.test.*
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -133,17 +132,14 @@ class FlowTest {
             .put("action", action).put("status", status).put("elapsedMs", elapsed).toString() + "\n")
     }
     private fun capture(name: String) {
-        val bitmap = requireNotNull(instrumentation.uiAutomation.takeScreenshot()) { "Screenshot unavailable" }
-        File(evidence, "$name.png").outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
-        bitmap.recycle()
+        Evidence.display("$name.png", evidence)
         val roots = compose.onAllNodes(isRoot())
-        File(evidence, "$name.txt").writeText((0 until roots.fetchSemanticsNodes().size).joinToString("\n") { roots[it].printToString() })
+        Evidence.text("$name.txt", (0 until roots.fetchSemanticsNodes().size).joinToString("\n") { roots[it].printToString() }, evidence)
     }
 
     private fun bindFixture(recipe: String) {
-        val args = InstrumentationRegistry.getArguments()
         val connected = IsolatedCore.connect(container)
-        val machineId = requireNotNull(args.getString("isolatedMachineId"))
+        val machineId = IsolatedCore.machineId
         runBlocking {
             withTimeout(30_000) {
                 container.core.connection.machines.first { directory -> directory.all.any { it.id == machineId && it.online(directory.evaluatedAt) } }
@@ -152,7 +148,7 @@ class FlowTest {
         // Machine rows are keyed by daemon ID.
         variables["fixture.endpointId"] = machineId
         if (recipe == "activity") {
-            val board = connected.boards.values.flatten().first { it.id == args.getString("isolatedBoardId") }
+            val board = connected.boards.values.flatten().first { it.id == IsolatedCore.boardId }
             val prefix = "Activity journey"
             variables["fixture.activityPrefix"] = prefix
             val cards = listOf(false, true).map { chat ->

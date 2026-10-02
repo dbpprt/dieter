@@ -41,7 +41,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -77,6 +76,7 @@ import com.dbpprt.dieter.core.identity.Gateway
 import com.dbpprt.dieter.core.identity.GatewayDraft
 import com.dbpprt.dieter.core.identity.GatewayEdits
 import com.dbpprt.dieter.settings.DieterPalette
+import com.dbpprt.dieter.core.notifications.NotificationBoardScope
 import com.dbpprt.dieter.core.notifications.NotificationStyle
 import com.dbpprt.dieter.update.AppUpdateManager
 import com.dbpprt.dieter.update.AppUpdateState
@@ -538,15 +538,12 @@ private fun ConnectionTextField(
 private fun NotificationSettings(state: DieterUiState, model: DieterViewModel) {
     val settings = state.notificationSettings
     val activityControlsEnabled = settings.enabled
-    val boards = (state.spaceBoards + state.boards).distinctBy { it.id }.sortedWith(
-        compareBy(
-            { board -> state.projects.firstOrNull { it.id == board.project_id }?.name.orEmpty().lowercase() },
-            { board -> state.projectReplicas[board.project_id]?.hostname.orEmpty().lowercase() },
-            { board -> board.name.lowercase() },
-        ),
+    val boardScope = NotificationBoardScope.of(
+        state.spaceBoards + state.boards,
+        state.projects,
+        state.presentedProjectReplicas.mapValues { (_, host) -> host.label },
+        settings,
     )
-    val visibleBoardIds = boards.mapTo(mutableSetOf()) { it.id }
-    val selectedVisibleBoards = state.notificationBoardIds.count(visibleBoardIds::contains)
     val context = LocalContext.current
 
     LazyColumn(
@@ -630,40 +627,37 @@ private fun NotificationSettings(state: DieterUiState, model: DieterViewModel) {
                     Column(Modifier.weight(1f)) {
                         Text("Board scope", color = DieterText, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Text(
-                            "$selectedVisibleBoards of ${boards.size} synced boards",
+                            boardScope.summary,
                             color = DieterMuted,
                             fontSize = 12.sp,
                         )
                     }
                     TextButton(
-                        onClick = { model.setNotificationBoardIds(state.notificationBoardIds + visibleBoardIds) },
-                        enabled = activityControlsEnabled && settings.reviewCards && boards.isNotEmpty(),
+                        onClick = { model.setNotificationBoardIds(boardScope.allBoardIds) },
+                        enabled = boardScope.canSelectAll,
                         modifier = Modifier.testTag("notifications-all-boards"),
                     ) { Text("All") }
                     TextButton(
                         onClick = { model.setNotificationBoardIds(emptySet()) },
-                        enabled = activityControlsEnabled && settings.reviewCards && state.notificationBoardIds.isNotEmpty(),
+                        enabled = boardScope.canSelectNone,
                         modifier = Modifier.testTag("notifications-no-boards"),
                     ) { Text("None") }
                 }
-                if (boards.isEmpty()) {
+                if (boardScope.rows.isEmpty()) {
                     Text(
-                        "Boards will appear here after a workspace sync.",
+                        NotificationBoardScope.EMPTY,
                         color = DieterMuted,
                         fontSize = 13.sp,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                     )
                 } else {
-                    boards.forEach { board ->
+                    boardScope.rows.forEach { board ->
                         HorizontalDivider(color = DieterDivider)
-                        val projectName = state.projects.firstOrNull { it.id == board.project_id }?.name
-                            ?.takeIf(String::isNotBlank) ?: "Workspace"
-                        val hostname = state.projectReplicas[board.project_id]?.hostname?.takeIf(String::isNotBlank)
                         NotificationBoardRow(
-                            boardName = board.name.ifBlank { "Untitled board" },
-                            projectName = listOfNotNull(projectName, hostname).distinct().joinToString(" · "),
-                            checked = board.id in state.notificationBoardIds,
-                            enabled = activityControlsEnabled && settings.reviewCards,
+                            boardName = board.name,
+                            projectName = board.detail,
+                            checked = board.selected,
+                            enabled = boardScope.enabled,
                             testTag = "notifications-board-${board.id}",
                             onToggle = { enabled -> model.setNotificationBoardEnabled(board.id, enabled) },
                         )
@@ -696,7 +690,7 @@ private fun NotificationSettings(state: DieterUiState, model: DieterViewModel) {
                 HorizontalDivider(color = DieterDivider)
                 NotificationToggleRow(
                     title = "Live work in connection status",
-                    subtitle = "Show active cards, model activity, and subagents in the ongoing status.",
+                    subtitle = "Show how many models and subagents are working in the ongoing status.",
                     checked = settings.liveStatus,
                     testTag = "notifications-live-status-toggle",
                     onToggle = { enabled ->

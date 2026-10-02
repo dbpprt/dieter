@@ -170,7 +170,10 @@
                     && NativeUIAccessibility.horizontalScrollView("project-changes.diff", in: window) != nil
             }
             capture(window, to: output.appending(path: "11-design-dark-split.png"))
-            let hunkID = model.diffLines.first { $0.kind == .hunk }?.id ?? -1
+            let hunkID =
+                model.diffLayout.rows.first {
+                    if case .hunk = $0 { true } else { false }
+                }?.id ?? -1
             let hunkTarget = "workspace-diff.hunk.\(hunkID)"
             let hunkBefore = NativeUIAccessibility.find(hunkTarget, in: window)?.recordedFrame
             let scrolled = NativeUIAccessibility.scrollHorizontally("project-changes.diff", in: window, delta: -220)
@@ -263,7 +266,7 @@
             await store.loadWorkspaceSurface()
             try? await DieterTaskSleep.seconds(1)
 
-            let changes = store.conversationChangeset
+            let changes = store.worktreeChanges.conversationChangeset
             results["changeset"] =
                 "\(changes?.files.count ?? 0) local files · dirty=\(store.conversationWorkspace?.dirty == true)"
             results["changeset-check"] =
@@ -283,7 +286,7 @@
                 : "failed: click=\(changesClicked), ready=\(changesReady), tab=\(store.conversationContext.content.conversationTab); \(NativeUIAccessibility.targetDiagnostics("conversation.content.fixed.changes", in: window))"
             _ = NativeUIAccessibility.click("changes.file.README.md", in: window)
             let inlineVisible = await NativeUIAccessibility.wait {
-                store.conversationDiff?.path == "README.md"
+                store.worktreeChanges.conversationDiff?.path == "README.md"
                     && NativeUIAccessibility.containsText("Chats now fold", in: window)
             }
             results["inline-diff-visible"] = inlineVisible ? "passed" : "failed: selected diff did not render"
@@ -531,11 +534,6 @@
             capture(window, to: output.appending(path: "10-project-compact.png"))
         }
 
-        private enum WorkspaceSmokeFailure: Error {
-            case operation(Dieter_V1_GitOperation)
-            case timeout
-        }
-
         // MARK: Phase B
 
         private static func runConflictPhase(
@@ -578,14 +576,18 @@
             await store.loadWorkspaceSurface()
 
             progress("starting update to provoke conflict", in: output)
-            guard await store.startGitOperation(.update, parameters: ["fetch": "false", "validate": "false"]) else {
+            var update = GitOperationKind.update.form().initial
+            update.fetch = false
+            update.validate = false
+            guard await store.startGitOperation(form: update) else {
                 results["conflict-update"] = "failed: update did not start (\(store.workspaceError ?? ""))"
                 return
             }
             var waited = 0
             while waited < 30 {
                 if let operation = store.gitOperation,
-                    GitOperationStatus.terminal(operation.status) || operation.status == "waiting_for_resolution"
+                    ["succeeded", "failed", "canceled", "interrupted", "waiting_for_resolution"].contains(
+                        operation.status)
                 {
                     break
                 }
@@ -613,8 +615,7 @@
 
             // Restore a quiet state so the fixture shuts down cleanly.
             if operation?.status == "waiting_for_resolution" {
-                _ = await store.startGitOperation(
-                    .abortConflict, parameters: ["conflicted_operation_id": operation?.id ?? ""])
+                _ = await store.startGitOperation(form: GitOperationKind.abortConflict.form().initial)
                 try? await DieterTaskSleep.seconds(2)
             }
             _ = card
@@ -629,17 +630,31 @@
             output: URL
         ) async -> Dieter_V1_Card? {
             let lane = board.lanes.first { $0.id == "running" }?.id ?? board.lanes.first?.id ?? "todo"
-            await store.createConversation(
-                title: title,
-                prompt: title,
-                chat: false,
-                provider: "claude-code",
-                model: "sonnet",
-                effort: "medium",
-                deferred: true,
-                lane: lane,
-                workspace: ConversationWorkspaceDraft(mode: .worktree, branch: "", baseBranch: "main")
-            )
+            // A deferred card in Running provisions its worktree without starting
+            // a turn, so Git operations stay allowed; the app's own create always
+            // starts a card it places in Running, so the fixture asks the daemon.
+            guard let rpc = await store.fixtureRPC() else {
+                progress("the fixture daemon is unavailable", in: output)
+                return nil
+            }
+            var request = Dieter_V1_CreateConversationRequest()
+            request.projectID = board.projectID
+            request.boardID = board.id
+            request.lane = lane
+            request.title = title
+            request.prompt = title
+            request.provider = "claude-code"
+            request.model = "sonnet"
+            request.effort = "medium"
+            request.deferStart = true
+            request.workspaceMode = ConversationWorkspaceMode.worktree.rawValue
+            request.workspaceBaseBranch = "main"
+            do {
+                _ = try await rpc.createCard(request)
+            } catch {
+                progress("creating card \(title) failed: \(error)", in: output)
+                return nil
+            }
             var waited = 0
             while waited < 30 {
                 // Match on the fixture project too: the app's persisted sync cache

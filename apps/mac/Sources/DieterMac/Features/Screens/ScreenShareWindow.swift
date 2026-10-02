@@ -210,7 +210,7 @@ private struct DetachedScreenShareView: View {
             if session.controller.phase != .streaming {
                 VStack(spacing: 12) {
                     Text(session.machineName).font(.headline)
-                    Text(session.controller.errorMessage ?? session.inactivityMessage ?? session.controller.phase.label)
+                    Text(session.controller.errorMessage ?? session.inactivityMessage ?? session.controller.phaseLabel)
                         .multilineTextAlignment(.center)
                     if case .permissionRequired(let reason) = session.controller.phase {
                         Text(reason).multilineTextAlignment(.center)

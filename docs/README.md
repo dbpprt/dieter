@@ -32,8 +32,8 @@ This directory holds implementation references and historical evidence.
 - [Apple release signing and TestFlight](apple-release-signing.md)
 
 Other component references: [RPC schema](../api/proto/README.md),
-[gateway deployment](../deploy/gateway/README.md), [Mac](../apps/mac/README.md),
-[Android](../apps/android/README.md), [iOS](../apps/ios/README.md),
+[gateway deployment](../deploy/gateway/README.md), [shared client core](../apps/core/README.md),
+[Mac](../apps/mac/README.md), [Android](../apps/android/README.md), [iOS](../apps/ios/README.md),
 [Android WebRTC](../native/android-webrtc/README.md), and [brand assets](../assets/brand/README.md).
 
 ## Historical investigations and validation
@@ -42,7 +42,8 @@ These are dated engineering records, not the current installation manual or a
 list of promised features. Their observations, benchmarks, and validation limits
 are retained. Paths are stable so existing issue and PR links continue to work.
 
-- [KMP core implementation plan](kmp-core-implementation-plan-2026-09-30.md) — work packages, cutover, test gates, and sequencing for moving all client logic into the shared core.
+- [macOS cutover to the shared core](mac-shared-core-cutover-plan-2026-10-01.md) — staged move of the Mac app onto the core, with what was built differently (complete).
+- [KMP core implementation plan](kmp-core-implementation-plan-2026-09-30.md) — work packages, cutover, test gates, and sequencing for moving all client logic into the shared core (complete for Android and macOS).
 - [Kotlin Multiplatform shared client core](kmp-shared-core-plan-2026-09-29.md) — deep dive, native-extension boundaries, feasibility results, and migration phases.
 - [Product assessment](product-assessment-2026-09-28.md) — commercial product review, prioritized gaps, Now/Next/Later roadmap, and research questions.
 - [Code structure, native clients, helpers, and build audit](code-structure-audit-2026-09-26.md)

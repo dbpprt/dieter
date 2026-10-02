@@ -12,7 +12,6 @@ timeout: 300s
 native:
   class: com.dbpprt.dieter.ui.WorkspaceFreshnessIndicatorTest
   methods:
-  - routineSyncKeepsCachedWorkspaceUncovered
   - reconnectingCachedWorkspaceIsExplicitAndScreenshotable
   - firstSyncIsVisibleInsteadOfAnEmptyBoard
   - disconnectedTerminalHeaderFollowsTheConnectionStatusTopBar

@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 
 struct MergeIntoBaseSheet: View {
@@ -26,40 +27,9 @@ struct MergeIntoBaseSheet: View {
         let value = workspace?.baseBranch ?? card?.workspace.baseBranch ?? ""
         return value.isEmpty ? "base" : value
     }
-    private var conflicted: Bool {
-        workspace?.state == "conflicted" || model.gitOperation?.status == "waiting_for_resolution"
-    }
-    private var mergeFailedConflict: Bool {
-        guard let operation = model.gitOperation else { return false }
-        return operation.kind == "merge_local" && operation.status == "failed"
-    }
+    private var conflicted: Bool { model.conflicted }
     private var running: Bool { model.mergeFlowStep != nil }
-    private var isChat: Bool { (card?.scope ?? "") == "chat" }
-    private var readiness: WorkspaceMergeReadiness {
-        WorkspaceMergeReadiness.evaluate(
-            workspaceState: workspace?.state ?? "",
-            baseBranch: baseBranch,
-            behind: Int(workspace?.behind ?? 0),
-            dirty: workspace?.dirty ?? false,
-            conflictedFiles: model.gitOperation?.conflicts.count ?? 0,
-            lastValidation: lastValidation
-        )
-    }
-    private var lastValidation: (name: String, passed: Bool, ago: String)? {
-        guard let operation = model.gitOperation,
-            operation.cardID == card?.id,
-            GitOperationStatus.terminal(operation.status),
-            !operation.validationResults.isEmpty
-        else { return nil }
-        let passed = operation.validationResults.allSatisfy { $0.exitCode == 0 }
-        let name =
-            operation.validationResults.count == 1 ? operation.validationResults[0].name : "validation"
-        return (name, passed, WorkspaceRelativeTime.compact(operation.finishedAt))
-    }
-    private var mergeButtonTitle: String {
-        let count = changes?.files.count ?? 0
-        return count > 0 ? "Merge \(count) file\(count == 1 ? "" : "s")" : "Merge into \(baseBranch)"
-    }
+    private var readiness: ClientMergeReadiness { model.mergeReadiness }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -71,7 +41,7 @@ struct MergeIntoBaseSheet: View {
                         conflictContent
                     } else {
                         readinessCard
-                        if mergeFailedConflict { mergeFailedNotice }
+                        if readiness.mergeFailed { mergeFailedNotice }
                         messageFields
                         strategyAndAfterMerge
                     }
@@ -88,6 +58,7 @@ struct MergeIntoBaseSheet: View {
         .onAppear {
             subject = card?.title ?? ""
             bodyText = card?.initialPrompt ?? ""
+            strategy = readiness.strategies.first?.strategy ?? strategy
         }
         .interactiveDismissDisabled(running)
     }
@@ -139,15 +110,18 @@ struct MergeIntoBaseSheet: View {
 
     private var readinessCard: some View {
         VStack(alignment: .leading, spacing: 9) {
-            ForEach(readiness.items) { item in
+            ForEach(readiness.items, id: \.id) { item in
+                let detail =
+                    item.at.isEmpty
+                    ? item.detail : SharedRules.shared.agoSince(value: item.at, nowMillis: Date.now.epochMillis)
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: symbol(for: item.tone))
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(color(for: item.tone))
+                        .foregroundStyle(WorkspaceToneStyle.color(item.tone))
                         .frame(width: 14)
                     Text(item.text).font(.system(size: 11, weight: .medium)).foregroundStyle(DieterTheme.text)
-                    if !item.detail.isEmpty {
-                        Text("· \(item.detail)").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
+                    if !detail.isEmpty {
+                        Text("· \(detail)").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                     }
                     Spacer(minLength: 0)
                 }
@@ -159,19 +133,11 @@ struct MergeIntoBaseSheet: View {
         .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(DieterTheme.border))
     }
 
-    private func symbol(for tone: WorkspaceMergeReadiness.Tone) -> String {
+    private func symbol(for tone: ClientWorkspaceTone) -> String {
         switch tone {
-        case .ready: "checkmark"
-        case .note: "exclamationmark.circle"
-        case .blocked: "exclamationmark.triangle.fill"
-        }
-    }
-
-    private func color(for tone: WorkspaceMergeReadiness.Tone) -> Color {
-        switch tone {
-        case .ready: DieterTheme.diffAddition
-        case .note: DieterTheme.amber
-        case .blocked: DieterTheme.coral
+        case .success: "checkmark"
+        case .danger: "exclamationmark.triangle.fill"
+        default: "exclamationmark.circle"
         }
     }
 
@@ -231,12 +197,10 @@ struct MergeIntoBaseSheet: View {
                 Text("STRATEGY").font(DieterFont.sectionLabel).tracking(0.45).foregroundStyle(
                     DieterTheme.tertiary)
                 Picker("Merge strategy", selection: $strategy) {
-                    Text("Squash").tag("squash")
-                    Text("Merge commit").tag("merge_commit")
-                    Text("Fast-forward").tag("fast_forward")
+                    ForEach(readiness.strategies, id: \.strategy) { Text($0.title).tag($0.strategy) }
                 }
                 .labelsHidden().pickerStyle(.segmented).disabled(running)
-                Text(strategyCaption)
+                Text(readiness.strategies.first { $0.strategy == strategy }?.caption ?? "")
                     .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                 Toggle("Validate the merge result", isOn: $validate)
                     .font(.system(size: 11)).toggleStyle(.switch).controlSize(.mini).disabled(running)
@@ -251,24 +215,12 @@ struct MergeIntoBaseSheet: View {
                     .disabled(running)
                 Text(
                     removeWorkspace
-                        ? (isChat ? "The chat keeps its full history." : "Card moves to Done.")
+                        ? (model.movesToDone ? "Card moves to Done." : "The chat keeps its full history.")
                         : "The worktree stays for follow-up work."
                 )
                 .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
             }
             .frame(width: 210, alignment: .leading)
-        }
-    }
-
-    private var strategyCaption: String {
-        let count = changes?.commits.count ?? 0
-        switch strategy {
-        case "merge_commit": return "Keeps every commit and adds a merge commit."
-        case "fast_forward": return "Moves \(baseBranch) forward without a new commit."
-        default:
-            return count > 1
-                ? "\(count) commits become one on \(baseBranch)."
-                : "The work lands as a single commit on \(baseBranch)."
         }
     }
 
@@ -280,7 +232,7 @@ struct MergeIntoBaseSheet: View {
                 Image(systemName: "exclamationmark.triangle").foregroundStyle(DieterTheme.coral).font(
                     .system(size: 13, weight: .semibold))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(conflictTitle).font(.system(size: 12, weight: .semibold)).foregroundStyle(
+                    Text(model.conflictTitle).font(.system(size: 12, weight: .semibold)).foregroundStyle(
                         DieterTheme.coral)
                     Text("Merge is blocked until conflicts are resolved.")
                         .font(DieterFont.meta).foregroundStyle(DieterTheme.coral.opacity(0.8))
@@ -328,10 +280,7 @@ struct MergeIntoBaseSheet: View {
                 }
                 Spacer()
                 Button("Resolve with agent") {
-                    let prompt = WorkspaceAgentPrompt.resolveConflicts(
-                        baseBranch: baseBranch,
-                        conflicts: model.gitOperation?.conflicts ?? []
-                    )
+                    let prompt = model.conflictPrompt
                     Task {
                         if await model.sendAgentMessage(prompt) {
                             model.showWorkspaceToast("Asked the agent to resolve the conflicts")
@@ -346,12 +295,6 @@ struct MergeIntoBaseSheet: View {
             .background(DieterTheme.shell.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
             .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.shell.opacity(0.18)))
         }
-    }
-
-    private var conflictTitle: String {
-        let count = model.gitOperation?.conflicts.count ?? 0
-        if count > 0 { return "\(count) file\(count == 1 ? "" : "s") conflict with \(baseBranch)" }
-        return "This workspace conflicts with \(baseBranch)"
     }
 
     // MARK: Footer
@@ -369,20 +312,18 @@ struct MergeIntoBaseSheet: View {
                 Spacer()
                 Button("Abort") { startOperationAndDismiss(.abortConflict) }
                     .buttonStyle(DieterSecondaryButtonStyle(destructive: true))
+                    .disabled(!availability.allows(.abortConflict))
                 Button("Continue after resolving") { startOperationAndDismiss(.continueConflict) }
                     .buttonStyle(DieterSecondaryButtonStyle())
+                    .disabled(!availability.allows(.continueConflict))
                 Button("Merge blocked") {}
                     .buttonStyle(DieterPrimaryButtonStyle())
                     .disabled(true).opacity(0.45)
             } else {
-                Text(
-                    availability.remotePublishMode == RemotePublishMode.pushBase.rawValue
-                        ? "Validated result is pushed to the configured base remote"
-                        : "Runs locally · nothing is pushed"
-                )
-                .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
+                Text(availability.mergeDestination)
+                    .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                 Spacer()
-                if mergeFailedConflict {
+                if readiness.mergeFailed {
                     Button {
                         startOperationAndDismiss(.update)
                     } label: {
@@ -401,7 +342,7 @@ struct MergeIntoBaseSheet: View {
                 Button {
                     startMerge()
                 } label: {
-                    Label(mergeButtonTitle, systemImage: "arrow.triangle.merge")
+                    Label(readiness.mergeTitle, systemImage: "arrow.triangle.merge")
                 }
                 .buttonStyle(DieterPrimaryButtonStyle())
                 .keyboardShortcut(.return, modifiers: .command)
@@ -428,26 +369,17 @@ struct MergeIntoBaseSheet: View {
                 body: bodyText.trimmingCharacters(in: .whitespacesAndNewlines),
                 validate: validate,
                 removeWorkspace: removeWorkspace,
-                moveCardToDone: removeWorkspace && !isChat
+                moveCardToDone: removeWorkspace && model.movesToDone
             )
             if merged { dismiss() }
         }
     }
 
     private func startOperationAndDismiss(_ kind: GitOperationKind) {
-        Task {
-            let parameters: [String: String]
-            switch kind {
-            case .update: parameters = ["fetch": "true", "validate": "false"]
-            case .continueConflict:
-                parameters = [
-                    "conflicted_operation_id": model.gitOperation?.id ?? "", "validate": String(validate),
-                ]
-            case .abortConflict: parameters = ["conflicted_operation_id": model.gitOperation?.id ?? ""]
-            default: parameters = [:]
-            }
-            if await model.startGitOperation(kind, parameters: parameters) { dismiss() }
-        }
+        var form = kind.form(card: card).initial
+        // An update from here only catches up; this sheet's toggle decides a continue's validation.
+        form.validate = kind == .continueConflict ? validate : kind == .update ? false : form.validate
+        Task { if await model.startGitOperation(form: form) { dismiss() } }
     }
 }
 

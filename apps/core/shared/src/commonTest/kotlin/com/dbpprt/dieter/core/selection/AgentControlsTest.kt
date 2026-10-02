@@ -63,6 +63,7 @@ class AgentControlsTest {
         assertEquals("Codex", controls.providerLabel)
         assertEquals("Sol", controls.modelLabel)
         assertEquals(listOf("low", "medium", "high"), controls.efforts.map { it.id })
+        assertEquals(listOf("Default" to "default", "Low" to "low", "Medium" to "medium", "High" to "high"), controls.effortChoices.map { it.name to it.id }, "the provider's own default is offered first")
         assertEquals("Medium", controls.effortLabel, "an unset effort shows the model's default")
         assertEquals("High", controls.copy(selection = controls.choosingEffort("high")).effortLabel)
         assertEquals("Default", controls.copy(selection = controls.choosingEffort(Selections.DEFAULT_EFFORT)).effortLabel)
@@ -78,18 +79,48 @@ class AgentControlsTest {
     }
 
     @Test
-    fun modelChangesResetEffortAndRevalidateOptions() {
+    fun modelChangesTakeTheModelsDefaultEffortAndRevalidateOptions() {
         val controls = AgentControls.forConversation(null, runningCard, listOf(codex))
         val spark = controls.choosingModel("spark")
-        assertEquals(HarnessSelection(provider = "codex", model = "spark", effort = "default"), spark, "the Sol-only option is dropped")
+        assertEquals(HarnessSelection(provider = "codex", model = "spark", effort = "default"), spark, "no default effort: the provider's own; the Sol-only option is dropped")
         val restored = controls.copy(selection = spark).choosingModel("sol")
-        assertEquals("default", restored.effort)
+        assertEquals("medium", restored.effort, "the model's own default effort")
         assertEquals(mapOf("fast_mode" to "false"), restored.provider_options, "the option returns at its default")
         assertEquals(
-            HarnessSelection(provider = "codex", model = "sol", effort = "default", provider_options = mapOf("fast_mode" to "false")),
+            HarnessSelection(provider = "codex", model = "sol", effort = "medium", provider_options = mapOf("fast_mode" to "false")),
             controls.choosingProvider(codex),
             "another provider starts from its own defaults",
         )
+    }
+
+    @Test
+    fun aModelChangeKeepsAnEffortThatMayNotChange() {
+        val modelOnly = codex.copy(capabilities = listOf(HarnessCapability(id = "model-selection", level = "between-turns")))
+        val controls = AgentControls.forConversation(null, runningCard, listOf(modelOnly))
+        assertTrue(controls.modelEnabled && !controls.effortEnabled)
+        assertEquals("high", controls.choosingModel("spark").effort)
+        assertEquals("medium", AgentControls(HarnessSelection("codex", "spark", "high"), listOf(modelOnly)).choosingModel("sol").effort, "a new conversation takes the model's default")
+    }
+
+    @Test
+    fun aProviderStartsFromItsFirstModelWhenItsDefaultIsUnknown() {
+        val unnamed = codex.copy(default_model = "")
+        assertEquals(HarnessSelection("codex", "sol", "medium", mapOf("fast_mode" to "false")), Selections.selectingProvider(unnamed))
+        assertEquals("sol", Selections.selectingProvider(codex.copy(default_model = "retired")).model)
+        assertEquals(HarnessSelection("bare", "", "default"), Selections.selectingProvider(Harness(id = "bare")))
+    }
+
+    @Test
+    fun effortsFollowTheDaemonsRule() {
+        val listed = HarnessModel(id = "listed", efforts = listOf("turbo", "low"))
+        val harness = codex.copy(models = codex.models + listed)
+        assertEquals(listOf("turbo", "low"), Selections.efforts(harness, listed), "a model's own list, even with efforts the harness does not name")
+        assertEquals(listOf("low", "medium", "high", "xhigh"), Selections.efforts(harness, null))
+        val controls = AgentControls(HarnessSelection("codex", "listed"), listOf(harness))
+        assertEquals(listOf("Turbo" to "turbo", "Low" to "low"), controls.efforts.map { it.name to it.id }, "names come from the harness, else the ID")
+        assertEquals("default", Selections.defaultEffort(harness, listed), "no default effort")
+        assertEquals("medium", Selections.defaultEffort(harness, codex.models.first()))
+        assertEquals("default", Selections.defaultEffort(harness, HarnessModel(id = "odd", default_effort = "xhigh", efforts = listOf("low"))), "a default the model rejects")
     }
 
     @Test
@@ -136,5 +167,22 @@ class AgentControlsTest {
         assertTrue(controls.optionEnabled(fastMode))
         assertFalse(controls.optionEnabled(instructions))
         assertTrue(controls.copy(locked = false).optionEnabled(instructions))
+    }
+
+    @Test
+    fun optionsAreEditedByTheirAdvertisedType() {
+        assertEquals(ProviderOptionKind.TOGGLE, Selections.optionKind(fastMode))
+        assertEquals(ProviderOptionKind.TOGGLE, Selections.optionKind(fastMode.copy(type = "Bool")))
+        assertEquals(ProviderOptionKind.CHOICE, Selections.optionKind(ProviderOption(type = "select")))
+        assertEquals(ProviderOptionKind.CHOICE, Selections.optionKind(ProviderOption(type = "enum")))
+        assertEquals(ProviderOptionKind.TEXT, Selections.optionKind(ProviderOption(type = "string")))
+        assertTrue(Selections.isOn("TRUE"))
+        assertFalse(Selections.isOn("yes"))
+
+        val mode = ProviderOption(id = "mode", name = "Mode", type = "enum", choices = listOf(ProviderOptionChoice(value_ = "quick", name = "Quick"), ProviderOptionChoice(value_ = "deep")))
+        assertEquals("Quick", Selections.optionLabel(mode, "quick"))
+        assertEquals("deep", Selections.optionLabel(mode, "deep"), "an unnamed choice shows its value")
+        assertEquals("Mode", Selections.optionLabel(mode, "turbo"), "a value outside the choices shows the option")
+        assertEquals(listOf("Quick", "deep"), mode.choices.map(Selections::choiceName))
     }
 }

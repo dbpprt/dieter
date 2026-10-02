@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterShared
 import Foundation
 
 enum ConversationWorkspaceMode: String, CaseIterable, Identifiable, Sendable {
@@ -7,27 +8,14 @@ enum ConversationWorkspaceMode: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
-    var title: String {
-        switch self {
-        case .worktree: "Worktree"
-        case .project: "Project directory"
-        }
-    }
+    /// "Worktree" or "Project directory", as the shared core words it.
+    var title: String { SharedRules.shared.workspaceModeTitle(mode: rawValue) }
 
-    var shortTitle: String {
-        switch self {
-        case .worktree: "Worktree"
-        case .project: "Project"
-        }
-    }
+    /// "Worktree" or "Project".
+    var shortTitle: String { SharedRules.shared.workspaceModeShortTitle(mode: rawValue) }
 
-    var detail: String {
-        switch self {
-        case .worktree: "Create a new isolated Git worktree and branch for this conversation."
-        case .project:
-            "Use the registered project directory on whichever branch it currently has checked out."
-        }
-    }
+    /// What the mode does.
+    var detail: String { SharedRules.shared.workspaceModeDetail(mode: rawValue) }
 
     static func projectMode(_ value: String) -> ConversationWorkspaceMode {
         selectable(value)
@@ -52,14 +40,13 @@ struct ConversationWorkspaceDraft: Equatable, Sendable {
     var baseRemote = ""
     var remotePublishMode = RemotePublishMode.manual.rawValue
 
-    func apply(to request: inout Dieter_V1_CreateConversationRequest) {
-        request.workspaceMode = mode.rawValue
-        request.workspaceBranch =
-            mode == .worktree ? branch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
-        request.workspaceBaseBranch =
-            mode == .worktree ? baseBranch.trimmingCharacters(in: .whitespacesAndNewlines) : ""
-        request.workspaceBaseRemote = baseRemote.trimmingCharacters(in: .whitespacesAndNewlines)
-        request.remotePublishMode = remotePublishMode
+    /// The workspace as chosen; the core uses the overrides in worktree mode only.
+    func apply(to intent: inout ClientCreationIntent) {
+        intent.workspaceMode = mode.rawValue
+        intent.workspaceBranch = branch.trimmingCharacters(in: .whitespacesAndNewlines)
+        intent.workspaceBaseBranch = baseBranch.trimmingCharacters(in: .whitespacesAndNewlines)
+        intent.workspaceBaseRemote = baseRemote.trimmingCharacters(in: .whitespacesAndNewlines)
+        intent.remotePublishMode = remotePublishMode
     }
 }
 
@@ -141,35 +128,16 @@ enum GitOperationKind: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
-    var title: String {
-        switch self {
-        case .commit: "Commit changes"
-        case .update: "Update from base"
-        case .validate: "Run validation"
-        case .mergeLocal: "Merge locally"
-        case .push: "Push branch"
-        case .createPullRequest: "Create pull request"
-        case .refreshPullRequest: "Refresh pull request"
-        case .mergePullRequest: "Merge pull request"
-        case .continueConflict: "Continue after resolving"
-        case .abortConflict: "Abort conflicted operation"
-        case .adopt: "Move workspace"
-        case .cleanup: "Clean up workspace"
-        case .discard: "Discard workspace"
-        }
+    /// The operation's form as the shared core describes it, filled from `card`.
+    func form(card: Dieter_V1_Card? = nil, baseBranch: String = "") -> ClientGitOperationFormSpec {
+        ClientGitOperationFormSpec(
+            rules: SharedRules.shared.gitOperationForm(
+                kind: rawValue, cardTitle: card?.title ?? "", cardPrompt: card?.initialPrompt ?? "",
+                pullRequestHeadSha: card?.pullRequest.headSha ?? "", baseBranch: baseBranch))
     }
 
-    var destructive: Bool { self == .discard || self == .abortConflict }
-}
-
-enum GitOperationStatus {
-    static func terminal(_ value: String) -> Bool {
-        ["succeeded", "failed", "canceled", "interrupted"].contains(value)
-    }
-
-    static func active(_ value: String) -> Bool {
-        ["queued", "running", "waiting_for_resolution"].contains(value)
-    }
+    /// "Commit changes", as the core words the operation.
+    var title: String { form().title }
 }
 
 /// What a workspace allows now. The shared core decides it from the card,
@@ -179,7 +147,6 @@ struct WorkspaceActionAvailability: Equatable {
     var allowsMergeFlow = false
     var hasReviewBranch = false
     var workspaceMode = ConversationWorkspaceMode.project.rawValue
-    var remotePublishMode = RemotePublishMode.manual.rawValue
     /// Where a merge's result ends up.
     var mergeDestination = ""
 
@@ -203,42 +170,11 @@ enum WorkspaceReviewLayout {
     }
 }
 
-enum WorkspaceChangePresentation {
-    static func badge(status: String, conflicted: Bool = false, untracked: Bool = false) -> String {
-        if conflicted { return "!" }
-        if untracked { return "U" }
-        return switch status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "a", "add", "added": "A"
-        case "d", "delete", "deleted": "D"
-        case "r", "rename", "renamed": "R"
-        case "c", "copy", "copied": "C"
-        case "u", "unmerged", "conflicted": "!"
-        default: "M"
-        }
+extension ClientChangedFileLabel {
+    /// A changed file as lists show it: its badge, title, name, and folder.
+    static func of(_ path: String, status: String = "", conflicted: Bool = false, untracked: Bool = false) -> Self {
+        Self(
+            rules: SharedRules.shared.changedFile(
+                path: path, status: status, conflicted: conflicted, untracked: untracked))
     }
-
-    static func title(status: String, conflicted: Bool = false, untracked: Bool = false) -> String {
-        if conflicted { return "Conflicted" }
-        if untracked { return "Untracked" }
-        return switch badge(status: status) {
-        case "A": "Added"
-        case "D": "Deleted"
-        case "R": "Renamed"
-        case "C": "Copied"
-        default: "Modified"
-        }
-    }
-
-    static func filename(_ path: String) -> String {
-        (path as NSString).lastPathComponent
-    }
-
-    static func directory(_ path: String) -> String {
-        let value = (path as NSString).deletingLastPathComponent
-        return value == "." ? "" : value
-    }
-}
-
-extension Dieter_V1_WorkspaceSummary {
-    var hasMaterialChanges: Bool { changedFiles > 0 || additions > 0 || deletions > 0 }
 }

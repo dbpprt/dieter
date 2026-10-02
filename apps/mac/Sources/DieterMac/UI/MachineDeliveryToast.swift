@@ -1,3 +1,4 @@
+import DieterAPI
 import SwiftUI
 
 struct MachineDeliveryToastStack: View {
@@ -5,76 +6,44 @@ struct MachineDeliveryToastStack: View {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 10) {
-            ForEach(store.machines, id: \.id) { machine in
-                if let summary = store.outboxSummary(for: machine) {
-                    MachineDeliveryToast(machine: machine, summary: summary)
-                        .transition(
-                            .asymmetric(
-                                insertion: .move(edge: .trailing).combined(with: .opacity),
-                                removal: .scale(scale: 0.96, anchor: .topTrailing).combined(with: .opacity)
-                            ))
-                }
+            ForEach(store.machineOutboxes, id: \.daemonID) { outbox in
+                MachineDeliveryToast(outbox: outbox)
+                    .transition(
+                        .asymmetric(
+                            insertion: .move(edge: .trailing).combined(with: .opacity),
+                            removal: .scale(scale: 0.96, anchor: .topTrailing).combined(with: .opacity)
+                        ))
             }
         }
-        .animation(.spring(response: 0.34, dampingFraction: 0.86), value: store.machineOutboxSummaries)
+        .animation(.spring(response: 0.34, dampingFraction: 0.86), value: store.machineOutboxes)
     }
 }
 
+/// One machine's queued work, worded by the shared core.
 private struct MachineDeliveryToast: View {
     @Environment(DieterStore.self) private var store
-    let machine: DieterEndpoint
-    let summary: MachineOutboxSummary
+    let outbox: ClientMachineOutbox
     @State private var discardConfirmationPresented = false
 
-    private var phase: MachineDeliveryToastPhase { summary.toastPhase(machineOnline: machine.online) }
-
     private var tint: Color {
-        switch phase {
+        switch outbox.phase {
         case .sending: DieterTheme.primary
-        case .waiting, .waitingForStorage, .retrying: DieterTheme.amber
         case .failed: DieterTheme.coral
-        }
-    }
-
-    private var title: String {
-        switch phase {
-        case .sending: "Delivering to \(machine.name)"
-        case .waiting: "Waiting for \(machine.name)"
-        case .waitingForStorage: "Low disk space on \(machine.name)"
-        case .retrying: "Retrying delivery to \(machine.name)"
-        case .failed: "Delivery to \(machine.name) failed"
-        }
-    }
-
-    private var detail: String {
-        switch phase {
-        case .sending: "\(summary.queuedLabel) · Sending now"
-        case .waiting: "\(summary.queuedLabel) · Sends when it reconnects"
-        case .waitingForStorage:
-            "\(summary.queuedLabel). Free disk space on \(machine.name); retries automatically every minute."
-        case .retrying: "\(summary.queuedLabel) · Trying again automatically"
-        case .failed:
-            summary.failureMessage ?? "\(summary.queuedLabel) · Try again when the machine is available"
+        default: DieterTheme.amber
         }
     }
 
     private var symbol: String {
-        switch phase {
+        switch outbox.phase {
         case .sending: "arrow.up"
         case .waiting: "wifi.exclamationmark"
         case .waitingForStorage: "externaldrive.badge.exclamationmark"
         case .retrying: "arrow.clockwise"
-        case .failed: "exclamationmark.triangle.fill"
+        default: "exclamationmark.triangle.fill"
         }
     }
 
-    private var retryTitle: String {
-        switch phase {
-        case .failed, .retrying: "Try Again"
-        case .waiting, .waitingForStorage: "Retry Now"
-        case .sending: ""
-        }
-    }
+    private var identifier: String { "machine.\(outbox.daemonID)" }
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -87,17 +56,17 @@ private struct MachineDeliveryToast: View {
             .frame(width: 32, height: 32)
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(title)
+                Text(outbox.title)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DieterTheme.text)
-                    .lineLimit(phase == .waitingForStorage ? nil : 1)
-                    .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id).queue-title")
-                    .smokeTarget("machine.\(machine.daemonID ?? machine.id).queue-title")
+                    .lineLimit(outbox.phase == .waitingForStorage ? nil : 1)
+                    .accessibilityIdentifier("\(identifier).queue-title")
+                    .smokeTarget("\(identifier).queue-title")
 
-                Text(detail)
+                Text(outbox.detail)
                     .font(.system(size: 10.5))
                     .foregroundStyle(DieterTheme.tertiary)
-                    .lineLimit(phase == .waitingForStorage ? nil : 2)
+                    .lineLimit(outbox.phase == .waitingForStorage ? nil : 2)
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 12) {
@@ -107,15 +76,15 @@ private struct MachineDeliveryToast: View {
                     .buttonStyle(.plain)
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(DieterTheme.tertiary)
-                    .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id).cancel-queue")
+                    .accessibilityIdentifier("\(identifier).cancel-queue")
 
-                    if phase != .sending {
-                        Button(retryTitle) { Task { await store.retryOutbox(for: machine) } }
+                    if !outbox.retryTitle.isEmpty {
+                        Button(outbox.retryTitle) { Task { await store.retryOutbox(daemonID: outbox.daemonID) } }
                             .buttonStyle(.borderedProminent)
                             .controlSize(.small)
                             .tint(tint)
-                            .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id).retry")
-                            .smokeTarget("machine.\(machine.daemonID ?? machine.id).retry")
+                            .accessibilityIdentifier("\(identifier).retry")
+                            .smokeTarget("\(identifier).retry")
                     }
                 }
                 .padding(.top, 3)
@@ -128,26 +97,29 @@ private struct MachineDeliveryToast: View {
         .dieterToastChrome()
         .overlay {
             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .stroke(tint.opacity(phase == .failed ? 0.38 : 0.24))
+                .stroke(tint.opacity(outbox.phase == .failed ? 0.38 : 0.24))
         }
         .overlay(alignment: .leading) {
             Capsule().fill(tint).frame(width: 3).padding(.vertical, 12)
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id).queue")
-        .smokeTarget("machine.\(machine.daemonID ?? machine.id).queue")
+        .accessibilityIdentifier("\(identifier).queue")
+        .smokeTarget("\(identifier).queue")
         .confirmationDialog(
-            "Cancel delivery to \(machine.name)?",
+            "Cancel delivery to \(outbox.machineName)?",
             isPresented: $discardConfirmationPresented,
             titleVisibility: .visible
         ) {
-            Button("Cancel \(summary.itemCount == 1 ? "Queued Item" : "Queued Items")", role: .destructive) {
-                Task { await store.discardOutbox(for: machine) }
+            Button(
+                "Cancel \(outbox.messageCount + outbox.changeCount == 1 ? "Queued Item" : "Queued Items")",
+                role: .destructive
+            ) {
+                Task { await store.discardOutbox(daemonID: outbox.daemonID) }
             }
             Button("Keep Waiting", role: .cancel) {}
         } message: {
             Text(
-                "This permanently removes the queued work from this Mac. Work already accepted by \(machine.name) is not affected."
+                "This permanently removes the queued work from this Mac. Work already accepted by \(outbox.machineName) is not affected."
             )
         }
     }

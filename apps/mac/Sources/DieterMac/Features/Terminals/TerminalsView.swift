@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterShared
 @preconcurrency import SwiftTerm
 import SwiftUI
 
@@ -193,7 +194,7 @@ struct TerminalsView: View {
                     .frame(width: 6, height: 6)
                 Text(terminalStatusText(terminal))
                     .foregroundStyle(DieterTheme.subtle)
-                Text(abbreviatedPath(terminal.workingDirectory))
+                Text(SharedRules.shared.compactPath(path: terminal.workingDirectory))
                     .foregroundStyle(DieterTheme.tertiary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -274,10 +275,6 @@ struct TerminalsView: View {
             return model.terminalStreamConnected ? model.machineName : "Reconnecting"
         }
         return terminal.hasExitCode ? "Exited \(terminal.exitCode)" : "Exited"
-    }
-
-    private func abbreviatedPath(_ path: String) -> String {
-        (path as NSString).abbreviatingWithTildeInPath
     }
 }
 

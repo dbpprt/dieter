@@ -8,7 +8,7 @@ import Testing
     let defaults = try #require(UserDefaults(suiteName: suiteName))
     defer { defaults.removePersistentDomain(forName: suiteName) }
     defaults.set("fixture-account", forKey: "DieterSharedKV.activeAccount")
-    let store = DieterStore(environment: .testing(defaults: defaults), restoreSync: false)
+    let store = DieterStore(environment: .testing(defaults: defaults), liveEnvironment: false)
 
     var firstProject = Dieter_V1_Project()
     firstProject.id = "p_first_machine"
@@ -20,9 +20,8 @@ import Testing
     preferredBoard.id = "b_preferred"
     preferredBoard.projectID = preferredProject.id
     preferredBoard.name = "Main"
-    store.sidebarProjectNavigation = SidebarProjectNavigationPreferences(
-        projectOrder: [preferredProject.id, firstProject.id]
-    )
+    store.foldNavigation(
+        .with { $0.projects = .with { $0.order = [preferredProject.id, firstProject.id] } })
 
     // The core restores every cached machine's view as one merged workspace.
     var state = Dieter_V1_State()

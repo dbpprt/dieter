@@ -9,7 +9,6 @@ struct ConversationContentScope {
     let target: WorkspaceTarget
     let rootPath: String
     var card: Dieter_V1_Card? = nil
-    var doneLaneID: String? = nil
     var machineName = "Machine"
     var workspaceMode = "worktree"
     var projectName = "Project"
@@ -79,7 +78,7 @@ final class ConversationContentTab: Identifiable {
     var dirty: Bool { files.fileEditorSession.isDirty }
     var symbol: String {
         if case .file(let path, _) = selection {
-            return ProjectFileLanguage.detect(filename: path) == .markdown ? "doc.richtext" : "doc.text"
+            return FilePresentation.symbol(name: path)
         }
         return kind.symbol
     }
@@ -117,7 +116,6 @@ final class ConversationContentModel {
     @ObservationIgnored var onReviewSendMessage: @MainActor (String, Dieter_V1_Card, WorkspaceTarget) async -> Bool = {
         _, _, _ in false
     }
-    @ObservationIgnored var onReviewCard: @MainActor (Dieter_V1_Card) -> Void = { _ in }
     @ObservationIgnored var onReviewOperationFinished: @MainActor (WorkspaceTarget) async -> Void = { _ in }
     @ObservationIgnored var prepareScope: @MainActor (String) async throws -> ConversationContentScope = { _ in
         throw CocoaError(.fileReadNoPermission)
@@ -309,7 +307,7 @@ final class ConversationContentModel {
         if reveal { isOpen = true }
         defer { if request == generation { loading = false; pendingTab = nil } }
         do {
-            if ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
+            if ConversationContentLink.isWeb(url) {
                 try validateWebURL(url, id)
                 if ExternalBrowserRules.matches(url, entries: ExternalBrowserRules.entries()) {
                     NSWorkspace.shared.open(url)
@@ -468,8 +466,8 @@ final class ConversationContentModel {
         for tab in tabs { tab.terminals.active = false; tab.processes.active = false }
     }
 
-    /// Connection replacement invalidates old clients immediately; rebinding a
-    /// same-target FilesModel retains the native editor and unsaved revision.
+    /// When the connected machine changes, every tab stops until it rebinds;
+    /// rebinding a same-target FilesModel keeps the native editor and its unsaved text.
     func invalidateTransports() {
         bindingGeneration &+= 1
         bindingTask?.cancel(); bindingTask = nil
@@ -575,10 +573,9 @@ final class ConversationContentModel {
         tab.terminals.terminalScopeCardID = scope.target.conversationID
         tab.terminals.machineName = scope.machineName
         tab.terminals.isLive = core != nil
-        tab.review.bind(target: scope.target, core: core, card: scope.card, doneLaneID: scope.doneLaneID)
+        tab.review.bind(target: scope.target, core: core, card: scope.card)
         tab.review.authorName = NSFullUserName()
         tab.review.onSendMessage = onReviewSendMessage
-        tab.review.onCard = onReviewCard
         tab.review.onOperationFinished = onReviewOperationFinished
         tab.review.onOpenFiles = { [weak self, weak tab] _, path in
             guard let self, let tab else { return }

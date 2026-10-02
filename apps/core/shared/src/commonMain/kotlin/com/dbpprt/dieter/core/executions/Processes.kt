@@ -6,8 +6,8 @@ import com.dbpprt.dieter.api.v1.ExecutionRef
 import com.dbpprt.dieter.api.v1.ExecutionStream
 import com.dbpprt.dieter.api.v1.ListExecutionsRequest
 import com.dbpprt.dieter.api.v1.WatchExecutionRequest
+import com.dbpprt.dieter.core.runtime.Deadlines
 import com.dbpprt.dieter.core.runtime.Failures
-import com.dbpprt.dieter.core.runtime.withDeadline
 import com.dbpprt.dieter.core.session.MachineSessions
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.seconds
@@ -59,6 +59,9 @@ class Processes(private val sessions: MachineSessions, private val scope: Corout
     private var completedId: String? = null
     private var sequence = 0L
 
+    /** Stops refreshing and shows nothing; the processes keep running. */
+    fun stop() = bind(null, active = false)
+
     /** Shows [target]'s processes while [active]; null or inactive stops refreshing. */
     fun bind(target: ProcessTarget?, active: Boolean) {
         val changed = target != view.value.target
@@ -86,9 +89,7 @@ class Processes(private val sessions: MachineSessions, private val scope: Corout
         val target = view.value.target ?: return
         mutableView.update { it.copy(loading = true) }
         try {
-            val listed = withDeadline(DEADLINE) {
-                sessions.call(target.daemonId) { it.ListExecutions().execute(ListExecutionsRequest(project_id = target.projectId, card_id = target.cardId)) }
-            }.executions.filter { it.card_id == target.cardId && it.project_id == target.projectId }
+            val listed = sessions.call(target.daemonId, Deadlines.CALL) { it.ListExecutions().execute(ListExecutionsRequest(project_id = target.projectId, card_id = target.cardId)) }.executions.filter { it.card_id == target.cardId && it.project_id == target.projectId }
             if (bound != generation) return
             mutableView.update { state ->
                 val merged = listed.map { incoming -> state.processes.firstOrNull { it.id == incoming.id && it.sequence.toULong() > incoming.sequence.toULong() } ?: incoming }
@@ -193,7 +194,7 @@ class Processes(private val sessions: MachineSessions, private val scope: Corout
         val bound = generation
         mutableView.update { it.copy(stopping = true) }
         try {
-            val result = withDeadline(DEADLINE) { sessions.call(target.daemonId) { it.CancelExecution().execute(ExecutionRef(execution_id = selected.id)) } }
+            val result = sessions.call(target.daemonId, Deadlines.CALL) { it.CancelExecution().execute(ExecutionRef(execution_id = selected.id)) }
             if (bound == generation) mutableView.update { current -> current.copy(processes = current.processes.map { if (it.id == result.id) result else it }) }
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
@@ -207,7 +208,6 @@ class Processes(private val sessions: MachineSessions, private val scope: Corout
         const val MAX_STREAM_BYTES = 128 * 1024
         const val HEARTBEAT_MS = 15_000
         private val POLL = 2.seconds
-        private val DEADLINE = 15.seconds
 
         /** Appends and keeps the newest bytes, cutting at a UTF-8 character boundary. */
         fun append(current: ByteString, data: ByteString): Pair<ByteString, Boolean> {

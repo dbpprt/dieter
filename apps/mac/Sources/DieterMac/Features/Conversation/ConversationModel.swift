@@ -1,5 +1,6 @@
 import DieterAPI
 import DieterCore
+import DieterShared
 import Foundation
 import Observation
 import SharedCore
@@ -9,7 +10,6 @@ import SharedCore
 /// state. The core owns the stream, retries, and the transcript cache.
 @MainActor @Observable
 final class ConversationModel {
-    @ObservationIgnored var presentSnapshot: (Dieter_V1_ConversationSnapshot) -> Dieter_V1_ConversationSnapshot = { $0 }
     var selectedCardID: String?
     var selectedChatID: String?
     var conversation: Dieter_V1_ConversationSnapshot? {
@@ -27,8 +27,19 @@ final class ConversationModel {
         didSet { if olderConversationMessages != oldValue { refreshConversationPresentationState() } }
     }
     var conversationMessages: [Dieter_V1_UiMessage] = []
+    /// Every loaded message by its timeline key: its ID, else "position:<index>".
+    private(set) var messagesByKey: [String: Dieter_V1_UiMessage] = [:]
+    /// The transcript's rows, as the core groups every loaded message.
+    private(set) var timeline: [ClientTimelineItem] = [] {
+        didSet { if timeline != oldValue, !presenting { conversationPresentationRevision &+= 1 } }
+    }
+    /// Task plans of messages that are not loaded, shown after the transcript.
+    private(set) var unattachedPlanIDs: [String] = []
     var conversationPresentationRevision = 0
-    var conversationHistoryStart = 0
+    #if DIETER_UI_SMOKE
+        /// Agent pickers a UI fixture shows over a catalog the core does not know.
+        var agentFixture: ClientAgentControlsState?
+    #endif
     var conversationHistoryTotal = 0
     var conversationHistoryHasMore = false
     var conversationHistoryLoading = false
@@ -41,8 +52,6 @@ final class ConversationModel {
     var conversationLoading = false
     var conversationSyncing = false
     var conversationLastRefreshedAt: Date?
-    /// A message this Mac sent has not been answered yet.
-    var awaitingReply = false
     /// A failed turn's retry was sent and has not run yet.
     var retrying = false
     /// The core's reading of the last turn's failure.
@@ -52,17 +61,30 @@ final class ConversationModel {
     var state = ClientConversationState()
     @ObservationIgnored var core: CoreClient?
     /// Synthetic earlier history UI fixtures render ahead of the core's.
-    @ObservationIgnored var fixtureHistory: [Dieter_V1_UiMessage] = []
+    @ObservationIgnored var fixtureHistory: [Dieter_V1_UiMessage] = [] {
+        didSet { if fixtureHistory != oldValue, let slice { present(slice) } }
+    }
     @ObservationIgnored var onAccepted: @MainActor (Dieter_V1_ConversationSnapshot, Bool) -> Void = { _, _ in }
     @ObservationIgnored var onContentPresentation: @MainActor (Dieter_V1_ContentPresentation, String) -> Void = {
         _, _ in
     }
+    #if DIETER_UI_SMOKE
+        /// Whether a UI fixture's conversation shows reasoning traces; the
+        /// core regroups every real conversation itself.
+        @ObservationIgnored var fixtureShowsReasoning = false {
+            didSet {
+                if fixtureShowsReasoning != oldValue { refreshConversationPresentationState(invalidate: true) }
+            }
+        }
+    #endif
     @ObservationIgnored private var subscription: SliceSubscription?
     @ObservationIgnored private(set) var observedCardID: String?
     @ObservationIgnored private var slice: ClientConversationSlice?
     @ObservationIgnored private var updates: UInt64 = 0
     @ObservationIgnored private var presentedContentIDs: Set<String> = []
     @ObservationIgnored private var presentedContentOrder: [String] = []
+    /// A slice is being presented; otherwise a UI fixture set the conversation.
+    @ObservationIgnored private var presenting = false
 
     /// Observes `cardID` through the core, which opens it on the machine that
     /// runs it; nil stops observing. Cached messages show at once.
@@ -96,6 +118,10 @@ final class ConversationModel {
             value.messages = KeyedList.apply(
                 value.messages, upserted: delta.upsertedMessages, removed: delta.removedMessageIds,
                 order: delta.orderChanged ? delta.messageOrder : nil, key: \.id)
+            value.timeline = KeyedList.apply(
+                value.timeline, upserted: delta.upsertedTimeline, removed: delta.removedTimelineIds,
+                order: delta.timelineOrderChanged ? delta.timelineOrder : nil, key: \.id)
+            value.unattachedPlanIds = delta.unattachedPlanIds
             value.loading = delta.loading
             value.syncing = delta.syncing
             value.error = delta.error
@@ -103,7 +129,6 @@ final class ConversationModel {
             value.hasEarlier_p = delta.hasEarlier_p
             value.loadingEarlier = delta.loadingEarlier
             value.browsingEarlier = delta.browsingEarlier
-            value.awaitingReply = delta.awaitingReply
             value.retrying = delta.retrying
             value.refreshedAtMillis = delta.refreshedAtMillis
             if delta.hasTurnFailure { value.turnFailure = delta.turnFailure } else { value.clearTurnFailure() }
@@ -127,6 +152,9 @@ final class ConversationModel {
     }
 
     private func present(_ slice: ClientConversationSlice) {
+        presenting = true
+        defer { presenting = false }
+        let revision = conversationPresentationRevision
         // The core's messages are loaded history followed by the live window.
         let earlier = min(max(0, Int(slice.earlierCount)), slice.messages.count)
         var snapshot = Dieter_V1_ConversationSnapshot()
@@ -140,8 +168,7 @@ final class ConversationModel {
         let older = fixtureHistory + slice.messages.prefix(earlier)
         if olderConversationMessages != older { olderConversationMessages = older }
         if hasContent {
-            let presented = presentSnapshot(snapshot)
-            if conversation != presented { conversation = presented }
+            if conversation != snapshot { conversation = snapshot }
             if selectedDetail != snapshot.detail { selectedDetail = snapshot.detail }
         }
         if browsingEarlierHistory != slice.browsingEarlier { browsingEarlierHistory = slice.browsingEarlier }
@@ -149,8 +176,19 @@ final class ConversationModel {
         if conversationHistoryLoading != slice.loadingEarlier { conversationHistoryLoading = slice.loadingEarlier }
         let total = max(Int(slice.page.total), slice.messages.count)
         if conversationHistoryTotal != total { conversationHistoryTotal = total }
-        let start = slice.browsingEarlier ? conversationHistoryStart : max(0, Int(slice.page.start) - earlier)
-        if conversationHistoryStart != start { conversationHistoryStart = start }
+        var rows = slice.timeline
+        #if DIETER_UI_SMOKE
+            // A UI fixture's earlier history has no core rows; lay it out by the core's rules.
+            if !fixtureHistory.isEmpty {
+                rows = ConversationTimelineFixture.rows(fixtureHistory, showReasoning: slice.state.showReasoning) + rows
+            }
+        #endif
+        if timeline != rows {
+            timeline = rows
+            // One slice is one presentation change, whether its messages, its rows, or both changed.
+            if conversationPresentationRevision == revision { conversationPresentationRevision &+= 1 }
+        }
+        if unattachedPlanIDs != slice.unattachedPlanIds { unattachedPlanIDs = slice.unattachedPlanIds }
         let error = slice.error.isEmpty ? nil : slice.error
         if conversationError != error { conversationError = error }
         let loading = slice.loading && !hasContent
@@ -159,35 +197,75 @@ final class ConversationModel {
         let refreshed =
             slice.refreshedAtMillis > 0 ? Date(timeIntervalSince1970: Double(slice.refreshedAtMillis) / 1_000) : nil
         if conversationLastRefreshedAt != refreshed { conversationLastRefreshedAt = refreshed }
-        if awaitingReply != slice.awaitingReply { awaitingReply = slice.awaitingReply }
         if retrying != slice.retrying { retrying = slice.retrying }
         let failure = slice.hasTurnFailure ? slice.turnFailure : nil
         if turnFailure != failure { turnFailure = failure }
         if state != slice.state { state = slice.state }
-        if hasContent, slice.hasCard { onAccepted(snapshot, slice.card.scope == "chat" && slice.card.boardID.isEmpty) }
+        if hasContent, slice.hasCard { onAccepted(snapshot, slice.state.chat) }
         presentContent(from: slice.conversation, daemonID: slice.daemonID)
     }
 
+    /// Loaded history followed by the live window, as the core lists them.
     func refreshConversationPresentationState(invalidate: Bool = false) {
-        let live = conversation?.conversation.messages ?? []
-        let liveIDs = Set(live.lazy.map(\.id).filter { !$0.isEmpty })
-        var seen = Set<String>()
-        let history = olderConversationMessages.filter { $0.id.isEmpty || !liveIDs.contains($0.id) }
-        let next = (history + live).filter { $0.id.isEmpty || seen.insert($0.id).inserted }
+        let next = olderConversationMessages + (conversation?.conversation.messages ?? [])
         let messagesChanged = conversationMessages != next
-        if messagesChanged { conversationMessages = next }
+        if messagesChanged {
+            conversationMessages = next
+            var keyed: [String: Dieter_V1_UiMessage] = [:]
+            for (index, message) in next.enumerated() {
+                keyed[message.id.isEmpty ? "position:\(index)" : message.id] = message
+            }
+            messagesByKey = keyed
+        }
+        #if DIETER_UI_SMOKE
+            // A conversation a UI fixture installed has no core rows or state.
+            if !presenting, subscription == nil {
+                if messagesChanged || invalidate {
+                    let queued = Set((conversation?.conversation.queue ?? []).map(\.id))
+                    timeline = ConversationTimelineFixture.rows(
+                        next, queued: queued, showReasoning: fixtureShowsReasoning)
+                }
+                state.showReasoning = fixtureShowsReasoning
+                if let card = conversation?.detail.card {
+                    state.chat = SharedRules.shared.isChat(scope: card.scope, boardId: card.boardID)
+                    state.runtime =
+                        conversation?.conversation.status.isEmpty == false
+                        ? conversation?.conversation.status ?? "" : card.runtime
+                }
+            }
+        #endif
         if messagesChanged || invalidate { conversationPresentationRevision &+= 1 }
     }
 
-    /// Shows a conversation this Mac holds locally (a creation still in the
-    /// outbox, or a fixture) until the core presents the real one.
-    func acceptConversation(_ snapshot: Dieter_V1_ConversationSnapshot, chat: Bool) {
-        let presented = presentSnapshot(snapshot)
-        if conversation != presented { conversation = presented }
-        if selectedDetail != snapshot.detail { selectedDetail = snapshot.detail }
-        conversationLoading = false
-        conversationError = nil
-        onAccepted(snapshot, chat)
+    /// The task plans a row shows, at their latest revision.
+    func taskPlans(ids: [String]) -> [Dieter_V1_TaskPlan] {
+        guard !ids.isEmpty else { return [] }
+        let plans = conversation?.conversation.taskPlans ?? []
+        return ids.compactMap { id in plans.filter { $0.id == id }.max { $0.revision < $1.revision } }
+    }
+
+    /// The delegated agents a row shows, in the row's order.
+    func subagents(ids: [String]) -> [Dieter_V1_Subagent] {
+        guard !ids.isEmpty else { return [] }
+        let agents = conversation?.conversation.subagents ?? []
+        return ids.compactMap { id in agents.first { $0.id == id } }
+    }
+
+    /// The message a timeline step renders, by the step's key.
+    func message(for step: ClientTimelineStep) -> Dieter_V1_UiMessage? {
+        if !step.messageID.isEmpty, let message = messagesByKey[step.messageID] { return message }
+        let key = step.id.components(separatedBy: ":part:").first ?? ""
+        return messagesByKey[key]
+    }
+
+    /// The part a timeline step renders: its message's part, with coalesced prose as its text.
+    func part(for step: ClientTimelineStep) -> Dieter_V1_MessagePart? {
+        guard let message = message(for: step), message.parts.indices.contains(Int(step.partIndex)) else {
+            return nil
+        }
+        var part = message.parts[Int(step.partIndex)]
+        if !step.text.isEmpty { part.text = step.text }
+        return part
     }
 
     /// Marks the visible reply as read; the core sends the receipt.
@@ -253,7 +331,6 @@ final class ConversationModel {
 
     func resetConversationHistory() {
         olderConversationMessages = []
-        conversationHistoryStart = 0
         conversationHistoryTotal = 0
         conversationHistoryHasMore = false
         conversationHistoryLoading = false

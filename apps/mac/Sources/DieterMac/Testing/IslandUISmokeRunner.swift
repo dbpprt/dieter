@@ -35,7 +35,7 @@
             }
 
             store.state.cards = Array(store.state.cards.prefix(1))
-            store.activityRows = Array(store.activityRows.prefix(1))
+            store.activity = fixtureActivity(Array(store.activity.rows.prefix(1)))
             let singleItemSettled = await waitForExpandedLayout(controller: controller, activity: store.islandActivity)
             let singleItemSize = controller.islandWindow?.frame.size ?? .zero
             let singleItemCount = store.islandActivity.items.count
@@ -49,7 +49,7 @@
             }
 
             store.state.cards = []
-            store.activityRows = []
+            store.activity = ClientActivitySlice()
             let emptySettled = await waitForExpandedLayout(controller: controller, activity: store.islandActivity)
             let emptySize = controller.islandWindow?.frame.size ?? .zero
             let emptyCount = store.islandActivity.items.count
@@ -475,14 +475,19 @@
             done.runtimeUpdatedAt = now
             store.state.boards = [board]
             store.state.cards = [running, review, done]
-            store.activityRows = zip([running, review, done], ["RUNNING", "ANSWER", "RECENT"]).map { card, kind in
-                .with {
-                    $0.card = card; $0.kind = kind
-                    $0.detail = card.summary.isEmpty ? "Latest conversation activity" : card.summary
-                    $0.atMillis = Int64(Date().timeIntervalSince1970 * 1000)
-                }
-            }
+            store.activity = fixtureActivity(
+                zip([running, review, done], [("RUNNING", "Running"), ("ANSWER", "Answer"), ("RECENT", "Recent")]).map {
+                    card, kind in
+                    .with {
+                        $0.card = card; $0.kind = kind.0; $0.kindLabel = kind.1; $0.title = card.title
+                        $0.needsYou = kind.0 == "ANSWER"
+                        $0.detail = card.summary.isEmpty ? "Latest conversation activity" : card.summary
+                        $0.atMillis = Date.now.epochMillis
+                        $0.shownAtMillis = $0.atMillis
+                    }
+                })
             store.phase = .connected(version: "island-smoke")
+            store.workspaceIsLive = true
         }
 
         private static func installNavigationFixture(
@@ -509,12 +514,32 @@
             store.navigationBoards[project.id] = [board]
             store.navigationCards[project.id] = [card]
             store.chats = [chat]
-            store.activityRows = [card, chat].map { card in
-                .with {
-                    $0.card = card; $0.kind = "UNREAD"; $0.detail = "Unread reply"
-                }
-            }
+            store.activity = fixtureActivity(
+                [card, chat].map { card in
+                    .with {
+                        $0.card = card; $0.kind = "UNREAD"; $0.kindLabel = "Unread reply"; $0.detail = "Unread reply"
+                        $0.title = card.title; $0.needsYou = true; $0.chat = card.scope == "chat"
+                    }
+                })
             return (project.id, board.id, card.id, chat.id)
+        }
+
+        /// The activity slice the core would send for `rows`: each on the
+        /// island, in order, with counts by kind.
+        private static func fixtureActivity(_ rows: [ClientActivityRow]) -> ClientActivitySlice {
+            .with { slice in
+                slice.rows = rows
+                slice.islandIds = rows.prefix(DieterIslandLayout.maximumVisibleRows).map(\.card.id)
+                let running = Int32(rows.filter { $0.kind == "RUNNING" }.count)
+                let attention = Int32(rows.filter(\.needsYou).count)
+                slice.summary = .with {
+                    $0.running = running
+                    $0.attention = attention
+                    $0.recent = Int32(rows.count) - running - attention
+                }
+                slice.islandAccessibility =
+                    "Dieter Island. \(running) running, \(attention) need attention, \(slice.summary.recent) recent."
+            }
         }
 
         private static func clickActivity(

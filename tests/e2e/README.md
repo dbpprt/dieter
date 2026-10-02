@@ -109,8 +109,10 @@ removes only owned reverses; failed cleanup also fails qualification.
 
 `--changed` uses current tracked/untracked changes and optional merge base. Known
 feature paths narrow cases; shared/unclassified Android inputs select broadly.
-Renamed/deleted paths are included. Documentation and JVM-only edits need no
-device execution. `just check-changed` remains the normal development entry point.
+A change to the shared core's sources (`apps/core`, outside its tests and
+`testing`) selects every Mac case and, unless it is Apple-only, every Android
+case. Renamed/deleted paths are included. Documentation and JVM-only edits need
+no device execution. `just check-changed` remains the normal development entry point.
 
 Retain native unit, codec, input, and performance assertions. Release/install/
 signing tooling is outside E2E consolidation. Do not add another test launcher:
@@ -133,7 +135,7 @@ platform-specific script.
 `just check` validates the catalog and both iOS layouts through `just e2e check`,
 so CI and release use the same portable gate. `just android check` compiles the
 E2E and performance apps/test drivers as well as running unit tests, debug assembly, and lint.
-All device execution uses `just e2e run`; the five old Android test aliases are removed. The Android job in the manual
+All device execution uses `just e2e run`. The Android job in the manual
 `Native E2E` workflow requires a runner labeled `self-hosted`, `Linux`,
 `dieter-android`, with Just/Go/Node/JDK21/Android SDK and the healthy visible
 `Pixel_9_API_37_1` AVD already available. It does not create, cold boot, or replace

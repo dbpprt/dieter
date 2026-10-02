@@ -1,8 +1,7 @@
 package com.dbpprt.dieter.core.identity
 
 /**
- * A Dieter gateway the user signs in to. Credentials are keyed by [origin],
- * which is also the key legacy Android, macOS, and iOS stores used.
+ * A Dieter gateway the user signs in to. Credentials are keyed by [origin].
  */
 data class Gateway(val name: String, val host: String, val port: Int, val secure: Boolean) {
     val origin: String get() = "${if (secure) "https" else "http"}://$host:$port"
@@ -11,13 +10,6 @@ data class Gateway(val name: String, val host: String, val port: Int, val secure
     val httpBase: String get() = "${if (secure) "https" else "http"}://${hostForUrl()}${if (secure && port == 443) "" else ":$port"}"
 
     private fun hostForUrl() = if (host.contains(':')) "[$host]" else host
-
-    /**
-     * Moves only the retired public address. Tokens stay keyed by their
-     * original origin, so the new gateway requires its own sign-in.
-     */
-    fun migrated(): Gateway =
-        if (secure && port == 443 && host.equals("board.dbpprt.com", ignoreCase = true)) copy(host = DEFAULT.host) else this
 
     /** Plaintext is only for loopback development gateways. */
     val permitted: Boolean get() = secure || Hosts.isLoopback(host)

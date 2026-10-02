@@ -9,32 +9,19 @@ struct KanbanView: View {
     var active = true
     let board: Dieter_V1_Board
 
-    private var lanes: [Dieter_V1_Lane] {
-        if !board.lanes.isEmpty { return board.lanes }
-        return ["backlog", "ready", "running", "review", "done"].map { id in
-            var lane = Dieter_V1_Lane()
-            lane.id = id
-            lane.name = id.capitalized
-            return lane
-        }
-    }
-
     var body: some View {
+        let projection = store.boardProjection
+        let lanes = projection.lanes
         GeometryReader { geometry in
             let laneWidth = KanbanLaneSizing.laneWidth(
                 availableWidth: geometry.size.width, laneCount: lanes.count)
             ScrollView(.horizontal) {
                 HStack(alignment: .top, spacing: KanbanLaneSizing.spacing) {
-                    ForEach(lanes, id: \.id) { lane in
-                        let direction = store.laneSortDirection(board: board.id, lane: lane.id)
+                    ForEach(lanes, id: \.laneID) { lane in
                         LaneColumn(
                             lane: lane,
-                            cards: BoardCardOrdering.sorted(
-                                store.boardProjection.displayedCardsByLane[lane.id] ?? [],
-                                direction: direction, moves: store.pendingCardMoves
-                            ),
-                            sortDirection: direction,
-                            onToggleSort: { store.toggleLaneSort(board: board.id, lane: lane.id) }
+                            cards: projection.cardsByLane[lane.laneID] ?? [],
+                            onToggleSort: { store.toggleLaneSort(board: board.id, lane: lane) }
                         )
                         .frame(width: laneWidth, height: max(0, geometry.size.height - 24))
                     }
@@ -53,17 +40,18 @@ struct LaneColumn: View {
     @Environment(DieterStore.self) private var store
     var usesTitlebarSpace = false
     var active = true
-    let lane: Dieter_V1_Lane
+    let lane: ClientBoardLaneView
     let cards: [Dieter_V1_Card]
-    let sortDirection: BoardCardSortDirection
     let onToggleSort: () -> Void
     @State private var isDropTargeted = false
 
+    private var sortDirection: BoardCardSortDirection { BoardCardSortDirection(descending: lane.descending) }
+
     private var laneTint: Color {
-        switch lane.id.lowercased() {
-        case "running": DieterTheme.primary
-        case "review": DieterTheme.amber
-        case "done": DieterTheme.eyes
+        switch lane.kind {
+        case .running: DieterTheme.primary
+        case .review: DieterTheme.amber
+        case .done: DieterTheme.eyes
         default: DieterTheme.tertiary
         }
     }
@@ -80,7 +68,7 @@ struct LaneColumn: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(DieterTheme.tertiary)
                         .frame(width: 20, height: 20)
-                        .smokeTarget("lane-sort.\(lane.id).\(sortDirection.systemImage)")
+                        .smokeTarget("lane-sort.\(lane.laneID).\(sortDirection.systemImage)")
                         .id(sortDirection.systemImage)
                 }
                 .buttonStyle(.borderless)
@@ -88,8 +76,8 @@ struct LaneColumn: View {
                 .quickHelp("Sort \(sortDirection.toggled.title.lowercased())")
                 .accessibilityLabel("\(lane.name) lane sorted \(sortDirection.title.lowercased())")
                 .accessibilityHint("Sort \(sortDirection.toggled.title.lowercased())")
-                .accessibilityIdentifier("lane-sort.\(lane.id)")
-                .smokeTarget("lane-sort.\(lane.id)")
+                .accessibilityIdentifier("lane-sort.\(lane.laneID)")
+                .smokeTarget("lane-sort.\(lane.laneID)")
                 Button {
                     store.createConversationPresented = true
                 } label: {
@@ -114,7 +102,7 @@ struct LaneColumn: View {
                     RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.border, style: .init(dash: [5])))
                 Spacer(minLength: 0)
             } else {
-                BoardLaneList(laneID: lane.id, cards: cards, sortDirection: sortDirection)
+                BoardLaneList(laneID: lane.laneID, cards: cards, sortDirection: sortDirection)
             }
         }
         .padding(10)
@@ -129,14 +117,10 @@ struct LaneColumn: View {
         .animation(.easeOut(duration: 0.14), value: isDropTargeted)
         .dropDestination(for: String.self) { values, _ in
             guard let value = values.first, let payload = BoardCardDragPayload(value),
-                payload.boardID == store.selectedBoardID,
-                let card = store.state.cards.first(where: { $0.id == payload.cardID })
+                payload.boardID == store.selectedBoardID
             else { return false }
-            if payload.sourceLane == lane.id, cards.last?.id == payload.cardID { return true }
-            let anchors = BoardDropOrdering.neighbors(
-                before: nil, movingCardID: card.id, cards: cards, direction: sortDirection,
-                moves: store.pendingCardMoves)
-            Task { await store.move(card, lane: lane.id, afterCardID: anchors.after, beforeCardID: anchors.before) }
+            let laneID = lane.laneID
+            Task { await store.drop(cardID: payload.cardID, laneID: laneID) }
             return true
         } isTargeted: {
             isDropTargeted = $0
@@ -168,16 +152,10 @@ struct LaneInsertionTarget: View {
         .contentShape(Rectangle())
         .dropDestination(for: String.self) { values, _ in
             guard let value = values.first, let payload = BoardCardDragPayload(value),
-                payload.boardID == store.selectedBoardID,
-                let card = store.state.cards.first(where: { $0.id == payload.cardID })
+                payload.boardID == store.selectedBoardID
             else { return false }
-            if payload.sourceLane == laneID, beforeCardID == payload.cardID { return true }
-            let anchors = BoardDropOrdering.neighbors(
-                before: beforeCardID, movingCardID: payload.cardID,
-                cards: store.boardProjection.displayedCardsByLane[laneID] ?? [],
-                direction: store.laneSortDirection(board: card.boardID, lane: laneID),
-                moves: store.pendingCardMoves)
-            Task { await store.move(card, lane: laneID, afterCardID: anchors.after, beforeCardID: anchors.before) }
+            let laneID = laneID, beforeCardID = beforeCardID ?? ""
+            Task { await store.drop(cardID: payload.cardID, laneID: laneID, beforeCardID: beforeCardID) }
             return true
         } isTargeted: {
             targeted = $0

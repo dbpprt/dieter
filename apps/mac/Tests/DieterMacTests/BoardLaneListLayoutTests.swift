@@ -191,6 +191,12 @@ import Testing
     #expect(counts["rowStructureChange"] == 2)
     #expect(store.selectedCardID == cards[1].id)
     try assertBoardLaneRowsFitContent(table: table, root: root, cards: cards, store: store)
+    // The zero counts above are evidence: the lane table records every reload.
+    BoardRenderingDiagnostics.start()
+    table.reloadData(forRowIndexes: IndexSet(integer: 0), columnIndexes: IndexSet(integer: 0))
+    table.reloadData()
+    let reloads = BoardRenderingDiagnostics.stop()
+    #expect(reloads["reloadedRows"] == 1 && reloads["fullReload"] == 1)
 }
 
 @Test @MainActor func boardLaneMetadataRefreshKeepsMeasuredOffscreenHeights() async throws {
@@ -257,7 +263,7 @@ import Testing
         store.foldFixture(full, daemonID: index.isMultiple(of: 2) ? "peer" : "owner")
         store.selectedCardID = cards[index % cards.count].id
         await settleBoardLane(root)
-        #expect(store.boardCards == cards)
+        #expect(store.state.cards == cards)
         #expect(cards.indices.map { table.rect(ofRow: $0) } == frames)
         for row in cards.indices {
             #expect(table.view(atColumn: 0, row: row, makeIfNecessary: false) === cells[row])
@@ -449,7 +455,7 @@ private struct BoardLaneNavigationFixture: View {
 }
 
 @MainActor private func boardLaneFixtureStore() -> DieterStore {
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
     var project = Dieter_V1_Project()
     project.id = "layout-project"
     project.name = "Layout fixture"

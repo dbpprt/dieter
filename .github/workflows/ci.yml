@@ -119,8 +119,6 @@ jobs:
         run: just harness install
       - name: Test the core against isolated gateways and daemons
         run: just core test
-      - name: Test the Android variant against an isolated gateway
-        run: just core android-test
 
   kmp-apple:
     name: Shared Kotlin core on Apple

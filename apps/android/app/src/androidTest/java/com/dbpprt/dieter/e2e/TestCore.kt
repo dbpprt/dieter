@@ -27,7 +27,6 @@ class TestCore(
     val core: CoreRuntime = SharedCore.create(context, null, directory)
     val preferences = AppPreferences(context)
     val policy = ConnectionPolicy(context, core) { _, _ -> }
-    val openedUrls = mutableListOf<String>()
 
     init {
         navigationAccount?.let { account ->
@@ -38,9 +37,7 @@ class TestCore(
     }
 
     fun viewModel(): DieterViewModel = DieterViewModel(core, preferences, policy, object : AppHost {
-        override fun openUrl(url: String) {
-            openedUrls += url
-        }
+        override fun openUrl(url: String) = Unit
     }, null)
 
     /** A second core over the same state, as after a process restart. */

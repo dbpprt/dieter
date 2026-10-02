@@ -39,7 +39,6 @@ final class FilesModel {
     private(set) var conflict = false
     private(set) var saving = false
     private(set) var fileScopeGeneration: UInt64 = 0
-    @ObservationIgnored private(set) var fileListingGeneration: UInt64 = 0
     @ObservationIgnored private var core: CoreClient?
     @ObservationIgnored private let scope = "files-\(UUID().uuidString)"
     @ObservationIgnored private var subscription: SliceSubscription?
@@ -51,7 +50,12 @@ final class FilesModel {
     @ObservationIgnored private var queued: Task<Void, Never>?
     @ObservationIgnored private var folding = false
 
-    var documentKey: String { target.documentKey(path: selectedFilePath) }
+    /// The open document's identity across targets, as the core keys it; "" without a target.
+    private(set) var documentKey = ""
+    /// The open document's language, e.g. "Swift" or "Plain text".
+    private(set) var languageName = ""
+    /// The open document's type, e.g. "Markdown" or its media type.
+    private(set) var typeLabel = ""
 
     /// Points the surface at `target` through `core`; a new target starts
     /// with an empty folder and editor.
@@ -66,9 +70,9 @@ final class FilesModel {
         guard self.target != target else { return }
         self.target = target
         fileScopeGeneration &+= 1
-        fileListingGeneration &+= 1
         fileEditorSession = FileEditorSession()
         selectedFilePath = ""; filePath = ""; files = []; fileDocument = nil
+        documentKey = ""; languageName = ""; typeLabel = ""
         fileNavigation = ProjectFileNavigation()
         filesError = nil; fileError = nil
         bound = ClientFilesTarget.with {
@@ -81,20 +85,15 @@ final class FilesModel {
         send { $0.bind = bind }
     }
 
-    /// Stops observing; the core closes the surface.
-    func unbind() {
-        subscription?.close()
-        subscription = nil
-    }
-
     private func fold(_ slice: ClientFilesSlice) {
         guard slice.target == bound else { return }
         folding = true
         defer { folding = false }
-        if files != slice.entries {
-            files = slice.entries
-            fileListingGeneration &+= 1
-        }
+        // The editor is prepared under the key, so it settles first.
+        if documentKey != slice.documentKey { documentKey = slice.documentKey }
+        if languageName != slice.languageName { languageName = slice.languageName }
+        if typeLabel != slice.typeLabel { typeLabel = slice.typeLabel }
+        if files != slice.entries { files = slice.entries }
         if filePath != slice.directory { filePath = slice.directory }
         if showHiddenFiles != slice.showHidden { showHiddenFiles = slice.showHidden }
         if filesLoading != slice.listingLoading { filesLoading = slice.listingLoading }
@@ -164,7 +163,7 @@ final class FilesModel {
     /// Cancels a read in progress without discarding a loaded editor buffer.
     func cancelContentRead() {
         guard fileLoading, fileDocument == nil else { return }
-        send { $0.close = ClientFilesStep() }
+        send { $0.close = ClientStep() }
     }
 
     func returnToProjectRoot() async {
@@ -189,12 +188,12 @@ final class FilesModel {
 
     func navigateFilesBack() async {
         guard fileNavigation.canGoBack, !fileNavigationLoading else { return }
-        await run { $0.back = ClientFilesStep() }
+        await run { $0.back = ClientStep() }
     }
 
     func navigateFilesForward() async {
         guard fileNavigation.canGoForward, !fileNavigationLoading else { return }
-        await run { $0.forward = ClientFilesStep() }
+        await run { $0.forward = ClientStep() }
     }
 
     func openFile(path: String) async {
@@ -229,20 +228,35 @@ final class FilesModel {
         _ = await saveFile(content: fileEditorSession.currentText())
     }
 
-    /// Replaces the open document with the version on disk, dropping conflicting edits.
+    /// Replaces the open document with the version on disk after a save
+    /// conflict, dropping the edits that conflicted with it.
     func reloadDocument() async {
-        await run(document: true) { $0.reload = ClientFilesStep() }
+        let key = documentKey
+        let generation = fileScopeGeneration
+        guard await run(document: true, { $0.reload = ClientStep() }) != nil,
+            generation == fileScopeGeneration, key == documentKey, let document = fileDocument
+        else { return }
+        // The editor keeps unsaved text across folds; a fresh session takes the disk version.
+        let editor = FileEditorSession()
+        if !document.binary { editor.prepare(documentKey: key, text: document.content) }
+        fileEditorSession = editor
     }
 
-    func createFile(path: String, directory: Bool) async {
+    /// Creates `name` in the current folder; the core joins the path.
+    func createFile(name: String, directory: Bool) async {
         guard isLive else { return }
-        let name = path.hasPrefix(filePath + "/") ? String(path.dropFirst(filePath.count + 1)) : path
         await run { command in
             command.create = .with {
-                $0.name = filePath.isEmpty ? path : name
+                $0.name = name
                 $0.directory = directory
             }
         }
+    }
+
+    /// Opens the current folder's parent.
+    func navigateToParent() async {
+        guard !filePath.isEmpty, !fileNavigationLoading else { return }
+        await run { $0.parent = ClientStep() }
     }
 
     func deleteFile(path: String, recursive: Bool) async {

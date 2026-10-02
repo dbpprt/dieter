@@ -6,8 +6,8 @@ import Testing
 
 @MainActor
 struct NewConversationSheetTests {
-    @Test func activeMachineIsTheDefaultCheckoutForSharedProjectCreation() {
-        let store = DieterStore(restoreSync: false)
+    @Test func newConversationsRunOnTheCoresCheckoutUnlessOneWasPicked() {
+        let store = DieterStore(liveEnvironment: false)
         let projectID = "shared-project"
         var mini = Dieter_V1_Checkout()
         mini.id = "mini-checkout"; mini.projectID = projectID; mini.daemonID = "mini"
@@ -20,6 +20,9 @@ struct NewConversationSheetTests {
             name: "Garuda", host: "127.0.0.1", port: 1, daemonID: "garuda", online: true,
             releaseVersion: "0.4.309", compatibility: .compatible)
 
+        // Several checkouts and no choice yet: the user chooses.
+        #expect(store.checkout(forProjectID: projectID) == nil)
+        store.foldCreation(.with { $0.checkouts = [projectID: garuda.id] })
         #expect(store.checkout(forProjectID: projectID)?.id == garuda.id)
         store.creationCheckoutIDs[projectID] = mini.id
         #expect(store.checkout(forProjectID: projectID)?.id == mini.id)
@@ -95,7 +98,7 @@ private final class NewConversationSheetFixture {
     let window: NSWindow
 
     init() {
-        let store = DieterStore(restoreSync: false)
+        let store = DieterStore(liveEnvironment: false)
         var project = Dieter_V1_Project()
         project.id = "native-creation-project"
         project.name = "Native creation fixture"
@@ -113,9 +116,7 @@ private final class NewConversationSheetFixture {
         store.state.boards = [board]
         store.selectedProjectID = project.id
         store.selectedBoardID = board.id
-        let endpointID = "native-creation-machine"
-        store.projectReplicaEndpointIDs[project.id] = endpointID
-        store.harnessCatalogsByEndpoint[endpointID] = Self.catalog
+        store.projectReplicaEndpointIDs[project.id] = "native-creation-machine"
         self.store = store
 
         let host = NSHostingView(rootView: NewConversationSheet().environment(store))
@@ -148,29 +149,5 @@ private final class NewConversationSheetFixture {
 
     private func descendants(of view: NSView) -> [NSView] {
         [view] + view.subviews.flatMap { descendants(of: $0) }
-    }
-
-    private static var catalog: Dieter_V1_HarnessCatalog {
-        var thinking = Dieter_V1_HarnessModel()
-        thinking.id = "native-thinking"; thinking.name = "Thinking model"
-        thinking.efforts = ["low", "high"]; thinking.defaultEffort = "high"
-        var instant = Dieter_V1_HarnessModel()
-        instant.id = "native-instant"; instant.name = "Instant model"
-        var provider = Dieter_V1_Harness()
-        provider.id = "native-creation-provider"; provider.name = "Fixture provider"
-        provider.defaultModel = thinking.id; provider.models = [thinking, instant]
-        provider.effort.options = thinking.efforts.map { id in
-            var option = Dieter_V1_EffortOption()
-            option.id = id; option.name = id.capitalized
-            return option
-        }
-        var alternate = Dieter_V1_HarnessModel()
-        alternate.id = "native-alternate"; alternate.name = "Alternate model"
-        var alternateProvider = Dieter_V1_Harness()
-        alternateProvider.id = "native-alternate-provider"; alternateProvider.name = "Alternate provider"
-        alternateProvider.defaultModel = alternate.id; alternateProvider.models = [alternate]
-        var catalog = Dieter_V1_HarnessCatalog()
-        catalog.harnesses = [provider, alternateProvider]
-        return catalog
     }
 }

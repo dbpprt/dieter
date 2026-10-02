@@ -68,13 +68,31 @@ sealed interface DiffRow {
     data class Line(val line: DiffLine) : DiffRow { override val id get() = line.id }
     data class Pair(override val id: Int, val old: DiffLine?, val new: DiffLine?) : DiffRow
     data class File(override val id: Int, val path: String) : DiffRow
-    data class Hunk(override val id: Int, val text: String, val skippedLines: Int) : DiffRow
 
-    /** Unchanged lines hidden until expanded. */
-    data class Fold(override val id: Int, val count: Int, val lines: List<DiffLine>) : DiffRow
+    /** A hunk boundary: its header text, the unchanged lines since the previous hunk, and its changed lines. */
+    data class Hunk(override val id: Int, val text: String, val skippedLines: Int, val additions: Int = 0, val deletions: Int = 0) : DiffRow
+
+    /** Unchanged lines hidden until expanded; [pairs] mirrors them on both sides in the split layout. */
+    data class Fold(override val id: Int, val count: Int, val lines: List<DiffLine>, val pairs: List<Pair> = emptyList()) : DiffRow
 }
 
-/** Display rows: headers dropped, long unchanged runs folded, optional side-by-side pairing. Ported from the macOS client. */
+/** A diff laid out for one view: its rows and its widest code line. */
+class DiffLayout(val rows: List<DiffRow>, val maxColumns: Int) {
+    companion object {
+        /** No diff shown. */
+        val EMPTY = DiffLayout(emptyList(), 0)
+
+        /** Lays out [lines]; a whole commit ([wholeCommit]) gets a row per file. */
+        fun of(lines: List<DiffLine>, split: Boolean, wholeCommit: Boolean = false): DiffLayout =
+            if (lines.isEmpty()) EMPTY else DiffLayout(DiffDisplay.rows(lines, split, wholeCommit), DiffDisplay.maximumColumns(lines))
+    }
+}
+
+/**
+ * Display rows: headers dropped, long unchanged runs folded, optional
+ * side-by-side pairing. Fold and hunk IDs are their first line's ID, so the
+ * same diff keeps them in either layout.
+ */
 object DiffDisplay {
     const val FOLD_THRESHOLD = 16
     const val FOLD_MARGIN = 5
@@ -84,6 +102,7 @@ object DiffDisplay {
         val context = mutableListOf<DiffLine>()
         val deletions = mutableListOf<DiffLine>()
         val additions = mutableListOf<DiffLine>()
+        val deltas = hunkDeltas(lines)
         var previousOldEnd: Int? = null
 
         fun flushChanges() {
@@ -113,7 +132,10 @@ object DiffDisplay {
                 val tail = if (trailing) 0 else FOLD_MARGIN
                 context.take(head).forEach(::emit)
                 val hidden = context.drop(head).dropLast(tail)
-                if (hidden.isNotEmpty()) rows += DiffRow.Fold(hidden.first().id, hidden.size, hidden)
+                if (hidden.isNotEmpty()) {
+                    val pairs = if (split) hidden.map { DiffRow.Pair(it.id, it, it) } else emptyList()
+                    rows += DiffRow.Fold(hidden.first().id, hidden.size, hidden, pairs)
+                }
                 context.takeLast(tail).forEach(::emit)
             }
             context.clear()
@@ -135,8 +157,10 @@ object DiffDisplay {
                     flushContext(trailing = true)
                     val summary = hunkSummary(line.text)
                     val skipped = if (summary != null && previousOldEnd != null) maxOf(0, summary.oldStart - previousOldEnd) else 0
-                    if (summary != null) previousOldEnd = summary.oldStart + summary.oldCount
-                    rows += DiffRow.Hunk(line.id, hunkText(line.text), skipped)
+                    // An unreadable header breaks the chain: the next hunk counts no gap.
+                    previousOldEnd = summary?.let { it.oldStart + it.oldCount }
+                    val (added, deleted) = deltas[line.id] ?: (0 to 0)
+                    rows += DiffRow.Hunk(line.id, hunkText(line.text), skipped, added, deleted)
                 }
                 DiffLineKind.CONTEXT -> {
                     flushChanges()
@@ -159,13 +183,18 @@ object DiffDisplay {
         return header.substringAfterLast(' ').removePrefix("b/").ifEmpty { null }
     }
 
+    /**
+     * `@@ -1284,9 +1284,16 @@ fn` → its ranges; null unless the header opens
+     * with exactly "@@" and both ranges have a start. A missing or unreadable
+     * count is 1.
+     */
     fun hunkSummary(text: String): HunkSummary? {
-        val pieces = text.split(' ')
-        if (pieces.size < 3 || !pieces[0].startsWith("@@")) return null
+        val pieces = text.split(' ').filter { it.isNotEmpty() }
+        if (pieces.size < 3 || pieces[0] != "@@") return null
         fun range(value: String): kotlin.Pair<Int, Int>? {
             val body = value.drop(1)
             val start = body.substringBefore(',').toIntOrNull() ?: return null
-            val count = if (',' in body) body.substringAfter(',').toIntOrNull() ?: return null else 1
+            val count = if (',' in body) body.substringAfter(',').toIntOrNull() ?: 1 else 1
             return start to count
         }
         val old = range(pieces[1]) ?: return null
@@ -173,11 +202,16 @@ object DiffDisplay {
         return HunkSummary(old.first, old.second, new.first, new.second)
     }
 
-    /** "-1,2 +1,3 funcName" keeps the function context after the ranges. */
+    /**
+     * The header up to the "@@" that closes its ranges, then any function
+     * context: "@@ -1,2 +1,3 @@ funcName". The closing "@@" is the first one
+     * after the opening one, so context containing "@@" stays whole.
+     */
     fun hunkText(text: String): String {
         val end = text.indexOf("@@", 2)
-        val ranges = (if (end > 0) text.substring(2, end) else text.removePrefix("@@")).trim()
-        val context = if (end > 0) text.substring(end + 2).trim() else ""
+        if (end < 0) return text
+        val ranges = text.substring(0, end + 2).trim()
+        val context = text.substring(end + 2).trim()
         return if (context.isEmpty()) ranges else "$ranges $context"
     }
 
@@ -199,8 +233,30 @@ object DiffDisplay {
         return deltas
     }
 
-    /** Widest code line in display columns: tabs count 4, non-ASCII 2. */
-    fun maximumColumns(lines: List<DiffLine>): Int = lines.maxOfOrNull { line ->
-        line.text.sumOf { char -> when { char == '\t' -> 4; char.code < 128 -> 1; else -> 2 } }
-    } ?: 0
+    /**
+     * The widest code line (context, addition, or deletion) in display
+     * columns, so a layout can reserve the width once: a tab counts 4, an
+     * ASCII character 1, any other character (one Unicode scalar) 2.
+     */
+    fun maximumColumns(lines: List<DiffLine>): Int {
+        var widest = 0
+        for (line in lines) {
+            if (line.kind != DiffLineKind.CONTEXT && line.kind != DiffLineKind.ADDITION && line.kind != DiffLineKind.DELETION) continue
+            val text = line.text
+            var columns = 0
+            var index = 0
+            while (index < text.length) {
+                val char = text[index]
+                columns += when {
+                    char == '\t' -> 4
+                    char.code < 128 -> 1
+                    else -> 2
+                }
+                // A surrogate pair is one scalar.
+                index += if (char.isHighSurrogate() && index + 1 < text.length && text[index + 1].isLowSurrogate()) 2 else 1
+            }
+            if (columns > widest) widest = columns
+        }
+        return widest
+    }
 }

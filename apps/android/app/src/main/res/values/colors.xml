@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="dieter_abyss">#0B0B0C</color>
     <color name="dieter_window_background">#F5F5F7</color>
     <color name="dieter_monochrome_bg">#1C1C1E</color>
     <color name="dieter_electric_blue_bg">#071426</color>

@@ -1,3 +1,4 @@
+import DieterShared
 import SwiftUI
 
 struct NavigationFolderEditor: Identifiable {
@@ -10,8 +11,8 @@ struct NavigationFolderEditor: Identifiable {
         Self(folderID: nil, title: title, initialName: "")
     }
 
-    static func rename(_ folder: NavigationFolder) -> Self {
-        Self(folderID: folder.id, title: "Rename folder", initialName: folder.name)
+    static func rename(id: String, name: String) -> Self {
+        Self(folderID: id, title: "Rename folder", initialName: name)
     }
 }
 
@@ -38,10 +39,9 @@ struct NavigationFolderNameSheet: View {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var duplicatesExistingName: Bool {
-        existingNames.contains {
-            $0.compare(trimmedName, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
-        }
+    /// Why the name cannot be used, as the core words it; empty when it can.
+    private var problem: String {
+        SharedRules.shared.folderNameProblem(name: name, existingNames: existingNames)
     }
 
     var body: some View {
@@ -65,11 +65,8 @@ struct NavigationFolderNameSheet: View {
                 .accessibilityIdentifier("navigation-folder.name")
                 .onSubmit { submit() }
 
-            if trimmedName.utf8.count > 256 {
-                Label("Choose a shorter folder name.", systemImage: "exclamationmark.circle")
-                    .font(.caption).foregroundStyle(DieterTheme.coral)
-            } else if duplicatesExistingName {
-                Label("A folder with this name already exists.", systemImage: "exclamationmark.circle")
+            if !trimmedName.isEmpty, !problem.isEmpty {
+                Label(problem, systemImage: "exclamationmark.circle")
                     .font(.caption).foregroundStyle(DieterTheme.coral)
             }
 
@@ -78,7 +75,7 @@ struct NavigationFolderNameSheet: View {
                 Button("Cancel") { dismiss() }
                 Button(editor.folderID == nil ? "Create folder" : "Rename") { submit() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!NavigationFolderPreferences.validName(trimmedName) || duplicatesExistingName)
+                    .disabled(!problem.isEmpty)
                     .accessibilityIdentifier("navigation-folder.confirm")
             }
         }
@@ -88,7 +85,7 @@ struct NavigationFolderNameSheet: View {
     }
 
     private func submit() {
-        guard NavigationFolderPreferences.validName(trimmedName), !duplicatesExistingName else { return }
+        guard problem.isEmpty else { return }
         save(trimmedName)
         dismiss()
     }

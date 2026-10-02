@@ -39,7 +39,6 @@ import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlin.math.max
 
 /** What the Screens footer shows about the media path. */
 data class ScreenMediaStats(val fps: Double = 0.0, val route: String = "", val decodedFrames: Long = 0)

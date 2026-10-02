@@ -3,17 +3,17 @@ package com.dbpprt.dieter.widget
 import android.content.Context
 import android.content.SharedPreferences
 
-/** Per-widget options plus the shared "last sync frame" clock the header renders. */
+/** Per-widget options of the Inbox widget. */
 object DieterWidgetPrefs {
     private const val PREFERENCES = "dieter_widget"
-    private const val KEY_LAST_SYNC_AT = "last_sync_at"
-    private const val SYNC_WRITE_THROTTLE_MS = 20_000L
 
-    @Volatile
-    private var lastSyncWriteMs = 0L
+    private val keyPrefixes = listOf("style_", "max_items_", "sections_")
 
-    private fun preferences(context: Context): SharedPreferences =
+    internal fun preferences(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+
+    /** Whether [key] is one of a widget's options. */
+    internal fun keeps(key: String): Boolean = keyPrefixes.any(key::startsWith)
 
     fun config(context: Context, appWidgetId: Int): WidgetConfig {
         val preferences = preferences(context)
@@ -32,25 +32,14 @@ object DieterWidgetPrefs {
             .putString("style_$appWidgetId", config.style.name)
             .putInt("max_items_$appWidgetId", config.maxItems)
             .putBoolean("sections_$appWidgetId", config.showSections)
-            .remove("chats_$appWidgetId")
             .apply()
     }
 
     fun delete(context: Context, appWidgetIds: IntArray) {
         val editor = preferences(context).edit()
         appWidgetIds.forEach { id ->
-            editor.remove("style_$id").remove("max_items_$id").remove("sections_$id").remove("chats_$id")
+            editor.remove("style_$id").remove("max_items_$id").remove("sections_$id")
         }
         editor.apply()
-    }
-
-    fun lastSyncAtMs(context: Context): Long = preferences(context).getLong(KEY_LAST_SYNC_AT, 0L)
-
-    /** Record applied workspace data, after publication; transport heartbeats do not count. */
-    fun recordSyncFrame(context: Context, nowMs: Long = System.currentTimeMillis()) {
-        if (nowMs - lastSyncWriteMs >= SYNC_WRITE_THROTTLE_MS) {
-            lastSyncWriteMs = nowMs
-            preferences(context).edit().putLong(KEY_LAST_SYNC_AT, nowMs).apply()
-        }
     }
 }

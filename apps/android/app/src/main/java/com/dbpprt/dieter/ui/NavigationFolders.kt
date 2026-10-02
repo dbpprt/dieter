@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import com.dbpprt.dieter.core.navigation.FolderScope
 import com.dbpprt.dieter.core.navigation.NavigationEditor
 import com.dbpprt.dieter.core.navigation.NavigationFolder
+import com.dbpprt.dieter.core.presentation.Counts
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterAmber
 import com.dbpprt.dieter.ui.theme.DieterShell
@@ -112,7 +113,7 @@ internal fun NavigationFolderHeader(
                 if (chatFolder) {
                     Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
                         Text(folder.name, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text("Folder · $count ${if (count == 1) "chat" else "chats"}", color = DieterMuted,
+                        Text("Folder · ${Counts.of(count, "chat")}", color = DieterMuted,
                             style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
                     }
                 } else {
@@ -250,7 +251,7 @@ internal fun NavigationSyncStatus(state: DieterUiState) {
     if (state.navigationPendingCount > 0 || state.navigationSyncError != null) {
         androidx.compose.material3.Text(
             text = listOfNotNull(
-                "${state.navigationPendingCount} navigation edits pending sync".takeIf { state.navigationPendingCount > 0 },
+                "${Counts.of(state.navigationPendingCount, "navigation edit")} pending sync".takeIf { state.navigationPendingCount > 0 },
                 state.navigationSyncError,
             ).joinToString(". "),
             modifier = androidx.compose.ui.Modifier.padding(horizontal = 20.dp, vertical = 4.dp),

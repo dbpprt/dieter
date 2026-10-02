@@ -5,147 +5,6 @@ import SwiftUI
 import Testing
 @testable import DieterMac
 
-@Test @MainActor func islandProjectionIgnoresActivityIrrelevantCardChanges() {
-    let store = DieterStore(restoreSync: false)
-    var card = Dieter_V1_Card()
-    card.id = "card-one"
-    card.projectID = "project-one"
-    card.boardID = "board-one"
-    card.runtime = "running"
-    card.runtimeUpdatedAt = "2026-08-30T12:00:00.000Z"
-    store.activityRows = [
-        .with {
-            $0.card = card; $0.kind = card.runtime == "running" ? "RUNNING" : "ANSWER"
-        }
-    ]
-
-    let initialRevision = store.islandActivityProjectionRevision
-    #expect(store.islandActivity.runningCount == 1)
-
-    card.workspace.changedFiles = 12
-    card.workspace.additions = 500
-    store.activityRows = [
-        .with {
-            $0.card = card; $0.kind = card.runtime == "running" ? "RUNNING" : "ANSWER"
-        }
-    ]
-    #expect(store.islandActivityProjectionRevision == initialRevision)
-
-    card.runtime = "waiting_for_user"
-    store.activityRows = [
-        .with {
-            $0.card = card; $0.kind = card.runtime == "running" ? "RUNNING" : "ANSWER"
-        }
-    ]
-    #expect(store.islandActivityProjectionRevision == initialRevision + 1)
-    #expect(store.islandActivity.runningCount == 0)
-}
-
-@Test func boardProjectionBuildsLaneAndLabelIndexesOnce() {
-    var first = Dieter_V1_Card()
-    first.id = "first"
-    first.boardID = "board"
-    first.lane = "todo"
-    first.runtime = "waiting"
-    first.title = "Matching card"
-    first.labelIds = ["label-one", "label-two"]
-    var second = Dieter_V1_Card()
-    second.id = "second"
-    second.boardID = "board"
-    second.lane = "done"
-    second.runtime = "completed"
-    second.labelIds = ["label-one"]
-    var unrelated = Dieter_V1_Card()
-    unrelated.id = "unrelated"
-    unrelated.boardID = "other"
-
-    let projection = BoardProjection.resolve(
-        cards: [first, second, unrelated],
-        boardID: "board",
-        runtimeFilter: "waiting",
-        labelFilter: "label-two",
-        query: "matching"
-    )
-
-    #expect(projection.cards.map(\.id) == ["first", "second"])
-    #expect(projection.displayedCards.map(\.id) == ["first"])
-    #expect(projection.displayedCardsByLane["todo"]?.map(\.id) == ["first"])
-    #expect(projection.labelCounts == ["label-one": 2, "label-two": 1])
-}
-
-@Test func machinePresenceExpirationLeavesEqualDirectoriesUntouched() {
-    let now = Date(timeIntervalSince1970: 1_000)
-    var endpoint = DieterEndpoint(name: "Machine", host: "localhost", port: 443, secure: true)
-    endpoint.daemonID = "daemon"
-    endpoint.online = true
-    endpoint.lastSeenAt = DieterTimestamp.string(from: now.addingTimeInterval(-5))
-    let current = [endpoint]
-
-    #expect(MachinePresenceText.applyingExpirations(to: current, relativeTo: now) == current)
-    #expect(MachinePresenceText.nextExpiration(in: current, relativeTo: now) == now.addingTimeInterval(25))
-
-    let expired = MachinePresenceText.applyingExpirations(
-        to: current,
-        relativeTo: now.addingTimeInterval(31)
-    )
-    #expect(expired.first?.online == false)
-}
-
-@Test func persistenceKeepsOnlyOneSupersedingPendingWrite() async throws {
-    let root = FileManager.default.temporaryDirectory
-        .appending(path: "dieter-sync-coalescing-\(UUID().uuidString)", directoryHint: .isDirectory)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let writer = BlockingPersistenceWriter()
-    let persistence = DieterSyncPersistence(root: root, writer: writer.write)
-
-    await persistence.scheduleSave(.empty)
-    while writer.startedWrites == 0 { await Task.yield() }
-
-    for sequence in 1...99 {
-        var state = DieterSyncDiskState.empty
-        state.projections["endpoint"] = .init(cursor: Data(String(sequence).utf8), snapshot: nil)
-        await persistence.scheduleSave(state)
-    }
-    var final = DieterSyncDiskState.empty
-    final.projections["endpoint"] = .init(cursor: Data("latest".utf8), snapshot: nil)
-    let finalSave = Task { try await persistence.save(final) }
-    while await persistence.metrics().acceptedSaveCount < 101 { await Task.yield() }
-    writer.releaseFirstWrite()
-    try await finalSave.value
-
-    let metrics = await persistence.metrics()
-    #expect(metrics.acceptedSaveCount == 101)
-    #expect(metrics.writeCount == 2)
-    #expect(metrics.logicalBytesWritten == 2)
-}
-
-@Test func checkpointPersistenceDebouncesAStreamingBurstToOneWrite() async throws {
-    let root = FileManager.default.temporaryDirectory
-        .appending(path: "dieter-sync-debounce-\(UUID().uuidString)", directoryHint: .isDirectory)
-    defer { try? FileManager.default.removeItem(at: root) }
-    let writer = RecordingPersistenceWriter()
-    let persistence = DieterSyncPersistence(
-        root: root,
-        writer: writer.write,
-        checkpointDelayNanoseconds: 20_000_000
-    )
-
-    for sequence in 1...100 {
-        var state = DieterSyncDiskState.empty
-        state.projections["endpoint"] = .init(cursor: Data("\(sequence)".utf8), snapshot: nil)
-        await persistence.scheduleCheckpoint(.init(diskState: state))
-    }
-    let deadline = Date().addingTimeInterval(1)
-    while await persistence.metrics().writeCount == 0, Date() < deadline {
-        try await Task.sleep(nanoseconds: 5_000_000)
-    }
-
-    let metrics = await persistence.metrics()
-    #expect(metrics.acceptedSaveCount == 100)
-    #expect(metrics.writeCount == 1)
-    #expect(writer.lastCursor == Data("100".utf8))
-}
-
 @Test func conversationRenderWindowBoundsTheLiveView() {
     func messages(_ count: Int) -> [Dieter_V1_UiMessage] {
         (0..<count).map { index in
@@ -184,51 +43,6 @@ import Testing
             == scrollback..<(retained + scrollback))
 }
 
-@Test func diffProjectionIndexesCommentsWhileBuildingRows() {
-    let patch = """
-        diff --git a/Sample.swift b/Sample.swift
-        --- a/Sample.swift
-        +++ b/Sample.swift
-        @@ -1,2 +1,2 @@
-        -let old = 1
-        +let new = 2
-         print(new)
-        """
-    var oldComment = Dieter_V1_ChangeComment()
-    oldComment.id = "old"
-    oldComment.side = "old"
-    oldComment.line = 1
-    var newComment = Dieter_V1_ChangeComment()
-    newComment.id = "new"
-    newComment.side = "new"
-    newComment.line = 1
-
-    let projection = WorkspaceDiffProjection.build(
-        lines: DiffFixtures.parse(patch),
-        path: "Sample.swift",
-        commitSHA: "",
-        split: false,
-        comments: [oldComment, newComment]
-    )
-
-    #expect(!projection.rows.isEmpty)
-    #expect(projection.commentsByLine[.init(side: "old", line: 1)]?.map(\.id) == ["old"])
-    #expect(projection.commentsByLine[.init(side: "new", line: 1)]?.map(\.id) == ["new"])
-}
-
-@Test func syntaxHighlightPlanningIsValueTypedAndBackgroundSafe() async {
-    let source = "let answer: Int = 42 // meaning"
-    let plan = await Task.detached {
-        FileSyntaxHighlightPlanner.build(source: source, language: .swift)
-    }.value
-
-    #expect(plan.location == 0)
-    #expect(plan.length == (source as NSString).length)
-    #expect(plan.runs.contains { $0.style == .keywordBold })
-    #expect(plan.runs.contains { $0.style == .number })
-    #expect(plan.runs.contains { $0.style == .comment })
-}
-
 @Test(.timeLimit(.minutes(1))) @MainActor func terminalOutputAccumulatorCoalescesFrameBursts() async throws {
     let clock = TerminalFrameClock()
     let accumulator = TerminalOutputAccumulator(sleep: { _ in await clock.wait() })
@@ -258,11 +72,6 @@ import Testing
     #expect(recorder.screen.revision == 100)
 }
 
-@Test func fileEditorLineCountingDoesNotNeedAnAppKitBuffer() {
-    #expect(FileEditorSession.countLines(in: "") == 1)
-    #expect(FileEditorSession.countLines(in: "one\ntwo\nthree") == 3)
-}
-
 @Test func nativeSmokeClickCoordinatesRespectContentOrientation() {
     let bounds = NSRect(x: 0, y: 0, width: 200, height: 100)
 
@@ -280,49 +89,6 @@ import Testing
             contentBounds: bounds,
             isFlipped: false
         ) == NSPoint(x: 100, y: 80))
-}
-
-private final class BlockingPersistenceWriter: @unchecked Sendable {
-    private let lock = NSLock()
-    private let firstWriteGate = DispatchSemaphore(value: 0)
-    private var writes = 0
-
-    var startedWrites: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return writes
-    }
-
-    func write(_ value: DieterSyncDiskState, _ fileURL: URL) throws -> Int {
-        lock.lock()
-        writes += 1
-        let write = writes
-        lock.unlock()
-        if write == 1 { firstWriteGate.wait() }
-        return 1
-    }
-
-    func releaseFirstWrite() {
-        firstWriteGate.signal()
-    }
-}
-
-private final class RecordingPersistenceWriter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var cursor: Data?
-
-    var lastCursor: Data? {
-        lock.lock()
-        defer { lock.unlock() }
-        return cursor
-    }
-
-    func write(_ value: DieterSyncDiskState, _ fileURL: URL) throws -> Int {
-        lock.lock()
-        cursor = value.projections["endpoint"]?.cursor
-        lock.unlock()
-        return value.projections["endpoint"]?.cursor?.count ?? 0
-    }
 }
 
 @MainActor
@@ -352,33 +118,4 @@ private actor TerminalFrameClock {
         pending?.resume()
         pending = nil
     }
-}
-
-@Test @MainActor func unchangedWorkspaceFoldsDoNotRecomputeTheIsland() {
-    let store = DieterStore(restoreSync: false)
-    var project = Dieter_V1_Project()
-    project.id = "project-one"
-    project.name = "One"
-    var card = Dieter_V1_Card()
-    card.id = "card-one"
-    card.projectID = project.id
-    card.boardID = "board-one"
-    card.title = "Streaming conversation"
-    card.runtime = "running"
-    card.runtimeUpdatedAt = "2026-08-30T12:00:00.000Z"
-    var state = Dieter_V1_State()
-    state.projects = [project]
-    state.cards = [card]
-    store.foldFixture(state)
-    store.activityRows = [
-        .with {
-            $0.card = card; $0.kind = "RUNNING"
-        }
-    ]
-    let islandRevision = store.islandActivityProjectionRevision
-    #expect(store.islandActivity.runningCount == 1)
-    // Transcript traffic arrives on the conversation slice; the workspace the
-    // core republishes alongside it is unchanged and must stay cheap.
-    for _ in 0..<1_000 { store.foldFixture(state) }
-    #expect(store.islandActivityProjectionRevision == islandRevision)
 }

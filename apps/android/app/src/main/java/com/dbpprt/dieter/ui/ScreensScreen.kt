@@ -37,11 +37,11 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.dbpprt.dieter.api.v1.RemoteDesktopCapabilities
 import com.dbpprt.dieter.api.v1.RemoteDesktopCodecPreference
 import com.dbpprt.dieter.api.v1.RemoteDesktopPointerButton.Button
 import com.dbpprt.dieter.api.v1.RemoteDesktopQuality
 import com.dbpprt.dieter.core.machines.MachineRow
+import com.dbpprt.dieter.core.machines.MachineRows
 import com.dbpprt.dieter.core.screens.*
 import com.dbpprt.dieter.screens.ScreenCanvasView
 import com.dbpprt.dieter.screens.ScreenHost
@@ -49,10 +49,10 @@ import com.dbpprt.dieter.screens.ScreenSessionViewModel
 import kotlin.math.roundToInt
 
 @Composable
-fun ScreensScreen(state: DieterUiState, model: DieterViewModel, padding: PaddingValues) {
+fun ScreensScreen(state: DieterUiState, padding: PaddingValues) {
     val holder: ScreenSessionViewModel = viewModel()
     val host = remember(holder) { holder.host() }
-    ScreenWorkspace(state.presentedEndpointConnections.filter { it.daemonId != null }, padding, host, onLeave = holder::leave)
+    ScreenWorkspace(state.presentedEndpointConnections, padding, host, onLeave = holder::leave)
 }
 
 /** Zoom changes recompose the small controls, rather than the entire session on every touch frame. */
@@ -91,7 +91,6 @@ internal fun ScreenWorkspace(
     val machine = machines.firstOrNull { it.id == selected }
     val streaming = screen.phase == ScreenPhase.Streaming
     val controlling = screen.controlActive
-    val session = screen.state
     val capabilities = screen.capabilities
     fun disconnect() {
         canvas?.showKeyboard(false); modifiers = 0
@@ -146,7 +145,7 @@ internal fun ScreenWorkspace(
                             fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Box(Modifier.size(7.dp).background(if (streaming) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary, CircleShape))
-                            Text(if (streaming) "Connected · ${if (controlling) "Control" else "View only"}" else screen.phase.label,
+                            Text(screen.statusLine,
                                 style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.testTag("screen-status"))
                         }
@@ -154,12 +153,11 @@ internal fun ScreenWorkspace(
                     IconButton(onClick = { information = true }) { Icon(Icons.Outlined.Info, "Connection details") }
                     Box {
                         IconButton(onClick = { qualityMenu = true }) { Icon(Icons.Outlined.Tune, "Screen quality") }
-                        ScreenQualityMenu(qualityMenu, { qualityMenu = false }, capabilities, host)
+                        ScreenQualityMenu(qualityMenu, { qualityMenu = false }, screen.frameRates, host)
                     }
                 }
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (streaming) listOf("${session?.width} × ${session?.height}", session?.codec.orEmpty(), "${stats.fps.roundToInt()} fps", screenMediaRoute(stats.route)).filter { it.isNotBlank() }.joinToString(" · ")
-                        else "Your view stays in place while connecting",
+                    Text(screen.metadata(stats.fps, stats.route),
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).testTag("screen-metadata"))
                     Box {
@@ -186,9 +184,9 @@ internal fun ScreenWorkspace(
                         Column(Modifier.align(Alignment.Center).padding(28.dp).widthIn(max = 420.dp), horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             if (screen.phase.active) CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
-                            Text(screen.phase.problem ?: machine?.takeIf { !it.remoteDesktopReady }?.remoteDesktopReason?.ifBlank { "Screen sharing is unavailable on this machine." }
-                                ?: "${screen.phase.label}…", color = Color.White, style = MaterialTheme.typography.bodyMedium)
-                            if (!screen.phase.active) Button(enabled = machine?.online == true && machine.isCompatible && selectedDaemon != null,
+                            Text(screen.waitingMessage(machine?.remoteDesktopReady != false, machine?.remoteDesktopReason.orEmpty()),
+                                color = Color.White, style = MaterialTheme.typography.bodyMedium)
+                            if (!screen.phase.active) Button(enabled = machine?.canShareScreen == true && selectedDaemon != null,
                                 onClick = { selectedDaemon?.let(host::connect) }, modifier = Modifier.testTag("screen-connect")) { Text("Check again") }
                         }
                     }
@@ -223,28 +221,27 @@ internal fun ScreenWorkspace(
                 Text("Connection details", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                 TextButton(onClick = { information = false }) { Text("Done") }
             }
+            val details = screen.details(selectedDaemon.orEmpty(), stats.fps, stats.route)
             Text(machine?.label ?: selectedName, style = MaterialTheme.typography.titleMedium)
-            Text("Status · ${screen.phase.label}")
-            Text("Video · ${screenMediaRoute(stats.route).ifBlank { "Negotiating" }}")
-            Text("Signaling · ${screen.routeLabel.ifBlank { "Negotiating" }}")
-            Text("Machine · ${selectedDaemon.orEmpty()}", style = MaterialTheme.typography.bodySmall)
-            if (session != null) {
-                Text("Display · ${session.width} × ${session.height} · ${session.codec}")
-                Text("${stats.fps.roundToInt()} fps · ${session.connected_clients} viewers")
-                if (!session.controller_name.isBlank()) Text("Controller · ${session.controller_name}")
-            }
-            machine?.releaseVersion?.takeIf { it.isNotBlank() }?.let { Text("Dieter $it") }
+            Text(details.status)
+            Text(details.video)
+            Text(screen.latencyLabel)
+            Text(details.signaling)
+            Text(details.machine, style = MaterialTheme.typography.bodySmall)
+            details.session.forEach { Text(it) }
+            machine?.releaseLabel?.takeIf { it.isNotBlank() }?.let { Text(it) }
             screen.codecFallbackReason?.let { Text(it) }
             if (screen.canTransferControl) TextButton(enabled = !screen.controlTransferring, onClick = { host.transferControl(!controlling) }, modifier = Modifier.testTag("screens.control")) {
-                Text(if (controlling) "Release Control" else "Take Control")
+                Text(screen.controlAction)
             }
+            screen.controlUnavailableReason.takeIf { it.isNotEmpty() }?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             screen.controlError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             if (capabilities?.clipboard_supported == true) {
                 FilterChip(selected = screen.clipboardEnabled, enabled = controlling, onClick = { host.setClipboardEnabled(!screen.clipboardEnabled) },
                     label = { Text("Share clipboard") }, modifier = Modifier.testTag("screens.clipboard.toggle"))
                 Row {
-                    TextButton(enabled = controlling && screen.clipboardEnabled && !screen.clipboardBusy, onClick = host::copy, modifier = Modifier.testTag("screens.clipboard.copy")) { Text("Copy") }
-                    TextButton(enabled = controlling && screen.clipboardEnabled && !screen.clipboardBusy, onClick = host::paste, modifier = Modifier.testTag("screens.clipboard.paste")) { Text("Paste") }
+                    TextButton(enabled = screen.clipboardActionsEnabled, onClick = host::copy, modifier = Modifier.testTag("screens.clipboard.copy")) { Text("Copy") }
+                    TextButton(enabled = screen.clipboardActionsEnabled, onClick = host::paste, modifier = Modifier.testTag("screens.clipboard.paste")) { Text("Paste") }
                 }
                 screen.clipboardError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
@@ -263,15 +260,9 @@ private fun CanvasZoomControls(state: CanvasControlsState, canvas: ScreenCanvasV
     ScreenCanvasControls(state.zoom, state.fitted, { canvas?.zoomCanvas(it) }, { canvas?.resetCanvas(animated = true) }, modifier)
 }
 
-internal fun screenMediaRoute(route: String): String = when (route.lowercase()) {
-    "direct", "webrtc-direct", "direct media" -> "Direct WebRTC"
-    "turn", "relay", "webrtc-turn", "relayed media" -> "TURN relay"
-    else -> route
-}
-
 @Composable
 internal fun ScreenMachineList(machines: List<MachineRow>, modifier: Modifier = Modifier, onConnect: (MachineRow) -> Unit) {
-    val ordered = remember(machines) { stableMachineOrder(machines) }
+    val ordered = remember(machines) { MachineRows.listed(machines) }
     LazyColumn(modifier.testTag("screen-machines"), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Column(Modifier.padding(top = 12.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -282,7 +273,7 @@ internal fun ScreenMachineList(machines: List<MachineRow>, modifier: Modifier = 
             }
         }
         items(ordered, key = { it.id }) { machine ->
-            val enabled = machine.online && machine.isCompatible && machine.daemonId != null
+            val enabled = machine.canShareScreen
             OutlinedCard(onClick = { onConnect(machine) }, enabled = enabled, shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth().testTag("screen-machine-${machine.id}")) {
@@ -292,11 +283,10 @@ internal fun ScreenMachineList(machines: List<MachineRow>, modifier: Modifier = 
                     }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(machine.label, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text(when { !machine.online -> "Offline"; !machine.isCompatible -> "Update required"; !machine.remoteDesktopReady -> "Screen sharing unavailable"; else -> "Ready to connect" },
+                        Text(machine.screenStatus,
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        val platform = when (machine.remoteDesktopPlatform) { "darwin" -> "macOS"; "linux" -> "Linux"; else -> machine.remoteDesktopPlatform }
-                        val metadata = listOf(platform, machine.releaseVersion.takeIf { it.isNotBlank() }?.let { "Dieter $it" }.orEmpty()).filter { it.isNotBlank() }.joinToString(" · ")
+                        val metadata = machine.screenMetadata
                         if (metadata.isNotBlank()) Text(metadata, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
@@ -322,7 +312,7 @@ private fun ScreenSpecialKeys(enabled: Boolean, modifiers: Int, onModifier: (Int
 }
 
 @Composable
-private fun ScreenQualityMenu(expanded: Boolean, dismiss: () -> Unit, capabilities: RemoteDesktopCapabilities?, host: ScreenHost) {
+private fun ScreenQualityMenu(expanded: Boolean, dismiss: () -> Unit, frameRates: List<Int>, host: ScreenHost) {
     DropdownMenu(expanded, dismiss) {
         listOf("Auto" to RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_AUTO, "Detail" to RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_DETAIL,
             "Responsive motion" to RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_MOTION).forEach { (label, value) ->
@@ -335,7 +325,7 @@ private fun ScreenQualityMenu(expanded: Boolean, dismiss: () -> Unit, capabiliti
             DropdownMenuItem(text = { Text(label) }, onClick = { host.selectCodec(value); dismiss() })
         }
         HorizontalDivider()
-        ScreenCapabilities.frameRates(capabilities ?: RemoteDesktopCapabilities()).forEach { fps ->
+        frameRates.forEach { fps ->
             DropdownMenuItem(text = { Text("Up to $fps fps") }, onClick = { host.selectMaxFps(fps); dismiss() })
         }
     }

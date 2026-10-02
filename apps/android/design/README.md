@@ -20,8 +20,9 @@ The extractor assigns stable semantic filenames explicitly so a refreshed PDF
 replaces the expected references and fails loudly if its page structure
 changes.
 
-Android uses Chats and Boards as primary destinations. Tools opens a compact
-panel for Machines, Terminal, Files, Schedules, Screens, and Settings. The panel uses
+Android's primary destinations are Activity (labelled Inbox, the default),
+Boards (labelled Projects), Chats, and Tools. Tools opens a compact panel for
+Machines, Terminal, Files, Schedules, Screens, and Settings. The panel uses
 opaque surfaces from the selected app palette.
 
 ## Tablet workspace
@@ -53,8 +54,9 @@ Activity and Projects always retain a sidebar with the selected content beside
 it, including empty selections and the Activity timeline. Opening a board card
 replaces the board in the content pane; Back returns to its lanes while the
 project navigator stays visible. Drag the divider to resize the panes. Activity,
-Projects, and Chats save their own split locally on the device across app
-restarts; temporary window constraints do not overwrite the saved split. Existing
+Projects, Chats, and, from 600 to 839 dp, Board (the board beside its open card)
+save their own split locally on the device across app restarts; temporary window
+constraints do not overwrite the saved split. Existing
 conversation, subagent, changes, merge, creation, schedule, terminal,
 screen, machine, and provider-quota controls remain the source of behavior.
 Long-press a card or chat in Activity (including either timeline) for Open,

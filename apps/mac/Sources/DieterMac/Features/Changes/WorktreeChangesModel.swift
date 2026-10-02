@@ -11,13 +11,12 @@ import SharedCore
 final class WorktreeChangesModel {
     private(set) var target = WorkspaceTarget(endpointID: "", projectID: "")
     var card: Dieter_V1_Card?
-    var doneLaneID: String?
     var authorName = ""
     var conversationWorkspace: Dieter_V1_Workspace?
     var conversationChangeset: Dieter_V1_Changeset?
     var conversationDiff: Dieter_V1_FileDiff?
-    /// The diff's lines as the core numbers them; comments attach to one.
-    var diffLines: [UnifiedDiffLine] = []
+    /// The diff laid out for this view, as the core lays it out.
+    private(set) var diff = WorkspaceDiffLayout()
     var conversationChangeComments: [Dieter_V1_ChangeComment] = []
     var conversationSCMCapabilities: Dieter_V1_SCMCapabilities?
     var gitOperation: Dieter_V1_GitOperation?
@@ -33,8 +32,20 @@ final class WorktreeChangesModel {
     var gitOperationNeedsReconciliation = false
     /// What the workspace allows now, as the core decides it.
     private(set) var availability = WorkspaceActionAvailability()
-    /// A cleanup, discard, or adopt removed the workspace here.
-    private(set) var surfaceRemoved = false
+    /// The workspace has conflicts, or an operation waits for them to be resolved.
+    private(set) var conflicted = false
+    /// The workspace's state in words, e.g. "Ready" or "Conflicted".
+    private(set) var workspaceState = ""
+    /// The review's presentation, as the core decides it: the operation strip,
+    /// the conflict's title and hand-off, the pull request, and the merge checklist.
+    private(set) var operationVisible = false
+    private(set) var operationCancelable = false
+    private(set) var conflictTitle = ""
+    private(set) var conflictPrompt = ""
+    private(set) var movesToDone = false
+    private(set) var pullRequest: ClientPullRequestView?
+    private(set) var mergeReadiness = ClientMergeReadiness()
+    @ObservationIgnored private var operationActive = false
     /// Visible and foregrounded: the core refreshes the review periodically.
     var active = false {
         didSet {
@@ -45,7 +56,6 @@ final class WorktreeChangesModel {
     }
     @ObservationIgnored var workspaceToastTask: Task<Void, Never>?
     private(set) var bindingGeneration: UInt64 = 0
-    @ObservationIgnored var onCard: @MainActor (Dieter_V1_Card) -> Void = { _ in }
     @ObservationIgnored var onOperationFinished: @MainActor (WorkspaceTarget) async -> Void = { _ in }
     @ObservationIgnored var onOpenFiles: @MainActor (Dieter_V1_Card, String?) async -> Void = { _, _ in }
     @ObservationIgnored var onOpenTerminal: @MainActor (Dieter_V1_Card) async -> Void = { _ in }
@@ -71,7 +81,7 @@ final class WorktreeChangesModel {
 
     /// Reviews `target`'s conversation through `core`; a conversation not yet
     /// on its machine has nothing to review.
-    func bind(target: WorkspaceTarget, core: CoreClient?, card: Dieter_V1_Card?, doneLaneID: String?) {
+    func bind(target: WorkspaceTarget, core: CoreClient?, card: Dieter_V1_Card?) {
         if subscription == nil, let core {
             self.core = core
             subscription = SliceSubscription(client: core, slice: .review, scope: scope) { [weak self] update in
@@ -80,7 +90,6 @@ final class WorktreeChangesModel {
             }
         }
         self.card = card
-        self.doneLaneID = doneLaneID
         guard self.target != target else { return }
         self.target = target
         resetWorkspaceSurface()
@@ -99,19 +108,28 @@ final class WorktreeChangesModel {
         bindingGeneration &+= 1
         workspaceToastTask?.cancel(); workspaceToastTask = nil
         workspaceToast = nil; mergeFlowStep = nil; shownToast = ""
-        conversationWorkspace = nil; conversationChangeset = nil; conversationDiff = nil; diffLines = []
+        conversationWorkspace = nil; conversationChangeset = nil; conversationDiff = nil; diff = WorkspaceDiffLayout()
         conversationChangeComments = []; conversationSCMCapabilities = nil
         gitOperation = nil; gitOperationLogs = []
         workspaceLoading = false; workspaceError = nil; conversationDiffLoading = false
         gitOperationSubmitting = false; gitOperationNeedsReconciliation = false
         selectedChangePath = ""; selectedCommitSHA = ""
-        availability = WorkspaceActionAvailability(); surfaceRemoved = false
+        availability = WorkspaceActionAvailability(); conflicted = false; workspaceState = ""
+        operationVisible = false; operationCancelable = false; operationActive = false
+        conflictTitle = ""; conflictPrompt = ""; movesToDone = false; pullRequest = nil
+        mergeReadiness = ClientMergeReadiness()
+    }
+
+    /// Lays the diff out side by side or in one column; the core keeps the choice.
+    func setLayout(split: Bool) {
+        send { $0.layout = .with { $0.split = split } }
     }
 
     private func fold(_ slice: ClientReviewSlice) {
         guard slice.cardID == bound.cardID, slice.daemonID == bound.daemonID else { return }
         let workspace = slice.hasWorkspace ? slice.workspace : nil
         if conversationWorkspace != workspace { conversationWorkspace = workspace }
+        if workspaceState != slice.workspaceState { workspaceState = slice.workspaceState }
         let changeset = slice.hasChangeset ? slice.changeset : nil
         if conversationChangeset != changeset { conversationChangeset = changeset }
         let scm = slice.hasScm ? slice.scm : nil
@@ -122,12 +140,14 @@ final class WorktreeChangesModel {
         if workspaceError != error { workspaceError = error }
         if selectedChangePath != slice.selectedPath { selectedChangePath = slice.selectedPath }
         if selectedCommitSHA != slice.selectedCommit { selectedCommitSHA = slice.selectedCommit }
-        let diff = slice.hasDiff ? slice.diff : nil
-        if conversationDiff != diff { conversationDiff = diff }
-        let lines = slice.diffRows.map(UnifiedDiffLine.init)
-        if diffLines != lines { diffLines = lines }
+        let fileDiff = slice.hasDiff ? slice.diff : nil
+        if conversationDiff != fileDiff { conversationDiff = fileDiff }
+        let layout = diff.folding(
+            rows: slice.displayRows, unchanged: slice.diffUnchanged, maxColumns: slice.diffMaxColumns,
+            split: slice.split, more: slice.diffMore, note: slice.diffTooLarge ? slice.diffNote : "")
+        if diff != layout { diff = layout }
         if conversationDiffLoading != slice.diffLoading { conversationDiffLoading = slice.diffLoading }
-        let previous = gitOperation
+        let previous = gitOperation, wasActive = operationActive
         let operation = slice.hasOperation ? slice.operation : nil
         if gitOperation != operation { gitOperation = operation }
         if gitOperationLogs != slice.logs { gitOperationLogs = slice.logs }
@@ -135,20 +155,29 @@ final class WorktreeChangesModel {
         if gitOperationNeedsReconciliation != slice.needsReconciliation {
             gitOperationNeedsReconciliation = slice.needsReconciliation
         }
-        if surfaceRemoved != slice.surfaceRemoved { surfaceRemoved = slice.surfaceRemoved }
         let step = WorkspaceMergeStep(rawValue: slice.mergeStep)
         if mergeFlowStep != step { mergeFlowStep = step }
         let next =
             slice.hasAvailability ? WorkspaceActionAvailability(slice.availability) : WorkspaceActionAvailability()
         if availability != next { availability = next }
+        if conflicted != slice.conflicted { conflicted = slice.conflicted }
+        operationActive = slice.operationActive
+        if operationVisible != slice.operationVisible { operationVisible = slice.operationVisible }
+        if operationCancelable != slice.operationCancelable { operationCancelable = slice.operationCancelable }
+        if conflictTitle != slice.conflictTitle { conflictTitle = slice.conflictTitle }
+        if conflictPrompt != slice.conflictPrompt { conflictPrompt = slice.conflictPrompt }
+        if movesToDone != slice.movesToDone { movesToDone = slice.movesToDone }
+        let pull = slice.hasPullRequest ? slice.pullRequest : nil
+        if pullRequest != pull { pullRequest = pull }
+        if mergeReadiness != slice.mergeReadiness { mergeReadiness = slice.mergeReadiness }
         if !slice.toast.isEmpty, slice.toast != shownToast {
             shownToast = slice.toast
             showWorkspaceToast(slice.toast)
-            send { $0.clearToast_p = ClientReviewStep() }
+            send { $0.clearToast_p = ClientStep() }
         }
         // A finished operation can change the project's workspaces and board.
-        if let previous, let operation, previous.id == operation.id,
-            GitOperationStatus.active(previous.status), GitOperationStatus.terminal(operation.status)
+        if let previous, let operation, previous.id == operation.id, wasActive, !slice.operationActive,
+            !slice.conflicted
         {
             let target = target
             Task { await onOperationFinished(target) }
@@ -192,18 +221,18 @@ final class WorktreeChangesModel {
     /// Reads the workspace; on return the review is at least as new as the call.
     func loadWorkspaceSurface() async {
         guard !bound.cardID.isEmpty else { return }
-        await run { $0.refresh = ClientReviewStep() }
+        await run { $0.refresh = ClientStep() }
     }
 
     func loadConversationDiff(path: String, commitSHA: String = "", append: Bool = false, retryStale: Bool = true) async
     {
         if append {
-            await run { $0.loadMoreDiff = ClientReviewStep() }
+            await run { $0.loadMoreDiff = ClientStep() }
             return
         }
         if selectedChangePath != path || selectedCommitSHA != commitSHA {
             selectedChangePath = path; selectedCommitSHA = commitSHA
-            conversationDiff = nil; diffLines = []
+            conversationDiff = nil; diff = WorkspaceDiffLayout()
         }
         await run { command in
             command.select = .with {
@@ -227,37 +256,23 @@ final class WorktreeChangesModel {
         return true
     }
 
-    /// Changes the workspace before the first turn.
-    func updateConversationWorkspace(_ draft: ConversationWorkspaceDraft) async -> Bool {
-        guard !bound.cardID.isEmpty else { return false }
-        let result = await run { command in
-            command.updateSettings = .with {
-                $0.mode = draft.mode.rawValue
-                $0.branch = draft.branch
-                $0.baseBranch = draft.baseBranch
-                $0.baseRemote = draft.baseRemote
-                $0.publishMode = draft.remotePublishMode
-            }
-        }
-        return result != nil
-    }
-
-    /// Starts a Git operation against the current revision.
-    func startGitOperation(_ kind: GitOperationKind, parameters: [String: String] = [:]) async -> Bool {
+    /// Starts a Git operation against the current revision from its form;
+    /// the core builds the parameters and refuses a form that is not ready.
+    func startGitOperation(form: ClientGitOperationForm) async -> Bool {
         guard !bound.cardID.isEmpty, !gitOperationSubmitting else { return false }
-        let result = await run { command in
-            command.start = .with {
-                $0.kind = kind.rawValue
-                $0.parameters = parameters
-            }
-        }
+        let result = await run { command in command.start = form }
         guard case .gitOperation? = result?.result else { return false }
         return true
     }
 
+    /// Starts `kind` with the form the core fills from the conversation.
+    func startGitOperation(_ kind: GitOperationKind) async -> Bool {
+        await startGitOperation(form: kind.form(card: card).initial)
+    }
+
     func cancelCurrentGitOperation() async {
-        guard let operation = gitOperation, GitOperationStatus.active(operation.status) else { return }
-        await run { $0.cancelOperation = ClientReviewStep() }
+        guard operationCancelable else { return }
+        await run { $0.cancelOperation = ClientStep() }
     }
 
     func showWorkspaceToast(_ message: String) {
@@ -298,21 +313,6 @@ final class WorktreeChangesModel {
         return outcome.succeeded
     }
 
-    /// Waits for the operation started last to settle.
-    func awaitCurrentGitOperationSuccess() async -> Bool {
-        guard let id = gitOperation?.id else { return false }
-        let binding = bindingGeneration
-        let deadline = ContinuousClock.now + .seconds(3_600)
-        while binding == bindingGeneration, ContinuousClock.now < deadline, !Task.isCancelled {
-            if let current = gitOperation, current.id == id,
-                GitOperationStatus.terminal(current.status) || current.status == "waiting_for_resolution"
-            {
-                return current.status == "succeeded"
-            }
-            try? await DieterTaskSleep.milliseconds(100)
-        }
-        return false
-    }
 }
 
 extension UnifiedDiffLine {
@@ -336,6 +336,6 @@ extension WorkspaceActionAvailability {
     init(_ core: ClientWorkspaceAvailability) {
         self.init(
             allowed: Set(core.allowed), allowsMergeFlow: core.allowsMergeFlow, hasReviewBranch: core.hasReviewBranch_p,
-            workspaceMode: core.mode, remotePublishMode: core.publish, mergeDestination: core.mergeDestination)
+            workspaceMode: core.mode, mergeDestination: core.mergeDestination)
     }
 }

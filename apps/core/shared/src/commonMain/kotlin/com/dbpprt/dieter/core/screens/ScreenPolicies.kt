@@ -8,18 +8,20 @@ import com.dbpprt.dieter.api.v1.RemoteDesktopQuality
 import com.dbpprt.dieter.api.v1.RemoteDesktopSessionDescription
 import com.dbpprt.dieter.api.v1.RemoteDesktopSessionState
 import com.dbpprt.dieter.api.v1.StartRemoteDesktopRequest
+import com.dbpprt.dieter.core.runtime.Backoff
+import com.dbpprt.dieter.core.runtime.Failures
 import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.ln
 import kotlin.math.roundToInt
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 
-/** Retry timing for a screen session: 250 ms doubling to 5 s, reset after 10 s of stable streaming, no cap. */
+/** Retry timing for a screen session: [Backoff.SCREEN] (250 ms doubling to 5 s), reset after 10 s of stable streaming, with no limit on retries. */
 class ScreenRecovery {
     private var attempts = 0
     private var streamingSince: Instant? = null
@@ -36,9 +38,9 @@ class ScreenRecovery {
 
     fun nextDelay(now: Instant): Duration {
         interrupted(now)
-        val delay = minOf(5_000L, 250L shl attempts)
-        attempts = minOf(attempts + 1, 5)
-        return delay.milliseconds
+        val delay = Backoff.SCREEN.delay(attempts)
+        if (delay < Backoff.SCREEN.maximum) attempts++
+        return delay
     }
 
     companion object {
@@ -65,7 +67,7 @@ object ScreenFailures {
     fun retryable(error: Throwable): Boolean = when (error) {
         is ScreenTrustException -> false
         is GrpcException -> error.grpcStatus in retryableCodes
-        else -> com.dbpprt.dieter.core.runtime.Failures.isRetryableRead(error)
+        else -> Failures.isRetryableRead(error)
     }
 
     fun retryableClosure(reason: String): Boolean = reason in RETRYABLE_CLOSURES
@@ -86,11 +88,11 @@ object ScreenCapabilities {
     fun embedCursor(caps: RemoteDesktopCapabilities, control: Boolean): Boolean =
         if (caps.platform == "linux" && control) false else !caps.cursor_supported
 
-    fun controlUnavailableReason(caps: RemoteDesktopCapabilities): String = when {
-        shouldRequestControl(caps) -> ""
-        caps.platform == "linux" -> "Remote-control permission is required from the Linux desktop portal"
-        else -> "Accessibility permission is required on the host"
-    }
+    fun controlUnavailableReason(caps: RemoteDesktopCapabilities): String = if (shouldRequestControl(caps)) "" else permissionReason(caps.platform)
+
+    /** The host permission control needs on [platform]: the Linux desktop portal's, else Accessibility. */
+    fun permissionReason(platform: String): String =
+        if (platform == "linux") "Remote-control permission is required from the Linux desktop portal" else "Accessibility permission is required on the host"
 
     fun frameRates(caps: RemoteDesktopCapabilities, ceiling: Int = 120): List<Int> =
         listOf(30, 60, 90, 120).filter { it <= minOf(ceiling, caps.max_fps.takeIf { fps -> fps > 0 } ?: 60) }
@@ -150,8 +152,8 @@ sealed interface ViewportPolicy {
     data object Tablet : ViewportPolicy {
         override fun size(widthPoints: Double, heightPoints: Double, scale: Double): Pair<Int, Int>? {
             if (!(widthPoints > 0 && heightPoints > 0 && scale > 0)) return null
-            val width = (kotlin.math.ceil(widthPoints * scale / 160) * 160).toInt().coerceIn(640, 1920)
-            val height = (kotlin.math.ceil(heightPoints * scale / 90) * 90).toInt().coerceIn(360, 1080)
+            val width = (ceil(widthPoints * scale / 160) * 160).toInt().coerceIn(640, 1920)
+            val height = (ceil(heightPoints * scale / 90) * 90).toInt().coerceIn(360, 1080)
             return width to height
         }
     }

@@ -38,7 +38,7 @@ internal class BoardCardDragState {
         val source = card
         val target = targetLaneId
         reset()
-        return if (source != null && target != null && target != source.lane) {
+        return if (source != null && target != null && !target.equals(source.lane, ignoreCase = true)) {
             BoardCardLaneDrop(source.id, target)
         } else null
     }

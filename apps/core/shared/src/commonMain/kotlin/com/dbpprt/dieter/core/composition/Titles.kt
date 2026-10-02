@@ -23,4 +23,7 @@ object Titles {
     /** The title a created task shows: explicit, else from the prompt, else an attachment, else "New task". */
     fun creation(title: String, prompt: String, attachments: List<MessagePart>): String =
         title.trim().ifEmpty { null } ?: task(prompt) ?: attachments.firstOrNull { it.filename.isNotBlank() }?.filename ?: "New task"
+
+    /** The daemon names a new task or chat when only a prompt was written; a placeholder shows until then. */
+    fun generated(title: String, prompt: String): Boolean = title.isBlank() && prompt.isNotBlank()
 }

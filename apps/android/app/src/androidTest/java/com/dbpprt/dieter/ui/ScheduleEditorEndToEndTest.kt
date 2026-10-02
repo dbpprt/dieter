@@ -20,23 +20,21 @@ import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
 import com.dbpprt.dieter.api.v1.ListSchedulesRequest
 import com.dbpprt.dieter.api.v1.ScheduleRef
 import com.dbpprt.dieter.e2e.IsolatedCore
+import com.dbpprt.dieter.e2e.Evidence
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
-import java.io.File
 import java.util.UUID
 
 /** Real Activity → isolated gateway → daemon coverage. */
@@ -50,10 +48,6 @@ class ScheduleEditorEndToEndTest {
 
     @Test
     fun createsRunningScheduleWithTemplatesThroughTheVisibleEditor() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val arguments = InstrumentationRegistry.getArguments()
-        val token = arguments.getString("isolatedGatewayToken").orEmpty()
-        assumeTrue("Pass isolatedGatewayToken for the isolated gateway", token.isNotBlank())
         val application = composeRule.activity.application as DieterApplication
         val container = application.container
         val connected = IsolatedCore.connect(container)
@@ -96,21 +90,7 @@ class ScheduleEditorEndToEndTest {
         composeRule.onNodeWithTag("workspace-mode-worktree").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("workspace-mode-project").performScrollTo().performClick()
         composeRule.onAllNodesWithText("{{date}}")[0].performScrollTo().assertIsDisplayed()
-
-        val context = instrumentation.targetContext
-        val screenshotDirectory = arguments.getString("additionalTestOutputDir")
-            ?.takeIf(String::isNotBlank)
-            ?.let(::File)
-            ?: requireNotNull(context.getExternalFilesDir(null))
-        screenshotDirectory.mkdirs()
-        val screenshot = File(screenshotDirectory, "schedule-editor-e2e.png")
-        screenshot.outputStream().use { output ->
-            instrumentation.uiAutomation.takeScreenshot().compress(
-                android.graphics.Bitmap.CompressFormat.PNG,
-                100,
-                output,
-            )
-        }
+        Evidence.display("schedule-editor-e2e.png")
 
         composeRule.onNodeWithText("Save").assertIsEnabled().performClick()
         composeRule.waitUntil(15_000) { composeRule.onAllNodesWithTag("schedule-name").fetchSemanticsNodes().isEmpty() }

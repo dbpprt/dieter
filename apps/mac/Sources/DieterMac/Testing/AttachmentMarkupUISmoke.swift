@@ -1,9 +1,6 @@
 #if DIETER_UI_SMOKE
     import AppKit
     import DieterAPI
-    import ImageIO
-    @preconcurrency import ScreenCaptureKit
-    import UniformTypeIdentifiers
 
     @MainActor enum AttachmentMarkupUISmoke {
         static func composer(
@@ -44,7 +41,6 @@
                     _ = await NativeUIAccessibility.wait { editor.document.hasChanges }
                 }
                 capture(sheet, to: output.appending(path: "04d-attachment-markup.png"))
-                if apply { await captureStage(sheet, output: output, phase: "markup") }
                 let action = NativeUIAccessibility.click("attachment.markup.\(apply ? "apply" : "cancel")", in: sheet)
                 let dismissed = await NativeUIAccessibility.wait { !sheet.isVisible && window.attachedSheet == nil }
                 if apply {
@@ -97,85 +93,7 @@
                 applied && updated
                 ? "passed" : "failed: capture Apply did not update the attachment bytes"
             capture(window, to: output.appending(path: "capture-task-annotated.png"))
-            await captureStage(window, output: output, phase: "quick-task-capture")
             return results
-        }
-
-        private static func captureStage(_ window: NSWindow, output: URL, phase: String) async {
-            guard ProcessInfo.processInfo.environment["DIETER_CONTENT_CAPTURE"] == "1" else { return }
-            if phase == "quick-task-capture" {
-                await captureOwnWindow(window, output: output)
-            }
-            let request = output.appending(path: "capture-request.json")
-            let marker = ["phase": phase, "windowNumber": String(window.windowNumber)]
-            if let data = try? JSONSerialization.data(withJSONObject: marker, options: [.prettyPrinted, .sortedKeys]) {
-                try? data.write(to: request, options: .atomic)
-            }
-            defer { try? FileManager.default.removeItem(at: request) }
-            _ = await NativeUIAccessibility.wait(timeout: 30) {
-                FileManager.default.fileExists(atPath: output.appending(path: "capture-ack-\(phase)").path)
-            }
-        }
-
-        /// ScreenCaptureKit includes the window-server material composition that
-        /// cacheDisplay omits. Capture only this process's exact visible fixture
-        /// window, with previously granted permission and no consent request.
-        private static func captureOwnWindow(_ window: NSWindow, output: URL) async {
-            let diagnostic = output.appending(path: "external-quick-task-capture.txt")
-            guard CGPreflightScreenCaptureAccess() else {
-                try? "skipped: existing Screen Recording permission unavailable".write(
-                    to: diagnostic, atomically: true, encoding: .utf8)
-                return
-            }
-            let windowID = CGWindowID(window.windowNumber)
-            let processID = ProcessInfo.processInfo.processIdentifier
-            var completed = false
-            var outcome = "failed: own-window screenshot timed out"
-            let attempt = Task { @MainActor in
-                defer { completed = true }
-                do {
-                    let content = try await SCShareableContent.currentProcess
-                    guard !Task.isCancelled, window.isVisible, window.windowNumber == Int(windowID),
-                        let target = content.windows.first(where: {
-                            $0.windowID == windowID && $0.owningApplication?.processID == processID && $0.isOnScreen
-                        })
-                    else {
-                        outcome = "failed: exact visible fixture window unavailable"
-                        return
-                    }
-                    let filter = SCContentFilter(desktopIndependentWindow: target)
-                    let configuration = SCStreamConfiguration()
-                    let scale = CGFloat(filter.pointPixelScale)
-                    configuration.width = max(1, Int((filter.contentRect.width * scale).rounded(.up)))
-                    configuration.height = max(1, Int((filter.contentRect.height * scale).rounded(.up)))
-                    configuration.showsCursor = false
-                    configuration.ignoreShadowsSingleWindow = true
-                    configuration.captureResolution = .best
-                    let image = try await SCScreenshotManager.captureImage(
-                        contentFilter: filter, configuration: configuration)
-                    guard !Task.isCancelled, window.isVisible, window.windowNumber == Int(windowID) else { return }
-                    let url = output.appending(path: "external-quick-task-capture.png")
-                    guard
-                        let destination = CGImageDestinationCreateWithURL(
-                            url as CFURL, UTType.png.identifier as CFString, 1, nil)
-                    else {
-                        outcome = "failed: could not create own-window PNG"
-                        return
-                    }
-                    CGImageDestinationAddImage(destination, image, nil)
-                    guard CGImageDestinationFinalize(destination) else {
-                        outcome = "failed: could not encode own-window PNG"
-                        return
-                    }
-                    outcome =
-                        "captured: process=\(processID), window=\(windowID), pixels=\(image.width)x\(image.height)"
-                } catch {
-                    outcome = "failed: \(error.localizedDescription)"
-                }
-            }
-            _ = await NativeUIAccessibility.wait(timeout: 8) { completed }
-            if !completed { attempt.cancel() }
-            try? outcome.write(to: diagnostic, atomically: true, encoding: .utf8)
         }
 
         private static func canvas(in view: NSView?) -> AttachmentMarkupCanvasView? {

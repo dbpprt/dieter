@@ -1,7 +1,5 @@
 package com.dbpprt.dieter.ui
 
-import android.content.Context
-import android.graphics.Bitmap
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -15,7 +13,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.lifecycle.ViewModelStore
@@ -23,10 +20,10 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.core.navigation.FolderScope
 import com.dbpprt.dieter.e2e.TestCore
+import com.dbpprt.dieter.e2e.saveEvidence
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.Project
-import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -110,7 +107,7 @@ class NavigationFoldersTest {
         androidx.test.espresso.Espresso.closeSoftKeyboard()
         compose.onAllNodesWithTag("chat-c1").assertCountEquals(1)
         compose.onNodeWithTag("folder-$id").performClick()
-        capture("chat-folders.png")
+        compose.onRoot().saveEvidence("chat-folders.png")
         compose.onNodeWithTag("folder-options-$id").performClick()
         compose.onNodeWithText("Rename folder").performClick()
         compose.onNodeWithTag("folder-name").performTextReplacement("Reviews")
@@ -170,11 +167,11 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("folder-$news").assertIsDisplayed()
         compose.onNodeWithTag("chat-runtime-filed", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("Not running").assertDoesNotExist()
-        capture("all-chats-dark.png")
+        compose.onRoot().saveEvidence("all-chats-dark.png")
         compose.runOnIdle { dark = false }
-        capture("all-chats-light.png")
+        compose.onRoot().saveEvidence("all-chats-light.png")
         compose.runOnIdle { dark = true; fontScale = 1.5f }
-        capture("all-chats-large-text.png")
+        compose.onRoot().saveEvidence("all-chats-large-text.png")
         compose.onNodeWithTag("chat-actions-pin").performClick()
         compose.onNodeWithText("Unpin").assertIsDisplayed()
         compose.onNodeWithText("Move to folder").assertIsDisplayed()
@@ -183,13 +180,13 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("folder-$news").performClick()
         compose.onNodeWithTag("chats-list").performScrollToNode(hasTestTag("project-chat-toggle-p1"))
         compose.onNodeWithTag("project-chat-toggle-p1").performClick()
-        compose.waitUntil { "p1" in model.state.value.collapsedChatProjectIds }
-        capture("all-chats-collapsed.png")
+        compose.waitUntil { model.state.value.navigationLayout.chatSectionCollapsed("p1") }
+        compose.onRoot().saveEvidence("all-chats-collapsed.png")
         compose.onNode(hasSetTextAction()).performTextInput("Newsroom")
         androidx.test.espresso.Espresso.closeSoftKeyboard()
         compose.onNodeWithTag("chat-filed").assertIsDisplayed()
         compose.onNodeWithTag("chat-filed-idle").assertIsDisplayed()
-        capture("all-chats-folder-search.png")
+        compose.onRoot().saveEvidence("all-chats-folder-search.png")
         compose.onNode(hasSetTextAction()).performTextReplacement("Dieter")
         androidx.test.espresso.Espresso.closeSoftKeyboard()
         compose.onNodeWithTag("chat-project").assertIsDisplayed()
@@ -200,13 +197,13 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("chat-project").assertDoesNotExist()
         compose.onNodeWithTag("chat-filed").assertDoesNotExist()
         compose.runOnIdle {
-            assertTrue("p1" in model.state.value.collapsedChatProjectIds)
+            assertTrue(model.state.value.navigationLayout.chatSectionCollapsed("p1"))
             assertFalse(model.state.value.chatFolders.single().expanded)
         }
         compose.onNode(hasSetTextAction()).performTextInput("nothing-matches-this")
         androidx.test.espresso.Espresso.closeSoftKeyboard()
         compose.onNodeWithText("No matching chats").assertIsDisplayed()
-        capture("all-chats-no-results.png")
+        compose.onRoot().saveEvidence("all-chats-no-results.png")
     }
 
     @Test fun projectFoldersMoveOutAndDeleteWithoutRemovingProjects() {
@@ -225,7 +222,7 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("save-folder").performClick()
         val id = folderID(FolderScope.PROJECTS)
         compose.onNodeWithTag("space-project-p1").assertIsDisplayed()
-        capture("project-folders.png")
+        compose.onRoot().saveEvidence("project-folders.png")
         compose.onNodeWithTag("folder-$id").performClick()
         compose.waitUntil(5_000) { compose.onAllNodesWithTag("space-project-p1").fetchSemanticsNodes().isEmpty() }
         compose.onNodeWithTag("space-project-p1").assertDoesNotExist()
@@ -256,14 +253,14 @@ class NavigationFoldersTest {
             }
         }
         compose.onNodeWithText("Shared updates between Desktop and Laptop are delayed.").assertIsDisplayed()
-        compose.onNodeWithText("1 navigation edits pending sync. Sign in again to sync folders and order.").assertIsDisplayed()
+        compose.onNodeWithText("1 navigation edit pending sync. Sign in again to sync folders and order.").assertIsDisplayed()
         compose.onNodeWithText("Navigation sync unavailable").assertDoesNotExist()
-        capture("project-sync-needs-attention.png")
+        compose.onRoot().saveEvidence("project-sync-needs-attention.png")
         compose.runOnIdle { state = state.copy(peerSyncWarnings = emptyList(), navigationPendingCount = 0, navigationSyncError = null) }
         compose.onNodeWithText("Shared updates between Desktop and Laptop are delayed.").assertDoesNotExist()
         compose.onNodeWithText("Sign in again", substring = true).assertDoesNotExist()
         compose.onNodeWithTag("space-project-p1").assertIsDisplayed()
-        capture("project-sync-recovered.png")
+        compose.onRoot().saveEvidence("project-sync-recovered.png")
     }
 
     @Test fun projectPinsPersistInSharedNavigationAndCanBeRemovedFromThePinnedCard() {
@@ -340,11 +337,4 @@ class NavigationFoldersTest {
     }
 
     private fun folders(scope: FolderScope) = if (scope == FolderScope.CHATS) model.state.value.chatFolders else model.state.value.projectFolders
-
-    private fun capture(name: String) {
-        val file = File(context.getExternalFilesDir(null), name)
-        file.outputStream().use { output ->
-            assertTrue(compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, output))
-        }
-    }
 }

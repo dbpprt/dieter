@@ -7,9 +7,9 @@ struct InboxView: View {
 
     var body: some View {
         ChatPaneSplit(layout: .inbox) {
-            InboxFeed { card in
-                guard (store.selectedCardID ?? store.selectedChatID) != card.id else { return }
-                Task { await store.openConversation(cardID: card.id, chat: card.scope == "chat", fromInbox: true) }
+            InboxFeed { entry in
+                guard (store.selectedCardID ?? store.selectedChatID) != entry.id else { return }
+                Task { await store.openConversation(cardID: entry.id, chat: entry.row.chat, fromInbox: true) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityElement(children: .contain)

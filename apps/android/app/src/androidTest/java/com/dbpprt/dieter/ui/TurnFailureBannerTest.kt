@@ -1,6 +1,5 @@
 package com.dbpprt.dieter.ui
 
-import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,10 +16,10 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
-import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.api.v1.MessagePart
 import com.dbpprt.dieter.core.conversation.TurnFailure
 import com.dbpprt.dieter.ui.theme.DieterTheme
+import com.dbpprt.dieter.e2e.Evidence
 import com.dbpprt.dieter.ui.theme.DieterBackground
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -118,10 +117,6 @@ class TurnFailureBannerTest {
 
     private fun capture(name: String) {
         compose.waitForIdle()
-        val descriptor = InstrumentationRegistry.getInstrumentation().uiAutomation
-            .executeShellCommand("screencap -p /sdcard/Download/$name")
-        ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { input ->
-            while (input.read() != -1) {}
-        }
+        Evidence.display(name)
     }
 }

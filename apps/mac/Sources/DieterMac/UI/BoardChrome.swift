@@ -15,16 +15,8 @@ struct BoardHeader: View {
         return content.splitMode && content.isPresented(for: cardID)
     }
 
-    private var needsAttention: Int {
-        store.boardCards.filter { ["waiting_for_user", "review"].contains($0.runtime) }.count
-    }
-
-    private var boardMetadata: String {
-        let count = store.boardCards.count
-        var parts = ["board", "\(count) conversation\(count == 1 ? "" : "s")"]
-        if needsAttention > 0 { parts.append("\(needsAttention) needs you") }
-        return parts.joined(separator: " · ")
-    }
+    /// The core's board view of the selected board.
+    private var view: ClientBoardViewSlice { store.boardProjection.view }
 
     private func machineFilterMenu(iconOnly: Bool) -> some View {
         Menu {
@@ -48,7 +40,7 @@ struct BoardHeader: View {
     }
 
     private var stateFilterTitle: String {
-        store.runtimeFilter.isEmpty ? "All states" : store.runtimeFilter.capitalized
+        view.stateTitle.isEmpty ? "All states" : view.stateTitle
     }
 
     var body: some View {
@@ -57,7 +49,7 @@ struct BoardHeader: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(store.selectedBoard?.name ?? "Board")
                         .font(DieterFont.paneTitle).lineLimit(1)
-                    Text(boardMetadata)
+                    Text(view.summary)
                         .font(DieterFont.subtitle)
                         .foregroundStyle(DieterTheme.tertiary).lineLimit(1)
                 }
@@ -160,7 +152,7 @@ struct BoardHeader: View {
     }
 
     private var hasActiveFilters: Bool {
-        !store.labelFilter.isEmpty || !store.runtimeFilter.isEmpty || !store.machineFilter.isEmpty
+        !store.labelFilter.isEmpty || store.stateFilter != .all || !store.machineFilter.isEmpty
     }
 
     private func stateFilterMenu(iconOnly: Bool) -> some View {
@@ -175,7 +167,7 @@ struct BoardHeader: View {
             }
         }
         .menuStyle(.button)
-        .tint(store.runtimeFilter.isEmpty ? nil : Color.accentColor)
+        .tint(store.stateFilter == .all ? nil : Color.accentColor)
         .accessibilityIdentifier("board.filter.state")
         .help("Filter cards by state")
     }
@@ -230,7 +222,7 @@ struct BoardHeader: View {
                 if store.labelFilter.isEmpty {
                     Image(systemName: "checkmark")
                 }
-                Text("\(compact ? "All" : "All cards") · \(store.boardCards.count)")
+                Text("\(compact ? "All" : "All cards") · \(view.total)")
                     .lineLimit(1)
             }
         }
@@ -247,7 +239,7 @@ struct BoardHeader: View {
                     ForEach(board.labels, id: \.id) { label in
                         BoardLabelShelfChip(
                             label: label, boardID: board.id,
-                            count: store.boardProjection.labelCounts[label.id, default: 0],
+                            count: Int(view.labelCounts[label.id, default: 0]),
                             selected: store.labelFilter == label.id
                         ) {
                             store.labelFilter = store.labelFilter == label.id ? "" : label.id
@@ -261,11 +253,10 @@ struct BoardHeader: View {
 
     private var stateFilterOptions: some View {
         Picker(
-            "State", selection: Binding(get: { store.runtimeFilter }, set: { store.runtimeFilter = $0 })
+            "State", selection: Binding(get: { store.stateFilter }, set: { store.stateFilter = $0 })
         ) {
-            Text("All states").tag("")
-            ForEach(["running", "review", "waiting", "completed", "failed"], id: \.self) { runtime in
-                Text(runtime.capitalized).tag(runtime)
+            ForEach(view.stateOptions, id: \.state) { option in
+                Text(option.title).tag(option.state)
             }
         }
         .pickerStyle(.inline)
@@ -288,8 +279,7 @@ struct BoardHeader: View {
             "Machine", selection: Binding(get: { store.machineFilter }, set: { store.machineFilter = $0 })
         ) {
             Text("All machines").tag("")
-            ForEach(Array(Set(store.boardCards.map(\.ownerDaemonID))).filter { !$0.isEmpty }.sorted(), id: \.self) {
-                id in
+            ForEach(view.machineIds, id: \.self) { id in
                 Text(store.endpoints.first { $0.daemonID == id }?.name ?? id).tag(id)
             }
         }

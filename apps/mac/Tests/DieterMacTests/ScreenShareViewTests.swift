@@ -31,6 +31,7 @@ struct ScreenShareViewTests {
                     clickCount: 1, pressure: 1))
         }
         controller.phase = .streaming
+        controller.active = true
         #expect(surface.acceptsFirstMouse(for: try event(NSPoint(x: 400, y: 300))))
         #expect(!surface.acceptsFirstMouse(for: try event(NSPoint(x: 400, y: 5))))
         controller.phase = .reconnecting
@@ -160,7 +161,9 @@ private final class ScreenShareViewFixture {
         model.sessions = [first, second]
         model.selectedSessionID = first.id
         first.controller.phase = .streaming
+        first.controller.active = true
         second.controller.phase = .streaming
+        second.controller.active = true
         let host = NSHostingView(
             rootView: ScreensView(model: model, machines: [], initialMachineID: "alpha"))
         host.sizingOptions = []

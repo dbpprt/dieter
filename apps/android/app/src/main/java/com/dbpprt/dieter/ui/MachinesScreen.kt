@@ -61,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -86,38 +87,36 @@ import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import com.dbpprt.dieter.ui.theme.DieterText
 import com.dbpprt.dieter.api.v1.GPUDevice
-import com.dbpprt.dieter.api.v1.GPUMemoryKind
-import com.dbpprt.dieter.api.v1.GPUVendor
 import com.dbpprt.dieter.api.v1.MachineInformation
 import com.dbpprt.dieter.api.v1.MachineOperationAction
 import com.dbpprt.dieter.api.v1.MachineProcess
-import kotlin.math.roundToInt
+import kotlin.time.Clock
+import kotlin.time.Instant
 
-private enum class MachineAction(
-    val wireValue: MachineOperationAction,
-    val title: String,
-    val button: String,
-    val explanation: String,
-) {
-    UPDATE(
-        MachineOperationAction.MACHINE_OPERATION_ACTION_UPDATE_DAEMON,
-        "Update Dieter daemon?",
-        "Update",
-        "The managed service will verify and install the latest Dieter release, restart, and reconnect automatically.",
-    ),
-    RESTART(
-        MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART,
-        "Restart machine?",
-        "Restart",
-        "Active Dieter turns will be suspended while the machine restarts. It will reconnect after Dieter starts again.",
-    ),
-    SHUTDOWN(
-        MachineOperationAction.MACHINE_OPERATION_ACTION_SHUTDOWN,
-        "Shut down machine?",
-        "Shut down",
-        "Active Dieter turns will be suspended and the machine will remain offline until somebody turns it on again.",
-    ),
+/**
+ * [machine]'s status line as the core words it, followed by when it was last
+ * seen when the core asks for that. The core judges the machine's own row,
+ * not the presented one.
+ */
+internal fun DieterUiState.machineStatusLine(machine: MachineRow, now: Instant): String {
+    val own = endpointConnections.firstOrNull { it.id == machine.id } ?: machine
+    return MachineRows.status(own, own.id == attachedMachineId, connectionPhase, connectionError, machineSyncWarnings[own.id].orEmpty(), feedLive)
+        .line(own.lastSeenAt, now)
 }
+
+private val MachineOperationAction.icon: ImageVector
+    get() = when (this) {
+        MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART -> Icons.Outlined.RestartAlt
+        MachineOperationAction.MACHINE_OPERATION_ACTION_SHUTDOWN -> Icons.Outlined.PowerSettingsNew
+        else -> Icons.Outlined.SystemUpdateAlt
+    }
+
+private val MachineOperationAction.tag: String
+    get() = when (this) {
+        MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART -> "restart"
+        MachineOperationAction.MACHINE_OPERATION_ACTION_SHUTDOWN -> "shutdown"
+        else -> "update"
+    }
 
 @Composable
 fun MachinesScreen(
@@ -234,7 +233,7 @@ private fun MachineList(
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
-    val online = machines.count { it.online }
+    val now = Clock.System.now()
     LazyColumn(
         modifier = modifier.fillMaxSize().testTag("machines-list"),
         contentPadding = PaddingValues(
@@ -251,12 +250,16 @@ private fun MachineList(
                     Column(Modifier.weight(1f)) {
                         Text("Machines", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                         Text(
-                            "${machines.size} ${if (machines.size == 1) "machine" else "machines"}",
+                            MachineFormats.count(machines.size, "machine"),
                             color = DieterMuted,
                             style = MaterialTheme.typography.labelMedium,
                         )
                     }
-                    MachineStatusLabel(online = online, total = machines.size)
+                    MachineStatusLabel(
+                        label = MachineRows.onlineLabel(machines),
+                        description = MachineRows.onlineSummary(machines),
+                        anyOnline = machines.any { it.online },
+                    )
                     IconButton(onClick = onRefresh, modifier = Modifier.testTag("machines-refresh")) {
                         Icon(Icons.Outlined.Refresh, "Refresh machines")
                     }
@@ -295,6 +298,7 @@ private fun MachineList(
             items(machines, key = MachineRow::id) { machine ->
                 MachineListItem(
                     machine = machine,
+                    status = state.machineStatusLine(machine, now),
                     information = state.machineSnapshots[machine.id]?.information,
                     selected = selectedId == machine.id,
                     onClick = { onSelect(machine.id) },
@@ -308,26 +312,27 @@ private fun MachineList(
 }
 
 @Composable
-private fun MachineStatusLabel(online: Int, total: Int) {
-    val color = if (online > 0) DieterEyes else DieterMuted
+private fun MachineStatusLabel(label: String, description: String, anyOnline: Boolean) {
+    val color = if (anyOnline) DieterEyes else DieterMuted
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier.semantics { contentDescription = "$online of $total machines online" },
+        modifier = Modifier.semantics { contentDescription = description },
     ) {
         Box(Modifier.size(7.dp).clip(CircleShape).background(color))
-        Text("$online online", color = color, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+        Text(label, color = color, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
     }
 }
 
 @Composable
 private fun MachineListItem(
     machine: MachineRow,
+    status: String,
     information: MachineInformation?,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val status = if (machine.online) machine.detail.ifBlank { "Online" } else machine.detail.ifBlank { "Offline" }
+    val agents = information?.active_agent_count ?: 0
     Surface(
         onClick = onClick,
         color = if (selected) DieterShellTint else DieterSurface,
@@ -362,10 +367,10 @@ private fun MachineListItem(
                 Text(machine.label, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(status, color = DieterMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            if (information?.active_agent_count ?: 0 > 0) {
+            if (agents > 0) {
                 Surface(color = DieterShellTint, shape = CircleShape) {
                     Text(
-                        "${information?.active_agent_count} ${if (information?.active_agent_count == 1) "agent" else "agents"}",
+                        MachineFormats.count(agents, "agent"),
                         color = DieterShell,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 10.sp,
@@ -390,7 +395,7 @@ private fun FleetSummary(fleet: FleetTotals) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("FLEET", color = DieterMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
                 Spacer(Modifier.weight(1f))
-                Text("${fleet.reporting}/${fleet.machines} reporting", color = DieterMuted, fontSize = 10.sp)
+                Text(fleet.reportingLabel, color = DieterMuted, fontSize = 10.sp)
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 FleetMetric(fleet.agents.toString(), "agents")
@@ -442,7 +447,7 @@ private fun MachineDetail(
     val loading = snapshot?.loading == true
     val error = snapshot?.error
     var actionsOpen by remember { mutableStateOf(false) }
-    var pendingAction by remember { mutableStateOf<MachineAction?>(null) }
+    var pendingAction by remember { mutableStateOf<MachineOperationAction?>(null) }
 
     LazyColumn(
         modifier = modifier.fillMaxSize().testTag("machine-detail"),
@@ -457,6 +462,7 @@ private fun MachineDetail(
         item("identity") {
             MachineIdentity(
                 machine = machine,
+                status = state.machineStatusLine(machine, Clock.System.now()),
                 information = information,
                 loading = loading,
                 expanded = expanded,
@@ -488,12 +494,12 @@ private fun MachineDetail(
                     }
                 }
                 information.gpu?.let { gpuTelemetry ->
-                    item("gpu-title") { MachineSectionHeader("GPU", "${gpuTelemetry.devices.size} devices") }
+                    item("gpu-title") { MachineSectionHeader("GPU", MachineFormats.count(gpuTelemetry.devices.size, "device")) }
                     if (gpuTelemetry.devices.isEmpty()) {
                         item("gpu-unavailable") {
                             MachinePanel {
                                 Text(
-                                    gpuTelemetry.unavailable_reason.ifBlank { "No supported GPU telemetry is available." },
+                                    MachineFormats.gpuUnavailable(gpuTelemetry),
                                     color = DieterMuted,
                                     fontSize = 12.sp,
                                 )
@@ -521,11 +527,11 @@ private fun MachineDetail(
                 MachineCenteredState {
                     Icon(Icons.Outlined.Computer, null, Modifier.size(30.dp), tint = if (machine.online) DieterAmber else DieterMuted)
                     Text(
-                        error ?: if (machine.online) "Machine information is unavailable." else machine.detail,
+                        MachineFormats.informationUnavailable(machine, error),
                         color = DieterMuted,
                         fontSize = 12.sp,
                     )
-                    if (machine.online && machine.isCompatible) {
+                    if (machine.unavailableMessage == null) {
                         Button(onClick = onRefresh) { Text("Try again") }
                     }
                 }
@@ -534,19 +540,20 @@ private fun MachineDetail(
     }
 
     pendingAction?.let { action ->
+        val copy = MachineOperations.copy(action)
         AlertDialog(
             onDismissRequest = { pendingAction = null },
-            title = { Text(action.title) },
-            text = { Text(action.explanation) },
+            title = { Text(copy.title) },
+            text = { Text(copy.explanation) },
             dismissButton = { TextButton(onClick = { pendingAction = null }) { Text("Cancel") } },
             confirmButton = {
                 TextButton(
                     onClick = {
                         pendingAction = null
-                        onOperation(action.wireValue)
+                        onOperation(action)
                     },
                     modifier = Modifier.testTag("machine-operation-confirm"),
-                ) { Text(action.button, color = if (action == MachineAction.UPDATE) DieterShell else DieterCoral) }
+                ) { Text(copy.button, color = if (copy.destructive) DieterCoral else DieterShell) }
             },
         )
     }
@@ -568,6 +575,7 @@ private fun MachineDetail(
 @Composable
 private fun MachineIdentity(
     machine: MachineRow,
+    status: String,
     information: MachineInformation?,
     loading: Boolean,
     expanded: Boolean,
@@ -575,7 +583,7 @@ private fun MachineIdentity(
     onRefresh: () -> Unit,
     actionsOpen: Boolean,
     onActionsOpenChange: (Boolean) -> Unit,
-    onAction: (MachineAction) -> Unit,
+    onAction: (MachineOperationAction) -> Unit,
     operationInFlight: Boolean,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -596,25 +604,16 @@ private fun MachineIdentity(
                     modifier = Modifier.testTag("machine-actions"),
                 ) { Icon(Icons.Outlined.MoreVert, "Machine actions") }
                 DropdownMenu(actionsOpen, { onActionsOpenChange(false) }) {
-                    MachineAction.entries.forEach { action ->
+                    MachineOperations.availability(information).forEach { option ->
                         DropdownMenuItem(
-                            text = { Text(action.button) },
-                            leadingIcon = {
-                                Icon(
-                                    when (action) {
-                                        MachineAction.UPDATE -> Icons.Outlined.SystemUpdateAlt
-                                        MachineAction.RESTART -> Icons.Outlined.RestartAlt
-                                        MachineAction.SHUTDOWN -> Icons.Outlined.PowerSettingsNew
-                                    },
-                                    null,
-                                )
-                            },
-                            enabled = MachineOperations.available(information, action.wireValue),
+                            text = { Text(MachineOperations.copy(option.action).menuTitle) },
+                            leadingIcon = { Icon(option.action.icon, null) },
+                            enabled = option.available,
                             onClick = {
                                 onActionsOpenChange(false)
-                                onAction(action)
+                                onAction(option.action)
                             },
-                            modifier = Modifier.testTag("machine-action-${action.name.lowercase()}")
+                            modifier = Modifier.testTag("machine-action-${option.action.tag}")
                         )
                     }
                 }
@@ -642,7 +641,7 @@ private fun MachineIdentity(
                 if (machine.online) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         Icon(Icons.Outlined.Lan, null, Modifier.size(14.dp), tint = DieterMuted)
-                        Text(machine.detail, color = DieterMuted, fontSize = 11.sp)
+                        Text(status, color = DieterMuted, fontSize = 11.sp)
                     }
                 }
             }
@@ -785,10 +784,9 @@ private fun MachineGpuPanel(device: GPUDevice, history: List<Double>) {
     MachinePanel {
         Row(verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(device.name.ifBlank { "GPU" }, fontWeight = FontWeight.Bold)
+                Text(MachineFormats.gpuName(device), fontWeight = FontWeight.Bold)
                 Text(
-                    listOf(MachineFormats.gpuVendor(device.vendor), device.id, device.driver_version.takeIf(String::isNotBlank)?.let { "driver $it" })
-                        .filterNotNull().joinToString(" · "),
+                    MachineFormats.gpuDetail(device),
                     color = DieterMuted,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 9.sp,
@@ -796,10 +794,9 @@ private fun MachineGpuPanel(device: GPUDevice, history: List<Double>) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            val utilization = device.utilization_percent
             Text(
-                if (utilization != null) MachineFormats.percentage(utilization) else "—",
-                color = if (utilization != null) DieterShell else DieterMuted,
+                MachineFormats.gpuUtilization(device),
+                color = if (device.utilization_percent != null) DieterShell else DieterMuted,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 22.sp,
@@ -812,13 +809,11 @@ private fun MachineGpuPanel(device: GPUDevice, history: List<Double>) {
             if (device.memory_used_bytes != null || device.memory_total_bytes != null) {
                 MachineIconMetric(Icons.Outlined.Memory, MachineFormats.gpuMemory(device))
             }
-            device.temperature_celsius?.let { MachineIconMetric(Icons.Outlined.Thermostat, "${it.roundToInt()}°C") }
-            device.power_watts?.let { MachineIconMetric(Icons.Outlined.Bolt, "${it.roundToInt()} W") }
+            device.temperature_celsius?.let { MachineIconMetric(Icons.Outlined.Thermostat, MachineFormats.temperature(it)) }
+            device.power_watts?.let { MachineIconMetric(Icons.Outlined.Bolt, MachineFormats.power(it)) }
         }
     }
 }
-
-
 
 @Composable
 private fun MachineSoftwarePanel(machine: MachineRow, information: MachineInformation) {
@@ -842,11 +837,7 @@ private fun MachineSoftwarePanel(machine: MachineRow, information: MachineInform
                 Text("Dieter daemon", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 val build = information.daemon_build
                 Text(
-                    listOf(
-                        build?.release_version?.ifBlank { null } ?: "Unknown",
-                        machine.releaseVersion.takeIf(String::isNotBlank),
-                        MachineFormats.shortRevision(build?.source_revision.orEmpty()),
-                    ).filterNotNull().joinToString(" · "),
+                    MachineFormats.daemonVersion(build?.release_version.orEmpty(), machine.releaseVersion, build?.source_revision.orEmpty()),
                     color = DieterMuted,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 9.sp,
@@ -862,10 +853,7 @@ private fun MachineProcessesPanel(information: MachineInformation) {
         Modifier.fillMaxWidth().testTag("machine-processes"),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        MachineSectionHeader(
-            "DIETER PROCESSES",
-            "${information.active_agent_count} ${if (information.active_agent_count == 1) "agent" else "agents"} active",
-        )
+        MachineSectionHeader("DIETER PROCESSES", MachineFormats.activeAgents(information.active_agent_count))
         Surface(
             color = DieterSurface,
             shape = RoundedCornerShape(14.dp),
@@ -902,7 +890,7 @@ private fun MachineProcessRow(process: MachineProcess) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(process.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                "pid ${process.pid} · ${process.detail}",
+                MachineFormats.processDetail(process.pid, process.detail),
                 color = DieterMuted,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 9.sp,
@@ -919,13 +907,10 @@ private fun MachineProcessRow(process: MachineProcess) {
 private fun MachineFooter(machine: MachineRow, information: MachineInformation, onOpenTerminals: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            MachineIconMetric(Icons.Outlined.Storage, "${MachineFormats.bytes(information.disk_free_bytes)} free")
-            MachineIconMetric(
-                Icons.Outlined.Lan,
-                "↓ ${MachineFormats.rate(information.network_receive_bytes_per_second)} · ↑ ${MachineFormats.rate(information.network_send_bytes_per_second)}",
-            )
+            MachineIconMetric(Icons.Outlined.Storage, MachineFormats.disk(information.disk_free_bytes))
+            MachineIconMetric(Icons.Outlined.Lan, MachineFormats.network(information.network_receive_bytes_per_second, information.network_send_bytes_per_second))
             if (information.temperature_celsius > 0) {
-                MachineIconMetric(Icons.Outlined.Thermostat, "${information.temperature_celsius.roundToInt()}°C")
+                MachineIconMetric(Icons.Outlined.Thermostat, MachineFormats.temperature(information.temperature_celsius))
             }
         }
         Button(
@@ -941,7 +926,7 @@ private fun MachineFooter(machine: MachineRow, information: MachineInformation, 
 }
 
 @Composable
-private fun MachineIconMetric(icon: androidx.compose.ui.graphics.vector.ImageVector, value: String) {
+private fun MachineIconMetric(icon: ImageVector, value: String) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
         Icon(icon, null, Modifier.size(14.dp), tint = DieterMuted)
         Text(value, color = DieterMuted, fontFamily = FontFamily.Monospace, fontSize = 9.sp)

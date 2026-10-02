@@ -196,7 +196,7 @@ final class TerminalsModel {
     }
 
     func loadTerminals(selecting preferredID: String? = nil) async {
-        await run { $0.load = ClientTerminalStep() }
+        await run { $0.load = ClientStep() }
         if let preferredID { await run { $0.select = .with { $0.terminalID = preferredID } } }
     }
 

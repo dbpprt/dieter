@@ -13,7 +13,7 @@ struct CoreSessionAdapterTests {
     let store: DieterStore
 
     init() {
-        store = DieterStore(core: core, restoreSync: false)
+        store = DieterStore(core: core, liveEnvironment: false)
     }
 
     func commands<Value>(_ match: (ClientCommand.OneOf_Command) -> Value?) -> [Value] {
@@ -32,11 +32,24 @@ struct CoreSessionAdapterTests {
         #expect(!start.hasDraftAttachments_p)
         // The core reports the start until the machine confirms it.
         store.foldBoard(.with { $0.operations = [card.id: "STARTING"] })
-        #expect(store.pendingCardStarts[card.id] != nil)
         await store.start(card)
         #expect(commands { if case .startCard(let start) = $0 { start } else { nil } }.count == 1)
-        store.foldBoard(ClientBoardSlice())
-        #expect(store.pendingCardStarts[card.id] == nil)
+    }
+
+    @Test func theReasoningPreferenceFollowsTheSessionAndTogglesThroughTheCore() async throws {
+        store.foldSession(.with { $0.showReasoning = true })
+        #expect(store.showReasoning, "Settings shows the preference without an open conversation")
+        #expect(commands { if case .setShowReasoning(let set) = $0 { set } else { nil } }.isEmpty)
+        // An unrelated update that still carries the old value keeps a toggle on its way to the core.
+        store.showReasoning = false
+        store.foldSession(
+            .with {
+                $0.showReasoning = true; $0.phaseLabel = "Connected"
+            })
+        #expect(!store.showReasoning)
+        func sent() -> [Bool] { commands { if case .setShowReasoning(let set) = $0 { set.show } else { nil } } }
+        for _ in 0..<100 where sent().isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(sent() == [false])
     }
 
     @Test func pinningAChatIsACoreCommandShownFromTheWorkspace() async {
@@ -75,38 +88,33 @@ struct CoreSessionAdapterTests {
         #expect(store.isFailedOutboxItem("local_message"))
     }
 
-    @Test func machineQueuesShowWhatIsWaitingAndWhy() {
+    @Test func machineQueuesShowWhatTheCoreSaysIsWaiting() {
         let machine = DieterEndpoint(
             name: "Offline", host: "gateway.getdieter.com", port: 443, secure: true, daemonID: "d_offline",
             online: false)
         store.endpoints = [machine]
+        store.machineEntries[machine.id] = .with {
+            $0.id = "d_offline"
+            $0.detail = "Offline"
+        }
         store.foldOutbox(
             .with {
                 $0.machines = [
                     .with {
                         $0.daemonID = "d_offline"
-                        $0.pending = 2
                         $0.messageCount = 1
                         $0.changeCount = 1
-                        $0.retrying = true
+                        $0.phase = .retrying
+                        $0.title = "Retrying delivery to Offline"
+                        $0.statusSuffix = " · retrying"
                     }
                 ]
             })
-        let summary = store.outboxSummary(for: machine)
-        #expect(summary?.queuedLabel == "2 items queued")
-        #expect(summary?.deliveryLabel == "2 items queued — delivers when it reconnects.")
-        #expect(summary?.toastPhase(machineOnline: false) == .retrying)
+        #expect(store.outbox(for: machine)?.title == "Retrying delivery to Offline")
+        #expect(store.outbox(for: machine)?.phase == .retrying)
+        #expect(store.machineStatusLine(machine) == "Offline · retrying")
         store.foldOutbox(
             .with {
-                $0.machines = [
-                    .with {
-                        $0.daemonID = "d_offline"
-                        $0.pending = 1
-                        $0.failed = 1
-                        $0.changeCount = 1
-                        $0.lastError = "The machine rejected the request."
-                    }
-                ]
                 $0.failedOperations = [
                     .with {
                         $0.id = "local_card"
@@ -117,11 +125,9 @@ struct CoreSessionAdapterTests {
                     }
                 ]
             })
-        #expect(store.outboxSummary(for: machine)?.toastPhase(machineOnline: true) == .failed)
-        #expect(store.outboxSummary(for: machine)?.failureMessage == "The machine rejected the request.")
         #expect(store.failedOutboxItems.map(\.operation) == ["Create card"])
         store.foldOutbox(ClientOutboxSlice())
-        #expect(store.outboxSummary(for: machine) == nil)
+        #expect(store.outbox(for: machine) == nil)
     }
 
     @Test func theSessionSliceBecomesTheMachinesAndPhaseViewsRead() throws {
@@ -137,32 +143,35 @@ struct CoreSessionAdapterTests {
                 $0.attachedMachineID = "d_mac"
                 $0.machines = [
                     .with {
-                        $0.id = "d_mac"; $0.name = "Mac"; $0.online = true; $0.attached = true; $0.route = "Local"
-                        $0.routeLatencyMillis = 3; $0.releaseVersion = "0.4.340"
+                        $0.id = "d_mac"; $0.name = "Mac"; $0.online = true; $0.route = "Local"
+                        $0.releaseVersion = "0.4.340"
                         $0.compatibility = "COMPATIBILITY_STATUS_COMPATIBLE"
+                        $0.detail = "Local · 3 ms"; $0.available = true
                     },
                     .with {
                         $0.id = "d_old"; $0.name = "Old"; $0.online = true; $0.route = "Relay"
-                        $0.compatibility = "COMPATIBILITY_STATUS_UPDATE_REQUIRED";
-                        $0.incompatibility = "Update required"
-                        $0.syncWarnings = ["Shared updates are delayed"]
+                        $0.compatibility = "COMPATIBILITY_STATUS_UPDATE_REQUIRED"
+                        $0.detail = "Update required · Dieter 0.4.1 (requires 0.4.300)"
+                        $0.unavailableMessage = "Dieter 0.4.1 needs an update to 0.4.300."
                     },
                 ]
-                $0.feed = .with {
-                    $0.live = true; $0.daemonID = "d_mac"; $0.lastAppliedAtMillis = 1_000
-                }
+                $0.feed = .with { $0.lastAppliedAtMillis = 1_000 }
+                $0.workspaceLive = true
+                $0.phaseLabel = "Connected"
             })
         #expect(store.phase == .connected(version: "0.4.340"))
         #expect(store.endpoint.daemonID == "d_mac")
         #expect(store.endpoint.credentialID == "https://gateway.getdieter.com:443")
         #expect(store.machines.map(\.name) == ["Mac", "Old"])
-        #expect(store.connectionStatus(for: store.endpoint)?.route == .local)
+        #expect(store.machineEntry(store.endpoint)?.route == "Local")
+        #expect(store.machineStatusLine(store.endpoint) == "Local · 3 ms")
         let old = try #require(store.endpoints.first { $0.daemonID == "d_old" })
-        #expect(store.connectionStatus(for: old)?.route == .gateway)
-        #expect(old.compatibilityState == .incompatible)
-        #expect(store.machineConnectionErrors[old.id] == "Update required")
-        #expect(store.machineSyncIssues[old.id] == "Shared updates are delayed")
-        #expect(!store.globalSyncing)
+        // The machine list shows the core's own wording.
+        #expect(store.machineStatusLine(old) == "Update required · Dieter 0.4.1 (requires 0.4.300)")
+        #expect(!store.machineIsAvailable(old))
+        #expect(store.unavailableReason(old) == "Dieter 0.4.1 needs an update to 0.4.300.")
+        #expect(store.unavailableReason(store.endpoint) == nil)
+        #expect(store.workspaceIsLive)
         #expect(store.lastSyncedAt == Date(timeIntervalSince1970: 1))
         store.foldSession(
             .with {
@@ -184,34 +193,47 @@ struct CoreSessionAdapterTests {
         #expect(move?.lane == "review" && move?.afterCardID == "c_before")
         store.foldBoard(
             .with {
-                $0.moves = [
-                    .with {
-                        $0.cardID = card.id; $0.lane = "review"; $0.afterCardID = "c_before"
-                    }
-                ]
+                $0.moves = [.with { $0.cardID = card.id }]
             })
-        #expect(store.pendingCardMoves[card.id]?.lane == "review")
         #expect(store.movingCardIDs == [card.id])
         // A second move while one is unconfirmed is not sent.
         await store.move(card, lane: "done")
         #expect(commands { if case .moveCard(let move) = $0 { move } else { nil } }.count == 1)
         store.foldBoard(ClientBoardSlice())
-        #expect(store.pendingCardMoves.isEmpty && store.movingCardIDs.isEmpty)
+        #expect(store.movingCardIDs.isEmpty)
+    }
+
+    @Test func finishingACardLetsTheCoreFindItsBoardsDoneLane() async {
+        var card = Dieter_V1_Card()
+        card.id = "c_review"
+        card.projectID = "p"
+        card.boardID = "b"
+        card.lane = "review"
+        await store.finish(card)
+        #expect(commands { if case .finishCard(let finish) = $0 { finish.cardID } else { nil } } == [card.id])
+        #expect(commands { if case .moveCard(let move) = $0 { move } else { nil } }.isEmpty)
+        // A card that is already moving is not finished again.
+        store.foldBoard(
+            .with {
+                $0.moves = [.with { $0.cardID = card.id }]
+            })
+        await store.finish(card)
+        #expect(commands { if case .finishCard(let finish) = $0 { finish.cardID } else { nil } }.count == 1)
     }
 
     @Test func aCreatedConversationIsSelectedUnderItsServerIDOnceAccepted() async {
         core.handler = { command in
-            guard case .createConversation = command.command else { return .with { $0.done = ClientDone() } }
-            return .with {
-                $0.card = .with {
-                    $0.id = "local_chat"; $0.scope = "chat"
+            switch command.command {
+            case .createConversation:
+                .with {
+                    $0.card = .with {
+                        $0.id = "local_chat"; $0.scope = "chat"
+                    }
                 }
+            default: .with { $0.done = ClientDone() }
             }
         }
-        #expect(
-            await store.createConversation(
-                title: "chat", prompt: "hi", chat: true, provider: "mock", model: "mock", effort: "low", deferred: false
-            ))
+        #expect(await store.createConversation(.with { $0.prompt = "hi" }, chat: true))
         #expect(store.selectedChatID == "local_chat")
         #expect(core.isObserved(.conversation, scope: "local_chat"))
         store.foldOutbox(.with { $0.resolutions = ["local_chat": "c_chat"] })
@@ -231,66 +253,73 @@ struct CoreSessionAdapterTests {
         #expect(store.phase == .connecting)
     }
 
-    @Test func navigationLayoutMirrorsTheCoreAndSendsOnlyUserEditsInOrder() async {
+    @Test func navigationLayoutShowsTheCoreAndSendsEachUserEditInOrder() async {
         store.foldNavigation(
             .with {
-                $0.projectOrder = ["b", "a"]
-                $0.expandedProjects = ["a"]
-                $0.projectFolders = [
-                    .with {
-                        $0.id = "f"; $0.name = "Work"; $0.itemIds = ["a"]; $0.expanded = true
-                    }
-                ]
-                $0.pinnedChatOrder = ["c1"]
+                $0.projects = .with {
+                    $0.order = ["b", "a"]
+                    $0.expanded = ["a"]
+                    $0.folders = [
+                        .with {
+                            $0.id = "f"; $0.name = "Work"; $0.itemIds = ["a"]; $0.expanded = true
+                        }
+                    ]
+                    $0.unfiled = ["b"]
+                }
                 $0.collapsedChatSections = ["a"]
-                $0.laneSorts = ["b1.todo": "ascending"]
                 $0.pending = 2
             })
-        #expect(store.sidebarProjectNavigation.projectOrder == ["b", "a"])
-        #expect(store.sidebarProjectNavigation.isExpanded("a"))
-        #expect(store.sidebarProjectFolders.folders.map(\.name) == ["Work"])
-        #expect(store.pinnedChatNavigation.chatOrder == ["c1"])
-        #expect(store.chatProjectDisclosure.isCollapsed("a"))
-        #expect(store.laneSortDirection(board: "b1", lane: "todo") == .ascending)
-        #expect(store.laneSortDirection(board: "b1", lane: "done") == .descending)
+        #expect(store.navigation.projects.order == ["b", "a"])
+        #expect(store.navigation.projects.folders.map(\.name) == ["Work"])
+        #expect(store.navigation.collapsedChatSections == ["a"])
         #expect(store.navigationPendingCount == 2)
-        #expect(core.commands.isEmpty, "mirroring the core sends nothing back")
+        #expect(core.commands.isEmpty, "showing the core sends nothing back")
 
-        store.sidebarProjectNavigation = SidebarProjectNavigationPreferences(
-            projectOrder: ["a", "b"], expandedProjectIDs: ["a", "b"])
-        store.toggleLaneSort(board: "b1", lane: "todo")
-        #expect(store.laneSortDirection(board: "b1", lane: "todo") == .descending, "shown before the core confirms")
+        store.moveProject("a", before: "b", ungrouped: false)
+        store.setProjectExpanded("b", expanded: true)
+        store.setChatSectionCollapsed("a", collapsed: false)
+        store.toggleLaneSort(
+            board: "b1",
+            lane: .with {
+                $0.laneID = "todo"; $0.descending = false
+            })
         await store.navigationEditTail?.value
         let sent = core.commands.compactMap { command -> String? in
             switch command.command {
-            case .setProjectOrder(let order): "order \(order.projectIds)"
+            case .navigation(let edit):
+                if case .moveProject(let move)? = edit.action {
+                    "move \(move.projectID) before \(move.beforeProjectID)"
+                } else {
+                    nil
+                }
             case .setProjectExpanded(let flag): "expand \(flag.projectID) \(flag.expanded)"
+            case .setChatSectionCollapsed(let flag): "collapse \(flag.projectID) \(flag.collapsed)"
             case .setLaneDescending(let sort): "lane \(sort.boardID).\(sort.laneID) \(sort.descending)"
             default: nil
             }
         }
-        #expect(sent == ["order [\"a\", \"b\"]", "expand b true", "lane b1.todo true"])
+        #expect(sent == ["move a before b", "expand b true", "collapse a false", "lane b1.todo true"])
     }
 
-    @Test func creationMemoryFillsTheQuickTaskFormAndRemembersItsChanges() async {
+    @Test func creationMemoryFillsTheQuickTaskFormAndRemembersItsDestinationAndCheckout() async {
         store.foldCreation(
             .with {
-                $0.selection = .with {
-                    $0.provider = "mock"; $0.model = "fast"; $0.effort = "low"
-                }
-                $0.workspaceMode = "project"
                 $0.projectID = "p"
-                $0.boards = ["p": "b"]
+                $0.boards = ["p": "b", "q": "c"]
+                $0.checkouts = ["p": "co_p"]
             })
-        #expect(store.quickTaskForm.provider == "mock" && store.quickTaskForm.draftBoardID == "b")
-        #expect(store.creationPreferences.workspaceMode == .project)
+        #expect(store.quickTaskForm.draftProjectID == "p" && store.quickTaskForm.draftBoardID == "b")
         #expect(commands { if case .rememberCreation(let remember) = $0 { remember } else { nil } }.isEmpty)
-        store.quickTaskForm.model = "smart"
-        store.rememberCreation(
-            ConversationCreationPreferences(provider: "mock", model: "smart", workspaceMode: .worktree))
+        // A project takes the board the core preselects there.
+        store.quickTaskForm.selectProject("q", in: store.creationMemory)
+        #expect(store.quickTaskForm.draftBoardID == "c")
+        store.pickCheckout(
+            .with {
+                $0.id = "co_q"; $0.projectID = "q"
+            })
         try? await Task.sleep(for: .milliseconds(50))
         let remembered = commands { if case .rememberCreation(let remember) = $0 { remember } else { nil } }
-        #expect(remembered.first?.selection.model == "smart")
-        #expect(remembered.contains { $0.workspaceMode == "worktree" })
+        #expect(remembered.contains { $0.projectID == "q" && $0.boardID == "c" })
+        #expect(remembered.contains { $0.projectID == "q" && $0.checkoutID == "co_q" })
     }
 }

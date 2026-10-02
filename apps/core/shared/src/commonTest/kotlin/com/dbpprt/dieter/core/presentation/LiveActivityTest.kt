@@ -3,6 +3,9 @@ package com.dbpprt.dieter.core.presentation
 import com.dbpprt.dieter.api.v1.MessagePart
 import com.dbpprt.dieter.api.v1.PendingTool
 import com.dbpprt.dieter.api.v1.ProviderStatus
+import com.dbpprt.dieter.api.v1.TaskPlan
+import com.dbpprt.dieter.api.v1.TaskPlanItem
+import com.dbpprt.dieter.api.v1.TaskPlanPhase
 import com.dbpprt.dieter.api.v1.UiMessage
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -41,6 +44,44 @@ class LiveActivityTest {
         assertEquals("Waiting for approval: create issue", live(tool("mcp__github__create_issue", state = "approval-requested")))
         val pending = PendingTool(tool_call_id = "p", tool_name = "bash", input_preview = "make build")
         assertEquals("Running make build", live(pending = listOf(pending)), "a pending tool not yet in the transcript describes the turn")
+    }
+
+    @Test
+    fun streamedArgumentsPlansAndCancelsDescribeTheTurn() {
+        val read = MessagePart(type = "tool-read", tool_call_id = "r", state = "input-available", input_json = """{"path":"src/App.kt"}""".encodeUtf8())
+        assertEquals("Reading App.kt", live(read), "streamed arguments describe the tool")
+        assertEquals("Reading App.kt · +1 tool", live(tool("grep", "x", id = "1"), read))
+        assertEquals("Stopping…", LiveActivities.resolve(listOf(user(), assistant(read)), conversationStatus = "cancelling").english())
+        val done = tool("bash", "ls", state = "output-available", id = "t1")
+        assertEquals("Thinking…", live(done, pending = listOf(PendingTool(tool_call_id = "t1", tool_name = "bash"))), "a finished tool stays done while its pending copy lingers")
+
+        val verifying = TaskPlanItem(content = "Verify", active_form = "Verifying Android behavior", status = "in_progress")
+        val plan = TaskPlan(message_id = "a", state = "active", phases = listOf(TaskPlanPhase(tasks = listOf(verifying))))
+        assertEquals("Verifying Android behavior", LiveActivities.resolve(listOf(user(), assistant()), plans = listOf(plan)).english())
+        assertEquals("Thinking…", LiveActivities.resolve(listOf(user(), assistant(), user("u2")), plans = listOf(plan)).english(), "a plan from an earlier turn does not describe this one")
+    }
+
+    @Test
+    fun toolActivityLabelsDescribeEachToolFamily() {
+        fun label(name: String, input: String, preview: String = "") = Tools.activity(name, input, preview).english()
+        assertEquals("Running go test ./internal/harness", label("exec_command", """{"cmd":"go test ./internal/harness"}"""))
+        assertEquals("Editing App.swift", label("apply_patch", """{"path":"Sources/App.swift"}"""))
+        assertEquals("Searching SwiftUI status indicator", label("web_search", """{"query":"SwiftUI status indicator"}"""))
+        assertEquals("Running go test ./...", label("shell", """{"argv":["go","test","./..."]}"""))
+        assertEquals("Verify the runtime", label("bash", """{"description":"Verify the runtime","command":"x"}"""))
+        assertEquals("Reading README.md", label("mcp__files__read_file", """{"path":"/repo/README.md"}"""))
+        assertEquals("Using get issue…", label("mcp__github__get_issue", """{"id":1}"""))
+        assertEquals("Waiting for command…", label("write_stdin", "{}"))
+        assertEquals("Running command…", label("bash", "{not json"))
+        assertEquals("Editing files…", label("apply_patch", "", "*** Begin Patch"))
+        val long = label("bash", """{"command":"${"x".repeat(300)}"}""")
+        assertEquals(120, long.length)
+        assertTrue(long.endsWith("…"))
+        assertEquals(ToolCategory.EDIT, Tools.category("str_replace_editor"))
+        assertEquals(ToolCategory.COMMAND, Tools.category("mcp__shell__exec_command"))
+        assertEquals(ToolCategory.READ, Tools.category("view_file"))
+        assertEquals(ToolCategory.OTHER, Tools.category("get_issue"))
+        assertEquals("", Tools.preview(tool("bash", state = "output-error").copy(output_preview = "boom")), "a failed tool previews nothing")
     }
 
     @Test
@@ -83,5 +124,16 @@ class LiveActivityTest {
         assertEquals("0:42", Durations.clock(42.seconds))
         assertEquals("12:05", Durations.clock(12.minutes + 5.seconds))
         assertEquals("0:00", Durations.clock(start, start - 5.seconds), "clock skew never shows negative time")
+    }
+
+    @Test
+    fun pendingToolsCountUntilTheTranscriptFinishesThem() {
+        val done = PendingTool(id = "p1", tool_call_id = "done", tool_name = "bash")
+        val next = PendingTool(id = "p2", tool_call_id = "next", tool_name = "read_file")
+        val unnamed = PendingTool(id = "p3", tool_name = "bash")
+        val messages = listOf(user(), assistant(tool("bash", state = "output-available", id = "done"), tool("read_file", id = "next")))
+        assertEquals(listOf("p2", "p3"), LiveActivities.unfinishedPendingTools(messages, listOf(done, next, unnamed)).map { it.id }, "a running call in the transcript still counts")
+        assertEquals(listOf("p1"), LiveActivities.unfinishedPendingTools(listOf(assistant(tool("bash", state = "output-available", id = "done")), user()), listOf(done)).map { it.id }, "an earlier turn's call does not finish this one's")
+        assertTrue(LiveActivities.unfinishedPendingTools(messages, emptyList()).isEmpty())
     }
 }

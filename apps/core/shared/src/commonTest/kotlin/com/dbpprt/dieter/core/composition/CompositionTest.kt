@@ -1,6 +1,7 @@
 package com.dbpprt.dieter.core.composition
 
 import com.dbpprt.dieter.api.v1.Board
+import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.Checkout
 import com.dbpprt.dieter.api.v1.CreateConversationRequest
 import com.dbpprt.dieter.api.v1.EffortConfig
@@ -16,8 +17,8 @@ import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.api.v1.ProviderOption
 import com.dbpprt.dieter.api.v1.ProviderOptionChoice
 import com.dbpprt.dieter.api.v1.QueuedMessage
-import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.core.runtime.CoreException
+import com.dbpprt.dieter.core.runtime.FailureKind
 import com.dbpprt.dieter.core.runtime.SilentLogger
 import com.dbpprt.dieter.core.selection.Selections
 import com.dbpprt.dieter.core.storage.CoreStorage
@@ -26,6 +27,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.advanceTimeBy
@@ -39,11 +41,13 @@ import okio.Path
 import okio.Path.Companion.toPath
 import okio.fakefilesystem.FakeFileSystem
 
-/** Counts file writes; [CoreStorage] completes each with an atomic move. */
+/** Counts file writes; [CoreStorage] completes each with an atomic move. While [full], every write fails. */
 private class CountingFileSystem(delegate: FileSystem) : ForwardingFileSystem(delegate) {
     var writes = 0
+    var full = false
 
     override fun atomicMove(source: Path, target: Path) {
+        if (full) throw okio.IOException("No space left on device")
         writes++
         super.atomicMove(source, target)
     }
@@ -283,8 +287,10 @@ class CompositionTest {
         assertNull(Creation.checkout(two, "stale"))
         assertEquals("k2", Creation.checkout(two, "k2")?.id)
         assertNull(Creation.checkout(project.copy(checkouts = listOf(Checkout(id = "k", detached = true))), null))
-        assertEquals("k2", Creation.preferredCheckout(two, null, catalogDaemonId = "d2", replicaDaemonId = "d1")?.id)
-        assertEquals("k1", Creation.preferredCheckout(two, null, catalogDaemonId = null, replicaDaemonId = "d1")?.id)
+        assertEquals("k2", Creation.preferredCheckout(two, null, attachedDaemonId = "d2", replicaDaemonId = "d1")?.id)
+        assertEquals("k1", Creation.preferredCheckout(two, null, attachedDaemonId = null, replicaDaemonId = "d1")?.id)
+        assertEquals("k1", Creation.preferredCheckout(two, "gone", attachedDaemonId = "d3", replicaDaemonId = "d1")?.id, "a choice that is gone falls back")
+        assertNull(Creation.preferredCheckout(two, null, attachedDaemonId = "d3", replicaDaemonId = null), "several checkouts and no preference: the user chooses")
 
         val input = CreationInput(project, board, lane = "todo", prompt = "Fix it", selection = HarnessSelection("codex", "sol", "low"), labelIds = listOf("l1"))
         assertNull(Creation.problem(input, listOf(codex)))
@@ -293,6 +299,10 @@ class CompositionTest {
         assertEquals("Choose where this task will run", Creation.problem(input.copy(project = two), listOf(codex)))
         assertEquals("Describe the task.", Creation.problem(input.copy(prompt = " "), listOf(codex)))
         assertNull(Creation.problem(input.copy(prompt = " ", title = "Title only"), listOf(codex)))
+        val reviewing = board.copy(lanes = board.lanes + Lane("review", "Review"))
+        assertEquals("A new task starts in Todo or Running.", Creation.problem(input.copy(board = reviewing, lane = "review"), listOf(codex)))
+        assertNull(Creation.problem(input.copy(board = reviewing, lane = "running"), listOf(codex)))
+        assertEquals("todo", Creation.defaultLane(Board(lanes = listOf(Lane("backlog", "Backlog"), Lane("todo", "Todo")))), "the first lane a task may start in")
 
         val request = Creation.request(input)
         assertEquals(CreateConversationRequest(
@@ -308,6 +318,13 @@ class CompositionTest {
         assertFalse(chat.auto_generate_title)
         assertEquals("Fix it", Creation.request(input.copy(chat = true)).title)
         assertTrue(Creation.request(input.copy(chat = true)).auto_generate_title)
+        val overridden = Creation.request(input.copy(workspaceBaseBranch = " develop ", workspaceBaseRemote = "upstream", remotePublishMode = "pull_request"))
+        assertEquals(listOf("develop", "upstream", "pull_request"), listOf(overridden.workspace_base_branch, overridden.workspace_base_remote, overridden.remote_publish_mode))
+        val inProject = Creation.request(input.copy(workspaceMode = WorkspaceMode.PROJECT, workspaceBranch = "b", workspaceBaseBranch = "develop", workspaceBaseRemote = "upstream", remotePublishMode = "pull_request"))
+        assertEquals(listOf("", "", "", ""), listOf(inProject.workspace_branch, inProject.workspace_base_branch, inProject.workspace_base_remote, inProject.remote_publish_mode), "workspace fields only in worktree mode")
+        assertTrue(Titles.generated(" ", "Fix it"))
+        assertFalse(Titles.generated("Named", "Fix it"))
+        assertFalse(Titles.generated("", " "), "nothing to name a task after")
         assertEquals(WorkspaceMode.PROJECT, WorkspaceMode.parse("anything"))
     }
 
@@ -321,8 +338,19 @@ class CompositionTest {
         assertEquals(WorkspaceMode.PROJECT, restored.workspaceMode)
         assertEquals("b", restored.rememberedBoard(project, listOf(Board(id = "a"), Board(id = "b")))?.id)
         assertEquals("a", restored.rememberedBoard(project, listOf(Board(id = "a")))?.id)
-        restored.setBoardNotifications("b", true)
-        assertTrue(CreationMemory(storage("install"), SilentLogger).notifiesBoard("b"))
+        assertEquals("a", restored.rememberedBoard(project, listOf(Board(id = "a"), Board(id = "b", retired = true)))?.id, "a retired board is not preselected")
+
+        // The checkout chosen in a project is preselected there while it is attached.
+        val two = project.copy(checkouts = project.checkouts + Checkout(id = "k2", daemon_id = "d2"))
+        assertNull(restored.preferredCheckout(two, attachedDaemonId = null, replicaDaemonId = null))
+        restored.remember(projectId = "p", checkoutId = "k2")
+        val reloaded = CreationMemory(storage("install"), SilentLogger)
+        assertEquals("k2", reloaded.preferredCheckout(two, attachedDaemonId = "d1", replicaDaemonId = null)?.id)
+        assertEquals("b", reloaded.state.value.boards["p"], "remembering a checkout keeps the board")
+
+        // A queued chat remembers its agent, mode, project, and checkout, never a board.
+        reloaded.remember(CreationInput(two, board = Board(id = "a"), checkoutId = "k1", chat = true, selection = HarnessSelection("codex", "spark", "low"), workspaceMode = WorkspaceMode.WORKTREE))
+        assertEquals(listOf("codex", "spark", "low", "worktree", "b", "k1"), reloaded.state.value.let { listOf(it.provider, it.model, it.effort, it.workspace_mode, it.boards["p"], it.checkouts["p"]) })
     }
 
     @Test
@@ -338,18 +366,51 @@ class CompositionTest {
         val restored = restarted.draft(draft.id)!!
         assertEquals("Ship it", restored.request!!.prompt)
         assertEquals("Import was interrupted. Choose the file again.", restored.failures.single().message)
-        assertFailsWith<CoreException> { restarted.freeze(draft.id, restored.request!!) }
+        assertEquals(TaskDrafts.NOT_READY, assertFailsWith<CoreException> { restarted.freeze(draft.id, restored.request!!) }.message)
         restarted.update(draft.id) { it.copy(failures = emptyList()) }
 
         val frozen = restarted.freeze(draft.id, CreateConversationRequest(project_id = "p", prompt = "Ship it"))
         assertTrue(frozen.submission_id.isNotEmpty())
         assertEquals(frozen.submission_id, restarted.freeze(draft.id, CreateConversationRequest(prompt = "changed")).submission_id)
-        assertFailsWith<CoreException> { restarted.update(draft.id) { it.copy(request = CreateConversationRequest(prompt = "late edit")) } }
+        assertEquals(TaskCaptures.SUBMISSION_PENDING, assertFailsWith<CoreException> { restarted.update(draft.id) { it.copy(request = CreateConversationRequest(prompt = "late edit")) } }.message)
         val again = TaskCaptures(clock, SilentLogger).also { it.bind(storage("g")) }.draft(draft.id)!!
         assertEquals(frozen.submission_id, again.submission_id)
         assertEquals("Ship it", again.request!!.prompt)
         restarted.accepted(draft.id)
         assertNull(TaskCaptures(clock, SilentLogger).also { it.bind(storage("g")) }.draft(draft.id))
+    }
+
+    @Test
+    fun aFreezeReachesTheOpenEditorAndLateEditsStayOut() = runTest {
+        val captures = TaskCaptures(clock, SilentLogger, backgroundScope).also { it.bind(storage("g")) }
+        val editor = captures.editor(captures.begin().id)
+        editor.edit { TaskDrafts.prompt(it, "original") }
+        captures.flush(editor.id)
+        val frozen = captures.freeze(editor.id, editor.state.value.task)
+        assertEquals(frozen.submission_id, editor.state.value.submission_id, "the open editor adopts the frozen draft")
+        editor.edit { TaskDrafts.prompt(it, "late edit") }
+        captures.flush(editor.id)
+        assertEquals("original", editor.state.value.task.prompt)
+        assertEquals("original", TaskCaptures(clock, SilentLogger).also { it.bind(storage("g")) }.draft(editor.id)!!.task.prompt)
+    }
+
+    @Test
+    fun aFailedJournalWriteKeepsTheEditAndTheSavedDraft() = runTest {
+        val disk = CountingFileSystem(fileSystem)
+        val captures = TaskCaptures(clock, SilentLogger, backgroundScope).also { it.bind(CoreStorage(disk, "/state/full".toPath())) }
+        val editor = captures.editor(captures.begin().id)
+        editor.edit { TaskDrafts.prompt(it, "Saved first") }
+        captures.flush(editor.id)
+        disk.full = true
+        editor.edit { TaskDrafts.prompt(it, "Cannot be saved") }
+        assertEquals(FailureKind.OUT_OF_STORAGE, assertFailsWith<CoreException> { captures.flush(editor.id) }.kind)
+        assertNotNull(editor.error.value)
+        assertEquals("Cannot be saved", editor.state.value.task.prompt, "the edit stays in the editor")
+        assertEquals("Saved first", captures.draft(editor.id)!!.task.prompt, "the saved draft is kept")
+        disk.full = false
+        captures.flush(editor.id)
+        assertNull(editor.error.value)
+        assertEquals("Cannot be saved", TaskCaptures(clock, SilentLogger).also { it.bind(storage("full")) }.draft(editor.id)!!.task.prompt)
     }
 
     @Test

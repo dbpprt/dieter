@@ -1,9 +1,9 @@
 #if DIETER_UI_SMOKE
     import AppKit
     import DieterAPI
+    import DieterShared
     import Foundation
     import SwiftUI
-    import WebKit
 
     /// An in-process smoke driver for a native app.
     ///
@@ -112,30 +112,23 @@
                 draft.misfirePolicy = "latest"
                 draft.workspaceMode = "worktree"
                 if await store.saveSchedule(id: nil, draft: draft) {
-                    scheduleFixtureID = store.selectedScheduleID
+                    scheduleFixtureID = store.schedulesModel.selectedScheduleID
                 } else {
                     scheduleFixtureError = store.errorMessage ?? "the schedule RPC was unavailable"
                 }
             }
-            let schedulesOnly = ProcessInfo.processInfo.arguments.contains("--schedules-ui-smoke")
             var fixtureNote: String?
-            if !schedulesOnly && store.state.cards.allSatisfy({ $0.boardID != board.id }) {
+            if store.state.cards.allSatisfy({ $0.boardID != board.id }) {
                 // Create the fixture card through the store's outbox rather than a raw
                 // RPC: the outbox queues and retries across the sync-recovery reconnects
                 // that would otherwise cancel a single in-flight createCard call.
-                let harness = store.harnessCatalog.harnesses.first
                 await store.createConversation(
-                    title: "Native UI smoke fixture",
-                    prompt: "Keep this deferred. It only exercises the packaged UI.",
-                    chat: false,
-                    provider: harness?.id ?? "mock",
-                    model: harness?.defaultModel ?? "",
-                    effort: harness?.models.first(where: { $0.id == harness?.defaultModel })?.defaultEffort
-                        ?? "",
-                    deferred: true,
-                    projectID: project.id,
-                    lane: board.lanes.first?.id ?? "backlog"
-                )
+                    .with {
+                        $0.projectID = project.id
+                        $0.boardID = board.id
+                        $0.title = "Native UI smoke fixture"
+                        $0.prompt = "Keep this deferred. It only exercises the packaged UI."
+                    }, chat: false)
                 store.section = .board
                 store.closeConversation()
                 let fixtureReady = await waitUntil(timeout: 25) {
@@ -181,18 +174,18 @@
             window.makeKeyAndOrderFront(nil)
             let compatibleEndpointID = store.endpoint.id
             results["mixed-version-compatible-startup"] =
-                store.endpoint.compatibilityState == .compatible
-                    && store.machines.contains(where: { $0.compatibilityState == .incompatible })
+                store.machineEntry(store.endpoint)?.compatible == true
+                    && store.machines.contains(where: { store.machineEntry($0)?.compatible == false })
                 ? "passed"
                 : "failed: startup did not select a compatible release from the mixed fleet"
             if let incompatibleMachine = store.machines.first(where: {
-                $0.compatibilityState == .incompatible
+                store.machineEntry($0)?.compatible == false
             }) {
                 await store.connect(to: incompatibleMachine)
                 results["mixed-version-switch-isolation"] =
                     store.endpoint.id == compatibleEndpointID && store.phase.isConnected
                         && store.workspaceIsLive
-                        && store.machineConnectionErrors[incompatibleMachine.id] != nil
+                        && store.machineEntry(incompatibleMachine).map { !$0.available && !$0.detail.isEmpty } == true
                         && store.errorMessage == nil
                     ? "passed"
                     : "failed: incompatible switch displaced the healthy route or presented a global error"
@@ -220,24 +213,6 @@
                 _ = await waitUntil(timeout: 25) { store.workspaceIsLive }
             }
 
-            if schedulesOnly {
-                await store.openProject(project.id, section: .schedules)
-                let scheduleReady = await waitUntil(timeout: 10) {
-                    store.schedulesAreLoaded
-                        && scheduleFixtureID.map { id in store.schedules.contains(where: { $0.id == id }) }
-                            == true
-                }
-                results["05-project-schedules"] =
-                    store.section == .schedules ? "passed" : "failed: \(store.section.rawValue)"
-                results["05-project-schedules-data"] =
-                    scheduleReady
-                    ? "passed"
-                    : "failed: dedicated schedule load did not return the fixture"
-                await captureAppearances(window, named: "05-project-schedules.png", in: output)
-                writeReport(results, to: output)
-                NSApp.terminate(nil)
-                return
-            }
             let originalWindowFrame = window.frame
             // Exercise the gesture through AppKit's event queue. A restored
             // window can begin with its persisted zoom flag and frame out of
@@ -261,7 +236,7 @@
                 window.setFrame(originalWindowFrame, display: true)
             }
             if ProcessInfo.processInfo.arguments.contains("--board-stress-ui-smoke") {
-                store.quotas.install(smokeProviderQuotaGroups())
+                store.quotas.install(groups: smokeProviderQuotaGroups())
                 try? await DieterTaskSleep.milliseconds(300)
             }
             let appearanceDefaults = DieterAppearance.applicationDefaults()
@@ -595,10 +570,14 @@
                     // The isolated daemon intercepts Spark metadata requests; the
                     // actual task must explicitly use its credential-free mock.
                     if store.harnessCatalog.harnesses.contains(where: { $0.id == "mock" }) {
-                        store.quickTaskForm.provider = "mock"
-                        store.quickTaskForm.model = "mock"
-                        store.quickTaskForm.effort = "low"
-                        store.quickTaskForm.providerOptions = [:]
+                        // A quick task runs the agent the core remembers.
+                        _ = await store.perform {
+                            $0.rememberCreation = .with {
+                                $0.selection = .with {
+                                    $0.provider = "mock"; $0.model = "mock"; $0.effort = "low"
+                                }
+                            }
+                        }
                         let runStory = "Run this native Quick Task before its title is generated"
                         let focused = await focusQuickTaskStory(in: popover)
                         let storyChanged = focused && replaceQuickTaskStory(runStory, in: popover)
@@ -660,10 +639,12 @@
                 id: "screen-smoke", machineID: store.endpoint.id,
                 machineName: store.endpoint.name, monitorsInactivity: false)
             retainedScreen.controller.phase = .streaming
+            retainedScreen.controller.active = true
             let otherScreen = ScreenShareSession(
                 id: "screen-smoke-other", machineID: "screen-smoke-other-machine",
                 machineName: "Other machine", monitorsInactivity: false)
             otherScreen.controller.phase = .streaming
+            otherScreen.controller.active = true
             store.screensModel.sessions = [retainedScreen, otherScreen]
             store.screensModel.selectedSessionID = retainedScreen.id
             store.openScreens()
@@ -840,11 +821,14 @@
 
                 if step.section == .schedules {
                     results["05-project-schedules-data"] =
-                        store.schedulesAreLoaded
+                        store.schedulesModel.schedulesAreLoaded
                             && scheduleFixtureID.map { id in store.schedules.contains(where: { $0.id == id }) }
                                 == true
                         ? "passed"
                         : "failed: dedicated schedule load did not return the fixture"
+                    let editorDraft =
+                        await store.schedulesModel.editorDraft(scheduleID: nil, context: store.scheduleEditorContext)
+                        ?? Dieter_V1_ScheduleDraft()
                     let cancellationWindow = NSPanel(
                         contentRect: NSRect(x: 0, y: 0, width: 980, height: 820),
                         styleMask: [.titled, .closable, .fullSizeContentView],
@@ -854,7 +838,8 @@
                     cancellationWindow.title = "New schedule cancellation"
                     cancellationWindow.contentViewController = NSHostingController(
                         rootView: ScheduleEditor(
-                            model: store.schedulesModel, context: store.scheduleEditorContext, schedule: nil)
+                            model: store.schedulesModel, context: store.scheduleEditorContext, scheduleID: nil,
+                            draft: editorDraft)
                     )
                     window.beginSheet(cancellationWindow, completionHandler: { _ in })
                     try? await DieterTaskSleep.milliseconds(50)
@@ -872,7 +857,8 @@
                     editorWindow.title = "New schedule"
                     editorWindow.contentViewController = NSHostingController(
                         rootView: ScheduleEditor(
-                            model: store.schedulesModel, context: store.scheduleEditorContext, schedule: nil)
+                            model: store.schedulesModel, context: store.scheduleEditorContext, scheduleID: nil,
+                            draft: editorDraft)
                     )
                     window.beginSheet(editorWindow, completionHandler: { _ in })
                     try? await DieterTaskSleep.seconds(2)
@@ -1135,22 +1121,15 @@
             })
             if let todoLane {
                 let title = "Native UI todo creation \(UUID().uuidString.lowercased())"
-                let harness = store.harnessCatalog.harnesses.first
                 await store.createConversation(
-                    title: title,
-                    prompt: "Create this deferred card without opening its conversation.",
-                    chat: false,
-                    provider: harness?.id ?? "",
-                    model: harness?.defaultModel ?? "",
-                    effort: harness?.models.first(where: { $0.id == harness?.defaultModel })?.defaultEffort
-                        ?? "",
-                    deferred: true,
-                    lane: todoLane.id,
-                    workspace: ConversationWorkspaceDraft(
-                        mode: .worktree,
-                        baseBranch: project.baseBranch
-                    )
-                )
+                    .with {
+                        $0.projectID = project.id
+                        $0.boardID = board.id
+                        $0.lane = todoLane.id
+                        $0.title = title
+                        $0.prompt = "Create this deferred card without opening its conversation."
+                        $0.workspaceMode = ConversationWorkspaceMode.worktree.rawValue
+                    }, chat: false)
                 let created = await waitUntil(timeout: 10) {
                     store.state.cards.contains {
                         $0.title == title && $0.lane.caseInsensitiveCompare("todo") == .orderedSame
@@ -1195,16 +1174,17 @@
                 store.harnessCatalog.harnesses.first(where: { $0.id == "mock" })
                 ?? store.harnessCatalog.harnesses.first
             await store.createConversation(
-                title: chatTitle,
-                prompt: "Create and open this standalone chat.",
-                chat: true,
-                provider: chatHarness?.id ?? "",
-                model: chatHarness?.defaultModel ?? "",
-                effort: chatHarness?.models.first(where: { $0.id == chatHarness?.defaultModel })?
-                    .defaultEffort ?? "",
-                deferred: false,
-                projectID: project.id
-            )
+                .with {
+                    $0.projectID = project.id
+                    $0.title = chatTitle
+                    $0.prompt = "Create and open this standalone chat."
+                    if let chatHarness {
+                        $0.selection = .with {
+                            $0.provider = chatHarness.id
+                            $0.model = chatHarness.defaultModel
+                        }
+                    }
+                }, chat: true)
             var chatRowStayedSingle = true
             let openedChat = await waitUntil(timeout: 10, intervalMilliseconds: 25) {
                 let ids = store.chats.map(\.id)
@@ -1485,8 +1465,8 @@
                 if let trigger = offlineTrigger() {
                     FileManager.default.createFile(atPath: trigger.path, contents: Data())
                     _ = await waitUntil(timeout: 10) { !store.phase.isConnected }
-                    // Let both WatchSync and WatchConversation observe the
-                    // daemon tunnel closing before checking for alert state.
+                    // Let the core's workspace and conversation feeds observe
+                    // the daemon tunnel closing before checking for alert state.
                     try? await DieterTaskSleep.seconds(1)
                 } else {
                     store.disconnect()
@@ -1499,7 +1479,7 @@
                     store.composerText = canceledOfflineMessage
                     await store.sendComposer()
                     let queued = await waitUntil(timeout: 5) {
-                        store.outboxSummary(for: machine)?.messageCount == 1
+                        store.outbox(for: machine)?.messageCount == 1
                     }
                     let toastVisible = await waitUntil(timeout: 5) {
                         NativeUIAccessibility.find(
@@ -1508,15 +1488,24 @@
                     results["17a-offline-message-queued"] =
                         queued && toastVisible && store.composerText.isEmpty
                         ? "passed"
-                        : "failed: queued=\(store.outboxSummary(for: machine)?.messageCount ?? 0), toast=\(toastVisible), draft=\(store.composerText)"
+                        : "failed: queued=\(store.outbox(for: machine)?.messageCount ?? 0), toast=\(toastVisible), draft=\(store.composerText)"
                     await captureAppearances(window, named: "17a-offline-message-queued.png", in: output)
 
                     // Exercise the native presentation without exhausting the host disk.
                     // The core's retry path is covered by its outbox tests.
                     store.coreFoldsHeld = true
-                    store.machineOutboxSummaries[machine.id] = MachineOutboxSummary(
-                        messageCount: 1, changeCount: 0, retrying: true, failed: false,
-                        failureMessage: "insufficient free disk space to start an agent turn")
+                    store.machineOutboxes = [
+                        .with {
+                            $0.daemonID = machine.daemonID ?? ""
+                            $0.messageCount = 1
+                            $0.retrying = true
+                            $0.phase = .waitingForStorage
+                            $0.machineName = machine.name
+                            $0.title = "Low disk space on \(machine.name)"
+                            $0.detail = "1 message queued. Free disk space on \(machine.name); retries automatically."
+                            $0.retryTitle = "Retry Now"
+                        }
+                    ]
                     let storageWarning = await waitUntil(timeout: 5) {
                         NativeUIAccessibility.find("machine.\(machine.daemonID ?? machine.id).queue-title", in: window)
                             != nil
@@ -1525,14 +1514,15 @@
                     }
                     results["17a-storage-message-queued"] =
                         storageWarning
-                            && store.outboxSummary(for: machine)?.toastPhase(machineOnline: true) == .waitingForStorage
+                            && store.outbox(for: machine)?.phase == .waitingForStorage
                         ? "passed" : "failed: storage warning or retry action missing"
                     await captureAppearances(window, named: "17a-storage-message-queued.png", in: output)
                     store.coreFoldsHeld = false
 
-                    let removed = await store.discardOutbox(for: machine)
+                    let removed = store.outbox(for: machine).map { Int($0.messageCount + $0.changeCount) } ?? 0
+                    await store.discardOutbox(daemonID: machine.daemonID ?? "")
                     let canceled = await waitUntil(timeout: 5) {
-                        store.outboxSummary(for: machine) == nil
+                        store.outbox(for: machine) == nil
                             && !store.conversationMessages.contains { message in
                                 message.parts.contains { $0.type == "text" && $0.text == canceledOfflineMessage }
                             }
@@ -1540,13 +1530,13 @@
                     results["17b-offline-message-canceled"] =
                         removed == 1 && canceled
                         ? "passed"
-                        : "failed: removed=\(removed), queued=\(store.outboxSummary(for: machine)?.messageCount ?? 0)"
+                        : "failed: removed=\(removed), queued=\(store.outbox(for: machine)?.messageCount ?? 0)"
                     await captureAppearances(window, named: "17b-offline-message-canceled.png", in: output)
 
                     store.composerText = offlineDeliveryMessage
                     await store.sendComposer()
                     _ = await waitUntil(timeout: 5) {
-                        store.outboxSummary(for: machine)?.messageCount == 1
+                        store.outbox(for: machine)?.messageCount == 1
                     }
                 } else {
                     results["17a-offline-message-queued"] = "failed: live card or owning machine missing"
@@ -1560,7 +1550,7 @@
                         guard let machine = store.machine(for: liveCard) else {
                             return false
                         }
-                        return store.outboxSummary(for: machine) == nil
+                        return store.outbox(for: machine) == nil
                     }
                     let visible = await waitUntil(timeout: 10) {
                         store.conversationMessages.contains { message in
@@ -1592,9 +1582,8 @@
                 }
                 await store.openBoard(cachedBoard.id, projectID: project.id)
                 try? await DieterTaskSleep.milliseconds(700)
-                let offlineLabel = SyncFreshnessPresentation.lastConnectedLabel(
-                    lastConnectedAt: store.lastSyncedAt
-                )
+                let offlineLabel = SharedRules.shared.lastConnected(
+                    atMillis: store.lastSyncedAt?.epochMillis ?? 0, nowMillis: Date().epochMillis)
                 let stayedUsable =
                     store.section == .board && store.selectedBoard?.id == cachedBoard.id
                     && store.errorMessage == nil
@@ -1887,7 +1876,7 @@
                     let start = ContinuousClock.now
                     let clicked = NativeUIAccessibility.click("files.row.\(path)", in: window)
                     let acknowledged = await waitUntil(timeout: 5, intervalMilliseconds: 5) {
-                        store.selectedFilePath == path
+                        store.filesModel.selectedFilePath == path
                     }
                     let feedbackTime = start.duration(to: .now)
                     feedbackLatencies.append(
@@ -1895,7 +1884,7 @@
                             feedbackTime.components.seconds)
                             * 1_000)
                     let loaded = await waitUntil(timeout: 5, intervalMilliseconds: 5) {
-                        store.selectedFilePath == path && store.fileDocument?.content == content
+                        store.filesModel.selectedFilePath == path && store.fileDocument?.content == content
                             && nativeTextViews(in: window.contentView).contains { $0.string == content }
                     }
                     latencies.append(
@@ -1982,13 +1971,17 @@
                 editor.insertText("Saved through the native editor.\n", replacementRange: editor.selectedRange())
                 var expected = documents[0].1 + "Saved through the native editor.\n"
                 let edited = await waitUntil(timeout: 5) {
-                    store.fileEditorSession.isDirty && editor.string == expected
+                    store.filesModel.fileEditorSession.isDirty && editor.string == expected
                 }
                 try? await DieterTaskSleep.milliseconds(100)
                 editor.undoManager?.undo()
-                let undone = await waitUntil(timeout: 5) { store.fileEditorSession.currentText() == documents[0].1 }
+                let undone = await waitUntil(timeout: 5) {
+                    store.filesModel.fileEditorSession.currentText() == documents[0].1
+                }
                 editor.undoManager?.redo()
-                let redone = await waitUntil(timeout: 5) { store.fileEditorSession.currentText() == expected }
+                let redone = await waitUntil(timeout: 5) {
+                    store.filesModel.fileEditorSession.currentText() == expected
+                }
                 results["files-markdown-source-undo"] =
                     edited && undone && redone ? "passed" : "failed: native Source undo/redo lost the shared draft"
                 window.makeFirstResponder(nil)
@@ -1997,7 +1990,7 @@
                 let richRestored = await waitUntil(timeout: 5) {
                     controller.layout == .preview && controller.splitViewItems[0].isCollapsed
                         && nativeRichTextView(in: window.contentView) === defaultRich
-                        && defaultRich?.string == expected && store.fileEditorSession.isDirty
+                        && defaultRich?.string == expected && store.filesModel.fileEditorSession.isDirty
                 }
                 let sourceAgain = NativeUIAccessibility.selectSegment(
                     1, identifier: "files.markdown.layout", in: window)
@@ -2015,7 +2008,7 @@
                     ? "passed" : "failed: Edit/Source switching lost a native host, undo history or unsaved draft"
                 let saved = await NativeUIAccessibility.pressWhenSettled("files.save", in: window)
                 let persisted = await waitUntil(timeout: 5) {
-                    store.fileDocument?.content == expected && !store.fileEditorSession.isDirty
+                    store.fileDocument?.content == expected && !store.filesModel.fileEditorSession.isDirty
                 }
                 results["files-edit-save"] =
                     edited && saved && persisted
@@ -2027,13 +2020,14 @@
                     let formatted = await NativeUIAccessibility.pressWhenSettled(
                         "files.markdown.format.bold", in: window)
                     let richEdited = await waitUntil(timeout: 5) {
-                        store.fileEditorSession.isDirty && store.fileEditorSession.currentText().contains("**File A**")
+                        store.filesModel.fileEditorSession.isDirty
+                            && store.filesModel.fileEditorSession.currentText().contains("**File A**")
                     }
-                    expected = store.fileEditorSession.currentText()
+                    expected = store.filesModel.fileEditorSession.currentText()
                     capture(window, to: output.appending(path: "04c-markdown-rich-editor.png"))
                     let richSaved = await NativeUIAccessibility.pressWhenSettled("files.save", in: window)
                     let richPersisted = await waitUntil(timeout: 5) {
-                        store.fileDocument?.content == expected && !store.fileEditorSession.isDirty
+                        store.fileDocument?.content == expected && !store.filesModel.fileEditorSession.isDirty
                     }
                     results["files-markdown-rich-edit-save"] =
                         formatted && richEdited && richSaved && richPersisted
@@ -2056,20 +2050,20 @@
                 await captureAppearances(window, named: "04a-loaded-editor.png", in: output)
                 await store.openFile(path: "missing-responsiveness-file.txt")
                 results["files-failed-read-ends-loading"] =
-                    !store.fileLoading && store.fileError != nil
+                    !store.filesModel.fileLoading && store.filesModel.fileError != nil
                     ? "passed" : "failed: read did not settle into an error"
                 await captureAppearances(window, named: "04b-file-read-error.png", in: output)
                 let row = NativeUIAccessibility.find("files.row.responsiveness-b.md", in: window)
                 let frame = row?.recordedFrame ?? row?.frame ?? .zero
                 let recover = NativeUIAccessibility.click("files.row.responsiveness-b.md", in: window)
                 let recovered = await waitUntil(timeout: 5) {
-                    store.fileError == nil
+                    store.filesModel.fileError == nil
                         && nativeTextViews(in: window.contentView).contains { $0.string == documents[1].1 }
                 }
                 results["files-list-remains-usable-after-error"] =
                     frame.height > 0 && recover && recovered
                     ? "passed"
-                    : "failed: file navigator error recovery; frame=\(frame), clicked=\(recover), selected=\(store.selectedFilePath), recovered=\(recovered)"
+                    : "failed: file navigator error recovery; frame=\(frame), clicked=\(recover), selected=\(store.filesModel.selectedFilePath), recovered=\(recovered)"
             } catch {
                 results["files-editor-lifecycle"] = "failed: \(error)"
             }
@@ -2106,37 +2100,6 @@
                 return controller
             }
             return view.subviews.lazy.compactMap { markdownSplitController(in: $0) }.first
-        }
-
-        private static func markdownWebView(in view: NSView?) -> WKWebView? {
-            guard let view else { return nil }
-            if let web = view as? WKWebView { return web }
-            return view.subviews.lazy.compactMap { markdownWebView(in: $0) }.first
-        }
-
-        private static func waitForMarkdown(_ web: WKWebView?, predicate: String) async -> Bool {
-            guard let web else { return false }
-            let deadline = Date().addingTimeInterval(15)
-            while Date() < deadline {
-                let matched: Bool = await withCheckedContinuation { continuation in
-                    web.evaluateJavaScript("Boolean(\(predicate))") { value, _ in
-                        continuation.resume(returning: value as? Bool == true)
-                    }
-                }
-                if matched { return true }
-                try? await DieterTaskSleep.milliseconds(100)
-            }
-            return false
-        }
-
-        private static func captureMarkdown(_ web: WKWebView, to url: URL) async {
-            let image: NSImage? = await withCheckedContinuation { continuation in
-                web.takeSnapshot(with: nil) { image, _ in continuation.resume(returning: image) }
-            }
-            guard let tiff = image?.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
-                let png = bitmap.representation(using: .png, properties: [:])
-            else { return }
-            try? png.write(to: url)
         }
 
         private static func closeBoardConversationForToolbar(store: DieterStore, window: NSWindow) async -> Bool {
@@ -2177,7 +2140,7 @@
         private static func runBoardLaneSortChecks(
             store: DieterStore, window: NSWindow, results: inout [String: String], output: URL
         ) async {
-            let cards = store.displayedCards.filter { $0.lane == "todo" }
+            let cards = store.boardProjection.cardsByLane["todo"] ?? []
             let directions: [BoardCardSortDirection] = [.ascending, .descending]
             for direction in directions {
                 let ready = await waitForBoardControl("lane-sort.todo", in: window)
@@ -2194,10 +2157,10 @@
                     orderChanged = true
                 } else {
                     orderChanged = await waitUntil(timeout: 5) {
-                        guard let first = BoardCardOrdering.sorted(cards, direction: direction).first else {
-                            return false
-                        }
-                        return firstCardIsTopmost(first.id, cards: cards, in: window)
+                        guard let lane = store.boardProjection.lanes.first(where: { $0.laneID == "todo" }),
+                            lane.descending == (direction == .descending), let first = lane.cardIds.first
+                        else { return false }
+                        return firstCardIsTopmost(first, cards: cards, in: window)
                     }
                 }
                 let key = direction == .ascending ? "board-lane-sort-toggle" : "board-lane-sort-restore"
@@ -2286,7 +2249,7 @@
                 return
             }
             let reachedBottom = await scrollNativeLaneToBottom(table, window: window)
-            let last = BoardCardOrdering.sorted(store.displayedCards.filter { $0.lane == "todo" }).last
+            let last = store.boardProjection.cardsByLane["todo"]?.last
             let lastVisible =
                 reachedBottom && (last.map { NativeUIAccessibility.find("card.\($0.id)", in: window) != nil } ?? false)
             results["board-scroll-to-last-card"] =
@@ -2402,7 +2365,7 @@
                                 path: "navigation-missing-\(section.rawValue.lowercased())-\(repetition + 1).txt"))
                     }
                     let probe = NativeUINavigationProbe(window: window, section: section)
-                    let stateReads = store.stateRequestGeneration
+                    let stateReads = store.stateRefreshCount
                     let chatReads = store.chatsRequestGeneration
                     probe.start()
                     let clicked = ready && NativeUIAccessibility.click(control, in: window)
@@ -2419,7 +2382,7 @@
                             String(
                                 format: "event %.1f / draw %.1f / max-gap %.1f ms",
                                 probe.mouseDownMS ?? -1, update, probe.maximumMainLoopGapMS)
-                                + " / project-generation \(store.stateRequestGeneration - stateReads) / chat-generation \(store.chatsRequestGeneration - chatReads)"
+                                + " / project-generation \(store.stateRefreshCount - stateReads) / chat-generation \(store.chatsRequestGeneration - chatReads)"
                                 + " / footprint-bytes \(performancePhysicalFootprint())")
                     } else {
                         samples.append(
@@ -2509,47 +2472,39 @@
 
         private static func smokeProviderQuotaGroups() -> [Dieter_Gateway_V1_ProviderQuotaGroup] {
             func group(
-                provider: Dieter_Gateway_V1_ProviderQuotaProvider,
-                accountKey: String,
-                email: String,
-                remaining: UInt32
+                provider: Dieter_Gateway_V1_ProviderQuotaProvider, accountKey: String, email: String, remaining: UInt32
             ) -> Dieter_Gateway_V1_ProviderQuotaGroup {
-                var window = Dieter_Gateway_V1_ProviderQuotaWindow()
-                window.id = "weekly"
-                window.label = "Weekly"
-                window.kind = .weekly
-                window.usedPercent = 100 - remaining
-                window.remainingPercent = remaining
-
-                var account = Dieter_Gateway_V1_ProviderQuotaSnapshot()
-                account.provider = provider
-                account.accountKey = accountKey
-                account.displayEmail = email
-                account.includedInSummary = true
-                account.accountKind = .subscription
-                account.plan = "plus"
-                account.availability = .available
-                account.windows = [window]
-
-                var group = Dieter_Gateway_V1_ProviderQuotaGroup()
-                group.provider = provider
-                group.accounts = [account]
-                return group
+                .with { group in
+                    group.provider = provider
+                    group.summary.remainingPercent = remaining
+                    group.accounts = [
+                        .with {
+                            $0.provider = provider
+                            $0.accountKey = accountKey
+                            $0.displayEmail = email
+                            $0.plan = "plus"
+                            $0.availability = .available
+                            $0.includedInSummary = true
+                            $0.freshUntil = "2999-01-01T00:00:00Z"
+                            $0.windows = [
+                                .with {
+                                    $0.id = "weekly"
+                                    $0.label = "Weekly"
+                                    $0.remainingPercent = remaining
+                                }
+                            ]
+                        }
+                    ]
+                }
             }
 
             return [
                 group(
-                    provider: .openaiCodex,
-                    accountKey: "smoke-openai-account",
-                    email: "dieter@example.com",
-                    remaining: 62
-                ),
+                    provider: .openaiCodex, accountKey: "smoke-openai-account", email: "dieter@example.com",
+                    remaining: 62),
                 group(
-                    provider: .anthropicClaude,
-                    accountKey: "smoke-claude-account",
-                    email: "claude@example.com",
-                    remaining: 81
-                ),
+                    provider: .anthropicClaude, accountKey: "smoke-claude-account", email: "claude@example.com",
+                    remaining: 81),
             ]
         }
 

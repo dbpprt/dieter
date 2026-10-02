@@ -11,25 +11,31 @@
             let size = window.contentView?.bounds.size ?? NSSize(width: 1380, height: 870)
             defer {
                 store.endpoints = endpoints
-                store.quotas.install(quotas)
+                store.quotas.install(groups: quotas)
                 store.section = section
                 store.themeSelection = theme
                 window.setContentSize(size)
             }
             var results: [String: String] = [:]
-            var group = Dieter_Gateway_V1_ProviderQuotaGroup()
-            group.provider = .openaiCodex
-            group.accounts = (0..<3).map { index in
-                var account = Dieter_Gateway_V1_ProviderQuotaSnapshot()
-                account.accountKey = "chrome-\(index)"
-                account.displayEmail = "account-\(index)@example.test"
-                account.availability = .available
-                var quota = Dieter_Gateway_V1_ProviderQuotaWindow()
-                quota.remainingPercent = UInt32(45 + index * 20)
-                account.windows = [quota]
-                return account
+            let group = Dieter_Gateway_V1_ProviderQuotaGroup.with { group in
+                group.provider = .openaiCodex
+                group.accounts = (0..<3).map { index in
+                    .with {
+                        $0.provider = .openaiCodex
+                        $0.accountKey = "chrome-\(index)"
+                        $0.displayEmail = "account-\(index)@example.test"
+                        $0.availability = .available
+                        $0.includedInSummary = true
+                        $0.freshUntil = "2999-01-01T00:00:00Z"
+                        $0.windows = [
+                            .with {
+                                $0.id = "weekly"; $0.remainingPercent = UInt32(45 + index * 20)
+                            }
+                        ]
+                    }
+                }
             }
-            store.quotas.install([group])
+            store.quotas.install(groups: [group])
             for count in [5, 20] {
                 store.endpoints = (0..<count).map { index in
                     DieterEndpoint(

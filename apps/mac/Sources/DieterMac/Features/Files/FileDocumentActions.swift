@@ -35,7 +35,7 @@ struct FileDocumentActions: View {
                 .accessibilityIdentifier("\(identifierPrefix).show-in-finder")
                 .smokeTarget("\(identifierPrefix).show-in-finder")
 
-                if !document.binary, ProjectFileLanguage.detect(filename: document.name) == .markdown {
+                if FilePresentation.renderer(document) == .markdown {
                     Menu {
                         Button("Export PDF…", systemImage: "doc.richtext") {
                             export(document, key: key, session: session, format: .pdf)

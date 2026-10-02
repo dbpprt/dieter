@@ -15,6 +15,7 @@ import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -91,7 +92,7 @@ class DirectoryPoller(
             state.toMachineSnapshot(machine.id)
         }
     } catch (cancelled: CancellationException) {
-        if (cancelled is kotlinx.coroutines.TimeoutCancellationException) {
+        if (cancelled is TimeoutCancellationException) {
             reportFailure(machine.id, "Refreshing ${machine.name} timed out.")
             null
         } else {

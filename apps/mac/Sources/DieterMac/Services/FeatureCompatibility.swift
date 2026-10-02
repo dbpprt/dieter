@@ -1,8 +1,9 @@
 import DieterAPI
 import Foundation
 
-// Navigation, legacy call sites, and smoke fixtures share these forwarding
-// adapters during UI migration. State and tasks have one feature owner.
+// Views and the store read window, replica, and feature state through these
+// forwarders; each value has one owner (the window, the replica, or a feature
+// model), and a forwarder's setter keeps dependent bindings current.
 extension AppSession {
     var kanbanPresentedAlongsideConversation: Bool {
         get { window.kanbanPresentedAlongsideConversation }
@@ -19,7 +20,7 @@ extension AppSession {
     }
     var chats: [Dieter_V1_Card] {
         get { replica.chats }
-        set { replica.chats = newValue; refreshIslandActivityProjection() }
+        set { replica.chats = newValue }
     }
     var chatProjects: [Dieter_V1_Project] {
         get { replica.chatProjects }
@@ -31,7 +32,7 @@ extension AppSession {
     }
     var navigationCards: [String: [Dieter_V1_Card]] {
         get { replica.navigationCards }
-        set { replica.navigationCards = newValue; refreshIslandActivityProjection() }
+        set { replica.navigationCards = newValue }
     }
     var projectDirectory: [String: Dieter_V1_Project] {
         get { replica.projectDirectory }
@@ -77,33 +78,13 @@ extension AppSession {
         get { conversationModel.conversation }
         set { conversationModel.conversation = newValue }
     }
-    var olderConversationMessages: [Dieter_V1_UiMessage] {
-        get { conversationModel.olderConversationMessages }
-        set { conversationModel.olderConversationMessages = newValue }
-    }
     var conversationMessages: [Dieter_V1_UiMessage] {
         get { conversationModel.conversationMessages }
         set { conversationModel.conversationMessages = newValue }
     }
-    var conversationPresentationRevision: Int {
-        get { conversationModel.conversationPresentationRevision }
-        set { conversationModel.conversationPresentationRevision = newValue }
-    }
-    var conversationHistoryStart: Int {
-        get { conversationModel.conversationHistoryStart }
-        set { conversationModel.conversationHistoryStart = newValue }
-    }
-    var conversationHistoryTotal: Int {
-        get { conversationModel.conversationHistoryTotal }
-        set { conversationModel.conversationHistoryTotal = newValue }
-    }
     var conversationHistoryHasMore: Bool {
         get { conversationModel.conversationHistoryHasMore }
         set { conversationModel.conversationHistoryHasMore = newValue }
-    }
-    var conversationHistoryLoading: Bool {
-        get { conversationModel.conversationHistoryLoading }
-        set { conversationModel.conversationHistoryLoading = newValue }
     }
     var selectedDetail: Dieter_V1_CardDetail? {
         get { conversationModel.selectedDetail }
@@ -133,73 +114,21 @@ extension AppSession {
         get { worktreeChanges.conversationWorkspace }
         set { worktreeChanges.conversationWorkspace = newValue }
     }
-    var conversationChangeset: Dieter_V1_Changeset? {
-        get { worktreeChanges.conversationChangeset }
-        set { worktreeChanges.conversationChangeset = newValue }
-    }
-    var conversationDiff: Dieter_V1_FileDiff? {
-        get { worktreeChanges.conversationDiff }
-        set { worktreeChanges.conversationDiff = newValue }
-    }
-    var conversationChangeComments: [Dieter_V1_ChangeComment] {
-        get { worktreeChanges.conversationChangeComments }
-        set { worktreeChanges.conversationChangeComments = newValue }
-    }
-    var conversationSCMCapabilities: Dieter_V1_SCMCapabilities? {
-        get { worktreeChanges.conversationSCMCapabilities }
-        set { worktreeChanges.conversationSCMCapabilities = newValue }
-    }
     var gitOperation: Dieter_V1_GitOperation? {
         get { worktreeChanges.gitOperation }
         set { worktreeChanges.gitOperation = newValue }
-    }
-    var gitOperationLogs: [Dieter_V1_GitOperationLogEntry] {
-        get { worktreeChanges.gitOperationLogs }
-        set { worktreeChanges.gitOperationLogs = newValue }
-    }
-    var workspaceLoading: Bool {
-        get { worktreeChanges.workspaceLoading }
-        set { worktreeChanges.workspaceLoading = newValue }
     }
     var workspaceError: String? {
         get { worktreeChanges.workspaceError }
         set { worktreeChanges.workspaceError = newValue }
     }
-    var selectedChangePath: String {
-        get { worktreeChanges.selectedChangePath }
-        set { worktreeChanges.selectedChangePath = newValue }
-    }
-    var selectedCommitSHA: String {
-        get { worktreeChanges.selectedCommitSHA }
-        set { worktreeChanges.selectedCommitSHA = newValue }
-    }
     var workspaceToast: WorkspaceToast? {
         get { worktreeChanges.workspaceToast }
         set { worktreeChanges.workspaceToast = newValue }
     }
-    var mergeFlowStep: WorkspaceMergeStep? {
-        get { worktreeChanges.mergeFlowStep }
-        set { worktreeChanges.mergeFlowStep = newValue }
-    }
     var fileScopeCardID: String? {
         get { filesModel.fileScopeCardID }
         set { filesModel.fileScopeCardID = newValue }
-    }
-    var fileEditorSession: FileEditorSession {
-        get { filesModel.fileEditorSession }
-        set { filesModel.fileEditorSession = newValue }
-    }
-    var conversationDiffLoading: Bool {
-        get { worktreeChanges.conversationDiffLoading }
-        set { worktreeChanges.conversationDiffLoading = newValue }
-    }
-    var gitOperationSubmitting: Bool {
-        get { worktreeChanges.gitOperationSubmitting }
-        set { worktreeChanges.gitOperationSubmitting = newValue }
-    }
-    var gitOperationNeedsReconciliation: Bool {
-        get { worktreeChanges.gitOperationNeedsReconciliation }
-        set { worktreeChanges.gitOperationNeedsReconciliation = newValue }
     }
     var terminalScopeCardID: String? {
         get { terminalsModel.terminalScopeCardID }
@@ -213,113 +142,21 @@ extension AppSession {
         get { composer.draft.attachments }
         set { composer.draft.attachments = newValue }
     }
-    var composerProvider: String {
-        get { composer.draft.provider }
-        set { composer.draft.provider = newValue }
-    }
-    var composerModel: String {
-        get { composer.draft.model }
-        set { composer.draft.model = newValue }
-    }
-    var composerEffort: String {
-        get { composer.draft.effort }
-        set { composer.draft.effort = newValue }
-    }
-    var composerProviderOptions: [String: String] {
-        get { composer.draft.providerOptions }
-        set { composer.draft.providerOptions = newValue }
-    }
-    var filesLoading: Bool {
-        get { filesModel.filesLoading }
-        set { filesModel.filesLoading = newValue }
-    }
     var filesError: String? {
         get { filesModel.filesError }
         set { filesModel.filesError = newValue }
-    }
-    var fileLoading: Bool {
-        get { filesModel.fileLoading }
-        set { filesModel.fileLoading = newValue }
-    }
-    var fileError: String? {
-        get { filesModel.fileError }
-        set { filesModel.fileError = newValue }
-    }
-    var selectedFilePath: String {
-        get { filesModel.selectedFilePath }
-        set { filesModel.selectedFilePath = newValue }
     }
     var schedulesError: String? {
         get { schedulesModel.schedulesError }
         set { schedulesModel.schedulesError = newValue }
     }
-    var files: [Dieter_V1_FileEntry] {
-        get { filesModel.files }
-        set { filesModel.files = newValue }
-    }
-    var filePath: String {
-        get { filesModel.filePath }
-        set { filesModel.filePath = newValue }
-    }
-    var fileNavigation: ProjectFileNavigation {
-        get { filesModel.fileNavigation }
-        set { filesModel.fileNavigation = newValue }
-    }
-    var fileNavigationLoading: Bool {
-        get { filesModel.fileNavigationLoading }
-        set { filesModel.fileNavigationLoading = newValue }
-    }
     var fileDocument: Dieter_V1_FileDocument? {
         get { filesModel.fileDocument }
         set { filesModel.fileDocument = newValue }
     }
-    var showHiddenFiles: Bool {
-        get { filesModel.showHiddenFiles }
-        set { filesModel.showHiddenFiles = newValue }
-    }
     var schedules: [Dieter_V1_Schedule] {
         get { schedulesModel.schedules }
         set { schedulesModel.schedules = newValue }
-    }
-    var scheduleRuns: [Dieter_V1_ScheduleRun] {
-        get { schedulesModel.scheduleRuns }
-        set { schedulesModel.scheduleRuns = newValue }
-    }
-    var selectedScheduleID: String? {
-        get { schedulesModel.selectedScheduleID }
-        set { schedulesModel.selectedScheduleID = newValue }
-    }
-    var schedulesLoading: Bool {
-        get { schedulesModel.schedulesLoading }
-        set { schedulesModel.schedulesLoading = newValue }
-    }
-    var schedulesLoadingMore: Bool {
-        get { schedulesModel.schedulesLoadingMore }
-        set { schedulesModel.schedulesLoadingMore = newValue }
-    }
-    var scheduleRunsLoading: Bool {
-        get { schedulesModel.scheduleRunsLoading }
-        set { schedulesModel.scheduleRunsLoading = newValue }
-    }
-    var scheduleRunsLoadingMore: Bool {
-        get { schedulesModel.scheduleRunsLoadingMore }
-        set { schedulesModel.scheduleRunsLoadingMore = newValue }
-    }
-    var schedulesTotalCount: Int {
-        get { schedulesModel.schedulesTotalCount }
-        set { schedulesModel.schedulesTotalCount = newValue }
-    }
-    var schedulesNextPageToken: String {
-        get { schedulesModel.schedulesNextPageToken }
-        set { schedulesModel.schedulesNextPageToken = newValue }
-    }
-    var scheduleRunsNextPageToken: String {
-        get { schedulesModel.scheduleRunsNextPageToken }
-        set { schedulesModel.scheduleRunsNextPageToken = newValue }
-    }
-    var schedulesLoadedProjectID: String {
-        get { schedulesModel.schedulesLoadedProjectID }
-        set { schedulesModel.schedulesLoadedProjectID = newValue }
     }
     var newChatProjectID: String {
         get { window.newChatProjectID }
@@ -368,9 +205,5 @@ extension AppSession {
     var archivePolicyPresented: Bool {
         get { window.archivePolicyPresented }
         set { window.archivePolicyPresented = newValue }
-    }
-    var workspaceToastTask: Task<Void, Never>? {
-        get { worktreeChanges.workspaceToastTask }
-        set { worktreeChanges.workspaceToastTask = newValue }
     }
 }

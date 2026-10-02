@@ -1,15 +1,11 @@
 package com.dbpprt.dieter.widget
 
-import com.dbpprt.dieter.core.activity.Activity
-import com.dbpprt.dieter.core.activity.ActivityItem
-import com.dbpprt.dieter.core.activity.ActivityKind
-import com.dbpprt.dieter.core.activity.ActivitySection
 import com.dbpprt.dieter.core.activity.WidgetModel
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-// LAST_FINISHED is a persisted style identifier. All styles now show the same
+// LAST_FINISHED is a persisted style identifier. All styles show the same
 // Inbox; this option only chooses a compact presentation.
 enum class WidgetStyle { AUTO, ACTIVITY, LAST_FINISHED }
 
@@ -32,10 +28,10 @@ internal val WidgetStyle.core: WidgetModel.Style
         WidgetStyle.LAST_FINISHED -> WidgetModel.Style.COMPACT
     }
 
-/** The widget's freshness line, with the last sync as an absolute local time. */
-internal fun widgetStatusText(lastSyncAtMs: Long, connected: Boolean): String {
-    val time = lastSyncAtMs.takeIf { it > 0 }?.let {
-        DateTimeFormatter.ofPattern("MMM d, HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it))
-    }
-    return WidgetModel.status(time, connected)
+/**
+ * A widget's last update as an absolute local time ("Sep 26, 10:00"), which
+ * stays truthful across hours of host suspension; null before the first one.
+ */
+internal fun widgetTime(epochMs: Long): String? = epochMs.takeIf { it > 0 }?.let {
+    DateTimeFormatter.ofPattern("MMM d, HH:mm").withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(it))
 }

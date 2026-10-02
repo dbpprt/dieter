@@ -4,22 +4,43 @@ import com.dbpprt.dieter.core.runtime.Timestamps
 import kotlin.time.Duration
 import kotlin.time.Instant
 
+enum class AgeUnit(val suffix: String) { MINUTES("m"), HOURS("h"), DAYS("d"), WEEKS("w") }
+
+/** An elapsed time in its largest whole [unit]. */
+data class AgeSpan(val count: Long, val unit: AgeUnit) {
+    /** "5m", "3h", "2d", "3w". */
+    val compact: String get() = "$count${unit.suffix}"
+}
+
 /**
- * Relative times as lists and headers show them. Beyond a day they fall back
- * to an absolute time the platform formats in the device's locale and zone.
+ * Relative times as lists and headers show them. Every format counts with
+ * [span]; beyond a day some fall back to an absolute time the platform
+ * formats in the device's locale and zone.
  */
 object Ages {
-    /** "now", "5m", "3h", "2d" since [since]; null when unknown. */
-    fun compact(since: Instant?, now: Instant): String? {
-        since ?: return null
-        val seconds = (now - since).coerceAtLeast(Duration.ZERO).inWholeSeconds
+    /**
+     * [elapsed] in whole minutes, hours, then days, or from seven days in
+     * weeks when [weeks]. Null under a minute, which includes the future.
+     */
+    fun span(elapsed: Duration, weeks: Boolean = false): AgeSpan? {
+        val seconds = elapsed.inWholeSeconds
         return when {
-            seconds < 60 -> "now"
-            seconds < 3_600 -> "${seconds / 60}m"
-            seconds < 86_400 -> "${seconds / 3_600}h"
-            else -> "${seconds / 86_400}d"
+            seconds < 60 -> null
+            seconds < 3_600 -> AgeSpan(seconds / 60, AgeUnit.MINUTES)
+            seconds < 86_400 -> AgeSpan(seconds / 3_600, AgeUnit.HOURS)
+            !weeks || seconds < 604_800 -> AgeSpan(seconds / 86_400, AgeUnit.DAYS)
+            else -> AgeSpan(seconds / 604_800, AgeUnit.WEEKS)
         }
     }
+
+    /** "now", "5m", "3h", "2d" since [since], or from seven days "3w" when [weeks]; null when unknown. */
+    fun compact(since: Instant?, now: Instant, weeks: Boolean = false): String? {
+        since ?: return null
+        return span(now - since, weeks)?.compact ?: "now"
+    }
+
+    /** "just now", "5m ago", "3h ago", "2d ago" since [at]; days keep counting, and the future reads "just now". */
+    fun ago(at: Instant, now: Instant): String = span(now - at)?.let { "${it.compact} ago" } ?: "just now"
 
     /**
      * An RFC 3339 [value] relative to [now]: "now", "5m", "3h", else its [day];
@@ -30,40 +51,37 @@ object Ages {
         if (value.isBlank()) return ""
         val at = Timestamps.parse(value) ?: return value.substringBefore('T').takeLast(5)
         if (at > now) {
-            val until = at - now
-            return when {
-                until.inWholeMinutes < 1 -> "in <1m"
-                until.inWholeMinutes < 60 -> "in ${until.inWholeMinutes}m"
-                until.inWholeHours < 24 -> "in ${until.inWholeHours}h"
-                else -> dateTime(at)
-            }
+            val until = span(at - now) ?: return "in <1m"
+            return if (until.unit == AgeUnit.DAYS) dateTime(at) else "in ${until.compact}"
         }
-        val age = now - at
-        return when {
-            age.inWholeMinutes < 1 -> "now"
-            age.inWholeMinutes < 60 -> "${age.inWholeMinutes}m"
-            age.inWholeHours < 24 -> "${age.inWholeHours}h"
-            else -> day(at)
-        }
+        val age = span(now - at) ?: return "now"
+        return if (age.unit == AgeUnit.DAYS) day(at) else age.compact
     }
 
     /** "Last refreshed 5m ago · Refreshing…"; beyond a day, the [dateTime]. */
     fun refreshed(at: Instant?, syncing: Boolean, now: Instant, dateTime: (Instant) -> String): String {
         at ?: return if (syncing) "Refreshing…" else "Not refreshed yet"
-        val age = (now - at).coerceAtLeast(Duration.ZERO)
+        val age = span(now - at)
         val freshness = when {
-            age.inWholeSeconds < 60 -> "just now"
-            age.inWholeMinutes < 60 -> "${age.inWholeMinutes}m ago"
-            age.inWholeHours < 24 -> "${age.inWholeHours}h ago"
-            else -> dateTime(at)
+            age == null -> "just now"
+            age.unit == AgeUnit.DAYS -> dateTime(at)
+            else -> "${age.compact} ago"
         }
         return "Last refreshed $freshness" + if (syncing) " · Refreshing…" else ""
     }
 }
 
 object DisplayPaths {
-    private const val DEVELOPMENT = "/Development/"
+    private val home = Regex("^/(?:Users|home)/([^/]+)")
 
-    /** A project path shortened to "~/Development/…" when it lives there. */
-    fun compact(path: String): String = if (DEVELOPMENT in path) "~$DEVELOPMENT${path.substringAfter(DEVELOPMENT)}" else path
+    /**
+     * A path under any user's home folder ("/Users/<name>/…" or
+     * "/home/<name>/…") shortened to "~/…", whichever machine it lives on.
+     * Other paths, including macOS's "/Users/Shared", stay as they are.
+     */
+    fun compact(path: String): String {
+        val match = home.find(path) ?: return path
+        if (match.groupValues[1] == "Shared") return path
+        return "~" + path.substring(match.value.length)
+    }
 }

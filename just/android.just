@@ -27,7 +27,7 @@ doctor:
     "{{ emulator }}" -version
     "{{ emulator }}" -list-avds | rg -x "{{ avd }}"
 
-# Regenerate Android's fallback brand assets from the canonical masters.
+# Regenerate the themed-icon mark, notification mark, and Sora font from the brand masters.
 sync-brand:
     {{ app_root }}/scripts/sync-brand-assets.sh
 

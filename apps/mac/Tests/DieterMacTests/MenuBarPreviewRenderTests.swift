@@ -59,7 +59,7 @@ private func writePNG(_ image: NSImage, scale: CGFloat, to path: String) throws 
 }
 
 @Test @MainActor func renderMenuBarPopoverPreview() throws {
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
     store.phase = .connected(version: "1.0.0")
 
     let miniHome = DieterEndpoint(name: "mac-mini", host: "100.121.53.82", port: 4242, daemonID: "d1", online: true)
@@ -68,7 +68,18 @@ private func writePNG(_ image: NSImage, scale: CGFloat, to path: String) throws 
         lastSeenAt: isoDate(secondsAgo: 7_200))
     store.endpoints = [miniHome, laptop]
     store.endpoint = miniHome
-    store.machineConnectionStatuses[miniHome.id] = MachineConnectionStatus(route: .local, latencyMilliseconds: 23)
+    store.machineEntries[miniHome.id] = .with {
+        $0.id = "d1"
+        $0.online = true
+        $0.available = true
+        $0.detail = "Local · 23 ms"
+    }
+    store.machineEntries[laptop.id] = .with {
+        $0.id = "d2"
+        $0.detail = "Offline"
+        $0.showLastSeen = true
+        $0.lastSeenAt = laptop.lastSeenAt
+    }
 
     var boardOne = Dieter_V1_Board(); boardOne.id = "b1"; boardOne.name = "Agent workspace"
     var boardTwo = Dieter_V1_Board(); boardTwo.id = "b2"; boardTwo.name = "Main"

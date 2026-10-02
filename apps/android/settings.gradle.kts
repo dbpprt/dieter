@@ -15,6 +15,10 @@ dependencyResolutionManagement {
             content { includeGroup("com.github.termux.termux-app") }
         }
     }
+    versionCatalogs {
+        // Kotlin, AGP, coroutines, and OkHttp versions shared with the included core.
+        create("coreLibs") { from(files("../core/gradle/libs.versions.toml")) }
+    }
 }
 
 rootProject.name = "DieterAndroid"

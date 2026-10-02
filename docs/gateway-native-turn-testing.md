@@ -69,6 +69,10 @@ DIETER_TEST_FORCE_TURN=1 \
 just mac test controlWebRTCRoutesNativeRPCAndReportsSelectedMode
 ```
 
+This test drives the shared `DieterTransport` WebRTC bridge through the iOS
+client's connection manager (`DieterClient`); the Mac app reaches the same
+bridge through the shared core.
+
 The policy exists only in debug builds. The API test requires `WebRTC · TURN`
 before and after reconnect; the screen test requires `Relayed media` while
 checking decoded frames and input/session behavior. Stop the exact fixture
@@ -90,15 +94,11 @@ reverse mapping for that TCP port on the explicitly selected emulator and remove
 it afterward. The recipe owns only the screen service's reverse mapping.
 
 For API coverage, `just e2e run --suite sync` builds and installs the isolated
-app/test APKs and executes the ordinary sync regressions. External TURN coverage
-is a separate manual qualification: select
-`IsolatedGatewayIntegrationTest#webRTCControlCarriesRPCAndReportsICEPath`, and
-provide instrumentation arguments `isolatedControlWebRTC=1`, `forceTURN=1`,
-`isolatedGatewayHost`, `isolatedGatewayPort` and the disposable
-`isolatedGatewayToken`. Use the same opted-in API fixture described above and
-map its random loopback port to the emulator. Never let Gradle select an attached
-physical phone. The instrumentation sets and restores the debug-only TURN policy;
-both API connection attempts must report `WebRTC · TURN`.
+app/test APKs and executes the ordinary sync regressions. No Android
+instrumentation test drives the WebRTC API route through TURN; the screen
+recipe above is the Android TURN qualification. The app's WebRTC API bridge
+(`sharedcore/ControlRTCBridge.kt`) applies the same debug-only
+`dieter.test.forceTURN` policy as screen media.
 
 ## Evidence and capacity
 

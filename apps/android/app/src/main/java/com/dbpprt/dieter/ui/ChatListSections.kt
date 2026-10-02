@@ -41,6 +41,7 @@ import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import com.dbpprt.dieter.api.v1.Project
+import com.dbpprt.dieter.core.presentation.Counts
 
 @Composable
 internal fun ChatSectionHeading(title: String, icon: ImageVector, count: Int, tint: Color = DieterMuted) {
@@ -76,7 +77,7 @@ internal fun ChatProjectHeader(project: Project, count: Int, collapsed: Boolean,
             Column(Modifier.weight(1f)) {
                 Text(project.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Project · $count ${if (count == 1) "chat" else "chats"}", color = DieterMuted, fontSize = 11.sp)
+                Text("Project · ${Counts.of(count, "chat")}", color = DieterMuted, fontSize = 11.sp)
             }
             Icon(Icons.Outlined.KeyboardArrowDown,
                 if (collapsed) "Expand ${project.name} chats" else "Collapse ${project.name} chats",

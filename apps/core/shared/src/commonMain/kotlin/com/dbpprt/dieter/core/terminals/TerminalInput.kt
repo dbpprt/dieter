@@ -2,13 +2,12 @@ package com.dbpprt.dieter.core.terminals
 
 import com.dbpprt.dieter.api.v1.TerminalInputRequest
 import com.dbpprt.dieter.core.runtime.CoreException
+import com.dbpprt.dieter.core.runtime.Deadlines
 import com.dbpprt.dieter.core.runtime.FailureKind
 import com.dbpprt.dieter.core.runtime.Failures
-import com.dbpprt.dieter.core.runtime.withDeadline
 import com.dbpprt.dieter.core.session.MachineSessions
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -48,9 +47,7 @@ class TerminalInputPumps(private val sessions: MachineSessions, private val scop
                 val chunk = target.pending.readByteString(minOf(target.pending.size, CHUNK_BYTES.toLong()))
                 target.inFlight = chunk.size.toLong()
                 try {
-                    withDeadline(DEADLINE) {
-                        sessions.call(key.daemonId) { it.WriteTerminal().execute(TerminalInputRequest(terminal_id = key.terminalId, data_ = chunk)) }
-                    }
+                    sessions.call(key.daemonId, Deadlines.CALL) { it.WriteTerminal().execute(TerminalInputRequest(terminal_id = key.terminalId, data_ = chunk)) }
                 } catch (cancelled: CancellationException) {
                     target.pending.clear()
                     throw cancelled
@@ -84,6 +81,5 @@ class TerminalInputPumps(private val sessions: MachineSessions, private val scop
         const val MAX_PUMPS = 8
         const val CHUNK_BYTES = 64 * 1024
         private val START_DELAY = 12.milliseconds
-        private val DEADLINE = 15.seconds
     }
 }

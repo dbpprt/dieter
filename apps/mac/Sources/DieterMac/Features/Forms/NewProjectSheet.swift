@@ -24,6 +24,10 @@ struct NewProjectSheet: View {
         availableMachines.first { $0.id == machineID }
     }
 
+    private var selectedMachineAvailable: Bool {
+        selectedMachine.map(store.machineIsAvailable) == true
+    }
+
     private var canSubmit: Bool {
         existingProjectID.isEmpty
             ? draft.canSubmit : !draft.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -70,28 +74,29 @@ struct NewProjectSheet: View {
                     Menu {
                         ForEach(availableMachines) { machine in
                             Button {
-                                if machine.online && machine.compatibilityState != .incompatible {
-                                    machineID = machine.id
-                                }
+                                if store.machineIsAvailable(machine) { machineID = machine.id }
                             } label: {
                                 if machine.id == machineID {
                                     Label(machine.name, systemImage: "checkmark")
+                                } else if let reason = store.unavailableReason(machine) {
+                                    Text("\(machine.name) · \(reason)")
                                 } else {
-                                    Text(machine.online ? machine.name : "\(machine.name) · Offline")
+                                    Text(machine.name)
                                 }
                             }
-                            .disabled(!machine.online || machine.compatibilityState == .incompatible)
+                            .disabled(!store.machineIsAvailable(machine))
                         }
                     } label: {
                         HStack(spacing: 9) {
-                            Circle().fill(selectedMachine?.online == true ? DieterTheme.eyes : DieterTheme.tertiary)
+                            Circle().fill(selectedMachineAvailable ? DieterTheme.eyes : DieterTheme.tertiary)
                                 .frame(width: 7, height: 7)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(selectedMachine?.name ?? "Choose a machine").font(
                                     .system(size: 13, weight: .semibold))
                                 Text(
-                                    selectedMachine?.online == true
-                                        ? "Online · repository and agents run here" : "Offline"
+                                    selectedMachineAvailable
+                                        ? "Online · repository and agents run here"
+                                        : selectedMachine.flatMap(store.unavailableReason) ?? "Offline"
                                 )
                                 .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                             }
@@ -121,9 +126,7 @@ struct NewProjectSheet: View {
                         .buttonStyle(DieterSecondaryButtonStyle())
                         .accessibilityIdentifier("new-project.browse")
                         .smokeTarget("new-project.browse")
-                        .disabled(
-                            submitting || machineID.isEmpty || selectedMachine?.online != true
-                                || selectedMachine?.compatibilityState == .incompatible)
+                        .disabled(submitting || machineID.isEmpty || !selectedMachineAvailable)
                     }
                     Text(pathHelp)
                         .font(.caption2).foregroundStyle(DieterTheme.tertiary)
@@ -259,10 +262,7 @@ struct NewProjectSheet: View {
                     }
                 }
                 .buttonStyle(DieterPrimaryButtonStyle())
-                .disabled(
-                    submitting || !canSubmit || selectedMachine?.online != true
-                        || selectedMachine?.compatibilityState == .incompatible
-                )
+                .disabled(submitting || !canSubmit || !selectedMachineAvailable)
                 .accessibilityIdentifier("new-project.submit")
             }
             .padding(.horizontal, 24).padding(.vertical, 14)

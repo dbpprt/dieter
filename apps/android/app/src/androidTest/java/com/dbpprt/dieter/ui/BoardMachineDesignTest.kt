@@ -1,22 +1,20 @@
 package com.dbpprt.dieter.ui
 
-import android.graphics.Bitmap
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.dp
-import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.core.composition.TaskDrafts
 import com.dbpprt.dieter.core.composition.WorkspaceMode
 import com.dbpprt.dieter.core.composition.task
+import com.dbpprt.dieter.e2e.Evidence
+import com.dbpprt.dieter.e2e.saveEvidence
 import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.core.machines.MachineRow
 import com.dbpprt.dieter.core.state.CaptureDraft
-import com.dbpprt.dieter.ui.ProjectReplica
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import com.dbpprt.dieter.api.v1.*
 import com.dbpprt.dieter.api.v1.Card
@@ -28,7 +26,7 @@ import java.time.Instant
 
 class BoardMachineDesignTest {
     @get:Rule val compose = createComposeRule()
-    private val board = Board(id = "board", name = "Main", lanes = listOf(Lane(id = "todo", name = "Todo")), labels = listOf(Label(id = "label", name = "Android", color = "#5DBFA0")))
+    private val board = Board(id = "board", name = "Main", lanes = listOf(Lane(id = "todo", name = "Todo"), Lane(id = "running", name = "Running")), labels = listOf(Label(id = "label", name = "Android", color = "#5DBFA0")))
     private val state = DieterUiState(
         connectionPhase = ConnectionPhase.CONNECTED,
         selectedProjectId = "project", selectedBoardId = "board", boards = listOf(board),
@@ -83,7 +81,7 @@ class BoardMachineDesignTest {
         val project = Project(id = "project", name = "nmt-aigency", checkouts = listOf(Checkout(id = "office", project_id = "project", daemon_id = "office", name = "nmt-aigency"), Checkout(id = "laptop", project_id = "project", daemon_id = "laptop", name = "nmt-aigency")))
         var current by mutableStateOf(state.copy(
             projects = listOf(project), creationCheckoutId = "office", harnessesEndpointId = "office",
-            projectReplicas = mapOf(project.id to ProjectReplica("home", "home", "mini-home", true)),
+            projectReplicas = mapOf(project.id to "home"),
             endpointConnections = listOf(
                 MachineRow("home", "mini-home", "", daemonId = "home"),
                 MachineRow("office", "mini-office", "", daemonId = "office"),
@@ -109,7 +107,7 @@ class BoardMachineDesignTest {
         compose.onNodeWithText("mini-home", substring = true).assertDoesNotExist()
         capture("project-checkouts-dark.png")
         compose.runOnIdle {
-            current = current.copy(projectReplicas = mapOf(project.id to ProjectReplica("office", "office", "mini-office", true)))
+            current = current.copy(projectReplicas = mapOf(project.id to "office"))
             dark = false
         }
         compose.onNodeWithText("1 board · mini-office · mbp-office (offline)").assertIsDisplayed()
@@ -121,7 +119,7 @@ class BoardMachineDesignTest {
         var dark by mutableStateOf(true)
         val cards = listOf(
             Card(id = "one", board_id = "board", owner_daemon_id = "linux", title = "Make the board easier to scan", summary = "Compact cards, clear destinations, less noise", provider = "codex", model = "gpt-5.6-sol", lane = "running", workspace_mode = "project", workspace_branch = "main", label_ids = listOf("label"), updated_at = "2026-09-21T08:00:00Z", token_usage = TokenUsage(reported_messages = 2, total_tokens = 18400)),
-            Card(id = "two", board_id = "board", owner_daemon_id = "mac", title = "Polish machine selection", provider = "codex", model = "gpt-5.6-sol", lane = "todo", workspace_mode = "worktree", workspace_branch = "feat/machine-picker"),
+            Card(id = "two", board_id = "board", scope = "board", owner_daemon_id = "mac", title = "Polish machine selection", initial_prompt = "Let people pick where a card runs.", provider = "codex", model = "gpt-5.6-sol", lane = "todo", workspace_mode = "worktree", workspace_branch = "feat/machine-picker"),
         )
         compose.setContent {
             DieterTheme(darkTheme = dark) {
@@ -149,10 +147,5 @@ class BoardMachineDesignTest {
         capture("board-light.png")
     }
 
-    private fun capture(name: String) {
-        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
-        val directory = InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir("board-design")!!
-        directory.mkdirs()
-        File(directory, name).outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-    }
+    private fun capture(name: String) = compose.onRoot().saveEvidence(name, File(Evidence.directory, "board-design"))
 }

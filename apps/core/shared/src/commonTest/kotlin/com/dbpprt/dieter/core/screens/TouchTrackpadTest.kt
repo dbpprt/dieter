@@ -15,13 +15,17 @@ class TouchTrackpadTest {
         val moves = mutableListOf<Point>()
         val buttons = mutableListOf<Pair<Boolean, Int>>()
         val scrolls = mutableListOf<Int>()
+        val scrollDeltas = mutableListOf<Point>()
         val canvas = ScreenCanvas().apply { resize(1000.0, 1800.0, 1920.0, 1080.0) }
         var clicks = 0
         val gesture = TouchTrackpad(12.0, 60.0, 300, object : TrackpadActions {
             override fun move(delta: Point) { moves += delta }
             override fun button(down: Boolean, clicks: Int) { buttons += down to clicks }
             override fun clicked() { this@Pad.clicks++ }
-            override fun scroll(delta: Point, phase: Int) { scrolls += phase }
+            override fun scroll(delta: Point, phase: Int) {
+                scrolls += phase
+                scrollDeltas += delta
+            }
             override fun transform(factor: Double, oldCenter: Point, newCenter: Point) = canvas.transform(factor, oldCenter, newCenter)
         })
 
@@ -59,6 +63,10 @@ class TouchTrackpadTest {
         pad.gesture.end(0, p(230.0), at(1100))
         assertEquals(Point(30.0, 0.0), pad.moves.last())
         assertTrue(pad.buttons.isEmpty())
+        pad.gesture.begin(0, p(), canControl = true)
+        pad.gesture.move(mapOf(0 to p(240.0)))
+        pad.gesture.end(0, p(240.0), at(1200))
+        assertEquals(Point(40.0, 0.0), pad.moves.last(), "a release where the finger last moved adds nothing")
     }
 
     @Test
@@ -67,6 +75,7 @@ class TouchTrackpadTest {
         pad.tap(1000)
         pad.tap(1100, 205.0)
         assertEquals(listOf(true to 1, false to 1, true to 2, false to 2), pad.buttons)
+        assertEquals(2, pad.clicks, "each click is reported once its buttons are released")
         pad.tap(1200)
         pad.tap(1300, 500.0)
         assertEquals(false to 1, pad.buttons.last())
@@ -82,6 +91,7 @@ class TouchTrackpadTest {
         for (cancel in listOf(false, true)) {
             val pad = Pad()
             pad.gesture.begin(0, p(), canControl = true)
+            assertTrue(pad.gesture.canLongPress)
             assertTrue(pad.gesture.longPress())
             assertFalse(pad.gesture.longPress())
             pad.gesture.move(mapOf(0 to p(203.0)))
@@ -140,6 +150,7 @@ class TouchTrackpadTest {
         pad.gesture.end(0, fingers.getValue(0), at(1000))
         assertEquals(listOf(true to 1, false to 1), pad.buttons)
         assertEquals(listOf(TouchTrackpad.SCROLL_BEGAN, TouchTrackpad.SCROLL_CHANGED, TouchTrackpad.SCROLL_ENDED), pad.scrolls)
+        assertEquals(listOf(Point(0.0, 0.0), Point(0.0, 50.0), Point(0.0, 0.0)), pad.scrollDeltas, "the scroll follows the fingers' centroid")
         assertEquals(0, pad.clicks)
         pad.gesture.begin(0, fingers.getValue(0), canControl = false)
         assertFalse(pad.gesture.longPress())

@@ -5,7 +5,7 @@ import Testing
 @testable import DieterMac
 
 @Test @MainActor func floatingComposerKeepsLastMessageAboveInputAsDraftGrows() async throws {
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
     var card = Dieter_V1_Card()
     card.id = "composer-layout"
     card.scope = "chat"
@@ -29,6 +29,7 @@ import Testing
     }
     store.state.chats = [card]
     store.chats = [card]
+    store.showChatsFixture()
     store.selectedChatID = card.id
     store.conversation = snapshot
     store.selectedDetail = snapshot.detail
@@ -81,7 +82,7 @@ import Testing
 }
 
 @Test @MainActor func composerTracksTheResizableConversationColumn() async throws {
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
     var card = Dieter_V1_Card()
     card.id = "composer-resize"
     card.scope = "chat"
@@ -168,7 +169,7 @@ import Testing
 }
 
 @Test @MainActor func allChatsKeepsComposerInsideWindowBelowTheTitlebar() async throws {
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
     var project = Dieter_V1_Project()
     project.id = "layout-project"
     project.name = "Layout fixture"

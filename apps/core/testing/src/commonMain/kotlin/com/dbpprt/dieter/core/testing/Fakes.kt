@@ -1,13 +1,24 @@
 package com.dbpprt.dieter.core.testing
 
-import com.dbpprt.dieter.core.platform.AuthHttp
+import com.dbpprt.dieter.core.platform.DaemonTokenSource
 import com.dbpprt.dieter.core.platform.DeviceSettings
-import com.dbpprt.dieter.core.platform.HttpResponse
+import com.dbpprt.dieter.core.platform.DirectTarget
+import com.dbpprt.dieter.core.platform.GatewayAccess
+import com.dbpprt.dieter.core.platform.RpcChannel
+import com.dbpprt.dieter.core.platform.RpcTransport
 import com.dbpprt.dieter.core.platform.SecureStore
+import com.dbpprt.dieter.core.routing.RouteSelector
+import com.dbpprt.dieter.core.routing.RoutingPolicy
+import com.dbpprt.dieter.core.routing.WebRtcCooldown
+import com.dbpprt.dieter.core.runtime.SilentLogger
+import com.dbpprt.dieter.core.session.MachineSessions
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeout
@@ -27,25 +38,26 @@ class MemoryDeviceSettings : DeviceSettings {
     }
 }
 
-/** Answers the OAuth exchange from a script and records each request. */
-class ScriptedAuthHttp(private val respond: (url: String, body: String) -> HttpResponse) : AuthHttp {
-    val requests = mutableListOf<Pair<String, String>>()
-    override suspend fun postJson(url: String, body: String): HttpResponse {
-        requests += url to body
-        return respond(url, body)
-    }
+/** A transport whose every route fails: a client that never connects. */
+object OfflineTransport : RpcTransport {
+    override fun gateway(access: GatewayAccess): RpcChannel = error("offline")
+    override fun relay(access: GatewayAccess, daemonId: String): RpcChannel = error("offline")
+    override fun direct(target: DirectTarget, tokens: DaemonTokenSource): RpcChannel = error("offline")
 }
+
+/** Machine sessions that never connect, for surfaces tested without a daemon. */
+fun offlineSessions(): MachineSessions =
+    MachineSessions(RouteSelector(OfflineTransport, null, RoutingPolicy(false), WebRtcCooldown(Clock.System), SilentLogger), CoroutineScope(Dispatchers.Unconfined))
 
 /** A wall clock tests move by hand. */
 class ManualClock(var current: Instant = Instant.parse("2026-09-30T12:00:00Z")) : Clock {
     override fun now(): Instant = current
-    fun advance(by: Duration) { current += by }
 }
 
 /** Waits in real time for [flow] to satisfy [predicate]; end-to-end tests use a live fixture. */
 suspend fun <T> Flow<T>.await(timeout: Duration = 20.seconds, describe: () -> String = { "condition" }, predicate: (T) -> Boolean): T =
     try {
         withTimeout(timeout) { first(predicate) }
-    } catch (error: kotlinx.coroutines.TimeoutCancellationException) {
+    } catch (error: TimeoutCancellationException) {
         throw AssertionError("timed out after $timeout waiting for ${describe()}", error)
     }

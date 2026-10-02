@@ -15,35 +15,43 @@ import Testing
     #expect(DieterIslandPreferences.isEnabled(in: defaults))
 }
 
-@Test @MainActor func islandUsesInboxKindsOrderingAndFullCountsBeforeLimitingRows() {
-    let store = DieterStore(restoreSync: false)
-    store.activityRows = ["RECENT", "FAILED", "REVIEW", "UNREAD", "ANSWER", "RUNNING"].map { kind in
-        .with {
-            $0.card.id = kind
-            $0.card.title = kind
-            $0.card.scope = kind == "ANSWER" ? "chat" : "board"
-            $0.kind = kind
-            $0.detail = "Inbox detail for \(kind)"
+@Test @MainActor func islandShowsTheCoresRowsCountsAndWording() {
+    let store = DieterStore(liveEnvironment: false)
+    store.activity = .with { slice in
+        slice.rows = ["RECENT", "FAILED", "REVIEW", "UNREAD", "ANSWER", "RUNNING"].map { kind in
+            .with {
+                $0.card.id = kind
+                $0.card.provider = "codex"
+                $0.kind = kind
+                $0.kindLabel = "Label \(kind)"
+                $0.title = "Title \(kind)"
+                $0.chat = kind == "ANSWER"
+                $0.detail = "Inbox detail for \(kind)"
+                $0.shownAtMillis = 1_000
+            }
         }
+        slice.islandIds = ["RUNNING", "UNREAD", "ANSWER", "RECENT"]
+        slice.summary = .with {
+            $0.running = 1; $0.attention = 2; $0.recent = 3; $0.subagents = 4
+        }
+        slice.islandAccessibility = "Dieter Island. 1 running, 2 need attention, 3 recent."
     }
     let activity = store.islandActivity
-    #expect(activity.runningCount == 1)
-    #expect(activity.attentionCount == 2)
-    #expect(activity.recentCount == 3)
+    #expect(activity.runningCount == 1 && activity.attentionCount == 2 && activity.recentCount == 3)
+    #expect(activity.subagentCount == 4)
     #expect(activity.items.map(\.cardID) == ["RUNNING", "UNREAD", "ANSWER", "RECENT"])
     #expect(activity.items.map(\.kind) == [.running, .unread, .answer, .recent])
-    #expect(activity.items[2].chat)
-    #expect(activity.items[1].detail == "Inbox detail for UNREAD")
-    // A seen response moves out of attention using the same core update as Inbox.
-    store.activityRows[3].kind = "REVIEW"
-    #expect(store.islandActivity.attentionCount == 1)
-    #expect(store.islandActivity.recentCount == 4)
-    store.activityRows = []
+    #expect(activity.items[2].chat && !activity.items[1].chat)
+    #expect(activity.items[1].title == "Title UNREAD" && activity.items[1].kindLabel == "Label UNREAD")
+    #expect(activity.items[1].detail == "Inbox detail for UNREAD" && activity.items[1].provider == "codex")
+    #expect(activity.items[1].shownAtMillis == 1_000)
+    #expect(activity.accessibilityLabel == "Dieter Island. 1 running, 2 need attention, 3 recent.")
+    store.activity = ClientActivitySlice()
     #expect(store.islandActivity == .empty)
 }
 
-@Test @MainActor func islandCardProjectionIncludesUnopenedProjectsAndOptimisticSelectedCards() {
-    let store = DieterStore(restoreSync: false)
+@Test @MainActor func synchronizedCardsIncludeUnopenedProjectsAndOptimisticSelectedCards() {
+    let store = DieterStore(liveEnvironment: false)
 
     func card(_ id: String, projectID: String, runtime: String) -> Dieter_V1_Card {
         var card = Dieter_V1_Card()
@@ -63,7 +71,7 @@ import Testing
     ]
     store.state.cards = [optimisticSelected]
 
-    let projected = Dictionary(uniqueKeysWithValues: store.synchronizedCards.map { ($0.id, $0) })
+    let projected = Dictionary(uniqueKeysWithValues: store.synchronizedCardValues().map { ($0.id, $0) })
     #expect(Set(projected.keys) == Set(["selected", "unopened"]))
     #expect(projected["selected"]?.runtime == "completed")
 }

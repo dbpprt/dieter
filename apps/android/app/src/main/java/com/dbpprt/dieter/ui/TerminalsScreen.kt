@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -52,7 +51,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -69,7 +67,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.dbpprt.dieter.core.machines.MachineRow
+import com.dbpprt.dieter.core.machines.MachineRows
 import com.dbpprt.dieter.core.terminals.NewTerminal
+import com.dbpprt.dieter.core.terminals.TerminalsView
 import com.dbpprt.dieter.core.terminals.running
 import com.dbpprt.dieter.ui.theme.DieterAbyss
 import com.dbpprt.dieter.ui.theme.DieterShell
@@ -109,8 +110,7 @@ fun TerminalsScreen(
                 bottom = contentPadding.calculateBottomPadding(),
             ),
     ) {
-        TerminalMachinePicker(state.presentedEndpointConnections.filter { it.daemonId != null },
-            state.terminalWorkspace.scope?.daemonId, model::selectTerminalMachine)
+        TerminalMachinePicker(state.presentedEndpointConnections, state.terminalWorkspace.scope?.daemonId, model::selectTerminalMachine)
         TerminalHeader(
             terminalCount = state.terminals.size,
             connected = state.terminalStreamConnected,
@@ -192,7 +192,7 @@ fun TerminalsScreen(
             TerminalStatusBar(
                 terminal = selected,
                 project = state.projects.firstOrNull { it.id == selected.project_id },
-                hostname = state.presentedProjectReplicas[selected.project_id]?.hostname.orEmpty(),
+                hostname = state.presentedProjectReplicas[selected.project_id]?.label.orEmpty(),
                 connected = state.terminalStreamConnected,
             )
         }
@@ -231,9 +231,9 @@ fun TerminalsScreen(
 }
 
 @Composable
-internal fun TerminalMachinePicker(machines: List<com.dbpprt.dieter.core.machines.MachineRow>, selectedId: String?, onSelect: (String) -> Unit) {
+internal fun TerminalMachinePicker(machines: List<MachineRow>, selectedId: String?, onSelect: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-    val ordered = remember(machines) { stableMachineOrder(machines) }
+    val ordered = remember(machines) { MachineRows.listed(machines) }
     val selected = machines.firstOrNull { it.daemonId == selectedId }
     Box(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
         OutlinedButton(onClick = { expanded = true }, modifier = Modifier.testTag("terminal-machine")) {
@@ -252,7 +252,7 @@ internal fun TerminalMachinePicker(machines: List<com.dbpprt.dieter.core.machine
                                 maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }, leadingIcon = { Icon(if (machine.daemonId == selectedId) Icons.Outlined.Check else Icons.Outlined.Computer, null) },
-                        enabled = machine.online && machine.isCompatible && machine.daemonId != null,
+                        enabled = machine.hostsProjects,
                         onClick = { expanded = false; machine.daemonId?.let(onSelect) },
                         modifier = Modifier.testTag("terminal-machine-${machine.id}"))
                 }
@@ -287,11 +287,7 @@ internal fun TerminalHeader(
                 Box(Modifier.size(6.dp).background(if (connected) DieterEyes else DieterMuted, CircleShape))
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    when {
-                        loading -> "Syncing persistent sessions…"
-                        terminalCount == 0 -> "Daemon-owned · survive app disconnects"
-                        else -> "$terminalCount persistent ${if (terminalCount == 1) "session" else "sessions"} · ${if (connected) "live" else "reconnecting"}"
-                    },
+                    TerminalsView.status(loading, terminalCount, connected),
                     color = DieterMuted,
                     fontSize = 11.sp,
                 )
@@ -538,7 +534,7 @@ private fun NewTerminalSheet(state: DieterUiState, model: DieterViewModel) {
 @Composable
 internal fun TerminalProjectPicker(
     projects: List<Project>,
-    projectReplicas: Map<String, ProjectReplica>,
+    projectReplicas: Map<String, MachineRow>,
     selectedProjectId: String,
     onProjectChange: (String) -> Unit,
 ) {
@@ -563,7 +559,7 @@ internal fun TerminalProjectPicker(
             }
         }
         DropdownMenu(expanded = menuVisible, onDismissRequest = { menuVisible = false }) {
-            projects.sortedWith(compareBy<Project> { it.name.lowercase(java.util.Locale.ROOT) }.thenBy { it.id }).forEach { candidate ->
+            NewTerminal.projects(projects).forEach { candidate ->
                 DropdownMenuItem(
                     text = {
                         Column {
@@ -589,8 +585,8 @@ internal fun TerminalProjectPicker(
     }
 }
 
-internal fun terminalProjectDetails(project: Project, host: ProjectReplica?): String =
-    NewTerminal.projectDetails(project, host?.hostname, host?.online)
+internal fun terminalProjectDetails(project: Project, host: MachineRow?): String =
+    NewTerminal.projectDetails(project, host?.label, host?.online)
 
 @Composable
 private fun RenameTerminalDialog(terminal: Terminal, onDismiss: () -> Unit, onRename: (String) -> Unit) {

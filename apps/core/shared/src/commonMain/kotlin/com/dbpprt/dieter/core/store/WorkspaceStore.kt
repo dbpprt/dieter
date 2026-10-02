@@ -2,13 +2,15 @@ package com.dbpprt.dieter.core.store
 
 import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.Checkout
 import com.dbpprt.dieter.api.v1.ConversationSnapshot
 import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.api.v1.Settings
+import com.dbpprt.dieter.core.board.Cards
+import com.dbpprt.dieter.core.runtime.Timestamps
 import com.dbpprt.dieter.core.sync.DirectoryProjection
 import com.dbpprt.dieter.core.sync.DirectoryReducer
 import com.dbpprt.dieter.core.sync.MachineSnapshot
-import com.dbpprt.dieter.core.runtime.Timestamps
 import com.dbpprt.dieter.core.sync.TranscriptFreshness
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
@@ -74,12 +76,24 @@ data class PendingItem(val card: Card, val daemonId: String, val aliases: Set<St
  */
 class WorkspaceStore(private val clock: Clock = Clock.System) {
     private var directory = DirectoryProjection.EMPTY
+
+    /** [directory] with the administrative results no machine view shows yet. */
+    private var administered = DirectoryProjection.EMPTY
     private var settings: Settings? = null
     private var conversations: Map<String, ConversationSnapshot> = emptyMap()
     private val overlays = LinkedHashMap<String, CardOverlay>()
     private val confirmedAt = HashMap<String, Instant>()
     private val pendingItems = LinkedHashMap<String, PendingItem>()
     private val pendingProjects = LinkedHashMap<String, Project>()
+
+    /** Project ID → the machine that holds a project no machine view lists yet. */
+    private val pendingReplicas = LinkedHashMap<String, String>()
+
+    /** Checkout ID → an attached, detached, or consolidated checkout. */
+    private val pendingCheckouts = LinkedHashMap<String, Checkout>()
+
+    /** Consolidated project ID → the project it was folded into. */
+    private val pendingConsolidations = LinkedHashMap<String, String>()
     private val pendingBoards = LinkedHashMap<String, Board>()
     private var loaded = false
     private val mutableState = MutableStateFlow(WorkspaceView())
@@ -90,7 +104,12 @@ class WorkspaceStore(private val clock: Clock = Clock.System) {
     /** Advances whenever server-sourced state (directory or conversation tail) changes. */
     val revision: StateFlow<Long> = mutableRevision.asStateFlow()
 
-    val directoryProjection: DirectoryProjection get() = directory
+    /**
+     * The merged directory, with the projects, replicas, checkouts, and boards
+     * administrative calls returned that no machine view shows yet, so a call
+     * that follows one reaches the right machine. Cards are the directory's.
+     */
+    val directoryProjection: DirectoryProjection get() = administered
 
     fun applyMachines(snapshots: List<MachineSnapshot>) {
         val next = DirectoryReducer.merge(directory, snapshots)
@@ -156,9 +175,12 @@ class WorkspaceStore(private val clock: Clock = Clock.System) {
     /**
      * Shows a project or board an administrative call returned until a machine
      * view is at least as new; another peer's later edit is never pinned.
+     * [replicaDaemonId] is the machine that holds a project no view lists yet
+     * (a project it just created); calls for the project are routed there.
      */
-    fun overlayProject(project: Project) {
+    fun overlayProject(project: Project, replicaDaemonId: String? = null) {
         pendingProjects[project.id] = project
+        if (!replicaDaemonId.isNullOrEmpty()) pendingReplicas[project.id] = replicaDaemonId
         reconcile()
         publish()
     }
@@ -166,8 +188,34 @@ class WorkspaceStore(private val clock: Clock = Clock.System) {
     /** A board as the client currently knows it: a pending response, the directory, or the retired list. */
     fun findBoard(id: String): Board? = pendingBoards[id] ?: directory.board(id) ?: directory.retiredBoards[id]
 
+    /**
+     * Shows a board an administrative call returned until a machine view is at
+     * least as new and includes its retirement intent. Its lifecycle joins the
+     * known one, and it lists as retired or live accordingly.
+     */
     fun overlayBoard(board: Board) {
         pendingBoards[board.id] = board
+        reconcile()
+        publish()
+    }
+
+    /** Shows an attached or detached checkout on its project until a machine view lists it so. */
+    fun overlayCheckout(checkout: Checkout) {
+        pendingCheckouts[checkout.id] = checkout
+        reconcile()
+        publish()
+    }
+
+    /**
+     * [sourceId] was folded into [destination]: the source leaves the
+     * workspace, its boards and items show on the destination, and the
+     * destination shows the checkouts the call returned, until no machine view
+     * lists the source.
+     */
+    fun overlayConsolidation(sourceId: String, destination: Project) {
+        pendingConsolidations[sourceId] = destination.id
+        pendingProjects[destination.id] = destination
+        for (checkout in destination.checkouts) pendingCheckouts[checkout.id] = checkout
         reconcile()
         publish()
     }
@@ -187,6 +235,9 @@ class WorkspaceStore(private val clock: Clock = Clock.System) {
         confirmedAt.clear()
         pendingItems.clear()
         pendingProjects.clear()
+        pendingReplicas.clear()
+        pendingCheckouts.clear()
+        pendingConsolidations.clear()
         pendingBoards.clear()
         loaded = false
         mutableRevision.value++
@@ -198,9 +249,15 @@ class WorkspaceStore(private val clock: Clock = Clock.System) {
         pendingProjects.entries.removeAll { (id, pending) ->
             directory.projects[id]?.let { Timestamps.compare(it.updated_at, pending.updated_at) >= 0 } == true
         }
+        pendingReplicas.keys.removeAll { it in directory.projectReplicas }
+        pendingCheckouts.values.removeAll { pending ->
+            directory.projects[pending.project_id]?.checkouts?.any { it.id == pending.id && (it.detached || !pending.detached) } == true
+        }
+        pendingConsolidations.keys.removeAll { it !in directory.projects }
         pendingBoards.entries.removeAll { (id, pending) ->
-            directory.board(id)?.let { Timestamps.compare(it.updated_at, pending.updated_at) >= 0 } == true ||
-                directory.retiredBoards[id]?.let { Timestamps.compare(it.updated_at, pending.updated_at) >= 0 } == true
+            // Retiring or restoring keeps the board's timestamp; its lifecycle shows the view has the intent.
+            val known = directory.board(id) ?: directory.retiredBoards[id]
+            known != null && Timestamps.compare(known.updated_at, pending.updated_at) >= 0 && DirectoryReducer.coversLifecycle(known, pending)
         }
         val now = clock.now()
         val iterator = overlays.entries.iterator()
@@ -230,32 +287,88 @@ class WorkspaceStore(private val clock: Clock = Clock.System) {
                 pendingIds += id
             }
         }
+        administered = withAdministration(byId.values)
         // Archived items leave every live view; the Archive view reads them on demand.
-        val visible = byId.values.filterNot { it.archived }
-        val projectsById = LinkedHashMap(directory.projects)
-        for ((id, project) in pendingProjects) {
-            if (project.archived) projectsById.remove(id) else projectsById[id] = project.copy(checkouts = project.checkouts.ifEmpty { projectsById[id]?.checkouts.orEmpty() })
+        val live = byId.values.filterNot { it.archived }
+        // A consolidated project's boards and items show on its destination.
+        val moved = pendingConsolidations.isNotEmpty()
+        val homed = if (!moved) live else live.map { card -> destinationOf(card.project_id).let { if (it == card.project_id) card else card.copy(project_id = it) } }
+        val (chats, cards) = homed.partition(Cards::isChat)
+        val boards = if (!moved) administered.boards else {
+            administered.boards.values.flatten().map { it.copy(project_id = destinationOf(it.project_id)) }
+                .groupBy { it.project_id }.mapValues { (_, list) -> list.sortedBy { it.id } }
         }
-        val projects = projectsById.values.sortedWith(compareBy<Project> { it.name.lowercase() }.thenBy { it.id })
-        val boards = if (pendingBoards.isEmpty()) directory.boards else {
-            val all = directory.boards.values.flatten().associateBy { it.id }.toMutableMap()
-            for ((id, board) in pendingBoards) if (board.retired) all.remove(id) else all[id] = board
-            all.values.groupBy { it.project_id }.mapValues { (_, list) -> list.sortedBy { it.id } }
-        }
+        val retired = administered.retiredBoards.values.map { if (moved) it.copy(project_id = destinationOf(it.project_id)) else it }
+        // A project counts the live boards shown for it.
+        val projects = administered.projects.values.filterNot { it.id in pendingConsolidations }.map { project ->
+            val count = boards[project.id]?.size ?: 0
+            if (project.board_count == count) project else project.copy(board_count = count)
+        }.sortedWith(compareBy<Project> { it.name.lowercase() }.thenBy { it.id })
+        val listed = projects.mapTo(HashSet()) { it.id }
         mutableState.value = WorkspaceView(
             projects = projects,
             boards = boards,
-            retiredBoards = directory.retiredBoards.values.sortedBy { it.id },
-            cards = visible.filter { it.scope != "chat" || it.board_id.isNotEmpty() }
-                .sortedBy { it.id }.groupBy { it.project_id },
-            chats = visible.filter { it.scope == "chat" && it.board_id.isEmpty() }
-                .sortedWith(compareByDescending<Card> { DirectoryReducer.activityTime(it) }.thenBy { it.id }),
-            projectReplicas = directory.projectReplicas,
+            retiredBoards = retired.sortedBy { it.id },
+            cards = cards.sortedBy { it.id }.groupBy { it.project_id },
+            chats = chats.sortedWith(compareByDescending<Card> { DirectoryReducer.activityTime(it) }.thenBy { it.id }),
+            projectReplicas = administered.projectReplicas.filterKeys { it in listed },
             settings = settings,
             conversations = conversations,
             pendingCardIds = pendingIds,
             loaded = loaded,
         )
+    }
+
+    /**
+     * [directory] with the pending administrative results applied: projects
+     * and their replicas, checkouts, and boards. A pending board's lifecycle
+     * joins the known one (the newer description wins), a board a card in
+     * [items] still references cannot retire, and each board lists as live or
+     * retired accordingly.
+     */
+    private fun withAdministration(items: Collection<Card>): DirectoryProjection {
+        if (pendingProjects.isEmpty() && pendingReplicas.isEmpty() && pendingCheckouts.isEmpty() && pendingBoards.isEmpty()) return directory
+        val projects = LinkedHashMap(directory.projects)
+        for ((id, project) in pendingProjects) {
+            if (project.archived) projects.remove(id) else projects[id] = DirectoryReducer.mergeProject(projects[id], project)
+        }
+        for (checkout in pendingCheckouts.values) {
+            val project = projects[checkout.project_id] ?: continue
+            projects[project.id] = DirectoryReducer.mergeProject(project, project.copy(checkouts = listOf(checkout)))
+        }
+        val all = LinkedHashMap(directory.retiredBoards)
+        for (list in directory.boards.values) for (board in list) all[board.id] = board
+        if (pendingBoards.isNotEmpty()) {
+            val referenced = DirectoryReducer.referencedBoards(items)
+            for ((id, pending) in pendingBoards) {
+                val known = all[id]
+                val joined = if (known != null && Timestamps.compare(known.updated_at, pending.updated_at) > 0) {
+                    DirectoryReducer.mergeBoardLifecycle(known, pending)
+                } else {
+                    DirectoryReducer.mergeBoardLifecycle(pending, known)
+                }
+                all[id] = DirectoryReducer.blockingReferenced(joined, referenced)
+            }
+        }
+        val boards = HashMap<String, MutableList<Board>>()
+        val retired = HashMap<String, Board>()
+        for (board in all.values) {
+            if (!projects.containsKey(board.project_id)) continue
+            if (board.retired) retired[board.id] = board else boards.getOrPut(board.project_id) { mutableListOf() }.add(board)
+        }
+        return directory.copy(
+            projects = projects,
+            projectReplicas = if (pendingReplicas.isEmpty()) directory.projectReplicas else pendingReplicas + directory.projectReplicas,
+            boards = boards.mapValues { (_, list) -> list.sortedBy { it.id } },
+            retiredBoards = retired,
+        )
+    }
+
+    /** The project [projectId] was consolidated into, following chains; itself when none. */
+    private fun destinationOf(projectId: String): String {
+        var id = projectId
+        repeat(pendingConsolidations.size) { id = pendingConsolidations[id] ?: return id }
+        return id
     }
 
     private companion object {

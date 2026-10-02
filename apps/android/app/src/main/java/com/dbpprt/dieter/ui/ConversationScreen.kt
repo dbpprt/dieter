@@ -2,16 +2,10 @@
 
 package com.dbpprt.dieter.ui
 
-import androidx.compose.runtime.CompositionLocalProvider
-import com.dbpprt.dieter.core.board.Runtimes
-import com.dbpprt.dieter.core.board.CardPolicy
-import com.dbpprt.dieter.core.board.CardOperation
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,22 +16,20 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Cancel
@@ -49,8 +41,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -59,7 +49,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,8 +63,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -84,43 +76,41 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
+import com.dbpprt.dieter.api.v1.MessagePart
+import com.dbpprt.dieter.api.v1.QueuedMessage
 import com.dbpprt.dieter.core.composition.Attachments
 import com.dbpprt.dieter.core.conversation.TurnFailure
 import com.dbpprt.dieter.core.presentation.ConversationPresentation
 import com.dbpprt.dieter.core.presentation.DeliveryState
 import com.dbpprt.dieter.core.presentation.TimelineItem
 import com.dbpprt.dieter.core.selection.AgentControls
+import com.dbpprt.dieter.ui.theme.DieterAbyss
 import com.dbpprt.dieter.ui.theme.DieterAmber
-import com.dbpprt.dieter.ui.theme.DieterShell
-import com.dbpprt.dieter.ui.theme.DieterShellDeep
+import com.dbpprt.dieter.ui.theme.DieterAmberTint
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
+import com.dbpprt.dieter.ui.theme.DieterShell
+import com.dbpprt.dieter.ui.theme.DieterShellDeep
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
-import com.dbpprt.dieter.api.v1.QueuedMessage
-import com.dbpprt.dieter.api.v1.Schedule
-import com.dbpprt.dieter.api.v1.MessagePart
-import com.dbpprt.dieter.api.v1.Subagent
-import com.dbpprt.dieter.api.v1.TaskPlan
-import com.dbpprt.dieter.api.v1.UiMessage
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.runtime.derivedStateOf
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.compose.currentStateAsState
-import com.dbpprt.dieter.ui.theme.DieterAmberTint
-import com.dbpprt.dieter.ui.theme.DieterAbyss
 
+/** The open conversation's transcript and composer; [presentation] and the composer's [agent] pickers come from the card detail. */
 @Composable
-internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier) {
-    val presentation = remember(
-        state.conversationView, state.selectedCardId, state.selectedCard, state.pendingMessageIds, state.acceptedOutboxIds,
-        state.failedOutboxIds, state.cardOperations, state.showReasoningTraces, state.spaceBoards, state.board,
-    ) { model.presentConversation(state) } ?: return
+internal fun ConversationBody(
+    state: DieterUiState,
+    model: DieterViewModel,
+    presentation: ConversationPresentation,
+    agent: AgentControls?,
+    modifier: Modifier = Modifier,
+) {
     val items = presentation.timeline.items
     val listState = remember(state.selectedCardId) { LazyListState() }
     var initialScrollComplete by remember(state.selectedCardId) { mutableStateOf(false) }
@@ -149,14 +139,8 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
         }
     }
     val host = card?.let(state::conversationHost)
-    val storageQueue = host?.endpointId?.let(state.machineOutboxSummaries::get)?.takeIf { it.storageBlocked && !it.failed }
+    val storageQueue = host?.id?.let(state.machineOutboxSummaries::get)?.takeIf { it.storageBanner }
     val draft = state.composerDraft
-    val attachments = draft.attachments
-    val controls = AgentControls.forConversation(draft.selection, card, state.harnesses, enabled = !state.working)
-    LaunchedEffect(card?.id, state.harnesses, draft.selection) {
-        // A saved choice the catalog no longer accepts is corrected in the draft itself.
-        if (draft.selection != null && controls.selection != draft.selection) model.updateComposerSelection(controls.selection)
-    }
     val creationFailure = card?.id
         ?.takeIf(state.failedOutboxIds::contains)
         ?.let(model::conversationCreationFailure)
@@ -169,12 +153,9 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
             val results = withContext(Dispatchers.IO) {
                 uris.map { uri -> runCatching { readAttachmentPart(context, uri, imagesOnly) } }
             }
-            val incoming = results.mapNotNull(Result<MessagePart>::getOrNull)
-            val limitError = Attachments.limitError(attachments + incoming)
-            if (limitError == null) model.addComposerAttachments(incoming)
-            composerError = limitError ?: results.firstNotNullOfOrNull { result ->
-                result.exceptionOrNull()?.message
-            }
+            // The core takes every readable file or none of them, and says which limit they break.
+            composerError = model.addComposerAttachments(results.mapNotNull(Result<MessagePart>::getOrNull))
+                ?: results.firstNotNullOfOrNull { result -> result.exceptionOrNull()?.message }
         }
     }
     val imagePicker = rememberLauncherForActivityResult(
@@ -203,8 +184,14 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
             }
         }
     }
-    val historyItems = if (state.historyHasMore || state.historyLoading) 1 else 0
-    val unsentTaskItems = if (presentation.hasUnsentDraft) 1 else 0
+    val rows = ConversationRows(
+        history = state.historyHasMore || state.historyLoading,
+        unsentTask = presentation.hasUnsentDraft,
+        timelineItems = items.size,
+        working = presentation.working,
+        turnFailure = turnFailure != null,
+        queued = presentation.queue.size,
+    )
     fun requestEarlierHistory(viewport: ConversationHistoryViewport) {
         if (!shouldLoadEarlierConversationHistory(
                 hasMore = state.historyHasMore,
@@ -272,7 +259,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
                 followingLatest = true
             } else if (historyAnchorKey != null) {
                 val itemIndex = items.indexOfFirst { it.id == historyAnchorKey }
-                if (itemIndex >= 0) listState.scrollToItem(historyItems + unsentTaskItems + itemIndex)
+                if (itemIndex >= 0) listState.scrollToItem(rows.timelineStart + itemIndex)
                 followingLatest = false
             }
         } else {
@@ -292,6 +279,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
         presentation.unsentTask,
         presentation.draftAttachments.hashCode(),
         presentation.working,
+        turnFailure != null,
         presentation.queue.size,
         presentation.queue.lastOrNull()?.id,
     ) {
@@ -299,8 +287,6 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
         // If new tool/model content grew below the current viewport, preserve
         // the reading position and expose the explicit jump affordance.
         withFrameNanos { }
-        val endIndex = historyItems + unsentTaskItems + items.size +
-            (if (presentation.working) 1 else 0) + presentation.queue.size
         val explicitOpenScroll = consumedScrollRequest != state.conversationScrollRequest
         if (!presentation.empty &&
             shouldFollowConversationUpdate(
@@ -309,7 +295,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
                 followingLatest = followingLatest,
             )
         ) {
-            listState.scrollToItem(endIndex)
+            listState.scrollToItem(rows.end)
             consumedScrollRequest = state.conversationScrollRequest
             initialScrollComplete = true
             followingLatest = true
@@ -318,9 +304,9 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
     Column(modifier) {
         if (host != null && storageQueue != null) {
             StorageDeliveryBanner(
-                machineName = host.hostname,
+                machineName = host.label,
                 detail = storageQueue.deliveryLabel,
-                onRetry = { model.retryOutboxForEndpoint(host.endpointId) },
+                onRetry = { model.retryOutboxForEndpoint(host.id) },
             )
         }
         creationFailure?.let { failure ->
@@ -346,7 +332,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    if (state.historyHasMore || state.historyLoading) {
+                    if (rows.history) {
                         item(key = "history") {
                             OutlinedButton(
                                 onClick = model::loadOlderMessages,
@@ -363,7 +349,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
                             }
                         }
                     }
-                    if (presentation.hasUnsentDraft) {
+                    if (rows.unsentTask) {
                         item(key = "unsent-agent-task") {
                             UnsentTaskMessage(presentation.unsentTask.orEmpty(), presentation.draftAttachments)
                         }
@@ -373,17 +359,12 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
                         // of teleporting the stale transcript to the new tail.
                         Box(Modifier.animateItem()) {
                             when (item) {
-                                is TimelineItem.Message -> MessageBlock(
-                                    item,
-                                    presentation,
-                                    model,
-                                    showAgentAvatar = card?.scope == "chat",
-                                )
-                                is TimelineItem.Activity -> ActivityBlock(item, model, showAgentAvatar = card?.scope == "chat")
+                                is TimelineItem.Message -> MessageBlock(item, presentation, model, showAgentAvatar = presentation.chat)
+                                is TimelineItem.Activity -> ActivityBlock(item, model, showAgentAvatar = presentation.chat)
                             }
                         }
                     }
-                    if (presentation.working) {
+                    if (rows.working) {
                         item(key = "agent-working") {
                             AgentWorkingIndicator(presentation.liveActivity.english(), presentation.turnStart?.toEpochMilliseconds())
                         }
@@ -458,7 +439,7 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
                 ) { Text("Mark done") }
             }
         }
-        if (card != null && presentation.canStart) {
+        if (card != null && (presentation.canStart || presentation.starting)) {
             StartCardBanner(
                 starting = presentation.starting,
                 error = state.cardOperationErrors[card.id],
@@ -469,13 +450,13 @@ internal fun ConversationBody(state: DieterUiState, model: DieterViewModel, modi
             value = draft.text,
             placeholder = "Message the local agent…",
             enabled = !state.working,
-            controls = controls.takeIf { state.harnesses.isNotEmpty() && card != null },
+            controls = agent,
             contextUsage = presentation.contextUsage,
             respondingModel = presentation.respondingModel,
-            attachments = attachments,
+            attachments = draft.attachments,
             error = composerError,
             onValueChange = model::updateComposerText,
-            onSelectionChange = model::updateComposerSelection,
+            onChoose = model::chooseAgent,
             onAttach = { attachmentPickerVisible = true },
             onRemoveAttachment = model::removeComposerAttachment,
             onSend = model::sendDraft,

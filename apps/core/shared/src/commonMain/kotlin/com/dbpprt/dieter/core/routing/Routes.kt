@@ -17,16 +17,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /** How a data plane reaches its daemon, best first. */
-enum class RouteKind(val rank: Int, val label: String) {
-    LOCAL(5, "Local"),
-    DIRECT(4, "Direct TLS"),
-    WEBRTC_DIRECT(3, "WebRTC · Direct"),
-    WEBRTC_TURN(2, "WebRTC · TURN"),
-    WEBRTC(2, "WebRTC"),
-    RELAY(1, "Relay"),
-    ;
-
-    fun prefers(other: RouteKind) = rank > other.rank
+enum class RouteKind(val label: String) {
+    LOCAL("Local"),
+    DIRECT("Direct TLS"),
+    WEBRTC_DIRECT("WebRTC · Direct"),
+    WEBRTC_TURN("WebRTC · TURN"),
+    WEBRTC("WebRTC"),
+    RELAY("Relay"),
 }
 
 /**
@@ -60,8 +57,6 @@ class RenewingDaemonToken(
     private val clock: Clock = Clock.System,
 ) : DaemonTokenSource {
     private val mutex = Mutex()
-
-    val expiresAt: Instant? get() = Timestamps.parse(access.expires_at)
 
     override suspend fun token(): String = mutex.withLock {
         if (!usable(access, clock.now() + 30.seconds)) {

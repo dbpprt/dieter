@@ -1,7 +1,6 @@
 package com.dbpprt.dieter.ui
 
 import android.Manifest
-import android.graphics.Bitmap
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -14,7 +13,6 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import androidx.lifecycle.ViewModelProvider
 import com.dbpprt.dieter.DieterApplication
@@ -23,11 +21,10 @@ import com.dbpprt.dieter.api.v1.ListTerminalsRequest
 import com.dbpprt.dieter.api.v1.Terminal
 import com.dbpprt.dieter.api.v1.TerminalRef
 import com.dbpprt.dieter.e2e.IsolatedCore
-import java.io.File
+import com.dbpprt.dieter.e2e.Evidence
 import java.security.MessageDigest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -47,8 +44,6 @@ class TerminalInputEndToEndTest {
 
     @Test
     fun visibleTerminalDeliversChunkedInputAndEditingBytes() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val arguments = InstrumentationRegistry.getArguments()
         val container = (compose.activity.application as DieterApplication).container
         val connected = IsolatedCore.connect(container)
         val project = connected.projects.first { candidate -> connected.boards[candidate.id].orEmpty().isNotEmpty() }
@@ -115,12 +110,7 @@ class TerminalInputEndToEndTest {
             val terminals = terminals().filter { it.name == name }
             assertEquals(1, terminals.size)
             assertEquals("running", terminals.single().status)
-            val directory = arguments.getString("additionalTestOutputDir")?.let(::File)
-                ?: requireNotNull(instrumentation.targetContext.getExternalFilesDir(null))
-            directory.mkdirs()
-            File(directory, "terminal-input-e2e.png").outputStream().use {
-                instrumentation.uiAutomation.takeScreenshot().compress(Bitmap.CompressFormat.PNG, 100, it)
-            }
+            Evidence.display("terminal-input-e2e.png")
         } finally {
             terminals().filter { it.name == name }.forEach { terminal ->
                 runBlocking { container.core.onMachine(daemonId) { it.CloseTerminal().execute(TerminalRef(terminal_id = terminal.id)) } }

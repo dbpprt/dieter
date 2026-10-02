@@ -34,32 +34,6 @@ import Testing
     #expect(session.currentText() == "first\nsecond\nunsaved")
 }
 
-private actor DelayedReadProbe {
-    var calls: [String] = []
-    var cancellations: [String] = []
-    func read(_ key: String, delay: Int) async throws -> String {
-        calls.append(key)
-        do { try await Task.sleep(for: .milliseconds(delay)) } catch { cancellations.append(key); throw error }
-        return key
-    }
-}
-
-@Test @MainActor func ownedReadsShareTransportAndCancelSupersededTargets() async throws {
-    let reader = OwnedRead<String>()
-    let probe = DelayedReadProbe()
-    let first = Task { try await reader.value(key: "A") { try await probe.read("A", delay: 1_000) } }
-    while await probe.calls.isEmpty { await Task.yield() }
-    let duplicate = Task { try await reader.value(key: "A") { try await probe.read("duplicate", delay: 1_000) } }
-    await Task.yield()
-    let second = Task { try await reader.value(key: "B") { try await probe.read("B", delay: 50) } }
-    #expect(try await second.value == "B")
-    do { _ = try await first.value; Issue.record("Superseded read published") } catch {}
-    do { _ = try await duplicate.value; Issue.record("Superseded duplicate published") } catch {}
-    #expect(await probe.calls == ["A", "B"])
-    #expect(await probe.cancellations == ["A"])
-    #expect(try await reader.value(key: "A") { try await probe.read("A", delay: 50) } == "A")
-}
-
 private actor DelayedScheduleRPC: DieterScheduleRPC {
     var calls = 0
     var fail = false
@@ -87,25 +61,22 @@ private actor DelayedScheduleRPC: DieterScheduleRPC {
 @Test(arguments: [50, 250, 1_000]) @MainActor
 func scheduleLoadsAcknowledgeImmediatelyRecoverAndTheLatestProjectWins(_ delay: Int) async throws {
     let rpc = DelayedScheduleRPC(delay: delay)
-    let store = DieterStore(core: SchedulesCoreDouble.core(reader: rpc), restoreSync: false)
+    let store = DieterStore(core: SchedulesCoreDouble.core(reader: rpc), liveEnvironment: false)
     store.selectedProjectID = "A"
     await rpc.setFailure(true)
     let start = Task { await store.loadSchedules() }
     while await rpc.calls == 0 { await Task.yield() }
-    #expect(store.schedulesLoading)
+    #expect(store.schedulesModel.schedulesLoading)
     let duplicate = Task { await store.loadSchedules() }
     await start.value
     await duplicate.value
-    #expect(!store.schedulesLoading)
+    #expect(!store.schedulesModel.schedulesLoading)
     #expect(store.schedulesError?.contains("Fixture unavailable") == true)
-    #expect(
-        SchedulesPresentationState.resolve(
-            isLoaded: false, isLoading: false, hasSchedules: false, error: store.schedulesError)
-            == .failed(store.schedulesError!))
+    #expect(store.schedulesModel.state == .failed)
     await rpc.setFailure(false)
     await store.loadSchedules()
     #expect(store.schedulesError == nil)
-    #expect(store.schedulesAreLoaded)
+    #expect(store.schedulesModel.schedulesAreLoaded)
     let calls = await rpc.calls
     let old = Task { await store.loadSchedules() }
     while await rpc.calls == calls { await Task.yield() }
@@ -114,7 +85,7 @@ func scheduleLoadsAcknowledgeImmediatelyRecoverAndTheLatestProjectWins(_ delay: 
     await old.value
     await newest.value
     #expect(store.schedules.map(\.id) == ["schedule-B"])
-    #expect(!store.schedulesLoading)
+    #expect(!store.schedulesModel.schedulesLoading)
 }
 
 @Test func markdownPreparationRunsOffMainAndBoundsEagerContent() async throws {

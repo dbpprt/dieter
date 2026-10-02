@@ -1,7 +1,7 @@
 package com.dbpprt.dieter.core.composition
 
-import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.Board
+import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.Checkout
 import com.dbpprt.dieter.api.v1.CreateConversationRequest
 import com.dbpprt.dieter.api.v1.Harness
@@ -10,10 +10,15 @@ import com.dbpprt.dieter.api.v1.Lane
 import com.dbpprt.dieter.api.v1.MessagePart
 import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.core.board.Lanes
+import com.dbpprt.dieter.core.presentation.Counts
 import com.dbpprt.dieter.core.runtime.CoreLogger
+import com.dbpprt.dieter.core.selection.AgentControls
 import com.dbpprt.dieter.core.selection.Selections
+import com.dbpprt.dieter.core.state.CaptureDraft
 import com.dbpprt.dieter.core.state.CreationPreferences
 import com.dbpprt.dieter.core.storage.CoreStorage
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,6 +37,9 @@ enum class WorkspaceMode(val wire: String, val title: String, val shortTitle: St
         /** The order pickers offer them: an isolated worktree first. */
         val choices: List<WorkspaceMode> = listOf(WORKTREE, PROJECT)
     }
+
+    /** How a picker offers this mode for a new conversation: "New worktree" or "Project directory". */
+    val choiceTitle: String get() = if (this == WORKTREE) "New worktree" else title
 }
 
 /** What a new task or chat needs before it can be queued. */
@@ -47,7 +55,14 @@ data class CreationInput(
     val selection: HarnessSelection = HarnessSelection(),
     val labelIds: List<String> = emptyList(),
     val workspaceMode: WorkspaceMode = WorkspaceMode.WORKTREE,
+    /** Worktree only: the new branch; blank lets the daemon name it. */
     val workspaceBranch: String = "",
+    /** Worktree only: blank takes the project's base branch. */
+    val workspaceBaseBranch: String = "",
+    /** Worktree only: blank takes the board's base remote, else the project's. */
+    val workspaceBaseRemote: String = "",
+    /** Worktree only: blank takes the board's publish mode, else "manual". */
+    val remotePublishMode: String = "",
 )
 
 /** The agent catalog a new conversation is checked against, relative to its destination machine. */
@@ -62,12 +77,68 @@ enum class CatalogState {
     LIVE,
 }
 
+/** Where new conversations can run, as the core knows it now. */
+data class CreationDestinations(
+    /** Machines online now. */
+    val online: Set<String> = emptySet(),
+    /** The machine the feed is attached to. */
+    val attachedDaemonId: String? = null,
+    /** Project ID → the machine whose view last listed it. */
+    val replicas: Map<String, String> = emptyMap(),
+    /** Daemon ID → its loaded agent catalog. */
+    val catalogs: Map<String, List<Harness>> = emptyMap(),
+)
+
+/** A new task or chat checked against its destination ([Creation.plan]). */
+data class CreationPlan(
+    val input: CreationInput,
+    /** The checkout it runs on; null while none is chosen. */
+    val checkout: Checkout?,
+    /** The machine that runs it: the checkout's. */
+    val daemonId: String?,
+    val machineOnline: Boolean,
+    val catalogState: CatalogState,
+    /** What the agent pickers offer: the catalog of [Creation.catalogMachine]; empty while it loads. */
+    val harnesses: List<Harness>,
+) {
+    /** The catalog [input] is validated against; null while it loads, or for a chat whose machine is offline. */
+    val catalog: List<Harness>? get() = Creation.catalog(input.chat, catalogState, harnesses)
+
+    /** Why it cannot be queued yet, or null. */
+    val problem: String? get() = Creation.problem(input, catalog)
+
+    /** The agent pickers for [input]'s selection. */
+    val controls: AgentControls get() = AgentControls(input.selection, harnesses)
+
+    val destinationStatus: String get() = Creation.destinationStatus(input.project, checkout, machineOnline, catalogState)
+
+    /** Shown under a task editor whose destination is offline; null while online or before a checkout is chosen. */
+    val offlineHint: String? get() = if (checkout == null || machineOnline) null else Creation.offlineHint(catalogState)
+
+    /** The destination is online but its catalog is not live yet: load it before validating. */
+    val needsCatalog: Boolean get() = Creation.needsCatalog(checkout, machineOnline, catalogState)
+}
+
 /** Rules for creating conversations, shared by every creation surface. */
 object Creation {
     /** Lanes a new task may start in: Todo saves it, Running starts it at once. */
     fun startLanes(board: Board?): List<Lane> = board?.lanes.orEmpty().filter { Lanes.isTodo(it.id) || Lanes.isRunning(it.id) }
 
     fun startsImmediately(lane: String): Boolean = !defersStart(chat = false, lane = lane)
+
+    /** The task editor's submit button: "Create & run" for a task that starts at once, else "Save". */
+    fun submitTitle(lane: String): String = if (startsImmediately(lane)) "Create & run" else "Save"
+
+    /** What submitting a task in [lane] does. */
+    fun startNote(lane: String): String =
+        if (startsImmediately(lane)) "The first message starts immediately." else "The card is saved as a draft in Todo."
+
+    /** Why nothing can be created without a project. */
+    const val NO_PROJECT = "Choose a project."
+
+    /** A checkout as destination pickers name it: its name, else "Project checkout", ending " · Offline" while its machine is offline. */
+    fun checkoutTitle(checkout: Checkout, machineOnline: Boolean = true): String =
+        checkout.name.ifBlank { "Project checkout" } + (if (machineOnline) "" else " · Offline")
 
     /** The machine whose catalog a new conversation loads: its checkout's, else the project's replica, else the attached machine. */
     fun catalogMachine(checkout: Checkout?, replicaDaemonId: String?, attachedDaemonId: String?): String? =
@@ -99,7 +170,7 @@ object Creation {
         checkout == null -> "Choose where this task will run"
         !machineOnline -> "Machine offline · choose an online destination"
         state != CatalogState.LIVE -> "Loading agent models…"
-        else -> checkout.name.ifBlank { "Project checkout" }
+        else -> checkoutTitle(checkout)
     }
 
     /** Shown under a task editor whose destination is offline. */
@@ -113,7 +184,12 @@ object Creation {
     /** Chats and started tasks open after creation; todo tasks stay on the board. */
     fun opensAfterCreate(chat: Boolean, lane: String): Boolean = chat || !Lanes.isTodo(lane)
 
-    fun defaultLane(board: Board?): String = board?.lanes?.firstOrNull()?.id ?: Lanes.TODO
+    /** The lane a new task starts in unless another is chosen: the board's first start lane, else its first lane. */
+    fun defaultLane(board: Board?): String = startLanes(board).firstOrNull()?.id ?: board?.lanes?.firstOrNull()?.id ?: Lanes.TODO
+
+    /** The lane a new task starts in: [selected] when it is one of [board]'s start lanes, else [defaultLane]. */
+    fun startLane(board: Board?, selected: String?): String =
+        startLanes(board).firstOrNull { it.id.equals(selected, ignoreCase = true) }?.id ?: defaultLane(board)
 
     /**
      * The checkout to run on: the chosen one when it still exists and is
@@ -124,18 +200,27 @@ object Creation {
         return candidates.firstOrNull { it.id == selectedId } ?: candidates.singleOrNull()
     }
 
-    /** A default choice: the selection, the catalog machine's, the only one, then the project replica's. */
-    fun preferredCheckout(project: Project, selectedId: String?, catalogDaemonId: String?, replicaDaemonId: String?): Checkout? {
+    /**
+     * The checkout a new conversation runs on unless another is chosen: the
+     * [selectedId] one while it is attached, else the attached machine's,
+     * else the only one, else the project replica's. Never just the first of
+     * several; then the user chooses.
+     */
+    fun preferredCheckout(project: Project, selectedId: String?, attachedDaemonId: String?, replicaDaemonId: String?): Checkout? {
         val candidates = project.checkouts.filterNot { it.detached }
         return candidates.firstOrNull { it.id == selectedId }
-            ?: candidates.firstOrNull { catalogDaemonId != null && it.daemon_id == catalogDaemonId }
+            ?: candidates.firstOrNull { !attachedDaemonId.isNullOrEmpty() && it.daemon_id == attachedDaemonId }
             ?: candidates.singleOrNull()
-            ?: candidates.firstOrNull { replicaDaemonId != null && it.daemon_id == replicaDaemonId }
+            ?: candidates.firstOrNull { !replicaDaemonId.isNullOrEmpty() && it.daemon_id == replicaDaemonId }
     }
+
+    /** The board to preselect: [rememberedId] unless it is retired or gone, else the first live board. */
+    fun preferredBoard(rememberedId: String?, boards: List<Board>): Board? =
+        boards.firstOrNull { it.id == rememberedId && !it.retired } ?: boards.firstOrNull { !it.retired }
 
     /** Why [input] cannot be queued yet, or null. */
     fun problem(input: CreationInput, harnesses: List<Harness>?): String? {
-        if (input.project.id.isEmpty()) return "Choose a project."
+        if (input.project.id.isEmpty()) return NO_PROJECT
         if (checkout(input.project, input.checkoutId) == null) {
             return if (input.project.checkouts.none { !it.detached }) "No checkouts available for this project" else "Choose where this task will run"
         }
@@ -148,15 +233,22 @@ object Creation {
             if (board == null) return "Choose a board."
             if (board.retired) return "This board is retired."
             if (board.lanes.none { it.id == input.lane }) return "Choose a lane on this board."
+            if (startLanes(board).none { it.id == input.lane }) return "A new task starts in Todo or Running."
             val labels = board.labels.mapTo(HashSet()) { it.id }
             if (input.labelIds.any { it !in labels }) return "Remove labels unavailable on this board"
         }
         return null
     }
 
+    /** The title the new card or chat shows at once: the explicit one, else a placeholder from the prompt or an attachment. */
+    fun title(input: CreationInput): String =
+        input.title.trim().ifEmpty { if (input.chat) Titles.chat(input.prompt, input.attachments) else Titles.creation("", input.prompt, input.attachments) }
+
     /**
      * The request to queue. A blank title becomes a placeholder the daemon
-     * replaces with a generated one; worktree fields are sent only in worktree mode.
+     * replaces with a generated one ([Titles.generated]); worktree fields,
+     * with the input's overrides of the project's and board's defaults, are
+     * sent only in worktree mode.
      */
     fun request(input: CreationInput): CreateConversationRequest {
         val board = input.board
@@ -167,7 +259,7 @@ object Creation {
             project_id = input.project.id,
             board_id = if (input.chat) "" else board?.id.orEmpty(),
             lane = lane,
-            title = input.title.trim().ifEmpty { if (input.chat) Titles.chat(input.prompt, input.attachments) else Titles.creation("", input.prompt, input.attachments) },
+            title = title(input),
             prompt = input.prompt.trim(),
             provider = input.selection.provider,
             model = input.selection.model,
@@ -178,15 +270,58 @@ object Creation {
             attachments = input.attachments,
             workspace_mode = input.workspaceMode.wire,
             workspace_branch = if (worktree) input.workspaceBranch.trim() else "",
-            workspace_base_branch = if (worktree) input.project.base_branch else "",
-            workspace_base_remote = if (worktree) (board?.base_remote?.ifEmpty { null } ?: input.project.base_remote) else "",
-            remote_publish_mode = if (worktree) board?.remote_publish_mode?.ifEmpty { null } ?: "manual" else "",
-            auto_generate_title = input.title.isBlank() && input.prompt.isNotBlank(),
+            workspace_base_branch = if (worktree) input.workspaceBaseBranch.trim().ifEmpty { input.project.base_branch } else "",
+            workspace_base_remote = if (worktree) input.workspaceBaseRemote.trim().ifEmpty { null } ?: board?.base_remote?.ifEmpty { null } ?: input.project.base_remote else "",
+            remote_publish_mode = if (worktree) input.remotePublishMode.trim().ifEmpty { null } ?: board?.remote_publish_mode?.ifEmpty { null } ?: "manual" else "",
+            auto_generate_title = Titles.generated(input.title, input.prompt),
+        )
+    }
+
+    /**
+     * "Todo · Worktree · Codex / Sol · Fast": where a new task goes and who
+     * runs it; a chat leaves out the lane. The lane is [lane] on [board], else
+     * its first; "Agent defaults" until the agent is known; "Fast" when the
+     * model's fast mode is on.
+     */
+    fun summary(chat: Boolean, lane: String, board: Board?, mode: WorkspaceMode, selection: HarnessSelection, harnesses: List<Harness>): String {
+        val harness = Selections.harness(harnesses, selection.provider)
+        val model = harness?.let { Selections.model(it, selection.model) }
+        val agent = if (harness != null && model != null) "${harness.name} / ${model.name}" else "Agent defaults"
+        val fast = harness != null && Selections.normalizedOptions(harness, selection.model, selection.provider_options)[FAST_MODE] == "true"
+        return buildList {
+            if (!chat) add((board?.lanes?.firstOrNull { it.id == lane } ?: board?.lanes?.firstOrNull())?.name ?: "Todo")
+            add(mode.title)
+            add(agent)
+            if (fast) add("Fast")
+        }.joinToString(" · ")
+    }
+
+    /** The provider option that trades depth for speed, where a harness offers it. */
+    const val FAST_MODE = "fast_mode"
+
+    /** How long queuing a new conversation waits for an online destination's catalog to load. */
+    val CATALOG_WAIT: Duration = 5.seconds
+
+    /**
+     * [input] checked against its destination: the checkout's machine, its
+     * catalog (live when online, cached when offline), and the agent pickers.
+     * [destinations] is what the core knows of machines and catalogs now.
+     */
+    fun plan(input: CreationInput, destinations: CreationDestinations): CreationPlan {
+        val checkout = checkout(input.project, input.checkoutId)
+        val daemonId = checkout?.daemon_id?.ifEmpty { null }
+        val online = daemonId != null && daemonId in destinations.online
+        val loaded = daemonId?.takeIf { it in destinations.catalogs }
+        val catalogMachine = catalogMachine(checkout, destinations.replicas[input.project.id], destinations.attachedDaemonId)
+        return CreationPlan(
+            input = input, checkout = checkout, daemonId = daemonId, machineOnline = online,
+            catalogState = catalogState(checkout, loaded, online),
+            harnesses = catalogMachine?.let(destinations.catalogs::get).orEmpty(),
         )
     }
 }
 
-/** Creation choices remembered on this device: last agent, workspace mode, and per-project board. */
+/** Creation choices remembered on this device: last agent, workspace mode, and per-project board and checkout. */
 class CreationMemory(private val storage: CoreStorage, private val logger: CoreLogger) {
     private val mutableState = MutableStateFlow(load())
     val state: StateFlow<CreationPreferences> = mutableState.asStateFlow()
@@ -202,31 +337,32 @@ class CreationMemory(private val storage: CoreStorage, private val logger: CoreL
 
     val workspaceMode: WorkspaceMode get() = WorkspaceMode.parse(state.value.workspace_mode)
 
-    fun remember(selection: HarnessSelection? = null, workspaceMode: WorkspaceMode? = null, projectId: String? = null, boardId: String? = null) {
+    /** Remembers what was given; a board or checkout belongs to [projectId] and needs it. */
+    fun remember(selection: HarnessSelection? = null, workspaceMode: WorkspaceMode? = null, projectId: String? = null, boardId: String? = null, checkoutId: String? = null) {
         var next = state.value
         if (selection != null) next = next.copy(provider = selection.provider, model = selection.model, effort = selection.effort, provider_options = selection.provider_options)
         if (workspaceMode != null) next = next.copy(workspace_mode = workspaceMode.wire)
-        if (projectId != null) next = next.copy(project_id = projectId, boards = if (boardId != null) next.boards + (projectId to boardId) else next.boards)
+        if (projectId != null) {
+            next = next.copy(
+                project_id = projectId,
+                boards = if (boardId != null) next.boards + (projectId to boardId) else next.boards,
+                checkouts = if (checkoutId != null) next.checkouts + (projectId to checkoutId) else next.checkouts,
+            )
+        }
         save(next)
     }
 
-    fun rememberedBoard(project: Project, boards: List<Board>): Board? =
-        state.value.boards[project.id]?.let { id -> boards.firstOrNull { it.id == id && !it.retired } } ?: boards.firstOrNull { !it.retired }
+    /** After [input] was queued, its agent, workspace mode, project, board (a task's), and checkout become the defaults. */
+    fun remember(input: CreationInput) = remember(
+        selection = input.selection, workspaceMode = input.workspaceMode, projectId = input.project.id,
+        boardId = input.board?.id?.takeIf { !input.chat }, checkoutId = input.checkoutId.ifEmpty { null },
+    )
 
-    fun setBoardNotifications(boardId: String, enabled: Boolean) {
-        if (boardId.isBlank()) return
-        val current = state.value
-        save(current.copy(notification_boards = if (enabled) current.notification_boards + (boardId to true) else current.notification_boards - boardId))
-    }
+    fun rememberedBoard(project: Project, boards: List<Board>): Board? = Creation.preferredBoard(state.value.boards[project.id], boards)
 
-    fun notifiesBoard(boardId: String): Boolean = state.value.notification_boards[boardId] == true
-
-    /** Adopts a legacy app's choices unless this device already made its own. */
-    fun adopt(preferences: CreationPreferences): Boolean {
-        if (storage.read(FILE) != null) return false
-        save(preferences)
-        return true
-    }
+    /** [project]'s checkout to preselect ([Creation.preferredCheckout]), starting from the one last chosen there. */
+    fun preferredCheckout(project: Project, attachedDaemonId: String?, replicaDaemonId: String?): Checkout? =
+        Creation.preferredCheckout(project, state.value.checkouts[project.id], attachedDaemonId, replicaDaemonId)
 
     private fun save(next: CreationPreferences) {
         if (next == state.value) return
@@ -242,7 +378,7 @@ class CreationMemory(private val storage: CoreStorage, private val logger: CoreL
 /** Describes where a capture can go, for the destination chooser. */
 object CaptureDestinations {
     fun projectInfo(project: Project, boards: Int, offline: Boolean): String = buildList {
-        add(if (boards == 1) "1 board" else "$boards boards")
+        add(Counts.of(boards, "board"))
         if (project.checkouts.size > 1) add("${project.checkouts.size} checkouts")
         if (offline) add("Offline")
     }.joinToString(" · ")
@@ -260,8 +396,11 @@ object CaptureDestinations {
         if (branch.isNotBlank()) add(branch)
     }.joinToString(" · ")
 
+    /** The board a capture goes to without asking: [boards]' only live board, else null (the user chooses). */
+    fun soleBoard(boards: List<Board>): Board? = boards.filterNot { it.retired }.singleOrNull()
+
     /** A submitted capture keeps the destination it was submitted to. */
-    fun selectable(draft: com.dbpprt.dieter.core.state.CaptureDraft, projectId: String, boardId: String? = null): Boolean {
+    fun selectable(draft: CaptureDraft, projectId: String, boardId: String? = null): Boolean {
         val submitted = draft.request?.takeIf { draft.frozen } ?: return true
         return submitted.project_id == projectId && (boardId == null || submitted.board_id == boardId)
     }

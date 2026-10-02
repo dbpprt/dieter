@@ -1,6 +1,5 @@
 package com.dbpprt.dieter.ui
 
-import android.graphics.Bitmap
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -11,20 +10,18 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
-import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.core.composition.TaskDrafts
 import com.dbpprt.dieter.core.composition.task
 import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.core.state.CaptureDraft
-import com.dbpprt.dieter.ui.ProjectReplica
 import com.dbpprt.dieter.ui.theme.DieterTheme
+import com.dbpprt.dieter.e2e.Evidence
 import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.CreateConversationRequest
 import com.dbpprt.dieter.api.v1.Project
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
-import java.io.File
 
 class ConversationDestinationPickerTest {
     @get:Rule val compose = createComposeRule()
@@ -39,7 +36,7 @@ class ConversationDestinationPickerTest {
         Board(id = "other", project_id = "box", name = "Another project board"),
     )
     private val state = DieterUiState(connectionPhase = ConnectionPhase.CONNECTED, projects = projects, spaceBoards = boards,
-        projectReplicas = mapOf("vps" to ProjectReplica("vps", "vps", "VPS", false)))
+        projectReplicas = mapOf("vps" to "vps"))
 
     @Test fun projectsSearchAndBoardsNavigateWithContext() {
         var draft by mutableStateOf(CaptureDraft(id = "capture"))
@@ -117,11 +114,6 @@ class ConversationDestinationPickerTest {
 
     private fun capture(name: String) {
         compose.waitForIdle()
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val directory = File(InstrumentationRegistry.getArguments().getString("dieterScreenshotsDir")
-            ?: requireNotNull(instrumentation.targetContext.getExternalFilesDir(null)).path).apply { mkdirs() }
-        File(directory, name).outputStream().use {
-            requireNotNull(instrumentation.uiAutomation.takeScreenshot()).compress(Bitmap.CompressFormat.PNG, 100, it)
-        }
+        Evidence.display(name)
     }
 }

@@ -80,7 +80,7 @@
                 }
                 results["content-processes-output-alignment"] =
                     aligned ? "passed" : "failed: short output was not aligned to the viewport's top-left"
-                await captureStage(window, output, "processes", "08g-content-processes.png")
+                capture(window, output.appending(path: "08g-content-processes.png"))
                 let closeClicked = NativeUIAccessibility.click(
                     "conversation.content.tab.\(tab.id.uuidString).close", in: window)
                 let closed = await wait { !content.tabs.contains(where: { $0.id == tab.id }) }
@@ -315,7 +315,7 @@
                     ? "passed"
                     : "failed: save click=\(saveClicked), clean=\(saved), scoped disk matches=\(document.content == savedText)"
             } catch { results["content-markdown-save"] = "failed: \(error)" }
-            await captureStage(window, output, "markdown", "08a-content-markdown.png")
+            capture(window, output.appending(path: "08a-content-markdown.png"))
 
             let closed = NativeUIAccessibility.click("conversation.content.tab.\(tab.id.uuidString).close", in: window)
             let removed = await wait { !model.tabs.contains(where: { $0.id == tab.id }) }
@@ -524,7 +524,7 @@
                     navigatedAgain && awayAgain && revealedOriginal
                     ? "passed"
                     : "failed: native navigate away=\(navigatedAgain && awayAgain), same tab revealed original URL=\(revealedOriginal)"
-                await captureStage(window, output, "browser", "08b-content-browser.png")
+                capture(window, output.appending(path: "08b-content-browser.png"))
                 let blockedClicked = await clickWebLink("blocked", web: linkedTab.browser.webView, window: window)
                 // WebKit can reject an HTTP page's file:// link before its navigation delegate.
                 // Verify that native click keeps the page intact, then exercise the app's
@@ -599,7 +599,7 @@
                 }
                 results["content-terminal-input"] =
                     "failed: automatic open selected=\(tab.terminals.selectedTerminalID ?? "none"), status=\(tab.terminals.selectedTerminal?.status ?? "none"), connected=\(tab.terminals.terminalStreamConnected), native terminal=\(mounted), terminalError=\(tab.terminals.terminalError ?? "none"), error=\(tab.terminals.errorMessage ?? "none")"
-                await captureStage(window, output, "terminal-failed", "08c-content-terminal-failed.png")
+                capture(window, output.appending(path: "08c-content-terminal-failed.png"))
                 return
             }
             click(view, window: window)
@@ -631,7 +631,7 @@
                 received
                 ? "passed"
                 : "failed: terminal focus=\(focused), command echoed=\(pasted), native output=\(received)"
-            await captureStage(window, output, "terminal", "08c-content-terminal.png")
+            capture(window, output.appending(path: "08c-content-terminal.png"))
             let closed = NativeUIAccessibility.click("conversation.content.tab.\(tab.id.uuidString).close", in: window)
             _ = await wait { !model.tabs.contains(where: { $0.id == tab.id }) }
             do {
@@ -702,11 +702,11 @@
                     return tab.projectReview.projectID == tab.scope?.target.projectID
                         && tab.projectReview.selection?.path == "side-by-side-smoke.swift"
                         && tab.projectReview.diff?.cardID.isEmpty == true
-                        && tab.projectReview.diffLines.contains { $0.text.contains("smokeLine42") }
+                        && tab.projectReview.diffLayout.texts.contains { $0.contains("smokeLine42") }
                 }
                 return tab.review.target.conversationID == cardID
                     && tab.review.selectedChangePath == "side-by-side-smoke.swift"
-                    && tab.review.diffLines.contains { $0.text.contains("smokeLine42") }
+                    && tab.review.diff.texts.contains { $0.contains("smokeLine42") }
             }
             results["content-review-scoped-diff"] =
                 clicked && diff
@@ -715,7 +715,7 @@
             results["content-review-project-workspace"] =
                 tab.usesProjectReview && diff
                 ? "passed" : "failed: project-workspace card did not use project changes and project-scoped file diff"
-            await captureStage(window, output, "review", "08d-content-review.png")
+            capture(window, output.appending(path: "08d-content-review.png"))
         }
 
         private static func presentation(
@@ -911,20 +911,6 @@
             else { return }
             view.cacheDisplay(in: view.bounds, to: bitmap)
             try? bitmap.representation(using: .png, properties: [:])?.write(to: destination)
-        }
-        private static func captureStage(_ window: NSWindow, _ output: URL, _ phase: String, _ filename: String) async {
-            capture(window, output.appending(path: filename))
-            guard ProcessInfo.processInfo.environment["DIETER_CONTENT_CAPTURE"] == "1" else { return }
-            let marker = ["phase": phase, "windowNumber": String(window.windowNumber), "suggestedFilename": filename]
-            if let data = try? JSONSerialization.data(withJSONObject: marker, options: [.prettyPrinted, .sortedKeys]) {
-                try? data.write(to: output.appending(path: "capture-request.json"), options: .atomic)
-            }
-            let acknowledgement = output.appending(path: "capture-ack-\(phase)")
-            for _ in 0..<200 {
-                if FileManager.default.fileExists(atPath: acknowledgement.path) { break }
-                try? await DieterTaskSleep.milliseconds(100)
-            }
-            try? FileManager.default.removeItem(at: output.appending(path: "capture-request.json"))
         }
     }
 

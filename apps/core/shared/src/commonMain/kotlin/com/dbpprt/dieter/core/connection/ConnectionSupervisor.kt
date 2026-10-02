@@ -1,5 +1,6 @@
 package com.dbpprt.dieter.core.connection
 
+import com.dbpprt.dieter.api.gateway.v1.GatewayInformation
 import com.dbpprt.dieter.core.identity.AccountStore
 import com.dbpprt.dieter.core.identity.Credentials
 import com.dbpprt.dieter.core.identity.Gateway
@@ -21,7 +22,6 @@ import com.dbpprt.dieter.core.sync.FeedConfig
 import com.dbpprt.dieter.core.sync.FeedStatus
 import com.dbpprt.dieter.core.sync.MachineFreshness
 import com.dbpprt.dieter.core.sync.PollerConfig
-import com.dbpprt.dieter.api.gateway.v1.GatewayInformation
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -218,8 +218,9 @@ class ConnectionSupervisor(
         val prepared = GatewayScope(gateway, storage, poller)
         gatewayScope = prepared
         // Offline-first: render the cached projection and machine views immediately.
+        // The restored feed's status (its last update's time) shows before it connects.
         val preferred = accounts.state.value.preferredMachine[gateway.origin]
-        if (preferred != null) feed(prepared, preferred).restoreCached()
+        mutableFeedStatus.value = preferred?.let { feed(prepared, it).also(Feed::restoreCached).status.value } ?: FeedStatus()
         poller.restoreCached(preferred)
         freshnessJob?.cancel()
         freshnessJob = scope.launch { poller.freshness.collect { mutableFreshness.value = it } }

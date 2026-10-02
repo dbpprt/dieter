@@ -18,10 +18,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.dbpprt.dieter.api.v1.Harness
 import com.dbpprt.dieter.api.v1.ProviderOption
+import com.dbpprt.dieter.core.selection.ProviderOptionKind
+import com.dbpprt.dieter.core.selection.Selections
 
-/** One provider-defined option; its value and whether it may change come from the core. */
+/** One provider-defined option; how it is edited, its value, and whether it may change come from the core. */
 @Composable
 internal fun ProviderOptionControl(
     option: ProviderOption,
@@ -29,7 +30,6 @@ internal fun ProviderOptionControl(
     enabled: Boolean,
     onValueChange: (String, String) -> Unit,
 ) {
-    val current = value
     val semantics = Modifier
         .testTag("provider-option-${option.id}")
         .semantics {
@@ -38,9 +38,9 @@ internal fun ProviderOptionControl(
                 if (option.description.isNotBlank()) append(". ${option.description}")
             }
         }
-    when (option.type.lowercase()) {
-        "boolean", "bool" -> {
-            val selected = current.equals("true", ignoreCase = true)
+    when (Selections.optionKind(option)) {
+        ProviderOptionKind.TOGGLE -> {
+            val selected = Selections.isOn(value)
             FilterChip(
                 selected = selected,
                 onClick = { onValueChange(option.id, (!selected).toString()) },
@@ -50,21 +50,18 @@ internal fun ProviderOptionControl(
             )
         }
 
-        "enum", "select" -> {
+        ProviderOptionKind.CHOICE -> {
             var expanded by remember(option.id) { mutableStateOf(false) }
-            val label = option.choices.firstOrNull { it.value_ == current }
-                ?.name?.ifBlank { current }
-                ?: option.name
             Box(semantics) {
                 AssistChip(
                     onClick = { expanded = true },
                     enabled = enabled,
-                    label = { Text(label) },
+                    label = { Text(Selections.optionLabel(option, value)) },
                 )
                 DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                     option.choices.forEach { choice ->
                         DropdownMenuItem(
-                            text = { Text(choice.name.ifBlank { choice.value_ }) },
+                            text = { Text(Selections.choiceName(choice)) },
                             onClick = {
                                 expanded = false
                                 onValueChange(option.id, choice.value_)
@@ -75,8 +72,8 @@ internal fun ProviderOptionControl(
             }
         }
 
-        else -> OutlinedTextField(
-            value = current,
+        ProviderOptionKind.TEXT -> OutlinedTextField(
+            value = value,
             onValueChange = { onValueChange(option.id, it) },
             enabled = enabled,
             singleLine = true,

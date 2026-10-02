@@ -1,79 +1,39 @@
 package com.dbpprt.dieter.widget
 
 import android.content.Context
-import org.json.JSONArray
-import org.json.JSONObject
+import android.util.Base64
+import com.dbpprt.dieter.api.gateway.v1.ListProviderQuotasResponse
+import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaGroup
 
 /**
- * Per-widget options plus a shared JSON cache of the last fetched provider
- * usage so the widget renders instantly after process death. The gateway
- * keeps no client state, so the client owns this cache.
+ * The last fetched provider quota groups, as gateway proto bytes, and the
+ * time of that fetch, so the usage widget renders instantly after process
+ * death. The gateway keeps no client state, so the client owns this cache.
  */
 object WidgetUsagePrefs {
     private const val PREFERENCES = "dieter_usage_widget"
-    private const val KEY_CACHE = "quota_cache"
+    private const val KEY_GROUPS = "quota_groups"
     private const val KEY_FETCHED_AT = "quota_fetched_at"
 
-    private fun preferences(context: Context) =
+    internal fun preferences(context: Context) =
         context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
-    fun cachedSnapshots(context: Context): Pair<List<UsageAccountSnapshot>, Long> {
-        val preferences = preferences(context)
-        val fetchedAt = preferences.getLong(KEY_FETCHED_AT, 0L)
-        val encoded = preferences.getString(KEY_CACHE, null) ?: return emptyList<UsageAccountSnapshot>() to 0L
-        return runCatching { decodeCache(encoded) }.getOrDefault(emptyList()) to fetchedAt
+    /** Whether [key] is part of the cache. */
+    internal fun keeps(key: String): Boolean = key == KEY_GROUPS || key == KEY_FETCHED_AT
+
+    /** The cached groups; empty before any fetch or when the cache cannot be decoded. */
+    fun cachedGroups(context: Context): List<ProviderQuotaGroup> {
+        val encoded = preferences(context).getString(KEY_GROUPS, null) ?: return emptyList()
+        return runCatching { ListProviderQuotasResponse.ADAPTER.decode(Base64.decode(encoded, Base64.NO_WRAP)).groups }.getOrDefault(emptyList())
     }
 
-    fun saveCache(context: Context, snapshots: List<UsageAccountSnapshot>, fetchedAtMs: Long) {
+    /** When the cached groups were fetched, in epoch milliseconds; 0 before any fetch. */
+    fun fetchedAt(context: Context): Long = preferences(context).getLong(KEY_FETCHED_AT, 0L)
+
+    fun saveCache(context: Context, groups: List<ProviderQuotaGroup>, fetchedAtMs: Long) {
         preferences(context).edit()
-            .putString(KEY_CACHE, encodeCache(snapshots))
+            .putString(KEY_GROUPS, Base64.encodeToString(ListProviderQuotasResponse(groups = groups).encode(), Base64.NO_WRAP))
             .putLong(KEY_FETCHED_AT, fetchedAtMs)
             .apply()
-    }
-
-    private fun encodeCache(snapshots: List<UsageAccountSnapshot>): String {
-        val array = JSONArray()
-        snapshots.forEach { account ->
-            val windows = JSONArray()
-            account.windows.forEach { window ->
-                windows.put(JSONObject()
-                    .put("label", window.label)
-                    .put("remaining", window.remainingPercent ?: -1)
-                    .put("resetsAt", window.resetsAt))
-            }
-            array.put(JSONObject()
-                .put("provider", account.providerName)
-                .put("title", account.title)
-                .put("available", account.available)
-                .put("availability", account.availabilityText)
-                .put("freshUntil", account.freshUntilMs)
-                .put("windows", windows))
-        }
-        return array.toString()
-    }
-
-    private fun decodeCache(encoded: String): List<UsageAccountSnapshot> {
-        val array = JSONArray(encoded)
-        val snapshots = (0 until array.length()).map { index ->
-            val account = array.getJSONObject(index)
-            val windows = account.getJSONArray("windows")
-            UsageAccountSnapshot(
-                providerName = account.getString("provider"),
-                title = account.getString("title"),
-                available = account.getBoolean("available"),
-                availabilityText = account.getString("availability"),
-                freshUntilMs = account.getLong("freshUntil"),
-                windows = (0 until windows.length()).map { windowIndex ->
-                    val window = windows.getJSONObject(windowIndex)
-                    val remaining = window.getInt("remaining")
-                    UsageWindowSnapshot(
-                        label = window.getString("label"),
-                        remainingPercent = remaining.takeIf { it >= 0 },
-                        resetsAt = window.getString("resetsAt"),
-                    )
-                },
-            )
-        }
-        return snapshots
     }
 }

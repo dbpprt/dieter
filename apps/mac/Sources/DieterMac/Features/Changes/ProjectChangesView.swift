@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 
 private struct ProjectChangeRow: Identifiable {
@@ -24,9 +25,6 @@ struct ProjectChangesView: View {
     private var model: ProjectChangesModel { injectedModel ?? store.projectChanges }
     private var projectName: String { injectedProjectName ?? store.selectedProject?.name ?? "Project" }
     private var connected: Bool { injectedModel == nil ? store.phase.isConnected : isLive }
-    private var hasRemote: Bool {
-        injectedModel != nil || store.selectedProject?.baseRemote.isEmpty == false
-    }
 
     init() {}
     init(model: ProjectChangesModel, projectName: String, active: Bool, isLive: Bool, bindingRevision: Int) {
@@ -47,6 +45,8 @@ struct ProjectChangesView: View {
         injectedModel != nil ? !model.projectID.isEmpty : model.projectID == store.selectedProjectID
     }
     private var canMutate: Bool { ready && connected && active && !model.mutationsDisabled }
+    /// The checkout operation `kind` can run now, as the core decides it.
+    private func can(_ kind: String) -> Bool { canMutate && model.allows(kind) }
     private var selectedFile: Dieter_V1_ChangedFile? { model.changes?.files.first { $0.path == model.selection?.path } }
 
     var body: some View {
@@ -85,8 +85,10 @@ struct ProjectChangesView: View {
             }
             // An active surface refreshes itself.
             model.active = true
+            model.setLayout(split: diffMode == "Split")
             await model.refresh()
         }
+        .onChange(of: diffMode) { _, mode in model.setLayout(split: mode == "Split") }
         .onDisappear { model.suspend() }
         .confirmationDialog(
             "Discard changes to \(discardPath ?? "this file")?",
@@ -227,12 +229,7 @@ struct ProjectChangesView: View {
             .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
             .overlay { RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.border) }
             Button {
-                model.startOperation(
-                    kind: "commit",
-                    parameters: [
-                        "subject": model.commitSubject.trimmingCharacters(in: .whitespacesAndNewlines),
-                        "body": model.commitBody, "validate": "false",
-                    ])
+                model.startOperation(kind: "commit", subject: model.commitSubject, body: model.commitBody)
             } label: {
                 HStack(spacing: 6) {
                     if model.pendingKind == "commit" { ProgressView().controlSize(.mini) }
@@ -243,11 +240,19 @@ struct ProjectChangesView: View {
                 }.frame(maxWidth: .infinity)
             }
             .buttonStyle(ChangesActionButtonStyle(prominent: true))
-            .disabled(
-                !canMutate || count == 0 || model.commitSubject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            )
+            .disabled(!can("commit") || !commitReady)
             .accessibilityIdentifier("project-changes.commit").smokeTarget("project-changes.commit")
         }
+    }
+
+    /// The commit form has what it needs, as the core checks it.
+    private var commitReady: Bool {
+        SharedRules.shared.gitOperationReady(
+            form: ClientGitOperationForm.with {
+                $0.kind = "commit"
+                $0.subject = model.commitSubject
+                $0.body = model.commitBody
+            }.rulesData)
     }
 
     private var branchStrip: some View {
@@ -264,16 +269,14 @@ struct ProjectChangesView: View {
 
     private var shipActions: some View {
         HStack(spacing: 7) {
-            Button("Update") {
-                model.startOperation(kind: "update", parameters: ["fetch": "true", "validate": "false"])
-            }
-            .disabled(!canMutate || model.changes?.dirty == true)
-            .accessibilityIdentifier("project-changes.update").smokeTarget("project-changes.update")
+            Button("Update") { model.startOperation(kind: "update") }
+                .disabled(!can("update"))
+                .accessibilityIdentifier("project-changes.update").smokeTarget("project-changes.update")
             Button("Validate") { model.startOperation(kind: "validate") }
-                .disabled(!canMutate)
+                .disabled(!can("validate"))
                 .accessibilityIdentifier("project-changes.validate").smokeTarget("project-changes.validate")
             Button("Push") { model.startOperation(kind: "push") }
-                .disabled(!canMutate || model.changes?.branch.isEmpty != false || !hasRemote)
+                .disabled(!can("push"))
                 .accessibilityIdentifier("project-changes.push").smokeTarget("project-changes.push")
         }
         .buttonStyle(ChangesActionButtonStyle(prominent: false))
@@ -301,7 +304,9 @@ struct ProjectChangesView: View {
                     Button(section == "staged" ? "Unstage all" : "Stage all") {
                         model.startOperation(kind: section == "staged" ? "unstage" : "stage")
                     }
-                    .buttonStyle(.plain).font(.system(size: 10)).disabled(!canMutate)
+                    .buttonStyle(.plain).font(.system(size: 10)).disabled(
+                        !can(section == "staged" ? "unstage" : "stage")
+                    )
                     .accessibilityIdentifier("project-changes.\(section == "staged" ? "unstage" : "stage")-all")
                     .smokeTarget("project-changes.\(section == "staged" ? "unstage" : "stage")-all")
                 }
@@ -325,6 +330,8 @@ struct ProjectChangesView: View {
         let stage = section != "staged"
         let selection = ProjectChangeSelection(path: file.path, section: section)
         let selected = model.selection == selection
+        let label = ClientChangedFileLabel.of(
+            file.path, status: status, conflicted: file.conflicted, untracked: status == "untracked")
         return HStack(spacing: 7) {
             Button {
                 model.startOperation(kind: stage ? "stage" : "unstage", path: file.path)
@@ -339,7 +346,8 @@ struct ProjectChangesView: View {
                     }
                 }.frame(width: 14, height: 14).padding(3).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).disabled(!canMutate).opacity(canMutate ? 1 : 0.45)
+            .buttonStyle(.plain).disabled(!can(stage ? "stage" : "unstage"))
+            .opacity(can(stage ? "stage" : "unstage") ? 1 : 0.45)
             .help("\(stage ? "Stage" : "Unstage") \(file.path)")
             .accessibilityLabel("\(stage ? "Stage" : "Unstage") \(file.path)")
             .accessibilityIdentifier("project-changes.\(stage ? "stage" : "unstage").\(file.path)")
@@ -351,11 +359,10 @@ struct ProjectChangesView: View {
             } label: {
                 HStack(spacing: 7) {
                     Image(systemName: "doc").font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
-                    Text(WorkspaceChangePresentation.filename(file.path)).font(.system(size: 12, weight: .medium))
+                    Text(label.filename).font(.system(size: 12, weight: .medium))
                         .lineLimit(1).layoutPriority(1)
-                    let directory = WorkspaceChangePresentation.directory(file.path)
-                    if !directory.isEmpty {
-                        Text(directory).font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
+                    if !label.directory.isEmpty {
+                        Text(label.directory).font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
                             .truncationMode(.middle)
                     }
                     Spacer(minLength: 0)
@@ -365,13 +372,10 @@ struct ProjectChangesView: View {
                         )
                         .help("This file has both staged and unstaged edits")
                     }
-                    Text(
-                        WorkspaceChangePresentation.badge(
-                            status: status, conflicted: file.conflicted, untracked: status == "untracked")
-                    )
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(
-                        statusColor(status)
-                    ).frame(width: 12)
+                    Text(label.badge)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(
+                            statusColor(status)
+                        ).frame(width: 12)
                 }.frame(maxWidth: .infinity, minHeight: 32).contentShape(Rectangle())
             }
             .buttonStyle(.plain).help(file.path)
@@ -389,7 +393,8 @@ struct ProjectChangesView: View {
             }
         }
         .contextMenu {
-            Button("Discard changes…", role: .destructive) { discardPath = file.path }.disabled(!canMutate)
+            Button("Discard changes…", role: .destructive) { discardPath = file.path }
+                .disabled(!can("discard_changes"))
         }
     }
 
@@ -421,10 +426,8 @@ struct ProjectChangesView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         WorkspaceDiffContent(
-                            diff: diff, lines: model.diffLines, split: diffMode == "Split", comments: [],
-                            canComment: false,
-                            addComment: { _ in }, loadMore: { model.loadMore() }, loadingMore: model.diffLoading,
-                            reviewSection: selection.section
+                            layout: model.diffLayout, addComment: { _ in }, loadMore: { model.loadMore() },
+                            loadingMore: model.diffLoading, reviewSection: selection.section
                         )
                         .id("\(model.projectID)|\(selection.section)|\(selection.path)")
                         .accessibilityIdentifier("project-changes.diff").smokeTarget("project-changes.diff")
@@ -462,17 +465,20 @@ struct ProjectChangesView: View {
                     .accessibilityIdentifier("project-changes.back").smokeTarget("project-changes.back")
                 }
                 Image(systemName: "doc").font(.system(size: 12)).foregroundStyle(DieterTheme.tertiary)
-                Text(WorkspaceChangePresentation.filename(selection.path)).font(
+                Text(ClientChangedFileLabel.of(selection.path).filename).font(
                     .system(size: 12, weight: .semibold, design: .monospaced)
                 ).lineLimit(1).truncationMode(.middle)
                     .help(selection.path)
                 if geometry.size.width > 900 {
-                    Text(WorkspaceChangePresentation.directory(selection.path))
+                    Text(ClientChangedFileLabel.of(selection.path).directory)
                         .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1).truncationMode(
                             .middle)
                 }
                 if geometry.size.width > 680 {
-                    Text(status.capitalized).font(.system(size: 10, weight: .semibold)).foregroundStyle(
+                    Text(
+                        ClientChangedFileLabel.of(selection.path, status: status, untracked: status == "untracked")
+                            .title
+                    ).font(.system(size: 10, weight: .semibold)).foregroundStyle(
                         statusColor(status)
                     )
                     .padding(.horizontal, 6).padding(.vertical, 4).background(
@@ -511,20 +517,22 @@ struct ProjectChangesView: View {
                     .overlay { RoundedRectangle(cornerRadius: 6).stroke(DieterTheme.border) }
                     .accessibilityIdentifier("project-changes.diff-mode").smokeTarget("project-changes.diff-mode")
                 Button("Discard") { discardPath = selection.path }
-                    .buttonStyle(ChangesActionButtonStyle()).foregroundStyle(DieterTheme.coral).disabled(!canMutate)
+                    .buttonStyle(ChangesActionButtonStyle()).foregroundStyle(DieterTheme.coral)
+                    .disabled(!can("discard_changes"))
                     .help("Discard all changes to this file")
                     .accessibilityIdentifier("project-changes.discard").smokeTarget("project-changes.discard")
                 Button(staged ? "Unstage file" : "Stage file") {
                     model.startOperation(kind: staged ? "unstage" : "stage", path: selection.path)
                 }
-                .buttonStyle(ChangesActionButtonStyle(prominent: true)).disabled(!canMutate)
+                .buttonStyle(ChangesActionButtonStyle(prominent: true)).disabled(!can(staged ? "unstage" : "stage"))
                 .accessibilityIdentifier("project-changes.stage-file").smokeTarget("project-changes.stage-file")
                 Menu {
                     Button("Copy path") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(selection.path, forType: .string)
                     }
-                    Button("Discard changes…", role: .destructive) { discardPath = selection.path }.disabled(!canMutate)
+                    Button("Discard changes…", role: .destructive) { discardPath = selection.path }
+                        .disabled(!can("discard_changes"))
                 } label: {
                     Image(systemName: "ellipsis")
                 }

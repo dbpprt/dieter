@@ -84,39 +84,33 @@ struct DiffScrollOffsetObserver: NSViewRepresentable {
     static func dismantleNSView(_ view: Anchor, coordinator: ()) { view.dismantle() }
 }
 
+/// A diff as the core laid it out: folded context, hunks with their counts,
+/// and side-by-side pairs; this view keeps scrolling and expanded folds.
 struct WorkspaceDiffContent: View {
-    let diff: Dieter_V1_FileDiff
-    /// The diff's lines as the core numbers them.
-    let lines: [UnifiedDiffLine]
-    let split: Bool
-    let comments: [Dieter_V1_ChangeComment]
-    let canComment: Bool
+    let layout: WorkspaceDiffLayout
     let addComment: (UnifiedDiffLine) -> Void
     let loadMore: () -> Void
     var loadingMore = false
     var reviewSection: String? = nil
 
-    @State private var projection = WorkspaceDiffProjection()
-    @State private var builtKey = ""
     @State private var horizontalScroll = DiffHorizontalScrollState()
     @State private var expandedFolds: Set<Int> = []
+    #if DIETER_UI_SMOKE
+        @State private var smokeTargetID = UUID()
+    #endif
 
-    private var buildKey: String {
-        let commentRevision = comments.map { "\($0.id):\($0.revision)" }.joined(separator: ",")
-        return
-            "\(diff.projectID)|\(diff.cardID)|\(diff.section)|\(diff.path)|\(diff.commitSha)|\(diff.revision)|\(split)|\(diff.nextOffset)|\(diff.totalBytes)|\(lines.count)|\(commentRevision)"
-    }
+    private var split: Bool { layout.split }
 
     var body: some View {
         GeometryReader { viewport in
             let contentWidth =
                 split
                 ? viewport.size.width
-                    + max(0, CGFloat(projection.maximumCodeColumns) * 7.3 + 78 - viewport.size.width / 2)
+                    + max(0, CGFloat(layout.maxColumns) * 7.3 + 78 - viewport.size.width / 2)
                 : viewport.size.width
             ScrollView([.horizontal, .vertical]) {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(projection.rows) { row in
+                    ForEach(layout.rows) { row in
                         WorkspaceDiffPositionedRow(split: split, scroll: horizontalScroll) {
                             diffRow(
                                 row,
@@ -126,10 +120,14 @@ struct WorkspaceDiffContent: View {
                             .frame(width: split ? viewport.size.width : nil, alignment: .leading)
                         }
                     }
-                    if diff.truncated {
+                    if layout.more {
                         Button("Load the rest of this diff") { loadMore() }
                             .disabled(loadingMore)
                             .buttonStyle(DieterSecondaryButtonStyle()).padding(12)
+                    } else if !layout.note.isEmpty {
+                        Text(layout.note)
+                            .font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
+                            .padding(12)
                     }
                 }
                 .frame(
@@ -141,43 +139,23 @@ struct WorkspaceDiffContent: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .overlay {
-            if builtKey.isEmpty { LoadFeedback(title: "Preparing diff…") }
-        }
-        .task(id: buildKey) {
-            guard builtKey != buildKey else { return }
-            let key = buildKey
-            let lines = lines
-            let path = diff.path
-            let commitSHA = diff.commitSha
-            let split = split
-            let comments = comments
-            guard
-                let next = try? await BackgroundPreparation.run({
-                    WorkspaceDiffProjection.build(
-                        lines: lines,
-                        path: path,
-                        commitSHA: commitSHA,
-                        split: split,
-                        comments: comments
-                    )
-                })
-            else { return }
-            guard !Task.isCancelled, buildKey == key else { return }
-            projection = next
-            builtKey = key
+        .onChange(of: layout.revision, initial: true) {
             expandedFolds = []
             #if DIETER_UI_SMOKE
                 if NativeUISmokeTargets.enabled {
-                    NativeUISmokeTargets.diffText = lines.map(\.text).joined(separator: "\n")
+                    NativeUISmokeTargets.diffOwner = smokeTargetID
+                    NativeUISmokeTargets.diffText = layout.texts.joined(separator: "\n")
                     NativeUISmokeTargets.diffSplit = split
                 }
             #endif
         }
         .onDisappear {
             #if DIETER_UI_SMOKE
-                NativeUISmokeTargets.diffText = ""
-                NativeUISmokeTargets.diffSplit = nil
+                // A view that replaced this one, e.g. after a resize, may already show its diff.
+                if NativeUISmokeTargets.diffOwner == smokeTargetID {
+                    NativeUISmokeTargets.diffText = ""
+                    NativeUISmokeTargets.diffSplit = nil
+                }
             #endif
         }
     }
@@ -190,11 +168,11 @@ struct WorkspaceDiffContent: View {
         switch row {
         case .line(let line):
             WorkspaceDiffLineRow(
-                line: line,
-                comments: commentsFor(line),
-                canComment: canComment && (line.newLine ?? line.oldLine) != nil,
+                line: line.line,
+                comments: line.comments,
+                canComment: line.commentable,
                 minimumWidth: viewportWidth,
-                addComment: { addComment(line) }
+                addComment: { addComment(line.line) }
             )
         case .pair(let pair):
             WorkspaceSplitPairRow(pair: pair, width: viewportWidth, horizontalScroll: horizontalScroll)
@@ -211,7 +189,7 @@ struct WorkspaceDiffContent: View {
             .frame(minWidth: viewportWidth, minHeight: 30, alignment: .leading)
             .background(DieterTheme.sidebar)
             .id(id)
-        case .hunk(let id, let text, let skipped):
+        case .hunk(let id, let text, let skipped, let additions, let deletions):
             VStack(spacing: 0) {
                 if skipped > 0 {
                     WorkspaceUnchangedSeparator(count: skipped, width: viewportWidth)
@@ -222,10 +200,10 @@ struct WorkspaceDiffContent: View {
                         .foregroundStyle(DieterTheme.subtle)
                         .lineLimit(1)
                     Spacer(minLength: 0)
-                    if let delta = projection.hunkDeltas[id] {
+                    if additions > 0 || deletions > 0 {
                         HStack(spacing: 5) {
-                            Text("+\(delta.additions)").foregroundStyle(DieterTheme.diffAddition)
-                            Text("−\(delta.deletions)").foregroundStyle(DieterTheme.coral)
+                            Text("+\(additions)").foregroundStyle(DieterTheme.diffAddition)
+                            Text("−\(deletions)").foregroundStyle(DieterTheme.coral)
                         }.font(.system(size: 10, design: .monospaced))
                     }
                     if let reviewSection {
@@ -262,11 +240,11 @@ struct WorkspaceDiffContent: View {
                     } else {
                         ForEach(lines) { line in
                             WorkspaceDiffLineRow(
-                                line: line,
-                                comments: commentsFor(line),
-                                canComment: canComment && (line.newLine ?? line.oldLine) != nil,
+                                line: line.line,
+                                comments: line.comments,
+                                canComment: line.commentable,
                                 minimumWidth: viewportWidth,
-                                addComment: { addComment(line) }
+                                addComment: { addComment(line.line) }
                             )
                         }
                     }
@@ -297,10 +275,27 @@ struct WorkspaceDiffContent: View {
         .help(expanded ? "Collapse this unchanged region" : "Expand this unchanged region")
     }
 
-    private func commentsFor(_ line: UnifiedDiffLine) -> [Dieter_V1_ChangeComment] {
-        projection.commentsByLine[WorkspaceDiffCommentKey(line)] ?? []
-    }
 }
+
+#if DIETER_UI_SMOKE
+    extension WorkspaceDiffLayout {
+        /// The shown code lines, for smoke checks of the diff.
+        var texts: [String] { rows.flatMap(\.texts) }
+    }
+
+    extension WorkspaceDiffRow {
+        /// The row's code lines, for smoke checks of the shown diff.
+        var texts: [String] {
+            switch self {
+            case .line(let line): [line.line.text]
+            case .pair(let pair): [pair.old?.text, pair.new?.text].compactMap { $0 }
+            case .file(_, let path): [path]
+            case .hunk(_, let text, _, _, _): [text]
+            case .fold(_, _, let lines, _): lines.map(\.line.text)
+            }
+        }
+    }
+#endif
 
 private struct WorkspaceDiffPositionedRow<Content: View>: View {
     let split: Bool

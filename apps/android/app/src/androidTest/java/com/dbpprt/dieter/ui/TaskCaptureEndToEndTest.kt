@@ -1,7 +1,6 @@
 package com.dbpprt.dieter.ui
 
 import android.Manifest
-import android.content.ClipData
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -17,9 +16,8 @@ import com.dbpprt.dieter.MainActivity
 import com.dbpprt.dieter.core.composition.task
 import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.e2e.IsolatedCore
+import com.dbpprt.dieter.e2e.Evidence
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -34,7 +32,6 @@ class TaskCaptureEndToEndTest {
 
     @Test fun sharesheetAndInboxUseOneDurableComposer() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val arguments = InstrumentationRegistry.getArguments()
         val context = instrumentation.targetContext
         instrumentation.startActivitySync(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         val container = (context.applicationContext as DieterApplication).container
@@ -132,17 +129,12 @@ class TaskCaptureEndToEndTest {
     }
 
     private fun capture(name: String) {
-        val directory = File(InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")
-            ?: requireNotNull(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null)).path)
-        directory.mkdirs()
         fun describe(node: AccessibilityNodeInfo?, depth: Int = 0): String {
             node ?: return ""
             return "${" ".repeat(depth)}${node.className}: ${node.text} / ${node.contentDescription} [${node.viewIdResourceName}]\n" +
                 (0 until node.childCount).joinToString("") { describe(node.getChild(it), depth + 1) }
         }
-        File(directory, "$name.hierarchy.txt").writeText(describe(InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow))
-        File(directory, name).outputStream().use {
-            requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()).compress(Bitmap.CompressFormat.PNG, 100, it)
-        }
+        Evidence.text("$name.hierarchy.txt", describe(InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow))
+        Evidence.display(name)
     }
 }

@@ -10,7 +10,7 @@ struct ConversationProcessesPane: View {
             VStack(spacing: 0) {
                 HStack {
                     Text("Processes").font(.headline)
-                    Text("\(model.processes.filter { $0.status == "running" }.count) running")
+                    Text("\(model.running) running")
                         .font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Button {
@@ -79,7 +79,7 @@ struct ConversationProcessesPane: View {
                     }
                     Spacer(minLength: 8)
                     Button("Stop", systemImage: "stop.fill") { Task { await model.stopSelected() } }
-                        .controlSize(.small).disabled(process.status != "running" || model.stopping || !model.connected)
+                        .controlSize(.small).disabled(!model.canStop || !model.connected)
                         .accessibilityIdentifier("conversation.content.processes.stop")
                         .smokeTarget("conversation.content.processes.stop")
                 }.padding(12)

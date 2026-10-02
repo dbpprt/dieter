@@ -40,7 +40,7 @@ private func recallMessage(_ id: String, text: String) -> Dieter_V1_QueuedMessag
     #expect(ComposerQueueRecall.newestMessage(text: "", attachments: [last.parts[1]], queue: [last]) == nil)
 }
 
-@Test @MainActor func queueRecallRestoresAuthoritativeContentsAttachmentsAndSettings() async throws {
+@Test @MainActor func queueRecallRestoresAuthoritativeContentsAndAttachments() async throws {
     let draft = ConversationDraft()
     let displayed = recallMessage("last", text: "Old cached value")
     let authoritative = recallMessage("last", text: "Nevermind 🦊")
@@ -52,8 +52,6 @@ private func recallMessage(_ id: String, text: String) -> Dieter_V1_QueuedMessag
     #expect(removed)
     #expect(draft.text == "Nevermind 🦊")
     #expect(draft.attachments == [authoritative.parts[1]])
-    #expect(draft.provider == "codex" && draft.model == "queued-model" && draft.effort == "high")
-    #expect(draft.providerOptions == ["fast_mode": "true"])
     #expect(draft.pendingQueueMessageIDs.isEmpty)
 }
 
@@ -110,7 +108,6 @@ private func recallMessage(_ id: String, text: String) -> Dieter_V1_QueuedMessag
     enum Failure: Error { case alreadyStarted }
     let draft = ConversationDraft()
     let message = recallMessage("last", text: "Nevermind")
-    draft.model = "current-model"
     do {
         _ = try await draft.removeQueuedMessage(message, edit: true) { _ in
             draft.text = "Typed during request"
@@ -119,7 +116,7 @@ private func recallMessage(_ id: String, text: String) -> Dieter_V1_QueuedMessag
         Issue.record("A failed dequeue should throw")
     } catch Failure.alreadyStarted {}
     #expect(draft.text == "Typed during request" && draft.attachments.isEmpty)
-    #expect(draft.model == "current-model" && draft.pendingQueueMessageIDs.isEmpty)
+    #expect(draft.pendingQueueMessageIDs.isEmpty)
     let retried = try await draft.removeQueuedMessage(message, edit: true) { _ in message }
     #expect(retried && draft.text == "Nevermind\n\nTyped during request")
 }

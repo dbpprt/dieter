@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -11,10 +12,7 @@ struct EditCardSheet: View {
     @State private var title: String
     @State private var task: String
     @State private var workspaceDraft: ConversationWorkspaceDraft
-    @State private var provider: String
-    @State private var model: String
-    @State private var effort: String
-    @State private var providerOptions: [String: String]
+    @State private var selection: Dieter_V1_HarnessSelection
     @State private var saving = false
     @FocusState private var focusedField: Field?
 
@@ -23,10 +21,13 @@ struct EditCardSheet: View {
     init(card: Dieter_V1_Card, availableHeight: CGFloat = NSScreen.main?.visibleFrame.height ?? 800) {
         self.card = card
         self.availableHeight = availableHeight
-        _provider = State(initialValue: card.provider)
-        _model = State(initialValue: card.model)
-        _effort = State(initialValue: card.effort)
-        _providerOptions = State(initialValue: card.providerOptions)
+        _selection = State(
+            initialValue: .with {
+                $0.provider = card.provider
+                $0.model = card.model
+                $0.effort = card.effort
+                $0.providerOptions = card.providerOptions
+            })
         _title = State(initialValue: card.title)
         _task = State(initialValue: card.initialPrompt)
         _workspaceDraft = State(
@@ -41,8 +42,8 @@ struct EditCardSheet: View {
     }
 
     private var hasChanges: Bool {
-        provider != card.provider || model != card.model || effort != card.effort
-            || providerOptions != card.providerOptions || title != card.title
+        selection.provider != card.provider || selection.model != card.model || selection.effort != card.effort
+            || selection.providerOptions != card.providerOptions || title != card.title
             || task != card.initialPrompt
             || workspaceDraft
                 != ConversationWorkspaceDraft(
@@ -53,9 +54,20 @@ struct EditCardSheet: View {
                         ? RemotePublishMode.manual.rawValue : card.remotePublishMode)
     }
 
-    private var canSave: Bool {
-        !saving && !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    /// Why the form cannot save yet, as the core checks the card when saving
+    /// it: a never-started todo card takes its title, task, and agent; a
+    /// started one only a new title. Empty when it can.
+    private var problem: String {
+        let current = store.state.cards.first { $0.id == card.id } ?? card
+        return SharedRules.shared.cardDraftProblem(
+            card: current.rulesData, title: title, task: task, selection: selection.rulesData)
+    }
+
+    private var canSave: Bool { !saving && problem.isEmpty }
+
+    /// The agents of the machine that runs the card.
+    private var catalog: Dieter_V1_HarnessCatalog {
+        store.machineMetadata[card.ownerDaemonID]?.harnesses ?? store.harnessCatalog
     }
 
     var body: some View {
@@ -121,12 +133,9 @@ struct EditCardSheet: View {
                     Divider().overlay(DieterTheme.border)
                     Text("Agent settings")
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
-                    HarnessFields(
-                        catalog: store.harnessCatalog,
-                        provider: $provider, model: $model, effort: $effort, providerOptions: $providerOptions
-                    )
-                    .accessibilityIdentifier("edit-card.agent-settings")
-                    .smokeTarget("edit-card.agent-settings")
+                    AgentControlFields(catalog: catalog, selection: $selection)
+                        .accessibilityIdentifier("edit-card.agent-settings")
+                        .smokeTarget("edit-card.agent-settings")
                     Divider().overlay(DieterTheme.border)
                     Text("Agent workspace")
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
@@ -158,7 +167,7 @@ struct EditCardSheet: View {
                         Text(workspaceDraft.mode.detail).font(.caption).foregroundStyle(DieterTheme.tertiary)
                     } else {
                         Text(
-                            "\(ConversationWorkspaceMode.projectMode(card.workspace.mode).title) · \(card.workspace.branch)"
+                            "\(SharedRules.shared.workspaceModeTitle(mode: card.workspace.mode)) · \(card.workspace.branch)"
                         )
                         Text("The workspace is already provisioned, so its checkout and branch are locked.")
                             .font(.caption).foregroundStyle(DieterTheme.tertiary)
@@ -185,6 +194,7 @@ struct EditCardSheet: View {
                 }
                 .buttonStyle(DieterPrimaryButtonStyle())
                 .disabled(!canSave)
+                .help(problem)
                 .keyboardShortcut("s", modifiers: .command)
                 .accessibilityIdentifier("edit-card.save")
             }
@@ -205,10 +215,10 @@ struct EditCardSheet: View {
         guard canSave else { return }
         saving = true
         var settings = Dieter_V1_DraftAgentSettings()
-        settings.provider = provider
-        settings.model = model
-        settings.effort = effort.isEmpty ? "default" : effort
-        settings.providerOptions = providerOptions
+        settings.provider = selection.provider
+        settings.model = selection.model
+        settings.effort = selection.effort
+        settings.providerOptions = selection.providerOptions
         let updated = await store.update(
             card,
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),

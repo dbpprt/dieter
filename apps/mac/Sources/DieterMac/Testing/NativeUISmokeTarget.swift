@@ -9,6 +9,8 @@ import SwiftUI
         static var frames: [String: [Entry]] = [:]
         static var diffText = ""
         static var diffSplit: Bool?
+        /// The diff view that published `diffText`; a replaced view clears only its own.
+        static var diffOwner: UUID?
         static let enabled = ProcessInfo.processInfo.arguments.contains { $0.hasSuffix("-ui-smoke") }
         static func register(_ view: NSView, identifier: String) {
             // SwiftUI can reuse a representable when a native list recycles its

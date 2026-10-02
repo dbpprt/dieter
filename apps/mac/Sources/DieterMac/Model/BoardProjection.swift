@@ -1,47 +1,49 @@
 import DieterAPI
+import DieterShared
 import Foundation
 
-/// A single derivation of the visible board state. SwiftUI consumers reuse the
-/// lane and label indexes instead of repeatedly filtering the full card list.
-struct BoardProjection: Equatable, Sendable {
-    let cards: [Dieter_V1_Card]
-    let displayedCards: [Dieter_V1_Card]
-    let displayedCardsByLane: [String: [Dieter_V1_Card]]
-    let labelCounts: [String: Int]
+/// The selected board as the shared core's board view shows it: its lanes
+/// with their shown cards top to bottom, counts, and filter chrome. Each
+/// shown card's data is looked up once from the workspace.
+struct BoardProjection: Equatable {
+    var view = ClientBoardViewSlice()
+    /// The lanes drawn: the core's, or the board's own without cards until
+    /// the core shows the board.
+    var lanes: [ClientBoardLaneView] = []
+    /// Lane ID → its shown cards, top to bottom.
+    var cardsByLane: [String: [Dieter_V1_Card]] = [:]
 
-    static let empty = BoardProjection(
-        cards: [],
-        displayedCards: [],
-        displayedCardsByLane: [:],
-        labelCounts: [:]
-    )
+    static let empty = BoardProjection()
 
-    static func resolve(
-        cards: [Dieter_V1_Card],
-        boardID: String,
-        runtimeFilter: String,
-        labelFilter: String,
-        query: String,
-        machineFilter: String = ""
-    ) -> BoardProjection {
-        let boardCards = boardID.isEmpty ? cards : cards.filter { $0.boardID == boardID }
-        var labelCounts: [String: Int] = [:]
-        for card in boardCards {
-            for labelID in card.labelIds { labelCounts[labelID, default: 0] += 1 }
+    static func resolve(view: ClientBoardViewSlice, board: Dieter_V1_Board?, cards: [Dieter_V1_Card])
+        -> BoardProjection
+    {
+        guard let board else { return .empty }
+        guard view.target.boardID == board.id, !view.lanes.isEmpty else {
+            return BoardProjection(
+                lanes: board.lanes.map { lane in
+                    .with {
+                        $0.laneID = lane.id
+                        $0.name = lane.name
+                        $0.kind = ClientBoardLaneKind(laneID: lane.id, name: lane.name)
+                        $0.descending = true
+                    }
+                })
         }
-        let displayed = boardCards.filter { card in
-            (machineFilter.isEmpty || card.ownerDaemonID == machineFilter)
-                && (runtimeFilter.isEmpty || card.runtime == runtimeFilter)
-                && (labelFilter.isEmpty || card.labelIds.contains(labelFilter))
-                && (query.isEmpty || card.title.localizedCaseInsensitiveContains(query)
-                    || card.summary.localizedCaseInsensitiveContains(query))
-        }
-        return BoardProjection(
-            cards: boardCards,
-            displayedCards: displayed,
-            displayedCardsByLane: Dictionary(grouping: displayed, by: \.lane),
-            labelCounts: labelCounts
-        )
+        let byID = Dictionary(cards.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+        var cardsByLane: [String: [Dieter_V1_Card]] = [:]
+        for lane in view.lanes { cardsByLane[lane.laneID] = lane.cardIds.compactMap { byID[$0] } }
+        return BoardProjection(view: view, lanes: view.lanes, cardsByLane: cardsByLane)
+    }
+
+    /// Every shown card, lane by lane.
+    var displayedCards: [Dieter_V1_Card] { lanes.flatMap { cardsByLane[$0.laneID] ?? [] } }
+}
+
+extension ClientBoardLaneKind {
+    /// A lane's kind as the shared core reads it from the lane's ID, else its name.
+    init(laneID: String, name: String) {
+        self = ClientBoardLaneKind(rawValue: Int(SharedRules.shared.laneKind(laneId: laneID, laneName: name))) ?? .other
     }
 }
 

@@ -1,73 +1,77 @@
 package com.dbpprt.dieter.core
 
 import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.ConversationSnapshot
 import com.dbpprt.dieter.api.v1.CreateConversationRequest
 import com.dbpprt.dieter.api.v1.DieterServiceClient
+import com.dbpprt.dieter.api.v1.Harness
 import com.dbpprt.dieter.api.v1.HarnessSelection
 import com.dbpprt.dieter.api.v1.MessagePart
-import com.dbpprt.dieter.core.admin.BackgroundPolicy
-import com.dbpprt.dieter.core.board.BoardOperations
-import com.dbpprt.dieter.core.composition.ConversationDrafts
-import com.dbpprt.dieter.core.composition.CreationMemory
-import com.dbpprt.dieter.core.composition.TaskCaptures
-import com.dbpprt.dieter.core.legacy.ForGateway
-import com.dbpprt.dieter.core.legacy.LegacyImportReport
-import com.dbpprt.dieter.core.legacy.LegacyState
-import com.dbpprt.dieter.core.admin.Administration
-import com.dbpprt.dieter.core.admin.MachineAdmin
-import com.dbpprt.dieter.core.admin.MachineTelemetry
 import com.dbpprt.dieter.core.activity.Activity
 import com.dbpprt.dieter.core.activity.ActivityItem
+import com.dbpprt.dieter.core.admin.Administration
+import com.dbpprt.dieter.core.admin.BackgroundPolicy
+import com.dbpprt.dieter.core.admin.MachineAdmin
+import com.dbpprt.dieter.core.admin.MachineTelemetry
+import com.dbpprt.dieter.core.board.BoardOperations
+import com.dbpprt.dieter.core.composition.ConversationDrafts
+import com.dbpprt.dieter.core.composition.Creation
+import com.dbpprt.dieter.core.composition.CreationDestinations
+import com.dbpprt.dieter.core.composition.CreationInput
+import com.dbpprt.dieter.core.composition.CreationMemory
+import com.dbpprt.dieter.core.composition.CreationPlan
+import com.dbpprt.dieter.core.composition.DraftKey
+import com.dbpprt.dieter.core.composition.TaskCaptures
 import com.dbpprt.dieter.core.connection.ConnectionSupervisor
+import com.dbpprt.dieter.core.connection.SupervisorConfig
+import com.dbpprt.dieter.core.conversation.ConversationConfig
+import com.dbpprt.dieter.core.conversation.ConversationSession
+import com.dbpprt.dieter.core.conversation.Conversations
+import com.dbpprt.dieter.core.files.FileTree
+import com.dbpprt.dieter.core.files.Files
+import com.dbpprt.dieter.core.identity.AccountStore
+import com.dbpprt.dieter.core.identity.ClientIdentity
+import com.dbpprt.dieter.core.identity.Credentials
+import com.dbpprt.dieter.core.identity.Gateway
+import com.dbpprt.dieter.core.identity.SignIn
+import com.dbpprt.dieter.core.metadata.MachineMetadataStore
+import com.dbpprt.dieter.core.navigation.NavigationEditor
+import com.dbpprt.dieter.core.navigation.NavigationLayout
+import com.dbpprt.dieter.core.navigation.SharedKv
 import com.dbpprt.dieter.core.notifications.NotificationPlanner
 import com.dbpprt.dieter.core.notifications.NotificationSettings
+import com.dbpprt.dieter.core.outbox.Outbox
+import com.dbpprt.dieter.core.outbox.OutboxPolicy
 import com.dbpprt.dieter.core.outbox.OutboxView
+import com.dbpprt.dieter.core.platform.Platform
+import com.dbpprt.dieter.core.presentation.LiveActivities
+import com.dbpprt.dieter.core.quotas.ProviderQuotas
+import com.dbpprt.dieter.core.routing.RouteSelector
+import com.dbpprt.dieter.core.routing.RoutingPolicy
+import com.dbpprt.dieter.core.routing.WebRtcCooldown
 import com.dbpprt.dieter.core.runtime.CoreException
 import com.dbpprt.dieter.core.runtime.FailureKind
+import com.dbpprt.dieter.core.schedules.Schedules
 import com.dbpprt.dieter.core.screens.LocalClipboard
 import com.dbpprt.dieter.core.screens.ScreenConfig
 import com.dbpprt.dieter.core.screens.ScreenMediaEngineFactory
 import com.dbpprt.dieter.core.screens.ScreenRouteFactory
 import com.dbpprt.dieter.core.screens.ScreenSession
 import com.dbpprt.dieter.core.screens.screenRoutes
-import com.dbpprt.dieter.core.files.FileTree
-import com.dbpprt.dieter.core.files.Files
-import com.dbpprt.dieter.core.store.WorkspaceView
-import com.dbpprt.dieter.core.workspace.ProjectChanges
-import com.dbpprt.dieter.core.workspace.ProjectWorkspaces
-import com.dbpprt.dieter.core.workspace.WorkspaceReview
-import com.dbpprt.dieter.core.terminals.TerminalInputPumps
-import com.dbpprt.dieter.core.terminals.TerminalSelections
-import com.dbpprt.dieter.core.terminals.TerminalOverview
-import com.dbpprt.dieter.core.terminals.Terminals
-import com.dbpprt.dieter.core.executions.Processes
-import com.dbpprt.dieter.core.quotas.ProviderQuotas
-import com.dbpprt.dieter.core.schedules.Schedules
-import com.dbpprt.dieter.core.conversation.ConversationConfig
-import com.dbpprt.dieter.core.conversation.ConversationSession
-import com.dbpprt.dieter.core.conversation.Conversations
-import com.dbpprt.dieter.core.connection.SupervisorConfig
-import com.dbpprt.dieter.core.identity.AccountStore
-import com.dbpprt.dieter.core.identity.ClientIdentity
-import com.dbpprt.dieter.core.identity.Credentials
-import com.dbpprt.dieter.core.identity.Gateway
-import com.dbpprt.dieter.core.identity.SignIn
-import com.dbpprt.dieter.core.journal.OutboxPlacement
-import com.dbpprt.dieter.core.metadata.MachineMetadataStore
-import com.dbpprt.dieter.core.navigation.NavigationEditor
-import com.dbpprt.dieter.core.navigation.NavigationLayout
-import com.dbpprt.dieter.core.navigation.SharedKv
-import com.dbpprt.dieter.core.outbox.Outbox
-import com.dbpprt.dieter.core.platform.Platform
-import com.dbpprt.dieter.core.routing.RouteSelector
-import com.dbpprt.dieter.core.routing.RoutingPolicy
-import com.dbpprt.dieter.core.routing.WebRtcCooldown
+import com.dbpprt.dieter.core.selection.Selections
 import com.dbpprt.dieter.core.session.MachineSessions
 import com.dbpprt.dieter.core.storage.CoreStorage
 import com.dbpprt.dieter.core.store.WorkspaceStore
-import com.dbpprt.dieter.core.presentation.LiveActivities
-import com.dbpprt.dieter.api.v1.ConversationSnapshot
+import com.dbpprt.dieter.core.store.WorkspaceView
 import com.dbpprt.dieter.core.sync.DirectoryPoller
+import com.dbpprt.dieter.core.terminals.TerminalInputPumps
+import com.dbpprt.dieter.core.terminals.TerminalOverview
+import com.dbpprt.dieter.core.terminals.TerminalSelections
+import com.dbpprt.dieter.core.terminals.Terminals
+import com.dbpprt.dieter.core.workspace.ProjectChanges
+import com.dbpprt.dieter.core.workspace.ProjectWorkspaces
+import com.dbpprt.dieter.core.workspace.WorkspaceReview
+import kotlin.concurrent.Volatile
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -83,9 +87,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-/** Marks an install whose legacy app state was imported. */
-private const val LEGACY_IMPORTED = "legacy-imported"
-
 data class RuntimeConfig(
     /** The canonical Dieter release of the app. */
     val clientVersion: String,
@@ -95,10 +96,6 @@ data class RuntimeConfig(
     val includeLoopbackRoutes: Boolean,
     /** Prefix of a newly generated sync client ID, e.g. `android` or `mac`. */
     val clientIdPrefix: String = "core",
-    /** The install's existing sync client ID from a legacy store, kept for command idempotency. */
-    val legacyClientId: () -> String? = { null },
-    val supervisor: SupervisorConfig = SupervisorConfig(clientVersion),
-    val routing: RoutingPolicy = RoutingPolicy(includeLoopbackRoutes),
     val conversations: ConversationConfig = ConversationConfig(),
 )
 
@@ -117,9 +114,9 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     val signIn = SignIn(storage, platform.http, credentials, config.oauthRedirectUri, platform.clock)
     val workspace = WorkspaceStore(platform.clock)
     private val cooldown = WebRtcCooldown(platform.clock)
-    private val routes = RouteSelector(platform.transport, platform.controlChannels, config.routing, cooldown, platform.logger, platform.clock)
+    private val routes = RouteSelector(platform.transport, platform.controlChannels, RoutingPolicy(config.includeLoopbackRoutes), cooldown, platform.logger, platform.clock)
     val sessions = MachineSessions(routes, scope)
-    val clientId: String = ClientIdentity.load(storage, config.clientIdPrefix, config.legacyClientId)
+    val clientId: String = ClientIdentity.load(storage, config.clientIdPrefix)
     val outbox = Outbox(clientId, sessions, workspace, platform.clock, platform.logger)
     val board = BoardOperations(sessions, workspace)
     val navigationKv = SharedKv("navigation", sessions, platform.clock, platform.logger)
@@ -130,7 +127,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     val creation = CreationMemory(storage, platform.logger)
     val connection: ConnectionSupervisor = ConnectionSupervisor(
         scope, accounts, credentials, sessions, workspace, ::storageFor, platform.transport,
-        config.supervisor.copy(clientVersion = config.clientVersion), platform.clock, platform.logger,
+        SupervisorConfig(config.clientVersion), platform.clock, platform.logger,
         onGatewayPrepared = { _, prepared ->
             gatewayStorage = prepared
             terminalSelections.reload()
@@ -141,37 +138,53 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
             captures.bind(prepared.scope("captures"))
             metadata.forget()
             conversations.reset()
-            schedules.bind(null)
-            processes.bind(null, active = false)
+            board.reset()
+            schedules.stop()
+            telemetry.reset()
+            projectWorkspaces.reset()
             quotas.reset()
+            gatewayListeners.forEach { it() }
         },
     )
-    val schedules = Schedules(sessions, workspace, scope)
-    val processes = Processes(sessions, scope)
+    val schedules = Schedules(sessions, workspace, scope, metadata)
+    val telemetry = MachineTelemetry(sessions, scope)
+    val projectWorkspaces = ProjectWorkspaces(sessions, workspace)
     val quotas = ProviderQuotas(platform.logger)
     private var gatewayStorage: CoreStorage? = null
     val terminalPumps = TerminalInputPumps(sessions, scope)
     val terminalSelections = TerminalSelections { gatewayStorage }
     val conversations: Conversations = Conversations(
-        sessions, workspace, outbox, board, drafts, connection.feedStatus, config.conversations, platform.clock, platform.logger, scope,
+        sessions, workspace, outbox, board, drafts, connection.feedStatus, config.conversations, platform.clock, platform.logger, scope, platform.settings,
+        catalog = { daemonId -> metadata.machines.value[daemonId]?.harnesses?.harnesses },
     )
+
+    @Volatile
+    private var gatewayListeners = emptyList<() -> Unit>()
+
+    /**
+     * Runs [listener] on the core dispatcher whenever the active gateway
+     * changes, after the runtime dropped the previous account's state.
+     * Register before [start].
+     */
+    fun onGatewayChange(listener: () -> Unit) {
+        gatewayListeners = gatewayListeners + listener
+    }
 
     /** Per-gateway state lives in its own namespace, so switching accounts never mixes data. */
     fun storageFor(gateway: Gateway): CoreStorage = storage.scope("gateway-${gateway.origin}")
 
-    private var started = false
-
     fun start() {
-        started = true
         scope.launch { connection.start() }
         scope.launch { outbox.run(reachableMachines()) }
         scope.launch { workspace.revision.collect { outbox.reconcile() } }
+        // An inline error goes with its card.
+        scope.launch { workspace.state.collect { view -> board.retainErrors { view.card(it) != null } } }
         scope.launch { navigationKv.run(connection.active.map { it?.attachedMachineId }) }
         // Pinned chats keep the order they were first seen in; later pins append. Only after
         // a full replay, so a saved order elsewhere is never mistaken for none.
         scope.launch {
             combine(workspace.state, navigationKv.values, navigationKv.status) { view, values, status ->
-                view.chats.takeIf { chats -> status.caughtUp && chats.any { it.pinned } && NavigationLayout(values).ordered("pinned-order").isEmpty() }
+                view.chats.takeIf { chats -> status.caughtUp && chats.any { it.pinned } && NavigationLayout(values).savedPinnedChatOrder().isEmpty() }
             }.collect { chats -> if (chats != null) navigation.initializePinnedChatOrder(chats) }
         }
         notificationPlanner?.let { planner ->
@@ -214,67 +227,6 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     /** The URL to open for GitHub sign-in to [gateway]. */
     suspend fun beginSignIn(gateway: Gateway): String = onCore { signIn.begin(gateway) }
 
-    /** Whether [importLegacy] still has to run on this install. */
-    val needsLegacyImport: Boolean get() = storage.read(LEGACY_IMPORTED) == null
-
-    /**
-     * Moves a legacy app's state into the core, once per install; later calls
-     * report `skipped`. Run it before [start]. Nothing is deleted from the
-     * legacy stores, so a rollback to the legacy implementation still works.
-     */
-    suspend fun importLegacy(state: LegacyState): LegacyImportReport = onCore {
-        if (!needsLegacyImport) return@onCore LegacyImportReport(skipped = true)
-        // Started components hold their stores in memory and would overwrite what is imported.
-        check(!started) { "Import legacy state before starting the core." }
-        val now = platform.clock.now().toEpochMilliseconds()
-        var tokens = 0
-        var outboxEntries = 0
-        var navigationCaches = 0
-        var draftCount = 0
-        var selections = 0
-        if (state.gateways.isNotEmpty()) {
-            val known = accounts.state.value.gateways.filterNot { existing -> state.gateways.any { it.origin == existing.origin } }
-            accounts.setGateways(state.gateways + known, state.activeOrigin)
-            for ((origin, daemonId) in state.preferredMachines) {
-                if (state.gateways.none { it.origin == origin }) continue
-                accounts.select(origin)
-                accounts.preferMachine(daemonId)
-            }
-            state.activeOrigin?.let(accounts::select)
-        }
-        val gateways = accounts.state.value.gateways.associateBy { it.origin }
-        for ((origin, token) in state.tokens) {
-            // A token is only valid for the exact origin it was issued for; migrated hosts sign in again.
-            val gateway = gateways[origin] ?: continue
-            if (token.isBlank() || credentials.token(gateway) != null) continue
-            credentials.save(gateway, token)
-            tokens++
-        }
-        fun <T> byGateway(items: List<ForGateway<T>>) = items.groupBy({ it.origin }, { it.value }).mapNotNull { (origin, values) -> gateways[origin]?.let { it to values } }
-        for ((gateway, entries) in byGateway(state.outbox)) outboxEntries += Outbox.importInto(storageFor(gateway).scope("outbox"), entries, now)
-        val active = state.activeNavigation
-        for ((gateway, caches) in byGateway(state.navigation)) {
-            val activeHere = active?.takeIf { gateways[it.origin] == gateway }?.value
-            navigationCaches += SharedKv.importInto(storageFor(gateway).scope("navigation"), "navigation", caches, activeHere)
-        }
-        for ((gateway, drafts) in byGateway(state.drafts)) draftCount += ConversationDrafts.importInto(storageFor(gateway).scope("drafts"), drafts)
-        for ((gateway, pairs) in byGateway(state.terminalSelections)) {
-            val selectionsHere = TerminalSelections { storageFor(gateway) }
-            for ((key, terminalId) in pairs) if (selectionsHere.get(key) == null) {
-                selectionsHere.set(key, terminalId)
-                selections++
-            }
-        }
-        state.notifications?.let { if (platform.settings.string("notifications.enabled") == null) it.save(platform.settings) }
-        state.creation?.let(creation::adopt)
-        storage.write(LEGACY_IMPORTED, "1".encodeToByteArray())
-        terminalSelections.reload()
-        LegacyImportReport(
-            skipped = false, gateways = state.gateways.size, tokens = tokens, outboxEntries = outboxEntries, navigationCaches = navigationCaches,
-            drafts = draftCount, terminalSelections = selections,
-        )
-    }
-
     /** Completes sign-in from the OAuth callback URL and connects. */
     suspend fun completeSignIn(callbackUrl: String): Gateway = onCore {
         val gateway = signIn.complete(callbackUrl)
@@ -283,8 +235,8 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     }
 
     /**
-     * Uses a gateway session obtained elsewhere, such as a token a legacy app
-     * stored, and connects to that gateway.
+     * Uses a gateway session obtained elsewhere, such as an isolated test
+     * run's token, and connects to that gateway.
      */
     suspend fun adoptSession(gateway: Gateway, token: String) = onCore {
         require(token.isNotBlank()) { "The session token is empty." }
@@ -314,15 +266,6 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
         connection.restart()
     }
 
-    /** Forgets the active gateway's session and its cached data. */
-    suspend fun signOut() = onCore {
-        val gateway = accounts.state.value.active
-        credentials.remove(gateway)
-        workspace.clear()
-        storageFor(gateway).clear()
-        connection.restart()
-    }
-
     suspend fun selectGateway(origin: String) = onCore { accounts.select(origin) }
 
     suspend fun setGateways(gateways: List<Gateway>, activeOrigin: String? = null) = onCore {
@@ -337,17 +280,82 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
 
     suspend fun setConnected(value: Boolean) = onCore { accounts.setDesiredConnected(value) }
 
-    /** Queues a card or chat; returns its optimistic row. */
+    /** Queues a card or chat as [request] says; returns its optimistic row. [create] applies the creation rules first. */
     suspend fun createConversation(request: CreateConversationRequest, chat: Boolean, submissionId: String? = null): Card =
         onCore { outbox.createConversation(request, chat, submissionId) }
 
-    /** Queues a message; returns its ID. */
-    suspend fun sendMessage(
-        cardId: String,
-        parts: List<MessagePart>,
-        selection: HarnessSelection = HarnessSelection(),
-        placement: OutboxPlacement = OutboxPlacement.OUTBOX_PLACEMENT_TRANSCRIPT,
-    ): String = onCore { outbox.sendMessage(cardId, parts, selection, placement) }
+    /** What the core knows of machines and their loaded catalogs for new conversations now. */
+    fun creationDestinations(): CreationDestinations = CreationDestinations(
+        online = connection.machines.value.online.mapTo(HashSet()) { it.id },
+        attachedDaemonId = connection.active.value?.attachedMachineId,
+        replicas = workspace.state.value.projectReplicas,
+        catalogs = metadata.machines.value.mapNotNull { (id, machine) -> machine.harnesses?.let { id to it.harnesses } }.toMap(),
+    )
+
+    /**
+     * [input] checked against its destination ([Creation.plan]). The machine
+     * whose catalog the pickers show starts loading it when it is online.
+     */
+    suspend fun planCreation(input: CreationInput): CreationPlan = onCore {
+        val destinations = creationDestinations()
+        val plan = Creation.plan(input, destinations)
+        Creation.catalogMachine(plan.checkout, destinations.replicas[input.project.id], destinations.attachedDaemonId)
+            ?.takeIf { it in destinations.online }?.let { metadata.ensure(it) }
+        plan
+    }
+
+    /**
+     * Queues [input] once it passes the creation rules ([CreationPlan.problem]),
+     * waiting up to [Creation.CATALOG_WAIT] for an online destination's
+     * catalog, and remembers its choices ([CreationMemory.remember]). With
+     * [captureId], that capture is submitted at most once ([submitCapture]);
+     * otherwise reusing [submissionId] never creates a second conversation.
+     */
+    suspend fun create(input: CreationInput, captureId: String? = null, submissionId: String? = null): Card = onCore {
+        var plan = planCreation(input)
+        val daemonId = plan.daemonId
+        if (plan.needsCatalog && daemonId != null) {
+            withTimeoutOrNull(Creation.CATALOG_WAIT) { metadata.machines.first { it[daemonId]?.loaded == true } }
+            plan = Creation.plan(input, creationDestinations())
+        }
+        plan.problem?.let { problem ->
+            // A destination whose catalog did not load yet may still take it later.
+            throw CoreException(if (plan.checkout != null && plan.catalog == null) FailureKind.TRANSIENT else FailureKind.PERMANENT, problem)
+        }
+        val request = Creation.request(plan.input)
+        val card = if (captureId != null) submitCapture(captureId, request, input.chat) else outbox.createConversation(request, input.chat, submissionId)
+        creation.remember(plan.input)
+        card
+    }
+
+    /**
+     * Queues a message; returns its ID. An open conversation sends it
+     * ([ConversationSession.send]); otherwise it goes straight to the outbox
+     * under the same rules: its agent is [selection], else the composer's
+     * choice, else the conversation's ([Selections.forSend] against the
+     * conversation machine's catalog), and it joins the queue while the agent
+     * works or messages wait ([ConversationSession.placement]).
+     */
+    suspend fun sendMessage(cardId: String, parts: List<MessagePart>, selection: HarnessSelection? = null): String = onCore {
+        conversations.session(cardId)?.let { session ->
+            return@onCore session.send(parts, selection, session.view.value.daemonId?.let(::loadedCatalog))
+        }
+        ConversationSession.checkSendable(parts)
+        val target = outbox.view.value.resolve(cardId)
+        val view = workspace.state.value
+        // A conversation still being created is known by its outbox entry.
+        val card = view.card(target)
+            ?: outbox.view.value.entries.firstOrNull { target in OutboxPolicy.conversationIds(it) }?.let(OutboxPolicy::optimisticCard)
+            ?: throw CoreException(FailureKind.PERMANENT, "The conversation is no longer available.")
+        val conversation = view.conversations[target]?.conversation
+        val owner = workspace.directoryProjection.owner(card) ?: view.projectReplicas[card.project_id]
+        val chosen = selection ?: owner?.let { drafts.state.value[DraftKey(it, target)] }?.selection
+        val locked = Selections.locked(card, conversation?.messages.orEmpty().isNotEmpty())
+        outbox.sendMessage(cardId, parts, Selections.forSend(chosen, card, owner?.let(::loadedCatalog), locked), ConversationSession.placement(card, conversation))
+    }
+
+    /** [daemonId]'s agent catalog once it has loaded, else null. */
+    fun loadedCatalog(daemonId: String): List<Harness>? = metadata.machines.value[daemonId]?.harnesses?.harnesses
 
     /**
      * Submits capture [id] as a task or chat. The first submit freezes the
@@ -383,9 +391,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     /** A project checkout's changes surface; each view owns one. */
     fun projectChanges(): ProjectChanges = ProjectChanges(sessions, workspace, scope)
 
-    val projectWorkspaces = ProjectWorkspaces(sessions, workspace)
     val admin = Administration(sessions, workspace) { connection.active.value?.attachedMachineId }
-    val telemetry = MachineTelemetry(sessions, scope)
 
     /** Renames a machine on the gateway; every client sees the new name through presence. */
     suspend fun renameMachine(daemonId: String, name: String) = onCore {
@@ -469,7 +475,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     }
 
     /** The conversation on screen; its results and review requests are not notified. */
-    @kotlin.concurrent.Volatile
+    @Volatile
     var visibleConversationId: String? = null
 
     /** Runs a board or card mutation on the core dispatcher. */

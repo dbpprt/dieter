@@ -1,9 +1,7 @@
 package com.dbpprt.dieter.ui
 
 import android.Manifest
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -18,7 +16,6 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
@@ -29,7 +26,7 @@ import com.dbpprt.dieter.api.v1.ProjectRef
 import com.dbpprt.dieter.api.v1.UpdateProjectWorkspaceSettingsRequest
 import com.dbpprt.dieter.core.store.WorkspaceView
 import com.dbpprt.dieter.e2e.IsolatedCore
-import java.io.File
+import com.dbpprt.dieter.e2e.saveEvidence
 import java.util.UUID
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -37,7 +34,6 @@ import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
@@ -54,9 +50,6 @@ class ProjectWorkspaceAdministrationEndToEndTest {
 
     @Test
     fun createsOnSelectedHostAndAdministersWorkspaceThroughTheVisibleApp() {
-        val arguments = InstrumentationRegistry.getArguments()
-        val token = arguments.getString("isolatedGatewayToken").orEmpty()
-        assumeTrue("Pass isolatedGatewayToken for the isolated gateway", token.isNotBlank())
         val application = composeRule.activity.application as DieterApplication
         val container = application.container
         val core = container.core
@@ -104,7 +97,7 @@ class ProjectWorkspaceAdministrationEndToEndTest {
             assertEquals("main", project.base_branch)
             assertEquals("git", project.validation_commands.single().executable)
             assertEquals(compatibleHost, createdState.projectReplicas[project.id])
-            capture("project-created-on-selected-host-e2e.png")
+            composeRule.onRoot().saveEvidence("project-created-on-selected-host-e2e.png")
 
             composeRule.runOnIdle { model().selectProject(initialProject.id) }
             composeRule.waitUntil(30_000) { model().state.value.selectedProjectId == initialProject.id }
@@ -128,7 +121,7 @@ class ProjectWorkspaceAdministrationEndToEndTest {
             composeRule.waitUntil(20_000) {
                 composeRule.onAllNodesWithTag("project-workspace-${card.id}").fetchSemanticsNodes().isNotEmpty()
             }
-            capture("project-workspace-management-e2e.png")
+            composeRule.onRoot().saveEvidence("project-workspace-management-e2e.png")
             composeRule.onNodeWithTag("discard-workspace-${card.id}").performScrollTo().performClick()
             composeRule.onNodeWithTag("confirm-workspace-operation").performClick()
             composeRule.waitUntil(30_000) {
@@ -154,7 +147,7 @@ class ProjectWorkspaceAdministrationEndToEndTest {
             val updated = updatedState.projects.first { it.id == initialProject.id }
             assertEquals("trunk", updated.base_branch)
             assertTrue(updated.validation_commands.single().executable == "git")
-            capture("project-workspace-settings-saved-e2e.png")
+            composeRule.onRoot().saveEvidence("project-workspace-settings-saved-e2e.png")
         } finally {
             // Each journey shares the disposable fixture, so restore its checkout defaults.
             runBlocking {
@@ -167,22 +160,6 @@ class ProjectWorkspaceAdministrationEndToEndTest {
             cardId?.let { runBlocking { runCatching { core.onBoard { archive(it) } } } }
             projectId?.let { id -> runBlocking { runCatching { core.admin.setProjectArchived(id, true) } } }
             IsolatedCore.disconnect(container)
-        }
-    }
-
-    private fun capture(name: String) {
-        val arguments = InstrumentationRegistry.getArguments()
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val directory = arguments.getString("additionalTestOutputDir")
-            ?.takeIf(String::isNotBlank)?.let(::File)
-            ?: requireNotNull(context.getExternalFilesDir(null))
-        directory.mkdirs()
-        File(directory, name).outputStream().use { output ->
-            composeRule.onRoot().captureToImage().asAndroidBitmap().compress(
-                android.graphics.Bitmap.CompressFormat.PNG,
-                100,
-                output,
-            )
         }
     }
 }

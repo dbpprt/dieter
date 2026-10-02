@@ -13,17 +13,10 @@ if ! command -v sips >/dev/null 2>&1; then
   exit 1
 fi
 
-mkdir -p \
-  "$resource_root/drawable-nodpi" \
-  "$resource_root/font" \
-  "$resource_root/mipmap-mdpi" \
-  "$resource_root/mipmap-hdpi" \
-  "$resource_root/mipmap-xhdpi" \
-  "$resource_root/mipmap-xxhdpi" \
-  "$resource_root/mipmap-xxxhdpi"
+mkdir -p "$resource_root/drawable-nodpi" "$resource_root/font"
 
-sips -s format png "$brand_root/assets/svg/mark.svg" \
-  --out "$resource_root/drawable-nodpi/ic_dieter_foreground.png" >/dev/null
+# The themed-icon layer of every palette launcher icon, and the mark that
+# notifications and widgets show.
 sips -s format png "$brand_root/assets/svg/mark-mono-light.svg" \
   --out "$work_root/ic_dieter_monochrome-1024.png" >/dev/null
 sips -z 1024 1024 "$work_root/ic_dieter_monochrome-1024.png" \
@@ -32,10 +25,5 @@ sips -z 192 192 "$work_root/ic_dieter_monochrome-1024.png" \
   --out "$resource_root/drawable-nodpi/ic_notification.png" >/dev/null
 
 cp "$brand_root/assets/fonts/Sora-Variable.ttf" "$resource_root/font/sora_variable.ttf"
-
-for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-  cp "$brand_root/assets/android/mipmap-$density/ic_launcher.png" \
-    "$resource_root/mipmap-$density/ic_launcher.png"
-done
 
 echo "Android brand resources synchronized from $brand_root"

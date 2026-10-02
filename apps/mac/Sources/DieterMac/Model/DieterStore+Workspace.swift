@@ -3,7 +3,6 @@ import DieterAPI
 import DieterCore
 import Foundation
 import SharedCore
-import GRPCCore
 import OSLog
 import Observation
 import UniformTypeIdentifiers
@@ -32,7 +31,7 @@ extension DieterStore {
                 endpointID: card.map { endpointID(for: $0) } ?? endpoint.id,
                 projectID: card?.projectID ?? selectedProjectID,
                 conversationID: selectedCardID ?? selectedChatID ?? ""),
-            core: core, card: card, doneLaneID: card.flatMap { doneLane(for: $0) }
+            core: core, card: card
         )
         worktreeChanges.authorName = NSFullUserName()
         worktreeChanges.onOpenFiles = { [weak self] card, path in
@@ -44,7 +43,6 @@ extension DieterStore {
         worktreeChanges.onSendMessage = { [weak self] text, card, target in
             await self?.sendAgentMessage(text, card: card, endpointID: target.endpointID) ?? false
         }
-        worktreeChanges.onCard = { [weak self] card in self?.acceptWorkspaceCard(card) }
         worktreeChanges.onOperationFinished = { [weak self] target in
             guard let self, self.selectedProjectID == target.projectID else { return }
             await self.loadProjectWorkspaces()
@@ -54,24 +52,13 @@ extension DieterStore {
         bindWorktree()
         await worktreeChanges.loadWorkspaceSurface()
     }
-    func loadConversationDiff(
-        path: String, commitSHA: String = "", append: Bool = false, retryStale: Bool = true
-    ) async {
-        bindWorktree()
-        await worktreeChanges.loadConversationDiff(
-            path: path, commitSHA: commitSHA, append: append, retryStale: retryStale)
-    }
-    func addChangeComment(line: UnifiedDiffLine, body: String) async -> Bool {
-        bindWorktree()
-        return await worktreeChanges.addChangeComment(line: line, body: body)
-    }
 
     func updateConversationWorkspace(
         _ draft: ConversationWorkspaceDraft, cardID explicitCardID: String? = nil
     ) async -> Bool {
         guard let cardID = explicitCardID ?? selectedCardID ?? selectedChatID else { return false }
         do {
-            let result = try await administer {
+            _ = try await administer {
                 $0.updateConversationWorkspace = .with {
                     $0.cardID = cardID
                     $0.mode = draft.mode.rawValue
@@ -81,7 +68,6 @@ extension DieterStore {
                     $0.publishMode = draft.remotePublishMode
                 }
             }
-            acceptWorkspaceCard(result.card)
             return true
         } catch {
             workspaceError = (error as? CoreFailure)?.message ?? error.localizedDescription
@@ -99,7 +85,7 @@ extension DieterStore {
         let updatesValidation = validationCommands != (checkout?.validationCommands ?? [])
         let projectID = selectedProjectID
         do {
-            let result = try await administer {
+            _ = try await administer {
                 $0.workspaceSettings = .with {
                     $0.projectID = projectID
                     $0.baseRemote = remote
@@ -109,7 +95,6 @@ extension DieterStore {
                     $0.validation = validationCommands
                 }
             }
-            acceptProject(result.project)
             return true
         } catch {
             show(error)
@@ -123,7 +108,7 @@ extension DieterStore {
         guard !projectID.isEmpty else { return }
         let result = await perform { $0.projectWorkspaces = .with { $0.load = .with { $0.projectID = projectID } } }
         guard case .projectWorkspaces(let slice)? = result?.result, projectID == selectedProjectID else { return }
-        projectWorkspaces = slice.workspaces
+        projectWorkspaces = slice.rows
         if !slice.error.isEmpty { workspaceError = slice.error }
     }
 
@@ -139,7 +124,7 @@ extension DieterStore {
             }
         }
         guard case .projectWorkspaces(let slice)? = result?.result else { return false }
-        projectWorkspaces = slice.workspaces
+        projectWorkspaces = slice.rows
         if let failure = slice.errors[cardID] {
             workspaceError = failure
             return false
@@ -147,12 +132,10 @@ extension DieterStore {
         return true
     }
 
-    func startGitOperation(_ kind: GitOperationKind, parameters: [String: String] = [:]) async -> Bool {
+    func startGitOperation(form: ClientGitOperationForm) async -> Bool {
         bindWorktree()
-        return await worktreeChanges.startGitOperation(kind, parameters: parameters)
+        return await worktreeChanges.startGitOperation(form: form)
     }
-    func cancelCurrentGitOperation() async { await worktreeChanges.cancelCurrentGitOperation() }
-    func showWorkspaceToast(_ message: String) { worktreeChanges.showWorkspaceToast(message) }
     @discardableResult func performMergeFlow(
         strategy: String, subject: String, body: String, validate: Bool, removeWorkspace: Bool,
         moveCardToDone: Bool
@@ -162,18 +145,6 @@ extension DieterStore {
             strategy: strategy, subject: subject, body: body, validate: validate,
             removeWorkspace: removeWorkspace,
             moveCardToDone: moveCardToDone)
-    }
-    func awaitCurrentGitOperationSuccess() async -> Bool {
-        await worktreeChanges.awaitCurrentGitOperationSuccess()
-    }
-
-    func doneLane(for card: Dieter_V1_Card) -> String? {
-        let lanes =
-            selectedDetail?.board.id == card.boardID
-            ? selectedDetail?.board.lanes
-            : boards(for: card.projectID).first { $0.id == card.boardID }?.lanes
-        guard let lanes, !lanes.isEmpty else { return nil }
-        return lanes.first { $0.id == "done" }?.id ?? lanes.last?.id
     }
 
     /// Sends a hand-off message into the conversation on the person's behalf,
@@ -204,20 +175,6 @@ extension DieterStore {
                 }
             }
         } != nil
-    }
-
-    func acceptWorkspaceCard(_ card: Dieter_V1_Card, sourceDaemonID: String? = nil) {
-        let card = replica.retainingOwnerDetails([card], sourceDaemonID: sourceDaemonID ?? endpoint.daemonID)[0]
-        replica.upsert(card)
-        refreshReplicaPresentation()
-        if var detail = selectedDetail, detail.card.id == card.id {
-            detail.card = card
-            selectedDetail = detail
-        }
-        if var snapshot = conversation, snapshot.detail.card.id == card.id {
-            snapshot.detail.card = card
-            conversation = snapshot
-        }
     }
 
     func listProjectDirectories(path: String, machineID: String) async throws
@@ -283,15 +240,11 @@ extension DieterStore {
             }
         }.createdProject
 
-        projectDirectory[response.project.id] = response.project
-        projectReplicaEndpointIDs[response.project.id] = target.id
-        navigationBoards[response.project.id] = [response.board]
         if target.id != endpoint.id { await connect(to: target) }
         selectedProjectID = response.project.id
         selectedBoardID = response.board.id
         section = .board
         await refreshState()
-        await refreshNavigation()
         return response
     }
 
@@ -304,7 +257,6 @@ extension DieterStore {
                 }
             }
             await refreshState()
-            await refreshNavigation()
             await loadArchive()
         } catch { show(error) }
     }
@@ -321,7 +273,6 @@ extension DieterStore {
             }
             renameProjectPresented = false
             await refreshState()
-            await refreshNavigation()
         } catch { show(error) }
     }
 
@@ -366,7 +317,6 @@ extension DieterStore {
             selectedBoardID = board.id
             section = .board
             await refreshState()
-            await refreshNavigation()
         } catch { show(error) }
     }
 
@@ -397,27 +347,15 @@ extension DieterStore {
         let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return false }
         do {
-            let updated = try await administer {
+            _ = try await administer {
                 $0.renameBoard = .with {
                     $0.boardID = id
                     $0.name = normalized
                 }
-            }.board
-            if let index = state.boards.firstIndex(where: { $0.id == updated.id }) {
-                var next = state
-                next.boards[index] = updated
-                state = next
-            }
-            if var boards = navigationBoards[updated.projectID],
-                let index = boards.firstIndex(where: { $0.id == updated.id })
-            {
-                boards[index] = updated
-                navigationBoards[updated.projectID] = boards
             }
             renameBoardPresented = false
             renameBoardTargetID = ""
             await refreshState()
-            await refreshNavigation()
             return true
         } catch {
             show(error)
@@ -428,13 +366,12 @@ extension DieterStore {
     func setArchivePolicy(_ policy: String) async {
         let boardID = selectedBoardID
         do {
-            acceptBoard(
-                try await administer {
-                    $0.setArchivePolicy = .with {
-                        $0.boardID = boardID
-                        $0.policy = policy
-                    }
-                }.board)
+            _ = try await administer {
+                $0.setArchivePolicy = .with {
+                    $0.boardID = boardID
+                    $0.policy = policy
+                }
+            }
             archivePolicyPresented = false
             await refreshState()
         } catch { show(error) }
@@ -444,27 +381,25 @@ extension DieterStore {
         guard let board = selectedBoard else {
             throw CaptureTaskError.failed("Choose an available project and board first.")
         }
-        acceptBoard(
-            try await administer {
-                $0.setHostnames = .with {
-                    $0.boardID = board.id
-                    $0.hostnames = hostnames
-                    $0.append = append
-                }
-            }.board)
+        _ = try await administer {
+            $0.setHostnames = .with {
+                $0.boardID = board.id
+                $0.hostnames = hostnames
+                $0.append = append
+            }
+        }
     }
 
     func updateBoardGitSettings(remote: String, publishMode: String) async -> Bool {
         let boardID = selectedBoardID
         do {
-            acceptBoard(
-                try await administer {
-                    $0.setGitSettings = .with {
-                        $0.boardID = boardID
-                        $0.baseRemote = remote
-                        $0.publishMode = publishMode
-                    }
-                }.board)
+            _ = try await administer {
+                $0.setGitSettings = .with {
+                    $0.boardID = boardID
+                    $0.baseRemote = remote
+                    $0.publishMode = publishMode
+                }
+            }
             await refreshState()
             return true
         } catch {
@@ -476,85 +411,66 @@ extension DieterStore {
     func createLabel(name: String, color: String, instructions: String = "") async {
         let boardID = selectedBoardID
         do {
-            acceptBoard(
-                try await administer {
-                    $0.createLabel = .with {
-                        $0.boardID = boardID
-                        $0.name = name
-                        $0.color = color
-                        $0.instructions = instructions
-                    }
-                }.board)
+            _ = try await administer {
+                $0.createLabel = .with {
+                    $0.boardID = boardID
+                    $0.name = name
+                    $0.color = color
+                    $0.instructions = instructions
+                }
+            }
         } catch { show(error) }
     }
 
     func updateLabel(id: String, name: String, color: String, instructions: String) async {
         let boardID = selectedBoardID
         do {
-            acceptBoard(
-                try await administer {
-                    $0.updateLabel = .with {
-                        $0.boardID = boardID
-                        $0.labelID = id
-                        $0.name = name
-                        $0.color = color
-                        $0.instructions = instructions
-                    }
-                }.board)
+            _ = try await administer {
+                $0.updateLabel = .with {
+                    $0.boardID = boardID
+                    $0.labelID = id
+                    $0.name = name
+                    $0.color = color
+                    $0.instructions = instructions
+                }
+            }
         } catch { show(error) }
     }
 
     func deleteLabel(id: String) async {
         let boardID = selectedBoardID
         do {
-            acceptBoard(
-                try await administer {
-                    $0.deleteLabel = .with {
-                        $0.boardID = boardID
-                        $0.labelID = id
-                    }
-                }.board)
+            _ = try await administer {
+                $0.deleteLabel = .with {
+                    $0.boardID = boardID
+                    $0.labelID = id
+                }
+            }
         } catch { show(error) }
     }
 
     func retireBoard(_ board: Dieter_V1_Board) async {
         do {
             // The core retires against the lifecycle revision the replica reports.
-            acceptBoard(
-                try await administer {
-                    $0.setBoardRetired = .with {
-                        $0.boardID = board.id
-                        $0.retired = true
-                    }
-                }.board)
+            _ = try await administer {
+                $0.setBoardRetired = .with {
+                    $0.boardID = board.id
+                    $0.retired = true
+                }
+            }
             await refreshState()
-            await refreshNavigation()
         } catch { show(error) }
     }
 
     func restoreBoard(_ id: String) async {
         do {
-            let restored = try await administer {
+            _ = try await administer {
                 $0.setBoardRetired = .with {
                     $0.boardID = id
                     $0.retired = false
                 }
-            }.board
-            replica.retiredBoards.removeValue(forKey: id)
-            acceptBoard(restored)
-            await refreshState(); await refreshNavigation()
+            }
+            await refreshState()
         } catch { show(error) }
-    }
-
-    func acceptBoard(_ board: Dieter_V1_Board) {
-        pendingBoards[board.id] = board
-        replica.upsert(board, selectedProjectID: selectedProjectID)
-        refreshReplicaPresentation()
-    }
-
-    func acceptProject(_ project: Dieter_V1_Project) {
-        pendingProjects[project.id] = project
-        replica.upsert(project)
-        refreshReplicaPresentation()
     }
 }

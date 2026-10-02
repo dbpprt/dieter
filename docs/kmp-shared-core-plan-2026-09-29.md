@@ -5,6 +5,13 @@ Status: proposal backed by a working spike in [`apps/core`](../apps/core/README.
 tree was not touched. An earlier gomobile (Go) spike was removed at the
 owner's request; its measurements appear here only for comparison.
 
+**Superseded** by the [implementation plan](kmp-core-implementation-plan-2026-09-30.md),
+the [macOS cutover plan](mac-shared-core-cutover-plan-2026-10-01.md), and
+[`apps/core/README.md`](../apps/core/README.md). Android and macOS run on the
+core; iOS does not yet. The Apple framework and façade are named
+`DieterShared`, not `DieterCore.xcframework` and `AppleCore`. This record is
+otherwise unchanged.
+
 **Recommendation:** move the Android, macOS, and iOS business logic into a
 Kotlin Multiplatform module, `apps/core`. Android consumes it as ordinary
 Kotlin. The Apple apps link it as `DieterCore.xcframework` through a thin
@@ -188,6 +195,22 @@ protobuf-lite classes during migration.
 - Large-workspace performance. The spike re-encodes the full snapshot per
   change; production needs delta events.
 - Wiring into the real app builds.
+
+*Since validated (2 October 2026):*
+- The Android app runs on the core on the emulator through the native test
+  catalog (`just e2e run`).
+- Pinned direct TLS is covered on the JVM (`CoreRuntimeEndToEndTest`) and
+  from Swift (`SharedCoreIntegrationTests`).
+- The screen-sharing control plane is covered by `ScreenSessionTest`,
+  `ClientApiScreenEndToEndTest`, `just mac screens-test`, and the Android
+  screens suite. The WebRTC control route runs in both apps, but no
+  automated core test drives it.
+- Android's live background sync runs on the core (`just e2e run --suite
+  sync`). The iOS share-extension limit is untested, because iOS does not use
+  the core yet, and memory was not measured.
+- Board and transcript slices travel as keyed deltas. Their cost was not
+  compared against the legacy implementations.
+- Android and macOS run on the core.
 
 ## 4. Migration plan
 

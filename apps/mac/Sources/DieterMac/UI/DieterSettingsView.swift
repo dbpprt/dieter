@@ -691,8 +691,6 @@ struct GeneralSettings: View {
                 SettingsPanel(
                     title: "Current project route", subtitle: "Dieter routes each project to the machine that owns it."
                 ) {
-                    SettingsValueRow(title: "Store", value: store.health.storePath)
-                    Divider().overlay(DieterTheme.border)
                     SettingsValueRow(title: "Runtime", value: store.runtime.mode)
                     SettingsValueRow(title: "Ready", value: store.runtime.ready ? "Yes" : "No")
                     SettingsValueRow(title: "Sandboxed", value: store.runtime.sandboxed ? "Yes" : "No")
@@ -866,7 +864,7 @@ struct ConnectionSettings: View {
     }
 
     private var activeConnection: some View {
-        SettingsPanel(title: "Automatic routing", subtitle: store.phase.label) {
+        SettingsPanel(title: "Automatic routing", subtitle: store.session.phaseLabel) {
             HStack(spacing: 10) {
                 Image(systemName: "point.3.connected.trianglepath.dotted").foregroundStyle(DieterTheme.shell).frame(
                     width: 18)
@@ -1001,14 +999,7 @@ struct ConnectionSettings: View {
     }
 
     private func machineSummary(_ machine: DieterEndpoint) -> String {
-        if let incompatibility = machine.incompatibilityDescription { return incompatibility }
-        if let connectionError = store.machineConnectionErrors[machine.id] { return connectionError }
-        if let issue = store.machineSyncIssues[machine.id] { return issue }
-        guard machine.online else { return MachinePresenceText.lastSeen(machine.lastSeenAt) }
-        if let status = store.connectionStatus(for: machine) {
-            return "\(status.route.rawValue) · \(status.latencyMilliseconds) ms"
-        }
-        return machine.releaseVersion.isEmpty ? "Online" : "Online · Dieter \(machine.releaseVersion)"
+        store.machineStatusLine(machine)
     }
 }
 

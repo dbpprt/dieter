@@ -1,6 +1,5 @@
 package com.dbpprt.dieter.ui
 
-import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -8,23 +7,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
-import androidx.test.platform.app.InstrumentationRegistry
-import com.dbpprt.dieter.core.connection.Availability
 import com.dbpprt.dieter.core.connection.ConnectionPhase
-import com.dbpprt.dieter.core.navigation.Destination
+import com.dbpprt.dieter.e2e.saveEvidence
 import com.dbpprt.dieter.ui.theme.DieterTheme
-import java.io.File
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -32,30 +25,6 @@ import org.junit.Test
 class WorkspaceFreshnessIndicatorTest {
     @get:Rule
     val composeRule = createComposeRule()
-
-    @Test
-    fun routineSyncKeepsCachedWorkspaceUncovered() {
-        val treatment = Availability.treatment(Destination.BOARD, hasCache = true, ConnectionPhase.SYNCING)
-        composeRule.setContent {
-            DieterTheme {
-                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    Column {
-                        if (treatment.showsNotice) {
-                            ConnectionStatusIndicator(
-                                phase = ConnectionPhase.SYNCING,
-                                lastConnectedAtMillis = System.currentTimeMillis(),
-                                showingCachedData = true,
-                            )
-                        }
-                        Text("Cached conversation")
-                    }
-                }
-            }
-        }
-
-        composeRule.onNodeWithTag("workspace-connection-status").assertDoesNotExist()
-        composeRule.onNodeWithText("Cached conversation").assertIsDisplayed()
-    }
 
     @Test
     fun reconnectingCachedWorkspaceIsExplicitAndScreenshotable() {
@@ -78,15 +47,7 @@ class WorkspaceFreshnessIndicatorTest {
         composeRule.onNodeWithText("Reconnecting to Dieter").assertIsDisplayed()
         composeRule.onNodeWithText("Cached data stays visible while the connection recovers.").assertIsDisplayed()
         composeRule.onNodeWithText("Updated 2m ago").assertIsDisplayed()
-
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val screenshot = File(requireNotNull(context.getExternalFilesDir(null)), "workspace-freshness-indicator.png")
-        val pendingScreenshot = File(screenshot.parentFile, "workspace-freshness-indicator.pending")
-        pendingScreenshot.outputStream().use { output ->
-            assertTrue(composeRule.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, output))
-        }
-        screenshot.delete()
-        assertTrue(pendingScreenshot.renameTo(screenshot))
+        composeRule.onRoot().saveEvidence("workspace-freshness-indicator.png")
     }
 
     @Test
@@ -134,14 +95,6 @@ class WorkspaceFreshnessIndicatorTest {
         val headerTop = composeRule.onNodeWithTag("terminal-header")
             .fetchSemanticsNode().boundsInRoot.top
         assertTrue("Connection status overlaps the terminal header", headerTop >= statusBottom)
-
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val screenshot = File(requireNotNull(context.getExternalFilesDir(null)), "connection-status-terminal-layout.png")
-        val pendingScreenshot = File(screenshot.parentFile, "connection-status-terminal-layout.pending")
-        pendingScreenshot.outputStream().use { output ->
-            assertTrue(composeRule.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, output))
-        }
-        screenshot.delete()
-        assertTrue(pendingScreenshot.renameTo(screenshot))
+        composeRule.onRoot().saveEvidence("connection-status-terminal-layout.png")
     }
 }

@@ -1,20 +1,21 @@
 package com.dbpprt.dieter.core.terminals
 
-import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.api.v1.CreateTerminalRequest
 import com.dbpprt.dieter.api.v1.ListTerminalsRequest
+import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.api.v1.RenameTerminalRequest
 import com.dbpprt.dieter.api.v1.ResizeTerminalRequest
 import com.dbpprt.dieter.api.v1.Terminal
 import com.dbpprt.dieter.api.v1.TerminalFrame
 import com.dbpprt.dieter.api.v1.TerminalRef
 import com.dbpprt.dieter.api.v1.WatchTerminalRequest
+import com.dbpprt.dieter.core.presentation.Counts
 import com.dbpprt.dieter.core.presentation.DisplayPaths
 import com.dbpprt.dieter.core.runtime.Backoff
 import com.dbpprt.dieter.core.runtime.CoreException
+import com.dbpprt.dieter.core.runtime.Deadlines
 import com.dbpprt.dieter.core.runtime.FailureKind
 import com.dbpprt.dieter.core.runtime.Failures
-import com.dbpprt.dieter.core.runtime.withDeadline
 import com.dbpprt.dieter.core.session.MachineSessions
 import com.dbpprt.dieter.core.storage.CoreStorage
 import com.squareup.wire.GrpcException
@@ -51,6 +52,10 @@ data class TerminalScope(val daemonId: String, val kind: TerminalScopeKind, val 
                 ?: return TerminalScope(daemonId, TerminalScopeKind.MACHINE)
             return TerminalScope(daemonId, TerminalScopeKind.PROJECT, project.id, checkout.id)
         }
+
+        /** The machine a new terminal starts on: the one [chosen] for the surface, else the [attached] one. */
+        fun creationMachine(chosen: String?, attached: String?): String =
+            chosen ?: attached ?: throw CoreException(FailureKind.TRANSIENT, "No machine is attached.")
     }
 }
 
@@ -69,6 +74,9 @@ data class NewTerminal(val projectId: String = "", val name: String = "", val sh
         val SHELLS = listOf("zsh", "bash", "fish", "sh")
 
         fun initial(project: Project?, name: String): NewTerminal = NewTerminal(project?.id.orEmpty(), name, DEFAULT_SHELL, project?.path.orEmpty())
+
+        /** The project picker's choices: by name ignoring case, then by ID. */
+        fun projects(projects: List<Project>): List<Project> = projects.sortedWith(compareBy<Project> { it.name.lowercase() }.thenBy { it.id })
 
         /** A project choice's detail: its machine (offline when known to be) and its compact path. */
         fun projectDetails(project: Project, hostName: String?, hostOnline: Boolean?): String {
@@ -91,6 +99,15 @@ data class TerminalsView(
 ) {
     val selected: Terminal? get() = terminals.firstOrNull { it.id == selectedId }
     fun screen(id: String): TerminalScreen = screens[id] ?: TerminalScreen.EMPTY
+
+    companion object {
+        /** A terminal surface's status line: syncing while [loading], what terminals are while there are none, else "2 persistent sessions · live" or "· reconnecting". */
+        fun status(loading: Boolean, count: Int, streamConnected: Boolean): String = when {
+            loading -> "Syncing persistent sessions…"
+            count == 0 -> "Daemon-owned · survive app disconnects"
+            else -> "${Counts.of(count, "persistent session")} · ${if (streamConnected) "live" else "reconnecting"}"
+        }
+    }
 }
 
 /**
@@ -150,7 +167,7 @@ class Terminals(
                 TerminalScopeKind.PROJECT -> ListTerminalsRequest(project_id = target.projectId, checkout_id = target.checkoutId)
                 TerminalScopeKind.CARD -> ListTerminalsRequest(project_id = target.projectId, card_id = target.cardId)
             }
-            val listed = withDeadline(DEADLINE) { sessions.call(target.daemonId) { it.ListTerminals().execute(request) } }.terminals
+            val listed = sessions.call(target.daemonId, Deadlines.CALL) { it.ListTerminals().execute(request) }.terminals
             if (bound != epoch) return
             val terminals = listed.filter { target.kind != TerminalScopeKind.CARD || it.card_id == target.cardId }.sortedWith(ORDER)
             val ids = terminals.mapTo(HashSet()) { it.id }
@@ -199,7 +216,7 @@ class Terminals(
                 working_directory = workingDirectory ?: ".", columns = columns, rows = rows,
             )
         }
-        val created = withDeadline(DEADLINE) { sessions.call(target.daemonId) { it.CreateTerminal().execute(request) } }
+        val created = sessions.call(target.daemonId, Deadlines.CALL) { it.CreateTerminal().execute(request) }
         if (bound != epoch) return created
         cursors[created.id] = 0
         mutableView.update { it.copy(terminals = (it.terminals.filterNot { t -> t.id == created.id } + created).sortedWith(ORDER), screens = it.screens + (created.id to TerminalScreen.EMPTY)) }
@@ -212,7 +229,7 @@ class Terminals(
         if (trimmed.isEmpty()) return
         val target = view.value.scope ?: return
         val bound = epoch
-        val renamed = withDeadline(DEADLINE) { sessions.call(target.daemonId) { it.RenameTerminal().execute(RenameTerminalRequest(terminal_id = id, name = trimmed)) } }
+        val renamed = sessions.call(target.daemonId, Deadlines.CALL) { it.RenameTerminal().execute(RenameTerminalRequest(terminal_id = id, name = trimmed)) }
         if (bound == epoch) upsert(renamed)
     }
 
@@ -220,7 +237,7 @@ class Terminals(
     suspend fun close(id: String) {
         val target = view.value.scope ?: return
         val bound = epoch
-        withDeadline(DEADLINE) { sessions.call(target.daemonId) { it.CloseTerminal().execute(TerminalRef(terminal_id = id)) } }
+        sessions.call(target.daemonId, Deadlines.CALL) { it.CloseTerminal().execute(TerminalRef(terminal_id = id)) }
         if (bound == epoch) remove(id)
     }
 
@@ -246,9 +263,7 @@ class Terminals(
         resize = scope.launch {
             delay(RESIZE_DEBOUNCE)
             try {
-                val resized = withDeadline(DEADLINE) {
-                    sessions.call(target.daemonId) { it.ResizeTerminal().execute(ResizeTerminalRequest(terminal_id = terminal.id, columns = columns, rows = rows)) }
-                }
+                val resized = sessions.call(target.daemonId, Deadlines.CALL) { it.ResizeTerminal().execute(ResizeTerminalRequest(terminal_id = terminal.id, columns = columns, rows = rows)) }
                 if (bound == epoch) upsert(resized)
             } catch (error: Throwable) {
                 if (error is CancellationException) throw error
@@ -339,19 +354,25 @@ class Terminals(
     companion object {
         const val HEARTBEAT_MS = 15_000
         const val MAX_SCREENS = 4
-        private val DEADLINE = 15.seconds
         private val STALL = 35.seconds
         private val RESIZE_DEBOUNCE = 120.milliseconds
         private val ORDER = compareBy<Terminal>({ it.created_at }, { it.id })
     }
 }
 
-/** Remembered terminal per surface, least recently used evicted beyond 64. */
+/**
+ * Remembered terminal per surface, least recently used evicted beyond 64.
+ * Each choice is stamped by a logical clock that resumes from the newest
+ * stored stamp, so the order survives restarts.
+ */
 class TerminalSelections(private val storage: () -> CoreStorage?) {
     private var cache: MutableMap<String, Pair<String, Long>>? = null
     private var clock = 0L
 
-    private fun entries(): MutableMap<String, Pair<String, Long>> = cache ?: load().also { cache = it }
+    private fun entries(): MutableMap<String, Pair<String, Long>> = cache ?: load().also { loaded ->
+        cache = loaded
+        clock = maxOf(clock, loaded.values.maxOfOrNull { it.second } ?: 0L)
+    }
 
     private fun load(): MutableMap<String, Pair<String, Long>> {
         val bytes = storage()?.read(FILE) ?: return LinkedHashMap()

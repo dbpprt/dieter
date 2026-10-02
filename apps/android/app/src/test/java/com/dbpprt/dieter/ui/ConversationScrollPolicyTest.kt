@@ -1,5 +1,6 @@
 package com.dbpprt.dieter.ui
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -7,17 +8,6 @@ import org.junit.Test
 class ConversationScrollPolicyTest {
     @Test
     fun followsUpdatesWhileReaderIsAtLatest() {
-        assertTrue(
-            shouldFollowConversationUpdate(
-                explicitOpenScroll = false,
-                initialScrollComplete = true,
-                followingLatest = true,
-            ),
-        )
-    }
-
-    @Test
-    fun growingToolOrModelContentKeepsFollowingTheLiveTail() {
         assertTrue(
             shouldFollowConversationUpdate(
                 explicitOpenScroll = false,
@@ -54,6 +44,15 @@ class ConversationScrollPolicyTest {
                 followingLatest = false,
             ),
         )
+    }
+
+    @Test
+    fun followingTheLatestReachesTheEndPastTheTurnFailureAndTheQueue() {
+        val rows = ConversationRows(history = true, unsentTask = true, timelineItems = 3, working = false, turnFailure = true, queued = 2)
+        assertEquals(2, rows.timelineStart)
+        assertEquals("history, task, 3 rows, the failure banner, and 2 queued messages come before the end marker", 8, rows.end)
+        assertEquals(7, rows.copy(turnFailure = false).end)
+        assertEquals(1, ConversationRows(history = false, unsentTask = false, timelineItems = 0, working = true, turnFailure = false, queued = 0).end)
     }
 
     @Test

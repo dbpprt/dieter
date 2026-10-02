@@ -3,6 +3,7 @@ package com.dbpprt.dieter.core.session
 import com.dbpprt.dieter.api.gateway.v1.CompatibilityComponent
 import com.dbpprt.dieter.api.gateway.v1.CompatibilityRequest
 import com.dbpprt.dieter.api.gateway.v1.CompatibilityStatus
+import com.dbpprt.dieter.api.gateway.v1.GatewayInformation
 import com.dbpprt.dieter.api.gateway.v1.GatewayServiceClient
 import com.dbpprt.dieter.api.gateway.v1.GrpcGatewayServiceClient
 import com.dbpprt.dieter.api.gateway.v1.WatchDaemonsRequest
@@ -17,9 +18,10 @@ import com.dbpprt.dieter.core.routing.RouteSelector
 import com.dbpprt.dieter.core.runtime.CoreException
 import com.dbpprt.dieter.core.runtime.FailureKind
 import com.dbpprt.dieter.core.runtime.Failures
-import com.dbpprt.dieter.api.gateway.v1.GatewayInformation
+import com.dbpprt.dieter.core.runtime.withDeadline
 import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlinx.coroutines.CoroutineScope
@@ -165,6 +167,10 @@ class MachineSessions(private val selector: RouteSelector, private val scope: Co
         }
     }
 
+    /** [call] within [deadline]; an expired deadline is a transient failure. */
+    suspend fun <T> call(daemonId: String, deadline: Duration, block: suspend (DieterServiceClient) -> T): T =
+        withDeadline(deadline) { call(daemonId, block) }
+
     fun invalidate(daemonId: String, plane: DataPlane? = null) {
         val current = planes[daemonId] ?: return
         if (plane != null && current !== plane) return
@@ -187,7 +193,7 @@ class MachineSessions(private val selector: RouteSelector, private val scope: Co
                 error.grpcStatus == GrpcStatus.UNAUTHENTICATED
             is IOException -> true
             is CoreException -> error.kind == FailureKind.TRANSIENT
-            else -> Failures.kind(error) == FailureKind.TRANSIENT && error !is kotlin.coroutines.cancellation.CancellationException
+            else -> Failures.kind(error) == FailureKind.TRANSIENT && error !is CancellationException
         }
     }
 }

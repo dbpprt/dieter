@@ -4,6 +4,7 @@ import com.dbpprt.dieter.api.v1.MessagePart
 import com.dbpprt.dieter.api.v1.Subagent
 import com.dbpprt.dieter.api.v1.TaskPlan
 import com.dbpprt.dieter.api.v1.UiMessage
+import kotlin.time.Instant
 
 enum class StepKind {
     TEXT, REASONING, TOOL, ATTENTION, ATTACHMENT, OTHER,
@@ -21,6 +22,8 @@ data class TimelineStep(
     val part: MessagePart,
     /** Coalesced text for prose steps. */
     val text: String = part.text,
+    /** [part]'s index in the message's parts (the first of coalesced prose); -1 for [StepKind.SUBAGENTS]. */
+    val partIndex: Int = -1,
 ) {
     val routine: Boolean get() = kind == StepKind.TOOL && !Parts.isApprovalTool(part) || kind == StepKind.REASONING
 }
@@ -48,6 +51,9 @@ data class ActivitySummary(val reasoning: Int, val tools: Map<ToolCategory, Int>
             tools = steps.filter { it.kind == StepKind.TOOL }.groupingBy { Tools.category(Parts.toolName(it.part)) }.eachCount(),
         )
 
+        /** Tool calls known only by name, e.g. running ones the transcript does not show yet. */
+        fun ofTools(names: List<String>) = ActivitySummary(reasoning = 0, tools = names.groupingBy { Tools.category(it) }.eachCount())
+
         fun noun(category: ToolCategory, count: Int): String {
             val (one, many) = when (category) {
                 ToolCategory.EDIT -> "edit" to "edits"
@@ -68,6 +74,12 @@ sealed interface TimelineItem {
     val id: String
     val messageIds: List<String>
 
+    /** When the row's last message was written; null when it does not say. */
+    val createdAt: Instant?
+
+    /** The row has prose a "copy message" action copies ([Parts.copyText]). */
+    val copyable: Boolean
+
     /** A user or assistant message with its visible steps, plans, and delegated agents. */
     data class Message(
         override val id: String,
@@ -76,13 +88,21 @@ sealed interface TimelineItem {
         val groups: List<StepGroup>,
         val plans: List<TaskPlan> = emptyList(),
         val subagents: List<Subagent> = emptyList(),
+        override val createdAt: Instant? = null,
+        override val copyable: Boolean = false,
     ) : TimelineItem {
         override val messageIds: List<String> get() = listOf(message.id)
         val steps: List<TimelineStep> get() = groups.flatMap { it.steps }
     }
 
     /** Consecutive assistant messages that only worked (tools, reasoning), shown as one summary. */
-    data class Activity(override val id: String, override val messageIds: List<String>, val steps: List<TimelineStep>) : TimelineItem {
+    data class Activity(
+        override val id: String,
+        override val messageIds: List<String>,
+        val steps: List<TimelineStep>,
+        override val createdAt: Instant? = null,
+        override val copyable: Boolean = false,
+    ) : TimelineItem {
         val summary: ActivitySummary get() = ActivitySummary.of(steps)
     }
 }
@@ -91,7 +111,34 @@ data class TimelineOptions(
     val showReasoning: Boolean = false,
     /** Drop tool calls that only mirror a rendered task plan. */
     val hidePlanTools: Boolean = true,
+    /**
+     * The message whose failure the turn-failure banner shows: its failure
+     * diagnostics are hidden there. Every other message shows its diagnostics
+     * as attention steps, so earlier turns' errors stay readable.
+     */
+    val failedMessageId: String? = null,
 )
+
+/**
+ * The steps each message produced in the previous build of one
+ * conversation's timeline, so a streaming update only reads the messages
+ * that changed. One observer owns it; it is not thread-safe.
+ */
+class TimelineCache {
+    internal var entries: Map<String, MessageSteps> = emptyMap()
+}
+
+/** What [TimelineBuilder.steps] read from one message, and the inputs it read it with. */
+internal class MessageSteps(
+    val message: UiMessage,
+    val inputs: StepInputs,
+    val steps: List<TimelineStep>,
+    val groups: List<StepGroup>,
+    val createdAt: Instant?,
+    val copyable: Boolean,
+)
+
+internal data class StepInputs(val showReasoning: Boolean, val hideFailures: Boolean, val hidePlanTools: Boolean, val subagents: List<Subagent>)
 
 data class Timeline(val items: List<TimelineItem>, val unattachedPlans: List<TaskPlan>)
 
@@ -109,15 +156,21 @@ object TimelineBuilder {
         plans: List<TaskPlan> = emptyList(),
         subagents: List<Subagent> = emptyList(),
         options: TimelineOptions = TimelineOptions(),
+        cache: TimelineCache? = null,
     ): Timeline {
         val plansByMessage = plans.filter { it.message_id.isNotEmpty() }.groupBy { it.message_id }
         val agentsByMessage = subagents.filter { it.message_id.isNotEmpty() }.groupBy { it.message_id }
+        val previous = cache?.entries.orEmpty()
+        val read = HashMap<String, MessageSteps>()
         val rows = mutableListOf<TimelineItem>()
-        var toolRun = mutableListOf<Pair<String, List<TimelineStep>>>()
+        var toolRun = mutableListOf<Pair<String, MessageSteps>>()
 
         fun flushToolRun() {
             if (toolRun.isEmpty()) return
-            rows += TimelineItem.Activity("tools:${toolRun.first().first}", toolRun.map { it.first }, toolRun.flatMap { it.second })
+            rows += TimelineItem.Activity(
+                "tools:${toolRun.first().first}", toolRun.map { it.first }, toolRun.flatMap { it.second.steps },
+                createdAt = toolRun.last().second.createdAt, copyable = toolRun.any { it.second.copyable },
+            )
             toolRun = mutableListOf()
         }
 
@@ -127,17 +180,24 @@ object TimelineBuilder {
             val user = Parts.isUser(message)
             val messagePlans = plansByMessage[message.id].orEmpty()
             val messageAgents = agentsByMessage[message.id].orEmpty()
-            val steps = steps(message, key, options, hidePlanTools = options.hidePlanTools && messagePlans.isNotEmpty(), subagents = messageAgents)
+            val inputs = StepInputs(options.showReasoning, hidesFailures(message, options), options.hidePlanTools && messagePlans.isNotEmpty(), messageAgents)
+            val entry = previous[key]?.takeIf { it.message === message && it.inputs == inputs } ?: run {
+                val steps = steps(message, key, options, inputs.hidePlanTools, messageAgents)
+                MessageSteps(message, inputs, steps, group(steps), MessageMetadata.createdAt(message), Parts.isCopyable(message))
+            }
+            if (cache != null) read[key] = entry
+            val steps = entry.steps
             if (!user && steps.isEmpty() && messagePlans.isEmpty() && messageAgents.isEmpty()) continue
             val toolOnly = !user && messagePlans.isEmpty() && messageAgents.isEmpty() && steps.isNotEmpty() && steps.all { it.routine }
             if (toolOnly) {
-                toolRun += key to steps
+                toolRun += key to entry
                 continue
             }
             flushToolRun()
-            rows += TimelineItem.Message("message:$key", message, user, group(steps), messagePlans, messageAgents)
+            rows += TimelineItem.Message("message:$key", message, user, entry.groups, messagePlans, messageAgents, entry.createdAt, entry.copyable)
         }
         flushToolRun()
+        cache?.entries = read
         val loaded = messages.mapTo(HashSet()) { it.id }
         return Timeline(merge(rows), plans.filter { it.message_id.isNotEmpty() && it.message_id !in loaded })
     }
@@ -148,7 +208,7 @@ object TimelineBuilder {
         for (row in rows) {
             val last = merged.lastOrNull()
             if (row is TimelineItem.Activity && last is TimelineItem.Activity) {
-                merged[merged.lastIndex] = TimelineItem.Activity(last.id, last.messageIds + row.messageIds, last.steps + row.steps)
+                merged[merged.lastIndex] = TimelineItem.Activity(last.id, last.messageIds + row.messageIds, last.steps + row.steps, row.createdAt, last.copyable || row.copyable)
             } else {
                 merged += row
             }
@@ -162,6 +222,7 @@ object TimelineBuilder {
      * delegating call; agents without one follow the message's other steps.
      */
     fun steps(message: UiMessage, key: String, options: TimelineOptions, hidePlanTools: Boolean, subagents: List<Subagent> = emptyList()): List<TimelineStep> {
+        val hideFailures = hidesFailures(message, options)
         val steps = mutableListOf<TimelineStep>()
         val delegated = subagents.mapNotNullTo(HashSet()) { it.parent_tool_call_id.ifEmpty { null } }
         var agentsShown = false
@@ -171,18 +232,19 @@ object TimelineBuilder {
             steps += TimelineStep("$key:subagents", message.id, StepKind.SUBAGENTS, MessagePart(), text = "")
         }
         for ((index, part) in message.parts.withIndex()) {
-            if (!Parts.isVisible(part, options.showReasoning)) continue
+            if (!Parts.isVisible(part, options.showReasoning, hideFailures)) continue
             if (hidePlanTools && Parts.isToolCall(part) && normalized(Parts.toolName(part)) in planTools) continue
             if (Parts.isToolCall(part) && part.tool_call_id.isNotEmpty() && part.tool_call_id in delegated && !Parts.isApprovalTool(part)) {
                 showAgents()
                 continue
             }
+            // Reasoning that reports an error is a diagnostic, not routine work.
             val kind = when {
                 Parts.isToolCall(part) -> StepKind.TOOL
-                Parts.isReasoning(part) -> StepKind.REASONING
                 Parts.needsAttention(part) -> StepKind.ATTENTION
+                Parts.isReasoning(part) -> StepKind.REASONING
                 part.type == "text" -> StepKind.TEXT
-                part.type in setOf("file", "attachment", "image") -> StepKind.ATTACHMENT
+                part.type in attachmentTypes -> StepKind.ATTACHMENT
                 else -> StepKind.OTHER
             }
             val previous = steps.lastOrNull()
@@ -190,7 +252,7 @@ object TimelineBuilder {
                 steps[steps.lastIndex] = previous.copy(text = previous.text + "\n\n" + part.text)
                 continue
             }
-            steps += TimelineStep("$key:part:$index", message.id, kind, part)
+            steps += TimelineStep("$key:part:$index", message.id, kind, part, partIndex = index)
         }
         showAgents()
         return steps
@@ -208,10 +270,19 @@ object TimelineBuilder {
     }
 
     /** The first group to show: from [fromId] when given, else the last [INITIAL_GROUPS]. */
-    fun visibleStart(groups: List<StepGroup>, fromId: String? = null): Int =
-        fromId?.let { id -> groups.indexOfFirst { it.id == id }.takeIf { it >= 0 } } ?: maxOf(0, groups.size - INITIAL_GROUPS)
+    fun visibleStart(groups: List<StepGroup>, fromId: String? = null): Int = visibleStartOf(groups.map { it.id }, fromId)
+
+    /** [visibleStart] over the groups' IDs. */
+    fun visibleStartOf(groupIds: List<String>, fromId: String? = null): Int =
+        fromId?.let { id -> groupIds.indexOf(id).takeIf { it >= 0 } } ?: maxOf(0, groupIds.size - INITIAL_GROUPS)
 
     const val INITIAL_GROUPS = 12
 
     private fun normalized(name: String) = name.trim().lowercase().replace('-', '_').replace(' ', '_')
+
+    private val attachmentTypes = setOf("file", "attachment", "image")
+
+    /** The banner carries [message]'s failure diagnostics. */
+    private fun hidesFailures(message: UiMessage, options: TimelineOptions): Boolean =
+        message.id.isNotEmpty() && message.id == options.failedMessageId
 }

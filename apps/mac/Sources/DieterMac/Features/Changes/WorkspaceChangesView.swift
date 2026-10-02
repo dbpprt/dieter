@@ -1,58 +1,51 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 
+/// A card's workspace badge as the shared core words it: compact on board
+/// cards and chat rows, the branch in a conversation's header.
 struct WorkspaceSummaryBadge: View {
     let card: Dieter_V1_Card
     var compact = false
 
-    private var summary: Dieter_V1_WorkspaceSummary { card.workspace }
-    private var mode: String { summary.mode.isEmpty ? card.workspaceMode : summary.mode }
-    private var conflicted: Bool { summary.state == "conflicted" }
-    private var branch: String {
-        let value = summary.branch.isEmpty ? card.workspaceBranch : summary.branch
-        return value.isEmpty ? ConversationWorkspaceMode.projectMode(mode).shortTitle : value
-    }
-    private var title: String {
-        if conflicted { return "Conflicts" }
-        if compact, card.pullRequest.number > 0 { return "PR #\(card.pullRequest.number)" }
-        if compact, summary.changedFiles > 0 { return "\(summary.changedFiles) changed" }
-        return branch
-    }
-
     var body: some View {
+        let badge = WorkspaceBadge.of(card)
         HStack(spacing: 5) {
-            Image(systemName: conflicted ? "exclamationmark.triangle.fill" : "arrow.triangle.branch")
+            Image(systemName: badge.conflicted ? "exclamationmark.triangle.fill" : "arrow.triangle.branch")
                 .font(.system(size: compact ? 8 : 9, weight: .semibold))
-            Text(title)
+            Text(compact ? badge.title : badge.fullTitle)
                 .font(.system(size: compact ? 9 : 10, weight: .semibold, design: compact ? .default : .monospaced))
         }
-        .foregroundStyle(conflicted ? DieterTheme.coral : DieterTheme.shell)
+        .foregroundStyle(badge.conflicted ? DieterTheme.coral : DieterTheme.shell)
         .lineLimit(1)
         .truncationMode(.middle)
         .frame(maxWidth: compact ? nil : 180)
         .padding(.horizontal, compact ? 0 : 8)
         .frame(height: compact ? 14 : 22)
         .background(
-            compact ? .clear : (conflicted ? DieterTheme.coral : DieterTheme.shell).opacity(0.1),
+            compact ? .clear : (badge.conflicted ? DieterTheme.coral : DieterTheme.shell).opacity(0.1),
             in: RoundedRectangle(cornerRadius: 6, style: .continuous)
         )
         .overlay {
             if !compact {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke((conflicted ? DieterTheme.coral : DieterTheme.shell).opacity(0.28))
+                    .stroke((badge.conflicted ? DieterTheme.coral : DieterTheme.shell).opacity(0.28))
             }
         }
-        .help(workspaceHelp)
+        .help(badge.accessibilityLabel)
     }
+}
 
-    private var workspaceHelp: String {
-        var pieces = [ConversationWorkspaceMode.projectMode(mode).title]
-        let branch = summary.branch.isEmpty ? card.workspaceBranch : summary.branch
-        if !branch.isEmpty { pieces.append(branch) }
-        if summary.ahead > 0 || summary.behind > 0 { pieces.append("↑\(summary.ahead) ↓\(summary.behind)") }
-        if card.pullRequest.number > 0 { pieces.append("PR #\(card.pullRequest.number)") }
-        return pieces.joined(separator: " · ")
+enum WorkspaceBadge {
+    /// `card`'s workspace badge from the shared core.
+    static func of(_ card: Dieter_V1_Card) -> ClientWorkspaceBadgeView {
+        let summary = card.workspace
+        return ClientWorkspaceBadgeView(
+            rules: SharedRules.shared.workspaceBadge(
+                mode: summary.mode, state: summary.state, branch: summary.branch, changedFiles: summary.changedFiles,
+                ahead: summary.ahead, behind: summary.behind, cardMode: card.workspaceMode,
+                cardBranch: card.workspaceBranch, pullRequest: card.pullRequest.number))
     }
 }
 
@@ -87,10 +80,7 @@ struct WorkspaceChangesView: View {
     private var card: Dieter_V1_Card? { model.card }
     private var workspace: Dieter_V1_Workspace? { model.conversationWorkspace }
     private var changes: Dieter_V1_Changeset? { model.conversationChangeset }
-    private var pullRequest: Dieter_V1_PullRequestSummary? {
-        guard let card, card.pullRequest.number > 0 else { return nil }
-        return card.pullRequest
-    }
+    private var pullRequest: ClientPullRequestView? { model.pullRequest }
     private var baseBranch: String {
         let value = workspace?.baseBranch ?? card?.workspace.baseBranch ?? ""
         return value.isEmpty ? "base" : value
@@ -98,14 +88,9 @@ struct WorkspaceChangesView: View {
     private var selectedFile: Dieter_V1_ChangedFile? {
         changes?.files.first { $0.path == model.selectedChangePath }
     }
-    private var operationActive: Bool {
-        model.gitOperationSubmitting || model.gitOperationNeedsReconciliation
-            || (model.gitOperation.map { GitOperationStatus.active($0.status) } ?? false)
-    }
+    /// The operation strip shows the operation while it runs or after it failed.
     private var visibleOperation: Dieter_V1_GitOperation? {
-        guard let operation = model.gitOperation else { return nil }
-        return GitOperationStatus.active(operation.status) || operation.status == "failed"
-            ? operation : nil
+        model.operationVisible ? model.gitOperation : nil
     }
     private var availability: WorkspaceActionAvailability { model.availability }
 
@@ -128,6 +113,9 @@ struct WorkspaceChangesView: View {
             await model.loadWorkspaceSurface()
         }
         .onDisappear { model.active = false }
+        .onChange(of: "\(model.bindingGeneration)|\(diffModeRaw)", initial: true) {
+            model.setLayout(split: diffMode == .split)
+        }
         .onChange(of: changes?.revision) { _, revision in
             guard viewedRevision != (revision ?? "") else { return }
             viewedRevision = revision ?? ""
@@ -149,7 +137,7 @@ struct WorkspaceChangesView: View {
             }
         #endif
         .sheet(item: $operationKind) { kind in
-            GitOperationSheet(model: model, kind: kind, card: card, operation: model.gitOperation)
+            GitOperationSheet(model: model, kind: kind, card: card, baseBranch: baseBranch)
         }
         .sheet(isPresented: $mergeSheetPresented) {
             MergeIntoBaseSheet(
@@ -177,9 +165,7 @@ struct WorkspaceChangesView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let workspace {
             VStack(spacing: 0) {
-                if workspace.state == "conflicted" || model.gitOperation?.status == "waiting_for_resolution" {
-                    conflictBanner
-                }
+                if model.conflicted { conflictBanner }
                 if let operation = visibleOperation { operationProgress(operation) }
                 if let error = model.workspaceError { workspaceErrorBanner(error) }
                 reviewLayout(workspace: workspace, compact: compact)
@@ -417,25 +403,20 @@ struct WorkspaceChangesView: View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(DieterTheme.coral)
             VStack(alignment: .leading, spacing: 2) {
-                Text(conflictBannerTitle).font(.system(size: 12, weight: .semibold))
+                Text(model.conflictTitle).font(.system(size: 12, weight: .semibold))
                 Text("Merge is blocked until conflicts are resolved.")
                     .font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
             }
             Spacer()
             Button("Review conflicts…") { mergeSheetPresented = true }
                 .buttonStyle(DieterPrimaryButtonStyle(tint: DieterTheme.coral))
+                .disabled(!availability.allowsMergeFlow)
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
         .background(DieterTheme.coral.opacity(0.08))
         .overlay(alignment: .bottom) {
             Rectangle().fill(DieterTheme.coral.opacity(0.22)).frame(height: 1)
         }
-    }
-
-    private var conflictBannerTitle: String {
-        let count = model.gitOperation?.conflicts.count ?? 0
-        if count > 0 { return "\(count) file\(count == 1 ? "" : "s") conflict with \(baseBranch)" }
-        return "This workspace conflicts with \(baseBranch)"
     }
 
     private func workspaceErrorBanner(_ error: String) -> some View {
@@ -469,7 +450,7 @@ struct WorkspaceChangesView: View {
             .padding(.top, 8)
         } label: {
             HStack(spacing: 8) {
-                if GitOperationStatus.active(operation.status) {
+                if model.operationCancelable || model.conflicted {
                     ProgressView().controlSize(.mini)
                 } else {
                     Image(systemName: "exclamationmark.circle.fill").foregroundStyle(DieterTheme.coral)
@@ -481,9 +462,7 @@ struct WorkspaceChangesView: View {
                 )
                 .foregroundStyle(DieterTheme.tertiary)
                 Spacer()
-                if GitOperationStatus.active(operation.status)
-                    && operation.status != "waiting_for_resolution"
-                {
+                if model.operationCancelable {
                     Button("Cancel") { Task { await model.cancelCurrentGitOperation() } }.buttonStyle(
                         DieterSecondaryButtonStyle(destructive: true))
                 }
@@ -520,7 +499,7 @@ struct WorkspaceChangesView: View {
                     }
                     Spacer()
                     if compactPane == .diff, !model.selectedChangePath.isEmpty {
-                        Text(WorkspaceChangePresentation.filename(model.selectedChangePath))
+                        Text(ClientChangedFileLabel.of(model.selectedChangePath).filename)
                             .font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(
                                 DieterTheme.tertiary
                             ).lineLimit(1)
@@ -549,7 +528,7 @@ struct WorkspaceChangesView: View {
         VStack(spacing: 0) {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 16) {
-                    if let pullRequest { pullRequestCard(pullRequest) }
+                    if let pullRequest = model.pullRequest { pullRequestCard(pullRequest) }
                     filesSection(compact: compact)
                     if changes?.commits.isEmpty == false { commitsSection(compact: compact) }
                     scmNotice
@@ -564,21 +543,14 @@ struct WorkspaceChangesView: View {
         .background(DieterTheme.sidebar)
     }
 
-    private func pullRequestCard(_ pr: Dieter_V1_PullRequestSummary) -> some View {
-        let presentation = PullRequestPresentation.from(
-            state: pr.state,
-            draft: pr.draft,
-            mergeable: pr.mergeable,
-            checksState: pr.checksState,
-            reviewDecision: pr.reviewDecision
-        )
-        return VStack(alignment: .leading, spacing: 9) {
+    private func pullRequestCard(_ pr: ClientPullRequestView) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 7) {
                 Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(
                         DieterTheme.shell)
                 Text("PR #\(pr.number)").font(.system(size: 12, weight: .semibold))
-                PullRequestStateBadge(label: presentation.stateLabel, tone: presentation.stateTone)
+                PullRequestStateBadge(label: pr.stateLabel, tone: pr.stateTone)
                 Spacer(minLength: 4)
                 Button {
                     if let url = URL(string: pr.url) { NSWorkspace.shared.open(url) }
@@ -592,27 +564,24 @@ struct WorkspaceChangesView: View {
                 .buttonStyle(.plain)
                 .help("View on GitHub")
             }
-            if !presentation.signals.isEmpty || pr.number > 0 {
+            if !pr.signals.isEmpty || pr.number > 0 {
                 DieterFlowLayout(horizontalSpacing: 10, verticalSpacing: 5) {
-                    ForEach(presentation.signals) { signal in
+                    ForEach(pr.signals, id: \.id) { signal in
                         PullRequestSignalLabel(signal: signal)
                     }
                     if !pr.lastSyncedAt.isEmpty {
-                        Text("synced \(WorkspaceRelativeTime.compact(pr.lastSyncedAt))")
-                            .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary)
+                        Text(
+                            "synced \(SharedRules.shared.agoSince(value: pr.lastSyncedAt, nowMillis: Date.now.epochMillis))"
+                        )
+                        .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary)
                     }
                 }
             }
             VStack(alignment: .leading, spacing: 6) {
-                if presentation.canAskAgent {
+                if pr.canAskAgent {
                     Button {
-                        let prompt = WorkspaceAgentPrompt.addressReview(
-                            number: pr.number,
-                            checksState: pr.checksState,
-                            reviewDecision: pr.reviewDecision
-                        )
                         Task {
-                            if await model.sendAgentMessage(prompt) {
+                            if await model.sendAgentMessage(pr.askAgentPrompt) {
                                 model.showWorkspaceToast(
                                     "Asked the agent to address the review on PR #\(pr.number)")
                             }
@@ -626,14 +595,12 @@ struct WorkspaceChangesView: View {
                 Button {
                     operationKind = .mergePullRequest
                 } label: {
-                    Text(presentation.mergeBlockedReason.map { "Merge PR · \($0)" } ?? "Merge PR")
+                    Text(pr.mergeBlockedReason.isEmpty ? "Merge PR" : "Merge PR · \(pr.mergeBlockedReason)")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(DieterPrimaryButtonStyle())
-                .disabled(presentation.mergeBlockedReason != nil || !availability.allows(.mergePullRequest))
-                .opacity(
-                    presentation.mergeBlockedReason != nil || !availability.allows(.mergePullRequest)
-                        ? 0.55 : 1)
+                .disabled(!availability.allows(.mergePullRequest))
+                .opacity(availability.allows(.mergePullRequest) ? 1 : 0.55)
             }
             HStack(spacing: 4) {
                 Text(
@@ -756,12 +723,12 @@ struct WorkspaceChangesView: View {
     private func workspaceFooter(_ workspace: Dieter_V1_Workspace) -> some View {
         HStack(spacing: 7) {
             StatusPill(
-                text: workspace.state,
-                color: workspace.state == "conflicted" ? DieterTheme.coral : DieterTheme.diffAddition)
-            Text(ConversationWorkspaceMode.projectMode(workspace.mode).shortTitle)
+                text: model.workspaceState,
+                color: model.conflicted ? DieterTheme.coral : DieterTheme.diffAddition)
+            Text(SharedRules.shared.workspaceModeShortTitle(mode: workspace.mode))
             if workspace.sizeBytes > 0 {
                 Text(
-                    "· \(ByteCountFormatter.string(fromByteCount: workspace.sizeBytes, countStyle: .file))")
+                    "· \(SharedRules.shared.bytes(count: workspace.sizeBytes))")
             }
             Spacer()
             Button {
@@ -791,13 +758,7 @@ struct WorkspaceChangesView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         WorkspaceDiffContent(
-                            diff: diff,
-                            lines: model.diffLines,
-                            split: diffMode == .split,
-                            comments: model.conversationChangeComments.filter {
-                                $0.path == model.selectedChangePath
-                            },
-                            canComment: model.selectedCommitSHA.isEmpty,
+                            layout: model.diff,
                             addComment: { line in selectedCommentLine = line },
                             loadMore: {
                                 Task {
@@ -836,8 +797,9 @@ struct WorkspaceChangesView: View {
                     .truncationMode(.middle)
                 if !compact, let file = selectedFile {
                     Text(
-                        WorkspaceChangePresentation.title(
-                            status: file.status, conflicted: file.conflicted, untracked: file.untracked)
+                        ClientChangedFileLabel.of(
+                            file.path, status: file.status, conflicted: file.conflicted, untracked: file.untracked
+                        ).title
                     )
                     .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary)
                 }
@@ -909,16 +871,21 @@ struct WorkspaceChangesView: View {
 
     private var diffFooter: some View {
         HStack(spacing: 14) {
-            if (workspace?.state ?? "") == "conflicted" {
+            if model.conflicted {
                 Label("Conflicts with \(baseBranch)", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(DieterTheme.coral)
             } else {
                 Label("No conflicts with \(baseBranch)", systemImage: "checkmark")
                     .foregroundStyle(DieterTheme.diffAddition)
             }
-            if let validation = lastValidationSummary {
-                Label(validation.text, systemImage: validation.passed ? "checkmark" : "xmark")
-                    .foregroundStyle(validation.passed ? DieterTheme.diffAddition : DieterTheme.coral)
+            let readiness = model.mergeReadiness
+            if !readiness.validationSummary.isEmpty {
+                let ago = SharedRules.shared.agoSince(value: readiness.validationAt, nowMillis: Date.now.epochMillis)
+                Label(
+                    ago.isEmpty ? readiness.validationSummary : "\(readiness.validationSummary) · \(ago)",
+                    systemImage: readiness.validationPassed ? "checkmark" : "xmark"
+                )
+                .foregroundStyle(readiness.validationPassed ? DieterTheme.diffAddition : DieterTheme.coral)
             }
             Spacer()
             if let files = changes?.files, !files.isEmpty {
@@ -934,22 +901,6 @@ struct WorkspaceChangesView: View {
         .background(DieterTheme.sidebar)
     }
 
-    private var lastValidationSummary: (text: String, passed: Bool)? {
-        guard let operation = model.gitOperation,
-            operation.cardID == card?.id,
-            GitOperationStatus.terminal(operation.status),
-            !operation.validationResults.isEmpty
-        else { return nil }
-        let passed = operation.validationResults.allSatisfy { $0.exitCode == 0 }
-        let name =
-            operation.validationResults.count == 1
-            ? operation.validationResults[0].name
-            : "\(operation.validationResults.count) validations"
-        let ago = WorkspaceRelativeTime.compact(operation.finishedAt)
-        let suffix = ago.isEmpty ? "" : " · \(ago)"
-        return ("\(name) \(passed ? "passed" : "failed")\(suffix)", passed)
-    }
-
     private var diffTitle: String {
         if !model.selectedCommitSHA.isEmpty { return "Commit \(model.selectedCommitSHA.prefix(10))" }
         return model.selectedChangePath.isEmpty ? "Diff" : model.selectedChangePath
@@ -963,7 +914,7 @@ struct WorkspaceChangesView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Add review comment").font(DieterFont.title)
                     Text(
-                        "\(WorkspaceChangePresentation.filename(model.selectedChangePath)) · line \(line.newLine ?? line.oldLine ?? 0)"
+                        "\(ClientChangedFileLabel.of(model.selectedChangePath).filename) · line \(line.newLine ?? line.oldLine ?? 0)"
                     )
                     .font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary)
                 }

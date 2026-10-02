@@ -110,6 +110,7 @@ class MachinesScreenTest {
         compose.onNodeWithTag("machine-action-restart").assertIsNotEnabled()
         compose.onNodeWithTag("machine-action-shutdown").assertIsNotEnabled()
         compose.onNodeWithTag("machine-action-update").assertIsEnabled().performClick()
+        compose.onNodeWithText("Update Dieter daemon").assertIsDisplayed()
         compose.onNodeWithTag("machine-operation-confirm").performClick()
         compose.runOnIdle {
             assertEquals(MachineOperationAction.MACHINE_OPERATION_ACTION_UPDATE_DAEMON to "UPDATE", operation)

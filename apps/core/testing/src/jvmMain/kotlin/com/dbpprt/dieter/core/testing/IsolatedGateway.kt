@@ -13,7 +13,6 @@ class IsolatedGateway(
     directRoute: String? = null,
     /** Enrolls a second, projectless daemon in the same account. */
     secondDaemon: Boolean = false,
-    inboxFixture: Boolean = false,
 ) : AutoCloseable {
     private val home = Files.createTempDirectory("dieter-core-e2e").toFile()
     private val offlineTrigger = File(home, "offline")
@@ -27,7 +26,6 @@ class IsolatedGateway(
         val command = mutableListOf(binary, "-addr", "127.0.0.1:0", "-home", File(home, "fixture").path, "-offline-trigger", offlineTrigger.path)
         if (directRoute != null) command += listOf("-direct-route", directRoute)
         if (secondDaemon) command += listOf("-daemon-restart-trigger", restartTrigger.path)
-        if (inboxFixture) command += "-inbox-fixture"
         process = ProcessBuilder(command).redirectError(log).start()
         val lines = process.inputStream.bufferedReader()
         values = buildMap {
@@ -51,19 +49,6 @@ class IsolatedGateway(
     fun daemonOffline() = check(offlineTrigger.createNewFile())
 
     fun daemonOnline() = check(offlineTrigger.delete())
-
-    /** Restarts the second daemon's API and tunnel once; returns when it reconnected. */
-    fun restartSecondDaemon(timeoutMillis: Long = 15_000) {
-        check(restartTrigger.createNewFile())
-        val ready = File(restartTrigger.path + ".ready")
-        val deadline = System.currentTimeMillis() + timeoutMillis
-        while (!ready.exists()) {
-            check(System.currentTimeMillis() < deadline) { "second daemon did not restart" }
-            Thread.sleep(50)
-        }
-    }
-
-    fun logTail(characters: Int = 4000): String = log.readText().takeLast(characters)
 
     override fun close() {
         process.destroy()

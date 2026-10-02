@@ -23,6 +23,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.MainActivity
 import com.dbpprt.dieter.BuildConfig
+import com.dbpprt.dieter.e2e.Evidence
 import org.junit.Assume.assumeFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -309,10 +310,7 @@ class MainActivityFramePerformanceTest {
             }?.let { return it }
             SystemClock.sleep(50)
         }
-        val screenshot = instrumentation.uiAutomation.takeScreenshot()
-        val file = java.io.File(activity.getExternalFilesDir(null), "navigation-failure.png")
-        file.outputStream().use { screenshot?.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-        screenshot?.recycle()
+        val file = runCatching { Evidence.display("navigation-failure.png") }.getOrNull()
         instrumentation.uiAutomation.rootInActiveWindow?.let { root ->
             for (label in listOf("Chats", "Projects", "Tools", "Terminal", "Close sheet")) {
                 val node = findClickable(root, label)

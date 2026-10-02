@@ -1,6 +1,7 @@
 import AppKit
 import DieterAPI
 import DieterCore
+import GRPCCore
 import SharedCore
 import Testing
 @testable import DieterMac
@@ -128,7 +129,7 @@ private actor FilesFixture: FilesRPC {
                 .with {
                     $0.daemonID = "machine"; $0.projectID = "project"
                 }),
-            .navigate(.with { $0.path = "apps" }), .back(ClientFilesStep()),
+            .navigate(.with { $0.path = "apps" }), .back(ClientStep()),
         ])
 }
 
@@ -164,7 +165,7 @@ private actor FilesFixture: FilesRPC {
     await model.openFile(path: "file.swift")
     #expect(model.fileDocument != nil)
     #expect(await model.saveFile(content: "changed") == nil)
-    await model.createFile(path: "new.swift", directory: false)
+    await model.createFile(name: "new.swift", directory: false)
     await model.deleteFile(path: "file.swift", recursive: false)
     #expect(await client.saveCount == 0)
     let changes = core.commands.filter {
@@ -174,4 +175,52 @@ private actor FilesFixture: FilesRPC {
         }
     }
     #expect(changes.isEmpty)
+}
+
+/// A file another writer changes between the read and the save.
+private actor ConflictingFilesFixture: FilesRPC {
+    private var disk = "original"
+    private var revision = 1
+
+    func changeOnDisk(_ text: String) {
+        disk = text; revision += 1
+    }
+    func listFiles(_ request: Dieter_V1_ListFilesRequest) async throws -> Dieter_V1_FileList {
+        var value = Dieter_V1_FileList(); value.path = request.path; return value
+    }
+    func readFile(_ request: Dieter_V1_ReadFileRequest) async throws -> Dieter_V1_FileDocument {
+        var value = Dieter_V1_FileDocument()
+        value.path = request.path; value.name = request.path; value.content = disk; value.revision = String(revision)
+        return value
+    }
+    func saveFile(_ request: Dieter_V1_SaveFileRequest) async throws -> Dieter_V1_FileDocument {
+        throw RPCError(code: .aborted, message: "revision \(request.revision) is stale")
+    }
+    func createFile(_ request: Dieter_V1_CreateFileRequest) async throws -> Dieter_V1_FileEntry { .init() }
+    func moveFile(_ request: Dieter_V1_MoveFileRequest) async throws -> Dieter_V1_MoveFileResponse { .init() }
+    func deleteFile(_ request: Dieter_V1_DeleteFileRequest) async throws {}
+}
+
+@Test @MainActor func filesSaveConflictKeepsTheEditsUntilReloadTakesTheDiskVersion() async throws {
+    let client = ConflictingFilesFixture(), core = FilesCoreDouble.core(over: client), model = FilesModel()
+    model.bind(target: .init(endpointID: "gateway#machine", projectID: "project"), core: core)
+    model.isLive = true
+    await model.openFile(path: "notes.md")
+    let editor = NSTextView()
+    model.fileEditorSession.attach(editor, documentKey: model.documentKey, initialText: "original")
+    editor.string = "my edit"; model.fileEditorSession.didEdit(lineDelta: 0)
+    await client.changeOnDisk("theirs")
+
+    #expect(await model.saveFile(content: "my edit") == nil)
+    #expect(model.conflict)
+    #expect(model.fileError?.contains("changed on disk") == true)
+    #expect(model.fileEditorSession.isDirty)
+    #expect(model.fileEditorSession.currentText() == "my edit")
+
+    await model.reloadDocument()
+    #expect(!model.conflict)
+    #expect(model.fileError == nil)
+    #expect(model.fileDocument?.content == "theirs")
+    #expect(!model.fileEditorSession.isDirty)
+    #expect(model.fileEditorSession.currentText() == "theirs")
 }

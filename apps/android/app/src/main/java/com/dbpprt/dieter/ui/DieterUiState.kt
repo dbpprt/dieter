@@ -12,12 +12,8 @@ import com.dbpprt.dieter.api.v1.Harness
 import com.dbpprt.dieter.api.v1.PeerRecord
 import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.api.v1.Schedule
-import com.dbpprt.dieter.api.v1.ScheduleRun
-import com.dbpprt.dieter.api.v1.Settings
-import com.dbpprt.dieter.api.v1.SettingsOptions
 import com.dbpprt.dieter.api.v1.Terminal
 import com.dbpprt.dieter.api.v1.UiMessage
-import com.dbpprt.dieter.api.v1.Workspace
 import com.dbpprt.dieter.core.activity.ActivityItem
 import com.dbpprt.dieter.core.admin.BackgroundMode
 import com.dbpprt.dieter.core.admin.MachineSnapshot
@@ -36,9 +32,9 @@ import com.dbpprt.dieter.core.navigation.NavigationLayout
 import com.dbpprt.dieter.core.notifications.NotificationSettings
 import com.dbpprt.dieter.core.outbox.MachineOutboxSummary
 import com.dbpprt.dieter.core.schedules.SchedulesView
-import com.dbpprt.dieter.core.terminals.TerminalScreen
 import com.dbpprt.dieter.core.terminals.TerminalsView
 import com.dbpprt.dieter.core.workspace.ProjectChangesView
+import com.dbpprt.dieter.core.workspace.ProjectWorkspaceRow
 import com.dbpprt.dieter.core.workspace.WorkspaceReviewView
 import com.dbpprt.dieter.settings.DEFAULT_PANE_LEADING_FRACTION
 import com.dbpprt.dieter.settings.DEFAULT_SIDEBAR_LEADING_FRACTION
@@ -46,15 +42,12 @@ import com.dbpprt.dieter.settings.DieterPalette
 
 enum class AppSurface { NEW_CHAT, NEW_CARD, NEW_BOARD, SCHEDULE_EDITOR, WORKSPACE, NEW_PROJECT, APP_SETTINGS }
 
-/** The machine that last listed a project. */
-@Immutable
-data class ProjectReplica(val endpointId: String, val daemonId: String, val hostname: String, val online: Boolean)
+/** What the project files destination shows: the checkout's files or its uncommitted changes. */
+enum class ProjectFilesTab(val label: String) { FILES("Files"), CHANGES("Changes") }
 
 /** Board administration data loaded on demand for the workspace sheet. */
 @Immutable
 data class AdministrationState(
-    val settings: Settings? = null,
-    val settingsOptions: SettingsOptions? = null,
     val archivedProjects: List<Project> = emptyList(),
     val archivedCards: List<Card> = emptyList(),
 )
@@ -71,12 +64,14 @@ data class DieterUiState(
     val lastConnectedAtMillis: Long? = null,
     val connectionDialogVisible: Boolean = false,
     val connectionError: String? = null,
+    /** The machine the live feed is attached to. */
+    val attachedMachineId: String? = null,
+    /** The attached machine's feed applied a live, complete frame. */
+    val feedLive: Boolean = false,
     val desiredConnected: Boolean = true,
-    val signedIn: Boolean = false,
     val backgroundSyncMode: BackgroundMode = BackgroundMode.LIVE,
     val palette: DieterPalette = DieterPalette.DEFAULT,
     val showReasoningTraces: Boolean = false,
-    val notificationBoardIds: Set<String> = emptySet(),
     val notificationSettings: NotificationSettings = NotificationSettings(),
     val endpointConnections: List<MachineRow> = emptyList(),
     val gateways: List<Gateway> = listOf(Gateway.DEFAULT),
@@ -97,17 +92,17 @@ data class DieterUiState(
     val navigationPendingCount: Int = 0,
     val navigationSyncError: String? = null,
     val peerSyncWarnings: List<String> = emptyList(),
+    /** Daemon ID → the sync warnings that machine reports. */
+    val machineSyncWarnings: Map<String, List<String>> = emptyMap(),
     val retiredBoards: List<Board> = emptyList(),
     val projectFolders: List<NavigationFolder> = emptyList(),
     val chatFolders: List<NavigationFolder> = emptyList(),
-    val collapsedChatProjectIds: Set<String> = emptySet(),
-    val expandedChatProjectIds: Set<String> = emptySet(),
-    val pinnedChatOrder: List<String> = emptyList(),
     val chatsPaneLeadingFraction: Float = DEFAULT_PANE_LEADING_FRACTION,
     val activityPaneLeadingFraction: Float = DEFAULT_SIDEBAR_LEADING_FRACTION,
     val projectsPaneLeadingFraction: Float = DEFAULT_SIDEBAR_LEADING_FRACTION,
     val boardPaneLeadingFraction: Float = DEFAULT_PANE_LEADING_FRACTION,
-    val projectReplicas: Map<String, ProjectReplica> = emptyMap(),
+    /** Project ID → the daemon whose view last listed it. */
+    val projectReplicas: Map<String, String> = emptyMap(),
     /** The selected project's boards and cards. */
     val boards: List<Board> = emptyList(),
     val cards: List<Card> = emptyList(),
@@ -115,7 +110,6 @@ data class DieterUiState(
     val spaceBoards: List<Board> = emptyList(),
     val spaceCards: List<Card> = emptyList(),
     val activityItems: List<ActivityItem> = emptyList(),
-    val spacesLoading: Boolean = false,
     val boardOverviewVisible: Boolean = true,
     /** Unfiled chats, newest activity first. */
     val chats: List<Card> = emptyList(),
@@ -143,7 +137,7 @@ data class DieterUiState(
     val fileDirty: Boolean = false,
     /** The last save hit a newer version on disk; the draft is kept. */
     val fileConflict: Boolean = false,
-    val projectFilesMode: String = "browse",
+    val projectFilesMode: ProjectFilesTab = ProjectFilesTab.FILES,
     val projectChanges: ProjectChangesView = ProjectChangesView(),
     val terminalWorkspace: TerminalsView = TerminalsView(),
     val terminalCreateVisible: Boolean = false,
@@ -153,15 +147,16 @@ data class DieterUiState(
     val directoryListingEndpointId: String = "",
     val directoryListingLoading: Boolean = false,
     val composerDraft: ConversationDraft = ConversationDraft(),
-    val projectWorkspaces: List<Workspace> = emptyList(),
+    val projectWorkspaceRows: List<ProjectWorkspaceRow> = emptyList(),
     val projectWorkspacesLoading: Boolean = false,
-    val projectWorkspaceOperations: Set<String> = emptySet(),
-    val projectWorkspaceErrors: Map<String, String> = emptyMap(),
+    val projectWorkspacesError: String? = null,
     val pendingCardIds: Set<String> = emptySet(),
     val pendingMessageIds: Set<String> = emptySet(),
     val acceptedOutboxIds: Set<String> = emptySet(),
     val failedOutboxIds: Set<String> = emptySet(),
     val machineOutboxSummaries: Map<String, MachineOutboxSummary> = emptyMap(),
+    /** Cards whose Start still waits in the outbox. */
+    val startingCardIds: Set<String> = emptySet(),
     val selectedMachineId: String? = null,
     /** Every machine's latest information, load, and read state. */
     val machineSnapshots: Map<String, MachineSnapshot> = emptyMap(),
@@ -172,9 +167,8 @@ data class DieterUiState(
     val pendingCardMoves: Map<String, PendingMove> = emptyMap(),
     val workspaceReview: WorkspaceReviewView = WorkspaceReviewView(),
 ) {
-    fun conversationHost(card: Card): ProjectReplica? = presentedEndpointConnections.firstOrNull { it.daemonId == card.owner_daemon_id }?.let {
-        ProjectReplica(it.id, it.daemonId.orEmpty(), it.label, it.online)
-    }
+    /** The machine that runs [card], as machine lists present it; null while its owner is unknown. */
+    fun conversationHost(card: Card): MachineRow? = presentedEndpointConnections.firstOrNull { it.daemonId == card.owner_daemon_id }
     val connected: Boolean get() = connectionPhase == ConnectionPhase.CONNECTED
     val backgroundSyncEnabled: Boolean get() = backgroundSyncMode.usesBackgroundService
     val hasCachedWorkspace: Boolean
@@ -182,8 +176,13 @@ data class DieterUiState(
     /** Files and schedules need a project whose machine is not known to be offline. */
     val projectSurfacesEnabled: Boolean
         get() = Availability.projectScopedEnabled(projects.map { it.id }) { presentedProjectReplicas[it]?.online }
-    val presentedProjectReplicas: Map<String, ProjectReplica>
-        get() = if (connected) projectReplicas else projectReplicas.mapValues { (_, host) -> host.copy(online = false) }
+
+    /** Project ID → the machine that last listed it, as machine lists present it ([MachineRows.host]). */
+    val presentedProjectReplicas: Map<String, MachineRow>
+        get() {
+            val rows = presentedEndpointConnections
+            return projectReplicas.mapValues { (_, daemonId) -> MachineRows.host(rows, daemonId) }
+        }
 
     /** Machines, plus rows for machines that only have queued changes; cached presence is never online while disconnected. */
     val presentedEndpointConnections: List<MachineRow>
@@ -191,35 +190,21 @@ data class DieterUiState(
             endpointConnections,
             connectionPhase,
             machineOutboxSummaries.keys,
-            projectReplicas.values.associate { it.endpointId to it.hostname },
+            emptyMap(),
         )
     val project: Project? get() = projects.firstOrNull { it.id == selectedProjectId }
     val board: Board? get() = boards.firstOrNull { it.id == selectedBoardId } ?: retiredBoards.firstOrNull { it.id == selectedBoardId } ?: boards.firstOrNull()
-    val boardNotificationsEnabled: Boolean get() = selectedBoardId in notificationBoardIds
+    val boardNotificationsEnabled: Boolean get() = selectedBoardId in notificationSettings.boardIds
     val selectedCard: Card?
         get() = conversation?.detail?.card
             ?: cards.firstOrNull { it.id == selectedCardId }
             ?: chats.firstOrNull { it.id == selectedCardId }
             ?: spaceCards.firstOrNull { it.id == selectedCardId }
     val schedules: List<Schedule> get() = scheduleWorkspace.schedules
-    val schedulesTotalCount: Int get() = scheduleWorkspace.totalCount
-    val schedulesNextPageToken: String get() = scheduleWorkspace.nextPageToken
-    val schedulesLoading: Boolean get() = scheduleWorkspace.loading
-    val schedulesLoadingMore: Boolean get() = scheduleWorkspace.loadingMore
-    val selectedScheduleId: String? get() = scheduleWorkspace.selectedId
-    val scheduleRuns: List<ScheduleRun> get() = scheduleWorkspace.runs
-    val scheduleRunsNextPageToken: String get() = scheduleWorkspace.runsNextPageToken
-    val scheduleRunsLoading: Boolean get() = scheduleWorkspace.runsLoading
-    val scheduleRunsLoadingMore: Boolean get() = scheduleWorkspace.runsLoadingMore
-    val schedulePreview: List<String> get() = scheduleWorkspace.preview
-    val settings: Settings? get() = administration.settings
-    val settingsOptions: SettingsOptions? get() = administration.settingsOptions
     val archivedProjects: List<Project> get() = administration.archivedProjects
     val archivedCards: List<Card> get() = administration.archivedCards
-    val selectedSchedule: Schedule? get() = schedules.firstOrNull { it.id == selectedScheduleId }
     val terminals: List<Terminal> get() = terminalWorkspace.terminals
     val selectedTerminalId: String? get() = terminalWorkspace.selectedId
-    val terminalScreens: Map<String, TerminalScreen> get() = terminalWorkspace.screens
     val terminalLoading: Boolean get() = terminalWorkspace.loading
     val terminalStreamConnected: Boolean get() = terminalWorkspace.streamConnected
     val selectedTerminal: Terminal? get() = terminalWorkspace.selected

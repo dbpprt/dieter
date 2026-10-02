@@ -3,27 +3,30 @@ import DieterAPI
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// A project's section of the chats pane, as the core lays it out: a
+/// preview of its newest chats, or every one while it shows all.
 struct ChatProjectGroup: View {
     @Environment(DieterStore.self) private var store
     let project: Dieter_V1_Project
+    /// The projects the pane shows, in order, for drops between them.
     let projectIDs: [String]
+    let section: ClientChatProjectSection
     let chats: [Dieter_V1_Card]
     let showArchived: Bool
-    let expanded: Bool
-    let collapsed: Bool
     let toggleExpanded: () -> Void
     let toggleCollapsed: () -> Void
     let moveProject: (String, String?) -> Void
     @State private var pageIndex = 0
     @State private var dropTargeted = false
 
+    private var collapsed: Bool { !section.showChats }
+
     private var headerAccessibilityLabel: String {
         collapsed ? "Expand \(project.name) chats" : "Collapse \(project.name) chats"
     }
 
     private var displayed: [Dieter_V1_Card] {
-        guard expanded else { return Array(chats.prefix(5)) }
-        let page = LaneCardPage.resolve(total: chats.count, requestedPage: pageIndex)
+        guard section.showAll else { return chats }
         return Array(chats[page.lowerBound..<page.upperBound])
     }
 
@@ -43,7 +46,7 @@ struct ChatProjectGroup: View {
                             DieterTheme.tertiary)
                         Text(project.name.uppercased()).font(DieterFont.sectionLabel).tracking(0.8).lineLimit(1)
                             .foregroundStyle(DieterTheme.subtle)
-                        Text("· \(chats.count)").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
+                        Text("· \(section.total)").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                         Spacer(minLength: 4)
 
                     }
@@ -101,9 +104,9 @@ struct ChatProjectGroup: View {
                     .padding(.leading, 36).padding(.vertical, 2)
                 } else {
                     ChatGroupCard(chats: displayed) {
-                        if chats.count > 5 {
+                        if section.hidden > 0 {
                             ChatRowSeparator()
-                            if expanded {
+                            if section.showAll {
                                 VStack(spacing: 4) {
                                     if page.pageCount > 1 {
                                         ChatPageControls(
@@ -128,7 +131,7 @@ struct ChatProjectGroup: View {
                                 Button(action: toggleExpanded) {
                                     HStack(spacing: 5) {
                                         Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold))
-                                        Text("Show \(chats.count - 5) more")
+                                        Text("Show \(section.hidden) more")
                                     }
                                     .font(.system(size: 10.5, weight: .medium)).foregroundStyle(DieterTheme.subtle)
                                     .padding(.leading, 27).padding(.vertical, 6)
@@ -147,7 +150,7 @@ struct ChatProjectGroup: View {
 }
 
 struct ChatNavigationFolderGroup: View {
-    let folder: NavigationFolder
+    let folder: ClientChatFolderSection
     let chats: [Dieter_V1_Card]
     let toggleExpanded: () -> Void
     let moveChatHere: (String) -> Void
@@ -163,7 +166,7 @@ struct ChatNavigationFolderGroup: View {
                     HStack(spacing: 7) {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 8, weight: .bold))
-                            .rotationEffect(.degrees(folder.isExpanded ? 90 : 0))
+                            .rotationEffect(.degrees(folder.showChats ? 90 : 0))
                         Image(systemName: dropTargeted ? "folder.fill.badge.plus" : "folder.fill")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(dropTargeted ? DieterTheme.shell : DieterTheme.subtle)
@@ -223,10 +226,10 @@ struct ChatNavigationFolderGroup: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(folder.name), \(chats.count) chats")
-            .accessibilityIdentifier("chats.folder.\(folder.id)")
-            .smokeTarget("chats.folder.\(folder.id)")
+            .accessibilityIdentifier("chats.folder.\(folder.folderID)")
+            .smokeTarget("chats.folder.\(folder.folderID)")
 
-            if folder.isExpanded {
+            if folder.showChats {
                 if chats.isEmpty {
                     HStack(spacing: 7) {
                         Image(systemName: "arrow.down.to.line.compact")
@@ -240,7 +243,7 @@ struct ChatNavigationFolderGroup: View {
                 }
             }
         }
-        .animation(.snappy(duration: 0.18), value: folder.isExpanded)
+        .animation(.snappy(duration: 0.18), value: folder.showChats)
         .animation(.easeOut(duration: 0.12), value: dropTargeted)
     }
 }

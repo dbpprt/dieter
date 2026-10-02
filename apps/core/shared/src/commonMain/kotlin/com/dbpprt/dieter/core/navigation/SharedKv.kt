@@ -406,26 +406,6 @@ class SharedKv(
         private fun cacheFile(namespace: String, account: String, daemonId: String): String =
             "kv-" + CoreStorage.safeName("$namespace.$account" + if (account == LOCAL_ACCOUNT) ".$daemonId" else "") + ".pb"
 
-        /**
-         * Writes a legacy app's caches (entries and undelivered intents) into
-         * [storage], one gateway's scope for [namespace]. Caches the core
-         * already has win. Returns how many caches were written.
-         */
-        fun importInto(storage: CoreStorage, namespace: String, caches: List<KvCache>, active: KvActive?): Int {
-            var written = 0
-            for (cache in caches) {
-                if (cache.account.isEmpty()) continue
-                val name = cacheFile(namespace, cache.account, cache.daemon_id)
-                if (storage.read(name) != null) continue
-                storage.write(name, KvCache.ADAPTER.encode(cache.copy(pending = cache.pending.takeLast(MAX_PENDING))))
-                written++
-            }
-            if (active != null && active.account.isNotEmpty() && storage.read(activeFile(namespace)) == null) {
-                storage.write(activeFile(namespace), KvActive.ADAPTER.encode(active))
-            }
-            return written
-        }
-
         const val MAX_PENDING = 1_024
         const val MAX_VALUE_BYTES = 32 * 1024
         const val LOCAL_ACCOUNT = "local"

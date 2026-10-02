@@ -54,12 +54,7 @@
 
             let phase = argument(after: "--sidebar-ui-smoke") ?? "prepare"
             var results: [String: String] = [:]
-            let sourceMachineNames = store.machines.map(\.name)
-            results["machine-source-order"] =
-                sourceMachineNames == ["Beta", longMachineName, "alpha"]
-                ? "passed"
-                : "failed: \(sourceMachineNames.joined(separator: ","))"
-            let sidebarMachineNames = SidebarMachineOrdering.sorted(store.machines).map(\.name)
+            let sidebarMachineNames = store.machines.map(\.name)
             results["machine-sidebar-order"] =
                 sidebarMachineNames == expectedMachineNames
                 ? "passed"
@@ -149,32 +144,27 @@
 
         private static func prepare(store: DieterStore, window: NSWindow, results: inout [String: String]) async {
             NativeUIAccessibility.click("sidebar.project.\(projectIDs[0]).toggle", in: window)
-            try? await DieterTaskSleep.milliseconds(450)
-            var preferences = store.sidebarProjectNavigation
-            results["expand-click"] =
-                preferences.isExpanded(projectIDs[0]) ? "passed" : "failed: first project did not expand"
+            let expandedByClick = await NativeUIAccessibility.wait { expanded(store, projectIDs[0]) }
+            results["expand-click"] = expandedByClick ? "passed" : "failed: first project did not expand"
 
+            let reordered = [projectIDs[2], projectIDs[0], projectIDs[1]]
             await drag(window: window, fromX: 100, fromTop: 324, toX: 100, toTop: 210)
-            try? await DieterTaskSleep.milliseconds(700)
-            preferences = store.sidebarProjectNavigation
-            if preferences.orderedIDs(from: projectIDs) != [projectIDs[2], projectIDs[0], projectIDs[1]] {
-                // In-process NSEvents exercise SwiftUI button hit-testing but do not
-                // enter AppKit's privileged system drag manager on every machine.
-                // Record the exact state transition made by the accepted drop so
-                // the second real app launch can still verify rendered persistence.
-                _ = preferences.move(projectIDs[2], before: projectIDs[0], availableIDs: projectIDs)
-                store.sidebarProjectNavigation = preferences
-                results["drag-dispatch"] = "accepted-drop state recorded"
-            } else {
+            if await NativeUIAccessibility.wait(timeout: 2, until: { order(store) == reordered }) {
                 results["drag-dispatch"] = "native mouse drag passed"
+            } else {
+                // In-process NSEvents exercise SwiftUI button hit-testing but do not
+                // enter AppKit's privileged system drag manager on every machine,
+                // and the core moves only projects its workspace lists. Record the
+                // order the accepted drop shows so the second real app launch can
+                // still verify rendered persistence.
+                _ = await store.perform { $0.setProjectOrder = .with { $0.projectIds = reordered } }
+                results["drag-dispatch"] = "accepted-drop state recorded"
             }
-            preferences = store.sidebarProjectNavigation
-            let order = preferences.orderedIDs(from: projectIDs)
+            let ordered = await NativeUIAccessibility.wait { order(store) == reordered }
             results["drag-order"] =
-                order == [projectIDs[2], projectIDs[0], projectIDs[1]]
-                ? "passed" : "failed: \(order.joined(separator: ","))"
+                ordered ? "passed" : "failed: \(order(store).joined(separator: ","))"
             results["saved-expand"] =
-                preferences.isExpanded(projectIDs[0]) ? "passed" : "failed: expanded state was not saved"
+                expanded(store, projectIDs[0]) ? "passed" : "failed: expanded state was not saved"
 
             if let split = navigationSplit(in: window) {
                 let initialWidth = split.arrangedSubviews[0].frame.width
@@ -185,7 +175,7 @@
                     abs(split.arrangedSubviews[0].frame.width - targetWidth) < 2
                         && abs(persistedSidebarWidth() - targetWidth) < 2
                 }
-                SidebarProjectNavigationPreferences.applicationDefaults().set(
+                SidebarPreferences.applicationDefaults().set(
                     Double(targetWidth), forKey: "smoke.expectedSidebarWidth")
                 results["resize-native-divider"] =
                     resized
@@ -195,7 +185,7 @@
                 results["resize-native-divider"] = "failed: navigation split view unavailable"
             }
 
-            installProjectFolder(store)
+            await installProjectFolder(store)
             let projectFolderRendered = await NativeUIAccessibility.wait(timeout: 3) {
                 NativeUIAccessibility.find("sidebar.project-folder.\(projectFolderID)", in: window) != nil
             }
@@ -204,16 +194,14 @@
             await switchChatsWithCompanion(store: store, window: window, results: &results)
             let chatWasVisible = NativeUIAccessibility.find("chat.\(chatIDs[0])", in: window) != nil
             let clicked = NativeUIAccessibility.click("chats.project.\(projectIDs[0]).toggle", in: window)
-            let saved = await NativeUIAccessibility.wait {
-                store.chatProjectDisclosure.isCollapsed(projectIDs[0])
-            }
+            let saved = await NativeUIAccessibility.wait { chatCollapsed(store, projectIDs[0]) }
             results["chat-collapse-click"] = clicked && saved ? "passed" : "failed: collapsed state was not saved"
             results["chat-collapse-rendered"] =
                 chatWasVisible && NativeUIAccessibility.find("chat.\(chatIDs[0])", in: window) == nil
                 ? "passed"
                 : "failed: project chat rows did not collapse"
 
-            installChatFolder(store)
+            await installChatFolder(store)
             let chatFolderRendered = await NativeUIAccessibility.wait(timeout: 3) {
                 NativeUIAccessibility.find("chats.folder.\(chatFolderID)", in: window) != nil
                     && NativeUIAccessibility.find("chat.\(chatIDs[1])", in: window) != nil
@@ -227,23 +215,21 @@
                 NativeUIAccessibility.find("sidebar.project-folder.\(projectFolderID)", in: window) != nil
             }
             results["folders-restored"] =
-                store.sidebarProjectFolders.folder(containing: projectIDs[1])?.id == projectFolderID
-                    && store.allChatsFolders.folder(containing: chatIDs[1])?.id == chatFolderID
+                store.navigation.projectFolders.folder(containing: projectIDs[1])?.id == projectFolderID
+                    && store.navigation.chatFolders.folder(containing: chatIDs[1])?.id == chatFolderID
                     && projectFolderRendered
                 ? "passed"
                 : "failed"
-            store.sidebarProjectFolders = NavigationFolderPreferences()
-            store.allChatsFolders = NavigationFolderPreferences()
+            await setFolders(store, .projects, [])
+            await setFolders(store, .chats, [])
             _ = await NativeUIAccessibility.wait {
                 NativeUIAccessibility.find("sidebar.project-folder.\(projectFolderID)", in: window) == nil
             }
 
-            let restored = store.sidebarProjectNavigation
             results["restored-order"] =
-                restored.orderedIDs(from: projectIDs) == [projectIDs[2], projectIDs[0], projectIDs[1]]
-                ? "passed" : "failed"
-            results["restored-expand"] = restored.isExpanded(projectIDs[0]) ? "passed" : "failed"
-            let expectedWidth = SidebarProjectNavigationPreferences.applicationDefaults().double(
+                order(store) == [projectIDs[2], projectIDs[0], projectIDs[1]] ? "passed" : "failed"
+            results["restored-expand"] = expanded(store, projectIDs[0]) ? "passed" : "failed"
+            let expectedWidth = SidebarPreferences.applicationDefaults().double(
                 forKey: "smoke.expectedSidebarWidth")
             let widthRestored = await NativeUIAccessibility.wait {
                 guard let split = navigationSplit(in: window) else { return false }
@@ -262,66 +248,92 @@
                 return firstFrame.width > 0 && secondFrame.width > 0 && firstFrame.minY > secondFrame.maxY
             }
             NativeUIAccessibility.click("sidebar.project.\(projectIDs[2]).toggle", in: window)
-            try? await DieterTaskSleep.milliseconds(350)
-            var interacted = store.sidebarProjectNavigation
+            let thirdExpanded = await NativeUIAccessibility.wait { expanded(store, projectIDs[2]) }
             results["order-in-relaunched-ui"] =
-                renderedOrder && interacted.isExpanded(projectIDs[2])
+                renderedOrder && thirdExpanded
                 ? "passed" : "failed: first visible toggle was not the reordered project"
             NativeUIAccessibility.click("sidebar.project.\(projectIDs[2]).toggle", in: window)
             try? await DieterTaskSleep.milliseconds(350)
 
             // The saved-expanded project renders second; collapsing it clears the flag.
             NativeUIAccessibility.click("sidebar.project.\(projectIDs[0]).toggle", in: window)
-            _ = await NativeUIAccessibility.wait { !store.sidebarProjectNavigation.isExpanded(projectIDs[0]) }
+            _ = await NativeUIAccessibility.wait { !expanded(store, projectIDs[0]) }
 
             await showChats(store: store, window: window)
             recordNavigationBoundaries(in: window, results: &results)
-            let restoredChatPreferences = store.chatProjectDisclosure
             results["chat-restored-collapse"] =
-                restoredChatPreferences.isCollapsed(projectIDs[0])
+                chatCollapsed(store, projectIDs[0])
                     && NativeUIAccessibility.find("chat.\(chatIDs[0])", in: window) == nil
                 ? "passed"
                 : "failed: collapsed Chats project was not restored"
             let clicked = NativeUIAccessibility.click("chats.project.\(projectIDs[0]).toggle", in: window)
-            let expanded = await NativeUIAccessibility.wait {
-                !store.chatProjectDisclosure.isCollapsed(projectIDs[0])
+            let chatExpanded = await NativeUIAccessibility.wait {
+                !chatCollapsed(store, projectIDs[0])
                     && NativeUIAccessibility.find("chat.\(chatIDs[0])", in: window) != nil
             }
-            results["chat-expand-in-relaunched-ui"] = clicked && expanded ? "passed" : "failed"
+            results["chat-expand-in-relaunched-ui"] = clicked && chatExpanded ? "passed" : "failed"
             _ = NativeUIAccessibility.click("chats.project.\(projectIDs[0]).toggle", in: window)
-            _ = await NativeUIAccessibility.wait { store.chatProjectDisclosure.isCollapsed(projectIDs[0]) }
-            interacted = store.sidebarProjectNavigation
+            _ = await NativeUIAccessibility.wait { chatCollapsed(store, projectIDs[0]) }
             results["expand-in-relaunched-ui"] =
-                !interacted.isExpanded(projectIDs[0])
+                !expanded(store, projectIDs[0])
                 ? "passed" : "failed: saved expanded project was not rendered second"
             NativeUIAccessibility.click("sidebar.project.\(projectIDs[0]).toggle", in: window)
-            _ = await NativeUIAccessibility.wait { store.sidebarProjectNavigation.isExpanded(projectIDs[0]) }
+            _ = await NativeUIAccessibility.wait { expanded(store, projectIDs[0]) }
 
-            installChatFolder(store)
+            await installChatFolder(store)
             let chatFolderRendered = await NativeUIAccessibility.wait(timeout: 3) {
                 NativeUIAccessibility.find("chats.folder.\(chatFolderID)", in: window) != nil
             }
             results["folders-in-relaunched-ui"] = chatFolderRendered ? "passed" : "failed"
         }
 
-        private static func installProjectFolder(_ store: DieterStore) {
-            store.sidebarProjectFolders = NavigationFolderPreferences(folders: [
-                NavigationFolder(
-                    id: projectFolderID,
-                    name: "Client work",
-                    itemIDs: [projectIDs[1]]
-                )
-            ])
+        private static func installProjectFolder(_ store: DieterStore) async {
+            await setFolders(
+                store, .projects,
+                [
+                    .with {
+                        $0.id = projectFolderID; $0.name = "Client work"; $0.itemIds = [projectIDs[1]]
+                        $0.expanded = true
+                    }
+                ])
         }
 
-        private static func installChatFolder(_ store: DieterStore) {
-            store.allChatsFolders = NavigationFolderPreferences(folders: [
-                NavigationFolder(
-                    id: chatFolderID,
-                    name: "Research",
-                    itemIDs: [chatIDs[1]]
-                )
-            ])
+        private static func installChatFolder(_ store: DieterStore) async {
+            await setFolders(
+                store, .chats,
+                [
+                    .with {
+                        $0.id = chatFolderID; $0.name = "Research"; $0.itemIds = [chatIDs[1]]
+                        $0.expanded = true
+                    }
+                ])
+        }
+
+        /// Saves fixed folders, so the relaunched app finds them by ID.
+        private static func setFolders(
+            _ store: DieterStore, _ scope: ClientFolderScope, _ folders: [ClientNavigationFolder]
+        ) async {
+            _ = await store.perform {
+                $0.setFolders = .with {
+                    $0.scope = scope
+                    $0.folders = folders
+                }
+            }
+        }
+
+        /// The fixture's projects in the sidebar's order.
+        private static func order(_ store: DieterStore) -> [String] {
+            store.navigation.projects.order.filter(projectIDs.contains)
+        }
+
+        /// Whether the sidebar shows a project's boards.
+        private static func expanded(_ store: DieterStore, _ projectID: String) -> Bool {
+            store.navigation.projects.expanded.contains(projectID)
+        }
+
+        /// Whether a project's section is collapsed in the chats pane.
+        private static func chatCollapsed(_ store: DieterStore, _ projectID: String) -> Bool {
+            store.navigation.collapsedChatSections.contains(projectID)
         }
 
         private static func switchChatsWithCompanion(
@@ -424,15 +436,8 @@
 
         private static func seed(_ store: DieterStore) {
             let names = ["adops-monorepo", "Beta", "Gamma"]
+            // The core sends machines by name; presence never moves a row.
             let machines = [
-                DieterEndpoint(
-                    name: longMachineName,
-                    host: "127.0.0.1",
-                    port: 4242,
-                    daemonID: "sidebar-smoke-zulu",
-                    online: true,
-                    releaseVersion: "smoke"
-                ),
                 DieterEndpoint(
                     name: "alpha",
                     host: "127.0.0.1",
@@ -449,8 +454,16 @@
                     online: true,
                     releaseVersion: "smoke"
                 ),
+                DieterEndpoint(
+                    name: longMachineName,
+                    host: "127.0.0.1",
+                    port: 4242,
+                    daemonID: "sidebar-smoke-zulu",
+                    online: true,
+                    releaseVersion: "smoke"
+                ),
             ]
-            let machine = machines[0]
+            let machine = machines[2]
             var projects: [Dieter_V1_Project] = []
             var boardsByProject: [String: [Dieter_V1_Board]] = [:]
             for (index, id) in projectIDs.enumerated() {
@@ -473,10 +486,23 @@
             store.endpoint = machine
             store.endpoints = machines
             store.projectReplicaEndpointIDs = Dictionary(
-                uniqueKeysWithValues: zip(projectIDs, machines).map { pair in (pair.0, pair.1.id) })
-            store.machineConnectionStatuses = Dictionary(
-                uniqueKeysWithValues: machines.map {
-                    ($0.id, MachineConnectionStatus(route: .local, latencyMilliseconds: 3))
+                uniqueKeysWithValues: zip(projectIDs, [machines[2], machines[0], machines[1]]).map { pair in
+                    (pair.0, pair.1.id)
+                })
+            store.machineEntries = Dictionary(
+                uniqueKeysWithValues: machines.map { machine in
+                    (
+                        machine.id,
+                        ClientMachineEntry.with {
+                            $0.id = machine.daemonID ?? ""
+                            $0.name = machine.name
+                            $0.online = machine.online
+                            $0.available = machine.online
+                            $0.compatible = true
+                            $0.route = machine.online ? "Local" : ""
+                            $0.detail = machine.online ? "Local · 3 ms" : "Offline"
+                        }
+                    )
                 })
             var chats: [Dieter_V1_Card] = []
             for (index, projectID) in projectIDs.enumerated() {
@@ -496,6 +522,9 @@
             store.selectedProjectID = projectIDs[0]
             store.selectedBoardID = boardsByProject[projectIDs[0]]?.first?.id ?? ""
             store.phase = .connected(version: "sidebar-smoke")
+            store.workspaceIsLive = true
+            // Lay the fixture's projects and chats out from the saved layout.
+            store.foldNavigation(store.navigation)
         }
 
         private static func drag(window: NSWindow, fromX: CGFloat, fromTop: CGFloat, toX: CGFloat, toTop: CGFloat) async
@@ -569,7 +598,7 @@
         }
 
         private static func persistedSidebarWidth() -> CGFloat {
-            let value = SidebarProjectNavigationPreferences.applicationDefaults().double(
+            let value = SidebarPreferences.applicationDefaults().double(
                 forKey: SidebarSizing.storageKey)
             return value > 0 ? SidebarSizing.clamped(CGFloat(value)) : SidebarSizing.defaultWidth
         }

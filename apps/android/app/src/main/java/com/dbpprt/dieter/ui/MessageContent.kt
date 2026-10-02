@@ -4,7 +4,9 @@ package com.dbpprt.dieter.ui
 
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.dbpprt.dieter.core.composition.Attachments
+import com.dbpprt.dieter.core.files.FilePaths
 import com.dbpprt.dieter.core.presentation.ActivitySummary
+import com.dbpprt.dieter.core.presentation.Counts
 import com.dbpprt.dieter.core.presentation.DetectedLinks
 import com.dbpprt.dieter.core.presentation.Durations
 import com.dbpprt.dieter.core.presentation.Markdown
@@ -12,7 +14,7 @@ import com.dbpprt.dieter.core.presentation.MarkdownBlock
 import com.dbpprt.dieter.core.presentation.Parts
 import com.dbpprt.dieter.core.presentation.StepKind
 import com.dbpprt.dieter.core.presentation.SubagentPresentation
-import android.graphics.BitmapFactory
+import com.dbpprt.dieter.core.runtime.Failures
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -69,7 +71,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
@@ -113,10 +114,8 @@ import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.ui.theme.DieterShellTint
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import com.dbpprt.dieter.api.v1.MessagePart
-import com.dbpprt.dieter.api.v1.Schedule
 import com.dbpprt.dieter.api.v1.Subagent
 import com.dbpprt.dieter.api.v1.TaskPlan
-import com.dbpprt.dieter.api.v1.UiMessage
 import com.dbpprt.dieter.api.v1.ToolOutput
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.Dispatchers
@@ -331,8 +330,8 @@ private fun ConversationImageLightbox(path: String, model: DieterViewModel, onDi
     LaunchedEffect(path) {
         document = model.readConversationImage(path)
         bitmap = document?.let { value ->
-            val bytes = if (value.binary) value.data_.toByteArray() else value.content.toByteArray()
-            withContext(Dispatchers.Default) { decodeConversationImage(bytes) }?.asImageBitmap()
+            val bytes = FilePaths.bytes(value).toByteArray()
+            withContext(Dispatchers.Default) { decodeImage(bytes, maxDimension = 2400) }?.asImageBitmap()
         }
         loaded = true
     }
@@ -381,21 +380,6 @@ private fun ConversationImageLightbox(path: String, model: DieterViewModel, onDi
             }
         }
     }
-}
-
-private fun decodeConversationImage(bytes: ByteArray, maxDimension: Int = 2400): android.graphics.Bitmap? {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-    var sample = 1
-    while (bounds.outWidth / sample > maxDimension * 2 || bounds.outHeight / sample > maxDimension * 2) {
-        sample *= 2
-    }
-    return BitmapFactory.decodeByteArray(
-        bytes,
-        0,
-        bytes.size,
-        BitmapFactory.Options().apply { inSampleSize = sample },
-    )
 }
 
 @Composable
@@ -465,7 +449,7 @@ internal fun SubagentBlock(subagents: List<Subagent>) {
         ) {
             Icon(Icons.Outlined.ChevronRight, null, tint = DieterMuted, modifier = Modifier.size(15.dp).rotate(if (expanded) 90f else 0f))
             Spacer(Modifier.width(5.dp))
-            Text("${subagents.size} ${if (subagents.size == 1) "subagent" else "subagents"}", color = DieterMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Text(Counts.of(subagents.size, "subagent"), color = DieterMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             if (active) {
                 Spacer(Modifier.width(7.dp))
                 CircularProgressIndicator(Modifier.size(11.dp), strokeWidth = 1.4.dp, color = DieterShell)
@@ -480,8 +464,8 @@ internal fun SubagentBlock(subagents: List<Subagent>) {
                     Surface(shape = RoundedCornerShape(8.dp), color = DieterSurfaceHigh, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(horizontal = 9.dp, vertical = 7.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (subagent.status == "running") CircularProgressIndicator(Modifier.size(11.dp), strokeWidth = 1.4.dp, color = DieterShell)
-                                else Icon(if (subagent.status == "completed") Icons.Outlined.CheckCircle else Icons.Outlined.Cancel, null, tint = if (subagent.status == "completed") DieterEyes else DieterMuted, modifier = Modifier.size(12.dp))
+                                if (presented.active) CircularProgressIndicator(Modifier.size(11.dp), strokeWidth = 1.4.dp, color = DieterShell)
+                                else Icon(if (presented.completed) Icons.Outlined.CheckCircle else Icons.Outlined.Cancel, null, tint = if (presented.completed) DieterEyes else DieterMuted, modifier = Modifier.size(12.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text(
                                     presented.title,
@@ -491,7 +475,7 @@ internal fun SubagentBlock(subagents: List<Subagent>) {
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
-                                Text(subagent.status, color = DieterMuted, fontSize = 8.sp)
+                                Text(presented.statusLabel, color = DieterMuted, fontSize = 8.sp)
                             }
                             presented.statusLine?.let { Text(it, color = DieterMuted, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                             val metrics = presented.summaryMetrics
@@ -754,19 +738,17 @@ internal fun ToolItem(messageId: String, part: MessagePart, model: DieterViewMod
     var loading by remember(part.tool_call_id, part.payload_revision) { mutableStateOf(false) }
     var error by remember(part.tool_call_id, part.payload_revision) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val input = (payload?.input_json ?: part.input_json).utf8().trim()
-    val output = (payload?.output_json ?: part.output_json).utf8().trim()
     val status = Tools.status(part)
     val failed = status == ToolStatus.FAILED
-    val attentionLabel = if (status == ToolStatus.DENIED) "Tool denied" else "Approval requested"
+    val statusLabel = Tools.statusLabel(status)
     fun toggle() {
         expanded = !expanded
-        if (expanded && payload == null && !loading && (part.has_input || part.has_output)) {
+        if (expanded && payload == null && !loading && Tools.hasPayload(part)) {
             loading = true
             scope.launch {
                 runCatching { model.loadToolOutput(messageId, part) }
                     .onSuccess { payload = it; error = null }
-                    .onFailure { error = it.message ?: "Could not load tool details" }
+                    .onFailure { error = Failures.message(it) }
                 loading = false
             }
         }
@@ -788,11 +770,7 @@ internal fun ToolItem(messageId: String, part: MessagePart, model: DieterViewMod
                     failed -> Icons.Outlined.Cancel
                     else -> Icons.Outlined.Terminal
                 },
-                contentDescription = when {
-                    attention -> attentionLabel
-                    failed -> "Tool failed"
-                    else -> null
-                },
+                contentDescription = statusLabel.takeIf { attention || failed },
                 tint = when {
                     attention -> MaterialTheme.colorScheme.primary
                     failed -> MaterialTheme.colorScheme.error
@@ -807,9 +785,9 @@ internal fun ToolItem(messageId: String, part: MessagePart, model: DieterViewMod
                 fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold,
             )
-            if (attention) {
+            if (attention && statusLabel != null) {
                 Spacer(Modifier.width(7.dp))
-                Text(attentionLabel, color = MaterialTheme.colorScheme.primary, fontSize = 10.sp)
+                Text(statusLabel, color = MaterialTheme.colorScheme.primary, fontSize = 10.sp)
             }
             val preview = Tools.preview(part)
             if (preview.isNotBlank()) {
@@ -832,7 +810,7 @@ internal fun ToolItem(messageId: String, part: MessagePart, model: DieterViewMod
             )
         }
         if (expanded) {
-            val payloadError = payload?.error_text.orEmpty().ifBlank { part.error_text }
+            val details = Tools.details(part, payload)
             if (loading) {
                 Row(
                     Modifier.padding(start = 25.dp, top = 5.dp, bottom = 7.dp),
@@ -846,11 +824,9 @@ internal fun ToolItem(messageId: String, part: MessagePart, model: DieterViewMod
             if (error != null) {
                 Text(error.orEmpty(), Modifier.padding(start = 25.dp, bottom = 6.dp), color = MaterialTheme.colorScheme.error, fontSize = 10.sp)
             }
-            if (payloadError.isNotBlank()) ToolPayloadBlock("Error", payloadError, error = true)
-            if (input.isNotBlank()) ToolPayloadBlock("Input", input)
-            if (output.isNotBlank()) ToolPayloadBlock("Output", output)
-            if (!loading && error == null && payloadError.isBlank() && input.isBlank() && output.isBlank()) {
-                Text("No additional payload", Modifier.padding(start = 25.dp, bottom = 6.dp), color = DieterMuted, fontSize = 10.sp)
+            details.forEach { detail -> ToolPayloadBlock(detail.label, detail.text, error = detail.error) }
+            if (!loading && error == null && details.isEmpty()) {
+                Text(Tools.NO_DETAILS, Modifier.padding(start = 25.dp, bottom = 6.dp), color = DieterMuted, fontSize = 10.sp)
             }
         }
     }

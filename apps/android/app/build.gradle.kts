@@ -1,8 +1,8 @@
 import java.security.MessageDigest
 
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.compose.compiler)
+    alias(coreLibs.plugins.android.application)
+    alias(coreLibs.plugins.compose.compiler)
 }
 
 val releaseKeystorePath = providers.environmentVariable("DIETER_ANDROID_KEYSTORE_PATH")
@@ -30,7 +30,6 @@ android {
         versionCode = releaseVersionCode.get()
         versionName = releaseVersionName.get()
         testInstrumentationRunner = "com.dbpprt.dieter.e2e.DieterTestRunner"
-        vectorDrawables.useSupportLibrary = true
     }
 
     signingConfigs {
@@ -101,8 +100,7 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.androidx.graphics.path)
-    implementation(libs.kotlinx.coroutines.android)
+    implementation(coreLibs.kotlinx.coroutines.android)
     // These two reusable Termux terminal modules are Apache-2.0 licensed.
     implementation(libs.termux.terminal.emulator)
     implementation(libs.termux.terminal.view)
@@ -114,11 +112,17 @@ dependencies {
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons)
-    implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
+    constraints {
+        // The app does not use graphics-path; Compose's ui-graphics requests 1.0.1.
+        implementation("androidx.graphics:graphics-path:${libs.versions.graphicsPath.get()}") {
+            because("1.1.0 ships libandroidx.graphics.path.so 16 KiB page aligned")
+        }
+    }
 
     testImplementation(libs.junit)
-    androidTestImplementation(libs.okhttp)
+    // Tests reach the native screen fixture over plaintext HTTP/2 with the core's OkHttp.
+    androidTestImplementation(coreLibs.okhttp)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.rules)
     androidTestImplementation(libs.espresso.core)

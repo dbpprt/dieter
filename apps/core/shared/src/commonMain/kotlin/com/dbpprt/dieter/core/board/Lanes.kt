@@ -2,6 +2,7 @@ package com.dbpprt.dieter.core.board
 
 import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.DraftAgentSettings
 import com.dbpprt.dieter.api.v1.Lane
 
 enum class LaneKind { REVIEW, DONE, RUNNING, OTHER }
@@ -44,9 +45,18 @@ object Lanes {
         else -> LaneKind.OTHER
     }
 
+    /** A board lane's kind by its ID, else by its name, e.g. "in-flight" named "Running". */
+    fun kind(lane: Lane): LaneKind = kind(lane.id).takeUnless { it == LaneKind.OTHER } ?: kind(lane.name)
+
     fun isDone(lane: String): Boolean = lane.equals(DONE, ignoreCase = true)
 
-    /** Placement order: order key, then legacy position for keyless cards, then ID. */
+    /** The default (review) workflow's lanes, as the daemon creates them. */
+    val DEFAULT: List<Lane> = listOf(Lane(TODO, "Todo"), Lane(RUNNING, "Running"), Lane(REVIEW, "Review"), Lane(DONE, "Done"))
+
+    /** The lanes a board shows: its own, or [DEFAULT] for a board without lanes. */
+    fun shown(board: Board?): List<Lane> = board?.lanes?.takeIf { it.isNotEmpty() } ?: DEFAULT
+
+    /** Placement order: order key, then position for cards without one, then ID. */
     val placement: Comparator<Card> = compareBy<Card> { it.order_key }
         .thenBy { if (it.order_key.isEmpty()) it.position else 0L }
         .thenBy { it.id }
@@ -90,6 +100,14 @@ object Lanes {
     }
 }
 
+object Cards {
+    /** An unfiled chat. A chat filed on a board sits in its lanes and behaves like a card. */
+    fun isChat(card: Card): Boolean = card.scope == "chat" && card.board_id.isEmpty()
+
+    /** The agent a card runs: its provider (or "agent") and model, e.g. "codex · gpt-5". */
+    fun agent(card: Card): String = listOf(card.provider.ifBlank { "agent" }, card.model).filter { it.isNotBlank() }.joinToString(" · ")
+}
+
 /** Which card actions are available. Ported from Android `CardStartPolicy` and the Mac board policies. */
 object CardPolicy {
     /** A never-started todo card with a task (text or attachments) and a board with a running lane. */
@@ -106,12 +124,48 @@ object CardPolicy {
         card.scope == "board" && Lanes.isTodo(card.lane) && card.merged_into_card_id.isEmpty() &&
             card.initial_prompt_sent_at.isEmpty() && card.initial_prompt.isNotBlank()
 
+    /**
+     * Why the edit card form cannot save [title], [task], and [agent] (null:
+     * the card's own agent) on [card]; null when it can. A never-started
+     * draft takes all three but needs a title and a task; a card whose task
+     * was sent only takes a new title.
+     */
+    fun draftProblem(card: Card, title: String, task: String, agent: DraftAgentSettings?): String? = when {
+        title.isBlank() -> "Enter a title."
+        canEditDraft(card) -> "Enter the agent's task.".takeIf { task.isBlank() }
+        task.trim() != card.initial_prompt.trim() || (agent != null && !sameAgent(card, agent)) ->
+            "The task was already sent to the agent; only the title can change."
+        else -> null
+    }
+
+    private fun sameAgent(card: Card, agent: DraftAgentSettings): Boolean =
+        agent.provider == card.provider && agent.model == card.model && agent.effort == card.effort && agent.provider_options == card.provider_options
+
     /** An idle card can be merged into a started card on the same board and machine. */
     fun canMerge(source: Card, target: Card): Boolean =
-        source.id != target.id && source.board_id.isNotEmpty() && source.board_id == target.board_id &&
-            source.project_id == target.project_id && source.owner_daemon_id == target.owner_daemon_id &&
-            !source.archived && !target.archived && source.merged_into_card_id.isEmpty() && target.merged_into_card_id.isEmpty() &&
-            !Runtimes.isBoardActive(source) && target.initial_prompt_sent_at.isNotEmpty()
+        source.id != target.id && mergeSourceKey(source).let { it.isNotEmpty() && it == mergeTargetKey(target) }
+
+    /**
+     * The key a dragged [card] merges by: its board, project, and machine
+     * while it can be merged into another card (idle, unmerged, unarchived,
+     * on a board); "" otherwise. [operation] is this client's in flight.
+     */
+    fun mergeSourceKey(card: Card, operation: CardOperation? = null): String =
+        if (mergeable(card) && !Runtimes.isBoardActive(card, operation = operation)) mergeKey(card) else ""
+
+    /** The key a started, unmerged, unarchived board card accepts merges by; "" otherwise. */
+    fun mergeTargetKey(card: Card): String = if (mergeable(card) && card.initial_prompt_sent_at.isNotEmpty()) mergeKey(card) else ""
+
+    private fun mergeable(card: Card): Boolean = card.board_id.isNotEmpty() && !card.archived && card.merged_into_card_id.isEmpty()
+
+    private fun mergeKey(card: Card): String = "${card.board_id}|${card.project_id}|${card.owner_daemon_id}"
+
+    /**
+     * The card's turn can be stopped: its agent works (and is not already
+     * stopping) or waits for input, and this client is not cancelling it.
+     */
+    fun canCancel(card: Card, operation: CardOperation? = null): Boolean =
+        operation != CardOperation.CANCELLING && Runtimes.classify(card.runtime).let { it == RuntimeState.ACTIVE || it == RuntimeState.NEEDS_INPUT }
 
     /** The optimistic look of a started card. */
     fun started(card: Card, board: Board?): Card? {

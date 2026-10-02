@@ -27,7 +27,7 @@ struct ConversationContentRenderer: View {
 
     @ViewBuilder
     private func documentView(_ document: Dieter_V1_FileDocument) -> some View {
-        switch ConversationFileRendererKind(document: document) {
+        switch FilePresentation.renderer(document) {
         case .markdown:
             MarkdownFileEditor(
                 session: files.fileEditorSession, documentKey: files.documentKey,
@@ -49,14 +49,12 @@ struct ConversationContentRenderer: View {
             ConversationPDFDocumentRenderer(data: bytes(document)) {
                 unsupported(document, title: "This PDF could not be displayed")
             }
-        case .unsupported:
+        default:
             unsupported(document, title: "No preview available")
         }
     }
 
-    private func bytes(_ document: Dieter_V1_FileDocument) -> Data {
-        ProjectFilePresentation.bytes(binary: document.binary, content: document.content, data: document.data)
-    }
+    private func bytes(_ document: Dieter_V1_FileDocument) -> Data { document.bytes }
 
     private func unsupported(_ document: Dieter_V1_FileDocument, title: String) -> some View {
         ContentUnavailableView {
@@ -81,25 +79,6 @@ struct ConversationContentRenderer: View {
         guard panel.runModal() == .OK, let destination = panel.url else { return }
         do { try bytes(document).write(to: destination, options: .atomic) } catch {
             files.fileError = "Could not save \(document.name): \(error.localizedDescription)"
-        }
-    }
-}
-
-enum ConversationFileRendererKind: Equatable {
-    case markdown, text, image, pdf, unsupported
-
-    init(document: Dieter_V1_FileDocument) {
-        let mime = document.mimeType.split(separator: ";", maxSplits: 1).first.map(String.init)?.lowercased() ?? ""
-        if (document.name as NSString).pathExtension.lowercased() == "pdf" || mime == "application/pdf" {
-            self = .pdf
-        } else if ProjectFilePresentation.isImage(filename: document.name, mimeType: mime) {
-            self = .image
-        } else if document.binary {
-            self = .unsupported
-        } else if ProjectFileLanguage.detect(filename: document.name) == .markdown {
-            self = .markdown
-        } else {
-            self = .text
         }
     }
 }
@@ -129,7 +108,7 @@ private struct ConversationImageDocumentRenderer<Unavailable: View>: View {
     }
 }
 
-private struct ConversationPDFDocumentRenderer<Unavailable: View>: View {
+struct ConversationPDFDocumentRenderer<Unavailable: View>: View {
     let data: Data
     let unavailable: () -> Unavailable
     @State private var document: PDFDocument?

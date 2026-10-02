@@ -13,10 +13,10 @@ import kotlin.uuid.Uuid
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.launch
 
 /** [bound] turns true once the gateway's journal is attached; drafts made earlier would be replaced by it. */
 data class CaptureView(val drafts: List<CaptureDraft> = emptyList(), val error: String? = null, val bound: Boolean = false)
@@ -134,7 +134,7 @@ class TaskCaptures(
         val current = drafts[id] ?: throw CoreException(FailureKind.PERMANENT, "The draft is no longer available.")
         val next = change(current)
         if (current.submission_id.isNotEmpty() && (next.request != current.request || next.project_id != current.project_id || next.board_id != current.board_id)) {
-            throw CoreException(FailureKind.PERMANENT, "Submission pending. Retry Save with the same task; attachments are retained.")
+            throw CoreException(FailureKind.PERMANENT, SUBMISSION_PENDING)
         }
         next.request?.attachments?.let { Attachments.limitError(it) }?.let { throw CoreException(FailureKind.PERMANENT, it) }
         return save(next)
@@ -144,7 +144,7 @@ class TaskCaptures(
     fun freeze(id: String, request: CreateConversationRequest): CaptureDraft {
         val current = drafts[id] ?: throw CoreException(FailureKind.PERMANENT, "The draft is no longer available.")
         if (current.submission_id.isNotEmpty()) return current
-        if (!current.ready) throw CoreException(FailureKind.PERMANENT, "Wait for attachments to finish importing, or remove the failed ones.")
+        if (!current.ready) throw CoreException(FailureKind.PERMANENT, TaskDrafts.NOT_READY)
         return save(current.copy(request = request, submission_id = Uuid.random().toString(), submitted = true))
             .also { frozen -> editors[id]?.first?.adopt(frozen) }
     }
@@ -184,6 +184,9 @@ class TaskCaptures(
 
     companion object {
         const val MAX_DRAFTS = 20
+
+        /** Shown with a submitted draft until the outbox accepts it; its request stays as submitted. */
+        const val SUBMISSION_PENDING = "Submission pending. Retry Save with the same task; attachments are retained."
 
         const val MAX_FILE_BYTES = 8 * 1024 * 1024
         private const val PREFIX = "capture-"

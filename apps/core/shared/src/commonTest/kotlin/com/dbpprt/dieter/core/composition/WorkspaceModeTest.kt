@@ -7,10 +7,10 @@ import kotlin.test.assertEquals
 
 class WorkspaceModeTest {
     @Test
-    fun pickersOfferAWorktreeFirstAndLegacyValuesRunInTheProject() {
+    fun pickersOfferAWorktreeFirstAndOtherValuesRunInTheProject() {
         assertEquals(listOf(WorkspaceMode.WORKTREE, WorkspaceMode.PROJECT), WorkspaceMode.choices)
         assertEquals(WorkspaceMode.WORKTREE, WorkspaceMode.parse("WORKTREE"))
-        for (legacy in listOf("project", "branch", "", null)) assertEquals(WorkspaceMode.PROJECT, WorkspaceMode.parse(legacy), legacy)
+        for (value in listOf("project", "branch", "", null)) assertEquals(WorkspaceMode.PROJECT, WorkspaceMode.parse(value), value)
         assertEquals(listOf("Project directory", "Project", "project"), WorkspaceMode.PROJECT.let { listOf(it.title, it.shortTitle, it.wire) })
         assertEquals(listOf("Worktree", "Worktree", "worktree"), WorkspaceMode.WORKTREE.let { listOf(it.title, it.shortTitle, it.wire) })
     }

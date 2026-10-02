@@ -1,11 +1,8 @@
 package com.dbpprt.dieter.ui
 
 import android.Manifest
-import android.graphics.Bitmap
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -15,14 +12,12 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
@@ -34,9 +29,9 @@ import com.dbpprt.dieter.api.v1.GetCardRequest
 import com.dbpprt.dieter.api.v1.GetChangesetRequest
 import com.dbpprt.dieter.core.workspace.GitOperationKinds
 import com.dbpprt.dieter.e2e.IsolatedCore
+import com.dbpprt.dieter.e2e.Evidence
 import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
-import java.io.File
 import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.seconds
@@ -44,9 +39,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
@@ -68,10 +61,6 @@ class WorkspaceChangesEndToEndTest {
 
     @Test
     fun worktreeChangesAreReviewedAndCommittedOnTheVisibleEmulator() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val arguments = InstrumentationRegistry.getArguments()
-        val token = arguments.getString("isolatedGatewayToken").orEmpty()
-        assumeTrue("Pass isolatedGatewayToken for the isolated gateway", token.isNotBlank())
         val application = composeRule.activity.application as DieterApplication
         val container = application.container
         val core = container.core
@@ -114,41 +103,36 @@ class WorkspaceChangesEndToEndTest {
             composeRule.waitUntil(20_000) {
                 composeRule.onAllNodesWithText(fixture.title).fetchSemanticsNodes().isNotEmpty()
             }
-            capture(requireNotNull(instrumentation.targetContext.getExternalFilesDir(null)), "workspace-before-card-click.png")
+            capture("workspace-before-card-click.png")
             composeRule.onNodeWithTag("nav-board").assertIsSelected()
             composeRule.onNodeWithTag("swipe-card-${fixture.id}").assertIsDisplayed().performTouchInput { click() }
-            val screenshotDirectory = arguments.getString("additionalTestOutputDir")
-                ?.takeIf(String::isNotBlank)
-                ?.let(::File)
-                ?: requireNotNull(instrumentation.targetContext.getExternalFilesDir(null))
-            screenshotDirectory.mkdirs()
-            capture(screenshotDirectory, "workspace-after-card-click.png")
+            capture("workspace-after-card-click.png")
 
             composeRule.waitUntil(20_000) {
                 composeRule.onAllNodesWithTag("card-detail-changes").fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onAllNodesWithTag("card-detail-changes")[0].performClick()
             composeRule.waitForIdle()
-            capture(screenshotDirectory, "workspace-tab-opened-e2e.png")
+            capture("workspace-tab-opened-e2e.png")
             composeRule.waitUntil(60_000) {
                 composeRule.onAllNodesWithTag("workspace-changes-list").fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.waitUntil(60_000) {
                 composeRule.onAllNodesWithText(worktreeNote).fetchSemanticsNodes().isNotEmpty()
             }
-            capture(screenshotDirectory, "workspace-changes-list-e2e.png")
+            capture("workspace-changes-list-e2e.png")
 
             // Review the unified diff for the untracked file.
             composeRule.onAllNodesWithText(worktreeNote)[0].performClick()
             composeRule.waitUntil(30_000) {
                 composeRule.onAllNodesWithTag("workspace-diff").fetchSemanticsNodes().isNotEmpty()
             }
-            capture(screenshotDirectory, "workspace-diff-opened-e2e.png")
+            capture("workspace-diff-opened-e2e.png")
             composeRule.waitUntil(30_000) {
                 composeRule.onAllNodesWithText("Android workspace E2E", substring = true)
                     .fetchSemanticsNodes().isNotEmpty()
             }
-            capture(screenshotDirectory, "workspace-diff-e2e.png")
+            capture("workspace-diff-e2e.png")
             composeRule.onAllNodesWithTag("workspace-diff-back")[0].performClick()
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("workspace-changes-list").fetchSemanticsNodes().isNotEmpty()
@@ -159,14 +143,14 @@ class WorkspaceChangesEndToEndTest {
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("commit-subject").fetchSemanticsNodes().isNotEmpty()
             }
-            capture(screenshotDirectory, "workspace-commit-sheet-e2e.png")
+            capture("workspace-commit-sheet-e2e.png")
             composeRule.onNodeWithTag("operation-start").performClick()
             // Working Changes is local-only, so a successful commit empties it.
             composeRule.waitUntil(120_000) {
                 composeRule.onAllNodesWithText("No local changes.").fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onAllNodesWithText("No local changes.")[0].assertIsDisplayed()
-            capture(screenshotDirectory, "workspace-committed-e2e.png")
+            capture("workspace-committed-e2e.png")
 
             val changeset = daemon { it.GetChangeset().execute(GetChangesetRequest(card_id = fixture.id)) }
             assertTrue("Committed history must not appear in Working Changes", changeset.commits.size == 0)
@@ -180,12 +164,12 @@ class WorkspaceChangesEndToEndTest {
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("merge-confirm").fetchSemanticsNodes().isNotEmpty()
             }
-            capture(screenshotDirectory, "workspace-merge-sheet-e2e.png")
+            capture("workspace-merge-sheet-e2e.png")
             composeRule.onNodeWithTag("merge-confirm").performClick()
             composeRule.waitUntil(180_000) {
                 composeRule.onAllNodesWithText("Workspace removed").fetchSemanticsNodes().isNotEmpty()
             }
-            capture(screenshotDirectory, "workspace-merged-e2e.png")
+            capture("workspace-merged-e2e.png")
             val merged = requireNotNull(daemon { it.GetCard().execute(GetCardRequest(card_id = fixture.id)) }.card)
             assertTrue("Card should move to Done after merge, was ${merged.lane}", merged.lane == "done")
 
@@ -201,7 +185,7 @@ class WorkspaceChangesEndToEndTest {
             composeRule.waitUntil(20_000) { composeRule.onAllNodesWithTag("project-files-browse").fetchSemanticsNodes().isNotEmpty() }
             composeRule.onNodeWithTag("project-files-changes").performClick()
             composeRule.waitUntil(30_000) { composeRule.onAllNodesWithText(projectNote).fetchSemanticsNodes().isNotEmpty() }
-            capture(screenshotDirectory, "project-changes-list-e2e.png")
+            capture("project-changes-list-e2e.png")
 
             val projectChanges = projectChangeset()
             assertTrue("Project changes must carry project scope", projectChanges.project_id == project.id && projectChanges.card_id.isEmpty())
@@ -211,17 +195,17 @@ class WorkspaceChangesEndToEndTest {
                 composeRule.onAllNodesWithText("No unstaged changes").fetchSemanticsNodes().isNotEmpty() &&
                     composeRule.onAllNodesWithTag("project-changes-commit").fetchSemanticsNodes().isNotEmpty()
             }
-            capture(screenshotDirectory, "project-changes-staged-e2e.png")
+            capture("project-changes-staged-e2e.png")
             composeRule.onNodeWithTag("project-changes-commit").performClick()
             composeRule.waitForIdle()
-            capture(screenshotDirectory, "project-commit-clicked-e2e.png")
+            capture("project-commit-clicked-e2e.png")
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("project-commit-subject").fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onNodeWithTag("project-commit-subject").performTextInput("Android project changes E2E")
             composeRule.onNodeWithTag("project-operation-start").performClick()
             composeRule.waitUntil(120_000) { composeRule.onAllNodesWithTag("project-changes-clean").fetchSemanticsNodes().isNotEmpty() }
-            capture(screenshotDirectory, "project-changes-committed-e2e.png")
+            capture("project-changes-committed-e2e.png")
             val cleanProject = projectChangeset()
             assertTrue("Project checkout must be clean after the staged commit", cleanProject.files.size == 0 && !cleanProject.dirty)
 
@@ -258,21 +242,18 @@ class WorkspaceChangesEndToEndTest {
             composeRule.onNodeWithTag("project-changes-actions").performClick()
             composeRule.onNodeWithTag("project-changes-push").assertIsDisplayed()
         } catch (error: Throwable) {
-            runCatching { capture(requireNotNull(instrumentation.targetContext.getExternalFilesDir(null)), "workspace-before-cleanup-failure.png") }
+            runCatching { capture("workspace-before-cleanup-failure.png") }
             throw error
         } finally {
             runBlocking { runCatching { retryTransient { core.onBoard { archive(fixture.id) } } } }
         }
     }
 
-    private fun capture(directory: File, name: String) {
+    private fun capture(name: String) {
         composeRule.waitForIdle()
         val state = androidx.lifecycle.ViewModelProvider(composeRule.activity)[DieterViewModel::class.java].state.value
-        File(directory, name + ".txt").writeText("destination=${state.destination} selectedCard=${state.selectedCardId} error=${state.error}\n")
-        File(directory, name).outputStream().use { output ->
-            requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
-                .compress(Bitmap.CompressFormat.PNG, 100, output)
-        }
+        Evidence.text("$name.txt", "destination=${state.destination} selectedCard=${state.selectedCardId} error=${state.error}\n")
+        Evidence.display(name)
     }
 
     private suspend fun <T> retryTransient(block: suspend () -> T): T = withTimeout(30_000) {

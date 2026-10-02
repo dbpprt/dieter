@@ -1,4 +1,6 @@
 import AppKit
+import DieterAPI
+import DieterShared
 import SwiftUI
 
 @main
@@ -327,7 +329,7 @@ struct MenuBarContent: View {
             }
             .frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 2) {
-                Text(store.phase.isConnected ? "Connected to \(store.endpoint.name)" : store.phase.label)
+                Text(store.phase.isConnected ? "Connected to \(store.endpoint.name)" : store.session.phaseLabel)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(DieterTheme.text)
                     .lineLimit(1)
@@ -337,15 +339,13 @@ struct MenuBarContent: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
-            StatusPill(text: store.phase.isConnected ? "Connected" : store.phase.label, color: phaseColor)
+            StatusPill(text: store.session.phaseLabel, color: phaseColor)
         }
     }
 
     private var headerDetail: String {
-        if let status = store.connectionStatus(for: store.endpoint) {
-            return "\(status.route.rawValue) · \(store.endpoint.host) · \(status.latencyMilliseconds) ms"
-        }
-        return "\(store.endpoint.host):\(store.endpoint.port)"
+        let status = store.machineStatusLine(store.endpoint)
+        return status.isEmpty ? "\(store.endpoint.host):\(store.endpoint.port)" : status
     }
 
     private var phaseColor: Color {
@@ -440,37 +440,28 @@ struct MenuBarContent: View {
         return "\(count) board\(count == 1 ? "" : "s")"
     }
 
-    private var reviewCount: Int {
-        store.state.cards.filter { $0.lane.caseInsensitiveCompare("review") == .orderedSame }.count
-    }
+    private var reviewCount: Int { Int(store.activity.summary.review) }
 
-    private var subagentCount: Int {
-        (store.state.cards + store.chats).reduce(0) { $0 + $1.activeSubagents.count }
-    }
+    private var subagentCount: Int { Int(store.activity.summary.subagents) }
 
-    /// What needs you or awaits review, then failures and results from the
-    /// last six hours, as the shared core classifies activity.
+    /// The core's menu bar rows: what needs you or awaits review, then
+    /// failures and results from the last six hours.
     private var events: [MenuBarEvent] {
-        let entries = store.inboxEntries
-        let actionable = entries.filter { $0.needsYou || $0.kind == .review }
-        let recent = entries.filter { entry in
-            [.failed, .recent].contains(entry.kind)
-                && entry.at.map { Date().timeIntervalSince($0) <= 6 * 3_600 } == true
-        }
-        return (actionable + recent).prefix(4).map { entry in
-            let (symbol, tint, title): (String, Color, String) =
-                switch entry.kind {
-                case .answer: ("questionmark.circle", DieterTheme.amber, "Needs you")
-                case .unread: ("envelope.badge", DieterTheme.amber, "Unread reply")
-                case .review: ("exclamationmark.circle", DieterTheme.amber, "Ready for review")
-                case .failed: ("xmark.circle", DieterTheme.coral, "Failed")
-                case .recent, .running: ("checkmark.circle", DieterTheme.eyes, "Finished")
+        let rows = Dictionary(
+            store.activity.rows.map { ($0.card.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return store.activity.menuBarIds.compactMap { rows[$0] }.map { row in
+            let (symbol, tint): (String, Color) =
+                switch InboxActivityKind(core: row.kind) {
+                case .answer: ("questionmark.circle", DieterTheme.amber)
+                case .unread: ("envelope.badge", DieterTheme.amber)
+                case .review: ("exclamationmark.circle", DieterTheme.amber)
+                case .failed: ("xmark.circle", DieterTheme.coral)
+                default: ("checkmark.circle", DieterTheme.eyes)
                 }
             return MenuBarEvent(
-                id: "\(entry.kind)-\(entry.id)", symbol: symbol, tint: tint, title: title,
-                subtitle: [entry.card.title, store.board(id: entry.card.boardID)?.name ?? ""].filter { !$0.isEmpty }
-                    .joined(separator: " · "),
-                timestamp: entry.at, cardID: entry.id)
+                id: "\(row.kind)-\(row.card.id)", symbol: symbol, tint: tint, title: row.menuBarTitle,
+                subtitle: [row.title, row.boardName].filter { !$0.isEmpty }.joined(separator: " · "),
+                atMillis: row.atMillis, cardID: row.card.id)
         }
     }
 }
@@ -481,18 +472,12 @@ private struct MenuBarEvent: Identifiable {
     let tint: Color
     let title: String
     let subtitle: String
-    let timestamp: Date?
+    let atMillis: Int64
     let cardID: String
 
     var age: String? {
-        guard let timestamp else { return nil }
-        let seconds = max(0, Int(Date().timeIntervalSince(timestamp)))
-        switch seconds {
-        case ..<60: return "now"
-        case ..<3_600: return "\(seconds / 60)m"
-        case ..<86_400: return "\(seconds / 3_600)h"
-        default: return "\(seconds / 86_400)d"
-        }
+        let age = SharedRules.shared.compactAge(sinceMillis: atMillis, nowMillis: Date.now.epochMillis)
+        return age.isEmpty ? nil : age
     }
 }
 

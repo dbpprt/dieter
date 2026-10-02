@@ -2,15 +2,6 @@
 
 package com.dbpprt.dieter.ui
 
-import com.dbpprt.dieter.api.v1.HarnessSelection
-import com.dbpprt.dieter.core.board.Runtimes
-import com.dbpprt.dieter.core.composition.WorkspaceMode
-import com.dbpprt.dieter.core.presentation.CardDetails
-import com.dbpprt.dieter.core.presentation.ContextUsage
-import com.dbpprt.dieter.core.presentation.SubagentPresentation
-import com.dbpprt.dieter.core.board.CardOperation
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,15 +40,16 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,32 +58,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.dbpprt.dieter.core.outbox.OutboxPolicy
+import com.dbpprt.dieter.api.v1.Subagent
+import com.dbpprt.dieter.core.board.Cards
+import com.dbpprt.dieter.core.presentation.CardDetails
+import com.dbpprt.dieter.core.presentation.ConversationPresentation
+import com.dbpprt.dieter.core.presentation.Counts
+import com.dbpprt.dieter.core.presentation.SubagentPresentation
+import com.dbpprt.dieter.core.presentation.TimelineCache
 import com.dbpprt.dieter.core.selection.AgentControls
 import com.dbpprt.dieter.ui.theme.DieterEyes
-import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterOutline
+import com.dbpprt.dieter.ui.theme.DieterRunning
+import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
-import com.dbpprt.dieter.api.v1.Board
-import com.dbpprt.dieter.api.v1.Project
-import com.dbpprt.dieter.api.v1.Subagent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
-import java.time.Duration
-import java.time.Instant
-import java.util.Locale
-import com.dbpprt.dieter.ui.theme.DieterRunning
 
 @Composable
 internal fun CardDetailScreen(
@@ -113,18 +104,24 @@ internal fun CardDetailScreen(
             refreshClockMillis = System.currentTimeMillis()
         }
     }
-    if (card == null) {
+    val daemonId = state.conversationView?.daemonId
+    val catalog by remember(daemonId) { model.conversationCatalog(daemonId) }.collectAsState(null)
+    val timelineCache = remember(state.selectedCardId) { TimelineCache() }
+    val presentation = remember(
+        state.conversationView, state.selectedCardId, state.selectedCard, state.pendingMessageIds, state.acceptedOutboxIds,
+        state.failedOutboxIds, state.cardOperations, state.showReasoningTraces, state.spaceBoards, state.board, catalog,
+    ) { model.presentConversation(state, catalog, timelineCache) }
+    if (card == null || presentation == null) {
         LoadingState(modifier)
         return
     }
-    val detailSections = detailSectionsFor()
+    val agent = composerAgent(state, presentation, catalog)
+    val detailSections = DetailSection.entries
     val detailPageCount = detailSections.size
     val subagents = snapshot?.conversation?.subagents.orEmpty()
     val activeSubagents = SubagentPresentation.active(subagents)
     val changedFileCount = CardDetails.changedFiles(card, state.workspaceReview.changeset)
     val showDetailTabs = CardDetails.showsTabs(card, subagents)
-    val cardOperation = state.cardOperations[card.id]
-    val displayRuntime = Runtimes.resolved(card.runtime, snapshot?.conversation?.status.orEmpty(), cardOperation)
     val detailTab by rememberUpdatedState(state.detailTab)
     val detailPagerState = rememberPagerState(
         initialPage = state.detailTab.coerceIn(0, detailPageCount - 1),
@@ -150,7 +147,7 @@ internal fun CardDetailScreen(
             Column(Modifier.weight(1f)) {
                 Text(card.title, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    if (card.scope == "chat") {
+                    if (Cards.isChat(card)) {
                         "${snapshot?.detail?.project?.name ?: state.project?.name ?: "Project"} · Standalone chat"
                     } else {
                         "${snapshot?.detail?.project?.name ?: state.project?.name ?: "Project"} / ${snapshot?.detail?.board?.name ?: state.board?.name ?: "Board"}"
@@ -173,8 +170,8 @@ internal fun CardDetailScreen(
                     modifier = Modifier.testTag("conversation-last-refreshed"),
                 )
             }
-            StatusPill(displayRuntime)
-            if (Runtimes.isActive(displayRuntime) && cardOperation != CardOperation.CANCELLING) {
+            StatusPill(presentation.runtime)
+            if (presentation.canHalt) {
                 IconButton(onClick = model::cancelSelected) {
                     Icon(Icons.Outlined.Cancel, "Cancel active turn")
                 }
@@ -214,17 +211,17 @@ internal fun CardDetailScreen(
                         text = { Text("Fork as new chat") },
                         onClick = { actionsOpen = false; model.forkSelected() },
                     )
-                    if (card.scope == "board") {
-                        DropdownMenuItem(
-                            text = { Text("Labels") },
-                            leadingIcon = { Icon(Icons.Outlined.LocalOffer, null) },
-                            onClick = { actionsOpen = false; labelsOpen = true },
-                        )
-                    } else {
+                    if (Cards.isChat(card)) {
                         DropdownMenuItem(
                             text = { Text(if (card.pinned) "Unpin chat" else "Pin chat") },
                             leadingIcon = { Icon(Icons.Outlined.PushPin, null) },
                             onClick = { actionsOpen = false; model.togglePin(card) },
+                        )
+                    } else {
+                        DropdownMenuItem(
+                            text = { Text("Labels") },
+                            leadingIcon = { Icon(Icons.Outlined.LocalOffer, null) },
+                            onClick = { actionsOpen = false; labelsOpen = true },
                         )
                     }
                     DropdownMenuItem(
@@ -276,19 +273,19 @@ internal fun CardDetailScreen(
                 beyondViewportPageCount = 1,
             ) { page ->
                 when (detailSections[page]) {
-                    DetailSection.CONVERSATION -> ConversationBody(state, model, Modifier.fillMaxSize())
+                    DetailSection.CONVERSATION -> ConversationBody(state, model, presentation, agent, Modifier.fillMaxSize())
                     DetailSection.CHANGES -> WorkspaceChangesBody(
                         state = state,
                         model = model,
                         active = detailSections.getOrNull(state.detailTab) == DetailSection.CHANGES,
                         modifier = Modifier.fillMaxSize(),
                     )
-                    DetailSection.SUBAGENTS -> SubagentsBody(state, model, Modifier.fillMaxSize())
+                    DetailSection.SUBAGENTS -> SubagentsBody(state, model, presentation, agent, Modifier.fillMaxSize())
                 }
             }
         } else {
             HorizontalDivider(color = DieterOutline.copy(alpha = 0.52f))
-            ConversationBody(state, model, Modifier.weight(1f).fillMaxWidth())
+            ConversationBody(state, model, presentation, agent, Modifier.weight(1f).fillMaxWidth())
         }
     }
     if (renameOpen) {
@@ -311,8 +308,6 @@ internal enum class DetailSection(val label: String) {
     SUBAGENTS("Subagents"),
 }
 
-internal fun detailSectionsFor(): List<DetailSection> = DetailSection.entries
-
 @Composable
 internal fun DetailTabLabel(label: String, count: Int = 0, selected: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -334,19 +329,24 @@ internal fun DetailTabLabel(label: String, count: Int = 0, selected: Boolean) {
     }
 }
 
+/** The conversation's delegated agents, with a composer that messages the conversation with the composer's [agent]. */
 @Composable
-internal fun SubagentsBody(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier) {
+internal fun SubagentsBody(
+    state: DieterUiState,
+    model: DieterViewModel,
+    presentation: ConversationPresentation,
+    agent: AgentControls?,
+    modifier: Modifier = Modifier,
+) {
     val subagents = state.conversation?.conversation?.subagents.orEmpty()
     val active = SubagentPresentation.active(subagents)
-    val contextUsage = remember(state.conversationView) { ContextUsage.latest(state.conversationMessages) }
     var text by remember(state.selectedCardId) { mutableStateOf("") }
-    var selection by remember(state.selectedCardId) { mutableStateOf<HarnessSelection?>(null) }
     Column(modifier) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("${subagents.size} ${plural(subagents.size, "subagent")}", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Text(Counts.of(subagents.size, "subagent"), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
             if (active > 0) {
                 Spacer(Modifier.width(8.dp))
                 Text("● $active running", color = DieterRunning, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
@@ -385,17 +385,16 @@ internal fun SubagentsBody(state: DieterUiState, model: DieterViewModel, modifie
                 }
             }
         }
-        val controls = AgentControls.forConversation(selection, state.selectedCard, state.harnesses, enabled = !state.working)
         MessageComposer(
             value = text,
             placeholder = "Message the local agent…",
             enabled = !state.working,
-            controls = controls.takeIf { state.harnesses.isNotEmpty() && state.selectedCard != null },
-            contextUsage = contextUsage,
+            controls = agent,
+            contextUsage = presentation.contextUsage,
             onValueChange = { text = it },
-            onSelectionChange = { selection = it },
+            onChoose = model::chooseAgent,
             onSend = {
-                model.sendMessage(text, controls.selection)
+                model.sendMessage(text)
                 text = ""
             },
         )
@@ -555,7 +554,7 @@ internal fun SubagentStatusCard(subagent: Subagent) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(subagent.status.ifBlank { "pending" }, color = tint, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                Text(presented.statusLabel, color = tint, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }

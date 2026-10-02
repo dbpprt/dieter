@@ -1,6 +1,6 @@
 import DieterAPI
-import DieterClient
 import DieterShared
+import DieterTransport
 import Foundation
 
 /// The WebRTC control route for the shared core: `ControlRTCBridge` exposes a

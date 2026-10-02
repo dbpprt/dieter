@@ -66,17 +66,3 @@ struct PinnedChatDragPayload: Equatable {
 
     var encoded: String { Self.prefix + chatID }
 }
-
-enum ChatActivityText {
-    static func compact(_ value: String, relativeTo now: Date = Date()) -> String {
-        guard let date = DieterTimestamp.date(from: value) else { return "" }
-        let seconds = max(0, Int(now.timeIntervalSince(date)))
-        switch seconds {
-        case ..<60: return "now"
-        case ..<3_600: return "\(seconds / 60)m"
-        case ..<86_400: return "\(seconds / 3_600)h"
-        case ..<604_800: return "\(seconds / 86_400)d"
-        default: return "\(seconds / 604_800)w"
-        }
-    }
-}

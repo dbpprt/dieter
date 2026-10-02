@@ -1,11 +1,17 @@
 # Implementing all client logic in the shared KMP core
 
-Status: implementation plan, 30 September 2026, baseline `ca36c81f`. It builds
-on the [feasibility spike](kmp-shared-core-plan-2026-09-29.md) in
-[`apps/core`](../apps/core/README.md), which is still uncommitted. The
-inventory figures come from file-by-file surveys of all three clients and a
-trace of every RPC call site. Line counts are approximate where a file mixes
-responsibilities.
+Status: implementation plan, 30 September 2026, baseline `ca36c81f`.
+**Complete for Android and macOS (2 October 2026); iOS has not moved.** This
+plan is kept as a record and is superseded, for macOS, by the
+[macOS cutover plan](mac-shared-core-cutover-plan-2026-10-01.md) and, for the
+current core, its parity matrix, and its deviations, by
+[`apps/core/README.md`](../apps/core/README.md). Notes marked *As built*
+below correct the plan where the result differs.
+
+It builds on the [feasibility spike](kmp-shared-core-plan-2026-09-29.md),
+committed as [`apps/core`](../apps/core/README.md). The inventory figures
+come from file-by-file surveys of all three clients and a trace of every RPC
+call site. Line counts are approximate where a file mixes responsibilities.
 
 ## 1. Summary
 
@@ -56,18 +62,23 @@ bridge), then iOS (the thinnest client, which gains the most), then macOS
 - it is switched on in all three apps;
 - the legacy code is deleted.
 
-**Status (2026-09-30):**
-- F through W6, the D7 contract, and the legacy importers are implemented and
-  tested.
-- Android is fully migrated in one pass, without shadow mode or soak, since
-  there are no users yet. The app's logic layer, `CoreRollout`,
-  protobuf-lite, grpc-java, and the Android legacy importer are deleted; the
-  Compose UI reads Wire models and core views directly (D8 and D10 no longer
-  apply to Android).
-- Apple reaches the core through the `DieterShared` façade and the adapter
-  harness. Its W7 waits for the macOS and iOS cutovers.
-- Progress and the deviations from this plan are tracked in the parity matrix
-  in [`apps/core/README.md`](../apps/core/README.md).
+**Status (2026-10-02):**
+- F through W6 and the D7 contract are implemented and tested. The legacy
+  importers were built and then deleted unused: neither app imports state
+  from its versions before the core.
+- Android is fully migrated in one pass, without rollout switches, shadow
+  mode, or soak, since there are no users yet. The app's logic layer,
+  protobuf-lite, and grpc-java are deleted; the Compose UI calls the core's
+  Kotlin domain APIs and reads Wire models and core views directly.
+- macOS is fully migrated, one domain at a time, through the
+  [cutover plan](mac-shared-core-cutover-plan-2026-10-01.md). Its feature
+  plane and Swift rule copies are deleted; views read slices and call
+  `SharedRules`. The Apple adapter harness became the Mac's `SharedCore`
+  target, and the core's Android harness was deleted.
+- iOS still runs on the Swift `DieterCore` and `DieterClient` modules; its
+  W7 waits for its cutover.
+- The parity matrix and the deviations from this plan are in
+  [`apps/core/README.md`](../apps/core/README.md).
 
 ## 2. Scope
 
@@ -202,6 +213,15 @@ rows, …), and commands.
   SKIE with exported Wire types) scale poorly: the spike measured a
   17,560-line header when Wire types were exported.
 
+*As built:* the schema is one file,
+`apps/core/model/src/commonMain/proto/dieter/client/v1/client.proto`. It
+stays with the core because it never crosses the network.
+`just mac proto-generate` (also part of `just proto`) copies it into the Mac
+package and regenerates the Swift types. Only Swift uses the contract: Android calls the
+core's Kotlin domain APIs and reads its views directly. Swift also calls
+synchronous render-time rules through `SharedRules`
+([cutover plan §7](mac-shared-core-cutover-plan-2026-10-01.md#7-as-built)).
+
 **D8 — Protocol models on Android (confirm).** Android UI moves from
 protobuf-lite to Wire types one domain at a time, as part of each cutover.
 Until a domain moves, `toLegacy()` converts by byte copy. Once all domains
@@ -213,6 +233,10 @@ instants, counts, enums, and canonical tool categories. Platforms render
 localized text. This replaces about 10 relative-time and 3 token-count
 formatters.
 
+*As built (reversed):* the core supplies the English wording (relative ages,
+sizes, counts, labels, status lines), so both apps say the same thing.
+Platforms format only absolute dates in the device locale.
+
 **D10 — Rollout switches.** `CoreRollout` keeps a compiled-in switch per
 domain, plus a hidden debug setting.
 - **Read domains** support shadow mode: the core runs beside legacy code and
@@ -220,6 +244,10 @@ domain, plus a hidden debug setting.
 - **Write domains** never run in shadow, to avoid double delivery; they are
   staged instead (§5).
 - Each switch is deleted together with the legacy code in W7.
+
+*As built:* no rollout switches, `CoreRollout`, or shadow mode shipped.
+Android switched in one pass and macOS one domain per stage, before either
+had users.
 
 **Invariants carried into the core** (from `AGENTS.md`):
 - queues, streams, caches, and journals stay bounded;
@@ -254,6 +282,10 @@ behavior are **bold** and need sign-off (§9).
 - Update `AGENTS.md` and the skills: "client business logic lives in
   `apps/core`; native code holds UI and platform extensions."
 
+*As built:* the recipes are `just core test`, `native-test`, `apple-test`, and
+`check`; `just mac shared-framework` assembles the XCFramework for the Mac
+package.
+
 **F2 — Test kit** (`:testing`)
 - Virtual clock and dispatchers.
 - A scripted `GrpcClient` that records and replays calls.
@@ -264,6 +296,10 @@ behavior are **bold** and need sign-off (§9).
   against the legacy Swift and Kotlin implementations until they are deleted.
 - Benchmarks (kotlinx-benchmark on the JVM and native).
 - Kover coverage reports.
+
+*As built:* the conformance-vector format, the fault proxy, benchmarks, and
+Kover were not built. The test kit has fakes, the JVM platform, `SliceFolds`,
+and the `IsolatedGateway` launcher.
 
 **F3 — Fixture extensions** (Go, all opt-in flags on `scripts/isolated-gateway`)
 - `-direct-route` advertises a loopback direct TLS candidate using
@@ -296,6 +332,13 @@ behavior are **bold** and need sign-off (§9).
   - the client-schema protos from D7 are generated.
 - **Exit:** every app starts `ClientRuntime` with all domains switched off,
   and CI is green.
+
+*As built:* there are no domain switches (D10). The production grpc-swift
+bridge is the Mac's `SharedCore` target, not `DieterClient`; the WebRTC
+control bridge, daemon certificate pinning (in place of
+`DieterRPC.verifyDaemonCertificateChain`), and resolver targets moved into the
+`DieterTransport` target, which `SharedCore` and `DieterClient` share. iOS
+does not link the framework yet.
 
 ### W1 — Session and connectivity
 
@@ -418,7 +461,21 @@ legacy code, the switch, and any shadow comparators. The bulk deletions:
 
 Docs, `AGENTS.md`, and the Dieter skills are updated accordingly.
 
+*As built:* on macOS, the `DieterStore+*` extensions, `FeatureCompatibility`,
+and `AppSession` stayed as thin slice and command adapters with no rules, and
+the transport pieces moved into `DieterTransport`
+([cutover plan §7](mac-shared-core-cutover-plan-2026-10-01.md#7-as-built)).
+iOS has not started.
+
 ## 5. Cutover and migration mechanics
+
+*As built:* 5.1–5.3 did not ship as planned. There were no conformance
+vectors, shadow mode, switches, or rollback: each app switched over in place,
+before either had users. The importers in 5.3 were built for the macOS and
+iOS formats and deleted unused; no Android importer shipped. The Mac keeps its
+gateway session file as the core's secure store, so sign-in survives, and
+Android deletes the earlier versions' unused files on start
+(`data/UnusedStorage.kt`).
 
 **5.1 Per domain, per platform:**
 1. Build and test in the core; conformance vectors pass against legacy.
@@ -490,6 +547,15 @@ Kotlin/Native dSYMs ship with the Apple builds.
 6. Performance budgets (§6.4) hold.
 7. `commonMain` line coverage for the WP's packages is at least 85% (Kover).
 8. The legacy code is deleted (W7).
+
+*As built:* conformance vectors (item 2) and the Kover gate (item 7) were
+never built. The adapter harnesses (item 4) were retired: the Swift one
+became the Mac's `SharedCoreTests` (`just mac core-test`), and the Android
+host harness was deleted, since `just core test` runs the same OkHttp
+transport on the JVM and the app's instrumentation covers its bindings. The
+core's suites are `commonTest` on the JVM and macOS (`just core test`,
+`just core native-test`), the JVM end-to-end tests against isolated gateways,
+and the apps' native catalogs.
 
 ### 6.2 End-to-end scenario catalog (JVM, real gateway and daemon)
 
@@ -588,7 +654,8 @@ measured. Re-estimate after F and W1.
 
 - **Parity matrix.** Keep a status table in `apps/core/README.md` with one row
   per WP and columns for implemented, conformance, E2E, Android, iOS, macOS,
-  and deleted.
+  and deleted. *As built:* the table lists each WP's packages, tests, and
+  status; platform status is the F5 row instead of one column per app.
 - **Board cards.** One card per WP (F1–F5, W1.1–W6.4, and W7 per platform),
   labelled by wave. I can create these once you approve the plan.
 - **Review rule.** A change that adds client business logic outside

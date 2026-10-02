@@ -26,9 +26,6 @@ object TaskDrafts {
     /** The title the created task shows: explicit, else from the task, else an attachment's name. */
     fun creationTitle(draft: CaptureDraft): String = draft.task.let { Titles.creation(it.title, it.prompt, it.attachments) }
 
-    /** The daemon names the task when only a prompt was written. */
-    fun generatesTitle(draft: CaptureDraft): Boolean = draft.task.title.isBlank() && draft.task.prompt.isNotBlank()
-
     fun selection(draft: CaptureDraft): HarnessSelection =
         draft.task.let { HarnessSelection(it.provider, it.model, it.effort, it.provider_options) }
 
@@ -62,14 +59,14 @@ object TaskDrafts {
         return draft.copy(project_id = projectId, board_id = "", checkout_id = "").editing { it.copy(label_ids = emptyList()) }
     }
 
-    /** Another board keeps only the labels it has and a lane it has. */
+    /** Another board keeps only the labels it has and a lane a task may start in there ([Creation.startLanes]). */
     fun board(draft: CaptureDraft, board: Board): CaptureDraft {
         if (draft.frozen) return draft
         val labels = board.labels.mapTo(HashSet()) { it.id }
         return draft.copy(board_id = board.id).editing { request ->
             request.copy(
                 label_ids = request.label_ids.filter { it in labels },
-                lane = request.lane.takeIf { lane -> board.lanes.any { it.id == lane } } ?: Creation.defaultLane(board),
+                lane = request.lane.takeIf { lane -> Creation.startLanes(board).any { it.id == lane } } ?: Creation.defaultLane(board),
             )
         }
     }
@@ -134,14 +131,9 @@ object TaskDrafts {
         }.copy(failures = into.failures + share.failures)
     }
 
-    /** "Todo · Worktree · Codex / Sol": where a quick task goes and who runs it. */
-    fun summary(draft: CaptureDraft, board: Board?, harnesses: List<Harness>): String {
-        val lane = board?.lanes?.firstOrNull { it.id == draft.task.lane } ?: board?.lanes?.firstOrNull()
-        val harness = Selections.harness(harnesses, draft.task.provider)
-        val model = harness?.let { Selections.model(it, draft.task.model) }
-        val agent = if (harness != null && model != null) "${harness.name} / ${model.name}" else "Agent defaults"
-        return "${lane?.name ?: "Todo"} · ${workspaceMode(draft).title} · $agent"
-    }
+    /** "Todo · Worktree · Codex / Sol": where a quick task goes and who runs it ([Creation.summary]). */
+    fun summary(draft: CaptureDraft, board: Board?, harnesses: List<Harness>): String =
+        Creation.summary(chat = false, lane = draft.task.lane, board = board, mode = workspaceMode(draft), selection = selection(draft), harnesses = harnesses)
 
     /** What the creation rules validate and turn into a request. */
     fun input(draft: CaptureDraft, project: Project, board: Board?, checkoutId: String = draft.checkout_id): CreationInput = draft.task.let {
@@ -150,6 +142,26 @@ object TaskDrafts {
             attachments = it.attachments, selection = selection(draft), labelIds = it.label_ids, workspaceMode = workspaceMode(draft),
         )
     }
+
+    /** [input] for a chat: no board, lane, or labels, so nothing of the open board carries over. */
+    fun chatInput(draft: CaptureDraft, project: Project, checkoutId: String = draft.checkout_id): CreationInput =
+        input(draft, project, null, checkoutId).copy(chat = true, lane = "", labelIds = emptyList())
+
+    /** Why a draft with attachments still importing or failed cannot be submitted. */
+    const val NOT_READY = "Wait for attachments to finish importing, or remove the failed ones."
+
+    /** Why [draft] cannot be queued as [input] yet, or null: its attachments first ([NOT_READY]), then [Creation.problem]. */
+    fun problem(draft: CaptureDraft, input: CreationInput, harnesses: List<Harness>?): String? =
+        if (!draft.ready) NOT_READY else Creation.problem(input, harnesses)
+
+    /**
+     * Adds [parts] together within the daemon's limits ([Attachments.appending]).
+     * A batch that would break one fails whole and leaves [draft] as it was;
+     * a frozen draft stays unchanged.
+     */
+    fun attach(draft: CaptureDraft, parts: List<MessagePart>): Result<CaptureDraft> =
+        if (draft.frozen) Result.success(draft)
+        else Attachments.appending(draft.task.attachments, parts).map { combined -> draft.editing { it.copy(attachments = combined) } }
 }
 
 /**

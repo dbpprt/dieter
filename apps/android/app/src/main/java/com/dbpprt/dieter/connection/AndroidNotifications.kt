@@ -22,10 +22,12 @@ import com.dbpprt.dieter.R
 import com.dbpprt.dieter.core.CoreRuntime
 import com.dbpprt.dieter.core.notifications.NotificationAction
 import com.dbpprt.dieter.core.notifications.NotificationContent
+import com.dbpprt.dieter.core.notifications.NotificationKind
 import com.dbpprt.dieter.core.notifications.NotificationRole
 import com.dbpprt.dieter.core.notifications.NotificationSettings
 import com.dbpprt.dieter.core.notifications.NotificationSink
 import com.dbpprt.dieter.core.notifications.NotificationStyle
+import com.dbpprt.dieter.core.notifications.ResultSummary
 import com.dbpprt.dieter.core.notifications.SummaryAction
 import com.dbpprt.dieter.core.notifications.resultSummaryAction
 import com.dbpprt.dieter.settings.AppPreferences
@@ -58,12 +60,10 @@ class AndroidNotifications(context: Context) : NotificationSink {
     private val settings: NotificationSettings get() = core?.let { NotificationSettings.load(it.platform.settings) } ?: NotificationSettings()
 
     override fun post(content: NotificationContent): Boolean {
-        val cardId = content.key.substringAfter(':')
-        val card = core?.workspace?.state?.value?.card(cardId)
-        val notification = when {
-            content.role == NotificationRole.RUNNING -> running(content, cardId, content.session ?: cardId)
-            content.key.startsWith("review:") -> review(content, cardId, card?.project_id.orEmpty())
-            else -> result(content, cardId)
+        val notification = when (content.kind) {
+            NotificationKind.RUNNING -> running(content, content.cardId, content.session ?: content.cardId)
+            NotificationKind.REVIEW -> review(content, content.cardId)
+            NotificationKind.RESULT -> result(content, content.cardId)
         }
         val posted = notify(content.key, notification)
         if (posted && content.role == NotificationRole.RESULTS) reconcileSummary()
@@ -71,8 +71,8 @@ class AndroidNotifications(context: Context) : NotificationSink {
     }
 
     override fun cancel(key: String) {
-        notifications.cancel(key, idFor(key))
-        if (!key.startsWith("running:")) reconcileSummary()
+        notifications.cancel(key, CONTENT_ID)
+        if (NotificationContent.runningCardId(key) == null) reconcileSummary()
     }
 
     private fun running(content: NotificationContent, cardId: String, session: String): Notification {
@@ -88,7 +88,7 @@ class AndroidNotifications(context: Context) : NotificationSink {
             .setAutoCancel(false)
             .setOngoing(false)
             .setContentIntent(openIntent(context, cardId))
-            .setDeleteIntent(dismissIntent(cardId, session))
+            .setDeleteIntent(dismissIntent(content.key, cardId, session))
         if (settings.style == NotificationStyle.DETAILED && Build.VERSION.SDK_INT >= 36) {
             builder.setStyle(Notification.ProgressStyle().setProgressIndeterminate(true).setStyledByProgress(false))
         } else {
@@ -115,7 +115,7 @@ class AndroidNotifications(context: Context) : NotificationSink {
         return builder.build()
     }
 
-    private fun review(content: NotificationContent, cardId: String, projectId: String): Notification {
+    private fun review(content: NotificationContent, cardId: String): Notification {
         val builder = Notification.Builder(context, RESULTS_CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(content.title)
@@ -129,7 +129,7 @@ class AndroidNotifications(context: Context) : NotificationSink {
             .setContentIntent(openIntent(context, cardId))
         content.actions.forEach { action ->
             val intent = when (action) {
-                NotificationAction.MARK_DONE -> markDoneIntent(cardId, projectId, idFor(content.key))
+                NotificationAction.MARK_DONE -> markDoneIntent(content.key, cardId)
                 NotificationAction.OPEN -> openIntent(context, cardId)
             }
             builder.addAction(Notification.Action.Builder(null, action.title, intent).build())
@@ -156,10 +156,11 @@ class AndroidNotifications(context: Context) : NotificationSink {
                 summarized.clear()
             }
             SummaryAction.POST -> {
+                val wording = ResultSummary.of(children.size)
                 val summary = Notification.Builder(context, RESULTS_CHANNEL)
                     .setSmallIcon(R.drawable.ic_notification)
-                    .setContentTitle("${children.size} Dieter updates")
-                    .setContentText("Chats finished or cards are ready for review")
+                    .setContentTitle(wording.title)
+                    .setContentText(wording.text)
                     .setColor(accent)
                     .setCategory(Notification.CATEGORY_STATUS)
                     .setGroup(RESULTS_GROUP)
@@ -179,9 +180,9 @@ class AndroidNotifications(context: Context) : NotificationSink {
         }
     }
 
-    private fun dismissIntent(cardId: String, session: String): PendingIntent = PendingIntent.getBroadcast(
+    private fun dismissIntent(key: String, cardId: String, session: String): PendingIntent = PendingIntent.getBroadcast(
         context,
-        idFor("running:$cardId"),
+        requestCode(key),
         Intent(context, NotificationDismissedReceiver::class.java)
             .setAction(DieterSyncService.ACTION_CHAT_NOTIFICATION_DISMISSED)
             .putExtra(DieterSyncService.EXTRA_CARD_ID, cardId)
@@ -189,22 +190,24 @@ class AndroidNotifications(context: Context) : NotificationSink {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    private fun markDoneIntent(cardId: String, projectId: String, notificationId: Int): PendingIntent = PendingIntent.getBroadcast(
+    private fun markDoneIntent(key: String, cardId: String): PendingIntent = PendingIntent.getBroadcast(
         context,
-        notificationId,
+        requestCode(key),
         Intent(context, NotificationActionReceiver::class.java)
             .setAction(DieterSyncService.ACTION_MARK_CARD_DONE)
             .putExtra(DieterSyncService.EXTRA_CARD_ID, cardId)
-            .putExtra(DieterSyncService.EXTRA_PROJECT_ID, projectId)
-            .putExtra(DieterSyncService.EXTRA_NOTIFICATION_TAG, "review:$cardId"),
+            .putExtra(DieterSyncService.EXTRA_NOTIFICATION_TAG, key),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
+
+    /** One request code per notification, so each keeps its own extras; extras alone never tell PendingIntents apart. */
+    private fun requestCode(key: String): Int = key.hashCode() and 0x7fffffff
 
     private fun canPost(): Boolean =
         Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
     @SuppressLint("MissingPermission")
-    private fun notify(tag: String?, notification: Notification, id: Int = idFor(tag.orEmpty())): Boolean {
+    private fun notify(tag: String?, notification: Notification, id: Int = CONTENT_ID): Boolean {
         if (!canPost()) return false
         return try {
             notifications.notify(tag, id, notification)
@@ -223,15 +226,8 @@ class AndroidNotifications(context: Context) : NotificationSink {
         private const val RESULTS_SUMMARY_ID = 1002
         private val REVIEW_ACCENT = Color.rgb(226, 190, 106)
 
-        /** Notifications are tagged with the core's key; the ID only separates roles. */
-        fun idFor(key: String): Int = when {
-            key.startsWith("running:") -> 20_000
-            key.startsWith("result:") -> 40_000
-            key.startsWith("review:") -> 60_000
-            else -> 80_000
-        }
-
-        /** One turn of a chat: a new turn shows its notification again after a dismissal. */
+        /** The ID of every notification the core plans; its key is the notification's tag. */
+        const val CONTENT_ID = 20_000
 
         fun openIntent(context: Context, cardId: String = "", showConnection: Boolean = false): PendingIntent {
             val intent = Intent(context, MainActivity::class.java)

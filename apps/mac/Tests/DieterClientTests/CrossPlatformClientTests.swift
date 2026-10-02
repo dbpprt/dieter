@@ -50,51 +50,36 @@ private enum CertificateFixtures {
 }
 
 @Test func daemonIdentityOnlyAcceptsExactURISubjectAlternativeName() {
-    #expect(DieterRPC.certificateHasDaemonIdentity(CertificateFixtures.matching, daemonID: "ios-fixture"))
-    #expect(!DieterRPC.certificateHasDaemonIdentity(CertificateFixtures.matching, daemonID: "ios"))
-    #expect(!DieterRPC.certificateHasDaemonIdentity(CertificateFixtures.matching, daemonID: ""))
-    #expect(!DieterRPC.certificateHasDaemonIdentity(CertificateFixtures.wrongDaemon, daemonID: "ios-fixture"))
-    #expect(!DieterRPC.certificateHasDaemonIdentity(CertificateFixtures.dnsOnly, daemonID: "ios-fixture"))
-    #expect(!DieterRPC.certificateHasDaemonIdentity(CertificateFixtures.noSAN, daemonID: "ios-fixture"))
-    #expect(!DieterRPC.certificateHasDaemonIdentity(Data([0x30, 0x80, 0x00]), daemonID: "ios-fixture"))
+    #expect(DaemonCertificatePinning.hasDaemonIdentity(CertificateFixtures.matching, daemonID: "ios-fixture"))
+    #expect(!DaemonCertificatePinning.hasDaemonIdentity(CertificateFixtures.matching, daemonID: "ios"))
+    #expect(!DaemonCertificatePinning.hasDaemonIdentity(CertificateFixtures.matching, daemonID: ""))
+    #expect(!DaemonCertificatePinning.hasDaemonIdentity(CertificateFixtures.wrongDaemon, daemonID: "ios-fixture"))
+    #expect(!DaemonCertificatePinning.hasDaemonIdentity(CertificateFixtures.dnsOnly, daemonID: "ios-fixture"))
+    #expect(!DaemonCertificatePinning.hasDaemonIdentity(CertificateFixtures.noSAN, daemonID: "ios-fixture"))
+    #expect(!DaemonCertificatePinning.hasDaemonIdentity(Data([0x30, 0x80, 0x00]), daemonID: "ios-fixture"))
 }
 
 @Test func directDaemonTrustRequiresEnrolledCAAndExactIdentity() {
     #expect(
-        DieterRPC.verifyDaemonCertificateChain(
+        DaemonCertificatePinning.verify(
             [CertificateFixtures.matching], daemonCAPEM: CertificateFixtures.ca, daemonID: "ios-fixture"))
     #expect(
-        !DieterRPC.verifyDaemonCertificateChain(
+        !DaemonCertificatePinning.verify(
             [CertificateFixtures.matching], daemonCAPEM: CertificateFixtures.otherCA, daemonID: "ios-fixture"))
     #expect(
-        !DieterRPC.verifyDaemonCertificateChain(
+        !DaemonCertificatePinning.verify(
             [CertificateFixtures.matching], daemonCAPEM: CertificateFixtures.ca, daemonID: "another-daemon"))
     #expect(
-        !DieterRPC.verifyDaemonCertificateChain(
+        !DaemonCertificatePinning.verify(
             [CertificateFixtures.dnsOnly], daemonCAPEM: CertificateFixtures.ca, daemonID: "ios-fixture"))
     var tampered = CertificateFixtures.matching
     tampered[tampered.count - 1] ^= 0x01
     #expect(
-        !DieterRPC.verifyDaemonCertificateChain(
+        !DaemonCertificatePinning.verify(
             [tampered], daemonCAPEM: CertificateFixtures.ca, daemonID: "ios-fixture"))
     #expect(
-        !DieterRPC.verifyDaemonCertificateChain(
+        !DaemonCertificatePinning.verify(
             [], daemonCAPEM: CertificateFixtures.ca, daemonID: "ios-fixture"))
-}
-
-@Test func installationIdentityPersistsWithPlatformPrefix() throws {
-    let suite = "dieter-ios-installation-test-\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
-    let first = DieterSyncPersistence.installationID(defaults: defaults)
-    #expect(DieterSyncPersistence.installationID(defaults: defaults) == first)
-    #if os(iOS)
-        #expect(first.hasPrefix("ios_"))
-    #else
-        #expect(first.hasPrefix("mac_"))
-    #endif
-    defaults.set("existing-installation", forKey: "DieterSyncClientID")
-    #expect(DieterSyncPersistence.installationID(defaults: defaults) == "existing-installation")
 }
 
 // Tests only this randomly-named service. Existing account sessions are never read,

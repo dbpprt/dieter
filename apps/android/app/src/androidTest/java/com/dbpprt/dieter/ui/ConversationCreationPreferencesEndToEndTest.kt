@@ -23,7 +23,6 @@ import androidx.compose.ui.test.performTextInput
 import androidx.lifecycle.ViewModelProvider
 import com.dbpprt.dieter.api.v1.MessagePart
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
@@ -33,15 +32,11 @@ import com.dbpprt.dieter.core.composition.WorkspaceMode
 import com.dbpprt.dieter.core.selection.AgentControls
 import com.dbpprt.dieter.core.selection.Selections
 import com.dbpprt.dieter.e2e.IsolatedCore
+import com.dbpprt.dieter.e2e.Evidence
 import okio.ByteString.Companion.encodeUtf8
-import java.io.File
 import java.util.UUID
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
@@ -58,10 +53,6 @@ class ConversationCreationPreferencesEndToEndTest {
 
     @Test
     fun submittedCardSelectionIsPreselectedForTheNextChat() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val arguments = InstrumentationRegistry.getArguments()
-        val token = arguments.getString("isolatedGatewayToken").orEmpty()
-        assumeTrue("Pass isolatedGatewayToken for the isolated gateway", token.isNotBlank())
         val application = composeRule.activity.application as DieterApplication
         val container = application.container
         val core = container.core
@@ -214,18 +205,8 @@ class ConversationCreationPreferencesEndToEndTest {
             // Reproduce opening a project chat while the app is currently
             // routed to a different machine. The creation screen must route
             // back to this project's checkout before exposing its catalog.
-            val expectedAlternateDaemon = arguments.getString("isolatedSecondDaemon").orEmpty()
-            val otherDaemon = runBlocking {
-                withTimeout(20_000) {
-                    core.connection.machines.first { directory ->
-                        expectedAlternateDaemon.isBlank() || directory.all.any { it.id == expectedAlternateDaemon && it.online(directory.evaluatedAt) }
-                    }
-                }.let { directory ->
-                    directory.all.firstOrNull { candidate ->
-                        candidate.online(directory.evaluatedAt) && candidate.id != checkout.daemon_id &&
-                            (expectedAlternateDaemon.isBlank() || candidate.id == expectedAlternateDaemon)
-                    }?.id
-                }
+            val otherDaemon = core.connection.machines.value.let { directory ->
+                directory.all.firstOrNull { candidate -> candidate.online(directory.evaluatedAt) && candidate.id != checkout.daemon_id }?.id
             }
             otherDaemon?.let {
                 runBlocking { core.attachMachine(it) }
@@ -266,19 +247,7 @@ class ConversationCreationPreferencesEndToEndTest {
     }
 
     private fun capture(name: String) {
-        val arguments = InstrumentationRegistry.getArguments()
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val directory = arguments.getString("additionalTestOutputDir")
-            ?.takeIf(String::isNotBlank)?.let(::File)
-            ?: requireNotNull(context.getExternalFilesDir(null))
-        directory.mkdirs()
-        File(directory, name).outputStream().use { output ->
-            composeRule.waitForIdle()
-            requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()).compress(
-                android.graphics.Bitmap.CompressFormat.PNG,
-                100,
-                output,
-            )
-        }
+        composeRule.waitForIdle()
+        Evidence.display(name)
     }
 }

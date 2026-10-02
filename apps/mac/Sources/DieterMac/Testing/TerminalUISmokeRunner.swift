@@ -58,11 +58,11 @@
                     timeout: 15,
                     condition: {
                         store.endpoints.contains {
-                            $0.id != store.endpoint.id && $0.online && $0.compatibilityState == .compatible
+                            $0.id != store.endpoint.id && store.machineIsAvailable($0)
                         }
                     }),
                 let destination = store.endpoints.first(where: {
-                    $0.id != store.endpoint.id && $0.online && $0.compatibilityState == .compatible
+                    $0.id != store.endpoint.id && store.machineIsAvailable($0)
                 })
             else {
                 writeReport(
@@ -141,7 +141,7 @@
                         .recordedFrame?.isEmpty == false
                 })
 
-            store.sendTerminalInput(id: terminalID, data: command(printing: firstMarker))
+            store.terminalsModel.sendTerminalInput(id: terminalID, data: command(printing: firstMarker))
             let received = await waitUntil(timeout: 20, condition: { screen(store, terminalID).contains(firstMarker) })
             try? await DieterTaskSleep.milliseconds(500)
             let clipboard = await terminalClipboardInteraction(store: store, terminalID: terminalID, in: window)
@@ -149,7 +149,7 @@
             capture(window, to: output.appending(path: "01-selection-copy-paste.png"))
             capture(window, to: output.appending(path: "01-before-client-exit.png"))
 
-            store.sendTerminalInput(id: terminalID, data: scrollbackCommand())
+            store.terminalsModel.sendTerminalInput(id: terminalID, data: scrollbackCommand())
             let filledScrollback = await waitUntil(
                 timeout: 20,
                 condition: {
@@ -166,10 +166,12 @@
                 condition: {
                     guard let grid = terminalGrid(in: window), let initialGrid else { return false }
                     return grid.columns < initialGrid.columns
-                        && store.selectedTerminal.map { Int($0.columns) == grid.columns && Int($0.rows) == grid.rows }
+                        && store.terminalsModel.selectedTerminal.map {
+                            Int($0.columns) == grid.columns && Int($0.rows) == grid.rows
+                        }
                             == true
                 })
-            store.sendTerminalInput(id: terminalID, data: command(printing: resizeMarker))
+            store.terminalsModel.sendTerminalInput(id: terminalID, data: command(printing: resizeMarker))
             let resizedOutput = await waitUntil(
                 timeout: 20,
                 condition: {
@@ -186,7 +188,9 @@
                 condition: {
                     guard let grid = terminalGrid(in: window), let narrowGrid else { return false }
                     return grid.columns > narrowGrid.columns
-                        && store.selectedTerminal.map { Int($0.columns) == grid.columns && Int($0.rows) == grid.rows }
+                        && store.terminalsModel.selectedTerminal.map {
+                            Int($0.columns) == grid.columns && Int($0.rows) == grid.rows
+                        }
                             == true
                 })
             try? await DieterTaskSleep.milliseconds(500)
@@ -200,7 +204,7 @@
                     "active-machine-id": originalEndpointID,
                     "overview-routing": "passed",
                     "terminal-create": "passed",
-                    "machine-home-scope": store.selectedTerminal?.projectID.isEmpty == true
+                    "machine-home-scope": store.terminalsModel.selectedTerminal?.projectID.isEmpty == true
                         ? "passed" : "failed: terminal unexpectedly required a project",
                     "new-terminal-sheet": sheetPresented
                         ? (sheetIsCompact ? "passed" : "failed: terminal sheet escaped its compact layout bounds")
@@ -239,7 +243,7 @@
                     "resize-cursor-tracking": narrowPresentation.cursorTracks
                         ? "passed"
                         : "failed: the caret left the resized terminal bounds",
-                    "terminal-running": store.selectedTerminal?.status == "running"
+                    "terminal-running": store.terminalsModel.selectedTerminal?.status == "running"
                         ? "passed" : "failed: terminal was not running",
                 ], named: "create-report.json", to: output)
         }
@@ -283,7 +287,7 @@
                 })
             let replayed = await waitUntil(timeout: 20, condition: { screen(store, terminalID).contains(firstMarker) })
 
-            store.sendTerminalInput(id: terminalID, data: command(printing: secondMarker))
+            store.terminalsModel.sendTerminalInput(id: terminalID, data: command(printing: secondMarker))
             let continued = await waitUntil(
                 timeout: 20, condition: { screen(store, terminalID).contains(secondMarker) })
             let rendered = await waitUntil(
@@ -412,7 +416,7 @@
 
             // Disable shell echo so the marker can only appear when the edited
             // command actually executes, not merely because its source was drawn.
-            store.sendTerminalInput(
+            store.terminalsModel.sendTerminalInput(
                 id: terminalID,
                 data: Data("stty -echo; printf '%s\\n' '\(editReadyMarker)'\n".utf8))
             guard
@@ -431,7 +435,7 @@
             let edited = await waitUntil(timeout: 20) {
                 screen(store, terminalID).contains("\(deleteMarker)\r\n")
             }
-            store.sendTerminalInput(id: terminalID, data: Data("stty echo\n".utf8))
+            store.terminalsModel.sendTerminalInput(id: terminalID, data: Data("stty echo\n".utf8))
             return edited
         }
 

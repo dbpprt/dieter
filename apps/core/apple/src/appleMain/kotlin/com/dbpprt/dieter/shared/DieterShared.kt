@@ -15,7 +15,6 @@ import com.dbpprt.dieter.client.v1.ScreenChannel
 import com.dbpprt.dieter.client.v1.ScreenMediaCapabilities as ClientScreenMediaCapabilities
 import com.dbpprt.dieter.client.v1.ScreenMediaConfig as ClientScreenMediaConfig
 import com.dbpprt.dieter.client.v1.Slice
-import com.dbpprt.dieter.client.v1.Update
 import com.dbpprt.dieter.core.CoreRuntime
 import com.dbpprt.dieter.core.RuntimeConfig
 import com.dbpprt.dieter.core.client.ClientApi
@@ -24,8 +23,6 @@ import com.dbpprt.dieter.core.client.ClientSubscription
 import com.dbpprt.dieter.core.client.ScreenHost
 import com.dbpprt.dieter.core.conversation.ConversationConfig
 import com.dbpprt.dieter.core.conversation.TranscriptRetention
-import com.dbpprt.dieter.core.legacy.AppleLegacyInput
-import com.dbpprt.dieter.core.legacy.LegacyInputs
 import com.dbpprt.dieter.core.notifications.NotificationContent
 import com.dbpprt.dieter.core.notifications.NotificationSink
 import com.dbpprt.dieter.core.platform.AuthHttp
@@ -38,6 +35,7 @@ import com.dbpprt.dieter.core.platform.Platform
 import com.dbpprt.dieter.core.platform.SecureStore
 import com.dbpprt.dieter.core.platform.SignatureVerifier
 import com.dbpprt.dieter.core.runtime.CoreLogger
+import com.dbpprt.dieter.core.runtime.SilentLogger
 import com.dbpprt.dieter.core.screens.LocalClipboard
 import com.dbpprt.dieter.core.screens.PeerState
 import com.dbpprt.dieter.core.screens.ReceiverSample
@@ -57,6 +55,7 @@ import com.squareup.wire.GrpcStatus
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okio.FileSystem
 import okio.IOException
@@ -251,8 +250,6 @@ class SharedConfiguration(
     val oauthRedirectUri: String,
     /** `mac` or `ios`: the prefix of a newly generated sync client ID. */
     val clientIdPrefix: String,
-    /** The install's existing client ID from the legacy app, kept for idempotency. */
-    val legacyClientId: String?,
     /** Only macOS can run a daemon itself, so only it tries loopback routes. */
     val includeLoopbackRoutes: Boolean,
     /** Phones keep a smaller transcript window than desktops. */
@@ -326,14 +323,13 @@ class DieterShared(configuration: SharedConfiguration, extensions: SharedExtensi
                     override fun warn(tag: String, message: String, error: Throwable?) =
                         native.log(2, tag, if (error == null) message else "$message: ${error.message}")
                 }
-            } ?: com.dbpprt.dieter.core.runtime.SilentLogger,
+            } ?: SilentLogger,
         ),
         RuntimeConfig(
             clientVersion = configuration.clientVersion,
             oauthRedirectUri = configuration.oauthRedirectUri,
             includeLoopbackRoutes = configuration.includeLoopbackRoutes,
             clientIdPrefix = configuration.clientIdPrefix,
-            legacyClientId = { configuration.legacyClientId },
             conversations = ConversationConfig(retention = if (configuration.compactTranscripts) TranscriptRetention.MOBILE else TranscriptRetention.DESKTOP),
         ),
     )
@@ -347,15 +343,6 @@ class DieterShared(configuration: SharedConfiguration, extensions: SharedExtensi
             )
         },
     )
-
-    val clientId: String get() = runtime.clientId
-
-    /** Whether the legacy app's state still has to be imported; do it before [start]. */
-    val needsLegacyImport: Boolean get() = runtime.needsLegacyImport
-
-    /** Moves the legacy app's state into the core once; returns a summary for the log. */
-    @Throws(Exception::class)
-    suspend fun importLegacy(input: AppleLegacyInput): String = runtime.importLegacy(LegacyInputs.apple(input)).toString()
 
     /** Starts supervision; cached state is observable before this. */
     fun start() = runtime.start()
@@ -380,19 +367,10 @@ class DieterShared(configuration: SharedConfiguration, extensions: SharedExtensi
 
     /**
      * Observes [slice] (a `dieter.client.v1.Slice` number); [scope] is the card
-     * ID for conversations. A slice this core does not know is reported as one
-     * `Update` carrying a failure, never as an exception across the boundary.
+     * ID for conversations and the view's surface key for view-owned surfaces.
      */
-    fun observe(slice: Int, scope: String, observer: SharedObserver): SharedSubscription {
-        val kind = Slice.fromValue(slice) ?: Slice.SLICE_UNSPECIFIED
-        val subscription = try {
-            api.observe(kind, scope) { update -> observer.update(update.encode().toNSData()) }
-        } catch (failure: ClientFailure) {
-            observer.update(Update(slice = kind, scope = scope, sequence = 1, failure = failure.failure).encode().toNSData())
-            ClientSubscription {}
-        }
-        return SharedSubscription(subscription)
-    }
+    fun observe(slice: Int, scope: String, observer: SharedObserver): SharedSubscription =
+        SharedSubscription(api.observe(Slice.fromValue(slice) ?: Slice.SLICE_UNSPECIFIED, scope) { update -> observer.update(update.encode().toNSData()) })
 
     @Throws(CancellationException::class)
     suspend fun shutdown() = runtime.shutdown()
@@ -485,7 +463,7 @@ private class NativeScreenMediaEngineAdapter(private val native: NativeScreenMed
         native.addRemoteCandidate(RemoteDesktopICECandidate.ADAPTER.encode(candidate).toNSData(), done(continuation, "The remote candidate could not be added."))
     }
 
-    private fun done(continuation: kotlinx.coroutines.CancellableContinuation<Unit>, fallback: String) = object : NativeScreenDoneCompletion {
+    private fun done(continuation: CancellableContinuation<Unit>, fallback: String) = object : NativeScreenDoneCompletion {
         override fun completed(error: String?) {
             if (!continuation.isActive) return
             if (error == null) continuation.resume(Unit) else continuation.resumeWithException(IOException(error.ifEmpty { fallback }))

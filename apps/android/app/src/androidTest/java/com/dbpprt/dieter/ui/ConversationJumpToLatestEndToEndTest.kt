@@ -1,10 +1,7 @@
 package com.dbpprt.dieter.ui
 
 import android.Manifest
-import android.graphics.Bitmap
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -13,17 +10,15 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
 import com.dbpprt.dieter.api.v1.CreateConversationRequest
 import com.dbpprt.dieter.e2e.IsolatedCore
-import java.io.File
+import com.dbpprt.dieter.e2e.saveEvidence
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
@@ -40,10 +35,6 @@ class ConversationJumpToLatestEndToEndTest {
 
     @Test
     fun conversationOffersAndUsesJumpToLatestOnTheVisibleEmulator() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val arguments = InstrumentationRegistry.getArguments()
-        val token = arguments.getString("isolatedGatewayToken").orEmpty()
-        assumeTrue("Pass isolatedGatewayToken for the isolated gateway", token.isNotBlank())
         val application = composeRule.activity.application as DieterApplication
         val container = application.container
         val connected = IsolatedCore.connect(container)
@@ -70,20 +61,7 @@ class ConversationJumpToLatestEndToEndTest {
                 composeRule.onAllNodesWithTag("jump-to-latest").fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.onNodeWithTag("jump-to-latest").assertIsDisplayed()
-
-            val context = instrumentation.targetContext
-            val screenshotDirectory = arguments.getString("additionalTestOutputDir")
-                ?.takeIf(String::isNotBlank)
-                ?.let(::File)
-                ?: requireNotNull(context.getExternalFilesDir(null))
-            screenshotDirectory.mkdirs()
-            val screenshot = File(screenshotDirectory, "conversation-jump-to-latest-e2e.png")
-            screenshot.outputStream().use { output ->
-                composeRule.onRoot()
-                    .captureToImage()
-                    .asAndroidBitmap()
-                    .compress(Bitmap.CompressFormat.PNG, 100, output)
-            }
+            composeRule.onRoot().saveEvidence("conversation-jump-to-latest-e2e.png")
 
             composeRule.onNodeWithTag("jump-to-latest").performClick()
             composeRule.waitForIdle()

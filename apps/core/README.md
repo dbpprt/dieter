@@ -1,50 +1,65 @@
 # Dieter shared client core (Kotlin Multiplatform)
 
-This is the client business logic shared by the Android, macOS, and iOS apps.
-It is implemented through work packages F–W6 of the
-[implementation plan](../../docs/kmp-core-implementation-plan-2026-09-30.md),
-and it is tested end to end on the JVM, on native macOS, from Swift, and as
-the Android variant.
+This is the client business logic of the Dieter apps. The Android and macOS
+apps run on it; the iOS app does not link it yet. It was built through work
+packages F–W6 of the
+[implementation plan](../../docs/kmp-core-implementation-plan-2026-09-30.md)
+and the [macOS cutover](../../docs/mac-shared-core-cutover-plan-2026-10-01.md),
+and it is tested end to end on the JVM (over the OkHttp transport Android
+shares), on native macOS, and from Swift.
+
+Every rule lives here: wording, counts, enablement, ordering, decisions,
+defaults, and parsing, so every client words and decides things the same way.
+Examples: the conversation timeline, state, and composer agent controls,
+task-draft editing and creation previews, board lanes and card flags, chat list
+sections, machine rows and telemetry formats, offline availability and the
+connection sheet, diff layout, schedule cadences, and relative times. The apps
+keep view mechanics (layout, scrolling, focus, animation, gesture geometry),
+locale date formatting, colours, icons, and their platform adapters. A rule an
+app still builds itself belongs in the core, with core tests (see
+[Adding a rule](#adding-a-rule)).
 
 Android runs entirely on the core:
-- The app's former logic layer, protobuf-lite, and grpc-java are gone. The
-  Compose UI reads Wire models and the core's views directly.
-- Presentation rules live in the core too, so every client words and decides
-  things the same way. Examples: the conversation presentation and composer
-  controls, task-draft editing, board and chat lists, machine rows and
-  telemetry text, offline availability and the connection sheet, and
-  relative times.
-- The app keeps only Compose layout and Android adapters: the OkHttp
-  transport, the Keystore-backed credential store, WebRTC/MediaCodec screen
-  media (framed by `platform/ControlFrames.kt`), the Termux terminal renderer,
-  notifications, widgets, the sideload updater, and the background service
-  (`apps/android/.../sharedcore`). The adapters format dates in the device
-  locale; the core supplies the wording.
-- There was no soak or shadow mode and there is no Android legacy importer:
-  the app had no users yet.
+- The Compose UI calls the core's Kotlin domain APIs and reads its views
+  (`CoreRuntime`, Wire models, `StateFlow`s) directly; the app has no logic
+  layer, protobuf-lite, or grpc-java of its own, and it does not use
+  `ClientApi`.
+- The app keeps only Compose layout and Android adapters: the TLS providers
+  for the core's OkHttp transport, the Keystore-backed credential store,
+  WebRTC/MediaCodec screen media (framed by `platform/ControlFrames.kt`), the
+  Termux terminal renderer, notifications, widgets, the sideload updater, and
+  the background service (`apps/android/.../sharedcore`). The adapters format
+  dates in the device locale; the core supplies the wording.
+- The app includes this build from source and imports its version catalog
+  (`gradle/libs.versions.toml`) as `coreLibs`, so both apply the same Kotlin,
+  AGP, coroutines, and OkHttp versions.
 
-The macOS app runs on the core
-([cutover plan](../../docs/mac-shared-core-cutover-plan-2026-10-01.md)). Its
-`SharedCore` target (`apps/mac/Sources/SharedCore`) links `DieterShared`,
-provides the native transport and platform services, and carries the legacy
-state over once through the macOS importer. Every Mac feature is a slice and
-command surface; the Mac keeps presentation, the editor, terminal rendering,
-and the WebRTC, VideoToolbox, and Metal screen engine. The iOS app does not
-link the core yet.
+The macOS app runs on the core. Its `SharedCore` target
+(`apps/mac/Sources/SharedCore`) links `DieterShared`, carries the core's RPCs
+over grpc-swift through the `DieterTransport` target (the WebRTC control
+bridge, daemon certificate pinning, and resolver targets), and provides the
+platform services. Every Mac feature observes a slice and sends commands;
+views call `SharedRules` for rules they need while rendering. The Mac keeps
+presentation, the editor, terminal rendering, and the WebRTC, VideoToolbox, and
+Metal screen engine.
+
+The iOS app (`apps/ios`, `apps/mac/Sources/DieterIOS`) still runs on the Swift
+`DieterCore` and `DieterClient` modules. Its cutover follows the Mac's: slice
+and `SharedRules` adapters, then deleting those modules.
 
 | Module | Role |
 | --- | --- |
-| `model` | Wire models and gRPC stubs generated from `api/proto`, relocated to `com.dbpprt.dieter.api.*`. It also holds the core's on-device records (`dieter/core/v1`) and the UI contract (`dieter/client/v1`, D7). |
+| `model` | Wire models and gRPC stubs generated from `api/proto`, relocated to `com.dbpprt.dieter.api.*`. It also holds the core's on-device records (`dieter/core/v1`) and the UI contract (`dieter/client/v1/client.proto`, D7). |
 | `shared` | All client logic, the platform-extension contracts (`platform/Platform.kt`, `screens/ScreenMedia.kt`, `terminals/TerminalScreen.kt`), and the OkHttp transport for Android and the JVM (`jvmSharedMain`). |
-| `testing` | Fakes, the JVM platform, the JDK's Ed25519 verifier, and the `IsolatedGateway` fixture launcher used by every end-to-end test. |
-| `apple` | The `DieterShared` façade, the only module exported to Swift. It offers `dispatch(command)` and `observe(slice, scope)` over encoded `dieter.client.v1` messages, a grpc-swift transport bridge, and the native extension protocols. |
-| `harness/android` | The core's Android variant (OkHttp transport) in a minimal app, tested on the JVM against an isolated gateway. |
+| `testing` | Fakes, `SliceFolds` (applies keyed deltas as a Swift observer does), the JVM platform, the JDK's Ed25519 verifier, and the `IsolatedGateway` fixture launcher used by every end-to-end test. |
+| `apple` | The only module exported to Swift: the `DieterShared` façade (`dispatch(command)` and `observe(slice, scope)` over encoded `dieter.client.v1` messages), the synchronous `SharedRules` exports (`SharedRules.kt`), and the native extension protocols, including the RPC bridge the Mac implements with grpc-swift (`NativeRpc.kt`). |
 
 ## Architecture
 
 - **Threading.** Every piece of mutable state is confined to one serialized
   dispatcher (`CoreRuntime.dispatcher`). UIs read `StateFlow`s (Kotlin) or
-  observe slices (Swift).
+  observe slices (Swift). `SharedRules` calls are stateless and run on any
+  thread.
 - **Data flow.** The attached machine streams one WatchSync feed. Other
   machines are polled. Every feature shares one data plane per machine
   (direct TLS, then WebRTC hedged against the relay, then the relay alone).
@@ -56,53 +71,129 @@ link the core yet.
   terminals (SwiftTerm, Termux), and screen media (WebRTC, decoders, Metal).
   The core makes every decision around them.
 
+### Source layout
+
+Under `shared/src/commonMain/kotlin/com/dbpprt/dieter/core/`:
+- One package per domain (`activity`, `admin`, `board`, `composition`,
+  `connection`, `conversation`, `files`, `machines`, `navigation`,
+  `presentation`, `quotas`, `schedules`, `screens`, `terminals`, `workspace`,
+  and others). Each holds the domain's state, operations, and rules; Android
+  calls these directly. `CoreRuntime.kt` wires them together.
+- `client/` implements the Apple contract (`client.proto`):
+  - `ClientApi.kt` dispatches commands and serves slice observations.
+  - `Surfaces.kt` keeps per-view surfaces by scope (files and file trees,
+    terminals and their overview, review, project changes and workspaces,
+    schedules, telemetry, processes, screens, board views, chats, and open
+    conversations): the first observer opens one, the last release stops it.
+  - `*Commands.kt` (`AdminCommands`, `CreationCommands`, `FileCommands`,
+    `MachineCommands`, `NavigationCommands`, `ReviewCommands`,
+    `ScreenCommands`, `TerminalCommands`) handle each domain's commands.
+  - `SliceMappers.kt`, `RuntimeSlices.kt`, and `BoardViewSlices.kt` map the
+    Kotlin views to slices; `Deltas.kt` turns keyed lists (cards, messages,
+    timeline items) into keyed deltas.
+  - `rules/` holds one stateless `*Exports` object per domain
+    (`FormatExports`, `BoardExports`, `ConversationExports`, …): adapters with
+    primitive inputs and outputs over the domain rules, for `SharedRules`.
+
+## Adding a rule
+
+1. Write the rule in its domain package, as a function or a property of the
+   domain's Kotlin view, with `commonTest` unit tests in the same package.
+   Android calls it there.
+2. Give Swift the result:
+   - **A value derived from slice state** (what a row or control shows or
+     allows) becomes a slice field in `client.proto`: compute it in the
+     Kotlin view, copy it in the slice mapper, and assert it in a
+     `client/*SliceTest` or a `ClientApi*EndToEndTest`. Keyed lists travel
+     as keyed deltas.
+   - **A rule a view calls while rendering**, from values it already holds,
+     becomes a `SharedRules` export: add a function to the domain's
+     `client/rules/<Domain>Exports.kt` with a test in
+     `commonTest/.../client/rules/<Domain>ExportsTest.kt`, and a forwarder in
+     the domain's region of `apple/.../SharedRules.kt`. Inputs are primitives
+     (`String`, `Long`, `Int`, `Double`, `Boolean`, lists of them) or encoded
+     messages; times are epoch milliseconds, 0 meaning unknown; outputs are
+     primitives or encoded `dieter.client.v1` messages. A forwarder only
+     converts and calls one export. Swift calls
+     `SharedRules.shared.<name>(...)`, often per rendered row, so keep exports
+     cheap.
+3. After a schema change, run `just mac proto-generate`. Avoid field names
+   that Wire escapes (`value`, `data`, and `file` become `value_`, `data_`,
+   and `file_`).
+4. Delete the app's copy and its tests.
+
 ## Parity matrix
 
 Status key:
 - **done**: implemented in the core and covered by tests.
-- **wired**: reachable from an app or adapter harness.
-- **façade**: exposed through the Apple byte contract.
+- **façade**: Swift reaches it through the named slices and commands, or
+  through `SharedRules`.
 
 | WP | Core packages | Tests | Status |
 | --- | --- | --- | --- |
 | F Foundation | `platform`, `runtime`, `storage`, `testing`, `model` | unit, native macOS, fixture | done |
-| W1.1 Identity | `identity` (gateways, PKCE sign-in, accounts, client ID) | `CoreRuntimeEndToEndTest`, `ClientApiEndToEndTest` | done, façade |
-| W1.2 Compatibility | `session` (`GatewaySession.verify`) | e2e (update-required path) | done, façade |
-| W1.3 Machines | `machines` (rows, fleet, formats), `admin/Machines.kt` (presence, telemetry, operations, background policy) | `AdminEndToEndTest`, `AdminRulesTest`, `MachineRowsTest` | done; rename and revoke are on the façade |
+| W1.1 Identity | `identity` (gateways, PKCE sign-in, accounts, client ID) | `CoreRuntimeEndToEndTest`, `ClientApiEndToEndTest` | done, façade (session; sign-in commands) |
+| W1.2 Compatibility | `session` (`GatewaySession.verify`) | e2e (update-required path) | done, façade (session) |
+| W1.3 Machines | `machines` (rows, fleet, formats), `admin/Machines.kt` (presence, telemetry, operations, background policy) | `ClientApiAdminEndToEndTest`, `AdminRulesTest`, `MachineTelemetryTest`, `MachineRowsTest` | done, façade (session machine entries, telemetry, machine formats; rename and revoke) |
 | W1.4 Routing | `routing`, `session` (direct, WebRTC hedge, relay; token renewal; cooldown) | `CoreRuntimeEndToEndTest` (live and dead direct routes, stream starvation) | done |
-| W1.5 Supervisor | `connection` (phases, liveness, backoff, `refreshForWidget`; offline availability and the connection sheet) | e2e (offline, restart, widget refresh), `AvailabilityTest` | done, façade |
-| W2.1–2.4 Sync and replica | `sync`, `store` (feed, directory poller, card-state projection, cache) | `SyncReplicaTest`, `CardStateProjectionTest`, e2e (cached launch) | done, façade (workspace deltas) |
-| W2.5 Runtime metadata | `metadata`, `selection` | `DomainsEndToEndTest` | done |
-| W3.1 Outbox | `outbox` | `OutboxPolicyTest`, `OutboxEndToEndTest`, `PendingItemsTest` | done, façade |
-| W3.2–3.3 Overlays and board | `board`, `store` | `BoardPolicyTest`, `BoardPresentationTest`, `BoardEndToEndTest` | done; move, finish, labels, pin, rename, archive, restore, cancel, and read are on the façade |
-| W3.4 Navigation | `navigation` (shared KV, folders, destinations, chat lists) | `NavigationTest`, `ChatListsTest`, `NavigationEndToEndTest` | done |
-| W3.5 Drafts and capture | `composition` (drafts, captures, task-draft editing, destinations) | `CompositionTest`, `TaskDraftsTest` | done |
-| W4 Conversation | `conversation`, `presentation`, `selection` | `ConversationReducerTest`, `PresentationTest`, `ConversationPresentationTest`, `AgentControlsTest`, `ConversationEndToEndTest` | done, façade (keyed transcript deltas, send, paging) |
-| W5.1 Schedules | `schedules` | `DomainRulesTest`, `DomainsEndToEndTest` | done |
-| W5.2 Terminals | `terminals` (surfaces, input pumps, replay, cross-machine overview) | `TerminalScreenTest`, `TerminalOverviewCatalogTest`, `TerminalEndToEndTest` | done |
-| W5.3 Workspace and git | `workspace` | `WorkspaceRulesTest`, `WorkspacePresentationTest`, `WorkspaceEndToEndTest` | done |
-| W5.4 Files | `files` (browser, tree, syntax, drafts) | `FilesTest`, `FilesEndToEndTest` | done |
-| W5.5 Admin | `admin` | `AdminRulesTest`, `AdminEndToEndTest` | done |
-| W5.6 Quotas | `quotas` | `DomainRulesTest`, e2e | done |
-| W5.7 Activity and notifications | `activity`, `notifications` | `ActivityTest`, `WidgetModelTest` | done, façade (activity) |
-| W5.8 Search | `search` | `DomainRulesTest` | done |
-| W5.9 Executions | `executions` | `DomainsEndToEndTest` | done |
-| W6 Screens | `screens` (trust, session controller, recovery, input, gestures, mouse buttons, clipboard, frame gating, receiver feedback), `platform/ControlFrames.kt` | `ScreenPoliciesTest`, `ScreenFramesTest`, `MouseButtonsTest`, `ControlFramesTest`, `ScreenSessionTest` (scripted daemon and engine), `ScreenEndToEndTest` | done |
-| D7 UI contract | `client` (`ClientApi`, keyed deltas), `apple` | `KeyedTest`, `ClientApiEndToEndTest`, Swift harness | done |
-| Legacy import | `legacy` (macOS and iOS formats) | `LegacyFormatsTest`, `LegacyInputsTest`, `LegacyImportEndToEndTest` | done, façade; Android needs none |
-| F5 App integration | Android `sharedcore/` (`SharedCore`, `ConnectionPolicy`); macOS `SharedCore` and slice adapters | Android unit tests and instrumentation catalog (`tests/e2e`); `just mac test`, `just mac core-test`, `just mac screens-test` | Android and macOS on the core; iOS not yet. |
-| W7 Consolidation | — | — | Android: legacy logic, protobuf-lite, and grpc-java deleted. macOS: the legacy feature plane and Swift rule copies deleted. |
+| W1.5 Supervisor | `connection` (phases, liveness, backoff, `refreshForWidget`; offline availability and the connection sheet) | e2e (offline, restart, widget refresh), `AvailabilityTest` | done, façade (session) |
+| W2.1–2.4 Sync and replica | `sync`, `store` (feed, directory poller, card-state projection, cache) | `SyncReplicaTest`, `CardStateProjectionTest`, `DirectoryTest`, `FeedTest`, e2e (cached launch) | done, façade (workspace, keyed deltas) |
+| W2.5 Runtime metadata | `metadata`, `selection` | `ClientApiEndToEndTest` | done, façade (metadata) |
+| W3.1 Outbox | `outbox` | `OutboxPolicyTest`, `OutboxEndToEndTest`, `PendingItemsTest` | done, façade (outbox) |
+| W3.2–3.3 Overlays and board | `board`, `store` | `BoardPolicyTest`, `BoardPresentationTest`, `BoardViewTest`, `LanesTest`, `BoardEndToEndTest`, `ClientApiBoardViewEndToEndTest` | done, façade (board, board view, card commands) |
+| W3.4 Navigation | `navigation` (shared KV, folders, destinations, chat lists) | `NavigationTest`, `ChatListsTest`, `ChatsSurfaceTest`, `NavigationEndToEndTest` | done, façade (navigation, chats) |
+| W3.5 Drafts and capture | `composition` (drafts, captures, task-draft editing, creation previews, destinations) | `CompositionTest`, `TaskDraftsTest`, `CreationPlanTest`, `WorkspaceModeTest`, `CreationCommandsTest` | done, façade (creation, drafts, creation preview) |
+| W4 Conversation | `conversation`, `presentation`, `selection` | `ConversationReducerTest`, `LiveActivityTest`, `TimelineTest`, `UsageTest`, `AgesTest`, `ConversationPresentationTest`, `AgentControlsTest`, `ConversationSliceTest`, `ConversationEndToEndTest` | done, façade (conversation: keyed timeline deltas, state, send, paging) |
+| W5.1 Schedules | `schedules` | `ScheduleRulesTest`, `SchedulesTest`, `DomainRulesTest`, `ClientApiEndToEndTest` | done, façade (schedules) |
+| W5.2 Terminals | `terminals` (surfaces, input pumps, replay, cross-machine overview) | `TerminalScreenTest`, `TerminalOverviewCatalogTest`, `TerminalSelectionsTest`, `TerminalEndToEndTest` | done, façade (terminals, terminal overview) |
+| W5.3 Workspace and git | `workspace` | `WorkspaceRulesTest`, `WorkspacePresentationTest`, `ReviewPresentationTest`, `DiffsTest`, `ReviewSliceTest`, `ClientApiWorkspaceEndToEndTest` | done, façade (review, project changes, project workspaces) |
+| W5.4 Files | `files` (browser, tree, syntax, drafts) | `FilesTest`, `FilesEndToEndTest` | done, façade (files, file tree) |
+| W5.5 Admin | `admin` | `AdminRulesTest`, `ClientApiAdminEndToEndTest` | done, façade (`AdminCommand`) |
+| W5.6 Quotas | `quotas` | `DomainRulesTest`, `QuotaRowsTest`, `UsageWidgetTest`, `QuotasEndToEndTest` | done, façade (quotas) |
+| W5.7 Activity and notifications | `activity`, `notifications` | `ActivityTest`, `WidgetModelTest`, `NotificationsTest` | done, façade (activity; notifications through the native sink) |
+| W5.8 Search | `search` | `DomainRulesTest` | done, façade (`SearchCommand`) |
+| W5.9 Executions | `executions` | `DomainRulesTest`, `ClientApiProcessesEndToEndTest` | done, façade (processes) |
+| W6 Screens | `screens` (trust, session controller, recovery, input, gestures, mouse buttons, clipboard, frame gating, receiver feedback), `platform/ControlFrames.kt` | `ScreenPoliciesTest`, `ScreenFramesTest`, `MouseButtonsTest`, `ControlFramesTest`, `ScreenSessionTest` (scripted daemon and engine), `ClientApiScreenEndToEndTest` | done, façade (screen) |
+| D7 UI contract | `client` (`ClientApi`, per-scope surfaces, domain command handlers, slice mappers, keyed deltas), `apple` | `KeyedTest`, the `client/*SliceTest`s, the `ClientApi*EndToEndTest`s, `just mac core-test` | done |
+| Rules for Swift | `client/rules` (`*Exports`), `apple/SharedRules.kt` | the `*ExportsTest`s, `SharedCoreTests` (Swift) | done, façade (`SharedRules`) |
+| F5 App integration | Android `sharedcore/` (`SharedCore`, `ConnectionPolicy`); macOS `SharedCore`, `DieterTransport`, and slice adapters | Android unit tests and instrumentation catalog (`tests/e2e`); `just mac test`, `just mac core-test`, `just mac screens-test` | Android and macOS on the core; iOS not yet. |
+| W7 Consolidation | — | — | Android: legacy logic, protobuf-lite, grpc-java, and rule duplicates deleted. macOS: the legacy feature plane, the legacy importer, and the Swift rule copies deleted. iOS: not started. |
 
 **On the Apple façade:** every feature, as `client.proto` commands and
-slices. Screens take a `NativeScreenMedia` engine and a `NativeClipboard`
-through `SharedExtensions`; engines are created per observed screen scope.
-Terminal output reaches Swift through the terminals slice.
+slices, plus `SharedRules` for render-time rules. Screens take a
+`NativeScreenMedia` engine and a `NativeClipboard` through
+`SharedExtensions`; engines are created per observed screen scope. Terminal
+output reaches Swift through the terminals slice.
 
 ## Deviations from the plan
 
 - **Client schema location.** The client schema lives in
   `model/src/commonMain/proto/dieter/client/v1`, not `api/proto`. It never
-  crosses the network, so it stays with the core that owns it.
+  crosses the network, so it stays with the core that owns it. It is one
+  file, `client.proto`, not one file per domain.
+- **Wording (D9 reversed).** The core supplies English text (relative ages,
+  sizes, counts, labels, status lines), so both apps say the same thing; the
+  apps format only absolute dates in the device locale.
+- **Rules for Swift.** Values derived from slice state are slice fields
+  computed by the core's Kotlin views, which Android reads directly; pure
+  render-time rules are synchronous `SharedRules` exports. D7 planned only
+  slices and commands.
+- **Android reads the Kotlin views.** D7 planned for Android to use the
+  client types; it calls the domain APIs instead, so `ClientApi` serves Swift
+  only.
+- **No rollout switches or shadow mode** (D10), no conformance vectors, and
+  no Kover coverage gate. Android switched in one pass and macOS one domain
+  at a time, before either had users.
+- **No legacy import.** Neither app imports state from its versions before
+  the core; there were no users yet. The macOS and iOS importer was built and
+  then deleted unused. The Mac's gateway session file is the core's secure
+  store, so sign-in survives. Android deletes the earlier versions' unused
+  files on start (`data/UnusedStorage.kt`).
+- **Harnesses retired.** The Apple adapter harness became the Mac's
+  `SharedCore` target and `SharedCoreTests` (`just mac core-test`). The
+  Android harness was deleted: `just core test` runs the same OkHttp
+  transport on the JVM, and the app's instrumentation
+  (`SharedCoreIntegrationTest`) covers the Android bindings.
 - **Screen routes** use the machine's shared data plane. Tokens renew per
   RPC, so a planned route refresh is unnecessary. Every attempt fetches a
   fresh RTC configuration and the enrolled certificate, and the certificate
@@ -123,12 +214,14 @@ the mock harness, installed with `just harness install`), and, on macOS,
 Xcode. The first Kotlin/Native build downloads about 1.6 GB into `~/.konan`.
 
 ```sh
-just core test          # JVM unit and end-to-end tests against isolated gateways and daemons
-just core android-test  # the Android variant against an isolated gateway
+just core test          # JVM unit and end-to-end tests against isolated gateways and daemons, over the OkHttp transport Android shares
 just core native-test   # common tests natively on macOS, plus the DieterShared XCFramework
 just core apple-test    # native tests, then `just mac core-test`: DieterShared driven from the Mac bridge
 just core check         # everything this host supports
 ```
+
+`just core test` passes extra arguments to Gradle, for example
+`just core test --tests '*ExportsTest'`.
 
 After changing the client schema (`model/src/commonMain/proto/dieter/client/v1`),
 regenerate the Mac package's Swift types with `just mac proto-generate`; it

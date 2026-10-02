@@ -1,4 +1,6 @@
 import AppKit
+import DieterAPI
+import DieterShared
 import Observation
 import SwiftUI
 
@@ -652,21 +654,27 @@ struct StatusPill: View {
     let text: String
     var color: Color = DieterTheme.subtle
 
+    /// A raw runtime, worded and coloured as the shared core classifies it.
+    init(runtime: String) {
+        text = SharedRules.shared.runtimeLabel(runtime: runtime)
+        color = runtimeColor(runtime)
+    }
+
+    init(text: String, color: Color = DieterTheme.subtle) {
+        self.text = text
+        self.color = color
+    }
+
     var body: some View {
         HStack(spacing: 5) {
             Circle().fill(color).frame(width: 5, height: 5)
-            Text(label).lineLimit(1)
+            Text(text).lineLimit(1)
         }
         .font(.system(size: 10, weight: .semibold))
         .foregroundStyle(color)
         .padding(.horizontal, 8).padding(.vertical, 4)
         .background(color.opacity(0.12), in: Capsule())
         .fixedSize()
-    }
-
-    private var label: String {
-        let value = text.isEmpty ? "idle" : text
-        return value.replacingOccurrences(of: "_", with: " ").capitalized
     }
 }
 
@@ -801,14 +809,20 @@ struct DieterSearchField: View {
     }
 }
 
+/// A runtime tone's colour.
 @MainActor
-func runtimeColor(_ runtime: String) -> Color {
-    switch runtime.lowercased() {
-    case "running", "active", "working", "starting": DieterTheme.primary
-    case "review", "waiting", "needs_input", "waiting_for_user": DieterTheme.amber
-    case "completed", "done": DieterTheme.eyes
-    case "idle": DieterTheme.subtle
-    case "failed", "error", "cancelled": DieterTheme.coral
+func toneColor(_ tone: ClientRuntimeTone) -> Color {
+    switch tone {
+    case .active: DieterTheme.primary
+    case .attention: DieterTheme.amber
+    case .done: DieterTheme.eyes
+    case .failed: DieterTheme.coral
     default: DieterTheme.subtle
     }
+}
+
+/// The colour of a raw runtime, as the shared core classifies it.
+@MainActor
+func runtimeColor(_ runtime: String) -> Color {
+    toneColor(ClientRuntimeTone(rawValue: Int(SharedRules.shared.runtimeTone(runtime: runtime))) ?? .idle)
 }

@@ -1,6 +1,5 @@
 package com.dbpprt.dieter.ui
 
-import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -8,8 +7,6 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -20,8 +17,8 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.unit.dp
-import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.ui.theme.DieterTheme
+import com.dbpprt.dieter.e2e.saveEvidence
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -60,25 +57,13 @@ class MessageMarkdownTableTest {
         compose.onNodeWithText("gx10-c674").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText("|---|---:|---:|---:|---:|---:|").fetchSemanticsNodes().isEmpty())
         compose.onNodeWithText("GPU temp / power").assertIsNotDisplayed()
-        capture("markdown-table-before.png")
+        compose.onRoot().saveEvidence("markdown-table-before.png")
 
         compose.onNodeWithTag("markdown-table").performTouchInput { swipeLeft(durationMillis = 500) }
         compose.waitForIdle()
 
         compose.onNodeWithText("GPU temp / power").assertIsDisplayed()
         compose.onNodeWithText("84°C / 57.4 W").assertIsDisplayed()
-        capture("markdown-table-after.png")
-    }
-
-    private fun capture(name: String) {
-        compose.waitForIdle()
-        val rendered = compose.onRoot().captureToImage().asAndroidBitmap()
-        assertTrue(rendered.width > 0 && rendered.height > 0 && rendered.byteCount > 0)
-        Thread.sleep(300)
-        val descriptor = InstrumentationRegistry.getInstrumentation().uiAutomation
-            .executeShellCommand("screencap -p /sdcard/Download/$name")
-        ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { input ->
-            while (input.read() != -1) {}
-        }
+        compose.onRoot().saveEvidence("markdown-table-after.png")
     }
 }

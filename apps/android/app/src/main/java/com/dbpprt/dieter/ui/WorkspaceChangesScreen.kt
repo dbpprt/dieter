@@ -7,7 +7,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -30,6 +29,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -76,11 +76,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -89,12 +89,22 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dbpprt.dieter.core.outbox.OutboxPolicy
+import com.dbpprt.dieter.core.presentation.Ages
+import com.dbpprt.dieter.core.presentation.ByteSizes
+import com.dbpprt.dieter.core.presentation.Counts
+import com.dbpprt.dieter.core.runtime.Timestamps
 import com.dbpprt.dieter.core.workspace.ChangedFiles
+import com.dbpprt.dieter.core.workspace.DiffLayout
+import com.dbpprt.dieter.core.workspace.DiffPages
+import com.dbpprt.dieter.core.workspace.DiffRow
+import com.dbpprt.dieter.core.workspace.GitFormField
 import com.dbpprt.dieter.core.workspace.GitOperationForm
 import com.dbpprt.dieter.core.workspace.GitOperationKinds
+import com.dbpprt.dieter.core.workspace.MergeReadinessItem
 import com.dbpprt.dieter.core.workspace.OperationStart
-import com.dbpprt.dieter.core.workspace.PullRequests
+import com.dbpprt.dieter.core.workspace.PullRequestView
 import com.dbpprt.dieter.core.workspace.ReviewComments
+import com.dbpprt.dieter.core.workspace.ReviewPresentation
 import com.dbpprt.dieter.core.workspace.StatusTone
 import com.dbpprt.dieter.ui.theme.DieterAmber
 import com.dbpprt.dieter.ui.theme.DieterBackground
@@ -116,11 +126,13 @@ import com.dbpprt.dieter.core.workspace.MergeStrategy
 import com.dbpprt.dieter.core.workspace.WorkspaceAvailability
 import com.dbpprt.dieter.core.workspace.WorkspaceReviewView
 import com.dbpprt.dieter.core.workspace.WorkspaceStatus
+import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.ChangeComment
 import com.dbpprt.dieter.api.v1.ChangedFile
-import com.dbpprt.dieter.api.v1.PullRequestSummary
+import com.dbpprt.dieter.api.v1.FileDiff
 import com.dbpprt.dieter.api.v1.WorkspaceCommit
+import kotlin.time.Clock
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 
 private val MonoFont = FontFamily.Monospace
 
@@ -173,9 +185,10 @@ internal fun WorkspaceChangesBody(
         return
     }
 
-    val availability = WorkspaceAvailability.of(card, review.workspace, review.changeset, review.scm, review.operation, review.submitting)
-    val pullRequest = card.pull_request?.takeIf { it.number > 0 }
-    val baseBranch = (review.workspace?.base_branch ?: card.workspace?.base_branch).orEmpty().ifBlank { "base" }
+    val availability = review.availability(card)
+    val presentation = ReviewPresentation.of(review, card)
+    val pullRequest = presentation.pullRequest
+    val baseBranch = presentation.base
     val workspaceUnlocked = WorkspaceStatus.settingsEditable(card)
 
     var operationSheet by remember(card.id) { mutableStateOf<String?>(null) }
@@ -183,6 +196,11 @@ internal fun WorkspaceChangesBody(
     var settingsSheetOpen by remember(card.id) { mutableStateOf(false) }
     var confirmAbort by remember(card.id) { mutableStateOf(false) }
     var commentTarget by remember(card.id) { mutableStateOf<DiffLine?>(null) }
+    LaunchedEffect(review.toast) {
+        if (review.toast == null) return@LaunchedEffect
+        delay(6_000)
+        model.clearWorkspaceToast()
+    }
 
     Box(modifier) {
         when {
@@ -227,14 +245,14 @@ internal fun WorkspaceChangesBody(
             else -> Column(Modifier.fillMaxSize()) {
                 if (review.conflicted) {
                     WorkspaceConflictBanner(
-                        conflictCount = review.operation?.conflicts?.size ?: 0,
-                        baseBranch = baseBranch,
+                        title = presentation.conflictTitle,
                         onReview = { mergeSheetOpen = true },
                     )
                 }
-                review.operation?.takeIf { GitOperations.isActive(it) || it.status == "failed" }?.let { operation ->
+                if (presentation.operationVisible) {
                     WorkspaceOperationCard(
                         review = review,
+                        cancelable = presentation.operationCancelable,
                         onCancel = model::cancelWorkspaceGitOperation,
                     )
                 }
@@ -271,13 +289,14 @@ internal fun WorkspaceChangesBody(
                             workspaceUnlocked = workspaceUnlocked,
                             onOperation = { kind ->
                                 when (GitOperations.start(kind)) {
-                                    OperationStart.IMMEDIATE -> model.startWorkspaceGitOperation(kind)
+                                    OperationStart.IMMEDIATE -> model.startWorkspaceGitOperation(GitOperationForm.initial(kind, card))
                                     OperationStart.CONFIRM -> confirmAbort = true
                                     OperationStart.FORM -> operationSheet = kind
                                 }
                             },
                             onMerge = { mergeSheetOpen = true },
                             onSettings = { settingsSheetOpen = true },
+                            onAskAgent = { prompt -> model.sendWorkspaceHandOffMessage(prompt) },
                         )
                     }
                 }
@@ -305,13 +324,12 @@ internal fun WorkspaceChangesBody(
     operationSheet?.let { kind ->
         GitOperationParameterSheet(
             kind = kind,
-            state = state,
+            card = card,
             baseBranch = baseBranch,
-            pullRequestHeadSha = pullRequest?.head_sha.orEmpty(),
             onDismiss = { operationSheet = null },
-            onStart = { parameters ->
+            onStart = { form ->
                 operationSheet = null
-                model.startWorkspaceGitOperation(kind, parameters)
+                model.startWorkspaceGitOperation(form)
             },
         )
     }
@@ -321,7 +339,7 @@ internal fun WorkspaceChangesBody(
             model = model,
             card = card,
             availability = availability,
-            baseBranch = baseBranch,
+            presentation = presentation,
             onDismiss = { mergeSheetOpen = false },
             onCreatePullRequestInstead = {
                 mergeSheetOpen = false
@@ -347,7 +365,7 @@ internal fun WorkspaceChangesBody(
             confirmButton = {
                 TextButton(onClick = {
                     confirmAbort = false
-                    model.startWorkspaceGitOperation(GitOperationKinds.ABORT_CONFLICT)
+                    model.startWorkspaceGitOperation(GitOperationForm.initial(GitOperationKinds.ABORT_CONFLICT, card))
                 }) { Text("Abort", color = DieterCoral) }
             },
             dismissButton = { TextButton(onClick = { confirmAbort = false }) { Text("Keep resolving") } },
@@ -373,12 +391,13 @@ private fun WorkspaceReviewList(
     state: DieterUiState,
     model: DieterViewModel,
     availability: WorkspaceAvailability,
-    pullRequest: PullRequestSummary?,
+    pullRequest: PullRequestView?,
     baseBranch: String,
     workspaceUnlocked: Boolean,
     onOperation: (String) -> Unit,
     onMerge: () -> Unit,
     onSettings: () -> Unit,
+    onAskAgent: (String) -> Unit,
 ) {
     val review = state.workspaceReview
     val changes = review.changeset
@@ -405,6 +424,7 @@ private fun WorkspaceReviewList(
                     availability = availability,
                     onRefresh = { onOperation(GitOperationKinds.REFRESH_PR) },
                     onMerge = { onOperation(GitOperationKinds.MERGE_PR) },
+                    onAskAgent = { onAskAgent(pr.askAgentPrompt) },
                 )
             }
         }
@@ -429,7 +449,7 @@ private fun WorkspaceReviewList(
                     Column(Modifier.weight(1f)) {
                         Text(ChangedFiles.filename(conflict.path), fontSize = 13.sp, fontWeight = FontWeight.Medium, fontFamily = MonoFont)
                         Text(
-                            "${conflict.hunk_count} conflicting hunk${if (conflict.hunk_count == 1) "" else "s"}",
+                            Counts.of(conflict.hunk_count, "conflicting hunk"),
                             color = DieterMuted,
                             fontSize = 11.sp,
                         )
@@ -542,7 +562,6 @@ private fun WorkspaceSummaryCard(
                         expanded = menuOpen,
                         onDismiss = { menuOpen = false },
                         availability = availability,
-                        workspaceMode = workspace.mode,
                         workspaceUnlocked = workspaceUnlocked,
                         onOperation = { menuOpen = false; onOperation(it) },
                         onSettings = { menuOpen = false; onSettings() },
@@ -564,7 +583,7 @@ private fun WorkspaceSummaryCard(
                 if (changes != null) {
                     WorkspaceDeltaLabel(changes.additions, changes.deletions)
                     Text(
-                        "${changes.files.size} file${if (changes.files.size == 1) "" else "s"}",
+                        Counts.of(changes.files.size, "file"),
                         color = DieterMuted,
                         fontSize = 11.sp,
                     )
@@ -602,7 +621,6 @@ private fun WorkspaceOverflowMenu(
     expanded: Boolean,
     onDismiss: () -> Unit,
     availability: WorkspaceAvailability,
-    workspaceMode: String,
     workspaceUnlocked: Boolean,
     onOperation: (String) -> Unit,
     onSettings: () -> Unit,
@@ -806,7 +824,7 @@ private fun WorkspaceCommitRow(commit: WorkspaceCommit, onClick: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(commit.subject, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    listOf(commit.author_name, "${commit.changed_files} file${if (commit.changed_files == 1) "" else "s"}")
+                    listOf(commit.author_name, Counts.of(commit.changed_files, "file"))
                         .filter(String::isNotBlank)
                         .joinToString(" · "),
                     color = DieterMuted,
@@ -822,26 +840,22 @@ private fun WorkspaceCommitRow(commit: WorkspaceCommit, onClick: () -> Unit) {
 
 @Composable
 private fun PullRequestCard(
-    pullRequest: PullRequestSummary,
+    pullRequest: PullRequestView,
     availability: WorkspaceAvailability,
     onRefresh: () -> Unit,
     onMerge: () -> Unit,
+    onAskAgent: () -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
-    val stateColor = when {
-        pullRequest.state == "merged" -> DieterEyes
-        pullRequest.state == "closed" -> DieterCoral
-        pullRequest.draft -> DieterMuted
-        else -> diffAdditionText
-    }
-    val stateLabel = PullRequests.stateLabel(pullRequest)
+    val stateColor = pullRequest.stateTone.color
+    val synced = Timestamps.parse(pullRequest.lastSyncedAt)?.let { "synced ${Ages.ago(it, Clock.System.now())}" }
     Surface(color = DieterSurface, shape = MaterialTheme.shapes.medium) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("PR #${pullRequest.number}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 Surface(color = stateColor.copy(alpha = 0.16f), shape = CircleShape) {
                     Text(
-                        stateLabel,
+                        pullRequest.stateLabel,
                         color = stateColor,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -855,54 +869,39 @@ private fun PullRequestCard(
                     }
                 }
             }
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                PullRequestSignalChip(
-                    label = when (pullRequest.checks_state) {
-                        "passed" -> "Checks passed"
-                        "failed" -> "Checks failed"
-                        "running" -> "Checks running"
-                        else -> "No checks"
-                    },
-                    tint = when (pullRequest.checks_state) {
-                        "passed" -> diffAdditionText
-                        "failed" -> diffDeletionText
-                        "running" -> DieterAmber
-                        else -> DieterMuted
-                    },
-                )
-                PullRequestSignalChip(
-                    label = when (pullRequest.review_decision) {
-                        "approved" -> "Approved"
-                        "changes_requested" -> "Changes requested"
-                        "review_required" -> "Review required"
-                        else -> "No review"
-                    },
-                    tint = when (pullRequest.review_decision) {
-                        "approved" -> diffAdditionText
-                        "changes_requested" -> diffDeletionText
-                        else -> DieterMuted
-                    },
-                )
-                PullRequestSignalChip(
-                    label = if (pullRequest.mergeable) "Mergeable" else "Not mergeable",
-                    tint = if (pullRequest.mergeable) diffAdditionText else DieterAmber,
-                )
+            if (pullRequest.signals.isNotEmpty() || synced != null) {
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    pullRequest.signals.forEach { signal -> PullRequestSignalChip(signal.text, signal.tone.color) }
+                    if (synced != null) Text(synced, color = DieterMuted, fontSize = 10.sp)
+                }
             }
-            if (pullRequest.state == "open") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = onRefresh,
-                        enabled = availability.allows(GitOperationKinds.REFRESH_PR),
-                        modifier = Modifier.weight(1f),
-                    ) { Text("Refresh") }
-                    Button(
-                        onClick = onMerge,
-                        enabled = availability.allows(GitOperationKinds.MERGE_PR) && PullRequests.mergeBlockedReason(pullRequest) == null,
-                        modifier = Modifier.weight(1f).testTag("workspace-merge-pr"),
-                    ) { Text("Merge PR") }
+            if (pullRequest.canAskAgent) {
+                OutlinedButton(onClick = onAskAgent, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Outlined.SmartToy, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Ask the agent to address the review")
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onRefresh,
+                    enabled = availability.allows(GitOperationKinds.REFRESH_PR),
+                    modifier = Modifier.weight(1f),
+                ) { Text("Refresh") }
+                Button(
+                    onClick = onMerge,
+                    enabled = availability.allows(GitOperationKinds.MERGE_PR),
+                    modifier = Modifier.weight(1f).testTag("workspace-merge-pr"),
+                ) {
+                    Text(
+                        pullRequest.mergeBlockedReason?.let { "Merge PR · $it" } ?: "Merge PR",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }
@@ -925,7 +924,7 @@ private fun PullRequestSignalChip(label: String, tint: Color) {
 // MARK: Banners and operation progress
 
 @Composable
-private fun WorkspaceConflictBanner(conflictCount: Int, baseBranch: String, onReview: () -> Unit) {
+private fun WorkspaceConflictBanner(title: String, onReview: () -> Unit) {
     Surface(color = DieterCoral.copy(alpha = 0.10f)) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
@@ -934,15 +933,7 @@ private fun WorkspaceConflictBanner(conflictCount: Int, baseBranch: String, onRe
         ) {
             Icon(Icons.Outlined.WarningAmber, null, tint = DieterCoral, modifier = Modifier.size(16.dp))
             Column(Modifier.weight(1f)) {
-                Text(
-                    if (conflictCount > 0) {
-                        "$conflictCount file${if (conflictCount == 1) "" else "s"} conflict with $baseBranch"
-                    } else {
-                        "This workspace conflicts with $baseBranch"
-                    },
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 Text("Merge is blocked until conflicts are resolved.", color = DieterMuted, fontSize = 10.sp)
             }
             TextButton(onClick = onReview) { Text("Resolve…", color = DieterCoral, fontSize = 12.sp) }
@@ -969,7 +960,7 @@ private fun WorkspaceErrorBanner(error: String, onRetry: () -> Unit, onDismiss: 
 }
 
 @Composable
-private fun WorkspaceOperationCard(review: WorkspaceReviewView, onCancel: () -> Unit) {
+private fun WorkspaceOperationCard(review: WorkspaceReviewView, cancelable: Boolean, onCancel: () -> Unit) {
     val operation = review.operation ?: return
     var expanded by remember(operation.id) { mutableStateOf(operation.status == "failed") }
     LaunchedEffect(operation.status) { if (operation.status == "failed") expanded = true }
@@ -988,7 +979,7 @@ private fun WorkspaceOperationCard(review: WorkspaceReviewView, onCancel: () -> 
                     fontSize = 11.sp,
                 )
                 Spacer(Modifier.weight(1f))
-                if (GitOperations.cancelable(operation)) {
+                if (cancelable) {
                     TextButton(onClick = onCancel) { Text("Cancel", color = DieterCoral, fontSize = 11.sp) }
                 }
                 IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(26.dp)) {
@@ -1039,7 +1030,6 @@ private fun WorkspaceOperationCard(review: WorkspaceReviewView, onCancel: () -> 
 
 // MARK: Diff pane
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun WorkspaceDiffPane(
     state: DieterUiState,
@@ -1100,72 +1090,163 @@ private fun WorkspaceDiffPane(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) { CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp) }
-            else -> LazyColumn(Modifier.fillMaxSize().testTag("workspace-diff"), contentPadding = PaddingValues(bottom = 32.dp)) {
-                items(review.diffLines, key = DiffLine::id) { line ->
-                    when (line.kind) {
-                        DiffLineKind.HEADER -> if (!line.text.startsWith("diff ")) {
-                            Text(
-                                line.text,
-                                color = DieterMuted,
-                                fontSize = 10.sp,
-                                fontFamily = MonoFont,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 1.dp),
-                            )
-                        } else {
-                            Spacer(Modifier.height(8.dp))
-                        }
-                        DiffLineKind.HUNK -> Surface(color = DieterShell.copy(alpha = 0.08f)) {
-                            Text(
-                                line.text,
-                                color = DieterShell,
-                                fontSize = 10.sp,
-                                fontFamily = MonoFont,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp),
-                            )
-                        }
-                        else -> {
-                            WorkspaceDiffLineRow(
-                                line = line,
-                                onLongPress = { onCommentLine(line) },
-                            )
-                            ReviewComments.anchor(line)?.let(commentsByLine::get)?.forEach { comment ->
-                                WorkspaceInlineComment(author = comment.author, body = comment.body)
-                            }
-                        }
-                    }
-                }
-                val diff = review.diff
-                if (diff != null && diff.truncated) {
-                    item(key = "load-more") {
-                        Row(
-                            Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                            horizontalArrangement = Arrangement.Center,
-                        ) {
-                            if (review.diffLoading) {
-                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            } else {
-                                OutlinedButton(onClick = model::loadMoreWorkspaceDiff) {
-                                    Text(
-                                        "Load more · ${diff.next_offset / 1024} of ${diff.total_bytes / 1024} KB",
-                                        fontSize = 11.sp,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+            else -> DiffRowsList(
+                layout = review.layout,
+                modifier = Modifier.fillMaxSize().testTag("workspace-diff"),
+                comments = commentsByLine,
+                canComment = review::canComment,
+                onComment = onCommentLine,
+            ) {
+                diffPagesFooter(review.diff, review.diffMore, review.diffTooLarge, review.diffLoading, model::loadMoreWorkspaceDiff)
             }
         }
     }
 }
 
+/**
+ * A diff's display rows, unified: file and hunk headers with the unchanged
+ * gap before each hunk, folds that expand in place, and each line's
+ * comments. Which folds are open is view state, reset when the rows change.
+ */
+@Composable
+internal fun DiffRowsList(
+    layout: DiffLayout,
+    modifier: Modifier = Modifier,
+    comments: Map<Pair<String, Int>, List<ChangeComment>> = emptyMap(),
+    canComment: (DiffLine) -> Boolean = { false },
+    onComment: (DiffLine) -> Unit = {},
+    footer: LazyListScope.() -> Unit = {},
+) {
+    var expandedFolds by remember(layout) { mutableStateOf(emptySet<Int>()) }
+    val rows = remember(layout, expandedFolds) {
+        layout.rows.flatMap { row ->
+            if (row is DiffRow.Fold && row.id in expandedFolds) listOf<DiffRow>(row) + row.lines.map { DiffRow.Line(it) } else listOf(row)
+        }
+    }
+    LazyColumn(modifier, contentPadding = PaddingValues(bottom = 32.dp)) {
+        items(rows, key = { diffRowKey(it) }) { row ->
+            when (row) {
+                is DiffRow.File -> DiffFileRow(row.path)
+                is DiffRow.Hunk -> DiffHunkRow(row)
+                is DiffRow.Fold -> {
+                    val expanded = row.id in expandedFolds
+                    DiffFoldRow(row.count, expanded) { expandedFolds = if (expanded) expandedFolds - row.id else expandedFolds + row.id }
+                }
+                is DiffRow.Line -> Column {
+                    WorkspaceDiffLineRow(row.line, onLongPress = if (canComment(row.line)) ({ onComment(row.line) }) else null)
+                    ReviewComments.anchor(row.line)?.let(comments::get)?.forEach { comment ->
+                        WorkspaceInlineComment(author = comment.author, body = comment.body)
+                    }
+                }
+                // Diffs are laid out unified here; pairs come only with the split layout.
+                is DiffRow.Pair -> Unit
+            }
+        }
+        footer()
+    }
+}
+
+private fun diffRowKey(row: DiffRow): String = when (row) {
+    is DiffRow.Line -> "line:${row.id}"
+    is DiffRow.Pair -> "pair:${row.id}"
+    is DiffRow.File -> "file:${row.id}"
+    is DiffRow.Hunk -> "hunk:${row.id}"
+    is DiffRow.Fold -> "fold:${row.id}"
+}
+
+/** The end of a paged diff: the next page while one is left, else the note that the diff stops at its limit. */
+internal fun LazyListScope.diffPagesFooter(diff: FileDiff?, more: Boolean, tooLarge: Boolean, loading: Boolean, onLoadMore: () -> Unit) {
+    if (diff != null && more) {
+        item(key = "load-more") {
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                if (loading) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    OutlinedButton(onClick = onLoadMore) {
+                        Text(
+                            "Load more · ${ByteSizes.format(diff.next_offset)} of ${ByteSizes.format(diff.total_bytes)}",
+                            fontSize = 11.sp,
+                        )
+                    }
+                }
+            }
+        }
+    }
+    if (tooLarge) {
+        item(key = "too-large") {
+            Text(
+                DiffPages.TOO_LARGE,
+                color = DieterMuted,
+                fontSize = 11.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun DiffFileRow(path: String) {
+    Text(
+        path,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        fontFamily = MonoFont,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).background(DieterSurface).padding(horizontal = 12.dp, vertical = 7.dp),
+    )
+}
+
+@Composable
+private fun DiffHunkRow(hunk: DiffRow.Hunk) {
+    Column(Modifier.fillMaxWidth()) {
+        if (hunk.skippedLines > 0) {
+            Text(
+                Counts.of(hunk.skippedLines, "unchanged line"),
+                color = DieterMuted,
+                fontSize = 10.sp,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            )
+        }
+        Row(
+            Modifier.fillMaxWidth().background(DieterShell.copy(alpha = 0.08f)).padding(horizontal = 12.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                hunk.text,
+                color = DieterShell,
+                fontSize = 10.sp,
+                fontFamily = MonoFont,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            WorkspaceDeltaLabel(hunk.additions, hunk.deletions)
+        }
+    }
+}
+
+@Composable
+private fun DiffFoldRow(count: Int, expanded: Boolean, onToggle: () -> Unit) {
+    val lines = Counts.of(count, "unchanged line")
+    Row(
+        Modifier.fillMaxWidth().background(DieterSurface).clickable(onClick = onToggle).padding(horizontal = 12.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, tint = DieterMuted, modifier = Modifier.size(14.dp))
+        Text(if (expanded) "Hide $lines" else lines, color = DieterMuted, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun WorkspaceDiffLineRow(line: DiffLine, onLongPress: () -> Unit) {
+private fun WorkspaceDiffLineRow(line: DiffLine, onLongPress: (() -> Unit)?) {
     val background = when (line.kind) {
         DiffLineKind.ADDITION -> diffAdditionBackground
         DiffLineKind.DELETION -> diffDeletionBackground
@@ -1180,7 +1261,7 @@ private fun WorkspaceDiffLineRow(line: DiffLine, onLongPress: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .background(background)
-            .combinedClickable(onClick = {}, onLongClick = onLongPress),
+            .then(if (onLongPress != null) Modifier.combinedClickable(onClick = {}, onLongClick = onLongPress) else Modifier),
     ) {
         Text(
             line.oldLine?.toString() ?: "",
@@ -1269,13 +1350,11 @@ private fun WorkspaceCommentDialog(
 @Composable
 private fun GitOperationParameterSheet(
     kind: String,
-    state: DieterUiState,
+    card: Card,
     baseBranch: String,
-    pullRequestHeadSha: String,
     onDismiss: () -> Unit,
-    onStart: (Map<String, String>) -> Unit,
+    onStart: (GitOperationForm) -> Unit,
 ) {
-    val card = state.conversation?.detail?.card ?: state.selectedCard
     var form by remember(kind) { mutableStateOf(GitOperationForm.initial(kind, card)) }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = DieterSurfaceHigh) {
         Column(
@@ -1287,50 +1366,8 @@ private fun GitOperationParameterSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(GitOperations.title(kind), style = MaterialTheme.typography.titleMedium)
-            when (kind) {
-                GitOperationKinds.COMMIT -> {
-                    OutlinedTextField(
-                        value = form.subject,
-                        onValueChange = { form = form.copy(subject = it) },
-                        label = { Text("Commit message") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth().testTag("commit-subject"),
-                    )
-                    OutlinedTextField(
-                        value = form.body,
-                        onValueChange = { form = form.copy(body = it) },
-                        label = { Text("Description (optional)") },
-                        minLines = 2,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    WorkspaceSheetToggle("Stage all changes", form.stageAll) { form = form.copy(stageAll = it) }
-                }
-                GitOperationKinds.UPDATE -> WorkspaceSheetToggle("Run validation after updating", form.validate) { form = form.copy(validate = it) }
-                GitOperationKinds.CREATE_PR -> {
-                    OutlinedTextField(
-                        value = form.subject,
-                        onValueChange = { form = form.copy(subject = it) },
-                        label = { Text("Title (optional)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    OutlinedTextField(
-                        value = form.body,
-                        onValueChange = { form = form.copy(body = it) },
-                        label = { Text("Description (optional)") },
-                        minLines = 2,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    WorkspaceSheetToggle("Open as draft", form.draft) { form = form.copy(draft = it) }
-                }
-                GitOperationKinds.MERGE_PR -> {
-                    Text("Merge strategy", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        GitOperationForm.PULL_REQUEST_STRATEGIES.forEach { (value, label) ->
-                            FilterChip(selected = form.strategy == value, onClick = { form = form.copy(strategy = value) }, label = { Text(label) })
-                        }
-                    }
-                }
+            GitOperations.fields(kind).forEach { field ->
+                GitOperationField(field, form) { form = it }
             }
             GitOperations.description(kind, baseBranch)?.let { description ->
                 Text(
@@ -1348,7 +1385,7 @@ private fun GitOperationParameterSheet(
                 )
             }
             Button(
-                onClick = { onStart(form.parameters(pullRequestHeadSha)) },
+                onClick = { onStart(form) },
                 enabled = form.ready,
                 colors = if (GitOperations.destructive(kind)) {
                     androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = DieterCoral)
@@ -1360,6 +1397,58 @@ private fun GitOperationParameterSheet(
                 Text(GitOperations.title(kind))
             }
         }
+    }
+}
+
+/** One input of an operation form; [onChange] receives the edited form. */
+@Composable
+private fun GitOperationField(field: GitFormField, form: GitOperationForm, onChange: (GitOperationForm) -> Unit) {
+    when (field) {
+        GitFormField.SUBJECT -> OutlinedTextField(
+            value = form.subject,
+            onValueChange = { onChange(form.copy(subject = it)) },
+            label = { Text(if (form.kind == GitOperationKinds.CREATE_PR) "Title" else "Commit message") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("${form.kind}-subject"),
+        )
+        GitFormField.BODY -> OutlinedTextField(
+            value = form.body,
+            onValueChange = { onChange(form.copy(body = it)) },
+            label = { Text("Description (optional)") },
+            minLines = 2,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        GitFormField.STAGE_ALL -> WorkspaceSheetToggle("Stage all changes", form.stageAll) { onChange(form.copy(stageAll = it)) }
+        GitFormField.FETCH -> WorkspaceSheetToggle("Fetch the base remote first", form.fetch) { onChange(form.copy(fetch = it)) }
+        GitFormField.VALIDATE -> WorkspaceSheetToggle("Run project validation", form.validate) { onChange(form.copy(validate = it)) }
+        GitFormField.STRATEGY -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Merge strategy", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GitOperations.strategies(form.kind).forEach { (value, label) ->
+                    FilterChip(selected = form.strategy == value, onClick = { onChange(form.copy(strategy = value)) }, label = { Text(label) })
+                }
+            }
+        }
+        GitFormField.DRAFT -> WorkspaceSheetToggle("Open as draft", form.draft) { onChange(form.copy(draft = it)) }
+        GitFormField.PUSH -> WorkspaceSheetToggle("Push the branch first", form.push) { onChange(form.copy(push = it)) }
+        GitFormField.FORCE_WITH_LEASE -> WorkspaceSheetToggle("Force with lease", form.forceWithLease) { onChange(form.copy(forceWithLease = it)) }
+        GitFormField.EXPECTED_REMOTE_SHA -> if (form.forceWithLease) {
+            OutlinedTextField(
+                value = form.expectedRemoteSha,
+                onValueChange = { onChange(form.copy(expectedRemoteSha = it)) },
+                label = { Text("Expected remote head") },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = MonoFont),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        GitFormField.TARGET_CARD_ID -> OutlinedTextField(
+            value = form.targetCardId,
+            onValueChange = { onChange(form.copy(targetCardId = it)) },
+            label = { Text("Conversation ID") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -1380,20 +1469,23 @@ private fun WorkspaceSheetToggle(label: String, checked: Boolean, onChange: (Boo
 private fun WorkspaceMergeSheet(
     state: DieterUiState,
     model: DieterViewModel,
-    card: com.dbpprt.dieter.api.v1.Card,
+    card: Card,
     availability: WorkspaceAvailability,
-    baseBranch: String,
+    presentation: ReviewPresentation,
     onDismiss: () -> Unit,
     onCreatePullRequestInstead: () -> Unit,
 ) {
     val review = state.workspaceReview
     val changes = review.changeset
-    var strategy by remember { mutableStateOf(MergeStrategy.SQUASH) }
-    var subject by remember { mutableStateOf(card.title) }
-    var body by remember { mutableStateOf("") }
+    val readiness = presentation.mergeReadiness
+    // The merge commits a dirty workspace first; its message starts from the conversation, as a commit's does.
+    val commit = remember(card.id) { GitOperationForm.initial(GitOperationKinds.COMMIT, card) }
+    var strategy by remember { mutableStateOf(MergeStrategy.entries.first()) }
+    var subject by remember { mutableStateOf(commit.subject) }
+    var body by remember { mutableStateOf(commit.body) }
     var validate by remember { mutableStateOf(true) }
     var removeWorkspace by remember { mutableStateOf(true) }
-    var moveToDone by remember { mutableStateOf(WorkspaceStatus.movesToDone(card)) }
+    var moveToDone by remember { mutableStateOf(presentation.movesToDone) }
     val flowRunning = review.mergeStep != null
     ModalBottomSheet(onDismissRequest = { if (!flowRunning) onDismiss() }, containerColor = DieterSurfaceHigh) {
         Column(
@@ -1404,7 +1496,7 @@ private fun WorkspaceMergeSheet(
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Merge into $baseBranch", style = MaterialTheme.typography.titleMedium)
+            Text("Merge into ${presentation.base}", style = MaterialTheme.typography.titleMedium)
             changes?.let {
                 Text(
                     WorkspaceStatus.summary(it),
@@ -1415,7 +1507,8 @@ private fun WorkspaceMergeSheet(
             if (review.conflicted) {
                 Surface(color = DieterCoral.copy(alpha = 0.10f), shape = MaterialTheme.shapes.small) {
                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Merge is blocked until conflicts are resolved.", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text(presentation.conflictTitle, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Merge is blocked until conflicts are resolved.", color = DieterMuted, fontSize = 11.sp)
                         review.operation?.conflicts.orEmpty().forEach { conflict ->
                             Text(
                                 "! ${WorkspaceStatus.conflict(conflict)}",
@@ -1433,7 +1526,7 @@ private fun WorkspaceMergeSheet(
                             OutlinedButton(
                                 onClick = {
                                     onDismiss()
-                                    model.sendWorkspaceHandOffMessage(WorkspaceStatus.conflictPrompt(review.operation?.conflicts.orEmpty()))
+                                    model.sendWorkspaceHandOffMessage(presentation.conflictPrompt)
                                 },
                                 modifier = Modifier.weight(1f),
                             ) {
@@ -1444,18 +1537,23 @@ private fun WorkspaceMergeSheet(
                             Button(
                                 onClick = {
                                     onDismiss()
-                                    model.startWorkspaceGitOperation(GitOperationKinds.CONTINUE_CONFLICT)
+                                    model.startWorkspaceGitOperation(GitOperationForm.initial(GitOperationKinds.CONTINUE_CONFLICT, card))
                                 },
+                                enabled = availability.allows(GitOperationKinds.CONTINUE_CONFLICT),
                                 modifier = Modifier.weight(1f),
                             ) { Text("Continue", fontSize = 12.sp) }
                         }
-                        TextButton(onClick = {
-                            onDismiss()
-                            model.startWorkspaceGitOperation(GitOperationKinds.ABORT_CONFLICT)
-                        }) { Text("Abort the conflicted operation", color = DieterCoral, fontSize = 11.sp) }
+                        TextButton(
+                            onClick = {
+                                onDismiss()
+                                model.startWorkspaceGitOperation(GitOperationForm.initial(GitOperationKinds.ABORT_CONFLICT, card))
+                            },
+                            enabled = availability.allows(GitOperationKinds.ABORT_CONFLICT),
+                        ) { Text("Abort the conflicted operation", color = DieterCoral, fontSize = 11.sp) }
                     }
                 }
             } else {
+                MergeReadinessList(readiness.items)
                 OutlinedTextField(
                     value = subject,
                     onValueChange = { subject = it },
@@ -1464,27 +1562,33 @@ private fun WorkspaceMergeSheet(
                     enabled = !flowRunning,
                     modifier = Modifier.fillMaxWidth().testTag("merge-subject"),
                 )
+                if (readiness.commitsFirst) {
+                    OutlinedTextField(
+                        value = body,
+                        onValueChange = { body = it },
+                        label = { Text("Description (optional)") },
+                        minLines = 2,
+                        enabled = !flowRunning,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 Text("Strategy", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MergeStrategy.entries.forEach { value ->
+                    readiness.strategies.forEach { option ->
                         FilterChip(
-                            selected = strategy == value,
-                            onClick = { if (!flowRunning) strategy = value },
-                            label = { Text(value.title) },
+                            selected = strategy.wire == option.strategy,
+                            onClick = { if (!flowRunning) MergeStrategy.entries.firstOrNull { it.wire == option.strategy }?.let { strategy = it } },
+                            label = { Text(option.title) },
                         )
                     }
                 }
+                readiness.strategies.firstOrNull { it.strategy == strategy.wire }?.let { option ->
+                    Text(option.caption, color = DieterMuted, fontSize = 11.sp)
+                }
                 WorkspaceSheetToggle("Run validation before merging", validate) { if (!flowRunning) validate = it }
                 WorkspaceSheetToggle("Remove workspace after merge", removeWorkspace) { if (!flowRunning) removeWorkspace = it }
-                if (WorkspaceStatus.movesToDone(card)) {
+                if (presentation.movesToDone) {
                     WorkspaceSheetToggle("Move card to Done", moveToDone) { if (!flowRunning) moveToDone = it }
-                }
-                if (review.workspace?.dirty == true) {
-                    Text(
-                        "Uncommitted changes are committed first with the message above.",
-                        color = DieterMuted,
-                        fontSize = 11.sp,
-                    )
                 }
                 Text(
                     availability.mergeDestination,
@@ -1503,7 +1607,7 @@ private fun WorkspaceMergeSheet(
                         )
                         onDismiss()
                     },
-                    enabled = !flowRunning && subject.isNotBlank() && availability.allowsMergeFlow,
+                    enabled = !flowRunning && subject.isNotBlank() && !readiness.blocked && availability.allowsMergeFlow,
                     modifier = Modifier.fillMaxWidth().testTag("merge-confirm"),
                 ) {
                     Text(
@@ -1511,7 +1615,7 @@ private fun WorkspaceMergeSheet(
                             MergeStep.COMMIT -> "Committing…"
                             MergeStep.MERGE -> "Merging…"
                             MergeStep.CLEANUP -> "Cleaning up…"
-                            null -> "Merge into $baseBranch"
+                            null -> readiness.mergeTitle
                         },
                     )
                 }
@@ -1525,11 +1629,39 @@ private fun WorkspaceMergeSheet(
     }
 }
 
+/** The merge checklist: each item with its tone, detail, and how long ago it happened. */
+@Composable
+private fun MergeReadinessList(items: List<MergeReadinessItem>) {
+    if (items.isEmpty()) return
+    val now = Clock.System.now()
+    Surface(color = DieterSurface, shape = MaterialTheme.shapes.small) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items.forEach { item ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(item.tone.icon, null, tint = item.tone.color, modifier = Modifier.padding(top = 1.dp).size(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(item.text, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        val detail = listOfNotNull(item.detail.ifBlank { null }, Timestamps.parse(item.at)?.let { Ages.ago(it, now) }).joinToString(" · ")
+                        if (detail.isNotEmpty()) Text(detail, color = DieterMuted, fontSize = 10.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private val StatusTone.icon: ImageVector
+    get() = when (this) {
+        StatusTone.DANGER -> Icons.Outlined.ErrorOutline
+        StatusTone.WARNING -> Icons.Outlined.WarningAmber
+        StatusTone.SUCCESS, StatusTone.NEUTRAL, StatusTone.ACTIVE -> Icons.Outlined.CheckCircle
+    }
+
 // MARK: Workspace settings sheet (before the first prompt)
 
 @Composable
 private fun ConversationWorkspaceSettingsSheet(
-    card: com.dbpprt.dieter.api.v1.Card,
+    card: Card,
     onDismiss: () -> Unit,
     onSave: (mode: WorkspaceMode, branch: String, baseBranch: String) -> Unit,
 ) {

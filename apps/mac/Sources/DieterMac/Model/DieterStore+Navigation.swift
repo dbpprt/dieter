@@ -2,7 +2,6 @@ import AppKit
 import DieterAPI
 import DieterCore
 import Foundation
-import GRPCCore
 import OSLog
 import Observation
 import UniformTypeIdentifiers
@@ -10,7 +9,7 @@ import UserNotifications
 
 extension DieterStore {
     func selectProject(_ id: String) async {
-        guard await ensureReplicaConnection(id) else { return }
+        guard await ensureConnected() else { return }
         selectedProjectID = id
         selectedBoardID = boards(for: id).first?.id ?? ""
         resetFileSurface()
@@ -33,13 +32,13 @@ extension DieterStore {
         selectCachedBoard(boardID, projectID: projectID)
         resetFileSurface()
         query = ""
-        runtimeFilter = ""
+        stateFilter = .all
         labelFilter = ""
-        guard await ensureReplicaConnection(projectID, reportOffline: false) else { return }
+        guard await ensureConnected(reportOffline: false) else { return }
         guard generation == boardSelectionGeneration, section == .board else { return }
         selectCachedBoard(boardID, projectID: projectID)
-        // WatchSync already owns this live project's state. A board click must
-        // not fetch and republish the same project (including every card/chat).
+        // The core's feed already keeps a live project current; a board click
+        // only asks for a refresh when the workspace is not live.
         if !hasLiveBoardProjection(projectID: projectID) { await refreshState() }
     }
 
@@ -47,9 +46,8 @@ extension DieterStore {
         workspaceIsLive && projectDirectory[projectID] != nil
     }
 
-    /// Board navigation is backed by the synchronized projection. Selecting it
-    /// must never wait for the host RPC: a refresh can follow when connectivity
-    /// is available, while the cached workspace remains immediately usable.
+    /// Board navigation shows the core's cached workspace at once; a refresh
+    /// can follow when the machine is reachable.
     func selectCachedBoard(_ boardID: String, projectID: String) {
         selectedProjectID = projectID
         selectedBoardID = boardID
@@ -78,7 +76,7 @@ extension DieterStore {
         if destination == .files || destination == .changes {
             ready = await ensureCheckoutConnection(projectID)
         } else {
-            ready = await ensureReplicaConnection(projectID, reportOffline: false)
+            ready = await ensureConnected(reportOffline: false)
         }
         guard ready,
             generation == boardSelectionGeneration,
@@ -103,7 +101,6 @@ extension DieterStore {
         stopTerminalWatch()
         closeConversation()
         section = .inbox
-        if !hasLiveChatDirectory { await refreshChats(includeArchived: false) }
     }
 
     func openChats() async {
@@ -112,19 +109,11 @@ extension DieterStore {
         stopTerminalWatch()
         closeConversation()
         section = .chats
-        if !hasLiveChatDirectory { await refreshChats(includeArchived: false) }
-        guard section == .chats else { return }
         if let lastUsedChatID,
             chats.contains(where: { $0.id == lastUsedChatID && !$0.archived })
         {
             await openConversation(cardID: lastUsedChatID, chat: true)
         }
-    }
-
-    var hasLiveChatDirectory: Bool { workspaceIsLive && coreWorkspace.loaded }
-
-    func ensureChatDirectory(includeArchived: Bool) async {
-        if includeArchived || !hasLiveChatDirectory { await refreshChats(includeArchived: includeArchived) }
     }
 
     func openTerminals() async {
@@ -174,15 +163,8 @@ extension DieterStore {
     }
 
     func openTerminals(on machine: DieterEndpoint) async {
-        guard machine.online else {
-            show(
-                NSError(
-                    domain: "DieterMachine", code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "\(machine.name) is offline."]))
-            return
-        }
-        guard machine.compatibilityState != .incompatible else {
-            machineConnectionErrors[machine.id] = machine.incompatibilityDescription
+        if let reason = unavailableReason(machine) {
+            show(NSError(domain: "DieterMachine", code: 2, userInfo: [NSLocalizedDescriptionKey: reason]))
             return
         }
         await openTerminals()
@@ -218,16 +200,6 @@ extension DieterStore {
         bindTerminals()
         await terminalsModel.loadTerminals()
     }
-    func selectTerminal(_ id: String) {
-        if terminalScopeCardID == nil,
-            let entry = terminalOverview.terminalOverviewEntries.first(where: { $0.terminal.id == id })
-        {
-            Task { await terminalOverview.selectTerminalOverviewEntry(entry.id) }
-            return
-        }
-        bindTerminals()
-        terminalsModel.selectTerminal(id)
-    }
     func createTerminal(
         projectID: String, checkoutID: String = "", machineID: String? = nil, machineHome: Bool = false,
         name: String, shell: String, workingDirectory: String
@@ -242,16 +214,6 @@ extension DieterStore {
         bindTerminals()
         await terminalsModel.createTerminal(name: name, shell: shell, workingDirectory: workingDirectory)
     }
-    func sendTerminalInput(id: String, data: Data) {
-        terminalsModel.sendTerminalInput(id: id, data: data)
-    }
-    func resizeTerminal(id: String, columns: Int, rows: Int) async {
-        await terminalsModel.resizeTerminal(id: id, columns: columns, rows: rows)
-    }
-    func renameTerminal(id: String, name: String) async {
-        await terminalsModel.renameTerminal(id: id, name: name)
-    }
-    func closeTerminal(id: String) async { await terminalsModel.closeTerminal(id: id) }
     func closeTerminalOverviewEntry(_ id: String) async {
         guard let entry = terminalOverview.terminalOverviewEntries.first(where: { $0.id == id }) else { return }
         if terminalOverview.selectedTerminalOverviewID != id || terminalsModel.target.endpointID != entry.machineID {
@@ -261,26 +223,20 @@ extension DieterStore {
         else { return }
         await terminalsModel.closeTerminal(id: entry.terminal.id)
     }
-    func startTerminalWatch() {
-        bindTerminals()
-        terminalsModel.active = true
-    }
     /// Stops streaming when the terminals are hidden; the shells keep running.
     func stopTerminalWatch() {
         terminalsModel.active = false
         terminalOverview.stop()
     }
 
+    /// The machines the terminal overview lists, in the core's order.
     var terminalOverviewMachines: [DieterEndpoint] {
         var values = endpoints.filter { $0.daemonID != nil || $0.id == endpoint.id }
         if !values.contains(where: { $0.id == endpoint.id }), endpoint.daemonID != nil {
             values.append(endpoint)
         }
-        return Array(Dictionary(values.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest }).values)
-            .sorted {
-                if $0.online != $1.online { return $0.online && !$1.online }
-                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-            }
+        var seen = Set<String>()
+        return values.filter { seen.insert($0.id).inserted }
     }
 
     func beginStandaloneChat(projectID: String? = nil) {
@@ -299,7 +255,7 @@ extension DieterStore {
 
     func presentNewBoard(projectID: String) {
         Task {
-            guard await ensureReplicaConnection(projectID) else { return }
+            guard await ensureConnected() else { return }
             selectedProjectID = projectID
             selectedBoardID = boards(for: projectID).first?.id ?? ""
             createBoardPresented = true
@@ -308,7 +264,7 @@ extension DieterStore {
 
     func presentRenameProject(projectID: String) {
         Task {
-            guard await ensureReplicaConnection(projectID) else { return }
+            guard await ensureConnected() else { return }
             selectedProjectID = projectID
             renameProjectTargetID = projectID
             renameProjectPresented = true
@@ -317,16 +273,16 @@ extension DieterStore {
 
     func presentProjectEditor(projectID: String) {
         Task {
-            guard await ensureReplicaConnection(projectID) else { return }
+            guard await ensureConnected() else { return }
             selectedProjectID = projectID
             projectContextPresented = true
         }
     }
 
     func presentRenameBoard(boardID: String) {
-        guard let target = board(id: boardID) else { return }
+        guard board(id: boardID) != nil else { return }
         Task {
-            guard await ensureReplicaConnection(target.projectID) else { return }
+            guard await ensureConnected() else { return }
             renameBoardTargetID = boardID
             renameBoardPresented = true
         }

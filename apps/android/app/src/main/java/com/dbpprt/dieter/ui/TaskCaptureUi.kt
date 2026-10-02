@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.dbpprt.dieter.core.composition.Attachments
+import com.dbpprt.dieter.core.composition.TaskCaptures
 import com.dbpprt.dieter.core.composition.TaskDraftEditor
 import com.dbpprt.dieter.core.composition.TaskDrafts
 import com.dbpprt.dieter.core.composition.frozen
@@ -73,7 +74,7 @@ internal fun TaskAttachmentControls(editor: TaskDraftEditor, store: TaskCaptureS
             TextButton(onClick = { scope.launch { runCatching { store?.flush(editor) } } }) { Text("Retry saving draft") }
         }
         Text(Attachments.LIMITS, style = MaterialTheme.typography.bodySmall)
-        if (draft.frozen) Text("Submission pending. Retry Save with the same task; attachments are retained.")
+        if (draft.frozen) Text(TaskCaptures.SUBMISSION_PENDING)
         if (draft.hasContent && !draft.frozen) TextButton(onClick = { discard = true }) { Text("Discard draft") }
     }
     if (picker) AttachmentPickerSheet(

@@ -1,5 +1,6 @@
 import CoreGraphics
 import DieterAPI
+import DieterShared
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -16,18 +17,20 @@ enum AttachmentPasteboardInput: Sendable {
 }
 
 actor AttachmentLoader {
-    static let maximumCount = 4
-    static let maximumBytes = 5 * 1_024 * 1_024
-    static let maximumTotalBytes = 6 * 1_024 * 1_024
+    /// Throws the shared core's limit problem for files measured but not read
+    /// yet; [names] and [sizes] pair up, and a size of zero is an empty file.
+    nonisolated static func checkLimits(names: [String], sizes: [Int64]) throws {
+        let problem = SharedRules.shared.attachmentLimitError(
+            names: names, sizes: sizes.map { KotlinLong(value: $0) })
+        guard problem.isEmpty else { throw DieterAttachmentError.limit(problem) }
+    }
 
+    /// Throws when [incoming] after [existing] would break the shared limits.
     nonisolated static func validate(
         _ incoming: [Dieter_V1_MessagePart], appendingTo existing: [Dieter_V1_MessagePart]
     ) throws -> [Dieter_V1_MessagePart] {
         let parts = existing + incoming
-        guard parts.count <= maximumCount else { throw DieterAttachmentError.tooMany }
-        guard parts.reduce(0, { $0 + $1.data.count }) <= maximumTotalBytes else {
-            throw DieterAttachmentError.totalTooLarge
-        }
+        try checkLimits(names: parts.map(\.filename), sizes: parts.map { Int64($0.data.count) })
         return parts
     }
 
@@ -36,10 +39,7 @@ actor AttachmentLoader {
         appendingTo existing: [Dieter_V1_MessagePart] = []
     ) throws -> [Dieter_V1_MessagePart] {
         try MacPerformanceSignposts.measure("Load file attachments", log: MacPerformanceSignposts.attachment) {
-            guard existing.count + urls.count <= Self.maximumCount else {
-                throw DieterAttachmentError.tooMany
-            }
-            var parts = existing
+            var measured: [(url: URL, values: URLResourceValues)] = []
             for url in urls {
                 let accessed = url.startAccessingSecurityScopedResource()
                 defer { if accessed { url.stopAccessingSecurityScopedResource() } }
@@ -47,18 +47,21 @@ actor AttachmentLoader {
                 guard values.isRegularFile != false else {
                     throw DieterAttachmentError.notAFile(url.lastPathComponent)
                 }
-                if let size = values.fileSize, size > Self.maximumBytes {
-                    throw DieterAttachmentError.fileTooLarge(url.lastPathComponent)
-                }
-                let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-                parts = try Self.appending(
-                    data: data,
-                    filename: url.lastPathComponent,
-                    contentType: values.contentType,
-                    to: parts
-                )
+                measured.append((url, values))
             }
-            return parts
+            // Measured sizes rule out oversized files before any is read; an
+            // unknown size is checked once the file is read.
+            try Self.checkLimits(
+                names: existing.map(\.filename) + measured.map(\.url.lastPathComponent),
+                sizes: existing.map { Int64($0.data.count) } + measured.map { Int64($0.values.fileSize ?? 1) })
+            var parts = existing
+            for (url, values) in measured {
+                let accessed = url.startAccessingSecurityScopedResource()
+                defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+                parts.append(Self.part(data: data, filename: url.lastPathComponent, contentType: values.contentType))
+            }
+            return try Self.validate([], appendingTo: parts)
         }
     }
 
@@ -67,9 +70,9 @@ actor AttachmentLoader {
         appendingTo existing: [Dieter_V1_MessagePart] = []
     ) throws -> [Dieter_V1_MessagePart] {
         try MacPerformanceSignposts.measure("Normalize image attachments", log: MacPerformanceSignposts.attachment) {
-            guard existing.count + images.count <= Self.maximumCount else {
-                throw DieterAttachmentError.tooMany
-            }
+            try Self.checkLimits(
+                names: existing.map(\.filename) + images.map { $0.suggestedName ?? "" },
+                sizes: existing.map { Int64($0.data.count) } + images.map { Int64($0.data.count) })
             var parts = existing
             for image in images {
                 let type = UTType(image.typeIdentifier)
@@ -78,35 +81,20 @@ actor AttachmentLoader {
                 let fallbackName = "Pasted Image \(parts.count + 1)"
                 let resolvedName = baseName.flatMap { $0.isEmpty ? nil : $0 } ?? fallbackName
                 let filename = Self.filename(resolvedName, for: normalized.type)
-                parts = try Self.appending(
-                    data: normalized.data,
-                    filename: filename,
-                    contentType: normalized.type,
-                    to: parts
-                )
+                parts.append(Self.part(data: normalized.data, filename: filename, contentType: normalized.type))
             }
-            return parts
+            return try Self.validate([], appendingTo: parts)
         }
     }
 
-    private static func appending(
-        data: Data,
-        filename: String,
-        contentType: UTType?,
-        to existing: [Dieter_V1_MessagePart]
-    ) throws -> [Dieter_V1_MessagePart] {
-        guard existing.count < maximumCount else { throw DieterAttachmentError.tooMany }
-        guard !data.isEmpty else { throw DieterAttachmentError.empty(filename) }
-        guard data.count <= maximumBytes else { throw DieterAttachmentError.fileTooLarge(filename) }
-        guard existing.reduce(0, { $0 + $1.data.count }) + data.count <= maximumTotalBytes else {
-            throw DieterAttachmentError.totalTooLarge
-        }
+    private static func part(data: Data, filename: String, contentType: UTType?) -> Dieter_V1_MessagePart {
         var part = Dieter_V1_MessagePart()
         part.type = contentType?.conforms(to: .image) == true ? "image" : "file"
-        part.mediaType = contentType?.preferredMIMEType ?? "application/octet-stream"
+        part.mediaType = SharedRules.shared.attachmentMediaType(
+            declared: contentType?.preferredMIMEType ?? "", filename: filename)
         part.filename = filename
         part.data = data
-        return existing + [part]
+        return part
     }
 
     private static func normalizedImage(data: Data, type: UTType?) throws -> (data: Data, type: UTType) {

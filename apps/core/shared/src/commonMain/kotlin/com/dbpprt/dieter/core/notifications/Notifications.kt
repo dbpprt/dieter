@@ -1,13 +1,17 @@
 package com.dbpprt.dieter.core.notifications
 
+import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.ConversationSnapshot
+import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.api.v1.Subagent
 import com.dbpprt.dieter.core.admin.BackgroundMode
+import com.dbpprt.dieter.core.board.Cards
 import com.dbpprt.dieter.core.board.Lanes
 import com.dbpprt.dieter.core.board.Runtimes
 import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.core.platform.DeviceSettings
+import com.dbpprt.dieter.core.presentation.Counts
 
 enum class NotificationStyle { COMPACT, DETAILED }
 
@@ -85,14 +89,14 @@ class TransitionTracker {
         val events = mutableListOf<NotificationEvent>()
         for (card in cards) {
             val old = before[card.id] ?: continue
-            val chat = card.scope == "chat" && card.board_id.isEmpty()
+            val chat = Cards.isChat(card)
             if (chat && Runtimes.isActive(old.runtime) && !Runtimes.isActive(card.runtime) && chatResultEnabled(card, settings)) {
                 val snapshot = snapshots[card.id] ?: beforeConversations[card.id]
                 val agents = (beforeConversations[card.id] ?: snapshots[card.id])?.conversation?.subagents.orEmpty()
                 events += NotificationEvent.ChatFinished(card.id, card, snapshot?.let(NotificationContent::resultPreview), agents)
             }
             if (!chat && settings.enabled && settings.reviewCards && card.board_id in settings.boardIds &&
-                !old.lane.equals("review", ignoreCase = true) && card.lane.equals("review", ignoreCase = true)
+                !Lanes.isReview(old.lane) && Lanes.isReview(card.lane)
             ) {
                 events += NotificationEvent.ReadyForReview(card.id, card)
             }
@@ -112,11 +116,17 @@ class TransitionTracker {
 
 enum class NotificationRole { CONNECTION, RUNNING, RESULTS }
 
+/** What a notification is about: a running chat, a chat's result, or a card ready for review. */
+enum class NotificationKind { RUNNING, RESULT, REVIEW }
+
 enum class NotificationAction(val title: String) { MARK_DONE("Mark done"), OPEN("Open") }
 
 data class NotificationContent(
+    /** Unique per notification; platforms use it as the opaque notification tag. */
     val key: String,
-    val role: NotificationRole,
+    val kind: NotificationKind,
+    /** The chat or card the notification opens and acts on. */
+    val cardId: String,
     val title: String,
     val text: String,
     val expanded: String? = null,
@@ -124,6 +134,9 @@ data class NotificationContent(
     /** For a running chat: the turn it describes. Dismissing hides it until the next turn. */
     val session: String? = null,
 ) {
+    /** The channel: running chats apart from results and reviews. */
+    val role: NotificationRole get() = if (kind == NotificationKind.RUNNING) NotificationRole.RUNNING else NotificationRole.RESULTS
+
     companion object {
         /** The last agent reply, keeping its closing words when long. */
         fun resultPreview(snapshot: ConversationSnapshot): String? {
@@ -145,24 +158,29 @@ data class NotificationContent(
             }
             val text = event.card.title.ifBlank { "Standalone chat" }
             val expanded = event.resultPreview?.takeIf { settings.style == NotificationStyle.DETAILED && settings.resultPreviews && it.isNotBlank() }
-            return NotificationContent("result:${event.cardId}", NotificationRole.RESULTS, title, text, expanded)
+            return NotificationContent("result:${event.cardId}", NotificationKind.RESULT, event.cardId, title, text, expanded)
         }
 
         fun review(event: NotificationEvent.ReadyForReview, boardName: String?, settings: NotificationSettings): NotificationContent {
             val line = "${event.card.title.ifBlank { "Dieter conversation" }} · ${boardName?.ifBlank { null } ?: "Board"}"
             val expanded = event.card.summary.takeIf { settings.style == NotificationStyle.DETAILED && it.isNotBlank() }
-            return NotificationContent("review:${event.cardId}", NotificationRole.RESULTS, "Ready for review", line, expanded, listOf(NotificationAction.MARK_DONE, NotificationAction.OPEN))
+            return NotificationContent("review:${event.cardId}", NotificationKind.REVIEW, event.cardId, "Ready for review", line, expanded, listOf(NotificationAction.MARK_DONE, NotificationAction.OPEN))
         }
 
         fun running(card: Card, detail: String?, activeModels: Int): NotificationContent =
             NotificationContent(
-                "running:${card.id}", NotificationRole.RUNNING, card.title.ifBlank { "Running chat" }, detail?.ifBlank { null } ?: "Working on your request",
-                expanded = "$activeModels model${if (activeModels == 1) "" else "s"} active now",
+                "$RUNNING_PREFIX${card.id}", NotificationKind.RUNNING, card.id, card.title.ifBlank { "Running chat" }, detail?.ifBlank { null } ?: "Working on your request",
+                expanded = "${Counts.of(activeModels, "model")} active now",
                 session = session(card),
             )
 
         /** A running chat's turn: its runtime update, else its last update. */
         fun session(card: Card): String = card.runtime_updated_at.ifBlank { card.updated_at.ifBlank { card.id } }
+
+        /** The card a running chat's notification [key] describes; null for other notifications. */
+        fun runningCardId(key: String): String? = key.removePrefix(RUNNING_PREFIX).takeIf { key.startsWith(RUNNING_PREFIX) && it.isNotEmpty() }
+
+        private const val RUNNING_PREFIX = "running:"
     }
 }
 
@@ -182,6 +200,68 @@ fun resultSummaryAction(activeChildIds: Set<String>, summarizedIds: Set<String>,
     else -> SummaryAction.UNCHANGED
 }
 
+/** The wording of the group summary that stacks [count] results and reviews. */
+data class ResultSummary(val title: String, val text: String) {
+    companion object {
+        fun of(count: Int): ResultSummary = ResultSummary(Counts.of(count, "Dieter update"), "Chats finished or cards are ready for review")
+    }
+}
+
+/** One board in the notification settings' review scope. */
+data class NotificationBoardRow(
+    val id: String,
+    val name: String,
+    /** The board's project, and its machine when known: "Dieter · mac-mini". */
+    val detail: String,
+    val selected: Boolean,
+)
+
+/**
+ * The notification settings' review scope: every synced board, ordered by
+ * project, machine, and board name, and what its controls allow.
+ */
+data class NotificationBoardScope(
+    val rows: List<NotificationBoardRow>,
+    /** "2 of 5 synced boards": selected boards that are listed, of all listed. */
+    val summary: String,
+    /** Review alerts are on, so the board choice applies. */
+    val enabled: Boolean,
+    val canSelectAll: Boolean,
+    val canSelectNone: Boolean,
+    /** The choice after selecting all: every listed board added to the current choice. */
+    val allBoardIds: Set<String>,
+) {
+    companion object {
+        const val EMPTY = "Boards will appear here after a workspace sync."
+
+        /** [hostnames] maps a project ID to the name of the machine that holds it. */
+        fun of(boards: List<Board>, projects: List<Project>, hostnames: Map<String, String>, settings: NotificationSettings): NotificationBoardScope {
+            val projectNames = projects.associate { it.id to it.name }
+            val listed = boards.distinctBy { it.id }.sortedWith(
+                compareBy(
+                    { board -> projectNames[board.project_id].orEmpty().lowercase() },
+                    { board -> hostnames[board.project_id].orEmpty().lowercase() },
+                    { board -> board.name.lowercase() },
+                ),
+            )
+            val ids = listed.mapTo(LinkedHashSet()) { it.id }
+            val enabled = settings.enabled && settings.reviewCards
+            return NotificationBoardScope(
+                rows = listed.map { board ->
+                    val project = projectNames[board.project_id]?.takeIf(String::isNotBlank) ?: "Workspace"
+                    val host = hostnames[board.project_id]?.takeIf(String::isNotBlank)
+                    NotificationBoardRow(board.id, board.name.ifBlank { "Untitled board" }, listOfNotNull(project, host).distinct().joinToString(" · "), board.id in settings.boardIds)
+                },
+                summary = "${settings.boardIds.count(ids::contains)} of ${Counts.of(ids.size, "synced board")}",
+                enabled = enabled,
+                canSelectAll = enabled && ids.isNotEmpty(),
+                canSelectNone = enabled && settings.boardIds.isNotEmpty(),
+                allBoardIds = settings.boardIds + ids,
+            )
+        }
+    }
+}
+
 /**
  * Decides what to post for each applied frame: running chats, results, and
  * review requests, suppressing the conversation the user is looking at.
@@ -190,22 +270,31 @@ class NotificationPlanner(private val sink: NotificationSink, private val settin
     private val tracker = TransitionTracker()
     private val posted = HashSet<String>()
     private val fingerprints = HashMap<String, String>()
-    private val dismissed = HashMap<String, String>()
+
+    /** Card ID → the running session the user dismissed, oldest first; kept across restarts. */
+    private val dismissed = LinkedHashMap<String, String>().apply {
+        settings?.string(DISMISSED).orEmpty().lineSequence().mapNotNull { line -> line.split(' ').takeIf { it.size == 2 } }.forEach { (cardId, session) -> put(cardId, session) }
+    }
 
     /** The user swiped away a running chat; it stays hidden for the rest of [session]. */
     fun dismissRunning(cardId: String, session: String) {
-        if (cardId.isBlank() || session.isBlank()) return
+        if (cardId.isBlank() || session.isBlank() || ' ' in cardId || ' ' in session) return
+        dismissed.remove(cardId)
         dismissed[cardId] = session
-        settings?.putString(DISMISSED + cardId, session)
+        while (dismissed.size > MAX_DISMISSED) dismissed.remove(dismissed.keys.first())
+        saveDismissals()
         posted -= "running:$cardId"
         fingerprints -= "running:$cardId"
     }
 
-    private fun dismissedSession(cardId: String): String? = dismissed[cardId] ?: settings?.string(DISMISSED + cardId)
+    private fun dismissedSession(cardId: String): String? = dismissed[cardId]
 
     private fun clearDismissal(cardId: String) {
-        dismissed -= cardId
-        settings?.putString(DISMISSED + cardId, null)
+        if (dismissed.remove(cardId) != null) saveDismissals()
+    }
+
+    private fun saveDismissals() {
+        settings?.putString(DISMISSED, dismissed.entries.joinToString("\n") { (cardId, session) -> "$cardId $session" }.ifEmpty { null })
     }
 
     fun reset() {
@@ -224,9 +313,11 @@ class NotificationPlanner(private val sink: NotificationSink, private val settin
     ) {
         val events = tracker.update(cards, snapshots, settings)
         val byId = cards.associateBy { it.id }
+        // A dismissal lasts one running session; once the chat stops or leaves, it is over.
+        dismissed.keys.filter { id -> byId[id]?.let { Cards.isChat(it) && Runtimes.isActive(it.runtime) } != true }.forEach(::clearDismissal)
 
         val running = if (settings.enabled && settings.runningChats) {
-            cards.filter { it.scope == "chat" && it.board_id.isEmpty() && Runtimes.isActive(it.runtime) && it.id != visibleConversationId }
+            cards.filter { Cards.isChat(it) && Runtimes.isActive(it.runtime) && it.id != visibleConversationId }
         } else {
             emptyList()
         }
@@ -243,7 +334,7 @@ class NotificationPlanner(private val sink: NotificationSink, private val settin
             val card = byId[id]
             val stale = when {
                 key.startsWith("result:") -> card == null || Runtimes.isActive(card.runtime) || !TransitionTracker.chatResultEnabled(card, settings)
-                key.startsWith("review:") -> card == null || !card.lane.equals("review", ignoreCase = true) || card.board_id !in settings.boardIds || !settings.enabled || !settings.reviewCards
+                key.startsWith("review:") -> card == null || !Lanes.isReview(card.lane) || card.board_id !in settings.boardIds || !settings.enabled || !settings.reviewCards
                 else -> false
             }
             if (stale) cancel(key)
@@ -277,7 +368,8 @@ class NotificationPlanner(private val sink: NotificationSink, private val settin
     }
 
     private companion object {
-        const val DISMISSED = "notifications.dismissed."
+        const val DISMISSED = "notifications.dismissed"
+        const val MAX_DISMISSED = 64
     }
 }
 
@@ -295,9 +387,12 @@ data class BackgroundStatus(
     val boards: Int,
     /** Board cards waiting in review. */
     val reviews: Int,
+    /** Subagents the running turns report, when live status is shown. */
+    val subagents: Int,
 ) {
-    val boardsLabel: String get() = "$boards ${if (boards == 1) "board" else "boards"}"
-    val reviewsLabel: String? get() = reviews.takeIf { it > 0 }?.let { "$it ${if (it == 1) "review" else "reviews"}" }
+    val boardsLabel: String get() = Counts.of(boards, "board")
+    val reviewsLabel: String? get() = reviews.takeIf { it > 0 }?.let { Counts.of(it, "review") }
+    val subagentsLabel: String? get() = subagents.takeIf { it > 0 }?.let { Counts.of(it, "subagent") }
 
     companion object {
         fun of(
@@ -314,6 +409,7 @@ data class BackgroundStatus(
             val sleeping = mode == BackgroundMode.PERIODIC && phase == ConnectionPhase.DISCONNECTED
             val name = gateway ?: "Dieter"
             val running = items.count { Runtimes.isActive(it.runtime) }.takeIf { settings.liveStatus } ?: 0
+            val subagents = items.sumOf { it.active_subagents.size }.takeIf { settings.liveStatus } ?: 0
             val title = when (phase) {
                 ConnectionPhase.CONNECTED -> "Connected to $name"
                 ConnectionPhase.SYNCING -> "Synchronizing Dieter"
@@ -331,12 +427,12 @@ data class BackgroundStatus(
                 else -> error ?: name
             }
             val subtext = when {
-                connected && running > 0 -> "$running ${if (running == 1) "model" else "models"} active now"
+                connected && running > 0 -> "${Counts.of(running, "model")} active now"
                 connected -> "Ongoing"
                 else -> null
             }
-            val reviews = items.count { it.scope != "chat" && Lanes.isReview(it.lane) }
-            return BackgroundStatus(title, summary, subtext, connected, connected || sleeping, running, boards, reviews)
+            val reviews = items.count { !Cards.isChat(it) && Lanes.isReview(it.lane) }
+            return BackgroundStatus(title, summary, subtext, connected, connected || sleeping, running, boards, reviews, subagents)
         }
     }
 }

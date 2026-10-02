@@ -117,7 +117,7 @@ final class ConversationFileTreeModel {
     }
 
     func refresh() async {
-        await send { $0.refresh = ClientFilesStep() }
+        await send { $0.refresh = ClientStep() }
     }
 }
 
@@ -219,7 +219,7 @@ struct ConversationFileNavigator: View {
                     systemName: directory ? (tab.tree.expanded.contains(row.id) ? "chevron.down" : "chevron.right") : ""
                 )
                 .font(.system(size: 8, weight: .semibold)).frame(width: 9)
-                Image(systemName: directory ? "folder" : fileSymbol(row.entry.name))
+                Image(systemName: directory ? "folder" : FilePresentation.symbol(name: row.entry.name))
                     .font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 14)
                 Text(row.entry.name).font(.system(size: 11)).lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 0)
@@ -235,12 +235,5 @@ struct ConversationFileNavigator: View {
         .accessibilityIdentifier("conversation.content.files.row.\(row.id)")
         .smokeTarget("conversation.content.files.row.\(row.id)")
         .smokeTarget("conversation.content.files.\(tab.id.uuidString).row.\(row.id)")
-    }
-
-    private func fileSymbol(_ name: String) -> String {
-        switch ProjectFileLanguage.detect(filename: name) {
-        case .markdown: "doc.richtext"
-        default: "doc.text"
-        }
     }
 }

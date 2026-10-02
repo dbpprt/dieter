@@ -4,62 +4,6 @@ import DieterCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ConversationTimelineRow: View {
-    @Environment(ConversationContext.self) private var context
-    let item: ConversationTimelineItem
-    let details: [ConversationTimelineMessageDetails]
-    var isLatest = false
-    var expandedActivity = false
-    @State private var isHovered = false
-
-    private var footer: MessageFooterContent { MessageFooterContent(messages: item.messages) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            VStack(alignment: .leading, spacing: 15) {
-                if item.isToolCallGroup {
-                    ConversationActivityPartsView(
-                        steps: ConversationActivityStep.steps(
-                            messages: item.messages, showReasoning: context.showReasoning),
-                        expandedActivity: expandedActivity)
-                } else if let message = item.messages.first {
-                    MessageView(message: message, expandedActivity: expandedActivity)
-                }
-                ForEach(details) { detail in
-                    ForEach(detail.plans, id: \.id) {
-                        TaskPlanView(plan: $0)
-                    }
-                    if !detail.subagents.isEmpty {
-                        SubagentTimelineGroup(agents: detail.subagents)
-                    }
-                }
-            }
-            MessageFooter(
-                content: footer, messageID: item.messages.last?.id ?? item.id,
-                isLatest: isLatest, isHovered: isHovered
-            )
-            .frame(
-                maxWidth: .infinity,
-                alignment: item.messages.first?.role == "user" ? .trailing : .leading)
-        }
-        .contentShape(Rectangle())
-        .onHover { isHovered = $0 }
-        .accessibilityElement(children: .contain)
-        .accessibilityActions {
-            if !footer.markdown.isEmpty {
-                Button("Copy message") { footer.copy() }
-            }
-        }
-        // A row can gain structured details (for example, a task plan) after
-        // its message has already been laid out. Preserve the available width
-        // while forcing SwiftUI to publish the row's complete updated height,
-        // so neither the message nor its details can paint into the next row.
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .smokeTarget("conversation.message.row.\(item.messages.last?.id ?? item.id)")
-    }
-}
-
 struct ConversationTimeline: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(ConversationContext.self) private var context
@@ -74,7 +18,8 @@ struct ConversationTimeline: View {
     @State private var contentCanScroll = true
     @State private var viewportMode = ConversationViewportMode.awaitingInitial(conversationID: "")
     @State private var presentedFailureLog: String?
-    @State private var retryingFailureLog: String?
+    /// The retry just clicked, so a second click cannot send it twice.
+    @State private var retryClicked = false
     // The mounted rows and the window they were built from change together.
     // Everything that affects layout reads these, never the requested window,
     // so nothing moves before the scroll controller holds the reading position.
@@ -113,13 +58,7 @@ struct ConversationTimeline: View {
     }
 
     private var messages: [Dieter_V1_UiMessage] { context.conversationMessages }
-    private var liveMessages: [Dieter_V1_UiMessage] { context.liveActivityMessages }
-    private var plans: [Dieter_V1_TaskPlan] { context.conversation?.conversation.taskPlans ?? [] }
-    private var subagents: [Dieter_V1_Subagent] { context.conversation?.conversation.subagents ?? [] }
-    private var queuedMessages: [Dieter_V1_QueuedMessage] {
-        context.model.browsingEarlierHistory ? [] : context.conversation?.conversation.queue ?? []
-    }
-    private var timelineGroups: [ConversationTimelineDisplayGroup] { projection.displayGroups }
+    private var timelineRows: [ClientTimelineItem] { projection.rows }
     private var renderRange: Range<Int> {
         ConversationRenderWindow.range(
             messages: messages, position: windowPosition, latestMessageLimit: latestMessageLimit)
@@ -132,24 +71,21 @@ struct ConversationTimeline: View {
         ConversationPresentationKey(
             conversationID: conversationID,
             revision: context.conversationPresentationRevision,
-            showReasoning: context.showReasoning,
             renderStart: renderRange.lowerBound,
             renderCount: renderRange.count
         )
     }
     private var conversationID: String { context.selectedCardID ?? context.selectedChatID ?? "" }
-    private var draftPrompt: String {
-        let card = context.selectedCard ?? context.selectedDetail?.card
-        return card?.initialPromptSentAt.isEmpty == true ? (card?.initialPrompt ?? "") : ""
-    }
-    private var draftAttachments: [Dieter_V1_MessagePart] {
-        context.conversation?.conversation.draftAttachments ?? []
+    private var state: ClientConversationState { context.model.state }
+    private var unsentAttachments: [Dieter_V1_MessagePart] {
+        state.unsentAttachments ? context.conversation?.conversation.draftAttachments ?? [] : []
     }
     private var pendingTools: [Dieter_V1_PendingTool] {
-        context.conversation?.conversation.pendingTools ?? []
+        let tools = context.conversation?.conversation.pendingTools ?? []
+        return state.pendingToolIds.compactMap { id in tools.first { $0.id == id } }
     }
-    private var agentIsWorking: Bool { context.model.state.working }
-    private var turnFailure: ConversationTurnFailure? { context.model.turnFailure.map(ConversationTurnFailure.init) }
+    private var agentIsWorking: Bool { state.working }
+    private var turnFailure: ClientTurnFailure? { context.model.turnFailure }
     private var creationFailure: String? {
         context.failedCreationError(conversationID)
     }
@@ -199,37 +135,29 @@ struct ConversationTimeline: View {
 
                 if messages.isEmpty && !agentIsWorking {
                     EmptyConversationView(
-                        standalone: context.selectedCard?.scope == "chat",
-                        prompt: draftPrompt,
-                        attachments: draftAttachments
-                    )
+                        standalone: state.chat, prompt: state.unsentTask, attachments: unsentAttachments)
                 }
 
-                ForEach(timelineGroups) { group in
-                    ConversationTimelineDisplayGroupView(
-                        group: group, showReasoning: context.showReasoning,
-                        isLatest: renderedThroughLatest && group.id == timelineGroups.last?.id,
-                        scrollAnchors: scroller
+                ForEach(timelineRows, id: \.id) { row in
+                    ConversationTimelineItemView(
+                        row: row, isLatest: renderedThroughLatest && row.id == timelineRows.last?.id
                     )
-                    .id(group.id)
+                    .id(row.id)
                     .background {
-                        ConversationScrollAnchorProbe(
-                            controller: scroller,
-                            messageIDs: group.rows.flatMap(\.item.messages).map(\.id))
+                        ConversationScrollAnchorProbe(controller: scroller, messageIDs: row.messageIds)
                     }
                 }
 
-                ForEach(projection.unattachedPlans, id: \.id) {
+                ForEach(context.model.taskPlans(ids: context.model.unattachedPlanIDs), id: \.id) {
                     TaskPlanView(plan: $0)
                 }
 
-                if !pendingTools.isEmpty {
-                    PendingToolGroupView(tools: pendingTools)
+                if !state.pendingToolsSummary.isEmpty {
+                    PendingToolGroupView(title: state.pendingToolsSummary, tools: pendingTools)
                 }
                 if agentIsWorking {
                     ConversationAgentWorkingIndicator(
-                        label: context.showReasoning
-                            ? context.model.state.liveReasoning : context.model.state.liveActivity,
+                        label: state.showReasoning ? state.liveReasoning : state.liveActivity,
                         startedAt: context.model.turnStartedAt
                     )
                     .id("conversation.agent-working")
@@ -244,15 +172,14 @@ struct ConversationTimeline: View {
                 } else if let turnFailure {
                     TurnFailureBanner(
                         failure: turnFailure,
-                        retrying: retryingFailureLog == turnFailure.log,
+                        retrying: context.model.retrying || retryClicked,
                         onViewLog: { presentedFailureLog = turnFailure.log },
                         onRetry: {
-                            guard retryingFailureLog == nil else { return }
-                            retryingFailureLog = turnFailure.log
+                            guard !retryClicked, !context.model.retrying else { return }
+                            retryClicked = true
                             Task { @MainActor in
-                                if !(await context.retryFailedTurn(turnFailure)) {
-                                    retryingFailureLog = nil
-                                }
+                                _ = await context.retryFailedTurn(turnFailure)
+                                retryClicked = false
                             }
                         }
                     )
@@ -330,9 +257,6 @@ struct ConversationTimeline: View {
                 )
             #endif
         }
-        .onChange(of: turnFailure?.log) { _, log in
-            if log == nil { retryingFailureLog = nil }
-        }
         .onChange(of: conversationID, initial: true) { _, selectedID in
             latestMessageLimit = ConversationRenderWindow.initialMessages
             windowPosition = .latest
@@ -351,40 +275,26 @@ struct ConversationTimeline: View {
         .task(id: projectionKey) {
             let key = projectionKey
             let range = renderRange
-            let source = Array(messages[range])
-            let allMessageIDs = Set(messages.lazy.map(\.id).filter { !$0.isEmpty })
             let throughLatest = range.upperBound == messages.count && !context.model.browsingEarlierHistory
-            let plans = plans
-            let subagents = subagents
-            let queue = queuedMessages
-            let showReasoning = context.showReasoning
+            // Rows whose messages meet the rendered range mount whole; their
+            // prose is prepared for rendering off the main thread.
+            let rendered = Set(
+                messages[range].enumerated().map { offset, message in
+                    message.id.isEmpty ? "position:\(range.lowerBound + offset)" : message.id
+                })
+            let rows = context.model.timeline.filter { $0.messageIds.contains(where: rendered.contains) }
+            let texts = rows.flatMap { row in
+                row.groups.filter { !$0.activity }.flatMap(\.steps).compactMap { step in
+                    step.text.isEmpty ? context.model.part(for: step)?.text : step.text
+                }
+            }
             guard
                 let next = try? await BackgroundPreparation.run({
-                    for message in source {
-                        let parts: [Dieter_V1_MessagePart]
-                        if message.role == "user" {
-                            parts = message.parts
-                        } else {
-                            let groups = ConversationActivityPartGroup.group(
-                                ConversationActivityStep.steps(messages: [message], showReasoning: showReasoning))
-                            // Older parts and collapsed activity are prepared
-                            // when revealed, not on the first visible frame.
-                            parts = groups.suffix(ConversationActivityPartGroup.initialVisibleCount)
-                                .filter { !$0.isActivity }.flatMap { $0.steps.map(\.part) }
-                        }
-                        for part in parts where !part.text.isEmpty {
-                            try Task.checkCancellation()
-                            _ = try ConversationRenderCache.prepare(ConversationRenderCache.preview(part.text))
-                        }
+                    for text in texts where !text.isEmpty {
+                        try Task.checkCancellation()
+                        _ = try ConversationRenderCache.prepare(ConversationRenderCache.preview(text))
                     }
-                    return ConversationTimelineProjection.build(
-                        messages: source,
-                        allMessageIDs: allMessageIDs,
-                        plans: plans,
-                        subagents: subagents,
-                        queue: queue,
-                        showReasoning: showReasoning
-                    )
+                    return ConversationTimelineProjection(rows: rows)
                 })
             else { return }
             guard !Task.isCancelled, key == projectionKey, key.conversationID == conversationID else { return }
@@ -398,6 +308,7 @@ struct ConversationTimeline: View {
             renderedHasEarlier = range.lowerBound > 0
             renderedThroughLatest = throughLatest
             guard viewportMode == .awaitingInitial(conversationID: key.conversationID) else { return }
+            let source = Array(messages[range])
             if source.isEmpty {
                 scroller.finishInitialPositioning()
                 viewportMode = .followingLatest

@@ -188,4 +188,33 @@ class CoreRuntimeEndToEndTest : EndToEnd() {
         runtime.onMachine(fixture.secondDaemonId) { it.Health().execute(Unit) }
         assertEquals(setOf(fixture.daemonId, fixture.secondDaemonId), runtime.sessions.routes.value.keys)
     }
+
+    @Test
+    fun aRestartShowsTheLastUpdateTimeBeforeItConnects() = e2e {
+        val fixture = fixture()
+        val directory = Files.createTempDirectory("dieter-core-feed").toOkioPath()
+        val secrets = MemorySecureStore()
+        val first = runtime(fixture, jvmTestPlatform(directory, secrets))
+        first.awaitConnected()
+        first.awaitLoaded(fixture)
+        val applied = assertNotNull(first.connection.feedStatus.await(describe = { "applied: ${first.connection.feedStatus.value}" }) { it.lastAppliedAt != null }.lastAppliedAt)
+        first.shutdown()
+        runtimes -= first
+
+        // A restarted process that does not connect (a widget render after process death) still knows when the workspace last changed.
+        val second = runtime(fixture, jvmTestPlatform(directory, secrets), active = false)
+        val restored = second.connection.feedStatus.await(describe = { "restored: ${second.connection.feedStatus.value}" }) { it.lastAppliedAt != null }
+        assertEquals(applied.toEpochMilliseconds(), restored.lastAppliedAt?.toEpochMilliseconds())
+        assertEquals(fixture.daemonId, restored.daemonId)
+        assertFalse(restored.live)
+        assertEquals(ConnectionPhase.DISCONNECTED, second.connection.state.value.phase)
+    }
+
+    @Test
+    fun aWidgetRefreshConnectsBrieflyWithoutStayingOnline() = e2e {
+        val fixture = fixture()
+        val runtime = runtime(fixture, active = false)
+        assertTrue(runtime.connection.refreshForWidget(30.seconds))
+        runtime.connection.state.await(20.seconds, describe = { "released: ${runtime.connection.state.value}" }) { it.phase == ConnectionPhase.DISCONNECTED }
+    }
 }

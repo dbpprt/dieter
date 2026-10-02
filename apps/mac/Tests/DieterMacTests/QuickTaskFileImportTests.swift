@@ -11,20 +11,11 @@ struct QuickTaskFileImportTests {
         draft.initialized = true
         draft.story = "Keep my unfinished task"
         draft.sourceURL = "https://example.com/page"
-        draft.provider = "codex"
-        draft.model = "gpt-5.6-sol"
-        draft.effort = "high"
-        draft.providerOptions = ["fast_mode": "true"]
         draft.attachments = [part("existing.txt")]
         draft.selectBoardContext(projectID: "current-project", boardID: "current-board")
-        // Popover initialization reconciles available boards on every open.
-        draft.selectProject("current-project", boardIDs: ["first-board", "current-board"])
         #expect(draft.draftProjectID == "current-project" && draft.draftBoardID == "current-board")
         #expect(draft.story == "Keep my unfinished task" && draft.sourceURL == "https://example.com/page")
-        #expect(draft.provider == "codex" && draft.model == "gpt-5.6-sol" && draft.effort == "high")
-        #expect(draft.providerOptions == ["fast_mode": "true"] && draft.attachments.count == 1)
-        draft.selectProject("old-project", boardIDs: ["old-board", "other"])
-        #expect(draft.draftBoardID == "old-board", "Global project selection still remembers each project's board")
+        #expect(draft.attachments.count == 1)
     }
 
     @Test func fileSelectionLoadsIntoTheRetainedDraftAfterPopoverDismissal() async throws {

@@ -1,5 +1,7 @@
 [versions]
-# Kotlin, AGP, and coroutines match apps/android so the app can include this build.
+# The one source of the toolchain and libraries apps/android shares with this
+# build: Android imports this file as its `coreLibs` catalog, because a build
+# that includes the core must apply the same Kotlin and AGP versions.
 kotlin = "2.4.10"
 agp = "9.3.1"
 coroutines = "1.11.0"
@@ -10,6 +12,7 @@ serialization = "1.11.0"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 wire-runtime = { module = "com.squareup.wire:wire-runtime", version.ref = "wire" }
 wire-grpc-client = { module = "com.squareup.wire:wire-grpc-client", version.ref = "wire" }
@@ -22,3 +25,6 @@ okio-fakefilesystem = { module = "com.squareup.okio:okio-fakefilesystem", versio
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 android-kmp-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
 wire = { id = "com.squareup.wire", version.ref = "wire" }
+# Applied by apps/android.
+android-application = { id = "com.android.application", version.ref = "agp" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

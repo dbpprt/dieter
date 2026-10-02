@@ -92,11 +92,10 @@ class SignIn(
     }
 }
 
-/** Gateway session tokens, keyed by origin exactly as the legacy stores were. */
+/** Gateway session tokens, keyed by gateway origin. */
 class Credentials(private val store: SecureStore) {
     fun token(gateway: Gateway): String? = store.read(gateway.origin)?.takeIf { it.isNotBlank() }
     fun save(gateway: Gateway, token: String) = store.write(gateway.origin, token)
-    fun remove(gateway: Gateway) = store.delete(gateway.origin)
 }
 
 fun Gateway.record() = GatewayRecord(name = name, host = host, port = port, secure = secure)

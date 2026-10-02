@@ -73,7 +73,7 @@ class CheckChangedTests(unittest.TestCase):
                 self.assertEqual(self.components(path), clients if path.startswith("assets/") else clients | {"kmp"})
 
     def test_shared_kotlin_core_runs_its_checks_and_every_client_that_links_it(self):
-        core = [["just", "core", "test"], ["just", "core", "android-test"], ["just", "core", "apple-test"]]
+        core = [["just", "core", "test"], ["just", "core", "apple-test"]]
         for path in ("apps/core/shared/src/commonMain/kotlin/com/dbpprt/dieter/core/CoreRuntime.kt",
                      "apps/core/apple/src/appleMain/kotlin/com/dbpprt/dieter/shared/DieterShared.kt", "just/core.just"):
             with self.subTest(path=path):
@@ -88,6 +88,14 @@ class CheckChangedTests(unittest.TestCase):
                 self.assertIn(["just", "e2e", "run", "--platform", "mac", "--suite", "smoke"], plan)
                 self.assertFalse(any(command[:2] == ["just", "ios"] for command in plan))
         self.assertEqual(self.components("apps/core/model/src/commonMain/proto/dieter/client/v1/client.proto"), {"kmp", "android", "macos"})
+        # The Android device cases run for core code the app compiles, never for the core's own tests or Apple bridge.
+        functional = ["just", "e2e", "run", "--suite", "functional", "--changed"]
+        self.assertIn(functional, self.plan("apps/core/shared/src/commonMain/kotlin/com/dbpprt/dieter/core/CoreRuntime.kt"))
+        for path in ("apps/core/shared/src/commonTest/kotlin/com/dbpprt/dieter/core/CoreRuntimeTest.kt",
+                     "apps/core/testing/src/commonMain/kotlin/com/dbpprt/dieter/core/testing/SliceFolds.kt",
+                     "apps/core/apple/src/appleMain/kotlin/com/dbpprt/dieter/shared/DieterShared.kt"):
+            with self.subTest(path=path):
+                self.assertNotIn(functional, self.plan(path))
         for path in ("apps/mac/Sources/SharedCore/CoreRpcBridge.swift", "apps/mac/scripts/shared-framework.sh"):
             with self.subTest(path=path):
                 plan = self.plan(path)

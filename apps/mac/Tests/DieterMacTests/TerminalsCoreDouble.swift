@@ -36,13 +36,7 @@ import SharedCore
         switch terminals.action {
         case .bind(let next)?:
             guard next != target else { break }
-            let active = surfaces[scope]?.active ?? false
-            surfaces[scope] = .with {
-                $0.target = next
-                $0.active = active
-            }
-        case .active(let toggle)?:
-            update(scope) { $0.active = toggle.on }
+            surfaces[scope] = .with { $0.target = next }
         case .load?:
             do {
                 let listed = try await rpc.terminals(

@@ -5,7 +5,6 @@ import com.dbpprt.dieter.api.v1.PendingTool
 import com.dbpprt.dieter.api.v1.ProviderStatus
 import com.dbpprt.dieter.api.v1.TaskPlan
 import com.dbpprt.dieter.api.v1.UiMessage
-import com.dbpprt.dieter.core.board.Runtimes
 import com.dbpprt.dieter.core.runtime.Timestamps
 import kotlin.time.Instant
 
@@ -47,8 +46,6 @@ object ProviderStatuses {
 
 /** Live activity of the current turn: only the messages after the latest user message count. */
 object LiveActivities {
-    fun isActive(conversationStatus: String?, cardRuntime: String?): Boolean = Runtimes.isActive(conversationStatus) || Runtimes.isActive(cardRuntime)
-
     fun resolve(
         messages: List<UiMessage>,
         pendingTools: List<PendingTool> = emptyList(),
@@ -60,19 +57,18 @@ object LiveActivities {
     ): LiveActivity {
         if (listOf(conversationStatus, cardRuntime).any { it?.trim()?.lowercase() == "cancelling" }) return LiveActivity.Stopping
         if (ProviderStatuses.label(providerStatus) != null) return LiveActivity.Provider(providerStatus!!)
-        val turn = messages.drop(messages.indexOfLast(Parts::isUser) + 1).filter { it.role.equals("assistant", ignoreCase = true) }
+        val turn = turn(messages)
         val parts = turn.flatMap { it.parts }
         parts.lastOrNull { Parts.isToolCall(it) && it.state == "approval-requested" }?.let { return LiveActivity.Approval(Tools.title(Parts.toolName(it))) }
         val running = parts.filter { Parts.isToolCall(it) && Tools.isRunning(it) }
         running.lastOrNull()?.let { return LiveActivity.Tool(activity(it), running.size - 1) }
-        val finished = parts.filter { Parts.isToolCall(it) && !Tools.isRunning(it) }.mapTo(HashSet()) { it.tool_call_id }
-        pendingTools.lastOrNull { it.tool_call_id.isEmpty() || it.tool_call_id !in finished }?.let { pending ->
+        unfinished(parts, pendingTools).lastOrNull()?.let { pending ->
             return LiveActivity.Tool(Tools.activity(pending.tool_name, pending.input_json.utf8(), pending.input_preview))
         }
         val last = parts.lastOrNull { it.type != "step-start" }
         if (last != null) {
             if (last.type == "text" && last.state == "streaming") return LiveActivity.Writing
-            if (showReasoning && Parts.isReasoning(last)) reasoningSummary(last.text)?.let { return LiveActivity.Reasoning(it) }
+            if (showReasoning) reasoning(last)?.let { return it }
         }
         val turnIds = turn.mapTo(HashSet()) { it.id }
         plans.lastOrNull { it.state == "active" && it.message_id in turnIds }?.let { plan ->
@@ -83,6 +79,33 @@ object LiveActivities {
         if (listOf(conversationStatus, cardRuntime).any { it?.trim()?.lowercase() == "starting" } && parts.isEmpty()) return LiveActivity.Starting
         return LiveActivity.Thinking
     }
+
+    /**
+     * [plain], resolved without reasoning, as [resolve] would show it with
+     * reasoning: the turn's latest reasoning summary where it takes precedence.
+     */
+    fun withReasoning(plain: LiveActivity, messages: List<UiMessage>): LiveActivity {
+        if (plain !is LiveActivity.Planning && plain != LiveActivity.Starting && plain != LiveActivity.Thinking) return plain
+        val last = turn(messages).flatMap { it.parts }.lastOrNull { it.type != "step-start" } ?: return plain
+        return reasoning(last) ?: plain
+    }
+
+    /** The [pendingTools] the current turn's transcript has not finished: running tool calls it does not show yet. */
+    fun unfinishedPendingTools(messages: List<UiMessage>, pendingTools: List<PendingTool>): List<PendingTool> =
+        if (pendingTools.isEmpty()) emptyList() else unfinished(turn(messages).flatMap { it.parts }, pendingTools)
+
+    private fun unfinished(parts: List<MessagePart>, pendingTools: List<PendingTool>): List<PendingTool> {
+        if (pendingTools.isEmpty()) return emptyList()
+        val finished = parts.filter { Parts.isToolCall(it) && !Tools.isRunning(it) }.mapTo(HashSet()) { it.tool_call_id }
+        return pendingTools.filter { it.tool_call_id.isEmpty() || it.tool_call_id !in finished }
+    }
+
+    /** The assistant messages after the latest user message. */
+    private fun turn(messages: List<UiMessage>): List<UiMessage> =
+        messages.drop(messages.indexOfLast(Parts::isUser) + 1).filter { it.role.equals("assistant", ignoreCase = true) }
+
+    private fun reasoning(part: MessagePart): LiveActivity.Reasoning? =
+        if (Parts.isReasoning(part)) reasoningSummary(part.text)?.let(LiveActivity::Reasoning) else null
 
     private fun activity(part: MessagePart) = Tools.activity(Parts.toolName(part), part.input_json.utf8(), part.input_preview)
 
@@ -100,5 +123,5 @@ object LiveActivities {
 
     /** When the current turn started: the latest user message's time, else the runtime's. */
     fun turnStart(messages: List<UiMessage>, runtimeUpdatedAt: String?): Instant? =
-        messages.lastOrNull(Parts::isUser)?.let(com.dbpprt.dieter.core.outbox.OutboxPolicy::messageCreatedAt) ?: Timestamps.parse(runtimeUpdatedAt)
+        messages.lastOrNull(Parts::isUser)?.let(MessageMetadata::createdAt) ?: Timestamps.parse(runtimeUpdatedAt)
 }

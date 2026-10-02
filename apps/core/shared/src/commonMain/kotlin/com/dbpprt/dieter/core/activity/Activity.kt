@@ -4,13 +4,18 @@ import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.ConversationSnapshot
 import com.dbpprt.dieter.api.v1.Project
+import com.dbpprt.dieter.core.board.Cards
+import com.dbpprt.dieter.core.board.Lanes
 import com.dbpprt.dieter.core.board.RuntimeState
 import com.dbpprt.dieter.core.board.Runtimes
+import com.dbpprt.dieter.core.presentation.Ages
+import com.dbpprt.dieter.core.presentation.Counts
 import com.dbpprt.dieter.core.presentation.LiveActivities
 import com.dbpprt.dieter.core.runtime.Timestamps
 import com.dbpprt.dieter.core.sync.mergeCardState
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Instant
 
 enum class ActivityKind(val label: String, val needsYou: Boolean) {
@@ -37,8 +42,11 @@ data class ActivityItem(
     val boardName: String?,
 ) {
     val id: String get() = card.id
-    val chat: Boolean get() = card.scope == "chat" && card.board_id.isEmpty()
+    val chat: Boolean get() = Cards.isChat(card)
     val running: Boolean get() = kind == ActivityKind.RUNNING
+
+    /** Waits for the user: an answer or an unread reply. */
+    val needsYou: Boolean get() = kind.needsYou
     val section: ActivitySection get() = when {
         kind.needsYou -> ActivitySection.ATTENTION
         running -> ActivitySection.RUNNING
@@ -46,7 +54,19 @@ data class ActivityItem(
     }
 
     /** Inbox "Finish": a board card waiting in review. */
-    val canFinish: Boolean get() = !chat && card.lane.equals("review", ignoreCase = true) && !running && kind != ActivityKind.ANSWER
+    val canFinish: Boolean get() = !chat && Lanes.isReview(card.lane) && !running && kind != ActivityKind.ANSWER
+
+    /** The card's title, or "Untitled chat" / "Untitled card". */
+    val title: String get() = Activity.title(card)
+
+    /** The time a row shows: when a running turn started (else its latest activity), otherwise the latest activity. */
+    val shownAt: Instant? get() = if (running) start ?: at else at
+
+    /** "Chat" or "Card". */
+    val noun: String get() = if (chat) "Chat" else "Card"
+
+    /** Where the row belongs: its project, a card's board, and [noun], e.g. "dieter · Main · Card". */
+    val context: String get() = listOfNotNull(projectName, boardName?.takeUnless { chat }, noun).joinToString(" · ")
 }
 
 /**
@@ -61,7 +81,7 @@ object Activity {
             state == RuntimeState.NEEDS_INPUT -> ActivityKind.ANSWER
             state == RuntimeState.ACTIVE || state == RuntimeState.STOPPING -> ActivityKind.RUNNING
             Runtimes.isUnread(card) -> ActivityKind.UNREAD
-            card.scope != "chat" && card.lane.equals("review", ignoreCase = true) -> ActivityKind.REVIEW
+            !Cards.isChat(card) && Lanes.isReview(card.lane) -> ActivityKind.REVIEW
             state == RuntimeState.FAILED -> ActivityKind.FAILED
             card.runtime.isNotBlank() && !card.runtime.equals("pending", ignoreCase = true) &&
                 card.initial_prompt_sent_at.isNotEmpty() && card.runtime_updated_at.isNotEmpty() -> ActivityKind.RECENT
@@ -79,7 +99,7 @@ object Activity {
         kind == ActivityKind.REVIEW -> "Ready for review"
         kind == ActivityKind.FAILED -> "Agent failed"
         card.runtime.trim().lowercase() in stopped -> "Stopped"
-        card.scope == "chat" -> "Replied"
+        Cards.isChat(card) -> "Replied"
         else -> "Finished"
     }
 
@@ -126,42 +146,59 @@ object Activity {
         ActivitySection.entries.associateWith { section -> items.filter { it.section == section } }
 
     /** Project (blank = all) and a trimmed, case-insensitive query over title, project, and board. */
-    fun filter(items: List<ActivityItem>, projectId: String?, query: String): List<ActivityItem> {
-        val term = query.trim()
-        return items.filter { item ->
-            (projectId.isNullOrBlank() || item.card.project_id == projectId) &&
-                (term.isEmpty() || listOfNotNull(item.card.title, item.projectName, item.boardName).any { it.contains(term, ignoreCase = true) })
+    fun filter(items: List<ActivityItem>, projectId: String?, query: String): List<ActivityItem> =
+        items.filter { item ->
+            (projectId.isNullOrBlank() || item.card.project_id == projectId) && matches(query, item.card.title, item.projectName, item.boardName)
         }
+
+    /** Whether the trimmed [query] occurs in [title], [projectName], or [boardName], ignoring case; a blank query matches. */
+    fun matches(query: String, title: String, projectName: String?, boardName: String?): Boolean {
+        val term = query.trim()
+        return term.isEmpty() || listOfNotNull(title, projectName, boardName).any { it.contains(term, ignoreCase = true) }
     }
 
+    /** A conversation's title, or "Untitled chat" / "Untitled card" when it has none. */
+    fun title(card: Card): String = card.title.ifBlank { if (Cards.isChat(card)) "Untitled chat" else "Untitled card" }
+
     fun needsYouCount(items: List<ActivityItem>): Int = items.count { it.kind.needsYou }
+
+    /** The Inbox header: "3 projects · 1 needs attention · 2 running" over [items]. */
+    fun overview(projects: Int, items: List<ActivityItem>): String {
+        val attention = needsYouCount(items)
+        val running = items.count { it.running }
+        return "${Counts.of(projects, "project")} · $attention ${Counts.word(attention, "needs", "need")} attention · $running running"
+    }
 
     /** "Just now", "5m", "3h", "2d"; [suffix] appends " ago" except to "Just now". */
     fun age(at: Instant?, now: Instant, suffix: Boolean = false): String {
         at ?: return "Time unavailable"
-        val minutes = (now - at).inWholeMinutes
-        val text = when {
-            minutes < 1 -> return "Just now"
-            minutes < 60 -> "${minutes}m"
-            minutes < 1440 -> "${minutes / 60}h"
-            else -> "${minutes / 1440}d"
-        }
-        return if (suffix) "$text ago" else text
+        val age = Ages.span(now - at) ?: return "Just now"
+        return if (suffix) "${age.compact} ago" else age.compact
     }
 
     data class TimelineBar(val item: ActivityItem, val from: Double, val to: Double, val point: Boolean)
 
-    /** Bars within the last [hours]; running work extends to [now], which is the last sync while offline. */
-    fun timeline(items: List<ActivityItem>, now: Instant, hours: Int): List<TimelineBar> {
+    /** A row's place in a timeline window, as fractions of it; [point] when only its end is known. */
+    data class TimelineSpan(val from: Double, val to: Double, val point: Boolean)
+
+    /** Bars within the last [hours], in [items]' order; running work extends to [now], which is the last sync while offline. */
+    fun timeline(items: List<ActivityItem>, now: Instant, hours: Int): List<TimelineBar> = items.mapNotNull { item ->
+        span(item.start, item.at, item.running, now, hours)?.let { TimelineBar(item, it.from, it.to, it.point) }
+    }
+
+    /**
+     * One row's bar within the last [hours] before [now]: from [start] (or
+     * its end, as a point) to [at], or to [now] while [running]; null when
+     * it lies outside the window or has no time.
+     */
+    fun span(start: Instant?, at: Instant?, running: Boolean, now: Instant, hours: Int): TimelineSpan? {
         val window = now - hours.hours
-        val span = (now - window).inWholeMilliseconds.toDouble()
-        return items.mapNotNull { item ->
-            val end = if (item.running) now else item.at ?: return@mapNotNull null
-            val start = item.start ?: end
-            if (end < window || start > now) return@mapNotNull null
-            fun fraction(value: Instant) = ((value - window).inWholeMilliseconds / span).coerceIn(0.0, 1.0)
-            TimelineBar(item, fraction(start), fraction(end), point = item.start == null)
-        }
+        val length = (now - window).inWholeMilliseconds.toDouble()
+        val end = if (running) now else at ?: return null
+        val begin = start ?: end
+        if (end < window || begin > now) return null
+        fun fraction(value: Instant) = ((value - window).inWholeMilliseconds / length).coerceIn(0.0, 1.0)
+        return TimelineSpan(fraction(begin), fraction(end), point = start == null)
     }
 }
 
@@ -221,7 +258,7 @@ data class WidgetModel(val rows: List<Row>, val summary: String, val compact: Bo
                     val trailing = Activity.age(item.at, now)
                     val subtitle = if (compact) listOf(item.detail, trailing.takeIf { it != "Just now" }).filterNotNull().joinToString(" · ")
                     else listOfNotNull(item.projectName, if (item.chat) "Chat" else "Card").joinToString(" · ")
-                    rows += Row.Item(item.id, kind, item.card.title.ifBlank { "Untitled conversation" }, subtitle, trailing, item.kind.needsYou, item.detail)
+                    rows += Row.Item(item.id, kind, item.title, subtitle, trailing, item.kind.needsYou, item.detail)
                 }
             }
             val attention = sections.getValue(ActivitySection.ATTENTION).size
@@ -237,31 +274,45 @@ data class WidgetModel(val rows: List<Row>, val summary: String, val compact: Bo
     }
 }
 
-/** The macOS island: running, review, and needs-you work, plus today's finished count. */
-data class IslandModel(val items: List<ActivityItem>, val running: Int, val review: Int, val doneToday: Int, val subagents: Int) {
-    val header: String get() = when {
-        running > 0 -> "$running running"
-        review > 0 -> "Ready for you"
-        else -> "All quiet"
+/** Counts over the whole activity feed, for the island and the menu bar. */
+data class ActivityCounts(
+    val running: Int = 0,
+    /** Rows waiting for the user: an answer or an unread reply. */
+    val attention: Int = 0,
+    /** Every other row: review, failed, and finished work. */
+    val recent: Int = 0,
+    /** Board cards in a review lane, whatever their agent does. */
+    val review: Int = 0,
+    /** Delegated agents at work across every row. */
+    val subagents: Int = 0,
+) {
+    companion object {
+        fun of(items: List<ActivityItem>) = ActivityCounts(
+            running = items.count { it.running },
+            attention = items.count { it.needsYou },
+            recent = items.count { !it.running && !it.needsYou },
+            review = items.count { !it.chat && Lanes.isReview(it.card.lane) },
+            subagents = items.sumOf { it.card.active_subagents.size },
+        )
     }
+}
 
-    val accessibility: String get() = "Dieter Island. $running running, $review in review, $doneToday done today."
+/**
+ * The macOS island: running work, then what waits for the user, then the
+ * rest, each group in the Inbox's order, with counts over the whole feed.
+ */
+data class IslandModel(val items: List<ActivityItem>, val running: Int, val attention: Int, val recent: Int, val subagents: Int) {
+    val accessibility: String get() = "Dieter Island. $running running, $attention need attention, $recent recent."
 
     companion object {
         const val MAX_ROWS = 4
 
-        /** [dayStart] is the start of the local day; the platform computes it in its time zone. */
-        fun build(items: List<ActivityItem>, dayStart: Instant): IslandModel {
-            val rank = mapOf(ActivityKind.RUNNING to 0, ActivityKind.REVIEW to 1, ActivityKind.ANSWER to 2, ActivityKind.UNREAD to 2)
-            val visible = items.filter { it.kind in rank }.sortedWith(compareBy<ActivityItem> { rank.getValue(it.kind) }.thenByDescending { it.at ?: Instant.DISTANT_PAST }.thenBy { it.id })
-            val done = items.count { it.kind == ActivityKind.RECENT && (it.at?.let { at -> at >= dayStart } == true) }
-            return IslandModel(
-                items = visible.take(MAX_ROWS),
-                running = items.count { it.running },
-                review = items.count { it.kind == ActivityKind.REVIEW },
-                doneToday = done,
-                subagents = items.sumOf { it.card.active_subagents.size },
-            )
+        fun build(items: List<ActivityItem>): IslandModel {
+            val counts = ActivityCounts.of(items)
+            val running = items.filter { it.running }
+            val attention = items.filter { it.needsYou }
+            val rest = items.filter { !it.running && !it.needsYou }
+            return IslandModel((running + attention + rest).take(MAX_ROWS), counts.running, counts.attention, counts.recent, counts.subagents)
         }
     }
 }
@@ -273,7 +324,23 @@ object MenuBar {
 
     fun items(items: List<ActivityItem>, now: Instant): List<ActivityItem> {
         val actionable = items.filter { it.kind.needsYou || it.kind == ActivityKind.REVIEW }
-        val recent = items.filter { (it.kind == ActivityKind.FAILED || it.kind == ActivityKind.RECENT) && it.at?.let { at -> now - at <= RECENT_WINDOW } == true }
-        return (actionable + recent).take(MAX_ROWS)
+        val results = items.filter { recent(it) && it.at?.let { at -> now - at <= RECENT_WINDOW } == true }
+        return (actionable + results).take(MAX_ROWS)
     }
+
+    /** A row's line in the menu: "Needs you", "Unread reply", "Ready for review", "Failed", or "Finished". */
+    fun title(kind: ActivityKind): String = when (kind) {
+        ActivityKind.ANSWER -> "Needs you"
+        ActivityKind.UNREAD -> "Unread reply"
+        ActivityKind.REVIEW -> "Ready for review"
+        ActivityKind.FAILED -> "Failed"
+        ActivityKind.RUNNING -> "Running"
+        ActivityKind.RECENT -> "Finished"
+    }
+
+    /** When the next recent row leaves the six-hour window after [now], so the menu changes; null when none will. */
+    fun nextChange(items: List<ActivityItem>, now: Instant): Instant? =
+        items.filter { recent(it) }.mapNotNull { it.at?.plus(RECENT_WINDOW) }.filter { it >= now }.minOrNull()?.plus(1.milliseconds)
+
+    private fun recent(item: ActivityItem): Boolean = item.kind == ActivityKind.FAILED || item.kind == ActivityKind.RECENT
 }

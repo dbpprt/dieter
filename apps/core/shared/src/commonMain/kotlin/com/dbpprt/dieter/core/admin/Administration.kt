@@ -8,6 +8,7 @@ import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.Checkout
 import com.dbpprt.dieter.api.v1.CheckoutRef
 import com.dbpprt.dieter.api.v1.ConsolidateProjectRequest
+import com.dbpprt.dieter.api.v1.ConversationRef
 import com.dbpprt.dieter.api.v1.CreateBoardLabelRequest
 import com.dbpprt.dieter.api.v1.CreateBoardRequest
 import com.dbpprt.dieter.api.v1.CreateProjectRequest
@@ -15,6 +16,8 @@ import com.dbpprt.dieter.api.v1.CreateProjectResponse
 import com.dbpprt.dieter.api.v1.DeleteBoardLabelRequest
 import com.dbpprt.dieter.api.v1.DieterServiceClient
 import com.dbpprt.dieter.api.v1.DirectoryListing
+import com.dbpprt.dieter.api.v1.FileDocument
+import com.dbpprt.dieter.api.v1.ListChatsRequest
 import com.dbpprt.dieter.api.v1.ListDirectoriesRequest
 import com.dbpprt.dieter.api.v1.PeerRecord
 import com.dbpprt.dieter.api.v1.PeerRecordRef
@@ -25,34 +28,29 @@ import com.dbpprt.dieter.api.v1.ProjectHostnames
 import com.dbpprt.dieter.api.v1.PromptPreview
 import com.dbpprt.dieter.api.v1.PromptSettings
 import com.dbpprt.dieter.api.v1.PutPeerRecordRequest
+import com.dbpprt.dieter.api.v1.ReadFileRequest
 import com.dbpprt.dieter.api.v1.RenameBoardRequest
 import com.dbpprt.dieter.api.v1.SetBoardArchivePolicyRequest
 import com.dbpprt.dieter.api.v1.SetBoardRetiredRequest
 import com.dbpprt.dieter.api.v1.SetScopedPromptTemplateRequest
-import com.dbpprt.dieter.api.v1.Settings
-import com.dbpprt.dieter.api.v1.SettingsOptions
 import com.dbpprt.dieter.api.v1.UpdateBoardGitSettingsRequest
 import com.dbpprt.dieter.api.v1.UpdateBoardHostnamesRequest
 import com.dbpprt.dieter.api.v1.UpdateBoardLabelRequest
+import com.dbpprt.dieter.api.v1.UpdateConversationWorkspaceRequest
 import com.dbpprt.dieter.api.v1.UpdateProjectRequest
 import com.dbpprt.dieter.api.v1.UpdatePromptSettingsRequest
-import com.dbpprt.dieter.api.v1.UpdateSettingsRequest
 import com.dbpprt.dieter.api.v1.ValidationCommand
-import com.dbpprt.dieter.api.v1.ConversationRef
-import com.dbpprt.dieter.api.v1.FileDocument
-import com.dbpprt.dieter.api.v1.ListChatsRequest
-import com.dbpprt.dieter.api.v1.ReadFileRequest
-import com.dbpprt.dieter.api.v1.UpdateConversationWorkspaceRequest
 import com.dbpprt.dieter.api.v1.Workspace
 import com.dbpprt.dieter.core.composition.WorkspaceMode
 import com.dbpprt.dieter.core.runtime.CoreException
+import com.dbpprt.dieter.core.runtime.Deadlines
 import com.dbpprt.dieter.core.runtime.FailureKind
-import com.dbpprt.dieter.core.runtime.withDeadline
 import com.dbpprt.dieter.core.session.MachineSessions
 import com.dbpprt.dieter.core.store.WorkspaceStore
+import com.dbpprt.dieter.core.workspace.ProjectWorkspaceSettings
+import com.dbpprt.dieter.core.workspace.ValidationCommandDraft
 import kotlin.random.Random
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -79,6 +77,9 @@ sealed interface AdminRoute {
     }
 }
 
+/** A project replica's archived projects and a board's archived cards, as the Archives view lists them. */
+data class AdministrationArchives(val projects: List<Project> = emptyList(), val cards: List<Card> = emptyList())
+
 /**
  * Projects, checkouts, boards, labels, prompt settings, and shared-record
  * conflicts. Owner and target machines are reached over scoped connections;
@@ -87,7 +88,11 @@ sealed interface AdminRoute {
  * dispatcher.
  */
 class Administration(private val sessions: MachineSessions, private val store: WorkspaceStore, private val attached: () -> String?) {
-    private val operationIds = HashMap<String, String>()
+    /** Intent → its operation ID, oldest first; an intent is forgotten once it succeeded. */
+    private val operationIds = LinkedHashMap<String, String>()
+
+    /** Intents whose operation ID is kept for a retry. */
+    internal val pendingIntents: Int get() = operationIds.size
 
     private fun daemonFor(route: AdminRoute): String {
         val directory = store.directoryProjection
@@ -95,44 +100,63 @@ class Administration(private val sessions: MachineSessions, private val store: W
             is AdminRoute.Target -> route.daemonId
             is AdminRoute.Replica -> directory.projectReplicas[route.projectId] ?: attached()
                 ?: throw CoreException(FailureKind.TRANSIENT, "No project replica is online.")
-            is AdminRoute.Owner -> directory.projects[route.projectId]?.checkouts?.firstOrNull { it.id == route.checkoutId }?.daemon_id?.ifEmpty { null }
+            is AdminRoute.Owner -> directory.checkoutMachine(route.projectId, route.checkoutId)
                 ?: throw CoreException(FailureKind.TRANSIENT, "The checkout’s machine is unavailable")
             AdminRoute.Attached -> attached() ?: throw CoreException(FailureKind.TRANSIENT, "No machine is attached.")
         }
     }
 
-    private suspend fun <T> call(route: AdminRoute, timeout: Duration = DEADLINE, block: suspend (DieterServiceClient) -> T): T =
-        withDeadline(timeout) { sessions.call(daemonFor(route), block) }
+    private suspend fun <T> call(route: AdminRoute, timeout: Duration = Deadlines.CALL, block: suspend (DieterServiceClient) -> T): T =
+        sessions.call(daemonFor(route), timeout, block)
 
-    /** One operation ID per distinct request, so a retry of the same intent is idempotent and an edit is not. */
-    private fun operationId(kind: String, fingerprint: ByteString): String =
-        operationIds.getOrPut(kind + ":" + fingerprint.sha256().hex()) { Uuid.random().toString() }
+    /**
+     * Runs [block] with one operation ID per distinct intent, so a retry of
+     * the same intent is idempotent and an edit is not. The ID is kept until
+     * the intent succeeds; only the newest [MAX_INTENTS] are kept.
+     */
+    private suspend fun <T> idempotent(kind: String, fingerprint: ByteString, block: suspend (operationId: String) -> T): T {
+        val key = kind + ":" + fingerprint.sha256().hex()
+        val id = operationIds.remove(key) ?: Uuid.random().toString()
+        operationIds[key] = id
+        while (operationIds.size > MAX_INTENTS) operationIds.remove(operationIds.keys.first())
+        return block(id).also { operationIds.remove(key) }
+    }
 
     // --- Projects ---------------------------------------------------------------
 
-    /** Registers an existing repository ("open") or creates one ("create") on [daemonId]. */
+    /**
+     * Registers an existing repository ("open") or creates one ("create") on
+     * [daemonId], with its first board ([DEFAULT_BOARD_NAME] when blank).
+     * A [summary] or [prompt] is saved on the new project right after.
+     */
     suspend fun createProject(
         daemonId: String,
         path: String,
         name: String = "",
         create: Boolean = false,
-        boardName: String = "Main",
-        workflow: String = "review",
-        baseRemote: String = "origin",
-        baseBranch: String = "main",
+        boardName: String = DEFAULT_BOARD_NAME,
+        workflow: String = DEFAULT_WORKFLOW,
+        baseRemote: String = DEFAULT_BASE_REMOTE,
+        baseBranch: String = DEFAULT_BASE_BRANCH,
         validation: List<ValidationCommand> = emptyList(),
+        summary: String = "",
+        prompt: String = "",
     ): CreateProjectResponse {
         if (path.isBlank()) throw CoreException(FailureKind.PERMANENT, "Choose a folder for the project.")
         if (baseBranch.isBlank()) throw CoreException(FailureKind.PERMANENT, "Enter a workspace base branch.")
         val request = CreateProjectRequest(
-            mode = if (create) "create" else "open", path = path.trim(), name = name.trim(), board_name = boardName.trim().ifEmpty { "Main" },
+            mode = if (create) "create" else "open", path = path.trim(), name = name.trim(), board_name = boardName.trim().ifEmpty { DEFAULT_BOARD_NAME },
             workflow = workflow, base_remote = baseRemote.trim(), base_branch = baseBranch.trim(), validation_commands = validation,
         )
-        val stable = request.copy(operation_id = operationId("project", CreateProjectRequest.ADAPTER.encodeByteString(request)))
-        val response = call(AdminRoute.Target(daemonId), CREATE_DEADLINE) { it.CreateProject().execute(stable) }
-        response.project?.let(store::overlayProject)
+        val response = idempotent("project", CreateProjectRequest.ADAPTER.encodeByteString(request)) { operationId ->
+            call(AdminRoute.Target(daemonId), Deadlines.PROVISION) { it.CreateProject().execute(request.copy(operation_id = operationId)) }
+        }
+        // Calls for the new project reach the machine that created it until a machine view lists it.
+        response.project?.let { store.overlayProject(it, replicaDaemonId = daemonId) }
         response.board?.let(store::overlayBoard)
-        return response
+        val created = response.project
+        if (created == null || (summary.isBlank() && prompt.isBlank())) return response
+        return response.copy(project = updateProject(created.id, summary = summary, prompt = prompt))
     }
 
     suspend fun updateProject(projectId: String, name: String? = null, summary: String? = null, prompt: String? = null, hostnames: List<String>? = null): Project {
@@ -143,6 +167,28 @@ class Administration(private val sessions: MachineSessions, private val store: W
         return call(AdminRoute.Replica(projectId)) { it.UpdateProject().execute(request) }.also(store::overlayProject)
     }
 
+    /**
+     * Saves the project settings form: the workspace base remote and branch
+     * and, unless [validation] is null, [checkoutId]'s validation commands
+     * (written on that checkout's machine), then the name, summary, and
+     * instructions. A blank [name] keeps the current one. The project shows
+     * each result at once.
+     */
+    suspend fun saveProject(
+        projectId: String,
+        name: String,
+        summary: String,
+        prompt: String,
+        baseRemote: String,
+        baseBranch: String,
+        checkoutId: String?,
+        validation: List<ValidationCommandDraft>?,
+    ): Project {
+        val project = store.state.value.project(projectId) ?: throw CoreException(FailureKind.PERMANENT, "The project is no longer available.")
+        ProjectWorkspaceSettings.update(sessions, store, project, baseRemote, baseBranch, checkoutId, validation).also(store::overlayProject)
+        return updateProject(projectId, name = name, summary = summary, prompt = prompt)
+    }
+
     suspend fun setProjectArchived(projectId: String, archived: Boolean): Project =
         call(AdminRoute.Replica(projectId)) { it.ArchiveProject().execute(ArchiveProjectRequest(project_id = projectId, archived = archived)) }.also(store::overlayProject)
 
@@ -151,11 +197,15 @@ class Administration(private val sessions: MachineSessions, private val store: W
         return call(AdminRoute.Target(machine)) { it.ListArchivedProjects().execute(Unit) }.projects
     }
 
-    /** Folds [sourceId] into [destinationId]; conversations keep their IDs, checkouts, and machines. */
+    /**
+     * Folds [sourceId] into [destinationId]; conversations keep their IDs,
+     * checkouts, and machines. The source leaves the workspace at once, and
+     * the destination shows its boards, items, and checkouts.
+     */
     suspend fun consolidate(sourceId: String, destinationId: String): Project {
         if (sourceId == destinationId) return store.directoryProjection.projects[destinationId] ?: throw CoreException(FailureKind.PERMANENT, "The project is no longer available.")
         return call(AdminRoute.Replica(destinationId)) { it.ConsolidateProject().execute(ConsolidateProjectRequest(source_project_id = sourceId, destination_project_id = destinationId)) }
-            .also(store::overlayProject)
+            .also { store.overlayConsolidation(sourceId, it) }
     }
 
     // --- Checkouts ----------------------------------------------------------------
@@ -164,18 +214,31 @@ class Administration(private val sessions: MachineSessions, private val store: W
     suspend fun directories(daemonId: String, path: String = ""): DirectoryListing =
         call(AdminRoute.Target(daemonId)) { it.ListDirectories().execute(ListDirectoriesRequest(path = path)) }
 
-    /** Attaches a Git working tree on [daemonId] as another checkout of [projectId]. */
+    /** Attaches a Git working tree on [daemonId] as another checkout of [projectId]; the project shows it at once. */
     suspend fun attachCheckout(daemonId: String, projectId: String, path: String, name: String = ""): Checkout =
-        call(AdminRoute.Target(daemonId), CREATE_DEADLINE) { it.AttachCheckout().execute(AttachCheckoutRequest(project_id = projectId, path = path.trim(), name = name.trim())) }
+        call(AdminRoute.Target(daemonId), Deadlines.PROVISION) { it.AttachCheckout().execute(AttachCheckoutRequest(project_id = projectId, path = path.trim(), name = name.trim())) }
+            .also(store::overlayCheckout)
 
-    /** Detaches a checkout on the machine that holds it; refused while a conversation there is running. */
+    /**
+     * Detaches a checkout on the machine that holds it; refused while a
+     * conversation there is running. The project shows it detached at once.
+     */
     suspend fun detachCheckout(projectId: String, checkoutId: String) {
         call(AdminRoute.Owner(checkoutId, projectId)) { it.DetachCheckout().execute(CheckoutRef(checkout_id = checkoutId)) }
+        store.directoryProjection.projects[projectId]?.checkouts?.firstOrNull { it.id == checkoutId }?.let { store.overlayCheckout(it.copy(detached = true)) }
     }
 
     // --- Boards -------------------------------------------------------------------
 
-    suspend fun createBoard(projectId: String, name: String, workflow: String = "review", description: String = "", policy: String = "never", baseRemote: String = "", publishMode: String = "manual"): Board {
+    suspend fun createBoard(
+        projectId: String,
+        name: String,
+        workflow: String = DEFAULT_WORKFLOW,
+        description: String = "",
+        policy: String = DEFAULT_ARCHIVE_POLICY,
+        baseRemote: String = "",
+        publishMode: String = DEFAULT_PUBLISH_MODE,
+    ): Board {
         if (name.isBlank()) throw CoreException(FailureKind.PERMANENT, "board name is required")
         val request = CreateBoardRequest(
             project_id = projectId, name = name.trim(), workflow = workflow, description = description.trim(), done_archive_policy = policy,
@@ -217,18 +280,12 @@ class Administration(private val sessions: MachineSessions, private val store: W
      */
     suspend fun setBoardRetired(boardId: String, retired: Boolean): Board {
         val route = AdminRoute.Replica(projectOf(boardId))
-        val daemon = daemonFor(route)
-        return withDeadline(DEADLINE) {
-            sessions.call(daemon) { client ->
+        return idempotent("board", "retire:$boardId:$retired".encodeUtf8()) { operationId ->
+            call(route) { client ->
                 val current = client.GetBoard().execute(BoardRef(board_id = boardId))
-                val intent = "retire:$boardId:$retired".encodeUtf8()
-                val request = SetBoardRetiredRequest(board_id = boardId, retired = retired, expected_revision = current.retirement_revision, operation_id = operationId("board", intent))
-                client.SetBoardRetired().execute(request)
+                client.SetBoardRetired().execute(SetBoardRetiredRequest(board_id = boardId, retired = retired, expected_revision = current.retirement_revision, operation_id = operationId))
             }
-        }.also {
-            operationIds.remove("board:" + "retire:$boardId:$retired".encodeUtf8().sha256().hex())
-            store.overlayBoard(it)
-        }
+        }.also(store::overlayBoard)
     }
 
     // --- Labels ---------------------------------------------------------------------
@@ -251,7 +308,7 @@ class Administration(private val sessions: MachineSessions, private val store: W
     suspend fun deleteLabel(boardId: String, labelId: String): Board =
         call(AdminRoute.Replica(projectOf(boardId))) { it.DeleteBoardLabel().execute(DeleteBoardLabelRequest(board_id = boardId, label_id = labelId)) }.also(store::overlayBoard)
 
-    // --- Settings and prompts ---------------------------------------------------------
+    // --- Prompts ----------------------------------------------------------------------
 
     /** Global prompt settings are local to one machine; the editor always names the machine it edits. */
     suspend fun promptSettings(daemonId: String): PromptSettings = call(AdminRoute.Target(daemonId)) { it.GetPromptSettings().execute(Unit) }
@@ -266,17 +323,6 @@ class Administration(private val sessions: MachineSessions, private val store: W
             it.UpdatePromptSettings().execute(UpdatePromptSettingsRequest(prompt_template = context, board_skill_template = boardSkill, chat_skill_template = chatSkill))
         }
     }
-
-    /**
-     * Portable settings are read from and written to the same machine,
-     * [projectId]'s replica (else the attached machine), so an update never
-     * lands on a machine whose settings were not the ones shown.
-     */
-    suspend fun settings(projectId: String?): Settings = call(AdminRoute.shared(projectId)) { it.GetSettings().execute(Unit) }
-
-    suspend fun updateSettings(projectId: String?, settings: Settings): Settings = call(AdminRoute.shared(projectId)) { it.UpdateSettings().execute(UpdateSettingsRequest(settings = settings)) }
-
-    suspend fun settingsOptions(projectId: String?): SettingsOptions = call(AdminRoute.shared(projectId)) { it.GetSettingsOptions().execute(Unit) }
 
     /** Sets or clears ([template] null) a project's prompt override. */
     suspend fun setProjectPrompt(projectId: String, template: String?): Project {
@@ -325,14 +371,12 @@ class Administration(private val sessions: MachineSessions, private val store: W
     private fun ownerOf(cardId: String): String {
         val directory = store.directoryProjection
         val card = directory.item(cardId) ?: throw CoreException(FailureKind.PERMANENT, "The conversation is no longer available.")
-        return card.owner_daemon_id.ifEmpty { null }
-            ?: directory.projects[card.project_id]?.checkouts?.firstOrNull { it.id == card.checkout_id }?.daemon_id?.ifEmpty { null }
-            ?: throw CoreException(FailureKind.TRANSIENT, "The conversation's machine is unavailable.")
+        return directory.owner(card) ?: throw CoreException(FailureKind.TRANSIENT, "The conversation's machine is unavailable.")
     }
 
     /** A conversation's workspace, provisioning it when needed. */
     suspend fun conversationWorkspace(cardId: String): Workspace =
-        call(AdminRoute.Target(ownerOf(cardId)), CREATE_DEADLINE) { it.GetWorkspace().execute(ConversationRef(card_id = cardId)) }
+        call(AdminRoute.Target(ownerOf(cardId)), Deadlines.PROVISION) { it.GetWorkspace().execute(ConversationRef(card_id = cardId)) }
 
     /** Changes a conversation's workspace before its first turn, on the machine that owns it. */
     suspend fun updateConversationWorkspace(cardId: String, mode: WorkspaceMode, branch: String, baseBranch: String, baseRemote: String, publishMode: String): Card {
@@ -356,22 +400,32 @@ class Administration(private val sessions: MachineSessions, private val store: W
 
     /** One file of a checkout, or of a conversation's workspace when [cardId] is set. */
     suspend fun readFile(daemonId: String, projectId: String, checkoutId: String, cardId: String, path: String): FileDocument =
-        call(AdminRoute.Target(daemonId), CREATE_DEADLINE) {
+        call(AdminRoute.Target(daemonId), Deadlines.PROVISION) {
             it.ReadFile().execute(ReadFileRequest(project_id = projectId, checkout_id = if (cardId.isEmpty()) checkoutId else "", card_id = cardId, path = path))
         }
 
-    /** Archived cards and projects plus settings, read together for the Archives view. */
-    suspend fun archives(projectId: String, boardId: String?): Pair<List<Project>, List<Card>> {
+    /** The archived projects [projectId]'s replica knows and [boardId]'s archived cards, read together for the Archives view. */
+    suspend fun archives(projectId: String, boardId: String?): AdministrationArchives {
         val projects = archivedProjects(daemonFor(AdminRoute.Replica(projectId)))
         val cards = boardId?.let { board -> call(AdminRoute.Replica(projectId)) { it.ListArchivedCards().execute(BoardRef(board_id = board)) }.cards }.orEmpty()
-        return projects to cards
+        return AdministrationArchives(projects, cards)
     }
 
     companion object {
-        val DEADLINE = 15.seconds
-        val CREATE_DEADLINE = 60.seconds
+        private const val MAX_INTENTS = 64
         val ARCHIVE_POLICIES = listOf("never", "immediately", "after_1_day", "after_7_days", "after_30_days", "after_90_days")
         val PUBLISH_MODES = listOf("manual", "pull_request", "push_base")
+
+        /** A board with a review lane, or one that moves finished work straight to Done; review first. */
+        val WORKFLOWS = listOf("review", "direct")
+
+        /** What a new project or board starts with unless the user changes it. */
+        const val DEFAULT_BOARD_NAME = "Main"
+        const val DEFAULT_WORKFLOW = "review"
+        const val DEFAULT_BASE_REMOTE = "origin"
+        const val DEFAULT_BASE_BRANCH = "main"
+        const val DEFAULT_PUBLISH_MODE = "manual"
+        const val DEFAULT_ARCHIVE_POLICY = "never"
 
         /** "Never", "Immediately", "After 7 days". */
         fun archivePolicyTitle(policy: String): String = policy.replace('_', ' ').replaceFirstChar { it.uppercase() }
@@ -382,7 +436,40 @@ class Administration(private val sessions: MachineSessions, private val store: W
             "push_base" -> "Push base"
             else -> mode
         }
-        val WORKFLOWS = listOf("review", "direct")
+
+        /** "With review" or "Direct to done"; an unknown workflow reads as itself. */
+        fun workflowTitle(workflow: String): String = when (workflow) {
+            "review" -> "With review"
+            "direct" -> "Direct to done"
+            else -> workflow
+        }
+
+        /** The lanes a workflow's cards pass: "Todo → Running → Review → Done", or without Review for direct. */
+        fun workflowLanes(workflow: String): String = if (workflow == "direct") "Todo → Running → Done" else "Todo → Running → Review → Done"
+
+        /** What a workflow does with finished agent work. */
+        fun workflowDetail(workflow: String): String =
+            if (workflow == "direct") "Direct moves completed work straight to Done." else "Review keeps completed agent work waiting for your approval."
+
+        /** The remote a project's workspaces branch from, [DEFAULT_BASE_REMOTE] when unset. */
+        fun baseRemote(project: Project): String = project.base_remote.ifBlank { DEFAULT_BASE_REMOTE }
+
+        /** The branch a project's workspaces start from, [DEFAULT_BASE_BRANCH] when unset. */
+        fun baseBranch(project: Project): String = project.base_branch.ifBlank { DEFAULT_BASE_BRANCH }
+
+        /** The remote a board's workspaces publish to: its own, else its project's. */
+        fun boardRemote(board: Board, project: Project?): String = board.base_remote.ifBlank { project?.base_remote.orEmpty() }
+
+        /** How a board publishes finished work, [DEFAULT_PUBLISH_MODE] when unset. */
+        fun publishMode(board: Board): String = board.remote_publish_mode.ifBlank { DEFAULT_PUBLISH_MODE }
+
+        /** A new project needs a folder, a base branch, and valid validation commands; a blank board name becomes [DEFAULT_BOARD_NAME]. */
+        fun canCreateProject(path: String, baseBranch: String, validation: List<ValidationCommandDraft>): Boolean =
+            path.isNotBlank() && baseBranch.isNotBlank() && ValidationCommandDraft.problem(validation) == null
+
+        /** The project settings form saves with a name, a base branch, and valid validation commands. */
+        fun canSaveProject(name: String, baseBranch: String, validation: List<ValidationCommandDraft>): Boolean =
+            name.isNotBlank() && baseBranch.isNotBlank() && ValidationCommandDraft.problem(validation) == null
     }
 }
 
@@ -403,7 +490,6 @@ object Labels {
         LabelColor("Rose", "#c65f98"),
     )
     val PALETTE = COLORS.map { it.value }
-    const val DEFAULT_COLOR = "#6558df"
     private val hex = Regex("^#[0-9a-fA-F]{6}$")
 
     fun validate(name: String, color: String): String? = when {
@@ -516,7 +602,4 @@ object PromptTemplates {
         }
         return null
     }
-
-    /** Rough token estimate the daemon also reports: a quarter of the UTF-8 bytes. */
-    fun estimatedTokens(text: String): Int = (text.encodeToByteArray().size + 3) / 4
 }

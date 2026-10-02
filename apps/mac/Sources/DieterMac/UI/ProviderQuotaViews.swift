@@ -1,9 +1,10 @@
 import DieterAPI
+import DieterShared
 import SwiftUI
 
 private struct ProviderQuotaCompactAccount: Identifiable {
     let provider: Dieter_Gateway_V1_ProviderQuotaProvider
-    let account: Dieter_Gateway_V1_ProviderQuotaSnapshot
+    let account: ClientQuotaAccountRow
 
     var id: String { "\(provider.rawValue):\(account.accountKey)" }
 }
@@ -14,15 +15,14 @@ struct ProviderQuotaCompactView: View {
     var embeddedInToolbar = false
     var embeddedInSidebar = false
 
-    private var groups: [Dieter_Gateway_V1_ProviderQuotaGroup] {
-        store.quotas.providerQuotaGroups.filter { !$0.accounts.isEmpty }
+    private var groups: [ClientQuotaGroupRow] {
+        store.quotas.providerQuotaRows.filter { !$0.accounts.isEmpty }
     }
 
     private var accounts: [ProviderQuotaCompactAccount] {
         groups.flatMap { group in
-            group.accounts.compactMap { account in
-                guard !account.hasIncludedInSummary || account.includedInSummary else { return nil }
-                return ProviderQuotaCompactAccount(provider: group.provider, account: account)
+            group.accounts.filter(\.included).map {
+                ProviderQuotaCompactAccount(provider: group.provider, account: $0)
             }
         }
     }
@@ -95,7 +95,7 @@ struct ProviderQuotaSidebarBlock: View {
     @Environment(DieterStore.self) private var store
 
     private var visible: Bool {
-        store.quotas.providerQuotasLoading || store.quotas.providerQuotaGroups.contains { !$0.accounts.isEmpty }
+        store.quotas.providerQuotasLoading || store.quotas.providerQuotaRows.contains { !$0.accounts.isEmpty }
     }
 
     var body: some View {
@@ -158,86 +158,44 @@ private extension View {
 
 private struct ProviderQuotaAccountCompactLabel: View {
     let provider: Dieter_Gateway_V1_ProviderQuotaProvider
-    let account: Dieter_Gateway_V1_ProviderQuotaSnapshot
-
-    private var remaining: UInt32? { ProviderQuotaPresentation.remainingPercent(account) }
+    let account: ClientQuotaAccountRow
 
     var body: some View {
+        let tint = ProviderQuotaPresentation.tint(provider, account.severity)
+        let warning = SharedRules.shared.quotaWarning(
+            unavailable: account.unavailable, freshUntilMillis: account.freshUntilMillis,
+            nowMillis: Date.now.epochMillis)
         HStack(spacing: 5) {
             Image(systemName: ProviderQuotaPresentation.symbol(provider))
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(ProviderQuotaPresentation.tint(provider, remaining ?? 100))
-            Text(ProviderQuotaPresentation.accountLabel(account))
+                .foregroundStyle(tint)
+            Text(account.label)
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(DieterTheme.subtle)
                 .lineLimit(1)
                 .frame(minWidth: 42, maxWidth: .infinity, alignment: .leading)
-            if let remaining {
-                Text("\(remaining)%")
+            if account.remaining >= 0 {
+                Text("\(account.remaining)%")
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(ProviderQuotaPresentation.tint(provider, remaining))
+                    .foregroundStyle(tint)
                     .monospacedDigit()
-                ProgressView(value: Double(remaining), total: 100)
+                ProgressView(value: Double(account.remaining), total: 100)
                     .progressViewStyle(.linear)
-                    .tint(ProviderQuotaPresentation.tint(provider, remaining))
+                    .tint(tint)
                     .frame(minWidth: 36, maxWidth: 84)
                     .layoutPriority(1)
             } else {
                 Text("—").font(.caption2)
             }
-            if account.availability != .available {
+            if !warning.isEmpty {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(DieterTheme.amber)
-                    .accessibilityLabel(ProviderQuotaPresentation.availability(account.availability))
+                    .accessibilityLabel(warning)
             }
         }
         .foregroundStyle(DieterTheme.subtle)
-        .help(ProviderQuotaPresentation.accountDescription(account, provider: provider))
-    }
-}
-
-struct ConversationProviderQuotaView: View {
-    @Environment(DieterStore.self) private var store
-    let card: Dieter_V1_Card
-    @State private var presented = false
-
-    private var selected: ProviderQuotaCompactAccount? {
-        guard !card.providerAccountKey.isEmpty else { return nil }
-        for group in store.quotas.providerQuotaGroups {
-            if let account = group.accounts.first(where: { $0.accountKey == card.providerAccountKey }) {
-                return ProviderQuotaCompactAccount(provider: group.provider, account: account)
-            }
-        }
-        return nil
-    }
-
-    var body: some View {
-        if let selected {
-            Button {
-                presented.toggle()
-            } label: {
-                ProviderQuotaAccountCompactLabel(
-                    provider: selected.provider,
-                    account: selected.account
-                )
-                .padding(.horizontal, 8)
-                .frame(height: 24)
-                .background(DieterTheme.raised, in: Capsule())
-                .overlay(Capsule().stroke(DieterTheme.border))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(
-                "Quota for this conversation's \(ProviderQuotaPresentation.accountLabel(selected.account)) account"
-            )
-            .accessibilityIdentifier("conversation.provider-account-quota")
-            .popover(isPresented: $presented, arrowEdge: .bottom) {
-                ProviderQuotaDetailsView(accountKey: selected.account.accountKey)
-                    .environment(store)
-                    .frame(width: 390)
-                    .padding(16)
-            }
-        }
+        .help(account.summaryLine)
     }
 }
 
@@ -246,9 +204,9 @@ struct ProviderQuotaDetailsView: View {
     var accountKey: String? = nil
     @State private var resetConfirmationAccountKey: String?
 
-    private var groups: [Dieter_Gateway_V1_ProviderQuotaGroup] {
-        guard let accountKey else { return store.quotas.providerQuotaGroups }
-        return store.quotas.providerQuotaGroups.compactMap { group in
+    private var groups: [ClientQuotaGroupRow] {
+        guard let accountKey else { return store.quotas.providerQuotaRows }
+        return store.quotas.providerQuotaRows.compactMap { group in
             var filtered = group
             filtered.accounts = group.accounts.filter { $0.accountKey == accountKey }
             return filtered.accounts.isEmpty ? nil : filtered
@@ -307,7 +265,7 @@ struct ProviderQuotaDetailsView: View {
             }
         }
         .task {
-            if store.quotas.providerQuotaGroups.isEmpty { await store.loadProviderQuotas() }
+            if store.quotas.providerQuotaRows.isEmpty { await store.loadProviderQuotas() }
         }
         .confirmationDialog(
             "Use one OpenAI reset credit?",
@@ -327,23 +285,14 @@ struct ProviderQuotaDetailsView: View {
         }
     }
 
-    private func providerGroup(_ group: Dieter_Gateway_V1_ProviderQuotaGroup) -> some View {
+    private func providerGroup(_ group: ClientQuotaGroupRow) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
-                Label(
-                    ProviderQuotaPresentation.name(group.provider),
-                    systemImage: ProviderQuotaPresentation.symbol(group.provider)
-                )
-                .font(.system(size: 13, weight: .semibold))
+                Label(group.providerName, systemImage: ProviderQuotaPresentation.symbol(group.provider))
+                    .font(.system(size: 13, weight: .semibold))
                 Spacer()
-                Text("\(group.accounts.count) account\(group.accounts.count == 1 ? "" : "s")")
+                Text(group.summary)
                     .font(.caption2).foregroundStyle(DieterTheme.tertiary)
-            }
-            if accountKey == nil, group.summary.excludedAccountCount > 0 {
-                Text(
-                    "\(group.summary.includedAccountCount) shown in header · \(group.summary.excludedAccountCount) hidden"
-                )
-                .font(.caption2).foregroundStyle(DieterTheme.tertiary)
             }
             ForEach(group.accounts, id: \.accountKey) { account in
                 accountView(account, provider: group.provider)
@@ -352,25 +301,25 @@ struct ProviderQuotaDetailsView: View {
     }
 
     private func accountView(
-        _ account: Dieter_Gateway_V1_ProviderQuotaSnapshot,
+        _ account: ClientQuotaAccountRow,
         provider: Dieter_Gateway_V1_ProviderQuotaProvider
     ) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
+        let now = Date.now.epochMillis
+        let warning = SharedRules.shared.quotaWarning(
+            unavailable: account.unavailable, freshUntilMillis: account.freshUntilMillis, nowMillis: now)
+        return VStack(alignment: .leading, spacing: 7) {
             HStack {
-                Text(account.plan.isEmpty ? "Account" : account.plan.capitalized)
+                Text(account.identity)
                     .font(.system(size: 12, weight: .semibold))
-                Text("••\(account.accountKey.suffix(6))")
-                    .font(.caption2.monospaced()).foregroundStyle(DieterTheme.tertiary)
-                Spacer()
-                Text(ProviderQuotaPresentation.availability(account.availability))
-                    .font(.caption2).foregroundStyle(
-                        account.availability == .available ? DieterTheme.eyes : DieterTheme.amber)
-            }
-            if !account.displayEmail.isEmpty {
-                Text(account.displayEmail)
-                    .font(.caption).foregroundStyle(DieterTheme.tertiary)
+                    .lineLimit(1)
                     .textSelection(.enabled)
+                Spacer()
+                if !warning.isEmpty {
+                    Text(warning).font(.caption2).foregroundStyle(DieterTheme.amber)
+                }
             }
+            Text(account.subtitle)
+                .font(.caption).foregroundStyle(DieterTheme.tertiary)
             if !account.machines.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Available on")
@@ -384,65 +333,55 @@ struct ProviderQuotaDetailsView: View {
                             Image(systemName: "server.rack")
                                 .font(.system(size: 9, weight: .medium))
                                 .foregroundStyle(DieterTheme.tertiary)
-                            Text(machine.name.isEmpty ? String(machine.daemonID.prefix(8)) : machine.name)
+                            Text(machine.name)
                                 .font(.caption)
                                 .lineLimit(1)
                             Spacer()
-                            Text(
-                                machine.online
-                                    ? "Online"
-                                    : ProviderQuotaPresentation.availability(machine.availability)
-                            )
-                            .font(.caption2)
-                            .foregroundStyle(machine.online ? DieterTheme.eyes : DieterTheme.tertiary)
+                            Text(machine.state)
+                                .font(.caption2)
+                                .foregroundStyle(machine.online ? DieterTheme.eyes : DieterTheme.tertiary)
                         }
                         .accessibilityElement(children: .combine)
                     }
                 }
                 .padding(.vertical, 2)
             }
+            if account.windows.isEmpty {
+                Text(account.status).font(.caption2).foregroundStyle(DieterTheme.tertiary)
+            }
             ForEach(account.windows, id: \.id) { window in
                 HStack(spacing: 8) {
-                    Text(window.label.isEmpty ? ProviderQuotaPresentation.windowName(window.kind) : window.label)
+                    Text(window.name)
                         .font(.caption).frame(width: 92, alignment: .leading)
-                    if window.hasRemainingPercent {
-                        ProgressView(value: Double(window.remainingPercent), total: 100)
+                    if window.remaining >= 0 {
+                        let tint = ProviderQuotaPresentation.tint(provider, window.severity)
+                        ProgressView(value: Double(window.remaining), total: 100)
                             .progressViewStyle(.linear)
-                            .tint(ProviderQuotaPresentation.tint(provider, window.remainingPercent))
-                        Text("\(window.remainingPercent)%")
+                            .tint(tint)
+                        Text("\(window.remaining)%")
                             .font(.caption.monospacedDigit()).frame(width: 34, alignment: .trailing)
-                            .foregroundStyle(ProviderQuotaPresentation.tint(provider, window.remainingPercent))
+                            .foregroundStyle(tint)
                     } else {
                         Text("Not reported").font(.caption).foregroundStyle(DieterTheme.tertiary)
                         Spacer()
                     }
                     if !window.resetsAt.isEmpty {
-                        Text(ProviderQuotaPresentation.resetText(window.resetsAt))
+                        Text(SharedRules.shared.quotaResetText(resetsAt: window.resetsAt, nowMillis: now, fine: true))
                             .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                     }
                 }
             }
-            if account.hasCredits {
-                quotaMetadata(
-                    "Credits",
-                    account.credits.unlimited
-                        ? "Unlimited" : (account.credits.balance.isEmpty ? "Available" : account.credits.balance)
-                )
-            }
-            if account.hasSpendAllowance {
-                let allowance = account.spendAllowance
-                quotaMetadata(
-                    "Spend",
-                    [allowance.used, allowance.limit].filter { !$0.isEmpty }.joined(separator: " / ")
-                )
-            }
-            if account.hasResetCredits {
-                quotaMetadata("Reset credits", "\(account.resetCredits.availableCount) available")
+            ForEach(Array(account.details.enumerated()), id: \.offset) { _, detail in
+                HStack {
+                    Text(detail.label).font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                    Spacer()
+                    Text(detail.text).font(.caption2.monospacedDigit())
+                }
             }
             Toggle(
                 "Show in app header",
                 isOn: Binding(
-                    get: { !account.hasIncludedInSummary || account.includedInSummary },
+                    get: { account.included },
                     set: { included in
                         Task {
                             await store.setProviderQuotaSummaryInclusion(
@@ -455,70 +394,26 @@ struct ProviderQuotaDetailsView: View {
             .controlSize(.mini)
             .disabled(store.quotas.providerQuotaMutatingAccounts.contains(account.accountKey))
             .accessibilityIdentifier("provider-quotas.include.\(account.accountKey)")
-            if provider == .openaiCodex, account.hasResetCredits,
-                account.resetCredits.availableCount > 0
-            {
+            if account.canReset {
                 Button("Use reset credit…") { resetConfirmationAccountKey = account.accountKey }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     .disabled(store.quotas.providerQuotaMutatingAccounts.contains(account.accountKey))
                     .accessibilityIdentifier("provider-quotas.reset.\(account.accountKey)")
             }
-            if account.refreshState == .refreshing {
+            if account.refreshing {
                 Text("Refreshing…").font(.caption2).foregroundStyle(DieterTheme.tertiary)
-            } else if !account.statusCode.isEmpty, account.availability != .available {
-                Text(account.statusCode.replacingOccurrences(of: "_", with: " ").capitalized)
-                    .font(.caption2).foregroundStyle(DieterTheme.tertiary)
             }
         }
         .padding(10)
         .background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(DieterTheme.border))
     }
-
-    private func quotaMetadata(_ label: String, _ value: String) -> some View {
-        HStack {
-            Text(label).font(.caption2).foregroundStyle(DieterTheme.tertiary)
-            Spacer()
-            Text(value.isEmpty ? "Reported" : value).font(.caption2.monospacedDigit())
-        }
-    }
 }
 
+/// SF Symbols and colours for quota rows; the wording and severity come from the shared core.
 @MainActor
 enum ProviderQuotaPresentation {
-    static func remainingPercent(_ account: Dieter_Gateway_V1_ProviderQuotaSnapshot) -> UInt32? {
-        account.windows.compactMap { $0.hasRemainingPercent ? $0.remainingPercent : nil }.min()
-    }
-
-    static func accountLabel(_ account: Dieter_Gateway_V1_ProviderQuotaSnapshot) -> String {
-        if !account.displayEmail.isEmpty {
-            let local = account.displayEmail.split(separator: "@", maxSplits: 1).first.map(String.init) ?? ""
-            if !local.isEmpty { return local }
-        }
-        if !account.plan.isEmpty { return account.plan.capitalized }
-        return "••\(account.accountKey.suffix(4))"
-    }
-
-    static func accountDescription(
-        _ account: Dieter_Gateway_V1_ProviderQuotaSnapshot,
-        provider: Dieter_Gateway_V1_ProviderQuotaProvider
-    ) -> String {
-        let identity = account.displayEmail.isEmpty ? accountLabel(account) : account.displayEmail
-        if let remaining = remainingPercent(account) {
-            return "\(name(provider)) · \(identity) · \(remaining)% remaining"
-        }
-        return "\(name(provider)) · \(identity) · \(availability(account.availability))"
-    }
-
-    static func name(_ provider: Dieter_Gateway_V1_ProviderQuotaProvider) -> String {
-        switch provider {
-        case .openaiCodex: "OpenAI"
-        case .anthropicClaude: "Claude"
-        default: "Provider"
-        }
-    }
-
     static func symbol(_ provider: Dieter_Gateway_V1_ProviderQuotaProvider) -> String {
         switch provider {
         case .openaiCodex: "sparkles"
@@ -527,40 +422,17 @@ enum ProviderQuotaPresentation {
         }
     }
 
-    static func tint(
-        _ provider: Dieter_Gateway_V1_ProviderQuotaProvider,
-        _ remaining: UInt32
-    ) -> Color {
-        if provider == .openaiCodex { return DieterTheme.openAIQuota }
-        if provider == .anthropicClaude { return DieterTheme.amber }
-        if remaining <= 10 { return DieterTheme.coral }
-        if remaining <= 30 { return DieterTheme.amber }
-        return DieterTheme.eyes
-    }
-
-    static func availability(_ value: Dieter_Gateway_V1_ProviderQuotaAvailability) -> String {
-        switch value {
-        case .available: "Available"
-        case .signedOut: "Signed out"
-        case .unsupported: "Unsupported"
-        case .temporarilyUnavailable: "Unavailable"
-        case .permissionDenied: "Permission denied"
-        default: "Unknown"
+    /// A low or critical severity wins over the provider's brand colour.
+    static func tint(_ provider: Dieter_Gateway_V1_ProviderQuotaProvider, _ severity: ClientQuotaSeverity) -> Color {
+        switch severity {
+        case .critical: return DieterTheme.coral
+        case .low: return DieterTheme.amber
+        default:
+            switch provider {
+            case .openaiCodex: return DieterTheme.openAIQuota
+            case .anthropicClaude: return DieterTheme.amber
+            default: return DieterTheme.eyes
+            }
         }
-    }
-
-    static func windowName(_ kind: Dieter_Gateway_V1_ProviderQuotaWindowKind) -> String {
-        switch kind {
-        case .fiveHour: "5 hour"
-        case .weekly: "Weekly"
-        case .monthly: "Monthly"
-        case .model: "Model"
-        default: "Quota"
-        }
-    }
-
-    static func resetText(_ value: String) -> String {
-        guard let date = ISO8601DateFormatter().date(from: value) else { return value }
-        return "resets " + date.formatted(.relative(presentation: .named))
     }
 }

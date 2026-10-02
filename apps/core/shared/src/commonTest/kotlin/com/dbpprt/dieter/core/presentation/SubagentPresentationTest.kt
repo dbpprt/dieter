@@ -26,12 +26,13 @@ class SubagentPresentationTest {
         val generic = Subagent(name = "task", agent_type = "task", task = "Read the remaining routes", assignment = "Trace every remaining route and report the request flow")
         assertEquals("Read the remaining routes", present(generic).title, "the task wins over the assignment")
         assertEquals("Explore", present(Subagent(name = "worker", agent_type = "Explore")).title)
+        assertEquals("Read the remaining routes", present(Subagent(name = "Agent (agent 2)", assignment = "Read the remaining routes")).title, "a generic name stays generic with its suffix")
         assertEquals("Subagent", present(Subagent(name = "  ")).title)
         assertEquals("agent", present(Subagent()).agentLabel)
     }
 
     @Test
-    fun identityActivityAndElapsedTime() {
+    fun identityStatusAndElapsedTime() {
         assertEquals("claude-code/opus · plugin", present(Subagent(provider = "claude-code", model = "opus", agent_source = "plugin")).identity)
         assertEquals("opus", present(Subagent(model = "opus")).identity)
         assertEquals("local", present(Subagent()).identity)
@@ -39,6 +40,9 @@ class SubagentPresentationTest {
         assertTrue(present(Subagent(status = "Pending")).active)
         assertFalse(present(Subagent(status = "completed")).active)
         assertEquals(2, SubagentPresentation.active(listOf(Subagent(status = "running"), Subagent(status = "pending"), Subagent(status = "failed"))))
+        assertTrue(present(Subagent(status = "Completed")).completed)
+        assertEquals("running", present(Subagent(status = "running")).statusLabel)
+        assertEquals("pending", present(Subagent(status = " ")).statusLabel, "an agent that reported nothing yet is pending")
         assertEquals("45s", present(Subagent(duration_ms = 45_000)).elapsedLabel)
         assertEquals("3m 12s", present(Subagent(started_at = "2026-09-30T11:50:00Z", ended_at = "2026-09-30T11:53:12Z")).elapsedLabel)
         assertEquals("1m 30s", present(Subagent(started_at = "2026-09-30T11:58:30Z")).elapsedLabel, "a running agent counts up to now")

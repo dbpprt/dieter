@@ -61,12 +61,8 @@ final class ScreenShareSession: Identifiable {
 
     var isConnected: Bool { controller.phase == .streaming }
 
-    var keepsConnectionOpen: Bool {
-        switch controller.phase {
-        case .loading, .connecting, .waitingForHostApproval, .streaming, .reconnecting: true
-        case .idle, .failed, .permissionRequired, .unsupported: false
-        }
-    }
+    /// The session is open or on its way, as the core reports it.
+    var keepsConnectionOpen: Bool { controller.active }
 
     func connect() {
         inactivityMessage = nil

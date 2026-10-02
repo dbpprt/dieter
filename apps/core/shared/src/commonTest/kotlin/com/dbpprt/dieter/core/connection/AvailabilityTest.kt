@@ -78,6 +78,45 @@ class AvailabilityTest {
         assertEquals("Updated 2h ago", Availability.updated(now - 120.minutes, now))
         assertEquals("Updated 3d ago", Availability.updated(now - (3 * 24 * 60).minutes, now))
         assertEquals("Updated just now", Availability.updated(now + 5.seconds, now))
+        assertEquals("Updated 6m ago", Availability.updated(now - 360.seconds, now))
+    }
+
+    @Test fun lastConnectedLabelsUseCompactRelativeAges() {
+        val now = start
+        assertEquals("Last connected unknown", Availability.lastConnected(null, now))
+        assertEquals("Last connected just now", Availability.lastConnected(now - 59.seconds, now))
+        assertEquals("Last connected 1m ago", Availability.lastConnected(now - 60.seconds, now))
+        assertEquals("Last connected 1h ago", Availability.lastConnected(now - 3_600.seconds, now))
+    }
+
+    @Test fun cachedWorkspacesShowANoticeOnlyWhileUnavailable() {
+        // Routine handoffs keep the cached workspace current without a banner.
+        listOf(ConnectionPhase.CONNECTED, ConnectionPhase.SYNCING, ConnectionPhase.CONNECTING).forEach { phase ->
+            assertNull(Availability.workspaceNotice(phase, hasCache = true), "$phase")
+        }
+        // Nothing cached: the first-sync screen explains the phase instead.
+        assertNull(Availability.workspaceNotice(ConnectionPhase.DISCONNECTED, hasCache = false))
+
+        val reconnecting = Availability.workspaceNotice(ConnectionPhase.RECONNECTING, hasCache = true)!!
+        assertEquals("Reconnecting to Dieter", reconnecting.title)
+        assertEquals("Cached conversations stay available; messages and new conversations queue until Dieter reconnects.", reconnecting.detail)
+        assertTrue(reconnecting.working)
+        assertFalse(reconnecting.offline)
+
+        val offline = Availability.workspaceNotice(ConnectionPhase.DISCONNECTED, hasCache = true)!!
+        assertEquals("Working from cached data", offline.title)
+        assertTrue(offline.offline)
+        assertFalse(offline.working)
+        assertEquals("Sign in required", Availability.workspaceNotice(ConnectionPhase.AUTH_REQUIRED, hasCache = true)!!.title)
+        assertEquals("Update required", Availability.workspaceNotice(ConnectionPhase.UPDATE_REQUIRED, hasCache = true)!!.title)
+    }
+
+    @Test fun theWorkspaceIsLiveOnlyWithATransportAndAnAppliedLiveFrame() {
+        assertTrue(Availability.workspaceLive(ConnectionPhase.CONNECTED, feedLive = true, projectionPending = false))
+        assertFalse(Availability.workspaceLive(ConnectionPhase.CONNECTED, feedLive = false, projectionPending = false))
+        assertFalse(Availability.workspaceLive(ConnectionPhase.CONNECTED, feedLive = true, projectionPending = true))
+        assertFalse(Availability.workspaceLive(ConnectionPhase.SYNCING, feedLive = true, projectionPending = false))
+        assertFalse(Availability.workspaceLive(ConnectionPhase.RECONNECTING, feedLive = true, projectionPending = false))
     }
 
     @Test fun phasesDescribeRecoveryInsteadOfCollapsingToOffline() {
@@ -85,7 +124,7 @@ class AvailabilityTest {
         assertEquals("Syncing", Availability.label(ConnectionPhase.SYNCING))
         assertEquals("Reconnecting", Availability.label(ConnectionPhase.RECONNECTING))
         assertEquals("Disconnected", Availability.label(ConnectionPhase.DISCONNECTED))
-        assertEquals("Incompatible", Availability.label(ConnectionPhase.UPDATE_REQUIRED))
+        assertEquals("Update required", Availability.label(ConnectionPhase.UPDATE_REQUIRED))
         assertTrue(Availability.blocked(ConnectionPhase.NO_MACHINE))
         assertFalse(Availability.blocked(ConnectionPhase.RECONNECTING))
     }

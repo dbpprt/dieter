@@ -12,6 +12,8 @@ import SharedCore
     private let reader: any DieterScheduleRPC
     private let writer: (any ScheduleCommandsRPC)?
     private var view = ClientSchedulesSlice()
+    /// The scope of the view the last command came from.
+    private var scope = ""
     private var binding: UInt64 = 0
     private var listRequest: UInt64 = 0
 
@@ -32,6 +34,7 @@ import SharedCore
 
     private func handle(_ command: ClientCommand) async throws -> ClientResult {
         guard case .schedules(let schedules)? = command.command else { return .with { $0.done = ClientDone() } }
+        scope = schedules.scope
         switch schedules.action {
         case .bind(let project)?:
             if project.projectID != view.projectID {
@@ -46,11 +49,6 @@ import SharedCore
             try await select(schedule.scheduleID)
         case .loadMoreRuns?:
             try await runs(more: true)
-        case .details(let schedule)?:
-            guard let summary = view.schedules.first(where: { $0.id == schedule.scheduleID }) else {
-                throw CoreFailure(kind: .permanent, message: "The schedule is no longer available.")
-            }
-            return .with { $0.schedule = summary }
         case .save(let save)?:
             let writer = try requireWriter()
             let bound = binding, project = view.projectID
@@ -71,9 +69,8 @@ import SharedCore
             publish()
             return .with { $0.schedule = saved }
         case .runNow(let schedule)?:
-            let run = try await requireWriter().runSchedule(id: schedule.scheduleID)
+            _ = try await requireWriter().runSchedule(id: schedule.scheduleID)
             try await select(schedule.scheduleID)
-            return .with { $0.scheduleRun = run }
         case .delete(let schedule)?:
             try await requireWriter().deleteSchedule(id: schedule.scheduleID)
             let present = view.schedules.contains { $0.id == schedule.scheduleID }
@@ -98,8 +95,6 @@ import SharedCore
         case .closeEditor?:
             view.preview = []
             view.previewError = ""
-        case .clearActionError_p?:
-            view.actionError = ""
         default:
             break
         }
@@ -175,8 +170,17 @@ import SharedCore
         view.schedules.sort { ($0.name.lowercased(), $0.id) < ($1.name.lowercased(), $1.id) }
     }
 
+    /// Publishes the view with the list state the core derives: failed only
+    /// with nothing to show, loading until the first page arrived.
     private func publish() {
+        if !view.error.isEmpty, view.schedules.isEmpty, !view.loading {
+            view.state = .failed
+        } else if !view.loaded || (view.loading && view.schedules.isEmpty) {
+            view.state = .loading
+        } else {
+            view.state = view.schedules.isEmpty ? .empty : .loaded
+        }
         let current = view
-        core?.emit(.schedules) { $0.schedules = current }
+        core?.emit(.schedules, scope: scope) { $0.schedules = current }
     }
 }

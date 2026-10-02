@@ -55,18 +55,3 @@ private actor ScheduleMutationFixture: DieterScheduleRPC, ScheduleCommandsRPC {
     #expect(model.selectedScheduleID == "B")
     #expect(model.errorMessage == nil)
 }
-
-@Test @MainActor func workspaceCardUpsertUpdatesItsProjectAndDoesNotInventABoardDictionaryKey() {
-    let store = DieterStore(restoreSync: false)
-    var card = Dieter_V1_Card(); card.id = "card"; card.projectID = "project"; card.boardID = "board";
-    card.runtime = "queued"
-    store.state.cards = [card]
-    store.navigationCards = [card.projectID: [card]]
-    card.runtime = "ready"
-    store.acceptWorkspaceCard(card)
-    #expect(store.state.cards.first?.runtime == "ready")
-    #expect(store.navigationCards["project"]?.first?.runtime == "ready")
-    #expect(store.navigationCards["board"] == nil)
-    store.updateSelectedState()
-    #expect(store.navigationCards["project"]?.first?.runtime == "ready")
-}

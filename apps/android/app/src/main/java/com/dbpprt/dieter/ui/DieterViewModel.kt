@@ -7,9 +7,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaProvider
-import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.FileDocument
+import com.dbpprt.dieter.api.v1.HarnessCatalog
 import com.dbpprt.dieter.api.v1.HarnessSelection
 import com.dbpprt.dieter.api.v1.MachineOperationAction
 import com.dbpprt.dieter.api.v1.MessagePart
@@ -17,27 +17,23 @@ import com.dbpprt.dieter.api.v1.PeerRecord
 import com.dbpprt.dieter.api.v1.PeerVersion
 import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.api.v1.QueuedMessage
-import com.dbpprt.dieter.api.v1.ReadFileRequest
 import com.dbpprt.dieter.api.v1.Schedule
 import com.dbpprt.dieter.api.v1.ScheduleDraft
-import com.dbpprt.dieter.api.v1.Settings
 import com.dbpprt.dieter.api.v1.ToolOutput
 import com.dbpprt.dieter.api.v1.ValidationCommand
-import com.dbpprt.dieter.api.v1.Workspace
 import com.dbpprt.dieter.core.CoreRuntime
+import com.dbpprt.dieter.core.admin.Administration
 import com.dbpprt.dieter.core.admin.BackgroundMode
-import com.dbpprt.dieter.core.board.DropAnchors
+import com.dbpprt.dieter.core.admin.MachineOperations
 import com.dbpprt.dieter.core.board.Lanes
+import com.dbpprt.dieter.core.composition.CaptureDestinations
 import com.dbpprt.dieter.core.composition.ConversationDraft
 import com.dbpprt.dieter.core.composition.ConversationDraftEditor
 import com.dbpprt.dieter.core.composition.Creation
-import com.dbpprt.dieter.core.composition.CreationInput
 import com.dbpprt.dieter.core.composition.DraftKey
 import com.dbpprt.dieter.core.composition.TaskDraftEditor
 import com.dbpprt.dieter.core.composition.TaskDrafts
 import com.dbpprt.dieter.core.composition.WorkspaceMode
-import com.dbpprt.dieter.core.composition.ready
-import com.dbpprt.dieter.core.composition.task
 import com.dbpprt.dieter.core.connection.Availability
 import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.core.connection.ConnectionPrompt
@@ -53,11 +49,15 @@ import com.dbpprt.dieter.core.navigation.BoardSelections
 import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.core.navigation.FolderScope
 import com.dbpprt.dieter.core.navigation.NavigationLayout
+import com.dbpprt.dieter.core.navigation.OpenRequests
+import com.dbpprt.dieter.core.navigation.OpenTarget
 import com.dbpprt.dieter.core.notifications.NotificationSettings
 import com.dbpprt.dieter.core.outbox.OutboxPolicy
 import com.dbpprt.dieter.core.presentation.ConversationPresentation
 import com.dbpprt.dieter.core.presentation.ConversationPresenter
+import com.dbpprt.dieter.core.presentation.TimelineCache
 import com.dbpprt.dieter.core.runtime.Failures
+import com.dbpprt.dieter.core.selection.AgentControls
 import com.dbpprt.dieter.core.state.CaptureDraft
 import com.dbpprt.dieter.core.terminals.NewTerminal
 import com.dbpprt.dieter.core.terminals.TerminalScope
@@ -65,9 +65,10 @@ import com.dbpprt.dieter.core.terminals.TerminalScopeKind
 import com.dbpprt.dieter.core.terminals.Terminals
 import com.dbpprt.dieter.core.workspace.ChangeSection
 import com.dbpprt.dieter.core.workspace.DiffLine
+import com.dbpprt.dieter.core.workspace.GitOperationForm
 import com.dbpprt.dieter.core.workspace.MergeStrategy
 import com.dbpprt.dieter.core.workspace.ProjectChanges
-import com.dbpprt.dieter.core.workspace.ProjectWorkspaceSettings
+import com.dbpprt.dieter.core.workspace.ProjectChangesView
 import com.dbpprt.dieter.core.workspace.ValidationCommandDraft
 import com.dbpprt.dieter.core.workspace.WorkspaceReview
 import com.dbpprt.dieter.settings.AppPreferences
@@ -79,6 +80,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -87,6 +89,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -127,7 +130,6 @@ class DieterViewModel internal constructor(
     private var connectionDialogJob: Job? = null
     private val connectionPrompt = ConnectionPrompt()
     private var layout = NavigationLayout(emptyMap())
-    private var pendingProjectCreation: String? = null
 
     internal var captureChooserVisible by mutableStateOf(false)
 
@@ -137,7 +139,7 @@ class DieterViewModel internal constructor(
 
     init {
         collect(appPreferences.palette) { palette -> copy(palette = palette) }
-        collect(appPreferences.showReasoningTraces) { copy(showReasoningTraces = it) }
+        collect(core.conversations.showReasoning) { copy(showReasoningTraces = it) }
         collect(appPreferences.chatsPaneLeadingFraction) { copy(chatsPaneLeadingFraction = it) }
         collect(appPreferences.activityPaneLeadingFraction) { copy(activityPaneLeadingFraction = it) }
         collect(appPreferences.projectsPaneLeadingFraction) { copy(projectsPaneLeadingFraction = it) }
@@ -149,7 +151,6 @@ class DieterViewModel internal constructor(
                 activeGatewayId = accounts.active.origin,
                 endpoint = accounts.active.httpBase,
                 desiredConnected = accounts.wantsConnection,
-                signedIn = core.credentials.token(accounts.active) != null,
             )
         }
         viewModelScope.launch {
@@ -160,27 +161,37 @@ class DieterViewModel internal constructor(
                     it.copy(
                         connectionPhase = connection.phase,
                         connectionError = connection.error,
-                        signedIn = core.credentials.token(core.accounts.state.value.active) != null,
+                        attachedMachineId = connection.attachedMachineId,
                     )
                 }
                 reconcileConnectionDialog()
                 if (connection.phase == ConnectionPhase.CONNECTED && previous != ConnectionPhase.CONNECTED) onConnected()
             }
         }
-        collect(core.connection.feedStatus) { feed -> copy(lastConnectedAtMillis = feed.lastAppliedAt?.toEpochMilliseconds()) }
+        collect(core.connection.feedStatus) { feed ->
+            copy(lastConnectedAtMillis = feed.lastAppliedAt?.toEpochMilliseconds(), feedLive = feed.live && !feed.projectionPending)
+        }
         viewModelScope.launch {
             combine(core.connection.machines, core.sessions.routes, core.connection.state, core.workspace.state, core.connection.freshness) { machines, routes, connection, workspace, freshness ->
                 val now = machines.evaluatedAt
                 val endpoints = machines.all.map { machine -> MachineRows.of(machine, machine.online(now), routes[machine.id], connection.attachedMachineId) }
-                val byId = endpoints.associateBy { it.id }
-                val replicas = workspace.projectReplicas.mapValues { (_, daemonId) ->
-                    val machine = byId[daemonId]
-                    ProjectReplica(daemonId, daemonId, machine?.label ?: daemonId, machine?.online == true)
+                val connected = connection.phase == ConnectionPhase.CONNECTED
+                val checked = Clock.System.now()
+                MachinesUpdate(
+                    endpoints,
+                    workspace.projectReplicas,
+                    MachineRows.syncWarnings(endpoints, freshness, connected, checked),
+                    MachineRows.syncWarningsByMachine(endpoints, freshness, connected, checked),
+                )
+            }.collect { update ->
+                _state.update {
+                    it.copy(
+                        endpointConnections = update.endpoints,
+                        projectReplicas = update.replicas,
+                        peerSyncWarnings = update.warnings,
+                        machineSyncWarnings = update.warningsByMachine,
+                    )
                 }
-                val warnings = MachineRows.syncWarnings(endpoints, freshness, connection.phase == ConnectionPhase.CONNECTED, Clock.System.now())
-                Triple(endpoints, replicas, warnings)
-            }.collect { (endpoints, replicas, warnings) ->
-                _state.update { it.copy(endpointConnections = endpoints, projectReplicas = replicas, peerSyncWarnings = warnings) }
                 refreshHarnesses()
             }
         }
@@ -195,6 +206,7 @@ class DieterViewModel internal constructor(
                     )
                     val projectId = selection.projectId
                     val boards = view.boards[projectId].orEmpty()
+                    val checkoutId = checkoutFor(projects.firstOrNull { it.id == projectId }, current.creationCheckoutId)
                     current.copy(
                         projects = projects,
                         spaceBoards = view.boards.values.flatten(),
@@ -206,13 +218,11 @@ class DieterViewModel internal constructor(
                         selectedProjectId = projectId,
                         selectedBoardId = selection.boardId,
                         selectedLane = selection.lane,
+                        creationCheckoutId = checkoutId,
                         loading = Availability.loading(current.desiredConnected, view.loaded, current.connectionPhase),
                         pinnedProjectOrder = layout.pinnedProjects(projects.map(Project::id)),
                         projectFolders = layout.folders(FolderScope.PROJECTS),
                         chatFolders = layout.folders(FolderScope.CHATS),
-                        collapsedChatProjectIds = projects.map(Project::id).filterTo(mutableSetOf(), layout::chatSectionCollapsed),
-                        expandedChatProjectIds = projects.map(Project::id).filterTo(mutableSetOf(), layout::chatsShowAll),
-                        pinnedChatOrder = layout.pinnedChats(view.chats.filter(Card::pinned)).map(Card::id),
                         navigationLayout = layout,
                     )
                 }
@@ -232,6 +242,7 @@ class DieterViewModel internal constructor(
                         acceptedOutboxIds = outbox.acceptedIds,
                         failedOutboxIds = outbox.failedIds,
                         machineOutboxSummaries = outbox.machines,
+                        startingCardIds = outbox.startingCardIds,
                         selectedCardId = resolved ?: it.selectedCardId,
                     )
                 }
@@ -255,12 +266,7 @@ class DieterViewModel internal constructor(
         collect(review.view) { copy(workspaceReview = it) }
         collect(projectChangesController.view) { copy(projectChanges = it) }
         collect(core.projectWorkspaces.view) { workspaces ->
-            copy(
-                projectWorkspaces = workspaces.workspaces,
-                projectWorkspacesLoading = workspaces.loading,
-                projectWorkspaceOperations = workspaces.pending,
-                projectWorkspaceErrors = workspaces.errors,
-            )
+            copy(projectWorkspaceRows = workspaces.rows, projectWorkspacesLoading = workspaces.loading, projectWorkspacesError = workspaces.error)
         }
         viewModelScope.launch {
             files.view.collect { view ->
@@ -286,7 +292,6 @@ class DieterViewModel internal constructor(
             )
         }
         _state.update { it.copy(notificationSettings = NotificationSettings.load(core.platform.settings)) }
-        _state.update { it.copy(notificationBoardIds = it.notificationSettings.boardIds) }
     }
 
     private fun <T> collect(flow: StateFlow<T>, apply: DieterUiState.(T) -> DieterUiState) {
@@ -331,7 +336,7 @@ class DieterViewModel internal constructor(
             core.quotas.load(refresh = false)
             terminals.setActive(_state.value.destination == Destination.TERMINALS)
             review.setActive(_state.value.selectedCardId != null)
-            projectChangesController.setActive(_state.value.destination == Destination.FILES && _state.value.projectFilesMode == "changes")
+            projectChangesController.setActive(_state.value.destination == Destination.FILES && _state.value.projectFilesMode == ProjectFilesTab.CHANGES)
         }
         when (_state.value.destination) {
             Destination.TERMINALS -> loadTerminals()
@@ -365,7 +370,7 @@ class DieterViewModel internal constructor(
         launchCore(report = false) { core.quotas.load(refresh = false) }
         when (_state.value.destination) {
             Destination.TERMINALS -> if (_state.value.terminals.isEmpty()) loadTerminals()
-            Destination.FILES -> if (_state.value.projectFilesMode == "changes") loadProjectChanges() else loadFiles()
+            Destination.FILES -> if (_state.value.projectFilesMode == ProjectFilesTab.CHANGES) loadProjectChanges() else loadFiles()
             Destination.SCHEDULES -> refreshSchedules()
             Destination.MACHINES -> refreshMachines()
             else -> Unit
@@ -395,8 +400,6 @@ class DieterViewModel internal constructor(
         host.openUrl(url)
     }
 
-    fun signOut() = action { core.signOut() }
-
     fun disconnect() {
         connectionDialogJob?.cancel()
         connectionPrompt.disconnected()
@@ -409,12 +412,12 @@ class DieterViewModel internal constructor(
 
     fun setPalette(palette: DieterPalette) = appPreferences.setPalette(palette)
 
-    fun setShowReasoningTraces(show: Boolean) = appPreferences.setShowReasoningTraces(show)
+    fun setShowReasoningTraces(show: Boolean) = launchCore { core.conversations.setShowReasoning(show) }
 
     private fun updateNotificationSettings(change: (NotificationSettings) -> NotificationSettings) {
         val next = change(_state.value.notificationSettings)
         next.save(core.platform.settings)
-        _state.update { it.copy(notificationSettings = next, notificationBoardIds = next.boardIds) }
+        _state.update { it.copy(notificationSettings = next) }
     }
 
     fun setSelectedBoardNotificationsEnabled(enabled: Boolean) = setNotificationBoardEnabled(_state.value.selectedBoardId, enabled)
@@ -434,8 +437,6 @@ class DieterViewModel internal constructor(
     }
 
     fun resetConnectionTargets() = action { core.setGateways(listOf(Gateway.DEFAULT), Gateway.DEFAULT.origin) }
-
-    fun selectGateway(origin: String) = launchCore { core.selectGateway(origin) }
 
     fun cleanSync() = action { core.resync() }
 
@@ -484,10 +485,7 @@ class DieterViewModel internal constructor(
     }
 
     /** Why [machineId] cannot be read or operated now, or null. */
-    private fun machineUnavailable(machineId: String): String? {
-        val machine = _state.value.presentedEndpointConnections.firstOrNull { it.id == machineId } ?: return "This machine is no longer enrolled."
-        return machine.unavailableMessage
-    }
+    private fun machineUnavailable(machineId: String): String? = MachineRows.unavailableMessage(_state.value.presentedEndpointConnections, machineId)
 
     fun selectMachine(machineId: String) {
         if (_state.value.presentedEndpointConnections.none { it.id == machineId }) return
@@ -517,15 +515,11 @@ class DieterViewModel internal constructor(
         _state.update { it.copy(machineOperationMessage = null) }
         launchCore {
             val response = core.telemetry.perform(action)
-            _state.update { it.copy(machineOperationMessage = response?.message?.ifBlank { null } ?: "Machine operation accepted.") }
+            _state.update { it.copy(machineOperationMessage = MachineOperations.resultMessage(response)) }
         }
     }
 
     fun dismissMachineOperationMessage() = _state.update { it.copy(machineOperationMessage = null) }
-
-    fun renameMachine(daemonId: String, name: String) = action { core.renameMachine(daemonId, name) }
-
-    fun revokeMachine(daemonId: String) = action { core.revokeMachine(daemonId) }
 
     fun openMachineTerminals(machineId: String) {
         machineUnavailable(machineId)?.let { unavailable ->
@@ -553,7 +547,7 @@ class DieterViewModel internal constructor(
                 appSurface = null,
                 editingScheduleId = null,
                 selectedMachineId = if (destination == Destination.MACHINES) it.selectedMachineId else null,
-                projectFilesMode = if (destination == Destination.FILES) "browse" else it.projectFilesMode,
+                projectFilesMode = if (destination == Destination.FILES) ProjectFilesTab.FILES else it.projectFilesMode,
                 boardOverviewVisible = if (destination == Destination.BOARD) true else it.boardOverviewVisible,
             )
         }
@@ -575,15 +569,13 @@ class DieterViewModel internal constructor(
         _state.update {
             it.copy(
                 selectedProjectId = id,
-                creationCheckoutId = it.creationCheckoutId.takeIf { selected ->
-                    it.projects.firstOrNull { p -> p.id == id }?.checkouts?.any { c -> c.id == selected && !c.detached } == true
-                }.orEmpty(),
+                creationCheckoutId = checkoutFor(it.projects.firstOrNull { p -> p.id == id }, it.creationCheckoutId),
                 selectedBoardId = "",
                 selectedLane = "",
                 boards = emptyList(),
                 cards = emptyList(),
                 fileDocument = null,
-                projectFilesMode = "browse",
+                projectFilesMode = ProjectFilesTab.FILES,
             )
         }
         reselectFromWorkspace()
@@ -595,36 +587,34 @@ class DieterViewModel internal constructor(
         refreshHarnesses()
     }
 
-    /** Recomputes the selected project's boards, cards, board, and lane from the workspace. */
-    private fun reselectFromWorkspace() {
+    /** Recomputes the selected project's boards, cards, board, and lane from the workspace ([BoardSelections.resolve]). */
+    private fun reselectFromWorkspace(boardId: String? = null) {
         val view = core.workspace.state.value
         _state.update { current ->
-            val boards = view.boards[current.selectedProjectId].orEmpty()
-            val boardId = current.selectedBoardId.takeIf { id -> boards.any { it.id == id } } ?: boards.firstOrNull()?.id.orEmpty()
-            val lane = current.selectedLane.takeIf { id -> boards.firstOrNull { it.id == boardId }?.lanes?.any { it.id == id } == true }
-                ?: boards.firstOrNull { it.id == boardId }?.lanes?.firstOrNull()?.id.orEmpty()
-            current.copy(boards = boards, cards = view.cards[current.selectedProjectId].orEmpty(), selectedBoardId = boardId, selectedLane = lane)
+            val wanted = BoardSelection(current.selectedProjectId, boardId ?: current.selectedBoardId, if (boardId == null) current.selectedLane else "")
+            val selection = BoardSelections.resolve(current.projects, view.boards, view.retiredBoards, wanted)
+            current.copy(
+                boards = view.boards[selection.projectId].orEmpty(),
+                cards = view.cards[selection.projectId].orEmpty(),
+                creationCheckoutId = checkoutFor(current.projects.firstOrNull { it.id == selection.projectId }, current.creationCheckoutId),
+                selectedProjectId = selection.projectId,
+                selectedBoardId = selection.boardId,
+                selectedLane = selection.lane,
+            )
         }
     }
 
+    /** Shows board [id] of the selected project from its first lane. */
     fun selectBoard(id: String) {
         closeConversation()
-        val board = _state.value.boards.firstOrNull { it.id == id }
-        _state.update { it.copy(selectedBoardId = id, selectedLane = board?.lanes?.firstOrNull()?.id.orEmpty()) }
+        reselectFromWorkspace(boardId = id)
     }
 
     fun openBoard(projectId: String, boardId: String) {
         closeConversation()
         if (projectId != _state.value.selectedProjectId) selectProject(projectId)
-        val board = _state.value.spaceBoards.firstOrNull { it.id == boardId }
-        _state.update {
-            it.copy(
-                destination = Destination.BOARD,
-                boardOverviewVisible = false,
-                selectedBoardId = boardId,
-                selectedLane = board?.lanes?.firstOrNull()?.id.orEmpty(),
-            )
-        }
+        reselectFromWorkspace(boardId = boardId)
+        _state.update { it.copy(destination = Destination.BOARD, boardOverviewVisible = false) }
     }
 
     fun openNewBoard(projectId: String) {
@@ -636,9 +626,6 @@ class DieterViewModel internal constructor(
         closeConversation()
         _state.update { it.copy(destination = Destination.BOARD, boardOverviewVisible = true) }
     }
-
-    /** Board and activity data is live from the core; this only clears a stale error. */
-    fun refreshSpaces() = _state.update { it.copy(spacesLoading = false) }
 
     fun selectLane(id: String) = _state.update { it.copy(selectedLane = id) }
 
@@ -701,7 +688,7 @@ class DieterViewModel internal constructor(
     }
 
     fun movePinnedChat(chatId: String, targetChatId: String) {
-        val displayed = _state.value.pinnedChatOrder
+        val displayed = layout.pinnedChats(_state.value.chats).map(Card::id)
         editNavigation { movePinnedChat(chatId, targetChatId, displayed) }
     }
 
@@ -720,10 +707,6 @@ class DieterViewModel internal constructor(
 
     override fun moveToFolder(scope: FolderScope, itemId: String, folderId: String?) { editNavigation { moveToFolder(scope, itemId, folderId) } }
 
-    fun reorderFolders(scope: FolderScope, order: List<String>) = editNavigation { reorderFolders(scope, order) }
-
-    fun reorderFolderItems(scope: FolderScope, folderId: String, order: List<String>) = editNavigation { reorderFolderItems(scope, folderId, order) }
-
     fun setChatsPaneLeadingFraction(fraction: Float) = appPreferences.setChatsPaneLeadingFraction(fraction)
     fun setActivityPaneLeadingFraction(fraction: Float) = appPreferences.setActivityPaneLeadingFraction(fraction)
     fun setProjectsPaneLeadingFraction(fraction: Float) = appPreferences.setProjectsPaneLeadingFraction(fraction)
@@ -732,8 +715,6 @@ class DieterViewModel internal constructor(
     // --- Outbox -----------------------------------------------------------------------------
 
     fun isPendingCard(id: String): Boolean = id in _state.value.pendingCardIds
-    fun isPendingMessage(id: String): Boolean = id in _state.value.pendingMessageIds
-    fun isAcceptedOutboxItem(id: String): Boolean = id in _state.value.acceptedOutboxIds
     fun isFailedOutboxItem(id: String): Boolean = id in _state.value.failedOutboxIds
     fun conversationCreationFailure(id: String): String? = core.outbox.view.value.failure(id)
 
@@ -756,8 +737,7 @@ class DieterViewModel internal constructor(
 
     private fun board(block: suspend com.dbpprt.dieter.core.board.BoardOperations.() -> Unit) = launchCore { core.onBoard(block) }
 
-    fun moveBoardCard(cardId: String, lane: String, afterCardId: String = "", beforeCardId: String = "") =
-        board { move(cardId, lane, DropAnchors(afterCardId, beforeCardId)) }
+    fun moveBoardCard(cardId: String, lane: String) = board { move(cardId, lane) }
 
     fun startBoardCard(cardId: String) = launchCore { core.startCard(cardId) }
 
@@ -788,15 +768,16 @@ class DieterViewModel internal constructor(
         board { rename(id, title) }
     }
 
-    fun forkSelected(messageId: String = "") {
+    fun forkSelected() {
         val id = _state.value.selectedCardId ?: return
         action {
-            val fork = core.board.fork(id, messageId)
+            val fork = core.board.fork(id)
             viewModelScope.launch { openCard(fork, Destination.CHATS) }
         }
     }
 
-    fun editBoardCard(cardId: String, title: String, initialPrompt: String) = board { updateDraft(cardId, title, initialPrompt) }
+    /** Saves the edit sheet: a draft takes its new title and task, a started card only its title. */
+    fun editBoardCard(cardId: String, title: String, initialPrompt: String) = board { edit(cardId, title, initialPrompt) }
 
     fun archiveSelected() {
         val card = _state.value.selectedCard ?: return
@@ -894,9 +875,20 @@ class DieterViewModel internal constructor(
         }
     }
 
-    fun openNotificationCard(cardId: String) {
-        val card = (_state.value.chats + _state.value.cards + _state.value.spaceCards).firstOrNull { it.id == cardId } ?: return
-        openCard(card, if (card.scope == "chat") Destination.CHATS else Destination.BOARD)
+    /**
+     * Opens [cardId] for a notification or a widget row ([OpenRequests.resolve]);
+     * [inInbox] opens it beside the inbox. False while the conversation may
+     * still arrive, so the caller keeps the request.
+     */
+    fun openRequested(cardId: String, inInbox: Boolean): Boolean {
+        val current = _state.value
+        val cards = current.spaceCards + current.cards + current.chats
+        when (val target = OpenRequests.resolve(cardId, cards, inInbox, current.loading, current.connectionPhase)) {
+            OpenTarget.Wait -> return false
+            OpenTarget.Inbox -> navigate(Destination.ACTIVITY)
+            is OpenTarget.Conversation -> openCard(target.card, target.destination)
+        }
+        return true
     }
 
     private fun closeConversation() {
@@ -942,25 +934,42 @@ class DieterViewModel internal constructor(
 
     fun loadOlderMessages() = conversation { loadEarlier() }
 
-    fun returnToLatest() = conversation { returnToLatest() }
-
     suspend fun loadToolOutput(messageId: String, part: MessagePart): ToolOutput {
         val current = session ?: error("No conversation is selected")
         return core.onConversation(current) { toolOutput(messageId, part.tool_call_id, part.payload_revision) }
     }
 
-    /** An image a message links to, read from the conversation's workspace. */
+    /** An image a message links to, read from the conversation's workspace; null when it cannot be read. */
     suspend fun readConversationImage(destination: String): FileDocument? {
         val current = session?.view?.value ?: return null
         val daemonId = current.daemonId ?: return null
         val card = current.card ?: return null
-        return core.onMachine(daemonId) {
-            it.ReadFile().execute(ReadFileRequest(project_id = card.project_id, path = destination, card_id = card.id))
+        return try {
+            core.onCore { core.admin.readFile(daemonId, card.project_id, card.checkout_id, card.id, destination) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Throwable) {
+            null
         }
     }
 
-    /** The open conversation as the screen shows it; computed by the core from the latest view and outbox. */
-    fun presentConversation(state: DieterUiState): ConversationPresentation? {
+    /**
+     * The agent catalog of the machine that runs the conversation, loaded on
+     * first use; null until it loads. Context windows and the composer's
+     * pickers come from it, never from another machine's catalog.
+     */
+    fun conversationCatalog(daemonId: String?): Flow<HarnessCatalog?> {
+        daemonId ?: return flowOf(null)
+        return core.metadata.machines.map { it[daemonId]?.harnesses }.distinctUntilChanged()
+            .onStart { core.onCore { core.metadata.ensure(daemonId) } }
+    }
+
+    /**
+     * The open conversation as the screen shows it; computed by the core from
+     * the latest view and outbox, with context windows from the conversation
+     * machine's [catalog]. [cache] keeps per-message steps between updates.
+     */
+    fun presentConversation(state: DieterUiState, catalog: HarnessCatalog?, cache: TimelineCache? = null): ConversationPresentation? {
         val cardId = state.selectedCardId ?: return null
         val view = state.conversationView ?: ConversationView(cardId)
         val card = view.card ?: state.selectedCard
@@ -971,16 +980,18 @@ class DieterViewModel internal constructor(
             card?.id?.let(state.cardOperations::get),
             state.showReasoningTraces,
             fallbackCard = state.selectedCard,
+            harnesses = catalog,
+            cache = cache,
         )
     }
 
     /** Sends the composer draft; the core clears exactly what was sent. */
     fun sendDraft() = conversation { sendDraft() }
 
-    /** Sends [text] outside the composer draft, e.g. from the subagents tab. */
-    fun sendMessage(text: String, selection: HarnessSelection) {
+    /** Sends [text] outside the composer draft, e.g. from the subagents tab, with the composer's agent. */
+    fun sendMessage(text: String) {
         if (text.isBlank()) return
-        conversation { send(listOf(textPart(text.trim())), selection) }
+        conversation { send(listOf(textPart(text.trim()))) }
     }
 
     private fun updateDraft(change: com.dbpprt.dieter.core.composition.ConversationDrafts.(DraftKey) -> Unit) {
@@ -993,11 +1004,14 @@ class DieterViewModel internal constructor(
         _state.update { it.copy(composerDraft = editor.state.value) }
     }
 
-    fun updateComposerSelection(value: HarnessSelection) = updateDraft { setSelection(it, value) }
+    /** Applies a picker choice to the composer's agent for the next message; [choose] gets the core's current pickers. */
+    fun chooseAgent(choose: (AgentControls) -> HarnessSelection) = conversation { this.chooseAgent(choose = choose) }
 
-    fun addComposerAttachments(values: List<MessagePart>) {
-        if (values.isEmpty()) return
-        launchCore { draftKey()?.let { core.drafts.addAttachments(it, values).getOrThrow() } }
+    /** Adds attachments to the composer, or returns the core's reason when they would break a limit. */
+    suspend fun addComposerAttachments(values: List<MessagePart>): String? {
+        if (values.isEmpty()) return null
+        val key = draftKey() ?: return null
+        return core.onCore { core.drafts.addAttachments(key, values) }.exceptionOrNull()?.message
     }
 
     fun removeComposerAttachment(index: Int) = updateDraft { removeAttachment(it, index) }
@@ -1038,8 +1052,7 @@ class DieterViewModel internal constructor(
     internal fun captureProject(id: String) {
         activeCapture?.edit { TaskDrafts.project(it, id) }
         selectProject(id)
-        val boards = _state.value.spaceBoards.filter { it.project_id == id && !it.retired }
-        if (boards.size == 1) openCaptureBoard(boards.single().id)
+        CaptureDestinations.soleBoard(_state.value.spaceBoards.filter { it.project_id == id })?.let { openCaptureBoard(it.id) }
     }
 
     internal fun openCaptureBoard(id: String) {
@@ -1078,7 +1091,7 @@ class DieterViewModel internal constructor(
     internal fun initializeTask(editor: TaskDraftEditor, quick: Boolean) {
         val current = _state.value
         val harnesses = current.creationCatalog(chat = false).orEmpty()
-        val lane = (if (quick) "" else current.selectedLane).ifBlank { Creation.defaultLane(current.board) }
+        val lane = Creation.startLane(current.board, current.selectedLane.takeUnless { quick })
         editor.edit { TaskDrafts.initialize(it, core.creation.selection(harnesses), core.creation.workspaceMode, lane, harnesses) }
     }
 
@@ -1102,9 +1115,11 @@ class DieterViewModel internal constructor(
         quickTaskOpen = true
     }
 
+    /** Runs new conversations, files, and changes on checkout [id]; the core remembers it for its project. */
     fun selectCreationCheckout(id: String) {
         val checkout = _state.value.projects.flatMap { it.checkouts }.firstOrNull { it.id == id } ?: return
         _state.update { it.copy(creationCheckoutId = id, fileDocument = null) }
+        launchCore(report = false) { core.creation.remember(projectId = checkout.project_id, checkoutId = id) }
         activeCapture?.takeIf { it.state.value.project_id == checkout.project_id }?.edit { TaskDrafts.checkout(it, id) }
         refreshHarnesses()
         if (_state.value.destination == Destination.FILES) loadFiles("")
@@ -1112,12 +1127,25 @@ class DieterViewModel internal constructor(
 
     fun prepareCreationCheckout(id: String) = selectCreationCheckout(id)
 
+    /**
+     * The checkout new conversations of [project] run on: [current] while it
+     * is one of the project's attached checkouts, else the core's preselection
+     * (the last one chosen there, else the attached machine's, else the only
+     * one, else the replica's), else none.
+     */
+    private fun checkoutFor(project: Project?, current: String): String {
+        project ?: return ""
+        if (project.checkouts.any { it.id == current && !it.detached }) return current
+        val attached = core.connection.state.value.attachedMachineId
+        return core.creation.preferredCheckout(project, attached, core.workspace.state.value.projectReplicas[project.id])?.id.orEmpty()
+    }
+
     /** Loads the agent catalog of the machine a new conversation would run on. */
     private fun refreshHarnesses() {
         val current = _state.value
         val daemonId = Creation.catalogMachine(
             current.creationCheckout,
-            current.projectReplicas[current.selectedProjectId]?.daemonId,
+            current.projectReplicas[current.selectedProjectId],
             core.connection.state.value.attachedMachineId,
         ) ?: return
         val metadata = core.metadata.machines.value[daemonId]
@@ -1127,24 +1155,21 @@ class DieterViewModel internal constructor(
 
     internal fun creationProblem(draft: CaptureDraft, chat: Boolean): String? = _state.value.creationProblem(draft, chat)
 
-    internal fun canSubmitTask(draft: CaptureDraft): Boolean = _state.value.canSubmitTask(draft)
-
     /** Queues the task in [editor]; its capture is submitted at most once, even across retries and restarts. */
     internal fun submitTask(editor: TaskDraftEditor, onCreated: () -> Unit = {}) = create(editor.state.value, chat = false, editor, onCreated)
 
     /** Starts a chat; its editor belongs to the chat screen and is not journaled. */
     internal fun createChat(draft: CaptureDraft) = create(draft, chat = true, editor = null)
 
+    /** Queues [draft] through the core's creation rules ([CoreRuntime.create]), which also remembers its choices. */
     private fun create(draft: CaptureDraft, chat: Boolean, editor: TaskDraftEditor?, onCreated: () -> Unit = {}) {
         val current = _state.value
         if (current.working) return
-        val project = current.project ?: return _state.update { it.copy(error = "Select a project before creating a conversation.") }
+        val project = current.project ?: return _state.update { it.copy(error = Creation.NO_PROJECT) }
         current.creationProblem(draft, chat)?.let { problem -> return _state.update { it.copy(error = problem) } }
         val input = current.creationInput(draft, project, chat)
         action {
-            val request = Creation.request(input)
-            core.creation.remember(input.selection, input.workspaceMode, project.id, input.board?.id)
-            val card = if (editor != null) core.submitCapture(editor.id, request, chat) else core.createConversation(request, chat)
+            val card = core.create(input, captureId = editor?.id)
             viewModelScope.launch {
                 if (editor != null && activeCapture?.id == editor.id) activeCapture = null
                 quickTaskOpen = false
@@ -1182,16 +1207,21 @@ class DieterViewModel internal constructor(
         viewModelScope.launch { closeSurface() }
     }
 
-    fun toggleSchedule(schedule: Schedule) = schedules { setEnabled(schedule.id, !schedule.enabled) }
+    /** A change to one schedule; the core shows its failure as the list's action error. */
+    private fun changeSchedule(block: suspend com.dbpprt.dieter.core.schedules.Schedules.() -> Unit) = launchCore(report = false) { core.schedules.block() }
 
-    fun runSchedule(schedule: Schedule) = schedules { runNow(schedule.id) }
+    fun toggleSchedule(schedule: Schedule) = changeSchedule { setEnabled(schedule.id, !schedule.enabled) }
 
-    fun deleteSchedule(schedule: Schedule) = schedules { delete(schedule.id) }
+    fun runSchedule(schedule: Schedule) = changeSchedule { runNow(schedule.id) }
+
+    fun deleteSchedule(schedule: Schedule) = changeSchedule { delete(schedule.id) }
+
+    fun clearScheduleActionError() = schedules { clearActionError() }
 
     // --- Terminals --------------------------------------------------------------------------
 
     fun selectTerminalMachine(daemonId: String) {
-        if (_state.value.presentedEndpointConnections.none { it.daemonId == daemonId && it.online && it.isCompatible }) return
+        if (_state.value.presentedEndpointConnections.none { it.daemonId == daemonId && it.hostsProjects }) return
         terminalMachineId = daemonId
         loadTerminals()
     }
@@ -1223,7 +1253,7 @@ class DieterViewModel internal constructor(
     fun closeTerminal(terminalId: String) = launchCore { terminals.close(terminalId) }
 
     fun createTerminal(form: NewTerminal, onCreated: () -> Unit = {}) = action {
-        val machine = terminalMachineId ?: core.connection.state.value.attachedMachineId ?: error("No machine is attached.")
+        val machine = TerminalScope.creationMachine(terminalMachineId, core.connection.state.value.attachedMachineId)
         val scope = TerminalScope.forCreation(machine, _state.value.projects.firstOrNull { it.id == form.projectId })
         if (terminals.view.value.scope != scope) {
             terminals.bind(scope)
@@ -1279,23 +1309,31 @@ class DieterViewModel internal constructor(
         return true
     }
 
-    fun setProjectFilesMode(mode: String) {
+    fun setProjectFilesMode(mode: ProjectFilesTab) {
         _state.update { it.copy(projectFilesMode = mode) }
-        if (mode == "changes") loadProjectChanges() else launchCore(report = false) { projectChangesController.setActive(false) }
+        if (mode == ProjectFilesTab.CHANGES) loadProjectChanges() else launchCore(report = false) { projectChangesController.setActive(false) }
     }
 
     // --- Project changes --------------------------------------------------------------------
 
     fun openProjectChanges() {
-        _state.update { it.copy(destination = Destination.FILES, projectFilesMode = "changes") }
+        _state.update { it.copy(destination = Destination.FILES, projectFilesMode = ProjectFilesTab.CHANGES) }
         loadProjectChanges()
     }
 
-    fun loadProjectChanges() {
+    private var projectChangesSelectFirst = false
+
+    /**
+     * Shows the selected checkout's changes. With [selectFirst] (the list and
+     * the diff side by side) the first change opens whenever nothing is
+     * selected; later loads keep the last choice.
+     */
+    fun loadProjectChanges(selectFirst: Boolean = projectChangesSelectFirst) {
+        projectChangesSelectFirst = selectFirst
         val current = _state.value
         val checkout = current.creationCheckout ?: return
         launchCore {
-            projectChangesController.bind(current.selectedProjectId, checkout.id, checkout.daemon_id)
+            projectChangesController.bind(current.selectedProjectId, checkout.id, checkout.daemon_id, selectFirst)
             projectChangesController.setActive(foreground)
             projectChangesController.refresh()
         }
@@ -1305,9 +1343,9 @@ class DieterViewModel internal constructor(
 
     fun loadMoreProjectDiff() = launchCore { projectChangesController.loadMoreDiff() }
 
-    /** Runs a checkout operation; [path] narrows stage, unstage, and discard to one file. */
-    fun startProjectGitOperation(kind: String, path: String = "", parameters: Map<String, String> = emptyMap()) = launchCore {
-        projectChangesController.run(kind, if (path.isBlank()) parameters else parameters + ("path" to path))
+    /** Runs a checkout operation; [path] narrows stage, unstage, and discard to one file, [subject] and [body] describe a commit. */
+    fun startProjectGitOperation(kind: String, path: String = "", subject: String = "", body: String = "") = launchCore {
+        projectChangesController.run(kind, ProjectChangesView.parameters(kind, subject, body, path))
     }
 
     fun closeProjectDiff() = launchCore { projectChangesController.deselect() }
@@ -1324,7 +1362,8 @@ class DieterViewModel internal constructor(
 
     fun loadMoreWorkspaceDiff() = review { loadMoreDiff() }
 
-    fun startWorkspaceGitOperation(kind: String, parameters: Map<String, String> = emptyMap()) = review { start(kind, parameters) }
+    /** Starts the operation [form] describes; a kind that collects nothing starts from [GitOperationForm.initial]. */
+    fun startWorkspaceGitOperation(form: GitOperationForm) = review { start(form) }
 
     fun cancelWorkspaceGitOperation() = review { cancelOperation() }
 
@@ -1351,10 +1390,8 @@ class DieterViewModel internal constructor(
     private suspend fun loadAdministrationNow() {
         val current = _state.value
         val projectId = current.selectedProjectId.ifBlank { return }
-        val (projects, cards) = core.admin.archives(projectId, current.selectedBoardId.ifBlank { null })
-        val settings = runCatching { core.admin.settings(projectId) }.getOrNull()
-        val options = runCatching { core.admin.settingsOptions(projectId) }.getOrNull()
-        _state.update { it.copy(administration = AdministrationState(settings, options, projects, cards)) }
+        val archives = core.admin.archives(projectId, current.selectedBoardId.ifBlank { null })
+        _state.update { it.copy(administration = AdministrationState(archivedProjects = archives.projects, archivedCards = archives.cards)) }
     }
 
     fun clearDirectoryListing() = _state.update { it.copy(directoryListing = null, directoryListingEndpointId = "", directoryListingLoading = false) }
@@ -1401,10 +1438,8 @@ class DieterViewModel internal constructor(
         baseBranch: String,
         validationCommands: List<ValidationCommand>,
     ) = action {
-        val response = core.admin.createProject(daemonId, path, name, create, boardName, workflow, baseRemote, baseBranch, validationCommands)
+        val response = core.admin.createProject(daemonId, path, name, create, boardName, workflow, baseRemote, baseBranch, validationCommands, summary, prompt)
         val project = response.project ?: return@action
-        if (summary.isNotBlank() || prompt.isNotBlank()) core.admin.updateProject(project.id, summary = summary, prompt = prompt)
-        pendingProjectCreation = null
         viewModelScope.launch {
             selectProject(project.id)
             closeSurface()
@@ -1412,9 +1447,9 @@ class DieterViewModel internal constructor(
     }
 
     fun updateProject(name: String, summary: String, prompt: String, baseRemote: String, baseBranch: String, validationCommands: List<ValidationCommandDraft>?) = action {
-        val project = _state.value.project ?: return@action
-        ProjectWorkspaceSettings.update(core.sessions, core.workspace, project, baseRemote, baseBranch, _state.value.creationCheckout?.id, validationCommands)
-        core.admin.updateProject(project.id, name = name, summary = summary, prompt = prompt)
+        val current = _state.value
+        val projectId = current.selectedProjectId.ifBlank { return@action }
+        core.admin.saveProject(projectId, name, summary, prompt, baseRemote, baseBranch, current.creationCheckout?.id, validationCommands)
     }
 
     fun loadProjectWorkspaces() {
@@ -1422,7 +1457,11 @@ class DieterViewModel internal constructor(
         launchCore { core.projectWorkspaces.load(projectId) }
     }
 
-    fun removeProjectWorkspace(workspace: Workspace, discard: Boolean) = launchCore { core.projectWorkspaces.remove(workspace, discard) }
+    /** Cleans up or discards the listed workspace of conversation [cardId]. */
+    fun removeProjectWorkspace(cardId: String, discard: Boolean) = launchCore {
+        val workspace = core.projectWorkspaces.view.value.workspaces.firstOrNull { it.card_id == cardId } ?: return@launchCore
+        core.projectWorkspaces.remove(workspace, discard)
+    }
 
     fun archiveCurrentProject() = action {
         core.admin.setProjectArchived(_state.value.selectedProjectId, true)
@@ -1433,7 +1472,7 @@ class DieterViewModel internal constructor(
         loadAdministrationNow()
     }
 
-    fun createBoard(name: String, workflow: String, description: String, openAfterCreate: Boolean = false, baseRemote: String = "", remotePublishMode: String = "manual") = action {
+    fun createBoard(name: String, workflow: String, description: String, openAfterCreate: Boolean = false, baseRemote: String = "", remotePublishMode: String = Administration.DEFAULT_PUBLISH_MODE) = action {
         val projectId = _state.value.selectedProjectId
         val board = core.admin.createBoard(projectId, name, workflow, description, baseRemote = baseRemote, publishMode = remotePublishMode)
         viewModelScope.launch {
@@ -1444,8 +1483,6 @@ class DieterViewModel internal constructor(
 
     fun restoreBoard(id: String) = action { core.admin.setBoardRetired(id, false) }
 
-    fun retireBoard(id: String) = action { core.admin.setBoardRetired(id, true) }
-
     fun setBoardArchivePolicy(policy: String) = action { core.admin.setArchivePolicy(_state.value.selectedBoardId, policy) }
 
     fun updateBoardGitSettings(baseRemote: String, remotePublishMode: String) = action {
@@ -1455,11 +1492,6 @@ class DieterViewModel internal constructor(
     fun createBoardLabel(name: String, color: String) = action { core.admin.createLabel(_state.value.selectedBoardId, name, color) }
 
     fun deleteBoardLabel(labelId: String) = action { core.admin.deleteLabel(_state.value.selectedBoardId, labelId) }
-
-    fun updateSettings(settings: Settings) = action {
-        val updated = core.admin.updateSettings(_state.value.selectedProjectId, settings)
-        _state.update { it.copy(administration = it.administration.copy(settings = updated)) }
-    }
 
     fun loadSharedConflicts(keys: List<String>) = launchCore {
         val projectId = _state.value.selectedProjectId
@@ -1476,7 +1508,8 @@ class DieterViewModel internal constructor(
 
     // --- Quotas -----------------------------------------------------------------------------
 
-    fun refreshProviderQuotas(requestRefresh: Boolean = true) = launchCore(report = false) { core.quotas.load(requestRefresh) }
+    /** Asks the machines for new provider numbers. */
+    fun refreshProviderQuotas() = launchCore(report = false) { core.quotas.load(refresh = true) }
 
     fun setProviderQuotaSummaryInclusion(provider: ProviderQuotaProvider, accountKey: String, included: Boolean) =
         launchCore(report = false) { core.quotas.setIncluded(provider, accountKey, included) }
@@ -1497,12 +1530,19 @@ class DieterViewModel internal constructor(
             DieterViewModel(core, appPreferences, policy, host, taskCaptures) as T
     }
 
+    /** One machine-list update: rows, project hosts, and sync warnings overall and per machine. */
+    private data class MachinesUpdate(
+        val endpoints: List<MachineRow>,
+        val replicas: Map<String, String>,
+        val warnings: List<String>,
+        val warningsByMachine: Map<String, List<String>>,
+    )
+
     companion object {
         fun textPart(text: String): MessagePart = MessagePart(type = "text", text = text)
 
         /** A new terminal's first grid on a phone; the view reports its real size once shown. */
         private const val PHONE_COLUMNS = 80
         private const val PHONE_ROWS = 28
-
     }
 }

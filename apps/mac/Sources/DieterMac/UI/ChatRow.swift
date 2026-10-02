@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -24,10 +25,10 @@ struct ChatRowContent: View, Equatable {
         lhs.card == rhs.card && lhs.showsPinnedDragHandle == rhs.showsPinnedDragHandle && lhs.unread == rhs.unread
     }
 
-    private var running: Bool { ChatRuntimePresentation.isActive(card.runtime) }
-
     var body: some View {
         let _ = BoardRenderingDiagnostics.record(.chatRowBody)
+        let running = SharedRules.shared.runtimeActive(runtime: card.runtime)
+        let tint = runtimeColor(card.runtime)
         Button {
             Task {
                 if card.archived { await store.archive(card, archived: false) }
@@ -37,13 +38,13 @@ struct ChatRowContent: View, Equatable {
             HStack(alignment: .top, spacing: 8) {
                 Group {
                     if running {
-                        ChatRunningIndicator(color: runtimeColor(card.runtime))
+                        ChatRunningIndicator(color: tint)
                             .accessibilityLabel("Running")
                     } else {
                         ZStack {
-                            Circle().stroke(runtimeColor(card.runtime).opacity(0.35), lineWidth: 1.5).frame(
+                            Circle().stroke(tint.opacity(0.35), lineWidth: 1.5).frame(
                                 width: 11, height: 11)
-                            Circle().fill(runtimeColor(card.runtime)).frame(width: 5, height: 5)
+                            Circle().fill(tint).frame(width: 5, height: 5)
                         }
                     }
                 }
@@ -72,7 +73,7 @@ struct ChatRowContent: View, Equatable {
                             } else if !card.summary.isEmpty {
                                 Text(card.summary).lineLimit(1)
                             }
-                            if !card.workspaceMode.isEmpty { WorkspaceSummaryBadge(card: card, compact: true) }
+                            if WorkspaceBadge.of(card).shown { WorkspaceSummaryBadge(card: card, compact: true) }
                             if !card.activeSubagents.isEmpty {
                                 Text(
                                     "· \(card.activeSubagents.count) subagent\(card.activeSubagents.count == 1 ? "" : "s")"
@@ -89,10 +90,10 @@ struct ChatRowContent: View, Equatable {
                                     .accessibilityLabel("Unread")
                             }
                             Text(
-                                ChatActivityText.compact(
-                                    card.lastActivityAt.isEmpty ? card.updatedAt : card.lastActivityAt,
-                                    relativeTo: .now
-                                )
+                                SharedRules.shared.compactAge(
+                                    sinceMillis: SharedRules.shared.epochMillis(
+                                        value: card.lastActivityAt.isEmpty ? card.updatedAt : card.lastActivityAt),
+                                    nowMillis: Date.now.epochMillis, weeks: true)
                             )
                             .fixedSize()
                             if showsPinnedDragHandle {
@@ -159,20 +160,21 @@ struct ChatContextMenu: ViewModifier {
                         Task { await store.pin(card, pinned: !card.pinned) }
                     }
                 }
-                if !store.allChatsFolders.folders.isEmpty {
+                let folders = store.navigation.chatFolders
+                if !folders.isEmpty {
                     Menu("Move to folder", systemImage: "folder") {
-                        ForEach(store.allChatsFolders.folders) { folder in
+                        ForEach(folders, id: \.id) { folder in
                             Button {
                                 moveChat(to: folder.id)
                             } label: {
-                                if folder.itemIDs.contains(card.id) {
+                                if folder.itemIds.contains(card.id) {
                                     Label(folder.name, systemImage: "checkmark")
                                 } else {
                                     Text(folder.name)
                                 }
                             }
                         }
-                        if store.allChatsFolders.folder(containing: card.id) != nil {
+                        if folders.folder(containing: card.id) != nil {
                             Divider()
                             Button("No folder", systemImage: "arrow.up.backward") {
                                 moveChat(to: nil)
@@ -216,9 +218,7 @@ struct ChatContextMenu: ViewModifier {
     }
 
     private func moveChat(to folderID: String?) {
-        var preferences = store.allChatsFolders
-        guard preferences.moveItem(card.id, to: folderID) else { return }
-        store.allChatsFolders = preferences
+        store.moveToFolder(.chats, itemID: card.id, folderID: folderID)
     }
 }
 
@@ -249,14 +249,6 @@ struct ChatRowMachineBadge: View {
                 .accessibilityIdentifier("chat.\(card.id).machine")
                 .smokeTarget("chat.\(card.id).machine.\(online ? "online" : "offline")")
         }
-    }
-}
-
-enum ChatRuntimePresentation {
-    private static let activeRuntimes = Set(["running", "starting", "working", "streaming"])
-
-    static func isActive(_ runtime: String) -> Bool {
-        activeRuntimes.contains(runtime.lowercased())
     }
 }
 

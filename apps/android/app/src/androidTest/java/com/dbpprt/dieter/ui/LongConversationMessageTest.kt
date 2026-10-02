@@ -1,6 +1,5 @@
 package com.dbpprt.dieter.ui
 
-import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -12,7 +11,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.dp
@@ -21,18 +19,11 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.core.presentation.TimelineBuilder
 import com.dbpprt.dieter.core.presentation.TimelineItem
 import com.dbpprt.dieter.e2e.TestCore
-import com.dbpprt.dieter.settings.AppPreferences
+import com.dbpprt.dieter.e2e.saveEvidence
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import com.dbpprt.dieter.api.v1.MessagePart
 import com.dbpprt.dieter.api.v1.UiMessage
-import java.io.File
-import java.lang.reflect.Proxy
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import org.junit.After
-import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
@@ -78,25 +69,18 @@ class LongConversationMessageTest {
         }
         compose.onNodeWithText("Step 0").assertDoesNotExist()
         compose.onNodeWithText("Step 339").performScrollTo().assertIsDisplayed()
-        capture("long-message-tail.png")
+        compose.onRoot().saveEvidence("long-message-tail.png")
         compose.onAllNodesWithContentDescription("Expand tool activity")[5].performScrollTo().performClick()
         compose.onNodeWithContentDescription("Collapse tool activity").assertExists()
         compose.onNodeWithTag("message-earlier-long").performScrollTo().performClick()
         compose.onNodeWithText("Step 328").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("Collapse tool activity").assertExists()
         compose.onNodeWithText("Step 0").assertDoesNotExist()
-        capture("long-message-earlier.png")
+        compose.onRoot().saveEvidence("long-message-earlier.png")
         compose.runOnUiThread {
             presentedMessage = message.copy(parts = listOf(MessagePart(type = "text", text = "Refreshed shorter message")))
         }
         compose.onNodeWithText("Refreshed shorter message").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("message-earlier-long").assertDoesNotExist()
-    }
-
-    private fun capture(name: String) {
-        val file = File(context.getExternalFilesDir(null), name)
-        file.outputStream().use { output ->
-            assertTrue(compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, output))
-        }
     }
 }

@@ -52,7 +52,7 @@ struct ConversationLinkExternalTarget {
         submenu.submenu = applications
         menu.addItem(submenu)
         status("Loading…")
-        let isWeb = ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+        let isWeb = ConversationContentLink.isWeb(url)
         if !isWeb { finder.isEnabled = false; menu.addItem(finder) }
         menu.addItem(.separator())
         menu.addItem(item("Copy Link") { FileExternalActions.copy(url.relativeString) })

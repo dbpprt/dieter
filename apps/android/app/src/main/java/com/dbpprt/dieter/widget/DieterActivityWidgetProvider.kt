@@ -17,13 +17,11 @@ import com.dbpprt.dieter.R
 import com.dbpprt.dieter.core.activity.WidgetModel
 import com.dbpprt.dieter.core.connection.ConnectionPhase
 import kotlin.time.Clock
-import kotlinx.coroutines.flow.first
 import kotlin.time.Duration.Companion.seconds
 import com.dbpprt.dieter.settings.AppPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeout
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** A cached Inbox, refreshed by applied workspace changes or an explicit user tap. */
@@ -76,6 +74,7 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
         /** What the widget shows, read from the shared core's current state. */
         internal data class Snapshot(
             val items: List<com.dbpprt.dieter.core.activity.ActivityItem>,
+            /** The core's last applied workspace change, kept across restarts; 0 before any. */
             val lastSyncAtMs: Long,
             val connected: Boolean,
             val gateway: String,
@@ -126,7 +125,7 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
             views.setTextViewText(R.id.widget_status, when {
                 refreshing.get() -> "Refreshing…"
                 failedRefreshGateway == state.gateway && failedRefreshAt > state.lastSyncAtMs -> "Couldn’t refresh"
-                else -> widgetStatusText(state.lastSyncAtMs, state.connected)
+                else -> WidgetModel.status(widgetTime(state.lastSyncAtMs), state.connected)
             })
             views.setTextViewText(R.id.widget_empty_title, WidgetModel.emptyTitle(state.lastSyncAtMs > 0, state.connected))
             views.setTextViewText(R.id.widget_empty_body, WidgetModel.EMPTY_BODY)

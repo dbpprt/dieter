@@ -16,20 +16,6 @@ enum RemoteDesktopPhase: Equatable, Sendable {
     case reconnecting
     case failed(String)
 
-    var label: String {
-        switch self {
-        case .idle: "Not connected"
-        case .loading: "Checking machine…"
-        case .permissionRequired: "Permission required"
-        case .unsupported: "Screen sharing unavailable"
-        case .connecting: "Connecting…"
-        case .waitingForHostApproval: "Waiting for approval on Linux host…"
-        case .streaming: "Live"
-        case .reconnecting: "Reconnecting…"
-        case .failed: "Connection failed"
-        }
-    }
-
     /// The core's phase name and the reason it carries.
     init(core phase: String, problem: String) {
         switch phase {
@@ -63,6 +49,10 @@ struct RemoteDesktopCursorState: Equatable {
 @Observable
 final class RemoteDesktopController {
     var phase: RemoteDesktopPhase = .idle
+    /// The phase as status lines show it, from the core: "Not connected", "Live", …
+    private(set) var phaseLabel = "Not connected"
+    /// The session is open or on its way: Disconnect, not Connect (fixtures set it).
+    var active = false
     var capabilities = Dieter_V1_RemoteDesktopCapabilities()
     var routeLabel = ""
     var machineName = ""
@@ -89,21 +79,20 @@ final class RemoteDesktopController {
     var preferredMaxFPS: Int32 = 60
     var codecPreference: Dieter_V1_RemoteDesktopCodecPreference = .h264
     private(set) var codecFallbackReason = ""
-    var availableFrameRates: [Int32] {
-        [30, 60, 90, 120].filter { $0 <= (capabilities.maxFps > 0 ? capabilities.maxFps : 60) }
-    }
+    /// The frame rates the host offers, from the core.
+    private(set) var frameRates: [Int32] = []
     /// This client controls the host and may send input now; folded from the
     /// slice (fixtures set it directly).
     var controlActive = false { didSet { if oldValue != controlActive { onCursorChange() } } }
     private(set) var canTransferControl = false
     private(set) var controlTransferPending = false
     private(set) var controlTransferError = ""
-    var controlUnavailableReason: String {
-        guard phase == .streaming, !canTransferControl else { return "" }
-        return capabilities.platform == "linux"
-            ? "Remote-control permission is required from the Linux desktop portal"
-            : "Accessibility permission is required on the host"
-    }
+    /// Why this client cannot take control of a live session; empty when it can.
+    private(set) var controlUnavailableReason = ""
+    /// Copy and paste can run now: control, a shared clipboard, nothing in flight.
+    private(set) var clipboardActionsEnabled = false
+    /// The round trip as the status bar shows it, e.g. "12 ms RTT".
+    private(set) var latencyLabel = ""
     var keyboardCaptureStatus = ""
     private(set) var displayMatchingStatus = ""
     @ObservationIgnored var onCursorChange: @MainActor () -> Void = {}
@@ -144,9 +133,10 @@ final class RemoteDesktopController {
         removePowerObservers()
         systemSleeping = false
         if case .failed = phase {} else { phase = .idle }
+        active = false
         controlActive = false
         mediaRouteLabel = "Negotiating media"
-        send { $0.disconnect = ClientScreenStep() }
+        send { $0.disconnect = ClientStep() }
     }
 
     /// Closes the session and stops observing it; the view is done.
@@ -164,7 +154,8 @@ final class RemoteDesktopController {
             guard let self else { return }
             switch update.value {
             case .screen(let slice): self.fold(slice)
-            case .failure(let failure): self.phase = .failed(failure.message); self.errorMessage = failure.message
+            case .failure(let failure):
+                self.phase = .failed(failure.message); self.active = false; self.errorMessage = failure.message
             default: break
             }
         }
@@ -173,6 +164,16 @@ final class RemoteDesktopController {
     func fold(_ slice: ClientScreenSlice) {
         let next = RemoteDesktopPhase(core: slice.phase, problem: slice.problem)
         if phase != next { phase = next }
+        if phaseLabel != slice.phaseLabel { phaseLabel = slice.phaseLabel }
+        if active != slice.active { active = slice.active }
+        if frameRates != slice.frameRates { frameRates = slice.frameRates }
+        if controlUnavailableReason != slice.controlUnavailableReason {
+            controlUnavailableReason = slice.controlUnavailableReason
+        }
+        if clipboardActionsEnabled != slice.clipboardActionsEnabled {
+            clipboardActionsEnabled = slice.clipboardActionsEnabled
+        }
+        if latencyLabel != slice.latencyLabel { latencyLabel = slice.latencyLabel }
         let error: String? = if case .failed(let message) = next { message } else { nil }
         if errorMessage != error { errorMessage = error }
         let capabilities = slice.hasCapabilities ? slice.capabilities : .init()
@@ -279,7 +280,7 @@ final class RemoteDesktopController {
 
     func releaseAllInput() {
         guard controlActive else { return }
-        send { $0.releaseInput = ClientScreenStep() }
+        send { $0.releaseInput = ClientStep() }
     }
 
     // MARK: Session
@@ -316,7 +317,7 @@ final class RemoteDesktopController {
             preferredMaxFPS = max(1, min(120, min(maxFPS, capabilities.maxFps > 0 ? capabilities.maxFps : 60)))
         }
         if displayID != nil || quality != nil || maxFPS != nil { sendPreferences() }
-        if refresh { send { $0.refresh = ClientScreenStep() } }
+        if refresh { send { $0.refresh = ClientStep() } }
     }
 
     func setClipboardEnabled(_ on: Bool) {
@@ -347,14 +348,14 @@ final class RemoteDesktopController {
 
     func prepareForSleep() {
         systemSleeping = true
-        send { $0.sleep = ClientScreenStep() }
+        send { $0.sleep = ClientStep() }
         onSystemSleep?()
     }
 
     func resumeAfterWake() {
         systemSleeping = false
         onUserActivity()
-        send { $0.resume = ClientScreenStep() }
+        send { $0.resume = ClientStep() }
     }
 
     private func sendPreferences() {

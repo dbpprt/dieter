@@ -60,18 +60,6 @@ import Testing
     #expect(received == ["open-plan"])
 }
 
-@Test func presentedPathsAreEncodedAsFileNamesAndKeepTheirLine() throws {
-    for path in ["docs/plan #1? 50%.md", "docs/note:12", "/remote/worktree/docs/plan #1.md"] {
-        var value = Dieter_V1_ContentPresentation()
-        value.path = path
-        value.line = 17
-        let url = try #require(ConversationPresentedContent.url(for: value))
-        let link = try ConversationContentLink.resolve(url, workspaceRoot: "/remote/worktree")
-        let expected = path.hasPrefix("/") ? "docs/plan #1.md" : path
-        #expect(link == .file(path: expected, line: 17))
-    }
-}
-
 @Test func malformedPresentationCannotBypassLinkRouting() {
     var value = Dieter_V1_ContentPresentation()
     #expect(ConversationPresentedContent.url(for: value) == nil)
@@ -102,17 +90,6 @@ import Testing
     #expect(received == destination)
     let unhandled = NativeTextViewWrapper(text: .constant("A linked file")).makeCoordinator()
     #expect(!unhandled.textView(text, clickedOnLink: destination, at: 4))
-}
-
-@Test func previewLinksKeepTheirLiteralHrefBeforeWorkspaceResolution() throws {
-    let url = try #require(MarkdownPreviewNavigation.contentURL(href: "../guide.md#L12"))
-    #expect(
-        try ConversationContentLink.resolve(url, workspaceRoot: "/workspace", relativeTo: "docs/plan.md")
-            == .file(path: "guide.md", line: 12))
-    let sameFile = try #require(MarkdownPreviewNavigation.contentURL(href: "#L17"))
-    #expect(
-        try ConversationContentLink.resolve(sameFile, workspaceRoot: "/workspace", relativeTo: "docs/plan.md")
-            == .file(path: "docs/plan.md", line: 17))
 }
 
 @Test @MainActor func richMarkdownStyledLinksPreserveTheirOriginalDestination() throws {

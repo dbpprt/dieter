@@ -1,20 +1,19 @@
 package com.dbpprt.dieter.ui
 
-import android.graphics.Bitmap
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.core.machines.MachineRow
+import com.dbpprt.dieter.e2e.Evidence
+import com.dbpprt.dieter.e2e.saveEvidence
 import com.dbpprt.dieter.api.gateway.v1.*
 import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.ui.theme.DieterTheme
@@ -151,14 +150,14 @@ class ActivityScreenTest {
                     account.copy(windows = emptyList(), availability = ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_TEMPORARILY_UNAVAILABLE),
                 ))))
         }
-        compose.onNodeWithTag("activity-feed").performScrollToNode(hasText("Usage windows unavailable"))
-        compose.onNodeWithText("Usage windows unavailable").assertIsDisplayed()
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasText("No numeric limit reported"))
+        compose.onNodeWithText("No numeric limit reported").assertIsDisplayed()
         compose.onNodeWithText("0% remaining", substring = true).assertDoesNotExist()
         compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-timeline"))
         compose.onNodeWithText("CACHED").assertIsDisplayed()
     }
 
-    @Test fun cardsShowLatestActivityAndOwningMachineAcrossUpdatesAndOffline() {
+    @Test fun runningCardsShowTheirStartOthersTheirLatestActivityAndBothTheirMachine() {
         val running = card("running", "Polish the Inbox cards", "running").copy(runtime_updated_at = now.minusSeconds(7200).toString(), last_activity_at = now.minusSeconds(120).toString())
         var current by mutableStateOf(state.copy(spaceCards = listOf(running)))
         var clock by mutableStateOf(now)
@@ -167,22 +166,23 @@ class ActivityScreenTest {
         } }
         compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-running"))
         compose.onNodeWithTag("activity-age-running", useUnmergedTree = true)
-            .assertContentDescriptionEquals("Last activity: 2m ago").assertIsDisplayed()
+            .assertContentDescriptionEquals("Started: 2h ago").assertIsDisplayed()
         compose.onNodeWithTag("activity-machine-running", useUnmergedTree = true)
             .assertContentDescriptionEquals("Machine: garuda").assertIsDisplayed()
         compose.runOnIdle {
             current = current.copy(spaceCards = listOf(running.copy(last_activity_at = now.toString())))
         }
         compose.onNodeWithTag("activity-age-running", useUnmergedTree = true)
-            .assertContentDescriptionEquals("Last activity: Just now")
+            .assertContentDescriptionEquals("Started: 2h ago")
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-answer"))
+        compose.onNodeWithTag("activity-age-answer", useUnmergedTree = true)
+            .assertContentDescriptionEquals("Last activity: 20m ago")
         compose.runOnIdle {
             current = current.copy(connectionPhase = ConnectionPhase.NO_MACHINE, lastConnectedAtMillis = now.toEpochMilli())
             clock = now.plusSeconds(180)
         }
-        compose.onNodeWithTag("activity-age-running", useUnmergedTree = true)
-            .assertContentDescriptionEquals("Last activity: 3m ago")
-        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-answer"))
-        compose.onNodeWithTag("activity-age-answer", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("activity-age-answer", useUnmergedTree = true)
+            .assertContentDescriptionEquals("Last activity: 23m ago").assertIsDisplayed()
         compose.onNodeWithTag("activity-machine-answer", useUnmergedTree = true)
             .assertContentDescriptionEquals("Machine: MacBook Pro").assertIsDisplayed()
     }
@@ -210,7 +210,7 @@ class ActivityScreenTest {
             }
             assertOrder()
             compose.onNodeWithTag("activity-age-$id", useUnmergedTree = true)
-                .assertContentDescriptionEquals("Last activity: Just now")
+                .assertContentDescriptionEquals(if (id == "older") "Started: 2h ago" else "Started: 1h ago")
         }
     }
 
@@ -321,9 +321,5 @@ class ActivityScreenTest {
         compose.onNodeWithTag("activity-archive-answer").assertIsNotEnabled()
     }
 
-    private fun capture(name: String) {
-        compose.waitForIdle()
-        val dir = File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null), "activity-evidence").apply { mkdirs() }
-        File(dir, name).outputStream().use { compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it) }
-    }
+    private fun capture(name: String) = compose.onRoot().saveEvidence(name, File(Evidence.directory, "activity-evidence"))
 }

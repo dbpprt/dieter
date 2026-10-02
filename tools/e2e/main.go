@@ -305,6 +305,20 @@ func affected(cases []Case, paths []string) []Case {
 			macChanged = true
 			continue
 		}
+		// Android compiles the shared core from source and the Mac links it as
+		// DieterShared. Apple-only core code reaches only the Mac; code that only
+		// the core's own tests compile reaches neither app.
+		if strings.HasPrefix(p, "apps/core/") {
+			sourceSet := coreSourceSet(p)
+			if strings.HasPrefix(p, "apps/core/testing/") || strings.HasSuffix(sourceSet, "Test") {
+				continue
+			}
+			macChanged = true
+			if !strings.HasPrefix(p, "apps/core/apple/") && !strings.HasPrefix(sourceSet, "apple") {
+				androidChanged = true
+			}
+			continue
+		}
 		if p == "just/android.just" {
 			androidChanged = true
 			continue
@@ -340,4 +354,15 @@ func affected(cases []Case, paths []string) []Case {
 		}
 	}
 	return result
+}
+
+// coreSourceSet returns the Kotlin source set of a core module path, such as
+// "commonMain" for apps/core/shared/src/commonMain/..., or "" outside src/.
+func coreSourceSet(p string) string {
+	_, rest, ok := strings.Cut(p, "/src/")
+	if !ok {
+		return ""
+	}
+	sourceSet, _, _ := strings.Cut(rest, "/")
+	return sourceSet
 }

@@ -1,7 +1,5 @@
 package com.dbpprt.dieter.ui
 
-import android.content.Context
-import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
@@ -20,9 +18,13 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
 import androidx.test.platform.app.InstrumentationRegistry
+import com.dbpprt.dieter.core.board.BoardTarget
+import com.dbpprt.dieter.core.board.BoardViews
 import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.e2e.TestCore
+import com.dbpprt.dieter.e2e.Evidence
+import com.dbpprt.dieter.e2e.saveEvidence
 import com.dbpprt.dieter.settings.AppPreferences
 import com.dbpprt.dieter.settings.DieterPalette
 import com.dbpprt.dieter.api.v1.ConversationSnapshot
@@ -37,13 +39,7 @@ import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.Lane
 import com.dbpprt.dieter.api.v1.Project
-import java.io.File
-import java.lang.reflect.Proxy
 import java.time.Instant
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -121,12 +117,7 @@ class TabletWorkspaceTest {
         } }
         fun verify(name: String) {
             capture(name)
-            val window = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
-            try {
-                File(context.getExternalFilesDir(null), "$name-window.png").outputStream().use {
-                    assertTrue(window.compress(Bitmap.CompressFormat.PNG, 100, it))
-                }
-            } finally { window.recycle() }
+            Evidence.display("$name-window.png")
             val root = compose.onNodeWithTag("tablet-test-surface")
             val bounds = root.fetchSemanticsNode().boundsInRoot
             val sidebar = compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle, "List"))
@@ -190,7 +181,7 @@ class TabletWorkspaceTest {
         val drops = mutableListOf<BoardCardLaneDrop>()
         compose.setContent { TabletTestSurface {
             DieterTheme {
-                BoardLanePager(current, model, board.lanes, current.cards,
+                BoardLanePager(current, model, BoardViews.build(BoardTarget(boardId = board.id), board, current.cards),
                     remember { BoardLabelDragState() }, Modifier.fillMaxSize(), showAllLanes = true,
                     onCardDrop = { drop ->
                         drops += drop
@@ -233,7 +224,7 @@ class TabletWorkspaceTest {
         var dropped: BoardCardLaneDrop? = null
         compose.setContent { TabletTestSurface {
             DieterTheme {
-                BoardLanePager(fixture, model, board.lanes, cards,
+                BoardLanePager(fixture, model, BoardViews.build(BoardTarget(boardId = board.id), board, cards),
                     remember { BoardLabelDragState() }, Modifier.width(480.dp).fillMaxHeight(),
                     showAllLanes = true, onCardDrop = { dropped = it })
             }
@@ -294,7 +285,7 @@ class TabletWorkspaceTest {
             DieterTheme(palette = DieterPalette.ULTRAVIOLET_RELAY, darkTheme = true) {
                 Surface(Modifier.fillMaxSize()) {
                     Row {
-                        TabletNavigationRail(Destination.ACTIVITY, false, false, 1, 2, {}, {}, {}, {}, {})
+                        TabletNavigationRail(Destination.ACTIVITY, false, false, 1, "2 of 2 machines online", {}, {}, {}, {}, {})
                         val feed: @Composable (Modifier) -> Unit = { modifier ->
                             ActivityFeed(fixture, modifier, { opened = it; timeline = false }, {}, {}, {}, now,
                                 tablet = true, timelineOnly = timeline, onTimelineToggle = { timeline = it })
@@ -332,7 +323,7 @@ class TabletWorkspaceTest {
                 DieterTheme(darkTheme = false) {
                     Surface(Modifier.fillMaxSize()) {
                         Row {
-                            TabletNavigationRail(Destination.CHATS, false, settings, 4, 3, { destination = it }, {}, {}, {}, { settings = true })
+                            TabletNavigationRail(Destination.CHATS, false, settings, 4, "3 of 4 machines online", { destination = it }, {}, {}, {}, { settings = true })
                             SettingsAdaptiveLayout(selectedTab, { selectedTab = it }, { settings = false }, PaddingValues()) {
                                 Text("Settings content", Modifier.padding(24.dp))
                             }
@@ -583,10 +574,8 @@ class TabletWorkspaceTest {
     }
 
     private fun capture(name: String) {
-        File(context.getExternalFilesDir(null), "$name.png").outputStream().use {
-            assertTrue(compose.onNodeWithTag("tablet-test-surface").captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it))
-        }
-        File(context.getExternalFilesDir(null), "$name.txt").writeText(compose.onRoot().printToString())
+        compose.onNodeWithTag("tablet-test-surface").saveEvidence("$name.png")
+        Evidence.text("$name.txt", compose.onRoot().printToString())
     }
     private fun snapshot(id: String): ConversationSnapshot {
         val card = cards.first { it.id == id }

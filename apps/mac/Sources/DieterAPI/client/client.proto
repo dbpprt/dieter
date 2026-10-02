@@ -8,10 +8,10 @@ option swift_prefix = "Client";
 import "gateway.proto";
 import "dieter.proto";
 
-// The UI contract of the shared core. It never leaves the device: Kotlin UIs
-// use these types directly, and Apple UIs exchange them as bytes through the
-// generic façade (dispatch a command, observe a slice). Fields are only ever
-// added; a UI ignores what it does not know.
+// The UI contract of the shared core. It never leaves the device and is
+// never stored: Apple UIs exchange it as bytes through the façade (dispatch a
+// command, observe a slice), which ships inside each app with the core it
+// was built against.
 
 // ---------------------------------------------------------------------------
 // Commands
@@ -21,7 +21,6 @@ message Command {
     AdoptSession adopt_session = 1;
     BeginSignIn begin_sign_in = 2;
     CompleteSignIn complete_sign_in = 3;
-    SignOut sign_out = 4;
     SelectGateway select_gateway = 5;
     AttachMachine attach_machine = 6;
     SetConnected set_connected = 7;
@@ -45,7 +44,6 @@ message Command {
     MergeCard merge_card = 26;
     ForkCard fork_card = 27;
     ListArchivedCards list_archived_cards = 28;
-    ClearCardError clear_card_error = 29;
     LoadEarlierMessages load_earlier_messages = 30;
     ReturnToLatest return_to_latest = 31;
     RefreshConversation refresh_conversation = 32;
@@ -61,8 +59,6 @@ message Command {
     SetGateways set_gateways = 43;
     Resync resync = 44;
     SetProjectOrder set_project_order = 45;
-    SetPinnedProjects set_pinned_projects = 46;
-    SetPinnedChatOrder set_pinned_chat_order = 47;
     SetProjectExpanded set_project_expanded = 48;
     SetChatSectionCollapsed set_chat_section_collapsed = 49;
     SetChatsShowAll set_chats_show_all = 50;
@@ -85,11 +81,23 @@ message Command {
     ProcessesCommand processes = 67;
     SearchCommand search = 68;
     ScreenCommand screen = 69;
+    SetShowReasoning set_show_reasoning = 71;
+    BoardViewCommand board_view = 72;
+    ChatsCommand chats = 74;
+    NavigationCommand navigation = 75;
+    CreationPreviewCommand creation_preview = 76;
+    ChooseAgent choose_agent = 77;
   }
 }
 
-// Uses a gateway session obtained elsewhere: a legacy app's stored token or a
-// test fixture. The gateway becomes the active one.
+// An action without arguments, e.g. a surface's refresh.
+message Step {}
+
+// Turns a surface's mode on or off.
+message Toggle { bool on = 1; }
+
+// Uses a gateway session obtained elsewhere, e.g. by an isolated test run's
+// launcher. The gateway becomes the active one.
 message AdoptSession {
   string gateway_url = 1;
   string session_token = 2;
@@ -98,7 +106,6 @@ message AdoptSession {
 
 message BeginSignIn { string gateway_url = 1; }
 message CompleteSignIn { string callback_url = 1; }
-message SignOut {}
 message SelectGateway { string origin = 1; }
 message AttachMachine { string daemon_id = 1; }
 message SetConnected { bool connected = 1; }
@@ -106,19 +113,27 @@ message SetConnected { bool connected = 1; }
 // The app is in the foreground (keeps the feed live) or in the background.
 message SetForeground { bool foreground = 1; }
 
+// Queues a new task or chat: the core applies its defaults to `intent`,
+// validates it against the destination machine's catalog (failing with the
+// problem its creation preview reports), builds the request, and remembers
+// the choices.
 message CreateConversation {
-  dieter.v1.CreateConversationRequest request = 1;
   bool chat = 2;
   // Reusing an ID never creates a second conversation.
   string submission_id = 3;
+  CreationIntent intent = 4;
 }
 
+// Queues a message. The core places it behind a running turn or queued
+// messages itself, and checks the message and its attachments.
 message SendMessage {
   string card_id = 1;
   repeated dieter.v1.MessagePart parts = 2;
+  // The agent for this message; unset uses the composer's choice
+  // (ChooseAgent), else the conversation's agent. Gaps are filled from the
+  // conversation's agent, and a started conversation keeps its provider and
+  // whatever its harness does not let change between turns.
   dieter.v1.HarnessSelection selection = 3;
-  // Queue behind the running turn instead of joining the transcript.
-  bool queue = 4;
 }
 
 message StartCard {
@@ -166,7 +181,9 @@ message AddCardLabel {
   string label_id = 2;
 }
 
-// Edits a never-started todo card's title, task, and (when set) agent.
+// Saves the edit card form. A never-started todo card takes the title, task,
+// and (when set) agent; a card whose task was sent only takes a new title,
+// and fails if the task or agent would change.
 message UpdateCardDraft {
   string card_id = 1;
   string title = 2;
@@ -184,14 +201,11 @@ message MergeCard {
 message ForkCard {
   string card_id = 1;
   string message_id = 2;
-  string title = 3;
 }
 
 // The board's archived cards; the result carries them.
 message ListArchivedCards { string board_id = 1; }
 
-// Dismisses a card's last operation error.
-message ClearCardError { string card_id = 1; }
 message MarkCardRead { string card_id = 1; }
 
 // An outbox entry or, with daemon_id, every failed entry for that machine.
@@ -239,6 +253,10 @@ message RefreshConversation { string card_id = 1; }
 // The conversation on screen; it is marked read as messages arrive.
 message SetVisibleConversation { string card_id = 1; }
 
+// Shows or hides reasoning traces in transcripts, a preference of this
+// device; conversation timelines regroup for it.
+message SetShowReasoning { bool show = 1; }
+
 message RenameMachine {
   string daemon_id = 1;
   string name = 2;
@@ -273,10 +291,6 @@ message Resync {}
 
 // The sidebar's project order; IDs it omits follow in their own order.
 message SetProjectOrder { repeated string project_ids = 1; }
-// The pinned projects, in order.
-message SetPinnedProjects { repeated string project_ids = 1; }
-// The pinned chats' order; membership comes from each chat's pin.
-message SetPinnedChatOrder { repeated string card_ids = 1; }
 message SetProjectExpanded {
   string project_id = 1;
   bool expanded = 2;
@@ -295,8 +309,9 @@ message SetLaneDescending {
   string lane_id = 2;
   bool descending = 3;
 }
-// Replaces a scope's folders: names, order, expansion, and members. Only the
-// differences are recorded, so concurrent edits elsewhere survive.
+// Replaces a scope's folders: names, order, expansion, and members. An item
+// belongs to one folder; the first listing wins. Only the differences are
+// recorded, so concurrent edits elsewhere survive.
 message SetFolders {
   FolderScope scope = 1;
   repeated NavigationFolder folders = 2;
@@ -305,6 +320,80 @@ message SetFolders {
 enum FolderScope {
   FOLDER_SCOPE_PROJECTS = 0;
   FOLDER_SCOPE_CHATS = 1;
+}
+
+// One navigation edit as the user made it; the core resolves the layout as
+// shown (available projects, folders, pinned order) and records the change.
+message NavigationCommand {
+  oneof action {
+    MoveProject move_project = 1;
+    PinProject pin_project = 2;
+    MovePinnedChat move_pinned_chat = 3;
+    CreateFolder create_folder = 4;
+    RenameFolder rename_folder = 5;
+    DeleteFolder delete_folder = 6;
+    SetFolderExpanded set_folder_expanded = 7;
+    MoveToFolder move_to_folder = 8;
+  }
+}
+
+// Moves a project right before another, or to the end (empty
+// before_project_id), as the sidebar shows the listed, unarchived projects:
+// within the project's folder, or among the projects in no folder. A target
+// in another group changes nothing. With `ungrouped`, it moves in the shared
+// order of every project, as lists that ignore folders (the chats list) show
+// them.
+message MoveProject {
+  string project_id = 1;
+  string before_project_id = 2;
+  bool ungrouped = 3;
+}
+
+// Pins a project after the pinned ones, or unpins it; a project already
+// pinned (or unpinned) stays where it is.
+message PinProject {
+  string project_id = 1;
+  bool pinned = 2;
+}
+
+// Drops a pinned chat on another: it takes that chat's place in the pinned
+// order as shown.
+message MovePinnedChat {
+  string chat_id = 1;
+  string target_chat_id = 2;
+}
+
+// Creates a folder named `name` (trimmed; 1 to 256 bytes, unique in its scope
+// ignoring case and accents) after the others.
+message CreateFolder {
+  FolderScope scope = 1;
+  string name = 2;
+}
+
+message RenameFolder {
+  FolderScope scope = 1;
+  string folder_id = 2;
+  string name = 3;
+}
+
+// Deletes a folder; its items move to no folder.
+message DeleteFolder {
+  FolderScope scope = 1;
+  string folder_id = 2;
+}
+
+message SetFolderExpanded {
+  FolderScope scope = 1;
+  string folder_id = 2;
+  bool expanded = 3;
+}
+
+// Moves an item to the end of a folder, or out of every folder (empty
+// folder_id).
+message MoveToFolder {
+  FolderScope scope = 1;
+  string item_id = 2;
+  string folder_id = 3;
 }
 
 // ---------------------------------------------------------------------------
@@ -333,11 +422,169 @@ message Drafts { repeated DraftText drafts = 1; }
 // what was remembered.
 message RememberCreation {
   dieter.v1.HarnessSelection selection = 1;
-  // "worktree" or "project".
-  string workspace_mode = 2;
   string project_id = 3;
   // The board chosen in `project_id`.
   string board_id = 4;
+  // The checkout chosen in `project_id`.
+  string checkout_id = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Creation: a new task or chat as the user describes it. The core fills in
+// what is left open, checks it against the destination machine's agent
+// catalog, builds the request, and remembers the choices once it is queued.
+
+// A new task or chat. Empty fields take the core's defaults.
+message CreationIntent {
+  string project_id = 1;
+  // A task's board; empty: the board last chosen in the project unless it is
+  // retired, else the first board. Ignored for a chat.
+  string board_id = 2;
+  // Empty: CreationSlice.checkouts[project_id].
+  string checkout_id = 3;
+  // Empty: the board's first lane. A task starts in Todo (saved) or Running
+  // (started at once).
+  string lane = 4;
+  // Empty: the daemon names the task from the prompt; a placeholder shows
+  // until then.
+  string title = 5;
+  string prompt = 6;
+  repeated dieter.v1.MessagePart attachments = 7;
+  // Unset: the agent last chosen, resolved against the destination's catalog.
+  dieter.v1.HarnessSelection selection = 8;
+  repeated string label_ids = 9;
+  // "worktree" or "project"; empty: the mode last chosen.
+  string workspace_mode = 10;
+  // Worktree only: the new branch (empty: generated) and overrides of the
+  // project's base branch, the board's base remote, and its publish mode.
+  string workspace_branch = 11;
+  string workspace_base_branch = 12;
+  string workspace_base_remote = 13;
+  string remote_publish_mode = 14;
+}
+
+// Binds a creation form's surface (SLICE_CREATION_PREVIEW, observed with a
+// scope the form chooses) to what the form shows; nothing is queued. The
+// surface previews it again whenever the workspace, a machine's catalog, or
+// the remembered choices change. The result is the preview.
+message CreationPreviewCommand {
+  string scope = 1;
+  CreationIntent intent = 2;
+  bool chat = 3;
+  // An agent picker's choice, applied to the intent's agent first; the
+  // preview's intent carries the result.
+  AgentChoice choice = 4;
+}
+
+// The destination machine's agent catalog.
+enum CreationCatalogState {
+  // Not loaded yet (or no destination): nothing can be validated.
+  CREATION_CATALOG_STATE_NONE = 0;
+  // The machine is offline; its last catalog is known, so a task can still
+  // be queued. A chat needs the machine online.
+  CREATION_CATALOG_STATE_CACHED = 1;
+  CREATION_CATALOG_STATE_LIVE = 2;
+}
+
+// A creation form as the core checks it.
+message CreationPreview {
+  // Why it cannot be queued yet, e.g. "Choose a board."; empty when it can.
+  string problem = 1;
+  // The intent with the defaults applied (checkout, board, lane, agent,
+  // workspace mode); edit and send this one back.
+  CreationIntent intent = 2;
+  CreationCatalogState catalog = 3;
+  // "Loading agent models…", "Machine offline · choose an online
+  // destination", or the checkout's name.
+  string destination_status = 4;
+  // Shown under a task editor whose destination is offline; empty when online.
+  string offline_hint = 5;
+  // The agent pickers for the destination machine's catalog.
+  AgentControlsState agent = 6;
+  // Lanes a new task may start in: Todo and Running.
+  repeated dieter.v1.Lane start_lanes = 7;
+  // The title the new card shows at once.
+  string title = 9;
+  // A task saved to Todo waits there; Running and chats start at once.
+  bool defers_start = 10;
+  // Open the conversation after creating it: chats and started tasks.
+  bool opens_after_create = 11;
+  // "Todo · Worktree · Codex / Sol": where a task goes and who runs it.
+  string summary = 12;
+  // The machine that runs it: the checkout's.
+  string daemon_id = 13;
+  // The workspace mode's description, e.g. "Create a new isolated Git
+  // worktree and branch for this conversation."
+  string workspace_detail = 14;
+}
+
+// ---------------------------------------------------------------------------
+// Agent selection: the provider, model, effort, and option pickers of a
+// composer or a creation form, resolved against one machine's catalog.
+
+// One choice in an agent picker.
+message AgentChoice {
+  oneof choice {
+    // A harness ID: its default model (else its first), that model's default
+    // effort, and its default options.
+    string provider = 1;
+    // A model of the selected harness: its default effort (unless the effort
+    // may not change now) and the options that apply to it.
+    string model = 2;
+    // An effort ID, or "default" for the provider's own default.
+    string effort = 3;
+    AgentOptionChoice option = 4;
+  }
+}
+
+// A provider option's new value.
+message AgentOptionChoice {
+  string id = 1;
+  string option_value = 2;
+}
+
+// Changes the composer's agent for the next message of an open conversation
+// (observe SLICE_CONVERSATION first). ConversationState.agent shows the
+// result; the choice is cleared once the conversation runs with it.
+message ChooseAgent {
+  string card_id = 1;
+  AgentChoice choice = 2;
+}
+
+// One entry of a provider or model picker.
+message AgentPickerItem {
+  string id = 1;
+  // The catalog's name, else the ID.
+  string name = 2;
+}
+
+// Agent pickers as the core resolves them.
+message AgentControlsState {
+  // What a send or creation uses: the choice with its gaps filled from the
+  // conversation's agent and its options validated against the catalog.
+  dieter.v1.HarnessSelection selection = 1;
+  // The machine's agents, for the provider picker.
+  repeated AgentPickerItem providers = 2;
+  // The selected agent's models, for the model picker.
+  repeated AgentPickerItem models = 3;
+  bool provider_enabled = 4;
+  bool model_enabled = 5;
+  bool effort_enabled = 6;
+  // Names, falling back to IDs: "Codex", "Sol"; "Agent" and "Default model"
+  // when nothing is chosen.
+  string provider_label = 7;
+  string model_label = 8;
+  // The effort's name; "Default" for the provider's own default; the
+  // model's default effort while none is chosen.
+  string effort_label = 9;
+  // Efforts the selected model accepts, with names. Offer "default" too.
+  repeated dieter.v1.EffortOption efforts = 10;
+  // Options that apply to the selected model.
+  repeated dieter.v1.ProviderOption options = 11;
+  // Option ID → its value (else its default).
+  map<string, string> option_values = 12;
+  // Option ID → it may change now.
+  map<string, bool> option_enabled = 13;
 }
 
 // ---------------------------------------------------------------------------
@@ -354,23 +601,23 @@ message FilesCommand {
     FilesPath load = 3;
     // Opens a folder, recording history.
     FilesPath navigate = 4;
-    FilesStep back = 5;
-    FilesStep forward = 6;
-    FilesStep parent = 7;
-    FilesToggle show_hidden = 8;
+    Step back = 5;
+    Step forward = 6;
+    Step parent = 7;
+    Toggle show_hidden = 8;
     FilesPath open = 9;
     // Saves over the revision that was read; a conflict keeps the text and
     // fails with KIND_CONFLICT. The result is the saved document, or the
     // surface when a save already runs.
     FilesText save = 10;
     // Replaces the open document with the version on disk.
-    FilesStep reload = 11;
+    Step reload = 11;
     // Creates `name` in the current folder.
     FilesCreate create = 12;
     FilesMove move = 13;
     FilesDelete delete = 14;
     // Closes the open document; the folder stays.
-    FilesStep close = 15;
+    Step close = 15;
   }
 }
 
@@ -384,8 +631,6 @@ message FilesTarget {
 }
 
 message FilesPath { string path = 1; }
-message FilesStep {}
-message FilesToggle { bool on = 1; }
 message FilesText { string text = 1; }
 
 message FilesCreate {
@@ -426,36 +671,38 @@ message ReviewCommand {
   oneof action {
     ReviewTarget bind = 2;
     // Visible and foregrounded: refresh periodically.
-    ReviewToggle active = 3;
+    Toggle active = 3;
     // Reads the workspace; on return the surface is at least as new as the call.
-    ReviewStep refresh = 4;
+    Step refresh = 4;
     // Shows a file, or a whole commit when `commit` is set and `path` empty.
     ReviewSelect select = 5;
-    ReviewStep load_more_diff = 6;
+    Step load_more_diff = 6;
     // A comment on one diff row of the current revision; the result is the comment.
     ReviewComment add_comment = 7;
-    // Starts a Git operation against the current revision, never retried
-    // automatically; the result is the operation.
-    GitStart start = 8;
-    // Cancels a running operation; one waiting on a conflict is aborted instead.
-    ReviewStep cancel_operation = 9;
+    // Starts the form's Git operation against the current revision, never
+    // retried automatically; the result is the operation. A pull request
+    // merge is pinned to the card's pull request head, and a conflict's
+    // operation is the daemon's to fill in.
+    GitOperationForm start = 8;
+    // Cancels a running operation. One waiting on a conflict is refused
+    // (a permanent failure): it is continued or aborted (`abort_conflict`).
+    Step cancel_operation = 9;
     // Commits, merges into the base, optionally removes the workspace and
     // moves the card to Done; any failed step stops it. The result is the outcome.
     ReviewMerge merge = 10;
-    // Changes the workspace before the first turn.
-    ReviewSettings update_settings = 11;
-    ReviewStep clear_toast = 12;
-    ReviewStep clear_error = 13;
+    Step clear_toast = 12;
+    // Lays the diff out for this view; the surface keeps it across conversations.
+    ReviewLayout layout = 14;
   }
 }
+
+// Unified (one column) or split (old and new side by side).
+message ReviewLayout { bool split = 1; }
 
 message ReviewTarget {
   string card_id = 1;
   string daemon_id = 2;
 }
-
-message ReviewStep {}
-message ReviewToggle { bool on = 1; }
 
 message ReviewSelect {
   string path = 1;
@@ -469,9 +716,68 @@ message ReviewComment {
   string author = 3;
 }
 
-message GitStart {
+// What a Git operation form collected (SharedRules.gitOperationForm says
+// which inputs a kind shows; SharedRules.gitOperationReady whether it can start).
+message GitOperationForm {
   string kind = 1;
-  map<string, string> parameters = 2;
+  // A commit's subject, a local squash merge's commit subject, or a pull request's title.
+  string subject = 2;
+  string body = 3;
+  bool stage_all = 4;
+  bool validate = 5;
+  // Fetch the base remote before updating.
+  bool fetch = 6;
+  bool draft = 7;
+  // Push the branch before creating a pull request.
+  bool push = 8;
+  // A local merge's ("squash", "merge_commit", "fast_forward") or a pull
+  // request's ("squash", "merge", "rebase").
+  string strategy = 9;
+  bool force_with_lease = 10;
+  // The remote head a forced push expects.
+  string expected_remote_sha = 11;
+  // The unstarted conversation that adopts the workspace.
+  string target_card_id = 12;
+  // Narrows a checkout's stage, unstage, or discard_changes to one file.
+  string path = 13;
+}
+
+// How to collect a Git operation form (SharedRules.gitOperationForm).
+message GitOperationFormSpec {
+  enum Input {
+    INPUT_SUBJECT = 0;
+    INPUT_BODY = 1;
+    INPUT_STAGE_ALL = 2;
+    INPUT_FETCH = 3;
+    INPUT_VALIDATE = 4;
+    INPUT_STRATEGY = 5;
+    INPUT_DRAFT = 6;
+    INPUT_PUSH = 7;
+    INPUT_FORCE_WITH_LEASE = 8;
+    INPUT_EXPECTED_REMOTE_SHA = 9;
+    INPUT_TARGET_CARD_ID = 10;
+  }
+  enum Start {
+    // Collect the inputs first.
+    START_FORM = 0;
+    // Start at once (refresh a pull request, continue after a conflict).
+    START_IMMEDIATE = 1;
+    // Ask before starting (abort a conflicted operation).
+    START_CONFIRM = 2;
+  }
+  // The form filled from the conversation (title, prompt, pull request head).
+  GitOperationForm initial = 1;
+  // "Commit changes".
+  string title = 2;
+  // What the operation does; empty when there is nothing to explain.
+  string summary = 3;
+  // It throws work away (discard, abort a conflict).
+  bool destructive = 4;
+  Start start = 5;
+  // The inputs to show, in order.
+  repeated Input inputs = 6;
+  // The strategies to choose from, the default first; `caption` is empty.
+  repeated MergeStrategyOption strategies = 7;
 }
 
 message ReviewMerge {
@@ -482,15 +788,6 @@ message ReviewMerge {
   bool validate = 4;
   bool remove_workspace = 5;
   bool move_to_done = 6;
-}
-
-message ReviewSettings {
-  // "project" or "worktree".
-  string mode = 1;
-  string branch = 2;
-  string base_branch = 3;
-  string base_remote = 4;
-  string publish_mode = 5;
 }
 
 message Outcome { bool succeeded = 1; }
@@ -504,16 +801,16 @@ message ProjectChangesCommand {
   string scope = 1;
   oneof action {
     ProjectChangesTarget bind = 2;
-    ReviewToggle active = 3;
-    ReviewStep refresh = 4;
+    Toggle active = 3;
+    Step refresh = 4;
     // Shows one section of a file; the latest selection wins.
     ProjectChangeSelect select = 5;
-    ReviewStep deselect = 6;
-    // Dismisses shown errors and notices.
-    ReviewStep dismiss = 7;
-    ReviewStep load_more_diff = 8;
-    // Runs a checkout operation and waits for it; the result is the outcome.
-    GitStart run = 9;
+    Step load_more_diff = 8;
+    // Runs the form's checkout operation and waits for it; the result is the
+    // outcome. Only the form's kind, subject, body, and path count.
+    GitOperationForm run = 9;
+    // Lays the diff out for this view; the surface keeps it across checkouts.
+    ReviewLayout layout = 10;
   }
 }
 
@@ -521,6 +818,9 @@ message ProjectChangesTarget {
   string project_id = 1;
   string checkout_id = 2;
   string daemon_id = 3;
+  // A refresh that leaves nothing selected opens the first unstaged change,
+  // else the first staged one.
+  bool select_first = 4;
 }
 
 message ProjectChangeSelect {
@@ -529,7 +829,8 @@ message ProjectChangeSelect {
   bool staged = 2;
 }
 
-// A project's conversation workspaces across its checkouts.
+// A project's conversation workspaces across its checkouts; the result is
+// the list after the command (Result.project_workspaces).
 message ProjectWorkspacesCommand {
   oneof action {
     ProjectWorkspacesLoad load = 1;
@@ -545,21 +846,22 @@ message ProjectWorkspaceRemove {
   bool discard = 2;
 }
 
+// One surface per view (SLICE_SCHEDULES); an empty scope reaches the surface
+// of the view that observes without one.
 message SchedulesCommand {
+  string scope = 14;
   oneof action {
     // Shows a project's schedules; empty shows none.
     ScheduleProject bind = 1;
-    ScheduleStep load = 2;
-    ScheduleStep load_more = 3;
+    Step load = 2;
+    Step load_more = 3;
     // Selects a schedule and reads its runs.
     ScheduleId select = 4;
-    ScheduleStep load_more_runs = 5;
-    // The owner's full definition; the result is the schedule.
-    ScheduleId details = 6;
+    Step load_more_runs = 5;
     // Previews the next occurrences shortly after the last change.
     SchedulePreview preview = 7;
     // Drops the preview; a late result cannot bring it back.
-    ScheduleStep close_editor = 8;
+    Step close_editor = 8;
     // Creates on the chosen checkout's machine or updates on the owner; the
     // result is the saved schedule.
     SaveSchedule save = 9;
@@ -568,12 +870,26 @@ message SchedulesCommand {
     // The result is the run.
     ScheduleId run_now = 11;
     ScheduleId delete = 12;
-    ScheduleStep clear_action_error = 13;
+    // The draft the editor starts with; the result is the schedule draft.
+    ScheduleDraftRequest draft = 15;
   }
 }
 
+// What the schedule editor opens on: an existing schedule's full definition
+// from its owner, or a new schedule with the defaults every client applies
+// (the project's boards, the machine's first agent and its default model).
+message ScheduleDraftRequest {
+  // Empty starts a new schedule.
+  string schedule_id = 1;
+  // The checkout a new schedule runs in; empty uses the project's only one.
+  string checkout_id = 2;
+  // The board a new schedule starts on when it still exists.
+  string selected_board_id = 3;
+  // The device's IANA time zone, which a new schedule starts in; empty is UTC.
+  string timezone = 4;
+}
+
 message ScheduleProject { string project_id = 1; }
-message ScheduleStep {}
 message ScheduleId { string schedule_id = 1; }
 
 message SchedulePreview {
@@ -600,8 +916,8 @@ message TerminalsCommand {
   oneof action {
     TerminalTarget bind = 2;
     // Foreground and visible: stream the selection; otherwise only stop.
-    TerminalToggle active = 3;
-    TerminalStep load = 4;
+    Toggle active = 3;
+    Step load = 4;
     TerminalId select = 5;
     // Creates a terminal in the surface and selects it; the result is the
     // terminal.
@@ -629,8 +945,6 @@ message TerminalTarget {
   string card_id = 5;
 }
 
-message TerminalStep {}
-message TerminalToggle { bool on = 1; }
 message TerminalId { string terminal_id = 1; }
 message TerminalInput { bytes data = 1; }
 
@@ -687,8 +1001,8 @@ message FileTreeCommand {
     FilesPath toggle = 4;
     // Expands and loads every folder above a file.
     FilesPath reveal = 5;
-    FilesStep refresh = 6;
-    FilesToggle show_hidden = 7;
+    Step refresh = 6;
+    Toggle show_hidden = 7;
   }
 }
 
@@ -706,7 +1020,6 @@ message Result {
     dieter.v1.Card card = 3;
     MessageQueued message_queued = 4;
     PageLoaded page_loaded = 5;
-    GatewaySelected gateway_selected = 6;
     Cards cards = 7;
     dieter.v1.QueuedMessage queued_message = 8;
     dieter.v1.ToolOutput tool_output = 9;
@@ -722,7 +1035,6 @@ message Result {
     TerminalsSlice terminals = 15;
     TerminalOverviewSlice terminal_overview = 16;
     dieter.v1.Schedule schedule = 17;
-    dieter.v1.ScheduleRun schedule_run = 18;
     // The schedules after a command.
     SchedulesSlice schedules = 19;
     // A started Git operation.
@@ -738,12 +1050,9 @@ message Result {
     dieter.v1.Checkout checkout = 28;
     dieter.v1.DirectoryListing directory_listing = 29;
     dieter.v1.PromptSettings prompt_settings = 30;
-    dieter.v1.Settings settings = 31;
-    dieter.v1.SettingsOptions settings_options = 32;
     dieter.v1.PromptPreview prompt_preview = 33;
     // A shared record with competing versions; empty when none compete.
     ConflictRecord conflict = 34;
-    Archives archives = 35;
     Projects projects = 36;
     dieter.v1.Workspace workspace = 37;
     dieter.v1.CreateProjectResponse created_project = 38;
@@ -751,8 +1060,10 @@ message Result {
     SearchResults search_results = 40;
     // The processes after a command.
     ProcessesSlice processes = 41;
-    // The screen after a command.
-    ScreenSlice screen = 42;
+    // The draft the schedule editor starts with.
+    dieter.v1.ScheduleDraft schedule_draft = 43;
+    // A creation form as the core checks it (CreationPreviewCommand).
+    CreationPreview creation_preview = 45;
   }
 }
 
@@ -760,7 +1071,6 @@ message Done {}
 message SignInStarted { string authorize_url = 1; }
 message MessageQueued { string message_id = 1; }
 message PageLoaded { bool loaded = 1; }
-message GatewaySelected { string origin = 1; }
 message Cards { repeated dieter.v1.Card cards = 1; }
 
 // Why a command failed. `kind` drives the UI: retry, sign in, or update.
@@ -807,17 +1117,22 @@ enum Slice {
   // Scoped by the view's surface key.
   SLICE_TERMINALS = 12;
   SLICE_TERMINAL_OVERVIEW = 13;
-  SLICE_SCHEDULES = 14;
   // Scoped by the view's surface key.
+  SLICE_SCHEDULES = 14;
   SLICE_REVIEW = 15;
   SLICE_PROJECT_CHANGES = 16;
-  SLICE_PROJECT_WORKSPACES = 17;
   SLICE_TELEMETRY = 18;
   SLICE_QUOTAS = 19;
   // Scoped by the view's surface key.
   SLICE_PROCESSES = 20;
   // Scoped by the view's surface key.
   SLICE_SCREEN = 21;
+  // Scoped by the view's surface key.
+  SLICE_BOARD_VIEW = 22;
+  // Scoped by the view's surface key.
+  SLICE_CHATS = 23;
+  // Scoped by the form's surface key (CreationPreviewCommand).
+  SLICE_CREATION_PREVIEW = 24;
 }
 
 message Update {
@@ -845,13 +1160,15 @@ message Update {
     SchedulesSlice schedules = 25;
     ReviewSlice review = 26;
     ProjectChangesSlice project_changes = 27;
-    ProjectWorkspacesSlice project_workspaces = 28;
     TelemetrySlice telemetry = 29;
     QuotasSlice quotas = 30;
     ProcessesSlice processes = 31;
     ScreenSlice screen = 32;
-    // The slice cannot be observed, e.g. an app newer than its core asked for
-    // one the core does not know. Sent once; nothing follows.
+    BoardViewSlice board_view = 33;
+    ChatsSlice chats = 34;
+    CreationPreview creation_preview = 35;
+    // The view's surface could not open, e.g. screen sharing on a device
+    // without it. Sent once; nothing follows.
     Failure failure = 9;
   }
 }
@@ -870,17 +1187,34 @@ message SessionSlice {
   Phase phase = 1;
   string gateway_origin = 2;
   repeated GatewayEntry gateways = 3;
-  bool signed_in = 4;
   string attached_machine_id = 5;
   string error = 6;
-  int64 retry_at_millis = 7;
+  // By name ignoring case, then by ID.
   repeated MachineEntry machines = 8;
-  string client_id = 9;
   FeedStatus feed = 10;
-  // Shared updates between machines that are delayed or blocked, one line each.
-  repeated string sync_warnings = 11;
   // The active gateway's build, once it has described itself.
   GatewayBuild gateway_build = 12;
+  // What synchronized views with a cached workspace show while that data is
+  // unavailable; unset while the workspace is current.
+  WorkspaceNotice notice = 13;
+  // A short connection status, e.g. "Connected", "Reconnecting", or
+  // "Update required".
+  string phase_label = 14;
+  // Connected with the attached machine's live projection applied: the
+  // workspace is current, neither cached nor still loading.
+  bool workspace_live = 15;
+  // This device shows reasoning traces in transcripts (SetShowReasoning).
+  bool show_reasoning = 17;
+}
+
+// The connection notice above cached synchronized views.
+message WorkspaceNotice {
+  string title = 1;
+  string detail = 2;
+  // Still trying: show progress rather than an offline mark.
+  bool working = 3;
+  // Needs the user or a machine before it can recover.
+  bool offline = 4;
 }
 
 message GatewayBuild {
@@ -891,12 +1225,8 @@ message GatewayBuild {
 
 // The attached machine's workspace feed.
 message FeedStatus {
-  string daemon_id = 1;
-  // A live frame has been applied in this session.
-  bool live = 2;
-  // The daemon is still assembling its projection.
-  bool projection_pending = 3;
-  // The last applied workspace change; heartbeats never advance it.
+  // The last applied workspace change; heartbeats never advance it. It is
+  // restored with the cached projection after a restart.
   int64 last_applied_at_millis = 4;
 }
 
@@ -911,26 +1241,39 @@ message MachineEntry {
   string id = 1;
   string name = 2;
   bool online = 3;
-  bool attached = 4;
   // "Direct TLS", "WebRTC · Direct", "Relay", … when a data plane is open.
   string route = 5;
-  int64 route_latency_millis = 6;
   string platform = 7;
   string release_version = 8;
   bool compatible = 9;
   string last_seen_at = 10;
   string minimum_release_version = 11;
-  // Why an incompatible machine cannot be used, e.g. "Update required · …".
-  string incompatibility = 12;
   bool remote_desktop_ready = 13;
   string remote_desktop_reason = 14;
   // The gateway's CompatibilityStatus name, e.g. "COMPATIBILITY_STATUS_UPDATE_REQUIRED".
   string compatibility = 15;
-  // Shared updates this machine reports as delayed or blocked, one line each.
-  repeated string sync_warnings = 16;
   // The open data plane is a loopback route: the machine is this device, so
   // its paths can be opened locally.
   bool local = 17;
+  // The list row's status line, without relative times: why it needs an
+  // update, the attached machine's connection failure, shared-update
+  // warnings, "Synchronizing", "Unavailable", "Offline",
+  // "Direct TLS · 12 ms", "Attached", or "Online".
+  string detail = 18;
+  // Views follow `detail` with when the machine was last seen, worded when
+  // rendered ("Unavailable · Last seen 5m ago").
+  bool show_last_seen = 19;
+  // Online while the gateway connection is live, enrolled, and current: it
+  // can host projects and terminals and run machine operations.
+  bool available = 20;
+  // Why it cannot take work now, e.g. "Studio is offline."; empty when available.
+  string unavailable_message = 21;
+  // What a screen picker says: "Ready to connect", "Offline",
+  // "Update required", or "Screen sharing unavailable".
+  string screen_status = 22;
+  // A screen share can start: online while the gateway connection is live,
+  // and current. `screen_status` says whether the host is ready.
+  bool can_share_screen = 23;
 }
 
 message WorkspaceSlice {
@@ -946,6 +1289,9 @@ message WorkspaceSlice {
   repeated dieter.v1.Board retired_boards = 7;
   // The attached machine's settings.
   dieter.v1.Settings settings = 8;
+  // Board ID → its cards that want a look: waiting in a review lane or with
+  // an agent at work. Boards with none are left out.
+  map<string, int32> board_attention = 9;
 }
 
 // Projects and boards are small and always complete; cards are keyed.
@@ -962,6 +1308,8 @@ message WorkspaceDelta {
   map<string, string> project_replicas = 9;
   repeated dieter.v1.Board retired_boards = 10;
   dieter.v1.Settings settings = 11;
+  // Complete, like the slice's.
+  map<string, int32> board_attention = 12;
 }
 
 message OutboxSlice {
@@ -995,15 +1343,60 @@ message MachineOutbox {
   string daemon_id = 1;
   int32 pending = 2;
   int32 failed = 3;
-  string last_error = 4;
   int32 message_count = 5;
   int32 change_count = 6;
   // Delivery failed transiently and is being retried.
   bool retrying = 7;
+  enum Phase {
+    PHASE_SENDING = 0;
+    PHASE_WAITING = 1;
+    PHASE_WAITING_FOR_STORAGE = 2;
+    PHASE_RETRYING = 3;
+    PHASE_FAILED = 4;
+  }
+  // Rejected work first, then a full disk, then transient retries; otherwise
+  // sending while the machine is online and the gateway connection is live.
+  Phase phase = 8;
+  // The machine's name, "Dieter machine" when the directory does not list it.
+  string machine_name = 9;
+  // The delivery toast: "Delivering to Studio", "Low disk space on Studio", …
+  string title = 11;
+  // What is queued and what happens next; a rejection shows the daemon's reason.
+  string detail = 12;
+  // The toast's retry button, "Try Again" or "Retry Now"; empty while sending.
+  string retry_title = 13;
+  // Appended to the machine's status line: " · attention needed",
+  // " · low disk space", " · retrying", or " · queued".
+  string status_suffix = 14;
 }
 
+// The account-wide activity feed: one latest activity per conversation,
+// newest first except that running rows keep their start order. Sent again
+// when a menu bar row leaves its six-hour window.
 message ActivitySlice {
   repeated ActivityRow rows = 1;
+  // Counts over every row.
+  ActivitySummary summary = 2;
+  // The macOS island's rows (at most 4): running, then waiting for the user,
+  // then the rest, each in the feed's order.
+  repeated string island_ids = 3;
+  // The macOS menu bar's rows (at most 4): what needs the user or waits in
+  // review, then failures and results from the last six hours.
+  repeated string menu_bar_ids = 4;
+  // "Dieter Island. 2 running, 1 need attention, 3 recent."
+  string island_accessibility = 5;
+}
+
+message ActivitySummary {
+  int32 running = 1;
+  // Rows waiting for the user: an answer or an unread reply.
+  int32 attention = 2;
+  // Every other row: review, failed, and finished work.
+  int32 recent = 3;
+  // Board cards in a review lane, whatever their agent does.
+  int32 review = 4;
+  // Delegated agents at work across every row.
+  int32 subagents = 5;
 }
 
 message ActivityRow {
@@ -1013,7 +1406,8 @@ message ActivityRow {
     SECTION_RECENT = 2;
   }
   dieter.v1.Card card = 1;
-  // The core's ActivityKind name, e.g. "NEEDS_INPUT" or "RUNNING".
+  // The core's ActivityKind name: "ANSWER", "RUNNING", "UNREAD", "REVIEW",
+  // "FAILED", or "RECENT".
   string kind = 2;
   Section section = 3;
   string detail = 4;
@@ -1021,7 +1415,32 @@ message ActivityRow {
   int64 started_at_millis = 6;
   string project_name = 7;
   string board_name = 8;
+  // An unfiled chat; a chat filed on a board is a card.
   bool chat = 9;
+  // Waits for the user: an answer or an unread reply.
+  bool needs_you = 10;
+  // Inbox "Finish": a board card waiting in a review lane.
+  bool can_finish = 11;
+  // "Answer", "Running", "Unread reply", "Review", "Failed", "Recent".
+  string kind_label = 12;
+  // The card's title, or "Untitled chat" / "Untitled card".
+  string title = 13;
+  // The time the row shows: when a running turn started, else the latest
+  // activity; 0 when unknown.
+  int64 shown_at_millis = 14;
+  // The menu bar's line: "Needs you", "Unread reply", "Ready for review",
+  // "Failed", or "Finished".
+  string menu_bar_title = 15;
+}
+
+// Where an activity row sits on the Inbox timeline, as fractions of the
+// window; not shown when outside it.
+message ActivityTimelineBar {
+  bool shown = 1;
+  double start_fraction = 2;
+  double end_fraction = 3;
+  // Only the end is known: a point, not a span.
+  bool point = 4;
 }
 
 message ConversationSlice {
@@ -1038,8 +1457,6 @@ message ConversationSlice {
   bool has_earlier = 10;
   bool loading_earlier = 11;
   bool browsing_earlier = 12;
-  // A message this client sent has not been answered yet.
-  bool awaiting_reply = 13;
   // A failed turn's retry was sent and has not run yet.
   bool retrying = 14;
   int64 refreshed_at_millis = 15;
@@ -1054,6 +1471,10 @@ message ConversationSlice {
   int32 earlier_count = 20;
   // What the conversation screen shows besides the transcript.
   ConversationState state = 21;
+  // The transcript's rows over every loaded message, keyed by `TimelineItem.id`.
+  repeated TimelineItem timeline = 22;
+  // Task plans (`Conversation.task_plans`, latest revision) whose message is not loaded.
+  repeated string unattached_plan_ids = 23;
 }
 
 // The conversation's state as every client presents it.
@@ -1070,16 +1491,195 @@ message ConversationState {
   int64 turn_started_at_millis = 6;
   // The model Claude Code reported for its latest reply, when it differs.
   string responding_model = 7;
-  // A never-started card's task, while it can still be edited.
+  // The task of a card that was never sent, trimmed, while no user message
+  // exists yet; empty otherwise.
   string unsent_task = 8;
   // The queued message that may interrupt the running turn now.
   string steerable_id = 9;
-  bool interrupting = 10;
-  bool ready_for_review = 11;
+  // A Start can run the card's saved task now; false while a start is in flight.
   bool can_start = 12;
+  // A Start of the card is in flight: this device's, or one still in the outbox.
   bool starting = 13;
+  // The latest step that reported usage; the window falls back to the
+  // model's entry in the machine's harness catalog. Both 0 when unknown.
   int64 context_used_tokens = 14;
   int64 context_window_tokens = 15;
+  // The conversation's draft attachments (`Conversation.draft_attachments`)
+  // belong to the unsent task.
+  bool unsent_attachments = 16;
+  // Context used at the latest reported step, 0-100.
+  int32 context_percent = 17;
+  // Close enough to the model's context limit to warn.
+  bool context_near_limit = 18;
+  // Running tool calls the transcript has not finished, e.g. "1 command ·
+  // 1 read"; empty when there are none.
+  string pending_tools_summary = 19;
+  // Those tool calls (`Conversation.pending_tools` IDs), in order.
+  repeated string pending_tool_ids = 20;
+  // The agent can be halted: it works and is not already stopping, or it
+  // waits for input.
+  bool can_halt = 21;
+  // A standalone chat, not a board card.
+  bool chat = 22;
+  // This device shows reasoning traces; the timeline is grouped for it.
+  bool show_reasoning = 23;
+  // The composer's agent pickers: the composer's choice (ChooseAgent), else
+  // the conversation's agent, against the conversation machine's catalog.
+  // Unset until the conversation's card is known.
+  AgentControlsState agent = 30;
+}
+
+// ---------------------------------------------------------------------------
+// Conversation timeline
+
+// One transcript row: a user or assistant message, or a run of routine agent
+// work (tools, reasoning) folded into one summary. Rows point at the slice's
+// messages by ID and at their parts by index, so part text is not repeated.
+message TimelineItem {
+  // "message:<message ID>" or "tools:<first message ID>"; a message without
+  // an ID is keyed "position:<index>". Stable while a turn streams, and
+  // independent of which messages a client renders.
+  string id = 1;
+  // The messages the row covers, in transcript order. An activity row names a
+  // message without an ID by its "position:<index>" key.
+  repeated string message_ids = 2;
+  // A run of routine work shown as one collapsed summary.
+  bool activity = 3;
+  bool user = 4;
+  // An activity row's title, e.g. "Reasoning · 1 edit · 1 command".
+  string summary = 5;
+  // The row's step groups; an activity row has one group with all its steps.
+  repeated TimelineStepGroup groups = 6;
+  // Task plans shown after the steps (`Conversation.task_plans`, latest revision).
+  repeated string plan_ids = 7;
+  // Delegated agents (`Conversation.subagents`) shown at the SUBAGENTS step.
+  repeated string subagent_ids = 8;
+  // When the row's last message was written; 0 when it does not say.
+  int64 created_at_millis = 9;
+  // The row has prose a "copy message" action copies.
+  bool copyable = 10;
+  // A user message's delivery; UNSPECIFIED for other rows.
+  MessageDelivery delivery = 11;
+  // A user message this device sent that the daemon has not confirmed; it
+  // renders dimmed.
+  bool unconfirmed = 12;
+}
+
+// Consecutive routine steps of one message form a group; every other step
+// stands alone.
+message TimelineStepGroup {
+  // The first step's ID.
+  string id = 1;
+  // Routine work, shown behind a disclosure titled `summary`.
+  bool activity = 2;
+  string summary = 3;
+  repeated TimelineStep steps = 4;
+}
+
+// One visible part of a message; adjacent prose parts are coalesced.
+message TimelineStep {
+  // "<message key>:part:<index>" or "<message key>:subagents".
+  string id = 1;
+  string message_id = 2;
+  TimelineStepKind kind = 3;
+  // The part in the message's `parts` (the first of coalesced prose); -1 for
+  // SUBAGENTS.
+  int32 part_index = 4;
+  // Coalesced prose; empty when the step is one part, whose text it shows.
+  string text = 5;
+  // Routine work: a tool call that is not an approval, or reasoning.
+  bool routine = 6;
+  // A TOOL step's status and title, e.g. "read file".
+  ToolCallStatus tool_status = 7;
+  string tool_title = 8;
+}
+
+enum TimelineStepKind {
+  TIMELINE_STEP_KIND_UNSPECIFIED = 0;
+  TIMELINE_STEP_KIND_TEXT = 1;
+  TIMELINE_STEP_KIND_REASONING = 2;
+  TIMELINE_STEP_KIND_TOOL = 3;
+  // An error, a denial, or a request for the user's decision.
+  TIMELINE_STEP_KIND_ATTENTION = 4;
+  TIMELINE_STEP_KIND_ATTACHMENT = 5;
+  TIMELINE_STEP_KIND_OTHER = 6;
+  // The message's delegated agents, where its first delegating call was.
+  TIMELINE_STEP_KIND_SUBAGENTS = 7;
+}
+
+enum ToolCallStatus {
+  TOOL_CALL_STATUS_UNSPECIFIED = 0;
+  TOOL_CALL_STATUS_RUNNING = 1;
+  TOOL_CALL_STATUS_COMPLETED = 2;
+  TOOL_CALL_STATUS_FAILED = 3;
+  TOOL_CALL_STATUS_NEEDS_APPROVAL = 4;
+  TOOL_CALL_STATUS_DENIED = 5;
+  TOOL_CALL_STATUS_OTHER = 6;
+}
+
+enum MessageDelivery {
+  MESSAGE_DELIVERY_UNSPECIFIED = 0;
+  // Waiting to send.
+  MESSAGE_DELIVERY_LOCAL = 1;
+  // Accepted by the daemon, waiting for sync.
+  MESSAGE_DELIVERY_ACCEPTED = 2;
+  MESSAGE_DELIVERY_QUEUED = 3;
+  MESSAGE_DELIVERY_SYNCED = 4;
+  // Rejected; the user retries or removes it.
+  MESSAGE_DELIVERY_FAILED = 5;
+}
+
+// Messages handed to a conversation rule, e.g. those a row's copy action copies.
+message TimelineMessages {
+  repeated dieter.v1.UiMessage messages = 1;
+}
+
+// SharedRules.timelineRows: messages laid out as `ConversationSlice.timeline`.
+message TimelineRows {
+  repeated TimelineItem items = 1;
+}
+
+// A task plan's progress and its tasks' wording.
+message TaskPlanSummary {
+  // Finished tasks: completed or abandoned.
+  int32 completed = 1;
+  int32 total = 2;
+  // The plan is active and a task is in progress.
+  bool active = 3;
+  // Each task's text in plan order: its active form while it is in progress.
+  repeated string task_texts = 4;
+}
+
+// One delegated agent as the transcript and the subagents pane show it.
+message SubagentSummary {
+  string title = 1;
+  // "agent 2", else the agent type, else "agent".
+  string agent_label = 2;
+  // "provider/model · source", or "local".
+  string identity = 3;
+  // Running or pending.
+  bool active = 4;
+  bool completed = 5;
+  // What it does now, else what it was asked; empty when neither.
+  string status_line = 6;
+  // "45s", "3m 12s"; empty before any time was measured.
+  string elapsed = 8;
+  // Current context over the model's window, 0-1; -1 when unknown.
+  double context_fraction = 9;
+  // "1.3M processed", "129k / 1.0M context (13%)".
+  repeated string usage_metrics = 10;
+  // What it was asked: assignment, task, and description, without repeats.
+  repeated SubagentDetail narrative = 13;
+  // Everything beyond the first narrative entry: the rest of the narrative,
+  // the current tool, and recent output.
+  repeated SubagentDetail details = 14;
+}
+
+message SubagentDetail {
+  string label = 1;
+  // At most 4,000 characters.
+  string text = 2;
+  bool monospace = 3;
 }
 
 message TurnFailure {
@@ -1104,7 +1704,6 @@ message ConversationDelta {
   bool has_earlier = 11;
   bool loading_earlier = 12;
   bool browsing_earlier = 13;
-  bool awaiting_reply = 14;
   bool retrying = 15;
   int64 refreshed_at_millis = 16;
   TurnFailure turn_failure = 17;
@@ -1117,6 +1716,13 @@ message ConversationDelta {
   string daemon_id = 22;
   int32 earlier_count = 23;
   ConversationState state = 24;
+  // Timeline rows changed or added since the last update, keyed by `id`.
+  repeated TimelineItem upserted_timeline = 25;
+  repeated string removed_timeline_ids = 26;
+  // Every row ID in order, sent only when the order changed beyond appends.
+  repeated string timeline_order = 27;
+  bool timeline_order_changed = 28;
+  repeated string unattached_plan_ids = 29;
 }
 
 // Per machine: its agents, settings choices, and runtime readiness.
@@ -1128,8 +1734,6 @@ message MachineMetadata {
   dieter.v1.HarnessCatalog harnesses = 1;
   dieter.v1.SettingsOptions settings_options = 2;
   dieter.v1.RuntimeStatus runtime = 3;
-  int64 refreshed_at_millis = 4;
-  string error = 5;
   // The catalog has arrived.
   bool loaded = 6;
 }
@@ -1138,15 +1742,153 @@ message MachineMetadata {
 message BoardSlice {
   // Card ID → the core's CardOperation name, e.g. "STARTING" or "MOVING".
   map<string, string> operations = 1;
-  map<string, string> errors = 2;
   repeated PendingCardMove moves = 3;
 }
 
 message PendingCardMove {
   string card_id = 1;
-  string lane = 2;
-  string after_card_id = 3;
-  string before_card_id = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Board view: one board as a view shows it (SLICE_BOARD_VIEW, scoped by the
+// view's surface key).
+
+message BoardViewCommand {
+  string scope = 1;
+  oneof action {
+    // Shows a board, narrowed by machine, label, state, and text.
+    BoardViewTarget bind = 2;
+    // Drops a card into a lane, measured against the lane as this view shows
+    // it. Dropping a card where it already is changes nothing.
+    BoardDrop drop = 3;
+  }
+}
+
+// What a board view shows; empty fields mean any.
+message BoardViewTarget {
+  string board_id = 1;
+  // Only cards this machine runs.
+  string machine_id = 2;
+  string label_id = 3;
+  BoardStateFilter state = 4;
+  // Matches titles and summaries, trimmed and ignoring case.
+  string query = 5;
+}
+
+// The board's state filter: what a card's agent does, or its review lane.
+enum BoardStateFilter {
+  BOARD_STATE_FILTER_ALL = 0;
+  // An agent works, starts, or stops.
+  BOARD_STATE_FILTER_RUNNING = 1;
+  // The agent waits for the user.
+  BOARD_STATE_FILTER_WAITING = 2;
+  // The card waits in a review lane.
+  BOARD_STATE_FILTER_REVIEW = 3;
+  BOARD_STATE_FILTER_FAILED = 4;
+  BOARD_STATE_FILTER_IDLE = 5;
+}
+
+message BoardStateOption {
+  BoardStateFilter state = 1;
+  // "All states", "Running", "Waiting", "Review", "Failed", "Idle".
+  string title = 2;
+}
+
+message BoardDrop {
+  string card_id = 1;
+  string lane_id = 2;
+  // The card the dropped one lands above, as shown; empty for the lane's end.
+  string before_card_id = 3;
+}
+
+message BoardViewSlice {
+  BoardViewTarget target = 1;
+  // The board's lanes in order (a board without lanes shows Todo, Running,
+  // Review, and Done), each with its shown cards.
+  repeated BoardLaneView lanes = 3;
+  // Label ID → the board's cards with it, before filtering.
+  map<string, int32> label_counts = 4;
+  // The board's cards, before filtering.
+  int32 total = 5;
+  // Machines running the board's cards, by name; a machine filter helps
+  // only with several.
+  repeated string machine_ids = 7;
+  // Shown card ID → what the board shows for it and offers on it.
+  map<string, BoardCardFlags> cards = 8;
+  // The state filter's choices, "All states" first.
+  repeated BoardStateOption state_options = 9;
+  // "All states", or the chosen state's title.
+  string state_title = 10;
+  // "board · 4 conversations · 1 needs you".
+  string summary = 11;
+}
+
+message BoardLaneView {
+  string lane_id = 1;
+  string name = 2;
+  // For the lane's tint, by its ID or name.
+  BoardLaneKind kind = 3;
+  // Newest first, unless the lane's shared sort is ascending.
+  bool descending = 4;
+  // The shown cards, top to bottom, with this device's pending moves applied.
+  repeated string card_ids = 5;
+}
+
+enum BoardLaneKind {
+  BOARD_LANE_KIND_OTHER = 0;
+  BOARD_LANE_KIND_RUNNING = 1;
+  BOARD_LANE_KIND_REVIEW = 2;
+  BOARD_LANE_KIND_DONE = 3;
+}
+
+// A runtime's colour family.
+enum RuntimeTone {
+  RUNTIME_TONE_IDLE = 0;
+  // A turn is starting, running, or stopping.
+  RUNTIME_TONE_ACTIVE = 1;
+  // The agent waits for the user.
+  RUNTIME_TONE_ATTENTION = 2;
+  RUNTIME_TONE_DONE = 3;
+  // Failed or cancelled.
+  RUNTIME_TONE_FAILED = 4;
+}
+
+// A board card's status dot: its agent, or a delegated one, works; its last
+// turn failed; or nothing runs.
+enum BoardAgentStatus {
+  BOARD_AGENT_STATUS_IDLE = 0;
+  BOARD_AGENT_STATUS_RUNNING = 1;
+  BOARD_AGENT_STATUS_FAILED = 2;
+}
+
+message BoardCardFlags {
+  // "Starting…", "Stopping…", or "Running"; empty while the agent rests.
+  string badge = 1;
+  RuntimeTone tone = 2;
+  // The runtime pill: the badge, "Waiting for you", "Failed", or the runtime
+  // in words, e.g. "Idle".
+  string runtime_label = 3;
+  BoardAgentStatus agent = 4;
+  // "Agent running", "Agent turn failed", or "No agent work in progress".
+  string agent_label = 5;
+  // A never-started todo card with a task, on a board with a running lane.
+  bool can_start = 6;
+  // A start is in flight: this device's, or one waiting in the outbox.
+  bool starting = 7;
+  // Its task was never sent, so the card's draft can still be edited.
+  bool can_edit_draft = 8;
+  // Its agent works or waits for input, and no cancel is in flight.
+  bool can_cancel = 9;
+  // A dragged card merges into another when its source key is non-empty and
+  // equals that card's target key.
+  string merge_source_key = 10;
+  string merge_target_key = 11;
+  // The core's CardOperation name in flight, e.g. "MOVING"; empty when none.
+  string operation = 12;
+  // The card exists only in this device's outbox.
+  bool pending = 13;
+  // Its creation was rejected; the user retries or discards it.
+  bool failed = 14;
 }
 
 // The navigation layout with this device's pending edits applied.
@@ -1159,24 +1901,118 @@ message NavigationSlice {
   repeated string expanded_projects = 6;
   repeated string collapsed_chat_sections = 7;
   repeated string chats_show_all = 8;
-  // "<board>.<lane>" → "ascending" or "descending"; absent lanes are descending.
-  map<string, string> lane_sorts = 9;
   // Edits not yet accepted by a machine.
   int32 pending = 10;
   // Why edits are not being delivered, if they are not.
   string error = 11;
   // A full replay arrived since the machine was attached.
   bool caught_up = 12;
+  // The sidebar's projects as it shows them.
+  ProjectNavigation projects = 13;
+}
+
+// The sidebar's projects: listed, unarchived projects only (the saved orders
+// above also keep projects whose machine is offline).
+message ProjectNavigation {
+  // Every project in the shared order; projects never ordered follow by name.
+  repeated string order = 1;
+  // Project folders in order, each listing its projects in the folder's order.
+  repeated NavigationFolder folders = 2;
+  // Projects in no folder, in the shared order.
+  repeated string unfiled = 3;
+  // Pinned projects, in pin order.
+  repeated string pinned = 4;
+  // Projects whose boards the sidebar shows.
+  repeated string expanded = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Chats: the chats list as a view shows it (SLICE_CHATS, scoped by the view's
+// surface key). Live chats are the workspace slice's cards; this slice
+// carries their IDs in sections, plus archived chats, which the workspace
+// leaves out.
+
+message ChatsCommand {
+  string scope = 1;
+  oneof action {
+    // Shows chats whose title, summary, project name, or folder name
+    // contains the text, trimmed and ignoring case.
+    ChatsQuery query = 2;
+    // Shows archived chats instead of live ones; they load each time this
+    // turns on.
+    Toggle show_archived = 3;
+    // Loads the archived chats again while they show.
+    Step reload = 4;
+  }
+}
+
+message ChatsQuery { string text = 1; }
+
+message ChatsSlice {
+  // Pinned chats in the shared pinned order; none while archived chats show
+  // (pinned ones then stay in their project's section).
+  repeated string pinned_ids = 3;
+  // Chat folders holding a shown chat or named like the query; every folder
+  // when not searching.
+  repeated ChatFolderSection folders = 4;
+  // Project sections in the shared project order. Without chat folders,
+  // every project has one when not searching; with them, only projects with
+  // chats outside the folders. A search keeps projects named like it or with
+  // a matching chat.
+  repeated ChatProjectSection projects = 5;
+  // Unpinned chats in no folder whose project is not listed (e.g. archived).
+  repeated string other_ids = 6;
+  // Every shown chat, newest activity (else last update) first.
+  repeated string visible_ids = 7;
+  // The shown archived chats, newest activity first, while they show.
+  repeated dieter.v1.Card archived = 8;
+  // Archived chats are loading.
+  bool loading = 9;
+  // Why archived chats could not be read.
+  string error = 10;
+}
+
+message ChatFolderSection {
+  string folder_id = 1;
+  string name = 2;
+  // Its shown chats, in the folder's order.
+  repeated string chat_ids = 3;
+  // The saved disclosure; toggling sends the opposite.
+  bool expanded = 4;
+  // Its chats show: expanded, or while searching.
+  bool show_chats = 5;
+}
+
+message ChatProjectSection {
+  string project_id = 1;
+  // The chats to show, newest activity first: every one while showing all or
+  // searching, else the first five.
+  repeated string chat_ids = 2;
+  // Every chat of the section.
+  int32 total = 3;
+  // Chats beyond the first five: "Show N more", or "Show fewer" while
+  // showing all. 0 while searching.
+  int32 hidden = 4;
+  // The saved collapse; toggling sends the opposite.
+  bool collapsed = 5;
+  // The project shows all its chats (SetChatsShowAll).
+  bool show_all = 6;
+  // Its chats show: not collapsed, or while searching.
+  bool show_chats = 7;
 }
 
 // Creation choices remembered on this device.
 message CreationSlice {
-  // The last agent chosen; may name one a machine no longer offers.
-  dieter.v1.HarnessSelection selection = 1;
   string workspace_mode = 2;
   string project_id = 3;
-  // Project ID → the board last chosen in it.
+  // Project ID → the board to preselect in it: the one last chosen unless it
+  // is retired, else the first live board. Projects without boards are absent.
   map<string, string> boards = 4;
+  // Project ID → the checkout a new conversation runs on unless another is
+  // chosen: the one last chosen while it is attached, else the attached
+  // machine's, else the only one, else the project replica's. A project with
+  // several checkouts and none of these is absent: the user chooses.
+  map<string, string> checkouts = 5;
 }
 
 // One files surface: a folder listing and the open document.
@@ -1198,6 +2034,13 @@ message FilesSlice {
   bool saving = 13;
   bool can_go_back = 14;
   bool can_go_forward = 15;
+  // Identifies the selected file's native editor buffer: the target and path,
+  // length-prefixed so no two collide. Empty without a target.
+  string document_key = 16;
+  // The open document's language, e.g. "Swift" or "Plain text".
+  string language_name = 18;
+  // "Markdown" for Markdown files, else the media type, or "Unknown type".
+  string type_label = 19;
 }
 
 // A lazily expanded folder tree.
@@ -1214,6 +2057,104 @@ message FileTreeFolder {
   repeated dieter.v1.FileEntry entries = 2;
 }
 
+// How a file is shown: a PDF, then an image, then any other binary file is
+// unsupported, then Markdown, else text.
+enum FileRenderer {
+  FILE_RENDERER_UNSPECIFIED = 0;
+  FILE_RENDERER_TEXT = 1;
+  FILE_RENDERER_MARKDOWN = 2;
+  FILE_RENDERER_IMAGE = 3;
+  FILE_RENDERER_PDF = 4;
+  FILE_RENDERER_UNSUPPORTED = 5;
+}
+
+// A listing row's icon: a folder, an image, Markdown, a file in a language
+// the editor highlights, else text.
+enum FileIconKind {
+  FILE_ICON_KIND_TEXT = 0;
+  FILE_ICON_KIND_DIRECTORY = 1;
+  FILE_ICON_KIND_IMAGE = 2;
+  FILE_ICON_KIND_MARKDOWN = 3;
+  FILE_ICON_KIND_CODE = 4;
+}
+
+// What a highlighted span of source is; the platform picks its color.
+enum SyntaxKind {
+  SYNTAX_KIND_UNSPECIFIED = 0;
+  SYNTAX_KIND_COMMENT = 1;
+  SYNTAX_KIND_STRING = 2;
+  SYNTAX_KIND_NUMBER = 3;
+  SYNTAX_KIND_KEYWORD = 4;
+  SYNTAX_KIND_TYPE = 5;
+  SYNTAX_KIND_FUNCTION = 6;
+  SYNTAX_KIND_ANNOTATION = 7;
+  SYNTAX_KIND_PROPERTY = 8;
+  SYNTAX_KIND_TAG = 9;
+  SYNTAX_KIND_ATTRIBUTE = 10;
+  SYNTAX_KIND_HEADING = 11;
+  SYNTAX_KIND_LINK = 12;
+  SYNTAX_KIND_EMPHASIS = 13;
+  SYNTAX_KIND_VARIABLE = 14;
+  SYNTAX_KIND_CONSTANT = 15;
+}
+
+// Syntax highlighting of some text (SharedRules.syntaxHighlights).
+message SyntaxHighlights {
+  // Packed (start, length, SyntaxKind value) triples in UTF-16 code units,
+  // starts already in document offsets. Later spans win where they overlap.
+  repeated int32 spans = 1;
+}
+
+// Where a link in a conversation leads (SharedRules.resolveContentLink).
+message ContentLinkResolution {
+  oneof result {
+    ContentFileLink file = 1;
+    // An http(s) URL with a host, as written.
+    string web_url = 2;
+    ContentLinkFailure failure = 3;
+  }
+}
+
+// A file inside the conversation's workspace.
+message ContentFileLink {
+  // Relative to the workspace root.
+  string path = 1;
+  // 1-based, or 0 for none.
+  int32 line = 2;
+}
+
+// Why a link cannot be opened in the pane.
+message ContentLinkFailure {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_INVALID_LINK = 1;
+    KIND_INVALID_WEB_URL = 2;
+    KIND_INVALID_WORKSPACE = 3;
+    KIND_OUTSIDE_WORKSPACE = 4;
+    KIND_UNSUPPORTED_FILE_HOST = 5;
+    KIND_UNSUPPORTED_SCHEME = 6;
+    KIND_INVALID_LINE = 7;
+  }
+  Kind kind = 1;
+  // Ready to show, e.g. "This file is outside the conversation's workspace."
+  string message = 2;
+  // The unsupported scheme as written, e.g. "mailto".
+  string scheme = 3;
+}
+
+// Web links in prose, in order and never overlapping (SharedRules.detectLinks).
+message DetectedLinks {
+  repeated DetectedLink links = 1;
+}
+
+// One link: its UTF-16 range in the text and the URL it opens (a bare
+// development address gains "http://").
+message DetectedLink {
+  int32 start = 1;
+  int32 length = 2;
+  string url = 3;
+}
+
 // One terminals surface.
 message TerminalsSlice {
   TerminalTarget target = 1;
@@ -1222,7 +2163,6 @@ message TerminalsSlice {
   bool loading = 4;
   string error = 5;
   bool stream_connected = 6;
-  bool active = 7;
   // Output this observer has not seen yet, per terminal; never in command
   // results.
   repeated TerminalOutput output = 8;
@@ -1278,6 +2218,332 @@ message SchedulesSlice {
   // Next occurrences (RFC 3339, UTC) for the editor's timing.
   repeated string preview = 15;
   string preview_error = 16;
+
+  // What the list area shows.
+  enum State {
+    // Not read yet, or reading with nothing to show.
+    STATE_LOADING = 0;
+    // The list could not be read and nothing is shown; `error` says why.
+    STATE_FAILED = 1;
+    STATE_EMPTY = 2;
+    STATE_LOADED = 3;
+  }
+  State state = 17;
+  // "3 automations", "Loading automations…", or "Automations unavailable".
+  string subtitle = 18;
+  // One per schedule, in the same order.
+  repeated ScheduleRow rows = 19;
+  // One per run, in the same order.
+  repeated ScheduleRunRow run_rows = 20;
+  // A preview of the editor's timing is pending.
+  bool preview_loading = 21;
+}
+
+// --- Schedules ---------------------------------------------------------------
+
+// One schedule as lists and details show it.
+message ScheduleRow {
+  string id = 1;
+  // "Weekdays at 09:00 · Europe/Berlin", "Every Thursday at 16:45 · UTC",
+  // "Custom schedule · UTC".
+  string timing = 2;
+  // Where each occurrence's card goes: "Todo" or "Running".
+  string placement = 3;
+  // "Enabled" or "Paused".
+  string status = 4;
+  // The schedule's description, else what each occurrence does.
+  string subtitle = 5;
+  // "No next run" when the schedule has none; empty when it has one, which
+  // the platform formats in the schedule's time zone.
+  string next_run_fallback = 6;
+  // Who runs each occurrence, named by the owner machine's catalog, else by
+  // their IDs: "Codex", "GPT-5", "High". The effort is "Default" for the
+  // provider's own default.
+  string provider_label = 7;
+  string model_label = 8;
+  string effort_label = 9;
+}
+
+// One occurrence in a schedule's run history.
+message ScheduleRunRow {
+  enum Tone {
+    // Pending, interrupted, skipped, or unknown.
+    TONE_NEUTRAL = 0;
+    // Starting or running.
+    TONE_ACTIVE = 1;
+    TONE_SUCCESS = 2;
+    // Failed or cancelled.
+    TONE_FAILURE = 3;
+  }
+  string id = 1;
+  // "Completed", "Failed", "Skipped", …; "Unknown" when the daemon sent none.
+  string status = 2;
+  Tone tone = 3;
+  // "Manual" or "Scheduled".
+  string trigger = 4;
+  // When it was due (RFC 3339), else when it was recorded; the platform
+  // formats it in the schedule's time zone.
+  string at = 5;
+  string message = 6;
+  // The card it created; empty when none.
+  string card_id = 7;
+}
+
+// The friendly editor over a five-field cron expression. Only plain
+// "minute hour * * day" expressions with an in-range time are friendly;
+// everything else is custom.
+message ScheduleCadence {
+  enum Kind {
+    KIND_WEEKDAYS = 0;
+    KIND_DAILY = 1;
+    KIND_WEEKLY = 2;
+    KIND_CUSTOM = 3;
+  }
+  Kind kind = 1;
+  // 0-23.
+  int32 hour = 2;
+  // 0-59.
+  int32 minute = 3;
+  // Cron day of week, 0 = Sunday.
+  int32 weekday = 4;
+  // The custom expression.
+  string custom = 5;
+  // The cron the daemon receives.
+  string cron = 6;
+  // "09:30".
+  string time = 7;
+  // "Weekdays at 09:30", without a time zone.
+  string summary = 8;
+}
+
+// The schedule screens' fixed choices and wording.
+message ScheduleEditorOptions {
+  message Option {
+    string key = 1;
+    string title = 2;
+    string detail = 3;
+  }
+  // key = the ScheduleCadence.Kind number; "Weekdays", "Daily", "Weekly", "Custom".
+  repeated Option cadences = 1;
+  // Monday first: key = cron day ("1", … "0"), title "Mon", detail "Monday".
+  repeated Option weekdays = 2;
+  // key = name ("date"), title = "{{date}}", detail = help text.
+  repeated Option variables = 3;
+  // key = action ("draft", "run"), title "Todo"/"Running", detail = what happens.
+  repeated Option placements = 4;
+  // key = policy ("skip_if_open", "always"), title "Skip if open"/"Always create".
+  repeated Option open_policies = 5;
+  // What happens to occurrences missed while the machine was off.
+  string misfire_note = 6;
+  // The example output for an empty title or prompt template.
+  string title_placeholder = 7;
+  string prompt_placeholder = 8;
+  // "Five fields: minute, hour, day of month, month, day of week."
+  string cron_help = 9;
+  // "New schedule" and "Edit schedule".
+  string new_title = 10;
+  string edit_title = 11;
+  // The empty list: "No schedules" and "Automate cards and chats with cron schedules."
+  string empty_title = 12;
+  string empty_detail = 13;
+  // "Load more schedules" and, while it loads, "Loading…".
+  string load_more = 14;
+  string loading_more = 15;
+  // A schedule's run history: "Loading occurrences…", "No occurrences yet.",
+  // "Load older runs", and "Loading older runs…".
+  string runs_loading = 16;
+  string runs_empty = 17;
+  string load_older_runs = 18;
+  string loading_older_runs = 19;
+}
+
+// ---------------------------------------------------------------------------
+// Workspace review presentation: laid-out diffs, the pull request, the merge
+// checklist, and the rules views call while rendering (SharedRules).
+
+// How a workspace fact should read.
+enum WorkspaceTone {
+  WORKSPACE_TONE_NEUTRAL = 0;
+  // In progress (checks running).
+  WORKSPACE_TONE_ACTIVE = 1;
+  // Good (open, approved, passed, ready).
+  WORKSPACE_TONE_SUCCESS = 2;
+  // Needs a look (changes requested, base moved, a failed validation note).
+  WORKSPACE_TONE_WARNING = 3;
+  // Blocking or failed (closed, checks failed, conflicts).
+  WORKSPACE_TONE_DANGER = 4;
+}
+
+// One row of a diff laid out for a view: file headers dropped, long
+// unchanged runs folded, and in the split layout changed lines paired side
+// by side. Row IDs are line IDs (`DiffRow.id`), stable for the same diff in
+// either layout, so a view can keep which folds it expanded.
+message DiffDisplayRow {
+  oneof item {
+    // Unified layout: one line.
+    DiffDisplayLine line = 1;
+    // Split layout: a deletion beside an addition, or a context line on both sides.
+    DiffPair pair = 2;
+    // A file boundary inside a whole-commit diff.
+    DiffFileBoundary file_boundary = 3;
+    DiffHunk hunk = 4;
+    DiffFold fold = 5;
+  }
+}
+
+message DiffDisplayLine {
+  DiffRow row = 1;
+  // The review comments on this line of the shown file.
+  repeated dieter.v1.ChangeComment comments = 2;
+  // A comment can attach here (`ReviewComment.row_id` = `row.id`): a
+  // numbered line of one file's diff in a review.
+  bool commentable = 3;
+}
+
+message DiffPair {
+  // The deletion's ID, else the addition's.
+  int32 id = 1;
+  // Absent when the side has no line.
+  DiffRow before = 2;
+  DiffRow after = 3;
+}
+
+message DiffFileBoundary {
+  int32 id = 1;
+  string path = 2;
+}
+
+message DiffHunk {
+  int32 id = 1;
+  // "@@ -1284,9 +1284,16 @@ function ChatSidebar()": the ranges, then any function context.
+  string text = 2;
+  // Unchanged lines between the previous hunk and this one; 0 for a file's
+  // first hunk or after an unreadable header.
+  int32 skipped_lines = 3;
+  int32 additions = 4;
+  int32 deletions = 5;
+}
+
+// Unchanged lines hidden until the view expands them.
+message DiffFold {
+  int32 id = 1;
+  int32 count = 2;
+  // The hidden lines, as unified rows.
+  repeated DiffDisplayLine lines = 3;
+  // The same lines on both sides, in the split layout only.
+  repeated DiffPair pairs = 4;
+}
+
+// A pull request as the review shows it.
+message PullRequestView {
+  int32 number = 1;
+  string url = 2;
+  // "Open", "Draft", "Merged", or "Closed".
+  string state_label = 3;
+  WorkspaceTone state_tone = 4;
+  // "checks passed/running/failed", then "approved", "changes requested", or "review requested".
+  repeated PullRequestSignal signals = 5;
+  // Why merging is blocked: "draft", "waiting on checks", "checks failed",
+  // "not mergeable", "already merged"; empty when it can merge.
+  string merge_blocked_reason = 6;
+  // Failing checks or requested changes the agent can address.
+  bool can_ask_agent = 7;
+  // The message that asks the agent to address them.
+  string ask_agent_prompt = 8;
+  // RFC 3339; SharedRules.agoSince words it.
+  string last_synced_at = 9;
+}
+
+message PullRequestSignal {
+  // "checks" or "review".
+  string id = 1;
+  string text = 2;
+  WorkspaceTone tone = 3;
+}
+
+// A merge strategy as a form offers it.
+message MergeStrategyOption {
+  // The wire value ("squash").
+  string strategy = 1;
+  // "Squash".
+  string title = 2;
+  // What it does on the base: "3 commits become one on main.".
+  string caption = 3;
+}
+
+// The checklist before merging into the base.
+message MergeReadiness {
+  message Item {
+    // "conflicts", "validation", "behind", or "uncommitted".
+    string id = 1;
+    // Success: ready; warning: a note; danger: blocks the merge.
+    WorkspaceTone tone = 2;
+    // "No conflicts with main", "2 files conflict with main", "go test passed on the workspace".
+    string text = 3;
+    string detail = 4;
+    // RFC 3339 when the detail is an age (a validation's finish), for SharedRules.agoSince.
+    string at = 5;
+  }
+  repeated Item items = 1;
+  // An item blocks the merge (conflicts).
+  bool blocked = 2;
+  // "Merge 3 files", or "Merge into main" when no file changed.
+  string merge_title = 4;
+  // "go test passed" or "2 validations failed"; empty without a finished validation.
+  string validation_summary = 5;
+  bool validation_passed = 6;
+  // RFC 3339, when the validation finished.
+  string validation_at = 7;
+  // Squash, merge commit, and fast-forward, with what each does here.
+  repeated MergeStrategyOption strategies = 8;
+  // The last local merge failed; updating from the base may resolve it.
+  bool merge_failed = 9;
+}
+
+// One of a project's conversation workspaces, as the list shows it.
+message ProjectWorkspaceRow {
+  string card_id = 1;
+  // The conversation's title, else the branch, else the card ID.
+  string title = 2;
+  // "feature/x · ready": the branch (else the mode) and the state.
+  string detail = 3;
+  // "3 files · +40 −12 · 1.2 MB".
+  string stats = 4;
+  string path = 5;
+  bool conflicted = 6;
+  // A worktree without changed files, while nothing runs on it.
+  bool can_clean_up = 7;
+  // A worktree, while nothing runs on it.
+  bool can_discard = 8;
+  // A cleanup or discard runs.
+  bool pending = 9;
+  // Why the last cleanup or discard failed; empty when it did not.
+  string error = 10;
+}
+
+// A card's workspace badge (SharedRules.workspaceBadge).
+message WorkspaceBadgeView {
+  // The card names a workspace mode; nothing else is set otherwise.
+  bool shown = 1;
+  // Board cards and chat rows: "Conflicts", "PR #12", "3 changed", else the branch or "Worktree"/"Project".
+  string title = 2;
+  // A conversation's header: "Conflicts", else the branch or "Worktree"/"Project".
+  string full_title = 3;
+  // "Workspace: Worktree · feature/x · 2 ahead, 1 behind · PR #12".
+  string accessibility_label = 4;
+  bool conflicted = 5;
+}
+
+// A changed file as lists show it (SharedRules.changedFile).
+message ChangedFileLabel {
+  // "A", "M", "D", "R", "C", "U" (untracked), or "!" (conflicted).
+  string badge = 1;
+  // "Added", "Modified", …, "Untracked", or "Conflicted".
+  string title = 2;
+  // "service.go".
+  string filename = 3;
+  // "internal/changeset", or empty at the root.
+  string directory = 4;
 }
 
 // One line of a unified diff, numbered on both sides.
@@ -1305,16 +2571,6 @@ message WorkspaceAvailability {
   // Where a merge's result ends up.
   string merge_destination = 3;
   bool has_review_branch = 4;
-  bool agent_active = 5;
-  bool operation_active = 6;
-  bool conflicted = 7;
-  bool has_remote = 8;
-  bool dirty = 9;
-  int32 changed_files = 10;
-  bool has_commits = 11;
-  string branch = 12;
-  string base = 13;
-  string publish = 14;
   // "project" or "worktree".
   string mode = 15;
 }
@@ -1331,17 +2587,14 @@ message ReviewSlice {
   string error = 8;
   string selected_path = 9;
   string selected_commit = 10;
-  // The diff page; its patch is in `diff_rows`.
+  // The diff page; `display_rows` lays out its patch.
   dieter.v1.FileDiff diff = 11;
-  repeated DiffRow diff_rows = 12;
   bool diff_loading = 13;
   dieter.v1.GitOperation operation = 14;
   repeated dieter.v1.GitOperationLogEntry logs = 15;
   bool submitting = 16;
   // After a reconnect or an ambiguous start, changes wait for a refresh.
   bool needs_reconciliation = 17;
-  // Cleanup, discard, or adopt succeeded; the workspace is gone here.
-  bool surface_removed = 18;
   // "commit", "merge", or "cleanup" while the merge flow runs.
   string merge_step = 19;
   string toast = 20;
@@ -1349,6 +2602,37 @@ message ReviewSlice {
   bool conflicted = 22;
   // Present when the conversation's card is known.
   WorkspaceAvailability availability = 23;
+  // The diff laid out for this view (`ReviewCommand.layout`), with each
+  // line's comments. Empty with `diff_unchanged`.
+  repeated DiffDisplayRow display_rows = 24;
+  // The widest code line in columns (a tab counts 4, a non-ASCII character 2).
+  int32 diff_max_columns = 25;
+  // The view already has these display rows; they are left out.
+  bool diff_unchanged = 26;
+  // Another page of the diff can load ("Load the rest of this diff").
+  bool diff_more = 27;
+  // The diff stops at the 4 MB limit; `diff_note` says so instead of loading more.
+  bool diff_too_large = 28;
+  // "This diff is too large to show in full; its first 4 MB are shown." with `diff_too_large`.
+  string diff_note = 29;
+  // The layout in effect.
+  bool split = 30;
+  // The operation strip shows `operation`: it is active or it failed.
+  bool operation_visible = 31;
+  // The shown operation can be cancelled (one waiting on a conflict cannot).
+  bool operation_cancelable = 32;
+  // "2 files conflict with main", or "This workspace conflicts with main".
+  string conflict_title = 33;
+  // The message that hands the conflicts to the agent.
+  string conflict_prompt = 34;
+  // Merging moves the card to Done by default (a board card or a filed chat).
+  bool moves_to_done = 35;
+  // Present when the card has a pull request.
+  PullRequestView pull_request = 36;
+  MergeReadiness merge_readiness = 37;
+  // The workspace's state in words: "Ready", "Conflicted", "Provisioning",
+  // "Cleanup pending", …; empty without a workspace.
+  string workspace_state = 38;
 }
 
 // One project checkout's changes.
@@ -1360,7 +2644,6 @@ message ProjectChangesSlice {
   // The selected file and half, when one is selected.
   ProjectChangeSelect selection = 5;
   dieter.v1.FileDiff diff = 6;
-  repeated DiffRow diff_rows = 7;
   bool diff_loading = 8;
   dieter.v1.GitOperation operation = 9;
   string pending_kind = 10;
@@ -1372,18 +2655,33 @@ message ProjectChangesSlice {
   string notice = 16;
   bool busy = 17;
   bool mutations_disabled = 18;
-  // "3 local files · main".
-  string summary = 19;
+  // The diff laid out for this view (`ProjectChangesCommand.layout`); empty
+  // with `diff_unchanged`. Lines take no comments.
+  repeated DiffDisplayRow display_rows = 20;
+  // The widest code line in columns (a tab counts 4, a non-ASCII character 2).
+  int32 diff_max_columns = 21;
+  // The view already has these display rows; they are left out.
+  bool diff_unchanged = 22;
+  // Another page of the diff can load.
+  bool diff_more = 23;
+  // The diff stops at the 4 MB limit; `diff_note` says so instead of loading more.
+  bool diff_too_large = 24;
+  string diff_note = 25;
+  // The layout in effect.
+  bool split = 26;
+  // Checkout operations that can run now ("stage", "unstage",
+  // "discard_changes", "commit", "update", "validate", "push"); a commit
+  // also needs a subject (SharedRules.gitOperationReady).
+  repeated string allowed = 27;
 }
 
+// A project's conversation workspaces after a ProjectWorkspacesCommand.
 message ProjectWorkspacesSlice {
-  string project_id = 1;
-  repeated dieter.v1.Workspace workspaces = 2;
-  bool loading = 3;
+  // The list could not be read.
   string error = 4;
-  // Card IDs with a cleanup or discard in flight.
-  repeated string pending = 5;
+  // Card ID → why its last cleanup or discard failed.
   map<string, string> errors = 6;
+  repeated ProjectWorkspaceRow rows = 7;
 }
 
 // ---------------------------------------------------------------------------
@@ -1421,10 +2719,6 @@ message AdminCommand {
     // A machine's global prompt settings.
     AdminMachine prompt_settings = 18;
     AdminPromptSettings update_prompt_settings = 19;
-    // Portable settings on a project's replica, else the attached machine.
-    AdminProject settings = 20;
-    AdminSettings update_settings = 21;
-    AdminProject settings_options = 22;
     // Sets or clears a project's or board's prompt override.
     AdminScopedPrompt set_project_prompt = 23;
     AdminScopedPrompt set_board_prompt = 24;
@@ -1433,8 +2727,6 @@ message AdminCommand {
     AdminConflict conflict = 26;
     // Keeps one version, or the deletion.
     AdminResolveConflict resolve_conflict = 27;
-    // Archived projects and a board's archived cards.
-    AdminArchives archives = 28;
     // Workspace defaults and a checkout's validation commands; the result
     // is the project.
     AdminWorkspaceSettings workspace_settings = 29;
@@ -1444,15 +2736,13 @@ message AdminCommand {
     // is the card.
     AdminConversationWorkspace update_conversation_workspace = 31;
     // Archived chats of every online machine; the result is the cards.
-    AdminStep archived_chats = 32;
+    Step archived_chats = 32;
     // Reads one file, e.g. to download it; the result is the document.
     AdminReadFile read_file = 33;
   }
 }
 
-message AdminStep {}
 message AdminMachine { string daemon_id = 1; }
-message AdminProject { string project_id = 1; }
 message AdminCard { string card_id = 1; }
 
 message AdminCreateProject {
@@ -1558,11 +2848,6 @@ message AdminPromptSettings {
   string chat_skill = 4;
 }
 
-message AdminSettings {
-  string project_id = 1;
-  dieter.v1.Settings settings = 2;
-}
-
 message AdminScopedPrompt {
   // The project or board.
   string scope_id = 1;
@@ -1589,11 +2874,6 @@ message AdminResolveConflict {
   dieter.v1.PeerRecord record = 2;
   bytes value_json = 3;
   bool deleted = 4;
-}
-
-message AdminArchives {
-  string project_id = 1;
-  string board_id = 2;
 }
 
 message AdminWorkspaceSettings {
@@ -1626,26 +2906,19 @@ message AdminReadFile {
 
 message ConflictRecord { dieter.v1.PeerRecord record = 1; }
 
-message Archives {
-  repeated dieter.v1.Project projects = 1;
-  repeated dieter.v1.Card cards = 2;
-}
-
 message Projects { repeated dieter.v1.Project projects = 1; }
 
 // ---------------------------------------------------------------------------
 // Machines: the selected machine's live telemetry (every 2 s while shown),
-// one-off reads for the machine list, and power and update operations.
+// and power and update operations.
 
+// The machine telemetry surface (SLICE_TELEMETRY); there is one, whatever
+// scope observes it.
 message TelemetryCommand {
   oneof action {
     // Shows a machine while active; switching machines resets the operation
     // state, not what was read.
     TelemetrySelect select = 1;
-    // Reads every listed machine once, a few at a time.
-    TelemetryRefresh refresh_all = 2;
-    // Records why a machine cannot be read now.
-    TelemetryUnavailable unavailable = 3;
     // Restarts, shuts down, or updates the selected machine; a lost reply is
     // never acted on twice. The result is the response.
     TelemetryOperation perform = 4;
@@ -1658,18 +2931,9 @@ message TelemetrySelect {
   bool active = 2;
 }
 
-message TelemetryRefresh { repeated string daemon_ids = 1; }
-
-message TelemetryUnavailable {
-  string daemon_id = 1;
-  string message = 2;
-}
-
 message TelemetryOperation { dieter.v1.MachineOperationAction action = 1; }
 
 message TelemetrySlice {
-  // The machine shown in detail.
-  string daemon_id = 1;
   // Every machine read so far, by daemon.
   map<string, MachineReadings> machines = 2;
   bool operation_pending = 3;
@@ -1684,9 +2948,33 @@ message MachineReadings {
   repeated double cpu_history = 4;
   // Per GPU, its last utilization samples.
   map<string, Samples> gpu_history = 5;
+  // The actions menu: update, restart, and shut down, in that order, once
+  // information was read. Only the daemon's operation capabilities count.
+  repeated MachineOperationState operations = 6;
 }
 
 message Samples { repeated double values = 1; }
+
+// Whether a machine offers one power or update operation.
+message MachineOperationState {
+  dieter.v1.MachineOperationAction action = 1;
+  bool available = 2;
+  // The daemon's reason when it is not available; may be empty.
+  string unavailable_reason = 3;
+}
+
+// How a machine operation reads in the actions menu and its confirmation.
+message MachineOperationCopy {
+  // The confirmation's title, e.g. "Restart machine".
+  string title = 1;
+  // The confirming button, e.g. "Restart".
+  string button = 2;
+  // The menu item, e.g. "Restart…".
+  string menu_title = 3;
+  string explanation = 4;
+  // Confirm with a destructive button: restart and shut down.
+  bool destructive = 5;
+}
 
 // ---------------------------------------------------------------------------
 // Provider quotas: credential-free snapshots from the gateway, watched rather
@@ -1720,8 +3008,122 @@ message QuotasSlice {
   string error = 3;
   // Accounts with a change in flight.
   repeated string mutating = 4;
-  // The gateway stream is connected.
-  bool live = 5;
+  // `groups` as views show them, in the same order. Wording that depends on
+  // the time (resets, staleness) comes from SharedRules.
+  repeated QuotaGroupRow group_rows = 6;
+}
+
+// How close an allowance is to running out: critical at 10% or less, low at
+// 30% or less. A severity tint wins over a provider's brand color.
+enum QuotaSeverity {
+  QUOTA_SEVERITY_UNKNOWN = 0;
+  QUOTA_SEVERITY_NORMAL = 1;
+  QUOTA_SEVERITY_LOW = 2;
+  QUOTA_SEVERITY_CRITICAL = 3;
+}
+
+// One provider's accounts, ready to show.
+message QuotaGroupRow {
+  dieter.gateway.v1.ProviderQuotaProvider provider = 1;
+  // "OpenAI" or "Claude", for compact labels.
+  string provider_name = 2;
+  // "2 accounts · 1 excluded".
+  string summary = 4;
+  // The gateway's lowest remaining percentage over the included accounts,
+  // 0-100; -1 when none reports one.
+  int32 lowest_remaining = 5;
+  repeated QuotaAccountRow accounts = 6;
+}
+
+// One provider account, ready to show.
+message QuotaAccountRow {
+  string account_key = 1;
+  // A short name: the email's local part, else the plan, else "••" and the
+  // key's last four characters.
+  string label = 2;
+  // The email, else "Plan · ••" and the key's last six characters.
+  string identity = 3;
+  // Under the identity: the plan when the email is shown, and whether the
+  // summary excludes the account; "Account details" otherwise.
+  string subtitle = 4;
+  // The lowest remaining percentage of any window, 0-100; -1 when none
+  // reports one.
+  int32 remaining = 5;
+  QuotaSeverity severity = 6;
+  bool available = 7;
+  // Why an unavailable account cannot be used, e.g. "Signed out"; empty
+  // when available, which is never shown as a warning.
+  string unavailable = 8;
+  // Shown instead of windows when none report a limit, e.g. "No numeric
+  // limit reported" or "rate limited".
+  string status = 9;
+  repeated QuotaWindowRow windows = 10;
+  repeated QuotaDetail details = 11;
+  // An OpenAI account with a reset credit left.
+  bool can_reset = 12;
+  // Counted in the provider's summary and shown in compact quota bars.
+  bool included = 13;
+  // The numbers are current until then; 0 when unknown, which reads as stale.
+  int64 fresh_until_millis = 14;
+  // For a tooltip or accessibility label, e.g.
+  // "OpenAI · dev@example.com · 45% remaining" or "Claude · Pro · Signed out".
+  string summary_line = 15;
+  // The gateway is reading the account's numbers again.
+  bool refreshing = 16;
+  // The machines that reported the account, as the gateway lists them.
+  repeated QuotaMachineRow machines = 17;
+}
+
+// A machine that reported a provider account.
+message QuotaMachineRow {
+  string daemon_id = 1;
+  // The machine's name, else the start of its ID.
+  string name = 2;
+  bool online = 3;
+  // "Online" or "Offline".
+  string state = 4;
+}
+
+// Provider quota groups handed to SharedRules.quotaRows.
+message QuotaGroupList {
+  repeated dieter.gateway.v1.ProviderQuotaGroup groups = 1;
+}
+
+// SharedRules.quotaRows: the groups as `QuotasSlice.group_rows` shows them.
+message QuotaGroupRows {
+  repeated QuotaGroupRow rows = 1;
+}
+
+// One quota window of an account.
+message QuotaWindowRow {
+  string id = 1;
+  // The provider's label, else "5 hour", "Weekly", "Monthly", "Model", or "Quota".
+  string name = 2;
+  // 0-100; -1 when not reported ("Not reported").
+  int32 remaining = 3;
+  QuotaSeverity severity = 4;
+  // RFC 3339, or empty; SharedRules.quotaResetText words it.
+  string resets_at = 5;
+}
+
+// One label and text row of an account's details.
+message QuotaDetail {
+  string label = 1;
+  string text = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Labels: the palette every client offers when it creates or edits a label.
+// Any six-digit hex color is valid; the palette only suggests.
+
+message LabelPalette {
+  repeated LabelSwatch swatches = 1;
+}
+
+// One palette color, e.g. "Teal" and "#379799".
+message LabelSwatch {
+  string name = 1;
+  string hex = 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -1735,7 +3137,7 @@ message ProcessesCommand {
   oneof action {
     ProcessesTarget bind = 2;
     ProcessId select = 3;
-    ProcessesStep stop = 4;
+    Step stop = 4;
   }
 }
 
@@ -1748,7 +3150,6 @@ message ProcessesTarget {
 }
 
 message ProcessId { string execution_id = 1; }
-message ProcessesStep {}
 
 message ProcessesSlice {
   string daemon_id = 1;
@@ -1774,8 +3175,6 @@ message ProcessesSlice {
 
 message SearchCommand {
   string query = 1;
-  // At most this many; zero uses the default.
-  int32 limit = 2;
 }
 
 message SearchResults { repeated SearchHit hits = 1; }
@@ -1799,12 +3198,12 @@ message ScreenCommand {
   oneof action {
     // Starts a session with a machine; an earlier one is closed first.
     ScreenConnect connect = 2;
-    ScreenStep disconnect = 3;
+    Step disconnect = 3;
     // The view's size; the requested stream size follows, debounced.
     ScreenViewport viewport = 4;
     ScreenPreferences preferences = 5;
     // Takes or hands back control, once at a time.
-    ScreenToggle control = 6;
+    Toggle control = 6;
     // Moves the remote pointer; quick moves coalesce.
     ScreenPointer pointer = 7;
     ScreenButton button = 8;
@@ -1814,25 +3213,23 @@ message ScreenCommand {
     // Committed text.
     ScreenText text = 11;
     // Releases every held key and button on the host.
-    ScreenStep release_input = 12;
+    Step release_input = 12;
     // "copy", "cut", or "paste" on the host.
     ScreenClipboardOperation clipboard = 13;
-    ScreenToggle clipboard_enabled = 14;
+    Toggle clipboard_enabled = 14;
     // The device woke or the app returned: start over at once.
-    ScreenStep resume = 15;
+    Step resume = 15;
     // The device is going to sleep: release held input.
-    ScreenStep sleep = 16;
-    ScreenToggle focused = 17;
+    Step sleep = 16;
+    Toggle focused = 17;
     // Matches the host display to this screen while holding control; an
     // empty target stops matching and restores a temporary mode.
     ScreenDisplayTarget match_display = 18;
     // Asks the host for a fresh frame.
-    ScreenStep refresh = 19;
+    Step refresh = 19;
   }
 }
 
-message ScreenStep {}
-message ScreenToggle { bool on = 1; }
 message ScreenConnect { string daemon_id = 1; }
 
 message ScreenViewport {
@@ -1900,6 +3297,8 @@ message ScreenSlice {
   // "idle", "loading", "permission_required", "unsupported", "connecting",
   // "waiting_for_host_approval", "streaming", "reconnecting", or "failed".
   string phase = 1;
+  // The phase as status lines show it: "Not connected", "Checking machine…",
+  // "Live", "Connection failed", …; phases in progress end with "…".
   string phase_label = 2;
   // Why no session can run, or why it is reconnecting.
   string problem = 3;
@@ -1907,9 +3306,6 @@ message ScreenSlice {
   bool active = 4;
   dieter.v1.RemoteDesktopCapabilities capabilities = 5;
   dieter.v1.RemoteDesktopSessionState state = 6;
-  string session_id = 7;
-  // Streaming with input channels open and the display presented.
-  bool ready = 8;
   bool control_active = 9;
   bool can_transfer_control = 10;
   bool control_transferring = 11;
@@ -1934,7 +3330,17 @@ message ScreenSlice {
   ScreenPreferences preferences = 28;
   // Resolution matching while holding control.
   string display_status = 29;
-  bool display_busy = 30;
+  // The frame-rate choices the host allows, e.g. 30, 60, 90, 120.
+  repeated int32 frame_rates = 31;
+  // Why this client cannot take control of the live session; empty while it
+  // can or is not streaming.
+  string control_unavailable_reason = 32;
+  // Copy and paste can run: controlling, sharing the clipboard, and no
+  // clipboard operation in flight.
+  bool clipboard_actions_enabled = 33;
+  // The network round trip: "12 ms RTT", "<1 ms RTT", or "— ms RTT" without
+  // a measurement or outside streaming.
+  string latency_label = 34;
 }
 
 // The native media engine across the Apple bridge, encoded.

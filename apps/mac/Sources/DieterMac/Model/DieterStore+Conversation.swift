@@ -1,7 +1,7 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import Foundation
-import GRPCCore
 import OSLog
 import Observation
 import SharedCore
@@ -13,8 +13,7 @@ import UserNotifications
 extension DieterStore {
     /// Loads archived chats, which the live workspace omits. Unarchived chats
     /// come from the core.
-    func refreshChats(includeArchived: Bool = true) async {
-        guard includeArchived else { return }
+    func loadArchivedChats() async {
         chatsRequestGeneration &+= 1
         let generation = chatsRequestGeneration
         chatsLoading = true
@@ -22,7 +21,7 @@ extension DieterStore {
         defer { if generation == chatsRequestGeneration { chatsLoading = false } }
         do {
             // Every online machine's archived chats; live ones are in the workspace.
-            let archived = try await administer { $0.archivedChats = ClientAdminStep() }.cards.cards
+            let archived = try await administer { $0.archivedChats = ClientStep() }.cards.cards
             guard generation == chatsRequestGeneration else { return }
             if archivedChats != archived {
                 archivedChats = archived
@@ -48,7 +47,8 @@ extension DieterStore {
             ?? state.cards.first(where: { $0.id == cardID })
             ?? navigationCards.values.lazy.compactMap({ $0.first(where: { $0.id == cardID }) }).first
         let opensChat =
-            chat || knownChat != nil || card?.scope.caseInsensitiveCompare("chat") == .orderedSame
+            chat || knownChat != nil
+            || card.map { SharedRules.shared.isChat(scope: $0.scope, boardId: $0.boardID) } == true
         let projectID = card?.projectID ?? ""
         stopTerminalWatch()
         section = fromInbox ? .inbox : (opensChat ? .chats : .board)
@@ -78,8 +78,8 @@ extension DieterStore {
         bindConversation()
         conversationModel.observe(cardID)
         await perform { $0.setVisibleConversation = .with { $0.cardID = cardID } }
-        // Files, terminals, and review still use the attached machine's
-        // feature plane, so follow the conversation to its machine.
+        // The composer's agents and the machine settings are the attached
+        // machine's, so follow the conversation to its machine.
         guard selectionGeneration == conversationSelectionGeneration, let card, isConversationServerBacked(cardID)
         else { return }
         _ = await ensureConversationConnection(card, reportOffline: false)
@@ -87,12 +87,7 @@ extension DieterStore {
 
     func bindConversation() {
         conversationModel.core = core
-        conversationModel.onAccepted = { [weak self] snapshot, _ in
-            guard let self else { return }
-            self.bindWorktree()
-            let harness = self.harnessCatalog.harnesses.first { $0.id == snapshot.detail.card.provider }
-            self.composer.draft.reconcileSettings(card: snapshot.detail.card, harness: harness)
-        }
+        conversationModel.onAccepted = { [weak self] _, _ in self?.bindWorktree() }
         conversationModel.onContentPresentation = { [weak self] presentation, cardID in
             guard let self, let url = ConversationPresentedContent.url(for: presentation) else { return }
             self.conversationContext.content.requestPresentation(
@@ -141,22 +136,12 @@ extension DieterStore {
             part.text = text
             parts.insert(part, at: 0)
         }
-        var settings = Dieter_V1_SendMessageRequest()
-        draft.applySettings(to: &settings, fallback: selectedCard ?? selectedDetail?.card)
-        let queuesBehindActiveTurn =
-            conversationModel.state.activeTurn || !(conversation?.conversation.queue.isEmpty ?? true)
         do {
+            // The core sends with the composer's agent choice, else the conversation's agent.
             try await core.dispatch {
                 $0.sendMessage = .with { send in
                     send.cardID = id
                     send.parts = parts
-                    send.selection = .with {
-                        $0.provider = settings.provider
-                        $0.model = settings.model
-                        $0.effort = settings.effort
-                        $0.providerOptions = settings.providerOptions
-                    }
-                    send.queue = queuesBehindActiveTurn
                 }
             }
             draft.acceptSend(revision: draftRevision)
@@ -188,8 +173,39 @@ extension DieterStore {
         }
     }
 
+    /// Changes the selected conversation's composer agent. The core keeps the
+    /// choice in its draft and checks the pickers allow it.
+    func chooseAgent(_ choice: ClientAgentChoice.OneOf_Choice) async {
+        guard let id = selectedCardID ?? selectedChatID else { return }
+        #if DIETER_UI_SMOKE
+            if let fixture = conversationModel.agentFixture {
+                conversationModel.agentFixture = AgentControlFields.controls(
+                    fixture.selection, catalog: harnessCatalog, choice: choice)
+                return
+            }
+        #endif
+        await perform {
+            $0.chooseAgent = .with {
+                $0.cardID = id
+                $0.choice = .with { $0.choice = choice }
+            }
+        }
+    }
+
+    /// Lets the queued message `messageID` interrupt the running turn now;
+    /// the core checks it is the one that may.
+    func steerConversation(messageID: String) async {
+        guard let id = selectedCardID ?? selectedChatID, !messageID.isEmpty else { return }
+        await perform {
+            $0.steerConversation = .with {
+                $0.cardID = id
+                $0.messageID = messageID
+            }
+        }
+    }
+
     @discardableResult
-    func retryFailedTurn(_ failure: ConversationTurnFailure) async -> Bool {
+    func retryFailedTurn(_ failure: ClientTurnFailure) async -> Bool {
         guard failure.retryable, let id = selectedCardID ?? selectedChatID else { return false }
         guard let result = await perform({ $0.retryFailedTurn = .with { $0.cardID = id } }) else { return false }
         return !result.messageQueued.messageID.isEmpty
@@ -247,9 +263,10 @@ extension DieterStore {
     ) async throws
         -> [Dieter_V1_MessagePart]
     {
-        guard existing.count + providers.count <= AttachmentLoader.maximumCount else {
-            throw DieterAttachmentError.tooMany
-        }
+        // Rule out too many attachments before reading any; sizes are checked as they load.
+        try AttachmentLoader.checkLimits(
+            names: existing.map(\.filename) + providers.map { _ in "" },
+            sizes: existing.map { Int64($0.data.count) } + providers.map { _ in 1 })
         var parts = existing
         for provider in providers {
             if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier),
@@ -393,72 +410,36 @@ extension DieterStore {
         return value + "." + suffix
     }
 
+    /// Creates a conversation from a form's choices. The core applies the
+    /// defaults, checks the choices, queues the creation until its machine
+    /// accepts it (even while that machine is offline), and remembers them.
+    /// Chats and started tasks open.
     @discardableResult
     func createConversation(
-        title: String,
-        prompt: String,
-        attachments: [Dieter_V1_MessagePart] = [],
-        chat: Bool,
-        provider: String,
-        model: String,
-        effort: String,
-        providerOptions: [String: String] = [:],
-        deferred: Bool,
-        projectID: String? = nil,
-        lane: String? = nil,
-        labelIDs: [String] = [],
-        workspace: ConversationWorkspaceDraft = ConversationWorkspaceDraft(),
-        autoGenerateTitle: Bool = false
+        _ intent: ClientCreationIntent, chat: Bool, submissionID: String = UUID().uuidString
     ) async -> Bool {
-        let destinationProjectID = projectID ?? selectedProjectID
-        var request = Dieter_V1_CreateConversationRequest()
-        request.projectID = destinationProjectID
-        let checkouts = projectDirectory[destinationProjectID]?.checkouts.filter { !$0.detached } ?? []
-        let chosen =
-            checkouts.first { $0.id == creationCheckoutIDs[destinationProjectID] }
-            ?? checkouts.first { $0.daemonID == endpoint.daemonID }
-            ?? checkouts.first
-        request.checkoutID = chosen?.id ?? ""
-        request.boardID = chat ? "" : selectedBoardID
-        request.lane = lane ?? selectedBoard?.lanes.first?.id ?? "backlog"
-        request.title = title
-        request.prompt = prompt
-        request.provider = provider
-        request.model = model
-        request.effort = effort
-        request.deferStart = deferred
-        request.providerOptions = providerOptions
-        request.attachments = attachments
-        request.labelIds = labelIDs
-        request.autoGenerateTitle = autoGenerateTitle
-        workspace.apply(to: &request)
-        // The outbox keeps the creation until its machine accepts it, even
-        // while that machine is offline.
         guard
             let created = await perform({
                 $0.createConversation = .with {
-                    $0.request = request
+                    $0.intent = intent
                     $0.chat = chat
+                    $0.submissionID = submissionID
                 }
             })
         else { return false }
         createConversationPresented = false
-        if Self.shouldOpenCreatedConversation(chat: chat, lane: request.lane) {
+        if SharedRules.shared.opensAfterCreate(chat: chat, lane: created.card.lane) {
             await openConversation(cardID: created.card.id, chat: chat)
         }
         section = chat ? .chats : .board
         return true
     }
 
-    nonisolated static func shouldOpenCreatedConversation(chat: Bool, lane: String) -> Bool {
-        chat || lane.caseInsensitiveCompare("todo") != .orderedSame
-    }
-
     func move(
         _ card: Dieter_V1_Card, lane: String,
         afterCardID: String = "", beforeCardID: String = ""
     ) async {
-        guard pendingCardMoves[card.id] == nil else { return }
+        guard !movingCardIDs.contains(card.id) else { return }
         await perform {
             $0.moveCard = .with {
                 $0.cardID = card.id
@@ -469,8 +450,14 @@ extension DieterStore {
         }
     }
 
+    /// Moves a card to its board's done lane, as the core finds that lane.
+    func finish(_ card: Dieter_V1_Card) async {
+        guard !movingCardIDs.contains(card.id) else { return }
+        await perform { $0.finishCard = .with { $0.cardID = card.id } }
+    }
+
     func start(_ card: Dieter_V1_Card) async {
-        guard isConversationServerBacked(card.id), pendingCardStarts[card.id] == nil else { return }
+        guard isConversationServerBacked(card.id), boardState.operations[card.id] != "STARTING" else { return }
         let hasDraftAttachments =
             conversation?.detail.card.id == card.id
             && !(conversation?.conversation.draftAttachments.isEmpty ?? true)
@@ -564,6 +551,16 @@ extension DieterStore {
         await perform { $0.cancelCard = .with { $0.cardID = card.id } }
     }
 
+    /// Adds a label to `card`; a label it has already changes nothing.
+    func addLabel(_ card: Dieter_V1_Card, labelID: String) async {
+        await perform {
+            $0.addCardLabel = .with {
+                $0.cardID = card.id
+                $0.labelID = labelID
+            }
+        }
+    }
+
     func setLabels(_ card: Dieter_V1_Card, ids: [String]) async {
         let normalized = ids.reduce(into: [String]()) { result, id in
             if !result.contains(id) { result.append(id) }
@@ -592,7 +589,7 @@ extension DieterStore {
             guard generation == archiveRequestGeneration, boardID == selectedBoardID else { return }
             archivedProjects = projects
             archivedCards = cards
-            await refreshChats(includeArchived: true)
+            await loadArchivedChats()
             if generation == archiveRequestGeneration { archiveError = chatsError }
         } catch {
             guard generation == archiveRequestGeneration else { return }

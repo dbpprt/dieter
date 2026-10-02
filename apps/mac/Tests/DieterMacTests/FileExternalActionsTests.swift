@@ -1,25 +1,8 @@
 import AppKit
 import DieterAPI
-import DieterClient
 import DieterCore
 import Testing
 @testable import DieterMac
-
-@Test func externalFileLocalityUsesTheActualDataPlaneAndRejectsRelay() {
-    let gateway = DieterEndpoint(name: "Gateway", host: "gateway.example", port: 443, secure: true, daemonID: "daemon")
-    #expect(DieterRPC.isLoopbackDataPlane(endpoint: gateway, route: .gateway, directHost: "127.0.0.1"))
-    #expect(DieterRPC.isLoopbackDataPlane(endpoint: gateway, route: .gateway, directHost: "::1"))
-    #expect(DieterRPC.isLoopbackDataPlane(endpoint: gateway, route: .gateway, directHost: "::ffff:127.0.0.1"))
-    #expect(!DieterRPC.isLoopbackDataPlane(endpoint: gateway, route: .gateway, directHost: "192.168.1.2"))
-    #expect(!DieterRPC.isLoopbackDataPlane(endpoint: gateway, route: .relay(daemonID: "daemon"), directHost: nil))
-    #expect(
-        !DieterRPC.isLoopbackDataPlane(endpoint: gateway, route: .relay(daemonID: "remote"), directHost: "127.0.0.1"))
-    let local = DieterEndpoint(name: "Local", host: "127.0.0.1", port: 4242)
-    #expect(DieterRPC.isLoopbackDataPlane(endpoint: local, route: .gateway, directHost: nil))
-    #expect(!DieterRPC.isLoopbackDataPlane(endpoint: local, route: .relay(daemonID: "remote"), directHost: nil))
-    let localGateway = DieterEndpoint(name: "Local gateway", host: "localhost", port: 443, daemonID: "remote")
-    #expect(!DieterRPC.isLoopbackDataPlane(endpoint: localGateway, route: .gateway, directHost: nil))
-}
 
 @Test func externalFileResolutionRequiresLocalityAndAContainedRegularFile() throws {
     let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

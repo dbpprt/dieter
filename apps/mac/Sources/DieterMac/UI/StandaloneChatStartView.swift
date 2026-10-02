@@ -5,32 +5,21 @@ import UniformTypeIdentifiers
 
 struct StandaloneChatStartView: View {
     @Environment(DieterStore.self) private var store
-    @State private var prompt = ""
+    @State private var form = CreationFormModel(chat: true)
     @State private var machineID = ""
     @State private var projectID = ""
     @State private var checkoutID = ""
-    @State private var provider = ""
-    @State private var model = ""
-    @State private var effort = ""
-    @State private var providerOptions: [String: String] = [:]
     @State private var submitting = false
-    @State private var attachments: [Dieter_V1_MessagePart] = []
     @State private var fileImporterPresented = false
     @State private var attachmentDropTargeted = false
     @FocusState private var promptFocused: Bool
-    @State private var workspaceDraft = ConversationWorkspaceDraft()
-    @State private var destinationHarnesses: [Dieter_V1_Harness] = []
-    @State private var harnessCatalogLoading = false
-    @State private var harnessCatalogError: String?
-    @State private var harnessCatalogRetry = 0
-    @State private var harnessCatalogRequestID = UUID()
+    @State private var workspaceMode: ConversationWorkspaceMode?
 
-    private struct HarnessLoadID: Hashable {
-        let projectID: String
-        let checkoutID: String
-        let endpointID: String
+    /// What a preview depends on: the choices and how many files are attached.
+    private struct PreviewKey: Equatable {
+        let intent: ClientCreationIntent
+        let attachments: Int
         let connected: Bool
-        let retry: Int
     }
 
     private let suggestions = [
@@ -68,8 +57,7 @@ struct StandaloneChatStartView: View {
         )
     }
     private var project: Dieter_V1_Project? { destination?.project }
-    private var harness: Dieter_V1_Harness? { destinationHarnesses.first { $0.id == provider } }
-    private var selectedModel: Dieter_V1_HarnessModel? { harness?.models.first { $0.id == model } }
+    private var preview: ClientCreationPreview { form.preview }
     var body: some View {
         VStack(spacing: 0) {
             FluidPaneChrome(background: .clear, spacing: 8) {
@@ -112,7 +100,7 @@ struct StandaloneChatStartView: View {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     ForEach(suggestions, id: \.0) { suggestion in
                         Button {
-                            prompt = suggestion.1
+                            form.intent.prompt = suggestion.1
                         } label: {
                             HStack {
                                 Image(systemName: "sparkles").font(.system(size: 10)).foregroundStyle(
@@ -139,50 +127,51 @@ struct StandaloneChatStartView: View {
         .attachmentIntake(
             store: store,
             importerPresented: $fileImporterPresented,
-            attachments: $attachments
+            attachments: $form.attachments
         )
-        .onAppear { chooseDestination() }
+        .onAppear {
+            form.attach(store.core)
+            chooseDestination()
+        }
         .onChange(of: store.newChatProjectID) { _, value in
             if !value.isEmpty { chooseDestination(preferredProjectID: value) }
         }
         .onChange(of: destinationGroups) { _, _ in reconcileDestination() }
+        .onChange(of: workspaceMode) { _, mode in form.intent.workspaceMode = mode?.rawValue ?? "" }
         .task(
-            id: HarnessLoadID(
-                projectID: projectID, checkoutID: checkoutID, endpointID: store.endpoint.id,
-                connected: store.phase.isConnected, retry: harnessCatalogRetry)
-        ) { await loadDestinationHarnesses(for: projectID, checkoutID: checkoutID) }
+            id: PreviewKey(
+                intent: form.intent, attachments: form.attachments.count, connected: store.phase.isConnected)
+        ) {
+            form.attach(store.core)
+            await form.refresh()
+        }
     }
 
     private var canSubmit: Bool {
-        !submitting && !harnessCatalogLoading && harnessCatalogError == nil && harness != nil
-            && destination != nil
-            && (!prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty)
+        !submitting && destination != nil && form.previewed && preview.problem.isEmpty
     }
 
     private var newChatComposer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if harnessCatalogLoading {
+            if destination != nil, preview.catalog == .none {
                 HStack(spacing: 7) {
                     ProgressView().controlSize(.small)
-                    Text("Loading models from the selected machine…")
+                    Text(preview.destinationStatus.isEmpty ? "Loading agent models…" : preview.destinationStatus)
                 }
                 .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                 .accessibilityIdentifier("chats.new.harness-loading")
-            } else if let harnessCatalogError {
-                HStack {
-                    Label(harnessCatalogError, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(DieterTheme.coral)
-                        .accessibilityIdentifier("chats.new.harness-error")
-                    Button("Retry") { harnessCatalogRetry += 1 }
-                        .accessibilityIdentifier("chats.new.harness-retry")
-                }.font(.caption2)
+            } else if destination != nil, preview.catalog != .live {
+                Label(preview.destinationStatus, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(DieterTheme.coral)
+                    .font(.caption2)
+                    .accessibilityIdentifier("chats.new.harness-error")
             }
 
             ComposerSurface(focused: promptFocused, dropTargeted: attachmentDropTargeted) {
                 destinationControls
                 ComposerTextInput(
                     placeholder: "Ask anything, describe a task, or explore an idea…",
-                    text: $prompt, focus: $promptFocused
+                    text: $form.intent.prompt, focus: $promptFocused
                 )
                 .accessibilityIdentifier("chats.new.prompt")
                 .smokeTarget("chats.new.prompt")
@@ -194,8 +183,8 @@ struct StandaloneChatStartView: View {
                     return .handled
                 }
 
-                if !attachments.isEmpty {
-                    AttachmentPreviewStrip(attachments: $attachments)
+                if !form.attachments.isEmpty {
+                    AttachmentPreviewStrip(attachments: $form.attachments)
                         .padding(.horizontal, 8)
                         .padding(.bottom, 6)
                 }
@@ -205,18 +194,10 @@ struct StandaloneChatStartView: View {
                         identifierPrefix: "chats.new", identity: projectID,
                         onUpload: { fileImporterPresented = true }
                     )
-                    newChatProviderMenu(compact: metrics.compact)
-                    newChatModelMenu(compact: metrics.compact)
-                        .layoutPriority(1)
-                    if let efforts = selectedModel?.efforts, !efforts.isEmpty {
-                        newChatReasoningMenu(efforts: efforts, compact: metrics.compact)
-                    }
-                    ComposerProviderOptions(
-                        options: ProviderOptionValues.options(for: harness, model: model),
-                        values: $providerOptions, identity: projectID, identifierPrefix: "chats.new"
-                    )
-                    .smokeTarget("chats.new.provider-options")
-                    .fixedSize()
+                    AgentComposerMenus(
+                        controls: preview.agent, compact: metrics.compact, identifierPrefix: "chats.new",
+                        identity: projectID
+                    ) { choice in Task { await form.refresh(choice: choice) } }
                     Spacer(minLength: 0)
                     ComposerSendButton(isEnabled: canSubmit, submitting: submitting) {
                         Task { await submit() }
@@ -229,7 +210,8 @@ struct StandaloneChatStartView: View {
             .attachmentDropTarget(isTargeted: $attachmentDropTargeted) { providers in
                 Task {
                     do {
-                        attachments = try await store.attachmentParts(providers, appendingTo: attachments)
+                        form.attachments = try await store.attachmentParts(
+                            providers, appendingTo: form.attachments)
                     } catch { store.show(error) }
                 }
             }
@@ -267,7 +249,7 @@ struct StandaloneChatStartView: View {
                 ) {
                     ForEach(machineDestinations) { item in
                         Button {
-                            selectDestination(item)
+                            selectDestination(item, picked: true)
                         } label: {
                             Label(
                                 projectOptionTitle(item),
@@ -284,13 +266,14 @@ struct StandaloneChatStartView: View {
                 .smokeTarget("chats.new.project")
 
                 ComposerSelectionMenu(
-                    title: workspaceDraft.mode.shortTitle, symbol: "square.stack.3d.up", help: "Workspace",
+                    title: form.workspaceMode.shortTitle, symbol: "square.stack.3d.up", help: "Workspace",
                     maximumWidth: 92
                 ) {
                     ForEach(ConversationWorkspaceMode.allCases) { mode in
-                        Button(mode.title) { workspaceDraft.mode = mode }
+                        Button(mode.title) { workspaceMode = mode }
                     }
                 }
+                .help(preview.workspaceDetail)
                 .accessibilityIdentifier("chats.new.workspace")
                 .smokeTarget("chats.new.workspace")
                 Spacer(minLength: 0)
@@ -322,58 +305,6 @@ struct StandaloneChatStartView: View {
         .padding(.top, 8)
     }
 
-    private func newChatProviderMenu(compact: Bool) -> some View {
-        ComposerSelectionMenu(
-            title: harness?.name ?? "Agent", symbol: "cpu", help: "Provider", compact: compact, maximumWidth: 100
-        ) {
-            ForEach(destinationHarnesses, id: \.id) { item in
-                Button(item.name) {
-                    guard let selection = HarnessSelection(provider: item.id).resolved(in: [item]) else { return }
-                    provider = selection.provider
-                    model = selection.model
-                    effort = selection.effort
-                    providerOptions = selection.providerOptions
-                }
-            }
-        }
-        .disabled(destinationHarnesses.isEmpty)
-        .accessibilityIdentifier("chats.new.provider")
-        .smokeTarget("chats.new.provider")
-    }
-
-    private func newChatModelMenu(compact: Bool) -> some View {
-        let name = selectedModel?.name ?? "Model"
-        return ComposerSelectionMenu(
-            title: compact ? name.replacingOccurrences(of: "GPT-", with: "") : name,
-            symbol: "sparkles", help: "Model"
-        ) {
-            ForEach(harness?.models ?? [], id: \.id) { item in
-                Button(item.name) {
-                    model = item.id
-                    effort = item.defaultEffort
-                    providerOptions = ProviderOptionValues.normalized(
-                        for: harness, model: model, saved: providerOptions)
-                }
-            }
-        }
-        .accessibilityLabel("Model: \(name)")
-        .accessibilityIdentifier("chats.new.model")
-        .smokeTarget("chats.new.model")
-    }
-
-    private func newChatReasoningMenu(efforts: [String], compact: Bool) -> some View {
-        ComposerSelectionMenu(
-            title: effort.isEmpty ? "Default" : effort.capitalized,
-            symbol: "sparkles", help: "Reasoning", compact: compact, maximumWidth: 80
-        ) {
-            ForEach(efforts, id: \.self) { value in
-                Button(value.capitalized) { effort = value }
-            }
-        }
-        .accessibilityIdentifier("chats.new.reasoning")
-        .smokeTarget("chats.new.reasoning")
-    }
-
     private func projectOptionTitle(_ item: ProjectDestination) -> String {
         let duplicates = machineDestinations.filter { $0.project.id == item.project.id }
         guard duplicates.count > 1 else { return item.project.name }
@@ -392,7 +323,7 @@ struct StandaloneChatStartView: View {
         let selected = ProjectDestinationCatalog.preferredDestination(
             preferredMachineID: store.endpoint.id,
             preferredProjectID: requestedProjectID,
-            preferredCheckoutID: store.creationCheckoutIDs[requestedProjectID] ?? "",
+            preferredCheckoutID: store.checkout(forProjectID: requestedProjectID)?.id ?? "",
             in: destinationGroups
         )
         if let selected {
@@ -424,92 +355,26 @@ struct StandaloneChatStartView: View {
                 in: destinationGroups
             )
         else { return }
-        selectDestination(selected)
+        selectDestination(selected, picked: true)
     }
 
-    private func selectDestination(_ selected: ProjectDestination) {
+    /// Shows `selected`; a destination the user picked is remembered for new conversations.
+    private func selectDestination(_ selected: ProjectDestination, picked: Bool = false) {
         machineID = selected.machineID
         projectID = selected.project.id
         checkoutID = selected.checkoutID
-        store.creationCheckoutIDs[selected.project.id] = selected.checkoutID
-    }
-
-    private func loadDestinationHarnesses(
-        for requestedProjectID: String, checkoutID requestedCheckoutID: String
-    ) async {
-        guard !Task.isCancelled else { return }
-        let requestID = UUID()
-        harnessCatalogRequestID = requestID
-        guard !requestedProjectID.isEmpty else {
-            destinationHarnesses = []
-            return
-        }
-        harnessCatalogLoading = true
-        harnessCatalogError = nil
-        defer { if harnessCatalogRequestID == requestID { harnessCatalogLoading = false } }
-        let catalog: Dieter_V1_HarnessCatalog
-        do {
-            catalog = try await store.loadHarnessCatalog(forProjectID: requestedProjectID)
-        } catch {
-            guard !Task.isCancelled, harnessCatalogRequestID == requestID,
-                projectID == requestedProjectID, checkoutID == requestedCheckoutID
-            else { return }
-            destinationHarnesses = []
-            harnessCatalogError =
-                DieterRPCFailure.isCancellation(error)
-                ? "The connection was interrupted while loading models. Try again."
-                : DieterRPCFailure.message(for: error)
-            return
-        }
-        guard !Task.isCancelled, harnessCatalogRequestID == requestID,
-            projectID == requestedProjectID, checkoutID == requestedCheckoutID
-        else { return }
-        destinationHarnesses = catalog.harnesses
-        let initializing = provider.isEmpty
-        let preferences =
-            initializing
-            ? store.creationPreferences
-            : ConversationCreationPreferences(
-                provider: provider, model: model, effort: effort, workspaceMode: workspaceDraft.mode)
-        guard let selection = preferences.resolved(in: destinationHarnesses),
-            let harness = destinationHarnesses.first(where: { $0.id == selection.provider })
-        else {
-            harnessCatalogError = "This machine did not advertise any usable agent models."
-            return
-        }
-        let previousProvider = provider
-        provider = selection.provider
-        model = selection.model
-        effort = selection.effort
-        if initializing { workspaceDraft.mode = selection.workspaceMode }
-        providerOptions = ProviderOptionValues.resolved(
-            for: harness,
-            existing: previousProvider == selection.provider ? providerOptions : [:]
-        )
+        form.intent.projectID = selected.project.id
+        form.intent.checkoutID = selected.checkoutID
+        if picked, let checkout = selected.checkout { store.pickCheckout(checkout) }
     }
 
     private func submit() async {
-        let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !attachments.isEmpty, !projectID.isEmpty,
-            !harnessCatalogLoading, harnessCatalogError == nil, harness != nil
-        else { return }
+        guard canSubmit else { return }
         submitting = true
-        store.rememberCreation(
-            ConversationCreationPreferences(
-                provider: provider,
-                model: model,
-                effort: effort,
-                workspaceMode: workspaceDraft.mode
-            ))
-        let firstLine =
-            text.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init)
-            ?? attachments.first?.filename ?? "New chat"
-        let title = firstLine.count > 72 ? String(firstLine.prefix(69)) + "…" : firstLine
-        await store.createConversation(
-            title: title, prompt: text, attachments: attachments, chat: true, provider: provider,
-            model: model,
-            effort: effort, providerOptions: providerOptions, deferred: false, projectID: projectID,
-            workspace: workspaceDraft)
+        if await form.create(using: store) {
+            form.intent.prompt = ""
+            form.attachments = []
+        }
         submitting = false
     }
 }

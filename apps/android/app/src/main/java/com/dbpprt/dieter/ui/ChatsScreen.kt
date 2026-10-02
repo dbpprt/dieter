@@ -3,7 +3,6 @@
 package com.dbpprt.dieter.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -23,7 +22,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -60,7 +58,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -96,13 +93,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.dbpprt.dieter.core.activity.Activity
 import com.dbpprt.dieter.core.navigation.ChatLists
 import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.core.navigation.NavigationFolder
 import com.dbpprt.dieter.core.navigation.FolderScope
 import androidx.compose.material.icons.outlined.Folder
 import com.dbpprt.dieter.core.board.Runtimes
-import com.dbpprt.dieter.core.search.ListFilters
+import com.dbpprt.dieter.core.presentation.Ages
+import com.dbpprt.dieter.core.presentation.Counts
+import com.dbpprt.dieter.core.runtime.Timestamps
 import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterShellDeep
 import com.dbpprt.dieter.ui.theme.DieterMuted
@@ -113,8 +113,8 @@ import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import com.dbpprt.dieter.ui.theme.DieterRunning
 import com.dbpprt.dieter.api.v1.Card as BoardCard
-import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.ui.theme.DieterAbyss
+import kotlin.time.Clock
 
 @Composable
 fun ChatsScreen(
@@ -161,19 +161,18 @@ fun ChatsScreen(
 @Composable
 internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: Modifier = Modifier) {
     var query by rememberSaveable { mutableStateOf("") }
-    val pinnedChatDragState = remember { PinnedChatDragState() }
+    val pinnedChatDragState = remember { ReorderDragState() }
     val haptic = LocalHapticFeedback.current
     val searchTerm = query.trim()
-    val sections = remember(state.chats, state.projects, state.chatFolders, state.pinnedChatOrder, searchTerm) {
-        ChatLists.sections(state.chats, state.projects, state.chatFolders, state.pinnedChatOrder, searchTerm)
+    val list = remember(state.chats, state.projects, state.navigationLayout, searchTerm) {
+        ChatLists.present(state.chats, state.projects, state.navigationLayout, searchTerm)
     }
-    val chats = sections.chats.values
-    val pinned = sections.pinned
-    val visibleFolders = sections.folders
-    val chatsByID = sections.chats
-    val chatProjects = sections.projects
-    val unpinnedByProject = sections.projectChats
-    val otherChats = sections.other
+    val chatsByID = remember(state.chats) { state.chats.associateBy { it.id } }
+    val projectsByID = remember(state.projects) { state.projects.associateBy { it.id } }
+    val pinned = list.pinned.mapNotNull(chatsByID::get)
+    val visibleFolders = list.folders
+    val chatProjects = list.projects.mapNotNull { group -> projectsByID[group.projectId]?.let { it to group } }
+    val otherChats = list.other.mapNotNull(chatsByID::get)
     val projectLabels = remember(state.projects) {
         state.projects.associate { it.id to it.name.ifBlank { "Project" } }
     }
@@ -181,8 +180,7 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
         Column(Modifier.fillMaxSize()) {
             SimpleScreenHeader(
                 "All chats",
-                "${state.chats.size} ${if (state.chats.size == 1) "conversation" else "conversations"} · " +
-                    "${state.projects.size} ${if (state.projects.size == 1) "project" else "projects"}",
+                "${Counts.of(state.chats.size, "conversation")} · ${Counts.of(state.projects.size, "project")}",
             ) {
                 NewNavigationFolderButton(FolderScope.CHATS, state.chatFolders, model)
                 IconButton(onClick = { model.openSurface(AppSurface.APP_SETTINGS) }) {
@@ -196,7 +194,7 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                 ConnectionEmptyState(state, model)
             } else if (state.chats.isEmpty() && state.projects.isEmpty() && state.chatFolders.isEmpty()) {
                 EmptyList("No chats yet", "Start a standalone conversation with a local agent.", Icons.Outlined.ChatBubbleOutline)
-            } else if (searchTerm.isNotEmpty() && chats.isEmpty() && chatProjects.isEmpty() && visibleFolders.isEmpty()) {
+            } else if (searchTerm.isNotEmpty() && list.visible.isEmpty() && chatProjects.isEmpty() && visibleFolders.isEmpty()) {
                 EmptyList("No matching chats", "Try a chat title, project, or folder name.", Icons.Outlined.Search)
             } else {
                 LazyColumn(
@@ -206,7 +204,7 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                     if (pinned.isNotEmpty()) {
                         item(key = "pinned-heading") { ChatSectionHeading("Pinned", Icons.Outlined.PushPin, pinned.size, DieterAmber) }
                         items(pinned, key = { "pinned-${it.id}" }) { chat ->
-                            val dragged = pinnedChatDragState.chatId == chat.id
+                            val dragged = pinnedChatDragState.itemId == chat.id
                             var dragHandleOriginInRoot by remember(chat.id) { mutableStateOf(Offset.Zero) }
                             DisposableEffect(pinnedChatDragState, chat.id) {
                                 onDispose { pinnedChatDragState.unregister(chat.id) }
@@ -214,11 +212,12 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                             ChatRow(
                                 chat = chat,
                                 model = model,
+                                hostLabel = state.machineLabel(chat.owner_daemon_id),
                                 folderPreferences = state.chatFolders,
                                 showPinnedDragHandle = true,
                                 folderLabel = state.chatFolders.folderContaining(chat.id)?.name,
                                 projectLabel = projectLabels[chat.project_id] ?: "Project unavailable",
-                                dropTarget = pinnedChatDragState.targetChatId == chat.id,
+                                dropTarget = pinnedChatDragState.targetId == chat.id,
                                 dragged = dragged,
                                 modifier = Modifier
                                     .onGloballyPositioned {
@@ -252,43 +251,38 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                     if (visibleFolders.isNotEmpty()) {
                         item(key = "folders-heading") { ChatSectionHeading("Folders", Icons.Outlined.FolderOpen, visibleFolders.size, DieterAmber) }
                     }
-                    visibleFolders.forEach { folder ->
-                        val members = folder.itemIds.mapNotNull(chatsByID::get)
-                        if (searchTerm.isBlank() || members.isNotEmpty() || folder.name.contains(searchTerm, ignoreCase = true)) {
-                            item(key = "chat-folder-${folder.id}") {
-                                NavigationFolderHeader(folder, members.size, FolderScope.CHATS,
-                                    state.chatFolders, model, revealSearchResults = searchTerm.isNotBlank())
+                    visibleFolders.forEach { group ->
+                        val folder = NavigationFolder(group.id, group.name, group.chatIds, group.expanded)
+                        val members = group.chatIds.mapNotNull(chatsByID::get)
+                        item(key = "chat-folder-${folder.id}") {
+                            NavigationFolderHeader(folder, members.size, FolderScope.CHATS,
+                                state.chatFolders, model, revealSearchResults = searchTerm.isNotBlank())
+                        }
+                        if (group.showChats) {
+                            if (members.isEmpty()) item(key = "chat-folder-empty-${folder.id}") {
+                                Text("No chats in this folder", color = DieterMuted,
+                                    modifier = Modifier.chatGroupRail(DieterAmber.copy(alpha = 0.3f)).padding(12.dp))
                             }
-                            if (folder.expanded || searchTerm.isNotBlank()) {
-                                if (members.isEmpty()) item(key = "chat-folder-empty-${folder.id}") {
-                                    Text("No chats in this folder", color = DieterMuted,
-                                        modifier = Modifier.chatGroupRail(DieterAmber.copy(alpha = 0.3f)).padding(12.dp))
-                                }
-                                items(members, key = { "folder-${folder.id}-${it.id}" }) { chat ->
-                                    ChatRow(chat, model, projectLabels[chat.project_id] ?: "Project unavailable",
-                                        modifier = Modifier.chatGroupRail(DieterAmber.copy(alpha = 0.3f)), folderPreferences = state.chatFolders)
-                                }
+                            items(members, key = { "folder-${folder.id}-${it.id}" }) { chat ->
+                                ChatRow(chat, model, projectLabels[chat.project_id] ?: "Project unavailable", state.machineLabel(chat.owner_daemon_id),
+                                    modifier = Modifier.chatGroupRail(DieterAmber.copy(alpha = 0.3f)), folderPreferences = state.chatFolders)
                             }
                         }
                     }
                     if (chatProjects.isNotEmpty()) {
                         item(key = "projects-heading") { ChatSectionHeading("Projects", Icons.Outlined.Workspaces, chatProjects.size) }
                     }
-                    chatProjects.forEach { project ->
-                        val projectChats = unpinnedByProject[project.id].orEmpty()
-                        val collapsed = searchTerm.isBlank() && project.id in state.collapsedChatProjectIds
-                        val expanded = searchTerm.isNotBlank() || project.id in state.expandedChatProjectIds
-                        val visibleProjectChats = ChatLists.visible(projectChats, expanded, searchTerm)
-                        val hiddenChats = ChatLists.hidden(projectChats, searchTerm)
+                    chatProjects.forEach { (project, group) ->
+                        val visibleProjectChats = group.chatIds.mapNotNull(chatsByID::get)
                         item(key = "project-chat-header-${project.id}") {
                             ChatProjectHeader(
-                                project, projectChats.size, collapsed,
+                                project, group.total, !group.showChats,
                                 onToggle = { model.toggleChatProjectCollapsed(project.id) },
                                 onNewChat = { model.selectProject(project.id); model.openSurface(AppSurface.NEW_CHAT) },
                             )
                         }
-                        if (!collapsed) {
-                            if (projectChats.isEmpty() && searchTerm.isBlank()) {
+                        if (group.showChats) {
+                            if (group.total == 0 && searchTerm.isBlank()) {
                                 item(key = "project-chat-empty-${project.id}") {
                                     Text(
                                         "No chats yet",
@@ -299,18 +293,18 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                                 }
                             } else {
                                 items(visibleProjectChats, key = { it.id }) { chat ->
-                                    ChatRow(chat, model, projectLabels[chat.project_id] ?: project.name,
+                                    ChatRow(chat, model, projectLabels[chat.project_id] ?: project.name, state.machineLabel(chat.owner_daemon_id),
                                         modifier = Modifier.chatGroupRail(DieterDivider), showProjectLabel = false,
                                         folderPreferences = state.chatFolders)
                                 }
-                                if (hiddenChats > 0) {
+                                if (group.hidden > 0) {
                                     item(key = "project-chat-more-${project.id}") {
                                         TextButton(
                                             onClick = { model.toggleChatProjectExpanded(project.id) },
                                             modifier = Modifier.fillMaxWidth().testTag("project-chat-more-${project.id}"),
                                         ) {
                                             Text(
-                                                if (expanded) "Show less" else "Show $hiddenChats more",
+                                                if (group.showAll) "Show less" else "Show ${group.hidden} more",
                                                 color = DieterShell,
                                                 fontWeight = FontWeight.SemiBold,
                                             )
@@ -319,7 +313,7 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                                                 Icons.Outlined.KeyboardArrowDown,
                                                 contentDescription = null,
                                                 tint = DieterShell,
-                                                modifier = Modifier.size(18.dp).rotate(if (expanded) 180f else 0f),
+                                                modifier = Modifier.size(18.dp).rotate(if (group.showAll) 180f else 0f),
                                             )
                                         }
                                     }
@@ -331,7 +325,7 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                         item(key = "other-heading") { ChatSectionHeading("Other chats", Icons.Outlined.ChatBubbleOutline, otherChats.size) }
                     }
                     items(otherChats, key = { it.id }) { chat ->
-                        ChatRow(chat, model, projectLabels[chat.project_id] ?: "Project unavailable", folderPreferences = state.chatFolders)
+                        ChatRow(chat, model, projectLabels[chat.project_id] ?: "Project unavailable", state.machineLabel(chat.owner_daemon_id), folderPreferences = state.chatFolders)
                     }
                 }
             }
@@ -353,6 +347,8 @@ internal fun ChatRow(
     chat: BoardCard,
     model: DieterViewModel,
     projectLabel: String,
+    /** The machine that runs the chat ([machineLabel]). */
+    hostLabel: String,
     modifier: Modifier = Modifier,
     dropTarget: Boolean = false,
     dragged: Boolean = false,
@@ -388,7 +384,7 @@ internal fun ChatRow(
             .testTag("chat-${chat.id}")
             .semantics {
                 contentDescription = buildString {
-                    append(chat.title.ifBlank { "Untitled chat" })
+                    append(Activity.title(chat))
                     append("; project ").append(projectLabel)
                     append(if (running) "; running" else "; not running")
                     append("; long press for actions")
@@ -406,13 +402,12 @@ internal fun ChatRow(
                     .padding(start = 12.dp, end = 0.dp, top = 11.dp, bottom = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val host = model.state.value.conversationHost(chat)?.hostname ?: chat.owner_daemon_id
                 ChatRowContent(
                     chat, running, projectLabel, dragHandleModifier, showPinnedDragHandle,
-                    hostLabel = host, showProjectLabel = showProjectLabel, folderLabel = folderLabel,
+                    hostLabel = hostLabel, showProjectLabel = showProjectLabel, folderLabel = folderLabel,
                 )
                 IconButton(onClick = { actionsOpen = true }, modifier = Modifier.size(48.dp).testTag("chat-actions-${chat.id}")) {
-                    Icon(Icons.Outlined.MoreVert, "Actions for ${chat.title.ifBlank { "Untitled chat" }}",
+                    Icon(Icons.Outlined.MoreVert, "Actions for ${Activity.title(chat)}",
                         tint = DieterMuted, modifier = Modifier.size(18.dp))
                 }
             }
@@ -491,7 +486,7 @@ internal fun RowScope.ChatRowContent(
 ) {
     Column(Modifier.weight(1f)) {
         Text(
-            chat.title.ifBlank { "Untitled chat" },
+            Activity.title(chat),
             fontSize = 15.sp,
             lineHeight = 19.sp,
             fontWeight = FontWeight.Medium,
@@ -508,18 +503,19 @@ internal fun RowScope.ChatRowContent(
             }
             val context = listOfNotNull(projectLabel.takeIf { showProjectLabel }, hostLabel.takeIf { it.isNotBlank() })
                 .joinToString(" · ")
+            val age = Ages.compact(Timestamps.parse(chat.last_activity_at.ifBlank { chat.updated_at }), Clock.System.now(), weeks = true).orEmpty()
             if (context.isNotEmpty()) {
                 Text(context, color = DieterMuted, fontSize = 11.sp, lineHeight = 14.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false).testTag("chat-project-${chat.id}"))
-                Text(" · ", color = DieterMuted, fontSize = 11.sp)
+                if (age.isNotEmpty()) Text(" · ", color = DieterMuted, fontSize = 11.sp)
             }
-            Text(shortTimestamp(chat.last_activity_at.ifBlank { chat.updated_at }), color = DieterMuted, fontSize = 11.sp)
+            if (age.isNotEmpty()) Text(age, color = DieterMuted, fontSize = 11.sp)
         }
         if (running || folderLabel != null) {
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (running) ChatRuntimeStatus(true, Modifier.testTag("chat-runtime-${chat.id}"))
+                if (running) ChatRuntimeStatus(Modifier.testTag("chat-runtime-${chat.id}"))
                 if (folderLabel != null) {
                     if (running) Spacer(Modifier.width(8.dp))
                     Icon(Icons.Outlined.Folder, null, tint = DieterAmber, modifier = Modifier.size(12.dp))
@@ -540,20 +536,17 @@ internal fun RowScope.ChatRowContent(
     }
 }
 
+/** The animated "Running" badge of a chat whose agent works. */
 @Composable
-internal fun ChatRuntimeStatus(
-    running: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val status = if (running) "Running" else "Not running"
-    val transition = if (running) rememberInfiniteTransition(label = "chat-running") else null
-    val rotation = transition?.animateFloat(
+internal fun ChatRuntimeStatus(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "chat-running")
+    val rotation = transition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(tween(1_450, easing = LinearEasing)),
         label = "chat-running-orbit",
     )
-    val glow = transition?.animateFloat(
+    val glow = transition.animateFloat(
         initialValue = 0.42f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -565,72 +558,55 @@ internal fun ChatRuntimeStatus(
 
     Box(
         modifier.semantics(mergeDescendants = true) {
-            contentDescription = "Chat is ${status.lowercase()}"
-            stateDescription = status
+            contentDescription = "Chat is running"
+            stateDescription = "Running"
         },
     ) {
-        if (running) {
-            Surface(
-                color = Color.Transparent,
-                contentColor = DieterRunning,
-                shape = RoundedCornerShape(50),
-                // Observe animation values while drawing. Reading them during
-                // composition rebuilt the entire badge, including text/layout,
-                // on every display frame for every mounted running chat.
-                modifier = Modifier.drawBehind {
-                    val pulse = glow?.value ?: 0f
-                    drawRoundRect(
-                        color = DieterRunning.copy(alpha = 0.09f + pulse * 0.025f),
-                        cornerRadius = CornerRadius(size.height / 2),
-                    )
-                    val stroke = 1.dp.toPx()
-                    drawRoundRect(
-                        color = DieterRunning.copy(alpha = 0.2f + pulse * 0.16f),
-                        topLeft = Offset(stroke / 2, stroke / 2),
-                        size = Size(size.width - stroke, size.height - stroke),
-                        cornerRadius = CornerRadius((size.height - stroke) / 2),
-                        style = Stroke(stroke),
-                    )
-                },
+        Surface(
+            color = Color.Transparent,
+            contentColor = DieterRunning,
+            shape = RoundedCornerShape(50),
+            // Observe animation values while drawing. Reading them during
+            // composition rebuilt the entire badge, including text/layout,
+            // on every display frame for every mounted running chat.
+            modifier = Modifier.drawBehind {
+                val pulse = glow.value
+                drawRoundRect(
+                    color = DieterRunning.copy(alpha = 0.09f + pulse * 0.025f),
+                    cornerRadius = CornerRadius(size.height / 2),
+                )
+                val stroke = 1.dp.toPx()
+                drawRoundRect(
+                    color = DieterRunning.copy(alpha = 0.2f + pulse * 0.16f),
+                    topLeft = Offset(stroke / 2, stroke / 2),
+                    size = Size(size.width - stroke, size.height - stroke),
+                    cornerRadius = CornerRadius((size.height - stroke) / 2),
+                    style = Stroke(stroke),
+                )
+            },
+        ) {
+            Row(
+                Modifier.padding(start = 5.dp, end = 8.dp, top = 3.dp, bottom = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    Modifier.padding(start = 5.dp, end = 8.dp, top = 3.dp, bottom = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Canvas(Modifier.size(18.dp)) {
-                        val strokeWidth = 1.7.dp.toPx()
-                        val pulse = glow?.value ?: 0f
-                        drawCircle(DieterRunning.copy(alpha = 0.16f), style = Stroke(strokeWidth))
-                        rotate(rotation?.value ?: 0f) {
-                            drawArc(
-                                color = DieterRunning.copy(alpha = 0.55f + pulse * 0.45f),
-                                startAngle = -90f,
-                                sweepAngle = 112f,
-                                useCenter = false,
-                                style = Stroke(strokeWidth, cap = StrokeCap.Round),
-                            )
-                        }
-                        drawCircle(DieterRunning.copy(alpha = 0.2f + pulse * 0.15f), radius = 4.dp.toPx())
-                        drawCircle(DieterRunning, radius = 2.2.dp.toPx())
+                Canvas(Modifier.size(18.dp)) {
+                    val strokeWidth = 1.7.dp.toPx()
+                    val pulse = glow.value
+                    drawCircle(DieterRunning.copy(alpha = 0.16f), style = Stroke(strokeWidth))
+                    rotate(rotation.value) {
+                        drawArc(
+                            color = DieterRunning.copy(alpha = 0.55f + pulse * 0.45f),
+                            startAngle = -90f,
+                            sweepAngle = 112f,
+                            useCenter = false,
+                            style = Stroke(strokeWidth, cap = StrokeCap.Round),
+                        )
                     }
-                    Spacer(Modifier.width(4.dp))
-                    Text("Running", color = DieterShell, fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold)
+                    drawCircle(DieterRunning.copy(alpha = 0.2f + pulse * 0.15f), radius = 4.dp.toPx())
+                    drawCircle(DieterRunning, radius = 2.2.dp.toPx())
                 }
-            }
-        } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(7.dp).background(DieterMuted.copy(alpha = 0.12f), CircleShape)
-                        .border(1.dp, DieterMuted.copy(alpha = 0.82f), CircleShape),
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    status,
-                    color = DieterMuted,
-                    fontSize = 10.sp,
-                    lineHeight = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                )
+                Spacer(Modifier.width(4.dp))
+                Text("Running", color = DieterShell, fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }

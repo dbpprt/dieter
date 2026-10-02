@@ -108,15 +108,8 @@ fun syntaxRanges(source: String, language: CodeLanguage, characterLimit: Int = M
     return when (language) {
         CodeLanguage.MARKDOWN -> markdownRanges(source, limit)
         CodeLanguage.HTML, CodeLanguage.XML -> markupRanges(source, limit)
-        else -> codeRanges(source, limit, profileFor(language))
+        else -> codeRanges(source, limit, profiles[language.ordinal])
     }
-}
-
-/** Ranges for UTF-16 [start]..[end] only, shifted to document offsets, for incremental re-highlighting of edited lines. */
-fun syntaxRangesInRange(source: String, language: CodeLanguage, start: Int, end: Int): List<SyntaxRange> {
-    val from = start.coerceIn(0, source.length)
-    val to = end.coerceIn(from, source.length)
-    return syntaxRanges(source.substring(from, to), language).map { it.copy(start = it.start + from, end = it.end + from) }
 }
 
 private data class LanguageProfile(
@@ -127,6 +120,9 @@ private data class LanguageProfile(
     val caseInsensitive: Boolean = false,
     val propertySeparators: Set<Char> = emptySet(),
 )
+
+/** Each language's profile, built once and indexed by [CodeLanguage.ordinal]. */
+private val profiles: List<LanguageProfile> = CodeLanguage.entries.map(::profileFor)
 
 private fun profileFor(language: CodeLanguage): LanguageProfile = when (language) {
     CodeLanguage.GO -> LanguageProfile(
@@ -164,7 +160,7 @@ private fun profileFor(language: CodeLanguage): LanguageProfile = when (language
         types = words("DateTime Dictionary Exception IEnumerable List Nullable String Task Type Uri"),
     )
     CodeLanguage.SWIFT -> LanguageProfile(
-        keywords = words("associatedtype class deinit enum extension fileprivate func import init inout internal let open operator private protocol public rethrows static struct subscript typealias var break continue default defer do else fallthrough for guard if in repeat return switch where while as Any catch false is nil super self Self throw throws true try async await actor some any"),
+        keywords = words("associatedtype class deinit enum extension fileprivate func import init inout internal let open operator private protocol public rethrows static struct subscript typealias var break case continue default defer do else fallthrough for guard if in repeat return switch where while as Any catch false is nil super self Self throw throws true try async await actor some any isolated nonisolated package mutating nonmutating override final required convenience lazy weak unowned indirect consuming borrowing sending macro willSet didSet"),
         types = words("Any AnyObject Array Bool Character Dictionary Double Error Float Int Never Optional Result Set String UInt URL Void"),
     )
     CodeLanguage.DART -> LanguageProfile(
@@ -351,35 +347,48 @@ private fun markupRanges(source: String, limit: Int): List<SyntaxRange> {
     return ranges
 }
 
+/**
+ * Headings, quotes, inline code, links, emphasis, and `<!-- -->` comments
+ * (which may span lines); a fenced block is lexed once, in its fence's
+ * language.
+ */
 private fun markdownRanges(source: String, limit: Int): List<SyntaxRange> {
     val ranges = ArrayList<SyntaxRange>()
     var lineStart = 0
     var fenceMarker: String? = null
     var fencedLanguage = CodeLanguage.PLAIN_TEXT
+    var fencedStart = 0
+    // Where a comment that began on an earlier line ended; the rest of its line is inline text.
+    var resume = -1
+    fun fencedBlock(end: Int) {
+        if (fencedLanguage == CodeLanguage.PLAIN_TEXT || end <= fencedStart) return
+        val block = source.substring(fencedStart, end)
+        ranges += syntaxRanges(block, fencedLanguage, block.length).map { it.copy(start = it.start + fencedStart, end = it.end + fencedStart) }
+    }
     while (lineStart < limit) {
         val lineEnd = source.indexOf('\n', lineStart).let { if (it == -1 || it > limit) limit else it }
         val contentStart = nextNonWhitespace(source, lineStart, lineEnd)
         val fence = when {
+            resume >= lineStart -> null
             source.startsWith("```", contentStart) -> "```"
             source.startsWith("~~~", contentStart) -> "~~~"
             else -> null
         }
-        if (fence != null) {
+        var stopped = lineEnd
+        if (resume >= lineStart) {
+            stopped = inlineMarkdownRanges(source, resume, lineEnd, limit, ranges)
+        } else if (fence != null && fenceMarker == null) {
             ranges += SyntaxRange(contentStart, lineEnd, SyntaxKind.KEYWORD)
-            if (fenceMarker == null) {
-                fenceMarker = fence
-                val hint = source.substring(minOf(contentStart + fence.length, lineEnd), lineEnd).trim()
-                fencedLanguage = languageForFence(hint)
-            } else if (fence == fenceMarker) {
-                fenceMarker = null
-                fencedLanguage = CodeLanguage.PLAIN_TEXT
-            }
-        } else if (fenceMarker != null) {
-            if (fencedLanguage != CodeLanguage.PLAIN_TEXT) {
-                val line = source.substring(lineStart, lineEnd)
-                ranges += syntaxRanges(line, fencedLanguage, line.length).map { it.copy(start = it.start + lineStart, end = it.end + lineStart) }
-            }
-        } else {
+            fenceMarker = fence
+            val hint = source.substring(minOf(contentStart + fence.length, lineEnd), lineEnd).trim()
+            fencedLanguage = languageForFence(hint)
+            fencedStart = if (lineEnd < limit) lineEnd + 1 else limit
+        } else if (fence != null && fence == fenceMarker) {
+            fencedBlock(lineStart)
+            ranges += SyntaxRange(contentStart, lineEnd, SyntaxKind.KEYWORD)
+            fenceMarker = null
+            fencedLanguage = CodeLanguage.PLAIN_TEXT
+        } else if (fenceMarker == null) {
             var hashes = contentStart
             while (hashes < lineEnd && source[hashes] == '#') hashes++
             if (hashes > contentStart && hashes - contentStart <= 6 && hashes < lineEnd && source[hashes].isWhitespace()) {
@@ -387,17 +396,36 @@ private fun markdownRanges(source: String, limit: Int): List<SyntaxRange> {
             } else if (contentStart < lineEnd && source[contentStart] == '>') {
                 ranges += SyntaxRange(contentStart, lineEnd, SyntaxKind.EMPHASIS)
             }
-            inlineMarkdownRanges(source, lineStart, lineEnd, ranges)
+            stopped = inlineMarkdownRanges(source, lineStart, lineEnd, limit, ranges)
         }
+        if (stopped > lineEnd) {
+            // A comment continued past this line: carry on in the line where it ends.
+            resume = stopped
+            lineStart = source.lastIndexOf('\n', stopped - 1) + 1
+            continue
+        }
+        resume = -1
         lineStart = if (lineEnd < limit) lineEnd + 1 else limit
     }
+    if (fenceMarker != null) fencedBlock(limit)
     return ranges
 }
 
-private fun inlineMarkdownRanges(source: String, start: Int, end: Int, ranges: MutableList<SyntaxRange>) {
+/**
+ * Inline rules for [start]..[end]; returns where it stopped, which is past
+ * [end] (at most [limit]) when a comment continues on later lines.
+ */
+private fun inlineMarkdownRanges(source: String, start: Int, end: Int, limit: Int, ranges: MutableList<SyntaxRange>): Int {
     var index = start
     while (index < end) {
         when {
+            source.startsWith("<!--", index) -> {
+                val closing = source.indexOf("-->", index + 4)
+                val commentEnd = if (closing == -1 || closing + 3 > limit) limit else closing + 3
+                ranges += SyntaxRange(index, commentEnd, SyntaxKind.COMMENT)
+                if (commentEnd > end) return commentEnd
+                index = commentEnd
+            }
             source[index] == '`' -> {
                 val closing = source.indexOf('`', index + 1)
                 val tokenEnd = if (closing == -1 || closing >= end) end else closing + 1
@@ -431,6 +459,7 @@ private fun inlineMarkdownRanges(source: String, start: Int, end: Int, ranges: M
             else -> index++
         }
     }
+    return end
 }
 
 

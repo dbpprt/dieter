@@ -7,8 +7,9 @@ import Testing
     @Test @MainActor func destinationsShareOneStableBackdrop() async throws {
         let suite = "WorkspaceChromeTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
-        let store = DieterStore(environment: .testing(defaults: defaults), restoreSync: false)
+        let store = DieterStore(environment: .testing(defaults: defaults), liveEnvironment: false)
         store.phase = .connected(version: "test")
+        store.workspaceIsLive = true
         let host = NSHostingController(
             rootView: DieterRootView(navigationDefaults: defaults).environment(store)
                 .dieterThemeRoot(palette: .monochrome, appearance: .dark))

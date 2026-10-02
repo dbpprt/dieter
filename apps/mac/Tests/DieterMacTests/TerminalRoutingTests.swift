@@ -49,7 +49,7 @@ private func terminal(_ id: String, status: String = "running") -> Dieter_V1_Ter
     await model.renameTerminal(id: "shell", name: "  build  ")
     #expect(
         core.commands.map(\.terminals.action) == [
-            .bind(target), .active(.with { $0.on = true }), .load(ClientTerminalStep()),
+            .bind(target), .active(.with { $0.on = true }), .load(ClientStep()),
             .input(.with { $0.data = Data("ls\n".utf8) }), .input(.with { $0.data = Data("pwd\n".utf8) }),
             .grid(
                 .with {

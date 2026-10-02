@@ -1,6 +1,5 @@
 import AppKit
 import DieterAPI
-import DieterClient
 import DieterCore
 import SwiftUI
 
@@ -147,7 +146,7 @@ struct ConversationStartCardBanner: View {
 
 struct QueuedMessageTray: View {
     let messages: [Dieter_V1_QueuedMessage]
-    let agentIsWorking: Bool
+    let steerableID: String
     let onEdit: (Dieter_V1_QueuedMessage) async -> Void
     let onRemove: (Dieter_V1_QueuedMessage) async -> Void
     let onSteer: () async -> Void
@@ -162,11 +161,8 @@ struct QueuedMessageTray: View {
                 ForEach(messages, id: \.id) { message in
                     QueuedComposerMessage(
                         message: message,
-                        canSteer: ConversationQueuePresentation.canSteer(
-                            messageID: message.id,
-                            queue: messages,
-                            agentIsWorking: agentIsWorking
-                        ),
+                        // The core names the one queued message that can steer the active turn.
+                        canSteer: !message.id.isEmpty && message.id == steerableID,
                         onEdit: { await onEdit(message) },
                         onRemove: { await onRemove(message) },
                         onSteer: onSteer

@@ -7,7 +7,7 @@ import Testing
 
 @Test(arguments: [false, true]) @MainActor
 func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool) async throws {
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
     var snapshot = automaticScrollSnapshot(start: 0, end: 30)
     for index in snapshot.conversation.messages.indices {
         snapshot.conversation.messages[index].parts[0].text =
@@ -62,7 +62,7 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
 @Test @MainActor func automaticHistoryScrollLoadsOnePageAndPreservesTheReaderThroughNetworkDelay() async throws {
     let snapshot = automaticScrollSnapshot(start: 90, end: 120)
     let rpc = AutomaticScrollLayoutCore(snapshot)
-    let store = DieterStore(core: rpc.core, restoreSync: false)
+    let store = DieterStore(core: rpc.core, liveEnvironment: false)
     let context = store.conversationContext
     let model = context.model
     store.state.chats = [snapshot.detail.card]
@@ -160,7 +160,7 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
 }
 
 @Test @MainActor func automaticHistoryDownwardWheelAdvancesFromABoundedRenderedEnd() async throws {
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
     let context = store.conversationContext
     // Larger than the pages a detached reader retains, so scrolling back must
     // eventually release the live tail.
@@ -234,7 +234,7 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
 }
 
 @Test @MainActor func automaticLongConversationScrollNeverReversesItsRenderWindow() async throws {
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
     let context = store.conversationContext
     var snapshot = automaticScrollSnapshot(start: 0, end: 360)
     for index in snapshot.conversation.messages.indices {
@@ -560,7 +560,7 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
 }
 
 @MainActor private final class TailGestureFixture {
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
     let window: NSWindow
     var root: NSView { window.contentView! }
     var tailCorrections = 0

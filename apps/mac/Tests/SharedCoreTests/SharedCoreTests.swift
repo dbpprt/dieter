@@ -38,24 +38,15 @@ struct SharedCoreTests {
         #expect(CoreRpcBridge.status(of: POSIXError(.ECONNRESET)).0 == 14)
     }
 
-    @Test func sharedKvCacheNamesMatchTheLegacyApp() {
-        #expect(
-            MacLegacyInputs.sharedKvFile(account: "github:1", daemonID: "d_1")
-                == "6898f6a880b11ea21829883a42cf4f4d218d72979201d72dceb005f620d62860.json")
-        #expect(
-            MacLegacyInputs.sharedKvFile(account: "local", daemonID: "d_1")
-                == "b9f1b58a33d2cc28070b4bdfc05425acc7113770d1867dd69b445ee442ee1eb0.json")
-    }
-
-    @Test func secureStoreSharesTheLegacySessionFile() throws {
+    @Test func secureStoreKeepsSessionsInOneUserOnlyFile() throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: "dieter-secure-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appending(path: "gateway-sessions.json")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try JSONEncoder().encode(["https://gateway.getdieter.com:443": "legacy-token"]).write(to: file)
+        try JSONEncoder().encode(["https://gateway.getdieter.com:443": "stored-token"]).write(to: file)
 
         let store = CoreFileSecureStore(fileURL: file)
-        #expect(store.read(key: "https://gateway.getdieter.com:443") == "legacy-token")
+        #expect(store.read(key: "https://gateway.getdieter.com:443") == "stored-token")
         store.write(key: "http://127.0.0.1:4242", value: "local-token")
         store.delete(key: "https://gateway.getdieter.com:443")
         let saved = try JSONDecoder().decode([String: String].self, from: Data(contentsOf: file))
@@ -66,42 +57,37 @@ struct SharedCoreTests {
         #expect(store.read(key: "http://127.0.0.1:4242") == "local-token")
     }
 
-    @Test func legacyInputsReadEveryMacSourceWithoutChangingIt() throws {
-        let suite = "SharedCoreTests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let root = FileManager.default.temporaryDirectory.appending(path: "dieter-legacy-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: root) }
-        let legacy = root.appending(path: "Dieter")
-        try FileManager.default.createDirectory(
-            at: legacy.appending(path: "shared-kv"), withIntermediateDirectories: true)
-        let credentials = root.appending(path: "gateway-sessions.json")
-        try Data(#"{"https://gateway.getdieter.com:443":"t"}"#.utf8).write(to: credentials)
-        try Data(#"{"version":1,"revision":3,"entries":[]}"#.utf8).write(
-            to: legacy.appending(path: "pending-commands.json"))
-        let cache = legacy.appending(path: "shared-kv").appending(
-            path: MacLegacyInputs.sharedKvFile(account: "github:1", daemonID: "d_1"))
-        try Data(#"{"entries":{},"pending":[]}"#.utf8).write(to: cache)
-        defaults.set(Data(#"[{"host":"gateway.getdieter.com"}]"#.utf8), forKey: "DieterEndpoints")
-        defaults.set("github:1", forKey: "DieterSharedKV.activeAccount")
-        defaults.set("d_1", forKey: "DieterSharedKV.activeDaemon")
-        defaults.set(["project|p1": "t1"], forKey: "DieterSelectedTerminalsByTarget")
-        defaults.set(false, forKey: "DieterNotifications")
-        defaults.set("project", forKey: "DieterConversationCreationWorkspaceMode")
+    @Test func sharedRulesAnswerSynchronouslyFromAnyThread() async {
+        #expect(SharedRules.shared.bytes(count: 1536) == "1.5 KB")
+        let now: Int64 = 1_000_000_000_000
+        #expect(SharedRules.shared.compactAge(sinceMillis: 0, nowMillis: now) == "")
+        await MainActor.run {
+            #expect(SharedRules.shared.compactAge(sinceMillis: now - 5 * 60_000, nowMillis: now) == "5m")
+        }
+        // Rules hold no state, so concurrent callers never wait on the core.
+        let answers = await withTaskGroup(of: String.self) { group in
+            for index in 0..<16 {
+                group.addTask { SharedRules.shared.bytes(count: Int64(index) * 1024) }
+            }
+            return await group.reduce(into: [String]()) { $0.append($1) }
+        }
+        #expect(Set(answers).count == 16)
+    }
 
-        let input = MacLegacyInputs.read(defaults: defaults, legacyDirectory: legacy, credentialsFile: credentials)
-        #expect(input.endpointsJson == #"[{"host":"gateway.getdieter.com"}]"#)
-        #expect(input.activeEndpointJson == nil)
-        #expect(input.tokensJson == #"{"https://gateway.getdieter.com:443":"t"}"#)
-        #expect(input.pendingCommandsJson?.contains(#""revision":3"#) == true)
-        #expect(input.sharedKvAccount == "github:1")
-        #expect(input.sharedKvDaemon == "d_1")
-        #expect(input.sharedKvJson == #"{"entries":{},"pending":[]}"#)
-        #expect(input.terminalSelections == ["project|p1": "t1"])
-        #expect(input.notificationsEnabled?.boolValue == false)
-        #expect(input.creationWorkspaceMode == "project")
-        #expect(!input.isIos)
-        #expect(FileManager.default.fileExists(atPath: cache.path), "reading never deletes legacy state")
+    @Test func sharedRulesReturnEncodedClientMessages() throws {
+        let palette = try ClientLabelPalette(serializedBytes: SharedRules.shared.labelPalette())
+        #expect(palette.swatches.count == 10)
+        #expect(palette.swatches.first?.name == "Ruby" && palette.swatches.first?.hex == "#d95c68")
+        // Highlights are packed (start, length, kind) triples in UTF-16, shifted by the offset.
+        let highlights = try ClientSyntaxHighlights(
+            serializedBytes: SharedRules.shared.syntaxHighlights(text: "let 💡 = 42", path: "a.swift", offset: 10))
+        #expect(highlights.spans.count % 3 == 0)
+        let starts = stride(from: 0, to: highlights.spans.count, by: 3).map { highlights.spans[$0] }
+        #expect(starts.contains(10))
+        #expect(starts.contains(10 + Int32(("let 💡 = " as NSString).length)))
+        let cadence = try ClientScheduleCadence(
+            serializedBytes: SharedRules.shared.scheduleCadence(cron: "0 9 * * 1-5"))
+        #expect(cadence.kind == .weekdays && cadence.summary == "Weekdays at 09:00")
     }
 
     @MainActor

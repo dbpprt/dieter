@@ -215,24 +215,15 @@ private func claudeQuotaPreviewGroup() -> Dieter_Gateway_V1_ProviderQuotaGroup {
     DieterTheme.install(selection: selection, systemColorScheme: .dark, reduceTransparency: true)
     defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
 
-    let store = DieterStore(restoreSync: false)
-    store.quotas.install([quotaPreviewGroup(), claudeQuotaPreviewGroup()])
-
-    var card = Dieter_V1_Card()
-    card.provider = "codex"
-    card.providerAccountKey = "acct_8d9c1a2b3c4d"
+    let store = DieterStore(liveEnvironment: false)
+    let groups = [quotaPreviewGroup(), claudeQuotaPreviewGroup()]
+    store.quotas.install(groups: groups)
 
     let compact = HStack(spacing: 16) {
         VStack(alignment: .leading, spacing: 2) {
             Text("Global")
                 .font(.caption).foregroundStyle(DieterTheme.tertiary)
             ProviderQuotaCompactView().environment(store)
-        }
-        Spacer()
-        VStack(alignment: .leading, spacing: 2) {
-            Text("This chat")
-                .font(.caption).foregroundStyle(DieterTheme.tertiary)
-            ConversationProviderQuotaView(card: card).environment(store)
         }
     }
     .padding(.horizontal, 16)

@@ -1,6 +1,5 @@
 package com.dbpprt.dieter.ui
 
-import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,10 +22,9 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
-import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.ui.theme.DieterTheme
+import com.dbpprt.dieter.e2e.saveEvidence
 import com.dbpprt.dieter.api.v1.Card
-import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -74,14 +72,14 @@ class ChatRuntimeStatusIndicatorTest {
         val compositionsBefore = Recomposer.runningRecomposers.value.associateWith { it.changeCount }
         val activeBefore = composeRule.onNodeWithTag("chat-runtime-running").captureToImage().asAndroidBitmap()
         val inactiveBefore = composeRule.onNodeWithTag("chat-title-inactive").captureToImage().asAndroidBitmap()
-        capture("chat-runtime-status-before.png")
+        composeRule.onRoot().saveEvidence("chat-runtime-status-before.png")
 
         composeRule.mainClock.advanceTimeBy(575)
         composeRule.waitForIdle()
 
         val activeAfter = composeRule.onNodeWithTag("chat-runtime-running").captureToImage().asAndroidBitmap()
         val inactiveAfter = composeRule.onNodeWithTag("chat-title-inactive").captureToImage().asAndroidBitmap()
-        capture("chat-runtime-status-after.png")
+        composeRule.onRoot().saveEvidence("chat-runtime-status-after.png")
 
         assertEquals("Badge animation must draw without recomposing text and layout",
             compositionsBefore, Recomposer.runningRecomposers.value.associateWith { it.changeCount })
@@ -108,18 +106,4 @@ class ChatRuntimeStatusIndicatorTest {
 
     private fun card(id: String, title: String, running: Boolean, pinned: Boolean = false): Card =
         Card(id = id, title = title, runtime = if (running) "running" else "idle", pinned = pinned, last_activity_at = "2026-09-05T20:40:00Z")
-
-    private fun capture(name: String) {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val screenshot = File(requireNotNull(context.getExternalFilesDir(null)), name)
-        val pendingScreenshot = File(screenshot.parentFile, "$name.pending")
-        pendingScreenshot.outputStream().use { output ->
-            assertTrue(
-                composeRule.onRoot().captureToImage().asAndroidBitmap()
-                    .compress(Bitmap.CompressFormat.PNG, 100, output),
-            )
-        }
-        screenshot.delete()
-        assertTrue(pendingScreenshot.renameTo(screenshot))
-    }
 }

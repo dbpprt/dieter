@@ -2,7 +2,6 @@ package com.dbpprt.dieter.screens
 
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.graphics.Bitmap
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
@@ -14,6 +13,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.api.v1.RemoteDesktopClipboardItem
+import com.dbpprt.dieter.e2e.Evidence
 import com.dbpprt.dieter.api.v1.RemoteDesktopClipboardRequest
 import com.dbpprt.dieter.api.v1.RemoteDesktopControlRequest
 import com.dbpprt.dieter.api.v1.RemoteDesktopQuality
@@ -26,7 +26,6 @@ import com.dbpprt.dieter.ui.ScreenWorkspace
 import com.dbpprt.dieter.ui.theme.DieterTheme
 import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
-import java.io.File
 import java.util.Base64
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
@@ -222,7 +221,7 @@ class ScreenEndToEndTest {
                 assertNotEquals("Synthetic luminance must visibly advance", screenshot.getPixel(screenshot.width / 2 + 80, screenshot.height / 2),
                     next.getPixel(next.width / 2 + 80, next.height / 2))
             }
-            File(context.getExternalFilesDir(null), "screen-e2e.png").outputStream().use { screenshot.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            Evidence.save(screenshot, "screen-e2e.png")
 
             // Put the cursor inside the owned native target. Gesture positions are deliberately
             // elsewhere on Android: a touch must move this cursor relatively, never teleport it.
@@ -274,7 +273,7 @@ class ScreenEndToEndTest {
             fun canvasEvidence(name: String) {
                 SystemClock.sleep(80)
                 val bitmap = captureScreenFixture()
-                File(context.getExternalFilesDir(null), "screen-canvas-$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                Evidence.save(bitmap, "screen-canvas-$name.png")
                 bitmap.recycle()
             }
             val gx = canvas.width * .5f; val gy = canvas.height * .5f
@@ -371,7 +370,7 @@ class ScreenEndToEndTest {
             compose.waitUntil(5_000) { state().render_measurement == measuredEndpoint && host.stats.value.decodedFrames > 0 }
             if (arguments.getString("forceTURN") == "1") assertEquals("Relayed media", host.stats.value.route)
             val decoder = host.media.decoderStatus
-            File(context.getExternalFilesDir(null), "screen-e2e-stats.json").writeText(JSONObject(mapOf(
+            Evidence.text("screen-e2e-stats.json", JSONObject(mapOf(
                 "schemaVersion" to 1, "sessionId" to view().sessionId, "nativeFramesDecoded" to host.stats.value.decodedFrames,
                 "width" to state().width, "height" to state().height,
                 "fps" to host.stats.value.fps, "inputAck" to state().last_input_ordinal,
@@ -459,7 +458,7 @@ class ScreenEndToEndTest {
         } catch (failure: Throwable) {
             runCatching {
                 val capture = captureScreenFixture()
-                File(context.getExternalFilesDir(null), "screen-failure.png").outputStream().use { capture.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                Evidence.save(capture, "screen-failure.png")
                 capture.recycle()
             }.onFailure { failure.addSuppressed(it) }
             throw AssertionError("Screen view: ${view().copy(cursorImage = null)}; pointer=${sent(ScreenChannels.POINTER)}; window focus=${canvas.hasWindowFocus()}", failure)

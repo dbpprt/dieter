@@ -89,14 +89,14 @@ struct FileExternalActions {
     @MainActor
     static func exportBytes(document: Dieter_V1_FileDocument, session: FileEditorSession, documentKey: String) -> Data {
         if !document.binary, session.documentKey == documentKey { return Data(session.currentText().utf8) }
-        return ProjectFilePresentation.bytes(binary: document.binary, content: document.content, data: document.data)
+        return document.bytes
     }
 
     @MainActor
     static func markdownExportDocument(
         document: Dieter_V1_FileDocument, session: FileEditorSession, documentKey: String
     ) -> MarkdownFileExport.Document? {
-        guard !document.binary, ProjectFileLanguage.detect(filename: document.name) == .markdown,
+        guard FilePresentation.renderer(document) == .markdown,
             !documentKey.isEmpty, session.documentKey == documentKey
         else { return nil }
         return MarkdownFileExport.Document(name: document.name, source: session.currentText())

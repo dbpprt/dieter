@@ -1,6 +1,7 @@
 import AppKit
 import CryptoKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -232,7 +233,7 @@ struct AttachmentPreviewTile: View {
                 ? "" : "\(update == nil ? "Preview" : "Annotate") \(part.filename.isEmpty ? "image" : part.filename)"
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(part.filename), \(AttachmentSizeText.format(part.data.count))")
+        .accessibilityLabel("\(part.filename), \(SharedRules.shared.bytes(count: Int64(part.data.count)))")
         .accessibilityAddTraits(thumbnail == nil ? [] : .isButton)
         .accessibilityAction(named: "Preview") {
             if thumbnail != nil { previewPresented = true }
@@ -287,7 +288,7 @@ struct AttachmentPreviewTile: View {
                     .font(.system(size: 8.5, weight: .semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
-                Text(AttachmentSizeText.format(part.data.count))
+                Text(SharedRules.shared.bytes(count: Int64(part.data.count)))
                     .font(.system(size: 7.5, weight: .medium))
                     .foregroundStyle(Color.white.opacity(0.72))
             }
@@ -317,10 +318,13 @@ struct AttachmentPreviewTile: View {
                 Text(part.filename.isEmpty ? "Attachment" : part.filename)
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)
-                Text("\(fileKind) · \(AttachmentSizeText.format(part.data.count))")
-                    .font(.system(size: 9))
-                    .foregroundStyle(DieterTheme.tertiary)
-                    .lineLimit(1)
+                Text(
+                    SharedRules.shared.attachmentDetails(
+                        filename: part.filename, mediaType: part.mediaType, bytes: Int64(part.data.count))
+                )
+                .font(.system(size: 9))
+                .foregroundStyle(DieterTheme.tertiary)
+                .lineLimit(1)
             }
         }
         .padding(.horizontal, 10)
@@ -332,12 +336,6 @@ struct AttachmentPreviewTile: View {
                 .stroke(hovering ? DieterTheme.shell.opacity(0.45) : DieterTheme.border)
         )
         .shadow(color: Color.black.opacity(0.22), radius: 5, y: 2)
-    }
-
-    private var fileKind: String {
-        let suffix = (part.filename as NSString).pathExtension.uppercased()
-        if !suffix.isEmpty { return suffix }
-        return part.mediaType.split(separator: "/").last.map { String($0).uppercased() } ?? "FILE"
     }
 
     private var thumbnail: NSImage? {
@@ -428,7 +426,7 @@ struct AttachmentImagePreview: View {
                     Text(part.filename.isEmpty ? "Image attachment" : part.filename)
                         .font(.system(size: 15, weight: .semibold)).lineLimit(1)
                     Text(
-                        "\(Int(image.size.width)) × \(Int(image.size.height))  ·  \(AttachmentSizeText.format(part.data.count))"
+                        "\(Int(image.size.width)) × \(Int(image.size.height))  ·  \(SharedRules.shared.bytes(count: Int64(part.data.count)))"
                     )
                     .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                 }
@@ -453,13 +451,5 @@ struct AttachmentImagePreview: View {
         }
         .frame(minWidth: 620, idealWidth: 820, minHeight: 480, idealHeight: 660)
         .background(DieterTheme.background)
-    }
-}
-
-enum AttachmentSizeText {
-    static func format(_ bytes: Int) -> String {
-        if bytes >= 1_024 * 1_024 { return String(format: "%.1f MB", Double(bytes) / 1_048_576) }
-        if bytes >= 1_024 { return String(format: "%.0f KB", Double(bytes) / 1_024) }
-        return "\(bytes) B"
     }
 }

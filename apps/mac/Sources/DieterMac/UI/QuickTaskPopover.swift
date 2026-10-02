@@ -1,39 +1,15 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 import UniformTypeIdentifiers
-
-struct QuickTaskDraft {
-    static func optimisticTitle(from story: String) -> String {
-        let firstLine =
-            story
-            .split(whereSeparator: { $0.isNewline })
-            .first
-            .map(String.init)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard firstLine.count > 80 else { return firstLine }
-        let end = firstLine.index(firstLine.startIndex, offsetBy: 80)
-        let prefix = String(firstLine[..<end])
-        guard let boundary = prefix.lastIndex(of: " "),
-            prefix.distance(from: prefix.startIndex, to: boundary) >= 40
-        else {
-            return prefix
-        }
-        return String(prefix[..<boundary])
-    }
-}
 
 @MainActor @Observable
 final class QuickTaskFormState {
     /// Remembers what was chosen through the shared core; set by the session.
     @ObservationIgnored var remember: (ClientRememberCreation) -> Void = { _ in }
     @ObservationIgnored private var adopting = false
-    private var boards: [String: String] = [:]
     var story = ""
-    var provider = "" { didSet { saveSelection() } }
-    var model = "" { didSet { saveSelection() } }
-    var effort = "" { didSet { saveSelection() } }
-    var providerOptions: [String: String] = [:] { didSet { saveSelection() } }
     var attachments: [Dieter_V1_MessagePart] = []
     var initialized = false
     private(set) var attachmentImportID: UUID?
@@ -43,35 +19,23 @@ final class QuickTaskFormState {
     var rememberHostname = false
     var sourceURL = ""
     var draftProjectID = "" { didSet { saveDestination() } }
-    var draftBoardID = "" {
-        didSet {
-            if !draftProjectID.isEmpty && !draftBoardID.isEmpty { boards[draftProjectID] = draftBoardID }
-            saveDestination()
-        }
-    }
+    var draftBoardID = "" { didSet { saveDestination() } }
 
     init() {}
 
-    /// Shows the choices the core remembers, without sending them back.
+    /// Shows the destination the core remembers, without sending it back.
     func adopt(_ creation: ClientCreationSlice) {
         adopting = true
         defer { adopting = false }
-        boards = creation.boards
         if draftProjectID != creation.projectID { draftProjectID = creation.projectID }
         let board = creation.boards[creation.projectID] ?? ""
         if draftBoardID != board { draftBoardID = board }
-        if provider != creation.selection.provider { provider = creation.selection.provider }
-        if model != creation.selection.model { model = creation.selection.model }
-        if effort != creation.selection.effort { effort = creation.selection.effort }
-        if providerOptions != creation.selection.providerOptions {
-            providerOptions = creation.selection.providerOptions
-        }
     }
 
-    func selectProject(_ id: String, boardIDs: [String]) {
+    /// Chooses a project and the board the core preselects in it.
+    func selectProject(_ id: String, in creation: ClientCreationSlice) {
         draftProjectID = id
-        let remembered = boards[id] ?? ""
-        draftBoardID = boardIDs.contains(remembered) ? remembered : (boardIDs.first ?? "")
+        draftBoardID = creation.boards[id] ?? ""
     }
 
     func selectBoardContext(projectID: String, boardID: String) {
@@ -114,19 +78,6 @@ final class QuickTaskFormState {
         }
     }
 
-    private func saveSelection() {
-        guard !adopting else { return }
-        remember(
-            .with {
-                $0.selection = .with {
-                    $0.provider = provider
-                    $0.model = model
-                    $0.effort = effort
-                    $0.providerOptions = providerOptions
-                }
-            })
-    }
-
     private func saveDestination() {
         guard !adopting, !draftProjectID.isEmpty else { return }
         remember(
@@ -154,10 +105,6 @@ struct QuickTaskPopover: View {
     var active = true
     @Binding var isPresented: Bool
     @Binding private var story: String
-    @Binding private var provider: String
-    @Binding private var model: String
-    @Binding private var effort: String
-    @Binding private var providerOptions: [String: String]
     @Binding private var attachments: [Dieter_V1_MessagePart]
     @Binding private var initialized: Bool
     @Binding private var rememberHostname: Bool
@@ -168,6 +115,7 @@ struct QuickTaskPopover: View {
     @State private var settingsPresented = false
     @State private var attachmentDropTargeted = false
     @State private var submissionError: String?
+    @State private var form = CreationFormModel(chat: false)
     private let formDraft: QuickTaskFormState
     private let capturedBrowser: Bool
     private let chooseDestination: Bool
@@ -189,10 +137,6 @@ struct QuickTaskPopover: View {
         formDraft = state
         let bindings = Bindable(state)
         _story = bindings.story
-        _provider = bindings.provider
-        _model = bindings.model
-        _effort = bindings.effort
-        _providerOptions = bindings.providerOptions
         _attachments = bindings.attachments
         _initialized = bindings.initialized
         _rememberHostname = bindings.rememberHostname
@@ -206,36 +150,17 @@ struct QuickTaskPopover: View {
     }
     @State private var storyFocused = false
 
-    private var cleanStory: String { story.trimmingCharacters(in: .whitespacesAndNewlines) }
+    /// The task's prompt: the story, then the page it came from.
+    private var prompt: String {
+        let url = sourceURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        return story.trimmingCharacters(in: .whitespacesAndNewlines) + (url.isEmpty ? "" : "\n\nPage URL: " + url)
+    }
     private var cannotSubmit: Bool {
-        cleanStory.isEmpty || submitting || formDraft.attachmentImportID != nil
-            || draftProjectID.isEmpty || draftBoardID.isEmpty
+        !form.previewed || !form.preview.problem.isEmpty || submitting || formDraft.attachmentImportID != nil
     }
-    private var lane: Dieter_V1_Lane? {
-        store.boards(for: draftProjectID).first { $0.id == draftBoardID }?.lanes.first
-    }
-    private var selection: ConversationCreationSelection? {
-        guard !provider.isEmpty else { return nil }
-        return ConversationCreationSelection(
-            provider: provider, model: model, effort: effort, workspaceMode: preferences.workspaceMode)
-    }
-    private var preferences: ConversationCreationPreferences {
-        store.creationPreferences
-    }
-    private var defaultsSummary: String {
-        let laneName = lane?.name ?? "Todo"
-        let workspace = preferences.workspaceMode.title
-        guard let selection,
-            let harness = store.harnessCatalog.harnesses.first(where: { $0.id == selection.provider }),
-            let model = harness.models.first(where: { $0.id == selection.model })
-        else {
-            return "\(laneName) · \(workspace) · Agent defaults"
-        }
-        let fastMode =
-            ProviderOptionValues.normalized(for: harness, model: model.id, saved: providerOptions)[
-                "fast_mode"] == "true"
-        return "\(laneName) · \(workspace) · \(harness.name) / \(model.name)"
-            + (fastMode ? " · Fast" : "")
+    /// The start lane where the agent starts at once.
+    private var runningLane: Dieter_V1_Lane? {
+        form.preview.startLanes.first { ClientBoardLaneKind(laneID: $0.id, name: $0.name) == .running }
     }
 
     var body: some View {
@@ -285,9 +210,7 @@ struct QuickTaskPopover: View {
                         "Project",
                         selection: Binding(
                             get: { draftProjectID },
-                            set: { id in
-                                formDraft.selectProject(id, boardIDs: store.boards(for: id).map(\.id))
-                            })
+                            set: { id in formDraft.selectProject(id, in: store.creationMemory) })
                     ) {
                         Text("Choose project").tag("")
                         ForEach(store.projects.filter { !$0.archived }, id: \.id) { Text($0.name).tag($0.id) }
@@ -376,7 +299,7 @@ struct QuickTaskPopover: View {
                 .buttonStyle(DieterGlassButtonStyle())
                 .disabled(submitting || formDraft.attachmentImportID != nil)
                 .accessibilityIdentifier("quick-task.attach")
-                Text("Paste or drop screenshots · 4 files, 6 MB total")
+                Text("Paste or drop screenshots · \(SharedRules.shared.attachmentLimits())")
                     .font(.caption2).foregroundStyle(DieterTheme.tertiary)
             }
             if !attachments.isEmpty {
@@ -409,7 +332,7 @@ struct QuickTaskPopover: View {
                 HStack(spacing: 7) {
                     Image(systemName: "slider.horizontal.3")
                         .font(.system(size: 11, weight: .medium))
-                    Text(defaultsSummary).lineLimit(2)
+                    Text(form.preview.summary).lineLimit(2)
                     Spacer(minLength: 4)
                     Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
                 }
@@ -421,16 +344,16 @@ struct QuickTaskPopover: View {
             .buttonStyle(.plain)
             .help("Change task settings")
             .accessibilityLabel("Task settings")
-            .accessibilityValue(defaultsSummary)
+            .accessibilityValue(form.preview.summary)
             .accessibilityIdentifier("quick-task.settings")
             .disabled(submitting)
             .popover(isPresented: $settingsPresented, arrowEdge: .trailing) {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("Task settings").font(.headline)
                     Form {
-                        HarnessFields(
-                            catalog: store.harnessCatalog,
-                            provider: $provider, model: $model, effort: $effort, providerOptions: $providerOptions)
+                        AgentPickerFields(controls: form.preview.agent) { choice in
+                            Task { await form.refresh(choice: choice) }
+                        }
                     }
                     .formStyle(.columns)
                     .pickerStyle(.menu)
@@ -478,7 +401,7 @@ struct QuickTaskPopover: View {
                     Label("Run task", systemImage: "play.fill")
                 }
                 .buttonStyle(DieterGlassButtonStyle(prominent: true))
-                .disabled(cannotSubmit)
+                .disabled(cannotSubmit || runningLane == nil)
                 .keyboardShortcut(.return, modifiers: [.command, .shift])
                 .help("Create this task and start the agent immediately")
                 .accessibilityIdentifier("quick-task.run")
@@ -501,28 +424,34 @@ struct QuickTaskPopover: View {
                     draftProjectID = store.selectedProjectID
                     draftBoardID = store.selectedBoardID
                 }
-                if provider.isEmpty {
-                    let initial = preferences.resolved(in: store.harnessCatalog.harnesses)
-                    provider = initial?.provider ?? ""
-                    model = initial?.model ?? ""
-                    effort = initial?.effort ?? ""
-                    let harness = store.harnessCatalog.harnesses.first { $0.id == provider }
-                    providerOptions = ProviderOptionValues.defaults(for: harness, model: model)
-                }
                 initialized = true
             }
-            if !draftProjectID.isEmpty {
-                formDraft.selectProject(
-                    draftProjectID, boardIDs: store.boards(for: draftProjectID).map(\.id))
-            }
+            form.attach(store.core)
             await Task.yield()
             storyFocused = true
+        }
+        .onChange(
+            of: QuickTaskDestination(
+                projectID: draftProjectID, boardID: draftBoardID,
+                checkoutID: store.checkout(forProjectID: draftProjectID)?.id ?? "", prompt: prompt),
+            initial: true
+        ) { _, destination in
+            form.intent.projectID = destination.projectID
+            form.intent.boardID = destination.boardID
+            form.intent.checkoutID = destination.checkoutID
+            form.intent.prompt = destination.prompt
+        }
+        .onChange(of: attachments.count, initial: true) { _, _ in form.attachments = attachments }
+        .task(
+            id: QuickTaskPreviewKey(intent: form.intent, attachments: attachments.count)
+        ) {
+            form.attach(store.core)
+            await form.refresh()
         }
         .onExitCommand { isPresented = false }
     }
 
     private func submit(runImmediately: Bool) async {
-        let story = cleanStory
         guard !cannotSubmit else { return }
         submitting = true
         submissionError = nil
@@ -545,30 +474,9 @@ struct QuickTaskPopover: View {
                 return
             }
         }
-        let resolved = selection
-        let harness = resolved.flatMap { value in
-            store.harnessCatalog.harnesses.first { $0.id == value.provider }
-        }
-        var workspace = ConversationWorkspaceDraft()
-        workspace.mode = preferences.workspaceMode
-        workspace.baseBranch = store.selectedProject?.baseBranch ?? ""
-        let accepted = await store.createConversation(
-            title: QuickTaskDraft.optimisticTitle(from: story),
-            prompt: story
-                + (sourceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    ? "" : "\n\nPage URL: " + sourceURL.trimmingCharacters(in: .whitespacesAndNewlines)),
-            attachments: attachments,
-            chat: false,
-            provider: resolved?.provider ?? "",
-            model: resolved?.model ?? "",
-            effort: resolved?.effort ?? "",
-            providerOptions: ProviderOptionValues.normalized(
-                for: harness, model: resolved?.model ?? "", saved: providerOptions),
-            deferred: !runImmediately,
-            lane: runImmediately ? "running" : (lane?.id ?? "todo"),
-            workspace: workspace,
-            autoGenerateTitle: true
-        )
+        form.intent.lane = runImmediately ? runningLane?.id ?? "" : ""
+        form.attachments = attachments
+        let accepted = await form.create(using: store)
         submitting = false
         guard accepted else {
             submissionError = "The task could not be saved. Your draft is still here; try again."
@@ -577,4 +485,18 @@ struct QuickTaskPopover: View {
         formDraft.reset()
         isPresented = false
     }
+}
+
+/// Where a quick task goes and what it asks.
+private struct QuickTaskDestination: Equatable {
+    let projectID: String
+    let boardID: String
+    let checkoutID: String
+    let prompt: String
+}
+
+/// What a quick task's preview depends on.
+private struct QuickTaskPreviewKey: Equatable {
+    let intent: ClientCreationIntent
+    let attachments: Int
 }

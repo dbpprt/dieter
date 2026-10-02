@@ -23,6 +23,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.core.board.Cards
 
 internal data class ActivityItemActions(
     val onRename: (Card, String) -> Unit,
@@ -64,7 +65,7 @@ internal fun ActivityItem(
                 DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(Icons.Outlined.Edit, null) },
                     enabled = enabled, modifier = Modifier.testTag("activity-rename-${card.id}"),
                     onClick = { menuOpen = false; title = card.title; renameOpen = true })
-                if (card.scope == "chat") {
+                if (Cards.isChat(card)) {
                     DropdownMenuItem(text = { Text(if (card.pinned) "Unpin" else "Pin") },
                         leadingIcon = { Icon(Icons.Outlined.PushPin, null) }, enabled = enabled,
                         modifier = Modifier.testTag("activity-pin-${card.id}"),
@@ -83,7 +84,7 @@ internal fun ActivityItem(
     }
     if (renameOpen && actions != null) AlertDialog(
         onDismissRequest = { renameOpen = false },
-        title = { Text(if (card.scope == "chat") "Rename chat" else "Rename card") },
+        title = { Text(if (Cards.isChat(card)) "Rename chat" else "Rename card") },
         text = {
             OutlinedTextField(title, { title = it }, label = { Text("Title") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("activity-rename-title-${card.id}"))

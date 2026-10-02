@@ -5,15 +5,14 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
-import android.webkit.MimeTypeMap
 import com.dbpprt.dieter.api.v1.MessagePart
 import okio.ByteString.Companion.toByteString
 import com.dbpprt.dieter.core.composition.Attachments
 import java.io.ByteArrayOutputStream
 import java.util.Base64
-import java.util.Locale
 
 
+/** Reads a picked file into a message part; its media type, name, and limits are the core's. */
 internal fun readAttachmentPart(context: Context, uri: Uri, imagesOnly: Boolean): MessagePart {
     require(uri.scheme == "content") { "Choose a file shared by an Android content provider" }
     val deadline = android.os.SystemClock.elapsedRealtime() + 30_000L
@@ -38,19 +37,9 @@ internal fun readAttachmentPart(context: Context, uri: Uri, imagesOnly: Boolean)
                 ?: -1L
         }
     }
-    val mediaType = resolver.getType(uri)
-        ?.substringBefore(';')
-        ?.trim()
-        ?.lowercase(Locale.ROOT)
-        ?.takeIf { it.contains('/') }
-        ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(
-            filename.substringAfterLast('.', "").lowercase(Locale.ROOT),
-        )
-        ?: "application/octet-stream"
+    val mediaType = Attachments.mediaType(resolver.getType(uri), filename)
     require(!imagesOnly || mediaType.startsWith("image/")) { "Choose an image file" }
-    require(declaredSize <= Attachments.MAX_FILE_BYTES || declaredSize < 0) {
-        "Each attachment must be at most 5 MB"
-    }
+    require(declaredSize <= Attachments.MAX_FILE_BYTES) { Attachments.FILE_TOO_LARGE }
     val bytes = requireNotNull(resolver.openInputStream(uri)) { "Could not open attachment" }.use { input ->
         val output = ByteArrayOutputStream(
             declaredSize.takeIf { it in 1..Attachments.MAX_FILE_BYTES }?.toInt() ?: 32 * 1024,
@@ -62,12 +51,13 @@ internal fun readAttachmentPart(context: Context, uri: Uri, imagesOnly: Boolean)
             val read = input.read(buffer)
             if (read < 0) break
             total += read
-            require(total <= Attachments.MAX_FILE_BYTES) { "Each attachment must be at most 5 MB" }
+            // Stop reading as soon as the file is too large to attach.
+            require(total <= Attachments.MAX_FILE_BYTES) { Attachments.FILE_TOO_LARGE }
             output.write(buffer, 0, read)
         }
         output.toByteArray()
     }
-    require(bytes.isNotEmpty()) { "Attachment is empty" }
+    Attachments.limitError(listOf(filename), listOf(bytes.size.toLong()))?.let { throw IllegalArgumentException(it) }
     return Attachments.part(filename, mediaType, bytes.toByteString())
 }
 
@@ -80,6 +70,11 @@ internal fun decodeAttachmentBitmap(part: MessagePart, maxDimension: Int = 900):
         }.getOrNull()
         else -> null
     } ?: return null
+    return decodeImage(bytes, maxDimension)
+}
+
+/** Decodes [bytes] as an image, subsampled so neither side is much larger than [maxDimension]; null when it is not one. */
+internal fun decodeImage(bytes: ByteArray, maxDimension: Int): Bitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
     var sample = 1

@@ -11,7 +11,7 @@
         ) async {
             let model = store.conversationContext.content
             defer {
-                store.conversationModel.olderConversationMessages.removeAll { $0.id == "message_linked_content_smoke" }
+                store.conversationModel.fixtureHistory = []
             }
             do {
                 let cardID = try await installFixture(store)
@@ -270,8 +270,6 @@
             // renderer fixture lives in earlier history, which metadata and
             // content-presentation deltas intentionally preserve.
             store.conversationModel.fixtureHistory = [message]
-            store.conversationModel.olderConversationMessages =
-                [message] + store.conversationModel.olderConversationMessages
             store.section = .board
             return card.id
         }

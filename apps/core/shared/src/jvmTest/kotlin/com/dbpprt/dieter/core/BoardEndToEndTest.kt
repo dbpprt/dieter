@@ -5,6 +5,8 @@ import com.dbpprt.dieter.api.v1.CreateConversationRequest
 import com.dbpprt.dieter.core.board.CardOperation
 import com.dbpprt.dieter.core.board.DropAnchors
 import com.dbpprt.dieter.core.board.Lanes
+import com.dbpprt.dieter.core.runtime.CoreException
+import com.dbpprt.dieter.core.runtime.FailureKind
 import com.dbpprt.dieter.core.testing.EndToEnd
 import com.dbpprt.dieter.core.testing.IsolatedGateway
 import com.dbpprt.dieter.core.testing.await
@@ -16,6 +18,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 /** Board and card mutations against a real daemon. */
 class BoardEndToEndTest : EndToEnd() {
@@ -50,6 +55,18 @@ class BoardEndToEndTest : EndToEnd() {
         assertTrue(runtime.onBoard { move(second, "review") })
         runtime.workspace.state.await { it.card(second)?.lane == "review" }
 
+        // While a change is in flight, repeating it (a double tap) does nothing and a different change is refused.
+        runtime.onBoard {
+            coroutineScope {
+                val moving = async(start = CoroutineStart.UNDISPATCHED) { move(second, "done") }
+                assertFalse(move(second, "done"), "a repeated change is a no-op")
+                assertEquals(FailureKind.TRANSIENT, assertFailsWith<CoreException> { rename(second, "Elsewhere") }.kind)
+                assertTrue(moving.await())
+            }
+        }
+        runtime.workspace.state.await { it.card(second)?.lane == "done" }
+        assertTrue(second !in runtime.board.view.value.errors, "a refused change leaves no card error")
+
         // Labels.
         val labelled = runtime.onMachine(fixture.daemonId) { it.CreateBoardLabel().execute(CreateBoardLabelRequest(board_id = fixture.boardId, name = "urgent", color = "#6558df")) }
         val label = labelled.labels.first { it.name == "urgent" }.id
@@ -62,9 +79,9 @@ class BoardEndToEndTest : EndToEnd() {
         assertFalse(runtime.onBoard { rename(first, "Renamed") })
         runtime.workspace.state.await { it.card(first)?.title == "Renamed" }
 
-        // Editing a never-started card.
-        assertTrue(runtime.onBoard { updateDraft(third, "Third v2", "New task") })
-        runtime.workspace.state.await { it.card(third)?.initial_prompt == "New task" }
+        // Editing a never-started card changes its title and task.
+        assertTrue(runtime.onBoard { edit(third, "Third v2", "New task") })
+        runtime.workspace.state.await { it.card(third)?.let { card -> card.initial_prompt == "New task" && card.title == "Third v2" } == true }
 
         // Archive leaves every live view; the board archive lists it.
         assertTrue(runtime.onBoard { archive(first) })
@@ -105,11 +122,22 @@ class BoardEndToEndTest : EndToEnd() {
         val id = runtime.outbox.view.await { local.id in it.resolutions }.resolve(local.id)
         runtime.workspace.state.await { it.card(id) != null }
         runtime.startCard(id)
+        assertTrue(id in runtime.outbox.view.value.startingCardIds, "the board shows a start in the outbox as starting")
         // The overlay shows it running at once; sync then confirms the admitted turn.
         assertEquals("running", runtime.workspace.state.value.card(id)?.lane)
         runtime.workspace.state.await(30.seconds, describe = { "started: ${runtime.workspace.state.value.card(id)}" }) {
             it.card(id)?.initial_prompt_sent_at?.isNotEmpty() == true
         }
         runtime.outbox.view.await { it.entries.isEmpty() }
+
+        // A started card's edit form only renames it; its sent task cannot change.
+        runtime.workspace.state.await(30.seconds, describe = { "idle: ${runtime.workspace.state.value.card(id)}" }) { view ->
+            view.card(id)?.runtime?.let { it != "running" && it != "starting" } == true && runtime.board.view.value.operations.isEmpty()
+        }
+        assertTrue(runtime.onBoard { edit(id, "Go again", "Say hi") })
+        runtime.workspace.state.await { it.card(id)?.title == "Go again" }
+        val refused = assertFailsWith<CoreException> { runtime.onBoard { edit(id, "Go again", "Say something else") } }
+        assertEquals(FailureKind.PERMANENT, refused.kind)
+        assertEquals("Say hi", runtime.workspace.state.value.card(id)?.initial_prompt)
     }
 }

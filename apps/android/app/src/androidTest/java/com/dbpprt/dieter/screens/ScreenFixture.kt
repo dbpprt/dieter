@@ -4,19 +4,15 @@ import android.content.Context
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.api.gateway.v1.RTCConfiguration
 import com.dbpprt.dieter.api.v1.DieterServiceClient
-import com.dbpprt.dieter.core.CoreRuntime
 import com.dbpprt.dieter.core.screens.ScreenRoute
-import com.dbpprt.dieter.sharedcore.SharedCore
+import com.dbpprt.dieter.e2e.TestCore
 import com.squareup.wire.GrpcClient
 import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
-import java.io.File
 import java.util.Base64
-import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
-import kotlinx.coroutines.runBlocking
 import okhttp3.Headers.Companion.headersOf
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -53,7 +49,7 @@ internal class ScreenFixture(private val json: JSONObject) {
     /** Route openings that fail as if the host's network slept. */
     val unavailableRoutes = AtomicInteger()
 
-    private val cores = mutableListOf<CoreRuntime>()
+    private val cores = mutableListOf<TestCore>()
 
     private fun http(): OkHttpClient = OkHttpClient.Builder()
         .protocols(listOf(Protocol.H2_PRIOR_KNOWLEDGE))
@@ -91,10 +87,9 @@ internal class ScreenFixture(private val json: JSONObject) {
 
     /** A screen host over an isolated, never-connected core whose routes lead to this fixture. */
     fun host(context: Context, configure: AndroidScreenMedia.() -> Unit = {}): ScreenHost {
-        val core = SharedCore.create(context, null, File(context.noBackupFilesDir, "screen-fixture-${UUID.randomUUID()}"))
-        cores += core
+        val core = TestCore(context).also { cores += it }
         val media = AndroidScreenMedia(context).apply(configure)
-        return ScreenHost(context, core, media) { { route() } }
+        return ScreenHost(context, core.core, media) { { route() } }
     }
 
     /** POSTs a fixture control endpoint such as `expire-screen` or `stop-capture`. */
@@ -111,7 +106,7 @@ internal class ScreenFixture(private val json: JSONObject) {
         }
     }
 
-    fun close() = runBlocking { cores.forEach { it.shutdown() } }
+    fun close() = cores.forEach { it.close(); it.delete() }
 
     companion object {
         /** The fixture passed by the e2e runner, or null outside `--suite screens`. */

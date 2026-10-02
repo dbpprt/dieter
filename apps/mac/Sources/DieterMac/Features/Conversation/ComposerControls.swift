@@ -260,11 +260,87 @@ struct ComposerSendButton: View {
     }
 }
 
+/// The agent pickers of a composer as the core shows them: provider, model,
+/// reasoning effort, and the model's options. Each pick is a choice the
+/// caller sends to the core.
+struct AgentComposerMenus: View {
+    let controls: ClientAgentControlsState
+    let compact: Bool
+    let identifierPrefix: String
+    let identity: String
+    let choose: (ClientAgentChoice.OneOf_Choice) -> Void
+
+    var body: some View {
+        ComposerSelectionMenu(
+            title: controls.providerLabel, symbol: "cpu", help: "Provider", compact: compact, maximumWidth: 100
+        ) {
+            ForEach(controls.providers, id: \.id) { item in
+                Button(item.name) { choose(.provider(item.id)) }
+            }
+        }
+        .accessibilityLabel("Provider: \(controls.providerLabel)")
+        .accessibilityIdentifier("\(identifierPrefix).provider")
+        .smokeTarget("\(identifierPrefix).provider")
+        .disabled(!controls.providerEnabled)
+        ComposerSelectionMenu(
+            title: compact ? controls.modelLabel.replacingOccurrences(of: "GPT-", with: "") : controls.modelLabel,
+            symbol: "sparkles", help: "Model"
+        ) {
+            ForEach(controls.models, id: \.id) { item in
+                Button(item.name) { choose(.model(item.id)) }
+            }
+        }
+        .accessibilityLabel("Model: \(controls.modelLabel)")
+        .accessibilityIdentifier("\(identifierPrefix).model")
+        .smokeTarget("\(identifierPrefix).model")
+        .disabled(!controls.modelEnabled)
+        .layoutPriority(1)
+        if !controls.efforts.isEmpty {
+            ComposerSelectionMenu(
+                title: controls.effortLabel, symbol: "sparkles", help: "Reasoning", compact: compact,
+                maximumWidth: 80
+            ) {
+                Button("Default") { choose(.effort("default")) }
+                ForEach(controls.efforts, id: \.id) { effort in
+                    Button(effort.name) { choose(.effort(effort.id)) }
+                }
+            }
+            .accessibilityLabel("Reasoning: \(controls.effortLabel)")
+            .accessibilityIdentifier("\(identifierPrefix).reasoning")
+            .smokeTarget("\(identifierPrefix).reasoning")
+            .disabled(!controls.effortEnabled)
+        }
+        ComposerProviderOptions(
+            options: controls.options,
+            values: Binding(
+                get: { controls.optionValues },
+                set: { values in
+                    for option in controls.options {
+                        guard let value = values[option.id], value != controls.optionValues[option.id] else {
+                            continue
+                        }
+                        choose(
+                            .option(
+                                .with {
+                                    $0.id = option.id
+                                    $0.optionValue = value
+                                }))
+                    }
+                }),
+            enabled: { controls.optionEnabled[$0.id] ?? false },
+            identity: identity, identifierPrefix: identifierPrefix
+        )
+        .smokeTarget("\(identifierPrefix).provider-options")
+        .fixedSize()
+    }
+}
+
 /// Fast remains directly accessible; other provider fields share one popover.
 struct ComposerProviderOptions: View {
     let options: [Dieter_V1_ProviderOption]
     @Binding var values: [String: String]
-    var conversationLocked = false
+    /// Whether an option may change now.
+    var enabled: (Dieter_V1_ProviderOption) -> Bool = { _ in true }
     let identity: String
     let identifierPrefix: String
     @State private var presented = false
@@ -274,11 +350,8 @@ struct ComposerProviderOptions: View {
     var body: some View {
         HStack(spacing: 4) {
             if let fast = options.first(where: { $0.id == "fast_mode" }) {
-                ProviderOptionChip(
-                    option: fast, values: $values,
-                    isEnabled: ProviderOptionValues.isEnabled(fast, conversationLocked: conversationLocked)
-                )
-                .smokeTarget("\(identifierPrefix).fast-mode")
+                ProviderOptionChip(option: fast, values: $values, isEnabled: enabled(fast))
+                    .smokeTarget("\(identifierPrefix).fast-mode")
             }
             if !additionalOptions.isEmpty {
                 Button {
@@ -297,9 +370,7 @@ struct ComposerProviderOptions: View {
                     Form {
                         ForEach(additionalOptions, id: \.id) { option in
                             ProviderOptionField(option: option, values: $values)
-                                .disabled(
-                                    !ProviderOptionValues.isEnabled(option, conversationLocked: conversationLocked)
-                                )
+                                .disabled(!enabled(option))
                                 .smokeTarget("\(identifierPrefix).other-option.\(option.id)")
                         }
                     }

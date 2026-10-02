@@ -1,6 +1,7 @@
 package com.dbpprt.dieter.core.connection
 
 import com.dbpprt.dieter.core.navigation.Destination
+import com.dbpprt.dieter.core.presentation.Ages
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
@@ -91,21 +92,35 @@ object Availability {
     /** "Updated just now", "Updated 5m ago", or "Waiting for first update". */
     fun updated(lastAppliedAt: Instant?, now: Instant): String {
         lastAppliedAt ?: return "Waiting for first update"
-        val seconds = (now - lastAppliedAt).inWholeSeconds.coerceAtLeast(0)
-        return when {
-            seconds < 60 -> "Updated just now"
-            seconds < 3_600 -> "Updated ${maxOf(1, seconds / 60)}m ago"
-            seconds < 86_400 -> "Updated ${maxOf(1, seconds / 3_600)}h ago"
-            else -> "Updated ${maxOf(1, seconds / 86_400)}d ago"
-        }
+        return "Updated " + ago(lastAppliedAt, now)
     }
+
+    /** "Last connected just now", "Last connected 5m ago", or "Last connected unknown". */
+    fun lastConnected(at: Instant?, now: Instant): String {
+        at ?: return "Last connected unknown"
+        return "Last connected " + ago(at, now)
+    }
+
+    /**
+     * What synchronized destinations with cached data show about the
+     * connection: a notice while that data is unavailable, else null. Chats
+     * and boards queue changes offline, and the notice says so.
+     */
+    fun workspaceNotice(phase: ConnectionPhase, hasCache: Boolean): ConnectionNotice? =
+        if (treatment(Destination.BOARD, hasCache, phase) == SurfaceTreatment.UNAVAILABLE) notice(phase, cached = true, offlineOutbox = true) else null
+
+    /** Connected, with the attached machine's live projection applied: the workspace is current, not cached or loading. */
+    fun workspaceLive(phase: ConnectionPhase, feedLive: Boolean, projectionPending: Boolean): Boolean =
+        phase == ConnectionPhase.CONNECTED && feedLive && !projectionPending
+
+    private fun ago(at: Instant, now: Instant): String = Ages.span(now - at)?.let { "${it.compact} ago" } ?: "just now"
 
     /** A short connection status, e.g. for a header chip. */
     fun label(phase: ConnectionPhase): String = when (phase) {
         ConnectionPhase.CONNECTED -> "Connected"
         ConnectionPhase.SYNCING -> "Syncing"
         ConnectionPhase.RECONNECTING -> "Reconnecting"
-        ConnectionPhase.UPDATE_REQUIRED -> "Incompatible"
+        ConnectionPhase.UPDATE_REQUIRED -> "Update required"
         ConnectionPhase.NO_MACHINE -> "Unavailable"
         ConnectionPhase.AUTH_REQUIRED -> "Sign in required"
         ConnectionPhase.DISCONNECTED -> "Disconnected"

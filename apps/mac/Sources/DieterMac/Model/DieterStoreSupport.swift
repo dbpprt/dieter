@@ -1,18 +1,13 @@
 import AppKit
 import DieterAPI
 import Foundation
-import GRPCCore
 import OSLog
 import Observation
 import UniformTypeIdentifiers
 import UserNotifications
 
-// Match iOS: conversation reads are large enough that a scrollback boundary
-// reveals a useful stretch of context instead of one short turn.
-let schedulePageSize: Int32 = 50
-let cachedConversationLimit = 24
+/// How much terminal output the app keeps per terminal for replay.
 let terminalClientBufferLimit = 2 * 1_024 * 1_024
-let connectionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", category: "Connection")
 let syncPerformanceLog = OSLog(subsystem: "com.dbpprt.dieter.mac", category: "SyncPerformance")
 
 struct TerminalScreenState: Equatable, Sendable {
@@ -135,137 +130,6 @@ enum AppSection: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-enum DieterStoreConnectionError: LocalizedError {
-    case incompatible(found: String)
-
-    var errorDescription: String? {
-        switch self {
-        case .incompatible(let found):
-            "Dieter update required · minimum release \(found.isEmpty ? "unknown" : found)."
-        }
-    }
-}
-
-enum MachineCompatibility: Equatable, Sendable {
-    case compatible
-    case incompatible
-}
-
-extension DieterEndpoint {
-    var compatibilityState: MachineCompatibility {
-        guard daemonID != nil else { return .compatible }
-        return compatibility == .compatible ? .compatible : .incompatible
-    }
-
-    var incompatibilityDescription: String? {
-        guard compatibilityState == .incompatible else { return nil }
-        return
-            "Update required · Dieter \(releaseVersion.isEmpty ? "unknown" : releaseVersion) (requires \(minimumReleaseVersion.isEmpty ? "a newer release" : minimumReleaseVersion))"
-    }
-}
-
-enum SyncFreshnessPresentation {
-    static func lastConnectedLabel(lastConnectedAt: Date?, now: Date = Date()) -> String {
-        guard let lastConnectedAt else { return "Last connected unknown" }
-        return relativeLabel(prefix: "Last connected", date: lastConnectedAt, now: now)
-    }
-
-    static func lastUpdateLabel(lastUpdatedAt: Date?, now: Date = Date()) -> String {
-        guard let lastUpdatedAt else { return "Not updated yet" }
-        return relativeLabel(prefix: "Updated", date: lastUpdatedAt, now: now)
-    }
-
-    private static func relativeLabel(prefix: String, date: Date, now: Date) -> String {
-        let elapsed = max(0, now.timeIntervalSince(date))
-        switch elapsed {
-        case ..<60:
-            return "\(prefix) just now"
-        case ..<3_600:
-            return "\(prefix) \(max(1, Int(elapsed / 60)))m ago"
-        case ..<86_400:
-            return "\(prefix) \(max(1, Int(elapsed / 3_600)))h ago"
-        default:
-            return "\(prefix) \(max(1, Int(elapsed / 86_400)))d ago"
-        }
-    }
-}
-
-enum WorkspaceFreshnessState: Equatable {
-    case live
-    case syncing
-    case reconnecting
-    case offline
-
-    static func resolve(
-        phase: ConnectionPhase,
-        globalSyncing: Bool,
-        hasCachedWorkspace: Bool
-    ) -> Self {
-        if phase.isConnected { return globalSyncing ? .syncing : .live }
-        if phase == .connecting, hasCachedWorkspace { return .reconnecting }
-        return .offline
-    }
-
-    var isLive: Bool { self == .live }
-
-    var label: String {
-        switch self {
-        case .live: "Online"
-        case .syncing: "Syncing"
-        case .reconnecting: "Reconnecting"
-        case .offline: "Offline"
-        }
-    }
-}
-
-struct MachineOutboxSummary: Equatable, Sendable {
-    let messageCount: Int
-    let changeCount: Int
-    let retrying: Bool
-    let failed: Bool
-    let failureMessage: String?
-
-    var itemCount: Int { messageCount + changeCount }
-    var storageBlocked: Bool { DieterRPCFailure.isInsufficientStorage(failureMessage) }
-
-    var queuedLabel: String {
-        let noun: String
-        if changeCount == 0 {
-            noun = messageCount == 1 ? "message" : "messages"
-        } else if messageCount == 0 {
-            noun = changeCount == 1 ? "change" : "changes"
-        } else {
-            noun = itemCount == 1 ? "item" : "items"
-        }
-        return "\(itemCount) \(noun) queued"
-    }
-
-    var deliveryLabel: String {
-        let suffix =
-            failed
-            ? "needs attention."
-            : storageBlocked
-                ? "free disk space on this machine; retries automatically every minute."
-                : "delivers when it reconnects."
-        return "\(queuedLabel) — \(suffix)"
-    }
-
-    func toastPhase(machineOnline: Bool) -> MachineDeliveryToastPhase {
-        if failed { return .failed }
-        if storageBlocked { return .waitingForStorage }
-        if retrying { return .retrying }
-        return machineOnline ? .sending : .waiting
-    }
-}
-
-enum MachineDeliveryToastPhase: Equatable, Sendable {
-    case sending
-    case waiting
-    case waitingForStorage
-    case retrying
-    case failed
-}
-
 struct DieterFailedOutboxItem: Identifiable, Sendable {
     let id: String
     let operation: String
@@ -278,28 +142,18 @@ struct DieterFailedOutboxItem: Identifiable, Sendable {
 struct ProjectFileNavigation: Equatable, Sendable {
     var canGoBack = false
     var canGoForward = false
-
-    static func parentPath(of path: String) -> String {
-        let parent = (path as NSString).deletingLastPathComponent
-        return parent == "." ? "" : parent
-    }
 }
 
 enum DieterAttachmentError: LocalizedError {
-    case tooMany
-    case fileTooLarge(String)
-    case totalTooLarge
-    case empty(String)
+    /// The shared core's wording of a broken attachment limit.
+    case limit(String)
     case notAFile(String)
     case unsupportedPaste
     case invalidImage
 
     var errorDescription: String? {
         switch self {
-        case .tooMany: "You can attach up to 4 images or files."
-        case .fileTooLarge(let name): "\(name) must be at most 5 MB."
-        case .totalTooLarge: "Attachments must total at most 6 MB."
-        case .empty(let name): "\(name) is empty."
+        case .limit(let problem): problem
         case .notAFile(let name): "\(name) is not a regular file."
         case .unsupportedPaste:
             "The clipboard does not contain an image or file that Dieter can attach."

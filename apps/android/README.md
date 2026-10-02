@@ -34,10 +34,11 @@ outbox, conversations, captures, schedules, terminals, screens) and the
 presentation rules behind the UI (what a row, notice, or control says and
 allows) live in the shared Kotlin core under [`apps/core`](../core/README.md),
 which also generates the Wire messages and gRPC clients from the authoritative
-schema. The app keeps the Compose UI and Android adapters: OkHttp transport,
-Keystore credentials, WebRTC/MediaCodec screen media, notifications, widgets,
-the sideload updater, and the background service. Add new rules to the core
-with core tests, not to the app. Do not commit generated build outputs.
+schema and provides the OkHttp transport. The app keeps the Compose UI and
+Android adapters: the transport's TLS providers, Keystore credentials,
+WebRTC/MediaCodec screen media, notifications, widgets, the sideload updater,
+and the background service. Add new rules to the core with core tests, not to
+the app. Do not commit generated build outputs.
 
 ## Visible emulator
 
@@ -63,10 +64,10 @@ Installation and connected tests retain app data and credentials. Do not use
 
 ## Native workflows
 
-**Activity** is the default destination, followed by **Boards**, **Chats**, and
-**Tools**. Activity combines recent card/chat activity, project filters, a timeline,
-Needs you, Running, and account quota windows. Back from a conversation preserves
-its Activity filter and scroll position.
+**Inbox** (Activity) is the default destination, followed by **Projects**
+(boards), **Chats**, and **Tools**. Inbox combines recent card/chat activity,
+project filters, a timeline, Needs you, Running, and account quota windows.
+Back from a conversation preserves its Inbox filter and scroll position.
 
 Tools opens Machines, Terminal, Files, Schedules, Screens, and Settings. Project
 and checkout choices route operations to the owning daemon. Terminals render
@@ -122,14 +123,17 @@ SHA-256 digest, then asks Android to install it. The user confirms each install;
 no silent update is attempted. Manual check: **App Settings → Updates**.
 
 Eight designs include default Native Monochrome. Appearance changes affect the
-UI, terminal, widgets, notification accents, and launcher icon. Regenerate fallback
-brand derivatives with `just android sync-brand`.
+UI, terminal, widgets, notification accents, and launcher icon. `just android
+sync-brand` regenerates the themed-icon mark, the notification and widget mark,
+and the Sora font from `assets/brand`; the per-design launcher icons are
+committed resources.
 
 ## Verify safely
 
 ```sh
 just check-changed --dry-run
 just check-changed
+just core test      # the shared core's rules, sync, and OkHttp transport, against isolated fixtures
 just android test
 just android check  # unit tests, lint, debug APK and both E2E/performance app/test APKs; no device
 ```
@@ -150,9 +154,7 @@ See [the test catalog guide](../../tests/e2e/README.md) for case authoring,
 change selection, artifacts, and iOS preparation. Android runs in the separate
 `com.dbpprt.dieter.e2e` package with disposable authenticated fixtures. Every
 case starts with clean test app data. APKs are built once and reused by hash;
-YAML-only edits need no recompilation. The old Android test aliases are removed;
-use `just e2e run --suite NAME` or `--case ID`. Class filters are replaced by
-explicit catalog case IDs.
+YAML-only edits need no recompilation.
 
 Performance is a separate suite using the non-debuggable
 `com.dbpprt.dieter.e2e.performance` app. It retains native frame limits and idle-CPU

@@ -284,16 +284,6 @@ class ConversationDrafts(
         val SAVE_INTERVAL = 500.milliseconds
         private const val FILE = "drafts.pb"
 
-        /** Merges legacy composer texts into [storage]; the newest text per conversation wins. */
-        fun importInto(storage: CoreStorage, drafts: List<DraftText>): Int {
-            val existing = storage.read(FILE)?.let { runCatching { DraftTexts.ADAPTER.decode(it) }.getOrNull() }?.drafts.orEmpty()
-            val merged = (existing + drafts.filter { it.daemon_id.isNotEmpty() && it.conversation_id.isNotEmpty() && it.text.isNotBlank() })
-                .groupBy { it.daemon_id to it.conversation_id }.values.map { group -> group.maxBy { it.updated_at_millis } }
-                .sortedByDescending { it.updated_at_millis }.take(MAX_DRAFTS)
-            if (merged == existing) return 0
-            storage.write(FILE, DraftTexts.ADAPTER.encode(DraftTexts(merged)))
-            return merged.size - existing.size
-        }
         private const val TAG = "Drafts"
     }
 }

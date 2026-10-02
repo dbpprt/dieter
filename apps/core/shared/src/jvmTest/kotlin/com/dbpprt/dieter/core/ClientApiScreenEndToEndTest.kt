@@ -1,12 +1,13 @@
 package com.dbpprt.dieter.core
 
 import com.dbpprt.dieter.client.v1.Command
+import com.dbpprt.dieter.client.v1.Failure
 import com.dbpprt.dieter.client.v1.ScreenCommand
 import com.dbpprt.dieter.client.v1.ScreenConnect
 import com.dbpprt.dieter.client.v1.ScreenDisplayTarget
 import com.dbpprt.dieter.client.v1.ScreenSlice
-import com.dbpprt.dieter.client.v1.ScreenStep
 import com.dbpprt.dieter.client.v1.Slice
+import com.dbpprt.dieter.client.v1.Step
 import com.dbpprt.dieter.client.v1.Update
 import com.dbpprt.dieter.core.client.ClientApi
 import com.dbpprt.dieter.core.client.ScreenHost
@@ -20,9 +21,11 @@ import com.dbpprt.dieter.core.screens.ScreenMediaEvents
 import com.dbpprt.dieter.core.screens.ViewportPolicy
 import com.dbpprt.dieter.core.testing.EndToEnd
 import com.dbpprt.dieter.core.testing.await
+import com.dbpprt.dieter.core.testing.jvmTestPlatform
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,11 +61,17 @@ class ClientApiScreenEndToEndTest : EndToEnd() {
         assertEquals(false, assertNotNull(settled.capabilities).ready)
         assertTrue(settled.route_label.isNotEmpty())
         assertTrue(settled.problem.isNotEmpty())
+        // A blocked session words its phase and offers no control, clipboard, or latency.
+        assertEquals(if (settled.phase == "unsupported") "Screen sharing unavailable" else "Permission required", settled.phase_label)
+        assertEquals("— ms RTT", settled.latency_label)
+        assertEquals("", settled.control_unavailable_reason)
+        assertFalse(settled.clipboard_actions_enabled)
+        assertTrue(settled.frame_rates.isNotEmpty())
         assertEquals(listOf("screen-test"), scopes, "the view's engines are made for its scope")
         // Matching needs control of a running session; without one it waits quietly.
         api.dispatch(command(ScreenCommand(match_display = ScreenDisplayTarget(width = 1512.0, height = 982.0, scale = 2.0))))
-        api.dispatch(command(ScreenCommand(disconnect = ScreenStep())))
-        screen.await(describe = { "idle: ${screen.value?.phase}" }) { it?.phase == "idle" }
+        api.dispatch(command(ScreenCommand(disconnect = Step())))
+        assertEquals("Not connected", screen.await(describe = { "idle: ${screen.value?.phase}" }) { it?.phase == "idle" }!!.phase_label)
         watch.close()
 
         // Without a media engine the slice reports that screens are unavailable.
@@ -70,5 +79,18 @@ class ClientApiScreenEndToEndTest : EndToEnd() {
         val bare = ClientApi(runtime).observe(Slice.SLICE_SCREEN, "bare") { failures.value = Update.ADAPTER.decode(it.encode()).failure?.message }
         failures.await(describe = { "failure" }) { it?.contains("unavailable") == true }
         bare.close()
+    }
+
+    @Test
+    fun aDeviceThatCannotVerifyScreenSessionsReportsItInsteadOfFailing() = e2e {
+        val runtime = CoreRuntime(jvmTestPlatform(signatures = null), RuntimeConfig(RELEASE, "dieter-test://oauth/callback", includeLoopbackRoutes = false))
+        runtimes += runtime
+        val api = ClientApi(runtime, ScreenHost({ NoMedia }, null, ScreenConfig("Core test", ViewportPolicy.Desktop)))
+        val failure = MutableStateFlow<Failure?>(null)
+        val watch = api.observe(Slice.SLICE_SCREEN, "unverified") { failure.value = Update.ADAPTER.decode(it.encode()).failure }
+        val reported = failure.await(describe = { "failure" }) { it != null }!!
+        assertEquals(Failure.Kind.KIND_PERMANENT, reported.kind)
+        assertEquals("Screen sharing is unavailable on this device.", reported.message)
+        watch.close()
     }
 }

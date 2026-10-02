@@ -15,6 +15,7 @@ import com.dbpprt.dieter.core.platform.ControlChannelFactory
 import com.dbpprt.dieter.core.platform.DaemonTokenExchange
 import com.dbpprt.dieter.core.platform.DirectTarget
 import com.dbpprt.dieter.core.platform.GatewayAccess
+import com.dbpprt.dieter.core.platform.RpcChannel
 import com.dbpprt.dieter.core.platform.RpcTransport
 import com.dbpprt.dieter.core.runtime.CoreException
 import com.dbpprt.dieter.core.runtime.CoreLogger
@@ -26,6 +27,7 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -102,7 +104,7 @@ class RouteSelector(
             DataPlane(daemonId, kind, client, started.elapsedNow(), channel::close)
         } catch (cancelled: CancellationException) {
             channel.close()
-            if (cancelled is kotlinx.coroutines.TimeoutCancellationException) null else throw cancelled
+            if (cancelled is TimeoutCancellationException) null else throw cancelled
         } catch (error: Throwable) {
             logger.debug(TAG, "direct candidate ${candidate.id} for $daemonId failed: ${Failures.message(error)}")
             channel.close()
@@ -118,7 +120,7 @@ class RouteSelector(
             withTimeout(policy.relayProbeTimeout) { client.Health().execute(Unit) }
         } catch (error: Throwable) {
             channel.close()
-            if (error is kotlinx.coroutines.TimeoutCancellationException) {
+            if (error is TimeoutCancellationException) {
                 throw CoreException(FailureKind.TRANSIENT, "The relay did not answer in time.", error)
             }
             throw error
@@ -138,7 +140,7 @@ class RouteSelector(
         val configuration: RTCConfiguration = gateway.GetRTCConfiguration().execute(DaemonRef(daemon_id = daemonId))
         val tokens = RenewingDaemonToken(exchange.exchange(), exchange, clock)
         val channel = factory.create(RTCConfiguration.ADAPTER.encode(configuration))
-        var direct: com.dbpprt.dieter.core.platform.RpcChannel? = null
+        var direct: RpcChannel? = null
         try {
             val bootstrap = transport.relay(access, daemonId)
             val offer = channel.offer()

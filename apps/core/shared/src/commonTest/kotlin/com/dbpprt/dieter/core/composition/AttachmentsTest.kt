@@ -4,6 +4,7 @@ import com.dbpprt.dieter.api.v1.MessagePart
 import com.dbpprt.dieter.core.presentation.ByteSizes
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import okio.ByteString.Companion.toByteString
 
 class AttachmentsTest {
@@ -18,6 +19,32 @@ class AttachmentsTest {
         assertEquals("PNG image", Attachments.kind(MessagePart(filename = "shot.png", media_type = "image/png")))
         assertEquals("Image", Attachments.kind(MessagePart(media_type = "image/png")))
         assertEquals("File", Attachments.kind(MessagePart(media_type = Attachments.OCTET_STREAM)))
+    }
+
+    @Test
+    fun chipDetailsFromMeasuredFiles() {
+        assertEquals("PDF · 1.5 KB", Attachments.details("brief.pdf", "application/pdf", 1_536))
+        assertEquals("SVG · 240 MB", Attachments.details("", "image/svg+xml", 240L * 1024 * 1024), "a media type suffix is dropped")
+        assertEquals("FILE", Attachments.details("", "", 0), "no name, type, or size")
+        assertEquals("PNG", Attachments.details("shot.png", "image/png", 0), "an empty file shows no size")
+    }
+
+    @Test
+    fun measuredFilesHitTheSameLimitsInTheSameOrder() {
+        val mb = 1024L * 1024
+        assertNull(Attachments.limitError(emptyList(), emptyList()))
+        assertNull(Attachments.limitError(List(4) { "f$it" }, List(4) { mb }))
+        assertEquals("You can attach up to 4 images or files.", Attachments.limitError(List(5) { "f$it" }, List(5) { 0L }), "the count comes first")
+        assertEquals("b.txt is empty.", Attachments.limitError(listOf("a.txt", "b.txt"), listOf(1L, 0L)))
+        assertEquals("The attachment is empty.", Attachments.limitError(emptyList(), listOf(0L)), "a missing name reads generically")
+        assertEquals("Each attachment must be at most 5 MB.", Attachments.limitError(listOf("big.mov"), listOf(5 * mb + 1)))
+        assertEquals("Attachments must total at most 6 MB.", Attachments.limitError(listOf("a", "b"), listOf(4 * mb, 3 * mb)))
+        assertEquals(
+            listOf(Attachments.TOO_MANY, Attachments.FILE_TOO_LARGE, Attachments.TOTAL_TOO_LARGE),
+            listOf(Attachments.limitError(List(5) { "f$it" }, List(5) { 1L }), Attachments.limitError(listOf("big.mov"), listOf(5 * mb + 1)), Attachments.limitError(listOf("a", "b"), listOf(4 * mb, 3 * mb))),
+            "platforms reading a file past the limit say the same",
+        )
+        assertEquals("Up to 4 attachments · 5 MB each · 6 MB total", Attachments.LIMITS)
     }
 
     @Test

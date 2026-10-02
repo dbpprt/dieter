@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -215,7 +216,7 @@ struct ProjectSettingsDraft: Equatable {
 struct ProjectWorkspacesSheet: View {
     @Environment(DieterStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    @State private var candidate: Dieter_V1_Workspace?
+    @State private var candidate: ClientProjectWorkspaceRow?
     @State private var candidateKind: GitOperationKind = .cleanup
 
     var body: some View {
@@ -246,30 +247,27 @@ struct ProjectWorkspacesSheet: View {
                 List(store.projectWorkspaces, id: \.cardID) { workspace in
                     HStack(spacing: 12) {
                         Image(
-                            systemName: workspace.state == "conflicted"
+                            systemName: workspace.conflicted
                                 ? "exclamationmark.triangle.fill" : "point.3.connected.trianglepath.dotted"
                         )
-                        .foregroundStyle(workspace.state == "conflicted" ? DieterTheme.coral : DieterTheme.shell)
+                        .foregroundStyle(workspace.conflicted ? DieterTheme.coral : DieterTheme.shell)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(cardTitle(workspace.cardID)).font(.system(size: 12, weight: .semibold))
-                            Text(
-                                "\(workspace.branch.isEmpty ? ConversationWorkspaceMode.projectMode(workspace.mode).title : workspace.branch) · \(workspace.state.replacingOccurrences(of: "_", with: " "))"
-                            )
-                            .font(.system(size: 10, design: .monospaced)).foregroundStyle(DieterTheme.tertiary)
+                            Text(workspace.title).font(.system(size: 12, weight: .semibold))
+                            Text(workspace.detail)
+                                .font(.system(size: 10, design: .monospaced)).foregroundStyle(DieterTheme.tertiary)
                             Text(workspace.path).font(.system(size: 9, design: .monospaced)).foregroundStyle(
                                 DieterTheme.tertiary
                             ).lineLimit(1).truncationMode(.middle)
+                            if !workspace.error.isEmpty {
+                                Text(workspace.error).font(.system(size: 9)).foregroundStyle(DieterTheme.coral)
+                                    .lineLimit(2)
+                            }
                         }
                         Spacer()
-                        VStack(alignment: .trailing, spacing: 3) {
-                            Text("\(workspace.changedFiles) files · +\(workspace.additions) −\(workspace.deletions)")
-                            Text(ByteCountFormatter.string(fromByteCount: workspace.sizeBytes, countStyle: .file))
-                        }
-                        .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary)
-                        if store.gitOperation?.cardID == workspace.cardID,
-                            GitOperationStatus.active(store.gitOperation?.status ?? "")
-                        {
-                            ProgressView().controlSize(.mini).help(store.gitOperation?.status ?? "Working")
+                        Text(workspace.stats)
+                            .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary)
+                        if workspace.pending {
+                            ProgressView().controlSize(.mini)
                         }
                         Menu {
                             Button("Open conversation") { open(workspace.cardID) }
@@ -280,15 +278,16 @@ struct ProjectWorkspacesSheet: View {
                             Button("Clean up…") {
                                 candidate = workspace; candidateKind = .cleanup
                             }
-                            .disabled(workspace.changedFiles > 0)
+                            .disabled(!workspace.canCleanUp)
                             Button("Discard…", role: .destructive) {
                                 candidate = workspace; candidateKind = .discard
                             }
+                            .disabled(!workspace.canDiscard)
                         } label: {
                             Image(systemName: "ellipsis.circle")
                         }
                         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                        .disabled(store.gitOperation.map { GitOperationStatus.active($0.status) } ?? false)
+                        .disabled(workspace.pending)
                     }
                     .padding(.vertical, 5)
                 }
@@ -302,7 +301,7 @@ struct ProjectWorkspacesSheet: View {
             isPresented: Binding(get: { candidate != nil }, set: { if !$0 { candidate = nil } })
         ) {
             if let candidate {
-                Button(candidateKind.title, role: candidateKind.destructive ? .destructive : nil) {
+                Button(candidateKind.title, role: candidateKind == .discard ? .destructive : nil) {
                     let cardID = candidate.cardID
                     let discard = candidateKind == .discard
                     self.candidate = nil
@@ -316,12 +315,6 @@ struct ProjectWorkspacesSheet: View {
                     ? "Dieter records recovery artifacts, then removes the checkout and managed branch."
                     : "Only clean, integrated workspaces can be cleaned up.")
         }
-    }
-
-    private func cardTitle(_ id: String) -> String {
-        store.state.cards.first(where: { $0.id == id })?.title
-            ?? store.chats.first(where: { $0.id == id })?.title
-            ?? String(id.prefix(12))
     }
 
     private func open(_ id: String) {

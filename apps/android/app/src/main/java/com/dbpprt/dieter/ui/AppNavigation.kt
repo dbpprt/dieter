@@ -3,7 +3,6 @@ package com.dbpprt.dieter.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.background
@@ -38,7 +37,6 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetScaffoldState
 import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
@@ -97,7 +95,6 @@ internal fun DieterBottomBar(
     onSelect: (Destination) -> Unit,
     onTools: () -> Unit,
     toolsOpen: Boolean = false,
-    windowInsets: WindowInsets = NavigationBarDefaults.windowInsets,
     toolsFocusRequester: FocusRequester? = null,
 ) {
     val colors = NavigationBarItemDefaults.colors(
@@ -110,7 +107,6 @@ internal fun DieterBottomBar(
     NavigationBar(
         containerColor = DieterSurface,
         tonalElevation = 0.dp,
-        windowInsets = windowInsets,
         modifier = Modifier.fillMaxWidth(),
     ) {
         primaryNavigationItems.forEach { item ->
@@ -178,8 +174,7 @@ internal fun DieterNavigationRail(
                 onClick = { onSelect(item.destination) },
                 icon = { Icon(item.icon, contentDescription = null) },
                 label = { Text(item.label) },
-                enabled = projectSurfacesEnabled ||
-                    (item.destination != Destination.FILES && item.destination != Destination.SCHEDULES),
+                enabled = projectSurfacesEnabled || !item.destination.projectScoped,
                 modifier = Modifier.testTag("nav-${item.destination.name.lowercase()}"),
             )
         }
@@ -238,8 +233,7 @@ internal fun DieterToolsSheet(
                             label = item.label,
                             icon = item.icon,
                             selected = selected == item.destination,
-                            enabled = projectSurfacesEnabled ||
-                                (item.destination != Destination.FILES && item.destination != Destination.SCHEDULES),
+                            enabled = projectSurfacesEnabled || !item.destination.projectScoped,
                             onClick = { onSelect(item.destination) },
                             modifier = Modifier.testTag("tool-${item.destination.name.lowercase()}").then(
                                 if (item == toolNavigationItems.first()) Modifier.focusRequester(initialFocus) else Modifier,

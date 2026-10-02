@@ -104,7 +104,7 @@ struct SharedCoreIntegrationTests {
         let host = try host(root: root, defaults: defaults)
         let core = host.client
         let folded = Folded(core)
-        await host.start()
+        host.start()
         try await core.dispatch { $0.setForeground = .with { $0.foreground = true } }
 
         await #expect(throws: CoreFailure.self) {
@@ -128,14 +128,13 @@ struct SharedCoreIntegrationTests {
 
         let created = try await core.dispatch {
             $0.createConversation = .with {
-                $0.request = .with { request in
-                    request.projectID = project
-                    request.boardID = board
-                    request.lane = "todo"
-                    request.title = "From the Mac through DieterShared"
-                    request.prompt = "hello"
-                    request.deferStart = true
-                    request.workspaceMode = "project"
+                $0.intent = .with { intent in
+                    intent.projectID = project
+                    intent.boardID = board
+                    intent.lane = "todo"
+                    intent.title = "From the Mac through DieterShared"
+                    intent.prompt = "hello"
+                    intent.workspaceMode = "project"
                 }
             }
         }
@@ -159,14 +158,14 @@ struct SharedCoreIntegrationTests {
         let chat = try await core.dispatch {
             $0.createConversation = .with {
                 $0.chat = true
-                $0.request = .with { request in
-                    request.projectID = project
-                    request.title = "chat"
-                    request.prompt = "first"
-                    request.provider = "mock"
-                    request.model = "mock"
-                    request.effort = "low"
-                    request.workspaceMode = "project"
+                $0.intent = .with { intent in
+                    intent.projectID = project
+                    intent.title = "chat"
+                    intent.prompt = "first"
+                    intent.selection = .with {
+                        $0.provider = "mock"; $0.model = "mock"; $0.effort = "low"
+                    }
+                    intent.workspaceMode = "project"
                 }
             }
         }
@@ -201,11 +200,12 @@ struct SharedCoreIntegrationTests {
         // and the session survives in the shared credentials file.
         let restarted = try self.host(root: root, defaults: defaults)
         let refolded = Folded(restarted.client)
-        await restarted.start()
+        restarted.start()
         try await wait("cached workspace") {
             refolded.workspace.cards.contains { $0.id == cardID && $0.title == "Renamed on the Mac" }
         }
-        try await wait("signed in") { refolded.session.signedIn }
+        try await restarted.client.dispatch { $0.setForeground = .with { $0.foreground = true } }
+        try await wait("signed in again") { [.syncing, .connected].contains(refolded.session.phase) }
         refolded.close()
         await restarted.shutdown()
     }

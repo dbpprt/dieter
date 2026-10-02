@@ -1,6 +1,7 @@
 package com.dbpprt.dieter.core.composition
 
 import com.dbpprt.dieter.api.v1.MessagePart
+import com.dbpprt.dieter.core.presentation.ByteSizes
 import okio.ByteString
 
 /**
@@ -35,14 +36,36 @@ object Attachments {
         return (payload.length.toLong() * 3 / 4 - padding).coerceAtLeast(0)
     }
 
-    /** The first limit [parts] would break, or null. Checked in the order count, file size, total size. */
+    /** The first limit [parts] would break, or null. Checked in the order count, emptiness, file size, total size. */
     fun limitError(parts: List<MessagePart>): String? {
-        if (parts.size > MAX_COUNT) return "You can attach up to 4 images or files."
-        parts.firstOrNull { it.data_.size == 0 && it.url.isEmpty() }?.let { return "${it.filename.ifEmpty { "The attachment" }} is empty." }
-        parts.firstOrNull { size(it) > MAX_FILE_BYTES }?.let { return "Each attachment must be at most 5 MB." }
-        if (parts.sumOf(::size) > MAX_TOTAL_BYTES) return "Attachments must total at most 6 MB."
+        if (parts.size > MAX_COUNT) return TOO_MANY
+        parts.firstOrNull { it.data_.size == 0 && it.url.isEmpty() }?.let { return empty(it.filename) }
+        parts.firstOrNull { size(it) > MAX_FILE_BYTES }?.let { return FILE_TOO_LARGE }
+        if (parts.sumOf(::size) > MAX_TOTAL_BYTES) return TOTAL_TOO_LARGE
         return null
     }
+
+    /**
+     * The same check over files the platform has measured but not read yet:
+     * [names] and [sizes] pair up by index, and a size of zero or less is an
+     * empty file.
+     */
+    fun limitError(names: List<String>, sizes: List<Long>): String? {
+        if (sizes.size > MAX_COUNT) return TOO_MANY
+        val emptyIndex = sizes.indexOfFirst { it <= 0 }
+        if (emptyIndex >= 0) return empty(names.getOrNull(emptyIndex).orEmpty())
+        if (sizes.any { it > MAX_FILE_BYTES }) return FILE_TOO_LARGE
+        if (sizes.sum() > MAX_TOTAL_BYTES) return TOTAL_TOO_LARGE
+        return null
+    }
+
+    const val TOO_MANY = "You can attach up to 4 images or files."
+
+    /** Also what a platform says when it stops reading a file past [MAX_FILE_BYTES]. */
+    const val FILE_TOO_LARGE = "Each attachment must be at most 5 MB."
+    const val TOTAL_TOO_LARGE = "Attachments must total at most 6 MB."
+
+    private fun empty(filename: String) = "${filename.ifEmpty { "The attachment" }} is empty."
 
     /** A media type the daemon accepts: lowercase, without parameters, else guessed from the name. */
     fun mediaType(declared: String?, filename: String): String {
@@ -77,15 +100,21 @@ object Attachments {
         addAll(attachments)
     }
 
-    /** A short kind for display, e.g. "PDF" or "PNG image"; formatting sizes stays native. */
     /** "PNG · 1.2 MB": the file's type and size, for an attachment chip. */
-    fun details(part: MessagePart): String {
-        val type = part.filename.substringAfterLast('.', "").ifBlank { null }?.uppercase()
-            ?: part.media_type.substringAfter('/', "file").substringBefore('+').uppercase()
-        val bytes = size(part)
-        return if (bytes > 0) "$type · ${com.dbpprt.dieter.core.presentation.ByteSizes.format(bytes)}" else type
+    fun details(part: MessagePart): String = details(part.filename, part.media_type, size(part))
+
+    /**
+     * "PNG · 1.2 MB": the type from [filename]'s extension, else from
+     * [mediaType] ("image/svg+xml" reads "SVG"); [bytes] are left out when
+     * there are none.
+     */
+    fun details(filename: String, mediaType: String, bytes: Long): String {
+        val type = filename.substringAfterLast('.', "").ifBlank { null }?.uppercase()
+            ?: mediaType.substringAfter('/', "file").substringBefore('+').uppercase()
+        return if (bytes > 0) "$type · ${ByteSizes.format(bytes)}" else type
     }
 
+    /** A short kind for display, e.g. "PDF" or "PNG image". */
     fun kind(part: MessagePart): String {
         val extension = part.filename.substringAfterLast('.', "").uppercase()
         return when {

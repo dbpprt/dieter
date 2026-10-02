@@ -9,14 +9,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.api.gateway.v1.RTCConfiguration
 import com.dbpprt.dieter.api.v1.RemoteDesktopICECandidate
 import com.dbpprt.dieter.core.screens.*
-import com.dbpprt.dieter.sharedcore.SharedCore
-import java.io.File
-import java.util.UUID
-import kotlinx.coroutines.runBlocking
+import com.dbpprt.dieter.e2e.Evidence
+import com.dbpprt.dieter.e2e.TestCore
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -30,9 +27,8 @@ class ScreenCanvasRenderingTest {
     private lateinit var canvas: ScreenCanvasView
 
     @Test fun staticVideoPixelsFollowZoomPanAndFitWithoutStaleRegions() {
-        val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val core = SharedCore.create(context, null, File(context.noBackupFilesDir, "canvas-pixels-${UUID.randomUUID()}"))
-        val host = ScreenHost(context, core)
+        val core = TestCore()
+        val host = ScreenHost(core.context, core.core)
         val engine = host.media.create(ScreenMediaConfig(RTCConfiguration(), listOf(RtpCodec("H264")), false, emptyList()),
             object : ScreenMediaEvents {
                 override fun localCandidate(candidate: RemoteDesktopICECandidate) = Unit
@@ -76,7 +72,8 @@ class ScreenCanvasRenderingTest {
             if (::canvas.isInitialized) compose.runOnIdle { canvas.release() }
             engine.close()
             host.close()
-            runBlocking { core.shutdown() }
+            core.close()
+            core.delete()
         }
     }
 
@@ -109,12 +106,7 @@ class ScreenCanvasRenderingTest {
         val location = IntArray(2)
         compose.runOnIdle { canvas.getLocationInWindow(location) }
         val image = captureScreenFixture()
-        val directory = InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")?.let(::File)
-            ?: requireNotNull(canvas.context.getExternalFilesDir(null))
-        fun capture() {
-            directory.mkdirs()
-            File(directory, "canvas-$name.png").outputStream().use { image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-        }
+        fun capture() = Evidence.save(image, "canvas-$name.png")
         try {
             val m = canvas.canvasModel
             for (row in 1..11) for (column in 1..9) {

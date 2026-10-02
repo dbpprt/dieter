@@ -8,7 +8,7 @@ import Testing
     let suite = "glass-layout-" + UUID().uuidString
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
     let draft = QuickTaskFormState()
     draft.initialized = true
     draft.story = "Investigate the selected browser page"
@@ -60,7 +60,7 @@ import Testing
 }
 
 @Test @MainActor func conversationInspectorHeaderKeepsStableHeightForLongTitlesAtMinimumWidth() {
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
     var card = Dieter_V1_Card()
     card.id = "inspector-layout"
     card.scope = "board"

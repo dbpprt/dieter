@@ -3,31 +3,21 @@ import Testing
 
 @testable import DieterMac
 
-@Test func conversationWorkspaceDraftPopulatesCreateRequest() {
-    var request = Dieter_V1_CreateConversationRequest()
+@Test func conversationWorkspaceDraftFillsTheCreationIntent() {
+    var intent = ClientCreationIntent()
     ConversationWorkspaceDraft(
         mode: .worktree,
         branch: "  feature/mac-git  ",
         baseBranch: "  release  ",
         baseRemote: "  private  ",
         remotePublishMode: RemotePublishMode.pullRequest.rawValue
-    ).apply(to: &request)
+    ).apply(to: &intent)
 
-    #expect(request.workspaceMode == "worktree")
-    #expect(request.workspaceBranch == "feature/mac-git")
-    #expect(request.workspaceBaseBranch == "release")
-    #expect(request.workspaceBaseRemote == "private")
-    #expect(request.remotePublishMode == "pull_request")
-}
-
-@Test func projectDirectoryDraftDoesNotSendWorktreeBranchOverrides() {
-    var request = Dieter_V1_CreateConversationRequest()
-    ConversationWorkspaceDraft(mode: .project, branch: "stale", baseBranch: "main").apply(
-        to: &request)
-
-    #expect(request.workspaceMode == "project")
-    #expect(request.workspaceBranch.isEmpty)
-    #expect(request.workspaceBaseBranch.isEmpty)
+    #expect(intent.workspaceMode == "worktree")
+    #expect(intent.workspaceBranch == "feature/mac-git")
+    #expect(intent.workspaceBaseBranch == "release")
+    #expect(intent.workspaceBaseRemote == "private")
+    #expect(intent.remotePublishMode == "pull_request")
 }
 
 @Test func validationCommandDraftRoundTripsLiteralArgumentsAndEnvironment() {
@@ -73,15 +63,4 @@ import Testing
     #expect(WorkspaceReviewLayout.isCompact(width: 520))
     #expect(!WorkspaceReviewLayout.isCompact(width: 900))
     #expect(WorkspaceReviewLayout.compactBreakpoint == 680)
-}
-
-@Test func changedFilesHaveCompactStablePresentation() {
-    #expect(WorkspaceChangePresentation.badge(status: "modified") == "M")
-    #expect(WorkspaceChangePresentation.badge(status: "added") == "A")
-    #expect(WorkspaceChangePresentation.badge(status: "modified", conflicted: true) == "!")
-    #expect(WorkspaceChangePresentation.badge(status: "modified", untracked: true) == "U")
-    #expect(WorkspaceChangePresentation.title(status: "renamed") == "Renamed")
-    #expect(WorkspaceChangePresentation.filename("Sources/App/Workspace.swift") == "Workspace.swift")
-    #expect(WorkspaceChangePresentation.directory("Sources/App/Workspace.swift") == "Sources/App")
-    #expect(WorkspaceChangePresentation.directory("README.md").isEmpty)
 }

@@ -74,8 +74,11 @@ message CreationPreferences {
   string effort = 3;
   string workspace_mode = 4;
   map<string, string> provider_options = 5;
+  reserved 8;
+  reserved "notification_boards";
   // Project ID → board last used for a quick task there.
   map<string, string> boards = 6;
   string project_id = 7;
-  map<string, bool> notification_boards = 8;
+  // Project ID → the checkout last chosen in it.
+  map<string, string> checkouts = 9;
 }

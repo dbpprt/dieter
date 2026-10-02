@@ -5,12 +5,11 @@ import com.dbpprt.dieter.api.v1.ListTerminalsRequest
 import com.dbpprt.dieter.api.v1.Terminal
 import com.dbpprt.dieter.core.machines.Machine
 import com.dbpprt.dieter.core.runtime.CoreException
+import com.dbpprt.dieter.core.runtime.Deadlines
 import com.dbpprt.dieter.core.runtime.FailureKind
 import com.dbpprt.dieter.core.runtime.Failures
-import com.dbpprt.dieter.core.runtime.withDeadline
 import com.dbpprt.dieter.core.session.MachineSessions
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,6 +59,9 @@ class TerminalOverview(
     private var listed: Set<String>? = null
     private var staleChecks = 0
 
+    /** Stops the overview's terminal streaming; the shells keep running. */
+    fun stop() = terminals.stop()
+
     suspend fun load(preferredDaemonId: String? = null) {
         val bound = ++generation
         preferred = preferredDaemonId
@@ -76,7 +78,7 @@ class TerminalOverview(
         val errors = LinkedHashMap<String, String>()
         for (machine in candidates) {
             try {
-                val values = withDeadline(DEADLINE) { sessions.call(machine.id) { it.ListTerminals().execute(ListTerminalsRequest()) } }.terminals
+                val values = sessions.call(machine.id, Deadlines.CALL) { it.ListTerminals().execute(ListTerminalsRequest()) }.terminals
                 listed += values.map { TerminalOverviewEntry(machine.id, machine.name, it) }
                 reached += machine.id
             } catch (cancelled: CancellationException) {
@@ -110,7 +112,7 @@ class TerminalOverview(
             project_id = projectId, checkout_id = if (machineHome) "" else checkoutId, name = name.trim(), shell = shell,
             working_directory = workingDirectory.trim(), columns = 120, rows = 36, machine_home = machineHome,
         )
-        val terminal = withDeadline(DEADLINE) { sessions.call(daemonId) { it.CreateTerminal().execute(request) } }
+        val terminal = sessions.call(daemonId, Deadlines.CALL) { it.CreateTerminal().execute(request) }
         val entry = TerminalOverviewEntry(daemonId, machine.name, terminal)
         generation++
         mutableView.update { state -> state.copy(entries = TerminalOverviewCatalog.sorted(state.entries.filterNot { it.id == entry.id } + entry)) }
@@ -163,9 +165,5 @@ class TerminalOverview(
         terminals.bind(TerminalScope(entry.daemonId, TerminalScopeKind.MACHINE))
         terminals.load()
         terminals.select(entry.terminal.id)
-    }
-
-    private companion object {
-        val DEADLINE = 15.seconds
     }
 }

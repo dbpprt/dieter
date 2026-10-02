@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 
 struct WorkspaceSectionHeader: View {
@@ -51,11 +52,6 @@ struct WorkspaceFileRow: View {
     var viewed = false
     let action: () -> Void
 
-    private var deleted: Bool {
-        WorkspaceChangePresentation.badge(status: file.status, conflicted: file.conflicted, untracked: file.untracked)
-            == "D"
-    }
-
     private var tint: Color {
         if file.conflicted { return DieterTheme.coral }
         if file.untracked { return DieterTheme.amber }
@@ -63,23 +59,21 @@ struct WorkspaceFileRow: View {
     }
 
     var body: some View {
+        let label = ClientChangedFileLabel.of(
+            file.path, status: file.status, conflicted: file.conflicted, untracked: file.untracked)
         Button(action: action) {
             HStack(spacing: 9) {
-                Text(
-                    WorkspaceChangePresentation.badge(
-                        status: file.status, conflicted: file.conflicted, untracked: file.untracked)
-                )
-                .font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(tint)
-                .frame(width: 20, height: 20).background(tint.opacity(0.11), in: RoundedRectangle(cornerRadius: 5))
+                Text(label.badge)
+                    .font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(tint)
+                    .frame(width: 20, height: 20).background(tint.opacity(0.11), in: RoundedRectangle(cornerRadius: 5))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(WorkspaceChangePresentation.filename(file.path))
+                    Text(label.filename)
                         .font(.system(size: 11, weight: .medium))
-                        .strikethrough(deleted)
+                        .strikethrough(label.badge == "D")
                         .opacity(viewed && !selected ? 0.55 : 1)
                         .lineLimit(1)
-                    let directory = WorkspaceChangePresentation.directory(file.path)
-                    if !directory.isEmpty {
-                        Text(directory).font(.system(size: 9, design: .monospaced)).foregroundStyle(
+                    if !label.directory.isEmpty {
+                        Text(label.directory).font(.system(size: 9, design: .monospaced)).foregroundStyle(
                             DieterTheme.tertiary
                         ).lineLimit(1).truncationMode(.middle)
                     }
@@ -95,9 +89,7 @@ struct WorkspaceFileRow: View {
             .background(selected ? DieterTheme.selection : .clear, in: RoundedRectangle(cornerRadius: 7))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain).help(
-            "\(WorkspaceChangePresentation.title(status: file.status, conflicted: file.conflicted, untracked: file.untracked)): \(file.path)"
-        )
+        .buttonStyle(.plain).help("\(label.title): \(file.path)")
     }
 }
 
@@ -117,7 +109,7 @@ struct WorkspaceCommitRow: View {
                     HStack(spacing: 6) {
                         WorkspaceDeltaLabel(additions: commit.additions, deletions: commit.deletions)
                         if !commit.authoredAt.isEmpty {
-                            Text(WorkspaceRelativeTime.compact(commit.authoredAt))
+                            Text(SharedRules.shared.agoSince(value: commit.authoredAt, nowMillis: Date.now.epochMillis))
                                 .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary)
                         }
                     }
@@ -134,7 +126,7 @@ struct WorkspaceCommitRow: View {
 
 struct PullRequestStateBadge: View {
     let label: String
-    let tone: PullRequestPresentation.Tone
+    let tone: ClientWorkspaceTone
 
     var body: some View {
         Text(label)
@@ -144,19 +136,24 @@ struct PullRequestStateBadge: View {
             .background(color.opacity(0.13), in: Capsule())
     }
 
-    private var color: Color {
+    private var color: Color { WorkspaceToneStyle.color(tone) }
+}
+
+/// The colour of a workspace fact's tone.
+@MainActor enum WorkspaceToneStyle {
+    static func color(_ tone: ClientWorkspaceTone) -> Color {
         switch tone {
-        case .positive: DieterTheme.diffAddition
+        case .success: DieterTheme.diffAddition
         case .active: DieterTheme.shell
         case .warning: DieterTheme.amber
-        case .critical: DieterTheme.coral
-        case .neutral: DieterTheme.subtle
+        case .danger: DieterTheme.coral
+        default: DieterTheme.subtle
         }
     }
 }
 
 struct PullRequestSignalLabel: View {
-    let signal: PullRequestPresentation.Signal
+    let signal: ClientPullRequestSignal
 
     var body: some View {
         HStack(spacing: 4) {
@@ -175,22 +172,14 @@ struct PullRequestSignalLabel: View {
 
     private var symbol: String {
         switch signal.tone {
-        case .positive: "checkmark"
+        case .success: "checkmark"
         case .warning: "clock"
-        case .critical: "xmark"
+        case .danger: "xmark"
         default: "circle"
         }
     }
 
-    private var color: Color {
-        switch signal.tone {
-        case .positive: DieterTheme.diffAddition
-        case .active: DieterTheme.shell
-        case .warning: DieterTheme.amber
-        case .critical: DieterTheme.coral
-        case .neutral: DieterTheme.subtle
-        }
-    }
+    private var color: Color { WorkspaceToneStyle.color(signal.tone) }
 }
 
 struct WorkspaceDiffLineRow: View {

@@ -46,7 +46,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -84,6 +83,7 @@ import com.dbpprt.dieter.DieterContainer
 import com.dbpprt.dieter.core.connection.Availability
 import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.core.machines.MachineLink
+import com.dbpprt.dieter.core.machines.MachineRows
 import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.update.AppUpdateManager
 import com.dbpprt.dieter.ui.theme.DieterShell
@@ -93,7 +93,7 @@ import com.dbpprt.dieter.ui.theme.DieterMuted
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import com.dbpprt.dieter.ui.theme.DieterText
-import com.dbpprt.dieter.ui.theme.DieterOutline
+import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.delay
@@ -145,14 +145,8 @@ fun DieterApp(container: DieterContainer) {
     LaunchedEffect(openRequest, state.loading, state.spaceCards, state.chats, state.connectionPhase) {
         val request = openRequest ?: return@LaunchedEffect
         if (request.showConnection) model.showConnectionDialogIfNeeded()
-        if (request.showInbox) {
-            val card = (state.spaceCards + state.cards + state.chats).firstOrNull { it.id == request.cardId && !it.archived }
-            // Keep a cold-launch request until cached state or the first live
-            // projection arrives. Removed conversations safely land in Inbox.
-            if (request.cardId.isNotBlank() && card == null && (state.loading || state.connectionPhase in setOf(
-                    ConnectionPhase.CONNECTING, ConnectionPhase.SYNCING, ConnectionPhase.RECONNECTING))) return@LaunchedEffect
-            if (card != null) model.openCard(card, Destination.ACTIVITY) else model.navigate(Destination.ACTIVITY)
-        } else if (request.cardId.isNotBlank()) model.openNotificationCard(request.cardId)
+        // A cold launch keeps the request until cached state or the first live projection arrives.
+        if ((request.showInbox || request.cardId.isNotBlank()) && !model.openRequested(request.cardId, inInbox = request.showInbox)) return@LaunchedEffect
         container.consumeOpenRequest(request)
     }
     LaunchedEffect(state.backgroundSyncMode, state.desiredConnected) {
@@ -547,8 +541,8 @@ internal fun ConnectionStatusIndicator(
 @OptIn(ExperimentalMaterial3Api::class)
 private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel) {
     val connected = state.connected
-    val machines = state.presentedEndpointConnections.filter { it.daemonId != null }
-    val onlineMachineCount = machines.count { it.online }
+    val machines = MachineRows.listed(state.presentedEndpointConnections)
+    val now = Clock.System.now()
     ModalBottomSheet(
         onDismissRequest = model::dismissConnectionDialog,
         containerColor = DieterSurface,
@@ -577,8 +571,7 @@ private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel)
                 Column(Modifier.weight(1f)) {
                     Text("Dieter server", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                     Text(
-                        if (machines.isEmpty()) "Discovering enrolled machines"
-                        else "$onlineMachineCount of ${machines.size} machines online · automatic routing",
+                        MachineRows.onlineSummary(machines) + if (machines.isEmpty()) "" else " · automatic routing",
                         color = DieterShell,
                         fontSize = 12.sp,
                         modifier = Modifier.clickable(onClick = model::openAppSettingsFromConnection),
@@ -605,7 +598,7 @@ private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel)
                     )
                 }
             }
-            state.presentedEndpointConnections.forEach { endpoint ->
+            machines.forEach { endpoint ->
                 val endpointConnected = endpoint.phase == MachineLink.CONNECTED
                 val outboxSummary = state.machineOutboxSummaries[endpoint.id]
                 Surface(
@@ -646,25 +639,20 @@ private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel)
                             )
                         }
                         Text(
-                            endpoint.detail + when {
-                                outboxSummary?.failed == true -> " · attention needed"
-                                outboxSummary?.storageBlocked == true -> " · low disk space"
-                                outboxSummary?.retrying == true -> " · retrying"
-                                outboxSummary != null -> " · queued"
-                                else -> ""
-                            },
+                            state.machineStatusLine(endpoint, now) + outboxSummary?.statusSuffix.orEmpty(),
                             color = if (endpointConnected) DieterEyes else DieterMuted,
                             fontSize = 10.sp,
                         )
                     }
                 }
-                if (outboxSummary?.storageBlocked == true && !outboxSummary.failed) {
+                if (outboxSummary?.storageBanner == true) {
                     StorageDeliveryBanner(
                         machineName = endpoint.label,
-                        detail = outboxSummary.deliveryLabel,
+                        detail = outboxSummary.detail(endpoint.label, endpoint.online),
                         onRetry = { model.retryOutboxForEndpoint(endpoint.id) },
                     )
                 } else if (outboxSummary != null) {
+                    val retryTitle = outboxSummary.retryTitle(endpoint.online)
                     Surface(
                         color = DieterAmber.copy(alpha = 0.08f),
                         shape = RoundedCornerShape(16.dp),
@@ -679,19 +667,21 @@ private fun DieterConnectionDialog(state: DieterUiState, model: DieterViewModel)
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(
-                                    if (endpoint.online) "Delivering to ${endpoint.label}" else "${endpoint.label} is unreachable",
+                                    outboxSummary.title(endpoint.label, endpoint.online),
                                     color = DieterAmber,
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 13.sp,
                                 )
-                                Text(outboxSummary.deliveryLabel, color = DieterMuted, fontSize = 11.sp)
+                                Text(outboxSummary.detail(endpoint.label, endpoint.online), color = DieterMuted, fontSize = 11.sp)
                             }
-                            Spacer(Modifier.width(8.dp))
-                            OutlinedButton(
-                                onClick = { model.retryOutboxForEndpoint(endpoint.id) },
-                                border = BorderStroke(1.dp, DieterAmber.copy(alpha = 0.5f)),
-                                modifier = Modifier.testTag("machine-retry-${endpoint.id}"),
-                            ) { Text("Retry now", color = DieterAmber, fontSize = 11.sp) }
+                            if (retryTitle.isNotEmpty()) {
+                                Spacer(Modifier.width(8.dp))
+                                OutlinedButton(
+                                    onClick = { model.retryOutboxForEndpoint(endpoint.id) },
+                                    border = BorderStroke(1.dp, DieterAmber.copy(alpha = 0.5f)),
+                                    modifier = Modifier.testTag("machine-retry-${endpoint.id}"),
+                                ) { Text(retryTitle, color = DieterAmber, fontSize = 11.sp) }
+                            }
                         }
                     }
                 }
@@ -780,7 +770,7 @@ private fun DestinationContent(
                     Destination.CHATS -> ChatsScreen(state, model, expanded, destinationPadding)
                     Destination.BOARD -> BoardScreen(state, model, expanded, destinationPadding)
                     Destination.MACHINES -> MachinesScreen(state, model, expanded, destinationPadding)
-                    Destination.SCREENS -> ScreensScreen(state, model, destinationPadding)
+                    Destination.SCREENS -> ScreensScreen(state, destinationPadding)
                     Destination.TERMINALS -> TerminalsScreen(state, model, expanded, destinationPadding)
                     Destination.FILES -> FilesScreen(state, model, expanded, destinationPadding)
                     Destination.SCHEDULES -> SchedulesScreen(state, model, destinationPadding)

@@ -3,15 +3,6 @@ import SwiftUI
 import Testing
 @testable import DieterMac
 
-@Test func activeChatRuntimeAliasesReceiveTheRunningTreatment() {
-    for runtime in ["running", "RUNNING", "starting", "working", "streaming"] {
-        #expect(ChatRuntimePresentation.isActive(runtime))
-    }
-    for runtime in ["", "idle", "waiting_for_user", "completed", "failed"] {
-        #expect(!ChatRuntimePresentation.isActive(runtime))
-    }
-}
-
 @Test @MainActor func runningIndicatorUsesCompositorAnimationsAndHonorsReducedMotion() {
     let view = ChatRunningIndicatorView(frame: NSRect(x: 0, y: 0, width: 15, height: 15))
     view.layoutSubtreeIfNeeded()

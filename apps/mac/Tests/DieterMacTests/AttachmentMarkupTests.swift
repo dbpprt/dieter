@@ -101,7 +101,7 @@ import Testing
             try AttachmentMarkupReplacement.replacing(original, at: 0, with: edited, in: [])
         }
         var other = original
-        other.data = Data(repeating: 0, count: AttachmentLoader.maximumTotalBytes)
+        other.data = Data(repeating: 0, count: 6 * 1_024 * 1_024)
         #expect(throws: DieterAttachmentError.self) {
             try AttachmentMarkupReplacement.replacing(original, at: 0, with: edited, in: [original, other])
         }

@@ -119,17 +119,18 @@
                     ? "passed" : "failed: daemon build identity was absent",
                 "gateway-version": store.gatewayInformation[machine.credentialID]?.releaseVersion.isEmpty == false
                     ? "passed" : "failed: gateway build identity was absent",
-                "host-controls": information.supportsRestart && information.supportsShutdown
-                    ? "passed" : "failed: restart/shutdown were unavailable",
+                "host-controls": [.restart, .shutdown].allSatisfy { action in
+                    store.fleet.machineOperations[machine.id]?.contains { $0.action == action && $0.available } == true
+                } ? "passed" : "failed: restart/shutdown were unavailable",
                 "daemon-update-capability": information.operationCapabilities.contains {
                     $0.action == .updateDaemon && $0.supported && $0.authorized
                 } ? "passed" : "failed: daemon update was unavailable",
-                "route": store.connectionStatus(for: machine) == nil
+                "route": store.machineEntry(machine)?.route.isEmpty != false
                     ? "failed: no authenticated route measurement" : "passed",
             ]
             if ProcessInfo.processInfo.environment["DIETER_TEST_CONTROL_WEBRTC"] == "1" {
                 results["webrtc-route"] =
-                    store.connectionStatus(for: machine)?.route == .webrtcDirect
+                    store.machineEntry(machine)?.route == "WebRTC · Direct"
                     ? "passed" : "failed: fixture did not select direct WebRTC"
             }
             results["render"] =
@@ -141,7 +142,7 @@
                 fixtureEndpoint: NativeTestSupport.argument("--dieter-endpoint")),
                 store.fleet.selectedMachineID == machine.id
             {
-                await store.fleet.performMachineOperation(.updateDaemon, confirmation: "UPDATE")
+                await store.fleet.performMachineOperation(.updateDaemon)
                 results["daemon-update"] =
                     store.fleet.machineOperationMessage?.contains("reconnect") == true
                     ? "passed" : "failed: isolated daemon update was not accepted"
@@ -152,7 +153,7 @@
                     writeReport(results, to: output)
                     return
                 }
-                await store.fleet.performMachineOperation(.restart, confirmation: "RESTART")
+                await store.fleet.performMachineOperation(.restart)
                 results["power-control"] =
                     store.fleet.machineOperationMessage?.isEmpty == false
                     ? "passed" : "failed: isolated restart was not accepted"

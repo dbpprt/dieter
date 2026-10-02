@@ -16,16 +16,15 @@ const val DEFAULT_PANE_LEADING_FRACTION = 0.43f
 const val DEFAULT_SIDEBAR_LEADING_FRACTION = 0.32f
 
 /**
- * This device's appearance choices: palette, reasoning traces, and pane
- * sizes. Everything else the app remembers (navigation, creation choices,
- * notification settings, drafts) is owned by the shared core.
+ * This device's appearance choices: palette and pane sizes. Everything
+ * else the app remembers (navigation, creation choices, the reasoning
+ * preference, notification settings, drafts) is owned by the shared core.
  */
 class AppPreferences(
     context: Context,
     loadAsync: Boolean = false,
 ) {
     private val appContext = context.applicationContext
-    private val asyncLoading = loadAsync
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutationVersion = AtomicLong()
     private val preferences by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -33,10 +32,6 @@ class AppPreferences(
     }
     private val _palette = MutableStateFlow(if (loadAsync) DieterPalette.DEFAULT else readPalette())
     val palette: StateFlow<DieterPalette> = _palette.asStateFlow()
-    private val _showReasoningTraces = MutableStateFlow(
-        if (loadAsync) false else preferences.getBoolean(KEY_SHOW_REASONING_TRACES, false),
-    )
-    val showReasoningTraces: StateFlow<Boolean> = _showReasoningTraces.asStateFlow()
     private val _chatsPaneLeadingFraction = MutableStateFlow(
         if (loadAsync) DEFAULT_PANE_LEADING_FRACTION else readPaneLeadingFraction(KEY_CHATS_PANE_LEADING_FRACTION),
     )
@@ -65,14 +60,12 @@ class AppPreferences(
     private fun hydrate() {
         val expectedVersion = mutationVersion.get()
         val palette = readPalette()
-        val showReasoningTraces = preferences.getBoolean(KEY_SHOW_REASONING_TRACES, false)
         val chatsPaneLeadingFraction = readPaneLeadingFraction(KEY_CHATS_PANE_LEADING_FRACTION)
         val boardPaneLeadingFraction = readPaneLeadingFraction(KEY_BOARD_PANE_LEADING_FRACTION)
         val activityPaneLeadingFraction = readPaneLeadingFraction(KEY_ACTIVITY_PANE_LEADING_FRACTION, DEFAULT_SIDEBAR_LEADING_FRACTION)
         val projectsPaneLeadingFraction = readPaneLeadingFraction(KEY_PROJECTS_PANE_LEADING_FRACTION, DEFAULT_SIDEBAR_LEADING_FRACTION)
         if (mutationVersion.get() != expectedVersion) return
         _palette.value = palette
-        _showReasoningTraces.value = showReasoningTraces
         _chatsPaneLeadingFraction.value = chatsPaneLeadingFraction
         _boardPaneLeadingFraction.value = boardPaneLeadingFraction
         _activityPaneLeadingFraction.value = activityPaneLeadingFraction
@@ -93,12 +86,6 @@ class AppPreferences(
             DieterActivityWidgetProvider.updateAll(appContext)
             DieterUsageWidgetProvider.updateAll(appContext)
         }
-    }
-
-    fun setShowReasoningTraces(show: Boolean) {
-        markMutation()
-        preferences.edit().putBoolean(KEY_SHOW_REASONING_TRACES, show).apply()
-        _showReasoningTraces.value = show
     }
 
     fun setChatsPaneLeadingFraction(fraction: Float) {
@@ -138,15 +125,23 @@ class AppPreferences(
     companion object {
         private const val PREFERENCES = "dieter_app_settings"
         private const val KEY_PALETTE = "palette"
-        private const val KEY_SHOW_REASONING_TRACES = "show_reasoning_traces"
         private const val KEY_CHATS_PANE_LEADING_FRACTION = "chats_pane_leading_fraction"
         private const val KEY_ACTIVITY_PANE_LEADING_FRACTION = "activity_pane_leading_fraction"
         private const val KEY_PROJECTS_PANE_LEADING_FRACTION = "projects_pane_leading_fraction"
         private const val KEY_BOARD_PANE_LEADING_FRACTION = "board_pane_leading_fraction"
 
+        private val KEYS = setOf(
+            KEY_PALETTE, KEY_CHATS_PANE_LEADING_FRACTION, KEY_ACTIVITY_PANE_LEADING_FRACTION,
+            KEY_PROJECTS_PANE_LEADING_FRACTION, KEY_BOARD_PANE_LEADING_FRACTION,
+        )
+
+        internal fun preferences(context: Context) = context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+
+        /** Whether [key] is one this class reads. */
+        internal fun keeps(key: String): Boolean = key in KEYS
+
         fun selectedPalette(context: Context): DieterPalette = DieterPalette.resolve(
-            context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-                .getString(KEY_PALETTE, DieterPalette.DEFAULT.slug),
+            preferences(context).getString(KEY_PALETTE, DieterPalette.DEFAULT.slug),
         )
     }
 }

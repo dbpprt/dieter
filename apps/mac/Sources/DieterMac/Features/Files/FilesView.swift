@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -134,15 +135,18 @@ struct FilesView: View {
                                 }
                             } label: {
                                 HStack(spacing: 9) {
-                                    Image(systemName: entry.kind == "directory" ? "folder.fill" : symbol(entry.name))
-                                        .foregroundStyle(
-                                            entry.kind == "directory" ? DieterTheme.shell : DieterTheme.tertiary
-                                        )
-                                        .frame(width: 15)
+                                    Image(
+                                        systemName: FilePresentation.symbol(
+                                            name: entry.name, directory: entry.kind == "directory")
+                                    )
+                                    .foregroundStyle(
+                                        entry.kind == "directory" ? DieterTheme.shell : DieterTheme.tertiary
+                                    )
+                                    .frame(width: 15)
                                     Text(entry.name).lineLimit(1)
                                     Spacer()
                                     if entry.kind != "directory" {
-                                        Text(ByteCountFormatter.string(fromByteCount: entry.size, countStyle: .file))
+                                        Text(SharedRules.shared.bytes(count: entry.size))
                                             .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                                     }
                                 }
@@ -194,7 +198,7 @@ struct FilesView: View {
                                     PaneTitleBlock(
                                         title: document.name,
                                         subtitle: preparedExternalActions?.displayPath ?? document.path,
-                                        symbol: symbol(document.name)
+                                        symbol: FilePresentation.symbol(name: document.name)
                                     )
                                     .textSelection(.enabled)
                                     .accessibilityIdentifier("files.document-title")
@@ -208,6 +212,12 @@ struct FilesView: View {
                                     }
                                     if editorSession.isDirty { StatusPill(text: "Edited", color: DieterTheme.amber) }
                                     openMenu(document)
+                                    if model.conflict {
+                                        Button("Reload") { Task { await model.reloadDocument() } }
+                                            .help("Replace your edits with the version on disk")
+                                            .accessibilityIdentifier("files.reload").smokeTarget("files.reload")
+                                            .disabled(!model.isLive || model.saving)
+                                    }
                                     Button("Save") { Task { await model.saveCurrentDocument() } }
                                         .buttonStyle(DieterPrimaryButtonStyle())
                                         .keyboardShortcut("s", modifiers: .command)
@@ -218,12 +228,9 @@ struct FilesView: View {
                             } secondary: {
                                 VStack(alignment: .leading, spacing: 8) {
                                     HStack(spacing: 8) {
-                                        Text(
-                                            ProjectFileLanguage.detect(filename: document.name) == .markdown
-                                                ? "Markdown"
-                                                : (document.mimeType.isEmpty ? "Unknown type" : document.mimeType))
+                                        Text(model.typeLabel)
                                         Text("·")
-                                        Text(ByteCountFormatter.string(fromByteCount: document.size, countStyle: .file))
+                                        Text(SharedRules.shared.bytes(count: document.size))
                                         Spacer()
                                         if !document.binary { Text("Editable") }
                                     }
@@ -234,21 +241,28 @@ struct FilesView: View {
                                 }
                             }
                             if model.fileLoading || model.fileError != nil {
+                                // A save conflict offers Reload above instead of retrying the read.
                                 LoadFeedback(
                                     title: "Refreshing \(document.name)…", error: model.fileError,
-                                    retry: { Task { await model.openFile(path: document.path) } }, compact: true)
+                                    retry: model.conflict
+                                        ? nil : { Task { await model.openFile(path: document.path) } },
+                                    compact: true)
                             }
-                            if let image = previewImage(document) {
-                                ProjectImagePreview(image: image)
-                            } else if document.binary {
-                                ContentUnavailableView(
-                                    "Binary file", systemImage: "doc.badge.ellipsis",
-                                    description: Text(
-                                        "\(ByteCountFormatter.string(fromByteCount: document.size, countStyle: .file)) • \(document.mimeType)"
-                                    ))
-                            } else {
+                            let renderer = FilePresentation.renderer(document)
+                            switch renderer {
+                            case .image:
+                                if let image = NSImage(data: document.bytes) {
+                                    ProjectImagePreview(image: image)
+                                } else {
+                                    unsupportedDocument(document)
+                                }
+                            case .pdf:
+                                ConversationPDFDocumentRenderer(data: document.bytes) {
+                                    unsupportedDocument(document)
+                                }
+                            case .markdown, .text:
                                 VStack(spacing: 0) {
-                                    if ProjectFileLanguage.detect(filename: document.name) == .markdown {
+                                    if renderer == .markdown {
                                         MarkdownFileEditor(
                                             session: editorSession, documentKey: model.documentKey,
                                             text: document.content, filename: document.name
@@ -265,7 +279,7 @@ struct FilesView: View {
                                         .accessibilityIdentifier("files.editor")
                                     }
                                     HStack(spacing: 12) {
-                                        Text(ProjectFileLanguage.detect(filename: document.name).displayName)
+                                        Text(model.languageName)
                                         Text("UTF-8")
                                         Spacer()
                                         Text("\(editorSession.lineCount) lines")
@@ -276,6 +290,8 @@ struct FilesView: View {
                                     .background(DieterTheme.sidebar)
                                     .overlay(alignment: .top) { Rectangle().fill(DieterTheme.border).frame(height: 1) }
                                 }
+                            default:
+                                unsupportedDocument(document)
                             }
                         }
                     } else {
@@ -311,7 +327,7 @@ struct FilesView: View {
                     Spacer(); Button("Cancel") { createPresented = false };
                     Button("Create") {
                         Task {
-                            await model.createFile(path: joined(model.filePath, newPath), directory: newDirectory);
+                            await model.createFile(name: newPath, directory: newDirectory);
                             newPath = ""; createPresented = false
                         }
                     }.buttonStyle(.borderedProminent).disabled(newPath.isEmpty)
@@ -339,19 +355,10 @@ struct FilesView: View {
         }
     }
 
-    private func symbol(_ name: String) -> String {
-        let ext = (name as NSString).pathExtension.lowercased()
-        return ["png", "jpg", "jpeg", "gif", "webp"].contains(ext)
-            ? "photo"
-            : ["swift", "go", "kt", "js", "ts", "tsx", "json", "md", "yml", "yaml"].contains(ext)
-                ? "chevron.left.forwardslash.chevron.right" : "doc"
-    }
-
-    private func previewImage(_ document: Dieter_V1_FileDocument) -> NSImage? {
-        guard ProjectFilePresentation.isImage(filename: document.name, mimeType: document.mimeType) else { return nil }
-        let bytes = ProjectFilePresentation.bytes(
-            binary: document.binary, content: document.content, data: document.data)
-        return NSImage(data: bytes)
+    private func unsupportedDocument(_ document: Dieter_V1_FileDocument) -> some View {
+        ContentUnavailableView(
+            "No preview available", systemImage: "doc.badge.ellipsis",
+            description: Text("\(SharedRules.shared.bytes(count: document.size)) • \(document.mimeType)"))
     }
 
     private func download(_ document: Dieter_V1_FileDocument) {
@@ -490,13 +497,7 @@ struct FilesView: View {
     }
 
     private func navigateToParent() {
-        guard !model.filePath.isEmpty else { return }
-        let parent = ProjectFileNavigation.parentPath(of: model.filePath)
-        Task { await model.navigateFiles(to: parent) }
-    }
-
-    private func joined(_ base: String, _ path: String) -> String {
-        base.isEmpty ? path : (base as NSString).appendingPathComponent(path)
+        Task { await model.navigateToParent() }
     }
 }
 

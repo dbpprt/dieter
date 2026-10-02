@@ -36,7 +36,7 @@ struct DieterTransparencyTests {
         let suite = "DieterTransparencyTests.store.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let store = DieterStore(themeDefaultsOverride: defaults, restoreSync: false)
+        let store = DieterStore(themeDefaultsOverride: defaults, liveEnvironment: false)
         let original = store.themeSelection
         let observedChange = Mutex(false)
         withObservationTracking {

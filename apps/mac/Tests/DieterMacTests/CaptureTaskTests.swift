@@ -131,11 +131,10 @@ import Testing
 }
 
 @Test @MainActor func quickTaskDraftResetsForSubmissionAndNewAppSession() {
-    // Choices are remembered through the shared core; a new session adopts them.
+    // Destinations are remembered through the shared core; a new session adopts them.
     var remembered = ClientCreationSlice()
     let draft = QuickTaskFormState()
     draft.remember = { change in
-        if change.hasSelection { remembered.selection = change.selection }
         if !change.projectID.isEmpty {
             remembered.projectID = change.projectID
             if !change.boardID.isEmpty { remembered.boards[change.projectID] = change.boardID }
@@ -146,10 +145,6 @@ import Testing
     draft.draftProjectID = "project"
     draft.draftBoardID = "board"
     draft.rememberHostname = true
-    draft.provider = "codex"
-    draft.model = "gpt-5.6-sol"
-    draft.effort = "high"
-    draft.providerOptions = ["fast_mode": "true"]
     draft.initialized = true
     let image = Dieter_V1_MessagePart()
     draft.attachments = [image]
@@ -159,19 +154,12 @@ import Testing
     newSession.adopt(remembered)
     #expect(echoed == 0, "adopting what the core remembers sends nothing back")
     #expect(newSession.draftProjectID == "project" && newSession.draftBoardID == "board")
-    #expect(newSession.providerOptions["fast_mode"] == "true")
-    #expect(newSession.provider == "codex" && newSession.model == "gpt-5.6-sol" && newSession.effort == "high")
     #expect(newSession.story.isEmpty && newSession.attachments.isEmpty)
     draft.reset()
     #expect(draft.story.isEmpty && draft.sourceURL.isEmpty && draft.attachments.isEmpty)
     #expect(draft.draftProjectID == "project" && draft.draftBoardID == "board")
-    #expect(draft.providerOptions["fast_mode"] == "true" && !draft.rememberHostname && draft.initialized)
-    draft.selectProject("second", boardIDs: ["first", "other"])
-    #expect(draft.draftBoardID == "first")
-    draft.draftBoardID = "other"
-    draft.selectProject("project", boardIDs: ["board"])
-    draft.selectProject("second", boardIDs: ["first", "other"])
-    #expect(draft.draftBoardID == "other")
-    draft.selectProject("second", boardIDs: ["first"])
-    #expect(draft.draftBoardID == "first")
+    #expect(!draft.rememberHostname && draft.initialized)
+    // A project takes the board the core preselects in it.
+    draft.selectProject("second", in: .with { $0.boards = ["second": "other"] })
+    #expect(draft.draftProjectID == "second" && draft.draftBoardID == "other")
 }

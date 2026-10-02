@@ -2,23 +2,13 @@ import Testing
 import DieterAPI
 import DieterCore
 import AppKit
-import CryptoKit
 import Foundation
-import GRPCCore
-import GRPCNIOTransportHTTP2
 import Observation
 import SwiftUI
+import SharedCore
 import SwiftTerm
 import UniformTypeIdentifiers
 @testable import DieterMac
-
-@Test func machineInformationPresentationFormatsTelemetryCompactly() {
-    #expect(MachineInformationPresentation.bytes(11_200_000_000).contains("GB"))
-    #expect(MachineInformationPresentation.rate(1_250_000).hasSuffix("/s"))
-    #expect(MachineInformationPresentation.uptime(14 * 86_400 + 6 * 3_600) == "14d 6h")
-    #expect(MachineInformationPresentation.uptime(2 * 3_600 + 41 * 60) == "2h 41m")
-    #expect(MachineInformationPresentation.percentage(37.6) == "38%")
-}
 
 @Test func gpuTelemetryKeepsUnavailableValuesDistinctFromRealZeroes() {
     var gpu = Dieter_V1_GPUDevice()
@@ -90,21 +80,6 @@ import UniformTypeIdentifiers
     #expect(custom.suggestion == "gateway")
 }
 
-@Test func remoteDesktopBindingMessageMatchesDaemonWireFormat() {
-    let message = RemoteDesktopSessionTrust.bindingMessage(
-        sessionID: "rd_one",
-        nonce: "nonce",
-        fingerprint: "sha-256 AA:BB",
-        expiresAt: "2026-08-25T08:00:00Z",
-        offerHash: Data([0, 1, 2]), controlGranted: true, displayID: "primary",
-        inputProtocolVersion: DieterRemoteDesktopProtocol.number, inputEpoch: Data(repeating: 7, count: 16)
-    )
-    #expect(
-        String(data: message, encoding: .utf8)
-            == "dieter-remote-desktop-v\(DieterRemoteDesktopProtocol.number)\nrd_one\nnonce\nsha-256 AA:BB\n2026-08-25T08:00:00Z\nAAEC\ntrue\nprimary\n\(DieterRemoteDesktopProtocol.number)\nBwcHBwcHBwcHBwcHBwcHBw"
-    )
-}
-
 @Test func remoteDesktopInputGeometryExcludesLetterboxingAndUsesTopLeftCoordinates() throws {
     let bounds = CGRect(x: 0, y: 0, width: 1_000, height: 1_000)
     let video = CGSize(width: 1_600, height: 900)
@@ -121,31 +96,6 @@ import UniformTypeIdentifiers
             point: CGPoint(x: 500, y: 500), bounds: bounds, videoSize: video))
     #expect(abs(center.x - 0.5) < 0.0001)
     #expect(abs(center.y - 0.5) < 0.0001)
-}
-
-@Test func scheduleTimingTurnsFriendlyChoicesIntoFiveFieldCron() throws {
-    let parsed = ScheduleTiming.parse("45 16 * * 4")
-    #expect(parsed.cadence == .weekly)
-    #expect(parsed.weekday == 4)
-    let components = Calendar.current.dateComponents([.hour, .minute], from: parsed.time)
-    #expect(components.hour == 16)
-    #expect(components.minute == 45)
-    #expect(ScheduleTiming.cron(cadence: .weekly, time: parsed.time, weekday: 4, custom: "") == "45 16 * * 4")
-    #expect(ScheduleTiming.parse("*/10 * * * *").cadence == .custom)
-}
-
-@Test func scheduleTemplatePreviewMatchesDaemonVariableSyntax() {
-    let variables = [
-        "date": "2026-08-25", "scheduled_at": "2026-08-25T07:00:00Z",
-        "project": "Dieter", "board": "Main", "schedule": "Morning",
-    ]
-    #expect(ScheduleTemplateRenderer.render("{{schedule}} · {{date}}", variables: variables) == "Morning · 2026-08-25")
-    #expect(
-        ScheduleTemplateRenderer.render("Work in {{project}} / {{board}} at {{scheduled_at}}", variables: variables)
-            == "Work in Dieter / Main at 2026-08-25T07:00:00Z")
-    #expect(ScheduleTemplateRenderer.appending("{{date}}", to: "Daily") == "Daily {{date}}")
-    #expect(ScheduleActionPresentation.title("draft") == "Todo")
-    #expect(ScheduleActionPresentation.title("run") == "Running")
 }
 
 private actor ScheduleRPCStub: DieterScheduleRPC {
@@ -192,7 +142,7 @@ private actor ScheduleRPCStub: DieterScheduleRPC {
     }
 }
 
-@Test @MainActor func schedulesLoadFromDedicatedRPCWithoutWaitingForGlobalSync() async {
+@Test @MainActor func schedulesLoadThroughTheirOwnSurfaceWithoutWaitingForGlobalSync() async {
     var schedule = Dieter_V1_Schedule()
     schedule.id = "s_morning"
     schedule.projectID = "p_dieter"
@@ -201,17 +151,17 @@ private actor ScheduleRPCStub: DieterScheduleRPC {
     run.id = "sr_morning"
     run.scheduleID = schedule.id
     let rpc = ScheduleRPCStub(schedules: [schedule], runs: [run])
-    let store = DieterStore(core: SchedulesCoreDouble.core(reader: rpc), restoreSync: false)
+    let store = DieterStore(core: SchedulesCoreDouble.core(reader: rpc), liveEnvironment: false)
     store.selectedProjectID = schedule.projectID
 
     await store.loadSchedules()
 
     #expect(store.schedules.map(\.id) == [schedule.id])
-    #expect(store.selectedScheduleID == schedule.id)
-    #expect(store.scheduleRuns.map(\.id) == [run.id])
-    #expect(store.schedulesAreLoaded)
-    #expect(!store.schedulesLoading)
-    #expect(!store.scheduleRunsLoading)
+    #expect(store.schedulesModel.selectedScheduleID == schedule.id)
+    #expect(store.schedulesModel.scheduleRuns.map(\.id) == [run.id])
+    #expect(store.schedulesModel.schedulesAreLoaded)
+    #expect(!store.schedulesModel.schedulesLoading)
+    #expect(!store.schedulesModel.scheduleRunsLoading)
     let requests = await rpc.requests()
     #expect(requests.projects == [schedule.projectID])
     #expect(requests.schedules == [schedule.id])
@@ -237,250 +187,22 @@ private actor ScheduleRPCStub: DieterScheduleRPC {
         schedulePages: ["": firstSchedules, "s-next": secondSchedules],
         runPages: ["": firstRuns, "r-next": secondRuns]
     )
-    let store = DieterStore(core: SchedulesCoreDouble.core(reader: rpc), restoreSync: false)
+    let store = DieterStore(core: SchedulesCoreDouble.core(reader: rpc), liveEnvironment: false)
     store.selectedProjectID = morning.projectID
 
     await store.loadSchedules()
-    await store.loadMoreSchedules()
-    await store.loadMoreScheduleRuns()
+    await store.schedulesModel.loadMoreSchedules()
+    await store.schedulesModel.loadMoreScheduleRuns()
 
     #expect(store.schedules.map(\.id) == [morning.id, nightly.id])
-    #expect(store.schedulesTotalCount == 2)
-    #expect(store.schedulesNextPageToken.isEmpty)
-    #expect(store.scheduleRuns.map(\.id) == [newest.id, older.id])
-    #expect(store.scheduleRunsNextPageToken.isEmpty)
+    #expect(store.schedulesModel.schedulesTotalCount == 2)
+    #expect(store.schedulesModel.schedulesNextPageToken.isEmpty)
+    #expect(store.schedulesModel.scheduleRuns.map(\.id) == [newest.id, older.id])
+    #expect(store.schedulesModel.scheduleRunsNextPageToken.isEmpty)
     let requests = await rpc.requests()
     #expect(requests.scheduleTokens == ["", "s-next"])
     #expect(requests.runTokens == ["", "r-next"])
     #expect(requests.pageSizes == [50, 50, 50, 50])
-}
-
-@Test func schedulesDoNotPresentAnAuthoritativeEmptyStateBeforeLoadingCompletes() {
-    #expect(SchedulesPresentationState.resolve(isLoaded: false, isLoading: false, hasSchedules: false) == .loading)
-    #expect(SchedulesPresentationState.resolve(isLoaded: true, isLoading: true, hasSchedules: false) == .loading)
-    #expect(SchedulesPresentationState.resolve(isLoaded: true, isLoading: false, hasSchedules: false) == .empty)
-    #expect(SchedulesPresentationState.resolve(isLoaded: true, isLoading: true, hasSchedules: true) == .loaded)
-}
-
-@Test func remoteDesktopBindingRejectsSignatureWithoutControlAndEpoch() throws {
-    let offer = "v=0\r\no=test"
-    let answer = "v=0\r\na=fingerprint:sha-256 AA:BB\r\n"
-    var binding = Dieter_V1_RemoteDesktopSessionBinding()
-    binding.clientNonce = "nonce_fixture"
-    binding.helperDtlsFingerprint = "sha-256 AA:BB"
-    binding.expiresAt = "2099-08-25T08:00:00Z"
-    binding.offerSha256 = Data(SHA256.hash(data: Data(offer.utf8)))
-    binding.inputProtocolVersion = DieterRemoteDesktopProtocol.number
-    binding.inputEpoch = Data(repeating: 1, count: 16)
-    binding.daemonSignature = try #require(
-        Data(base64Encoded: "ctCMwB2SL9Wk9JqpQzgtM+NQxXqUXGGKSSpQ1X2lNX3G3uS8UR7uKe5J8fjZheT1WxX3U5s37saWnSk7dqIADQ=="))
-    let certificate = Data(
-        """
-        -----BEGIN CERTIFICATE-----
-        MIIBYTCCAROgAwIBAgIUWcmlQ5i8ry6XFrGSInUHhVtT6bcwBQYDK2VwMCUxIzAh
-        BgNVBAMMGkRpZXRlciBSZW1vdGUgRGVza3RvcCBUZXN0MCAXDTI2MDgyNTA2MzAy
-        M1oYDzIxMjYwODAxMDYzMDIzWjAlMSMwIQYDVQQDDBpEaWV0ZXIgUmVtb3RlIERl
-        c2t0b3AgVGVzdDAqMAUGAytlcAMhAK/kvlcnHBLF7CgDu3bGqnnFqiS1qDddmdfC
-        2SuEjBCxo1MwUTAdBgNVHQ4EFgQUTRWfCy1GDKsD0d2TMOQ04Djoy0QwHwYDVR0j
-        BBgwFoAUTRWfCy1GDKsD0d2TMOQ04Djoy0QwDwYDVR0TAQH/BAUwAwEB/zAFBgMr
-        ZXADQQBccxXAQ41kKXSVZIV/OV/wSiYVreRAZ5kKZDnz//Ks54js7/FFkUoIVBBN
-        bpWaGrNlFFB4ASZmaVDTqY2T0psO
-        -----END CERTIFICATE-----
-        """.utf8
-    )
-    let now = try #require(ISO8601DateFormatter().date(from: "2026-08-25T08:00:00Z"))
-
-    do {
-        try RemoteDesktopSessionTrust.verify(
-            binding: binding, sessionID: "rd_fixture", clientNonce: "nonce_fixture",
-            offerSDP: offer, answerSDP: answer, daemonCertificatePEM: certificate,
-            now: now
-        )
-        Issue.record("a signature without the control binding was accepted")
-    } catch RemoteDesktopSessionTrust.Failure.invalidSignature {
-        // Expected: control authorization and the input epoch are now signed.
-    }
-}
-
-@Test func remoteDesktopBindingRejectsExpiryBeforeCertificateVerification() {
-    let offer = "v=0\r\no=test"
-    let answer = "v=0\r\na=fingerprint:sha-256 AA:BB\r\n"
-    var binding = Dieter_V1_RemoteDesktopSessionBinding()
-    binding.clientNonce = "nonce"
-    binding.helperDtlsFingerprint = "sha-256 AA:BB"
-    binding.expiresAt = "2026-08-25T07:00:00Z"
-    binding.offerSha256 = Data(SHA256.hash(data: Data(offer.utf8)))
-    binding.inputProtocolVersion = DieterRemoteDesktopProtocol.number
-    binding.inputEpoch = Data(repeating: 1, count: 16)
-    do {
-        try RemoteDesktopSessionTrust.verify(
-            binding: binding, sessionID: "rd_one", clientNonce: "nonce",
-            offerSDP: offer, answerSDP: answer, daemonCertificatePEM: Data(),
-            now: try #require(ISO8601DateFormatter().date(from: "2026-08-25T08:00:00Z"))
-        )
-        Issue.record("expired binding was accepted")
-    } catch RemoteDesktopSessionTrust.Failure.expiredBinding {
-        // Expected: expiry is enforced before any untrusted certificate work.
-    } catch {
-        Issue.record("unexpected binding failure: \(error)")
-    }
-}
-
-@Test func unreachableEndpointSurvivesConnectionBackoffAndShutdown() async throws {
-    let endpoint = try #require(DieterEndpoint.parse("127.0.0.1:1"))
-    let client = try DieterRPC(endpoint: endpoint)
-    let connection = Task {
-        try? await client.run()
-    }
-
-    do {
-        _ = try await client.health(timeout: .milliseconds(250))
-        Issue.record("A closed loopback port unexpectedly accepted the health RPC")
-    } catch {
-        // The expected failure moves the transport into its connection-backoff path.
-    }
-
-    try await Task.sleep(nanoseconds: 2_000_000_000)
-    connection.cancel()
-    client.shutdown()
-}
-
-@Test func parsesDieterEndpointWithDefaultPort() {
-    let endpoint = DieterEndpoint.parse("board.local", name: "Office")
-    #expect(endpoint?.name == "Office")
-    #expect(endpoint?.host == "board.local")
-    #expect(endpoint?.port == 4242)
-}
-
-@Test func parsesDieterEndpointWithExplicitPort() {
-    let endpoint = DieterEndpoint.parse("127.0.0.1:50051")
-    #expect(endpoint?.address == "http://127.0.0.1:50051")
-    #expect(DieterEndpoint.parse("127.0.0.1:70000") == nil)
-}
-
-@Test func parsesSecureDieterEndpointWithHTTPSDefaultPort() {
-    let endpoint = DieterEndpoint.parse("https://dieter.example", name: "Public")
-    #expect(endpoint?.host == "dieter.example")
-    #expect(endpoint?.port == 443)
-    #expect(endpoint?.secure == true)
-    #expect(endpoint?.address == "https://dieter.example:443")
-}
-
-@Test func transportTargetsDoNotSendIPAddressesAsTLSServerNames() {
-    #expect(DieterTransportTarget.hostKind("127.0.0.1") == .ipv4)
-    #expect(DieterTransportTarget.hostKind("::1") == .ipv6)
-    #expect(DieterTransportTarget.hostKind("fe80::1%en0") == .ipv6)
-    #expect(DieterTransportTarget.hostKind("gateway.getdieter.com") == .dns)
-
-    #expect(DieterTransportTarget.make(host: "127.0.0.1", port: 4242) is ResolvableTargets.IPv4)
-    #expect(DieterTransportTarget.make(host: "::1", port: 4242) is ResolvableTargets.IPv6)
-    #expect(DieterTransportTarget.make(host: "gateway.getdieter.com", port: 443) is ResolvableTargets.DNS)
-}
-
-@Test func backgroundMachineRefreshOnlyProbesLoopbackDirectCandidates() {
-    func candidate(_ id: String, network: String, priority: Int32) -> Dieter_Gateway_V1_DirectCandidate {
-        var candidate = Dieter_Gateway_V1_DirectCandidate()
-        candidate.id = id
-        candidate.network = network
-        candidate.priority = priority
-        return candidate
-    }
-
-    let loopback = candidate("loopback", network: "loopback", priority: 1_000)
-    let uppercaseLoopback = candidate("loopback-uppercase", network: "LOOPBACK", priority: 900)
-    let lan = candidate("lan", network: "lan", priority: 2_000)
-
-    #expect(
-        DirectCandidateScope.loopbackOnly.ordered([lan, uppercaseLoopback, loopback]).map(\.id) == [
-            "loopback", "loopback-uppercase",
-        ])
-    #expect(DirectCandidateScope.all.ordered([loopback, lan]).map(\.id) == ["lan", "loopback"])
-}
-
-@Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_LIVE_DIRECT_PORT"] != nil))
-func liveDirectRouteCompletesTLSAndReachesDaemonAuthentication() async throws {
-    struct StoredIdentity: Decodable {
-        let id: String
-        let certificatePem: Data
-        let daemonCaPem: Data
-    }
-
-    let port = try #require(Int(ProcessInfo.processInfo.environment["DIETER_LIVE_DIRECT_PORT"] ?? ""))
-    let identityURL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".dieter/daemon/identity.json")
-    let identity = try JSONDecoder().decode(StoredIdentity.self, from: Data(contentsOf: identityURL))
-    let certificateBody = try #require(String(data: identity.certificatePem, encoding: .utf8))
-        .replacingOccurrences(of: "-----BEGIN CERTIFICATE-----", with: "")
-        .replacingOccurrences(of: "-----END CERTIFICATE-----", with: "")
-        .components(separatedBy: .whitespacesAndNewlines)
-        .joined()
-    let certificateDER = try #require(Data(base64Encoded: certificateBody))
-    #expect(
-        DieterRPC.verifyDaemonCertificateChain(
-            [certificateDER],
-            daemonCAPEM: identity.daemonCaPem,
-            daemonID: identity.id
-        ))
-    let endpoint = DieterEndpoint(name: "Live direct route", host: "127.0.0.1", port: port, daemonID: identity.id)
-    let client = try DieterRPC(
-        endpoint: endpoint,
-        direct: .init(
-            host: endpoint.host,
-            port: endpoint.port,
-            daemonID: identity.id,
-            daemonCAPEM: identity.daemonCaPem,
-            accessToken: "deliberately-invalid-test-token"
-        )
-    )
-    let connection = Task { try? await client.run() }
-    defer {
-        connection.cancel()
-        client.shutdown()
-    }
-
-    do {
-        _ = try await client.health(timeout: .seconds(2))
-        Issue.record("The daemon unexpectedly accepted an invalid direct-route token")
-    } catch let error as RPCError {
-        // Unauthenticated is the direct daemon's application-level response.
-        // Reaching it proves IP target selection, TLS, CA validation, HTTP/2,
-        // and gRPC framing all completed successfully.
-        #expect(error.code == .unauthenticated)
-    }
-}
-
-@Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_LIVE_DIRECT_PORT"] != nil))
-func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
-    struct StoredIdentity: Decodable {
-        let id: String
-        let daemonCaPem: Data
-    }
-
-    let port = try #require(Int(ProcessInfo.processInfo.environment["DIETER_LIVE_DIRECT_PORT"] ?? ""))
-    let identityURL = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".dieter/daemon/identity.json")
-    let identity = try JSONDecoder().decode(StoredIdentity.self, from: Data(contentsOf: identityURL))
-    let endpoint = DieterEndpoint(name: "Wrong identity", host: "127.0.0.1", port: port, daemonID: "wrong-daemon")
-    let client = try DieterRPC(
-        endpoint: endpoint,
-        direct: .init(
-            host: endpoint.host,
-            port: endpoint.port,
-            daemonID: "wrong-daemon",
-            daemonCAPEM: identity.daemonCaPem,
-            accessToken: "deliberately-invalid-test-token"
-        )
-    )
-    let connection = Task { try? await client.run() }
-    defer {
-        connection.cancel()
-        client.shutdown()
-    }
-
-    do {
-        _ = try await client.health(timeout: .seconds(2))
-        Issue.record("A direct route accepted a certificate for another daemon")
-    } catch let error as RPCError {
-        #expect(error.code != .unauthenticated)
-    }
 }
 
 @Test func daemonEndpointKeepsHostnamePresenceAndGatewayCredentialIdentity() throws {
@@ -500,59 +222,12 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     #expect(endpoint.credentialID == "https://dieter.example:443")
     #expect(endpoint.name == "Studio Mac")
     #expect(!endpoint.online)
-    #expect(endpoint.compatibilityState == .compatible)
+    #expect(endpoint.compatibility == .compatible)
     #expect(endpoint.gatewayEndpoint.daemonID == nil)
     #expect(endpoint.gatewayEndpoint.credentialID == endpoint.credentialID)
-    #expect(DieterRPC.Route.gateway.daemonID == nil)
-    #expect(DieterRPC.Route.relay(daemonID: "daemon-1").daemonID == "daemon-1")
 
     let decoded = try JSONDecoder().decode(DieterEndpoint.self, from: JSONEncoder().encode(endpoint))
     #expect(decoded == endpoint)
-}
-
-@Test func credentialFileStorePersistsUpdatesAndRemovalWithUserOnlyPermissions() async throws {
-    let directory = FileManager.default.temporaryDirectory
-        .appending(path: "board-credential-test-\(UUID().uuidString)", directoryHint: .isDirectory)
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let fileURL = directory.appending(path: "gateway-sessions.json", directoryHint: .notDirectory)
-    let credentialID = "https://dieter.example:443"
-    let otherCredentialID = "https://other.example:443"
-
-    let store = DieterCredentialFileStore(fileURL: fileURL)
-    try await store.save("first", for: credentialID)
-    try await store.save("second", for: credentialID)
-    try await store.save("other", for: otherCredentialID)
-
-    let reloaded = DieterCredentialFileStore(fileURL: fileURL)
-    let reloadedToken = await reloaded.token(for: credentialID)
-    let reloadedOtherToken = await reloaded.token(for: otherCredentialID)
-    #expect(reloadedToken == "second")
-    #expect(reloadedOtherToken == "other")
-    let directoryAttributes = try FileManager.default.attributesOfItem(atPath: directory.path)
-    let fileAttributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
-    let directoryMode = try #require(directoryAttributes[.posixPermissions] as? NSNumber)
-    let fileMode = try #require(fileAttributes[.posixPermissions] as? NSNumber)
-    #expect(directoryMode.intValue == 0o700)
-    #expect(fileMode.intValue == 0o600)
-
-    try await reloaded.remove(for: credentialID)
-    let removedToken = await reloaded.token(for: credentialID)
-    let retainedOtherToken = await reloaded.token(for: otherCredentialID)
-    #expect(removedToken == nil)
-    #expect(retainedOtherToken == "other")
-}
-
-@Test func offlineMachineLastSeenTextIsCompact() throws {
-    let now = try #require(ISO8601DateFormatter().date(from: "2026-08-18T15:00:00Z"))
-    #expect(MachinePresenceText.lastSeen("2026-08-18T14:59:40Z", relativeTo: now) == "Last seen just now")
-    #expect(MachinePresenceText.lastSeen("2026-08-18T14:52:00Z", relativeTo: now) == "Last seen 8m ago")
-    #expect(MachinePresenceText.lastSeen("2026-08-18T12:00:00Z", relativeTo: now) == "Last seen 3h ago")
-    #expect(MachinePresenceText.lastSeen("", relativeTo: now) == "Last seen unknown")
-    #expect(MachinePresenceText.freshestAge(["2026-08-18T14:59:55Z"], relativeTo: now) == "5s ago")
-    #expect(MachinePresenceText.isFresh("2026-08-18T14:59:31Z", relativeTo: now))
-    #expect(!MachinePresenceText.isFresh("2026-08-18T14:59:30Z", relativeTo: now))
-    #expect(MachinePresenceText.online(serverOnline: true, lastSeenAt: "", relativeTo: now))
-    #expect(!MachinePresenceText.online(serverOnline: false, lastSeenAt: "2026-08-18T14:59:59Z", relativeTo: now))
 }
 
 @Test func cardDragPayloadRejectsUnrelatedText() {
@@ -569,11 +244,6 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     #expect(payload?.boardID == "b_456")
     #expect(BoardLabelDragPayload("ordinary text") == nil)
     #expect(BoardLabelDragPayload("board-label||l_123") == nil)
-}
-
-@Test func labelAssignmentDoesNotCreateDuplicates() {
-    #expect(BoardLabelAssignment.adding("l_2", to: ["l_1"]) == ["l_1", "l_2"])
-    #expect(BoardLabelAssignment.adding("l_1", to: ["l_1", "l_2"]) == ["l_1", "l_2"])
 }
 
 @Test func shiftReturnCreatesANewlineAndPlainReturnSends() {
@@ -626,231 +296,6 @@ func liveDirectRouteRejectsTheWrongDaemonIdentity() async throws {
     #expect(!ComposerHistoryNavigation.isAtBoundary(.older, text: text, selection: NSRange(location: 14, length: 0)))
     #expect(!ComposerHistoryNavigation.isAtBoundary(.newer, text: text, selection: NSRange(location: 3, length: 0)))
     #expect(ComposerHistoryNavigation.isAtBoundary(.newer, text: text, selection: NSRange(location: 14, length: 0)))
-}
-
-@Test func optimisticCardMoveSurvivesAStaleProjectionUntilSyncConfirmsIt() {
-    var stale = Dieter_V1_Card()
-    stale.id = "card-one"
-    stale.lane = "todo"
-    stale.position = 1_024
-    let move = OptimisticCardMove(
-        operationID: UUID(),
-        lane: "review",
-        position: 2_048,
-        placementRevision: "committed"
-    )
-
-    let projected = OptimisticCardProjection.reconcile(
-        cards: [stale],
-        moves: [stale.id: move],
-        labels: [:]
-    )
-    #expect(projected.cards[0].lane == "review")
-    #expect(projected.cards[0].position == 2_048)
-    #expect(projected.moves[stale.id] == move)
-
-    var confirmed = stale
-    confirmed.lane = "review"
-    confirmed.position = 2_048
-    confirmed.placementRevision = "committed"
-    let synchronized = OptimisticCardProjection.reconcile(
-        cards: [confirmed],
-        moves: projected.moves,
-        labels: [:]
-    )
-    #expect(synchronized.cards[0] == confirmed)
-    #expect(synchronized.moves.isEmpty)
-}
-
-@Test func optimisticCardLabelsStayVisibleUntilTheSynchronizedCardMatches() {
-    var stale = Dieter_V1_Card()
-    stale.id = "card-labels"
-    stale.labelIds = ["old"]
-    let update = OptimisticCardLabels(operationID: UUID(), labelIDs: ["new"])
-
-    let projected = OptimisticCardProjection.reconcile(
-        cards: [stale],
-        moves: [:],
-        labels: [stale.id: update]
-    )
-    #expect(projected.cards[0].labelIds == ["new"])
-    #expect(projected.labels[stale.id] == update)
-
-    var confirmed = stale
-    confirmed.labelIds = ["new"]
-    let synchronized = OptimisticCardProjection.reconcile(
-        cards: [confirmed],
-        moves: [:],
-        labels: projected.labels
-    )
-    #expect(synchronized.labels.isEmpty)
-}
-
-@Test func boardLabelChangesSurviveAStaleWorkspaceProjection() {
-    var stale = Dieter_V1_Board()
-    stale.id = "board-one"
-    var updated = stale
-    var label = Dieter_V1_Label()
-    label.id = "label-one"
-    label.name = "Backend"
-    label.instructions = "Run the backend checks."
-    updated.labels = [label]
-
-    let projected = OptimisticWorkspaceProjection.reconcileBoards(
-        [stale],
-        pending: [updated.id: updated]
-    )
-    #expect(projected.boards == [updated])
-    #expect(projected.pending[updated.id] == updated)
-
-    let synchronized = OptimisticWorkspaceProjection.reconcileBoards(
-        [updated],
-        pending: projected.pending
-    )
-    #expect(synchronized.boards == [updated])
-    #expect(synchronized.pending.isEmpty)
-}
-
-@Test func conversationRefreshTextDistinguishesCachedAndRefreshingState() {
-    let now = Date(timeIntervalSince1970: 10_000)
-    #expect(ConversationRefreshText.label(lastRefreshedAt: nil, syncing: true, now: now) == "Refreshing…")
-    #expect(
-        ConversationRefreshText.label(
-            lastRefreshedAt: now.addingTimeInterval(-20),
-            syncing: true,
-            now: now
-        ) == "Last refreshed just now · Refreshing…")
-    #expect(
-        ConversationRefreshText.label(
-            lastRefreshedAt: now.addingTimeInterval(-300),
-            syncing: false,
-            now: now
-        ) == "Last refreshed 5m ago")
-}
-
-@Test func equalInactiveMachineRefreshProducesAnEqualDirectoryProjection() {
-    let endpoint = DieterEndpoint(
-        name: "Other Mac",
-        host: "dieter.example",
-        port: 443,
-        secure: true,
-        daemonID: "daemon-other"
-    )
-    var project = Dieter_V1_Project()
-    project.id = "project-other"
-    project.name = "Other project"
-    project.boardCount = 1
-    var board = Dieter_V1_Board()
-    board.id = "board-other"
-    board.projectID = project.id
-    var card = Dieter_V1_Card()
-    card.id = "card-other"
-    card.projectID = project.id
-    card.boardID = board.id
-    var chat = Dieter_V1_Card()
-    chat.id = "chat-other"
-    chat.projectID = project.id
-    chat.scope = "chat"
-    chat.updatedAt = "2026-08-24T10:00:00Z"
-
-    let current = MachineDirectoryProjection(
-        projects: [project.id: project],
-        projectReplicaEndpointIDs: [project.id: endpoint.id],
-        boards: [project.id: [board]],
-        cards: [project.id: [card]],
-        chats: [chat]
-    )
-    let snapshot = MachineSnapshot(
-        endpoint: endpoint,
-        connection: MachineConnectionStatus(route: .gateway, latencyMilliseconds: 12),
-        projects: [project],
-        boards: [board],
-        cards: [card],
-        chats: [chat]
-    )
-
-    #expect(MachineDirectoryReducer.merging(current, snapshots: [snapshot]) == current)
-}
-
-@Test func inactiveMachineMergePreservesTheActiveMachineProjection() {
-    let activeEndpoint = DieterEndpoint(
-        name: "Active Mac",
-        host: "dieter.example",
-        port: 443,
-        secure: true,
-        daemonID: "daemon-active"
-    )
-    let otherEndpoint = DieterEndpoint(
-        name: "Other Mac",
-        host: "dieter.example",
-        port: 443,
-        secure: true,
-        daemonID: "daemon-other"
-    )
-    var activeProject = Dieter_V1_Project()
-    activeProject.id = "project-active"
-    var activeCard = Dieter_V1_Card()
-    activeCard.id = "card-active"
-    activeCard.projectID = activeProject.id
-    var otherProject = Dieter_V1_Project()
-    otherProject.id = "project-other"
-    var otherChat = Dieter_V1_Card()
-    otherChat.id = "chat-other"
-    otherChat.projectID = otherProject.id
-    otherChat.scope = "chat"
-
-    let current = MachineDirectoryProjection(
-        projects: [activeProject.id: activeProject],
-        projectReplicaEndpointIDs: [activeProject.id: activeEndpoint.id],
-        boards: [activeProject.id: []],
-        cards: [activeProject.id: [activeCard]],
-        chats: []
-    )
-    let next = MachineDirectoryReducer.merging(
-        current,
-        snapshots: [
-            MachineSnapshot(
-                endpoint: otherEndpoint,
-                connection: MachineConnectionStatus(route: .gateway, latencyMilliseconds: 8),
-                projects: [otherProject],
-                boards: [],
-                cards: [],
-                chats: [otherChat]
-            )
-        ])
-
-    #expect(next.projects[activeProject.id] == activeProject)
-    #expect(next.projectReplicaEndpointIDs[activeProject.id] == activeEndpoint.id)
-    #expect(next.cards[activeProject.id] == [activeCard])
-    #expect(next.projects[otherProject.id] == otherProject)
-    #expect(next.chats == [otherChat])
-}
-
-@Test func unchangedInactiveMachineSnapshotPreservesItsDirectoryProjection() {
-    let endpoint = DieterEndpoint(
-        name: "Other Mac",
-        host: "dieter.example",
-        port: 443,
-        secure: true,
-        daemonID: "daemon-other"
-    )
-    var project = Dieter_V1_Project()
-    project.id = "project-other"
-    let current = MachineDirectoryProjection(
-        projects: [project.id: project],
-        projectReplicaEndpointIDs: [project.id: endpoint.id],
-        boards: [project.id: []],
-        cards: [project.id: []],
-        chats: []
-    )
-    let unchanged = MachineSnapshot(
-        endpoint: endpoint,
-        connection: MachineConnectionStatus(route: .local, latencyMilliseconds: 3),
-        projects: [], boards: [], cards: [], chats: [],
-        unchanged: true
-    )
-
-    #expect(MachineDirectoryReducer.merging(current, snapshots: [unchanged]) == current)
 }
 
 private func historyToolMessage(_ id: String) -> Dieter_V1_UiMessage {
@@ -949,14 +394,12 @@ private func historyTextMessage(_ id: String, role: String = "assistant") -> Die
     let chat = ConversationPresentationKey(
         conversationID: "chat-one",
         revision: 7,
-        showReasoning: true,
         renderStart: 0,
         renderCount: 30
     )
     let card = ConversationPresentationKey(
         conversationID: "card-one",
         revision: 7,
-        showReasoning: true,
         renderStart: 0,
         renderCount: 30
     )
@@ -1253,228 +696,6 @@ private func terminalKeyEvent(
     )!
 }
 
-@Test func chatActivityTextUsesCompactUnits() throws {
-    let now = try #require(ISO8601DateFormatter().date(from: "2026-08-19T12:00:00Z"))
-    #expect(ChatActivityText.compact("2026-08-19T11:59:35Z", relativeTo: now) == "now")
-    #expect(ChatActivityText.compact("2026-08-19T11:55:00Z", relativeTo: now) == "5m")
-    #expect(ChatActivityText.compact("2026-08-19T10:00:00Z", relativeTo: now) == "2h")
-}
-
-@Test func boardCardActivityTextUsesLatestModificationOrChatActivity() throws {
-    let now = try #require(ISO8601DateFormatter().date(from: "2026-08-19T12:00:00Z"))
-    #expect(
-        BoardCardActivityText.compact(
-            updatedAt: "2026-08-19T11:50:00Z",
-            lastActivityAt: "2026-08-19T10:00:00Z",
-            relativeTo: now
-        ) == "10min")
-    #expect(
-        BoardCardActivityText.compact(
-            updatedAt: "2026-08-14T12:00:00Z",
-            lastActivityAt: "2026-08-19T10:00:00Z",
-            relativeTo: now
-        ) == "2h")
-    #expect(
-        BoardCardActivityText.compact(
-            updatedAt: "2026-08-14T12:00:00Z",
-            lastActivityAt: "",
-            relativeTo: now
-        ) == "5d")
-    #expect(BoardCardActivityText.compact(updatedAt: "", lastActivityAt: "", relativeTo: now).isEmpty)
-}
-
-@Test func assistantMessagePartsCollapseAdjacentToolCallsIntoGroups() {
-    var intro = Dieter_V1_MessagePart()
-    intro.type = "text"
-    intro.text = "Starting"
-    var bash = Dieter_V1_MessagePart()
-    bash.type = "dynamic-tool"
-    bash.toolName = "Bash"
-    var edit = Dieter_V1_MessagePart()
-    edit.type = "tool-call"
-    edit.toolName = "Edit"
-    var result = Dieter_V1_MessagePart()
-    result.type = "text"
-    result.text = "Finished"
-    var browser = Dieter_V1_MessagePart()
-    browser.type = "tool"
-    browser.toolName = "browser.open"
-
-    let groups = ConversationMessagePartGroup.group([intro, bash, edit, result, browser])
-
-    #expect(groups.count == 4)
-    #expect(!groups[0].isToolCallGroup)
-    #expect(groups[1].isToolCallGroup)
-    #expect(groups[1].parts.map(\.toolName) == ["Bash", "Edit"])
-    #expect(!groups[2].isToolCallGroup)
-    #expect(groups[3].isToolCallGroup)
-}
-
-@Test func failedTurnPresentationKeepsCompleteLogAndRetryPayload() throws {
-    var prompt = Dieter_V1_MessagePart()
-    prompt.type = "text"
-    prompt.text = "Run the flaky verification"
-    var attachment = Dieter_V1_MessagePart()
-    attachment.type = "file"
-    attachment.filename = "failure.png"
-    attachment.url = "data:image/png;base64,iVBORw0KGgo="
-    var user = Dieter_V1_UiMessage()
-    user.id = "user-one"
-    user.role = "user"
-    user.parts = [prompt, attachment]
-
-    var diagnostic = Dieter_V1_MessagePart()
-    diagnostic.type = "text"
-    diagnostic.state = "error"
-    diagnostic.text = "Turn failed — codex exited 1 after 42s (context overflow).\nprovider stderr\nstack frame"
-    var assistant = Dieter_V1_UiMessage()
-    assistant.id = "assistant-one"
-    assistant.role = "assistant"
-    assistant.parts = [diagnostic]
-
-    // The core reads the failure from the transcript (TurnFailureTest);
-    // the Mac keeps its report and renders the diagnostic part as a failure.
-    let failure = ConversationTurnFailure(
-        .with {
-            $0.summary = "codex exited 1 after 42s (context overflow)."
-            $0.log = diagnostic.text
-            $0.failedMessageID = assistant.id
-            $0.retryable = true
-        })
-    #expect(failure.summary == "codex exited 1 after 42s (context overflow).")
-    #expect(failure.log.contains("provider stderr\nstack frame"))
-    #expect(failure.retryable)
-    #expect(ConversationTurnFailure.isFailurePart(diagnostic))
-    #expect(ConversationMessagePartGroup.group([diagnostic]).isEmpty)
-    #expect(!user.parts.contains(where: ConversationTurnFailure.isFailurePart))
-}
-
-@Test func hiddenReasoningDoesNotSplitAdjacentToolCallGroups() {
-    var reasoning = Dieter_V1_MessagePart()
-    reasoning.type = "reasoning"
-    reasoning.text = "Thinking about the change"
-    var bash = Dieter_V1_MessagePart()
-    bash.type = "dynamic-tool"
-    bash.toolName = "Bash"
-    var edit = Dieter_V1_MessagePart()
-    edit.type = "dynamic-tool"
-    edit.toolName = "Edit"
-
-    let hidden = ConversationMessagePartGroup.group([reasoning, bash, reasoning, edit], showReasoning: false)
-    #expect(hidden.count == 1)
-    #expect(hidden[0].isToolCallGroup)
-    #expect(hidden[0].parts.map(\.toolName) == ["Bash", "Edit"])
-
-    let shown = ConversationMessagePartGroup.group([reasoning, bash, reasoning, edit], showReasoning: true)
-    #expect(shown.count == 4)
-    #expect(!shown[0].isToolCallGroup)
-    #expect(shown[1].isToolCallGroup)
-
-    var blank = Dieter_V1_MessagePart()
-    blank.type = "reasoning"
-    blank.text = "  \n"
-    let blankShown = ConversationMessagePartGroup.group([bash, blank, edit], showReasoning: true)
-    #expect(blankShown.count == 1)
-    #expect(blankShown[0].parts.map(\.toolName) == ["Bash", "Edit"])
-}
-
-@Test func prefixedToolPartTypesGroupAndDeriveToolNames() {
-    var read = Dieter_V1_MessagePart()
-    read.type = "tool-Read"
-    var bash = Dieter_V1_MessagePart()
-    bash.type = "tool-Bash"
-    let groups = ConversationMessagePartGroup.group([read, bash])
-    #expect(groups.count == 1)
-    #expect(groups[0].isToolCallGroup)
-    #expect(read.effectiveToolName == "Read")
-    #expect(ToolCallGroupSummary(toolNames: [read, bash].map(\.effectiveToolName)).title == "1 command, 1 tool call")
-}
-
-@Test func reasoningOnlyMessagesMergeIntoToolTimelineGroupsWhenReasoningHidden() {
-    var reasoning = Dieter_V1_MessagePart()
-    reasoning.type = "reasoning"
-    reasoning.text = "Deliberating"
-    var tool = Dieter_V1_MessagePart()
-    tool.type = "dynamic-tool"
-    tool.toolCallID = "tool_1"
-    tool.toolName = "Bash"
-
-    var message = Dieter_V1_UiMessage()
-    message.id = "message_1"
-    message.role = "assistant"
-    message.parts = [reasoning, tool]
-
-    let hidden = ConversationTimelineItem.group([message], showReasoning: false)
-    #expect(hidden.count == 1)
-    #expect(hidden[0].isToolCallGroup)
-
-    let shown = ConversationTimelineItem.group([message], showReasoning: true)
-    #expect(shown.count == 1)
-    #expect(!shown[0].isToolCallGroup)
-}
-
-@Test func adjacentToolOnlyAssistantMessagesCollapseIntoOneStableTimelineGroup() {
-    var firstTool = Dieter_V1_MessagePart()
-    firstTool.type = "dynamic-tool"
-    firstTool.toolCallID = "tool_1"
-    firstTool.toolName = "exec_command"
-    var secondTool = Dieter_V1_MessagePart()
-    secondTool.type = "tool-call"
-    secondTool.toolCallID = "tool_2"
-    secondTool.toolName = "apply_patch"
-    var text = Dieter_V1_MessagePart()
-    text.type = "text"
-    text.text = "Implemented."
-
-    var first = Dieter_V1_UiMessage()
-    first.id = "message_1"
-    first.role = "assistant"
-    first.parts = [firstTool]
-    var second = Dieter_V1_UiMessage()
-    second.id = "message_2"
-    second.role = "assistant"
-    second.parts = [secondTool]
-    var result = Dieter_V1_UiMessage()
-    result.id = "message_3"
-    result.role = "assistant"
-    result.parts = [text]
-
-    let items = ConversationTimelineItem.group([first, second, result])
-
-    #expect(items.count == 2)
-    #expect(items[0].id == "tools:message_1")
-    #expect(items[0].toolCalls.map(\.part.toolName) == ["exec_command", "apply_patch"])
-    #expect(items[1].id == "message:message_3")
-}
-
-@Test func emptyMessageIDsReceiveUniqueStableTimelineFallbacks() {
-    var first = Dieter_V1_UiMessage(); first.role = "user"
-    var second = Dieter_V1_UiMessage(); second.role = "assistant"
-    let items = ConversationTimelineItem.group([first, second])
-
-    #expect(items.map(\.id) == ["message:position:0", "message:position:1"])
-    #expect(Set(items.map(\.id)).count == items.count)
-}
-
-@Test func toolCallGroupSummaryMatchesCompactEditAndCommandLabels() {
-    #expect(ToolCallGroupSummary(toolNames: ["Bash"]).title == "1 command")
-    #expect(
-        ToolCallGroupSummary(
-            toolNames: Array(repeating: "Edit", count: 14) + Array(repeating: "exec_command", count: 7)
-        ).title == "14 edits, 7 commands")
-    #expect(ToolCallGroupSummary(toolNames: ["browser.open", "mcp/custom"]).title == "2 tool calls")
-}
-
-@Test func conversationContextUsageReadsHarnessMetadata() throws {
-    var message = Dieter_V1_UiMessage()
-    message.metadataJson = Data(
-        #"{"usage":{"inputTokens":120,"outputTokens":30,"totalTokens":150},"contextWindowTokens":1000}"#.utf8)
-    let usage = try #require(ConversationContextUsage.latest(messages: [message], fallbackWindow: 0))
-    #expect(usage.used == 150)
-    #expect(usage.window == 1_000)
-    #expect(usage.percentage == 15)
-}
-
 @Test func sidebarWidthIsClampedToItsSupportedRange() {
     #expect(SidebarSizing.clamped(180) == SidebarSizing.minimumWidth)
     #expect(SidebarSizing.clamped(300) == 300)
@@ -1486,35 +707,6 @@ private func terminalKeyEvent(
     #expect(KanbanLaneSizing.contentWidth(availableWidth: 1_255, laneCount: 4) == 1_255)
     #expect(KanbanLaneSizing.laneWidth(availableWidth: 680, laneCount: 4) == KanbanLaneSizing.minimumWidth)
     #expect(KanbanLaneSizing.contentWidth(availableWidth: 680, laneCount: 4) == 1_111)
-}
-
-@Test func quickTaskOptimisticTitleUsesTheFirstStoryLineAndBoundsIt() {
-    #expect(
-        QuickTaskDraft.optimisticTitle(from: "Add keyboard navigation\nKeep focus visible") == "Add keyboard navigation"
-    )
-    let long = "Make every Kanban lane fully accessible to keyboard users while preserving card ordering and focus"
-    let title = QuickTaskDraft.optimisticTitle(from: long)
-    #expect(title.count <= 80)
-    #expect(!title.hasSuffix(" "))
-}
-
-@Test func boardOrderingUsesPlacementEvenWhenCreationTimesDisagree() {
-    var a = Dieter_V1_Card(); a.id = "a"; a.orderKey = "100"; a.createdAt = "2099-01-01T00:00:00Z"
-    var b = a; b.id = "b"; b.orderKey = "200"; b.createdAt = "2020-01-01T00:00:00Z"
-    var c = a; c.id = "c"; c.orderKey = "300"
-    let cards = [c, a, b]
-    #expect(BoardCardOrdering.sorted(cards).map(\.id) == ["c", "b", "a"])
-    #expect(BoardCardOrdering.sorted(cards, direction: .ascending).map(\.id) == ["a", "b", "c"])
-    let ascending = BoardDropOrdering.neighbors(before: "b", movingCardID: "c", cards: cards, direction: .ascending)
-    #expect(ascending.after == "a" && ascending.before == "b")
-    let descending = BoardDropOrdering.neighbors(before: "b", movingCardID: "a", cards: cards, direction: .descending)
-    #expect(descending.after == "b" && descending.before == "c")
-    let end = BoardDropOrdering.neighbors(before: nil, movingCardID: "c", cards: cards, direction: .descending)
-    #expect(end.after == "" && end.before == "a")
-    let pending = ["b": OptimisticCardMove(operationID: UUID(), lane: "", position: 0, beforeCardID: "a")]
-    let duringMove = BoardDropOrdering.neighbors(
-        before: "a", movingCardID: "c", cards: cards, direction: .ascending, moves: pending)
-    #expect(duringMove.after == "b" && duringMove.before == "a")
 }
 
 @Test func laneCardPagesBoundTenThousandCardsAndClampAfterDeletion() {
@@ -1533,33 +725,6 @@ private func terminalKeyEvent(
     #expect(clamped.page == 0)
     #expect(clamped.lowerBound == 0)
     #expect(clamped.upperBound == 3)
-}
-
-@Test func chatListProjectionIndexesProjectsInOnePass() {
-    func chat(_ id: String, project: String, pinned: Bool = false) -> Dieter_V1_Card {
-        var value = Dieter_V1_Card()
-        value.id = id
-        value.projectID = project
-        value.scope = "chat"
-        value.title = id
-        value.pinned = pinned
-        value.updatedAt = id
-        return value
-    }
-    let pinned = chat("pinned", project: "alpha", pinned: true)
-    let alpha = chat("alpha", project: "alpha")
-    let beta = chat("beta", project: "beta")
-    let projection = ChatListProjection.resolve(
-        chats: [alpha, beta, pinned],
-        showArchived: false,
-        search: "",
-        pinnedOrder: [pinned.id]
-    )
-
-    #expect(projection.visible.count == 3)
-    #expect(projection.pinned.map(\.id) == [pinned.id])
-    #expect(projection.byProject["alpha"]?.map(\.id) == [alpha.id])
-    #expect(projection.byProject["beta"]?.map(\.id) == [beta.id])
 }
 
 @Test func boardCreationOptionsMatchTheServerContract() {
@@ -1582,137 +747,8 @@ private func terminalKeyEvent(
     #expect(!AppSection.allCases.map(\.rawValue).contains("Machines"))
 }
 
-@Test func reasoningTracePreferenceDefaultsOffAndPersistsBothStates() throws {
-    let suite = "dieter-reasoning-trace-tests-\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
-
-    #expect(!ReasoningTracePreferences.load(from: defaults))
-
-    ReasoningTracePreferences.save(true, to: defaults)
-    #expect(ReasoningTracePreferences.load(from: defaults))
-
-    ReasoningTracePreferences.save(false, to: defaults)
-    #expect(!ReasoningTracePreferences.load(from: defaults))
-    #expect(defaults.object(forKey: ReasoningTracePreferences.storageKey) != nil)
-}
-
-@Test @MainActor func conversationCreationPreferencesPersistAndResolveTheLastValidSelection() throws {
-    let suite = "dieter-conversation-creation-tests-\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
-
-    var low = Dieter_V1_EffortOption()
-    low.id = "low"
-    low.name = "Low"
-    var xhigh = Dieter_V1_EffortOption()
-    xhigh.id = "xhigh"
-    xhigh.name = "Extra high"
-    var codexModel = Dieter_V1_HarnessModel()
-    codexModel.id = "sol"
-    codexModel.name = "Sol"
-    codexModel.defaultEffort = "low"
-    codexModel.efforts = ["low", "xhigh"]
-    var codex = Dieter_V1_Harness()
-    codex.id = "codex"
-    codex.name = "Codex"
-    codex.defaultModel = "sol"
-    codex.models = [codexModel]
-    codex.effort.options = [low, xhigh]
-
-    let saved = ConversationCreationPreferences(
-        provider: "codex",
-        model: "sol",
-        effort: "xhigh",
-        workspaceMode: .project
-    )
-    // The core remembers creation choices; the session shows its slice.
-    let store = DieterStore(restoreSync: false)
-    store.foldCreation(
-        .with {
-            $0.selection = .with {
-                $0.provider = "codex"; $0.model = "sol"; $0.effort = "xhigh"
-            }
-            $0.workspaceMode = "project"
-        })
-    let restored = store.creationPreferences
-    #expect(restored == saved)
-    #expect(
-        restored.resolved(in: [codex])
-            == ConversationCreationSelection(
-                provider: "codex",
-                model: "sol",
-                effort: "xhigh",
-                workspaceMode: .project
-            ))
-}
-
-@Test func conversationCreationPreferencesFallBackWhenTheCatalogChanges() {
-    var medium = Dieter_V1_EffortOption()
-    medium.id = "medium"
-    medium.name = "Medium"
-    var currentModel = Dieter_V1_HarnessModel()
-    currentModel.id = "current"
-    currentModel.defaultEffort = "medium"
-    currentModel.efforts = ["medium"]
-    var harness = Dieter_V1_Harness()
-    harness.id = "available"
-    harness.defaultModel = "current"
-    harness.models = [currentModel]
-    harness.effort.options = [medium]
-
-    let stale = ConversationCreationPreferences(
-        provider: "removed",
-        model: "retired",
-        effort: "xhigh",
-        workspaceMode: .project
-    )
-
-    #expect(
-        stale.resolved(in: [harness])
-            == ConversationCreationSelection(
-                provider: "available",
-                model: "current",
-                effort: "medium",
-                workspaceMode: .project
-            ))
-}
-
-@Test func conversationHarnessCatalogDirectoryUsesTheProjectsMachine() throws {
-    var localHarness = Dieter_V1_Harness()
-    localHarness.id = "local"
-    var localCatalog = Dieter_V1_HarnessCatalog()
-    localCatalog.harnesses = [localHarness]
-    var remoteHarness = Dieter_V1_Harness()
-    remoteHarness.id = "remote"
-    var remoteCatalog = Dieter_V1_HarnessCatalog()
-    remoteCatalog.harnesses = [remoteHarness]
-
-    let endpointID = ConversationHarnessCatalogDirectory.endpointID(
-        projectID: "p_remote",
-        activeEndpointID: "machine-local",
-        projectReplicaEndpointIDs: ["p_remote": "machine-remote"]
-    )
-    #expect(endpointID == "machine-remote")
-    let selected = try #require(
-        ConversationHarnessCatalogDirectory.catalog(
-            endpointID: endpointID,
-            activeEndpointID: "machine-local",
-            activeCatalog: localCatalog,
-            catalogsByEndpoint: ["machine-remote": remoteCatalog]
-        ))
-    #expect(selected.harnesses.map(\.id) == ["remote"])
-    #expect(
-        ConversationHarnessCatalogDirectory.catalog(
-            endpointID: "machine-unknown",
-            activeEndpointID: "machine-local",
-            activeCatalog: localCatalog,
-            catalogsByEndpoint: [:]
-        ) == nil)
-}
-
 @Test @MainActor func conversationWorkspaceRouteUsesTheConversationOwnerNotTheProjectReplica() throws {
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
     let projectReplica = DieterEndpoint(
         name: "MBP", host: "mbp.invalid", port: 443, secure: true,
         daemonID: "daemon-mbp", online: true)
@@ -1733,20 +769,6 @@ private func terminalKeyEvent(
     #expect(route.machineName == "Mini")
     #expect(route.endpointID != store.projectReplicaEndpointIDs[chat.projectID])
     #expect(route.endpointID == store.endpoint.id)
-}
-
-@Test func providerOptionsDropValuesUnsupportedByTheDestinationHarness() {
-    var advisor = Dieter_V1_ProviderOption()
-    advisor.id = "advisor"
-    advisor.defaultValue = "false"
-    var harness = Dieter_V1_Harness()
-    harness.options = [advisor]
-
-    #expect(
-        ProviderOptionValues.resolved(
-            for: harness,
-            existing: ["advisor": "true", "local-only": "secret"]
-        ) == ["advisor": "true"])
 }
 
 @Test func appearancePreferenceDefaultsToSystemAndRecognizesEveryStoredMode() {
@@ -1778,7 +800,7 @@ private func terminalKeyEvent(
     defer { defaults.removePersistentDomain(forName: suiteName) }
     defaults.set(DieterAppearance.light.rawValue, forKey: DieterAppearance.storageKey)
     defaults.set(DieterPalette.monochrome.rawValue, forKey: DieterPalette.storageKey)
-    let store = DieterStore(themeDefaultsOverride: defaults, restoreSync: false)
+    let store = DieterStore(themeDefaultsOverride: defaults, liveEnvironment: false)
     let (changes, continuation) = AsyncStream<Void>.makeStream()
 
     withObservationTracking {
@@ -1840,7 +862,7 @@ private func terminalKeyEvent(
     #expect(groups.map { $0.destinations.map(\.project.name) } == [["dieter"], ["dieter"]])
     let destination = try #require(ProjectDestinationCatalog.destination(projectID: officeProject.id, in: groups))
     #expect(destination.title == "dieter · mini-office")
-    #expect(destination.detail == "Offline · /Users/office/Development/dieter")
+    #expect(destination.detail == "Offline · ~/Development/dieter")
 }
 
 @Test func projectWithoutACheckoutHasNoExecutionDestination() throws {
@@ -1948,36 +970,36 @@ private func terminalKeyEvent(
         ) == .empty)
 }
 
-@Test func transientRPCFailuresAreEligibleForSilentReconnect() {
-    #expect(DieterRPCFailure.isTransient(RPCError(code: .unavailable, message: "stream unexpectedly closed")))
-    #expect(DieterRPCFailure.isTransient(RPCError(code: .deadlineExceeded, message: "timed out")))
-    #expect(!DieterRPCFailure.isTransient(RPCError(code: .notFound, message: "board missing")))
-}
+@Test @MainActor func coreFailuresReportByKindAndTransientOnesStaySilentWhileOffline() {
+    let store = DieterStore(liveEnvironment: false)
+    store.phase = .disconnected
+    store.show(CoreFailure(kind: .transient, message: "The machine is unreachable."))
+    #expect(store.errorMessage == nil)
+    store.show(CoreFailure(kind: .permanent, message: "This board has no done lane."))
+    #expect(store.errorMessage == "This board has no done lane.")
 
-@Test @MainActor func transientRPCFailuresStaySilentAfterTheClientIsReleased() {
-    let store = DieterStore(restoreSync: false)
-
-    store.show(RPCError(code: .unavailable, message: "stream unexpectedly closed"))
-
+    store.errorMessage = nil
+    store.phase = .connected(version: "fixture")
+    store.show(CoreFailure(kind: .transient, message: "The machine is unreachable."))
+    #expect(store.errorMessage == "The machine is unreachable.")
+    store.errorMessage = nil
+    store.show(CancellationError())
     #expect(store.errorMessage == nil)
 }
 
-@Test func offlineConnectionLabelsUseCompactRelativeAges() {
-    let now = Date(timeIntervalSince1970: 100_000)
-    #expect(SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: nil, now: now) == "Last connected unknown")
-    #expect(
-        SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: now.addingTimeInterval(-59), now: now)
-            == "Last connected just now")
-    #expect(
-        SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: now.addingTimeInterval(-60), now: now)
-            == "Last connected 1m ago")
-    #expect(
-        SyncFreshnessPresentation.lastConnectedLabel(lastConnectedAt: now.addingTimeInterval(-3_600), now: now)
-            == "Last connected 1h ago")
+@Test @MainActor func notificationSettingIsKeptOnlyUnderItsCoreKey() throws {
+    let suite = "DieterNotificationSettingTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let store = DieterStore(environment: .testing(defaults: defaults), liveEnvironment: false)
+    store.notificationsEnabled = false
+    #expect(!store.notificationsEnabled)
+    #expect(defaults.string(forKey: "notifications.enabled") == "false")
+    #expect(defaults.object(forKey: "DieterNotifications") == nil)
 }
 
-@Test @MainActor func cachedBoardSelectionSwitchesTheVisibleProjectWithoutAnRPC() {
-    let store = DieterStore(restoreSync: false)
+@Test @MainActor func cachedBoardSelectionSwitchesTheVisibleProjectAtOnce() {
+    let store = DieterStore(liveEnvironment: false)
     var firstProject = Dieter_V1_Project()
     firstProject.id = "p_first"
     firstProject.name = "First"
@@ -2008,548 +1030,22 @@ private func terminalKeyEvent(
     #expect(store.selectedProjectID == secondProject.id)
     #expect(store.selectedBoard?.id == secondBoard.id)
     #expect(store.state.project.id == secondProject.id)
-    #expect(store.boardCards.map(\.id) == [secondCard.id])
+    #expect(store.state.cards.map(\.id) == [secondCard.id])
 }
 
-@Test func projectFileLanguageDetectionCoversCommonSourceFormats() {
-    #expect(ProjectFileLanguage.detect(filename: "BoardView.swift") == .swift)
-    #expect(ProjectFileLanguage.detect(filename: "main.go") == .go)
-    #expect(ProjectFileLanguage.detect(filename: "client.tsx") == .typescript)
-    #expect(ProjectFileLanguage.detect(filename: "settings.yaml") == .yaml)
-    #expect(ProjectFileLanguage.detect(filename: "Dockerfile") == .shell)
-    #expect(ProjectFileLanguage.detect(filename: "LICENSE") == .plain)
-}
-
-@Test func projectFilePresentationRecognizesImagesAndPreservesBytes() {
-    #expect(ProjectFilePresentation.isImage(filename: "preview.png", mimeType: ""))
-    #expect(ProjectFilePresentation.isImage(filename: "asset", mimeType: "image/webp"))
-    #expect(!ProjectFilePresentation.isImage(filename: "main.swift", mimeType: "text/plain"))
-    #expect(ProjectFilePresentation.bytes(binary: true, content: "ignored", data: Data([0, 1, 2])) == Data([0, 1, 2]))
-    #expect(ProjectFilePresentation.bytes(binary: false, content: "hello", data: Data()) == Data("hello".utf8))
-}
-
-@Test func projectFileNavigationReturnsEachParentThroughTheProjectRoot() {
-    #expect(ProjectFileNavigation.parentPath(of: "apps/mac/Sources") == "apps/mac")
-    #expect(ProjectFileNavigation.parentPath(of: "apps/mac") == "apps")
-    #expect(ProjectFileNavigation.parentPath(of: "apps") == "")
-    #expect(ProjectFileNavigation.parentPath(of: "") == "")
-}
-
-@Test func labelColorPaletteContainsValidDistinctHexColors() {
-    #expect(LabelColorPalette.colors.count >= 8)
-    #expect(Set(LabelColorPalette.colors).count == LabelColorPalette.colors.count)
-    #expect(LabelColorPalette.colors.allSatisfy { SwiftUI.Color(hex: $0) != nil })
+@Test func fileDocumentsPreserveTheirBytes() {
+    var document = Dieter_V1_FileDocument()
+    document.binary = true
+    document.content = "ignored"
+    document.data = Data([0, 1, 2])
+    #expect(document.bytes == Data([0, 1, 2]))
+    document.binary = false
+    document.content = "hello"
+    #expect(document.bytes == Data("hello".utf8))
 }
 
 @Test func labelColorPaletteSerializesCustomColorsAsHex() {
     #expect(LabelColorPalette.hex(for: SwiftUI.Color(red: 1, green: 0.5, blue: 0)) == "#ff8000")
-}
-
-@Test func globalProjectionAndOutboxSurviveRelaunch() async throws {
-    let root = FileManager.default.temporaryDirectory.appending(path: "board-sync-test-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: root) }
-    let persistence = DieterSyncPersistence(root: root)
-
-    var cursor = Dieter_V1_SyncCursor()
-    cursor.epoch = "epoch-one"
-    cursor.sequence = 42
-    cursor.projectionVersion = 1
-    var project = Dieter_V1_Project()
-    project.id = "p_one"
-    project.name = "One"
-    var snapshot = Dieter_V1_GlobalSnapshot()
-    snapshot.state.projects = [project]
-    var request = Dieter_V1_SendMessageRequest()
-    request.cardID = "c_one"
-    request.commandID = "command-one"
-    request.clientID = "mac-one"
-    request.messageID = "msg_one"
-    let entry = DieterOutboxEntry(
-        commandID: request.commandID,
-        clientID: request.clientID,
-        endpointID: "https://dieter.example:443#daemon-one",
-        kind: .sendMessage,
-        request: try request.serializedData(),
-        optimisticID: request.messageID,
-        attempts: 0,
-        createdAt: Date(timeIntervalSince1970: 1)
-    )
-    let endpointID = "https://dieter.example:443#daemon-one"
-    let refreshedAt = Date(timeIntervalSince1970: 100)
-    try await persistence.save(
-        .init(
-            projections: [
-                endpointID: .init(cursor: try cursor.serializedData(), snapshot: try snapshot.serializedData())
-            ],
-            conversationRefreshedAt: [endpointID: ["c_one": refreshedAt]]
-        ))
-
-    let restored = await DieterSyncPersistence(root: root).load()
-    let projection = try #require(restored.projections[endpointID])
-    let cursorData = try #require(projection.cursor)
-    let snapshotData = try #require(projection.snapshot)
-    let restoredCursor = try Dieter_V1_SyncCursor(serializedBytes: cursorData)
-    let restoredSnapshot = try Dieter_V1_GlobalSnapshot(serializedBytes: snapshotData)
-    #expect(restoredCursor.sequence == 42)
-    #expect(restoredSnapshot.state.projects.first?.id == "p_one")
-    #expect(restored.conversationRefreshedAt[endpointID]?["c_one"] == refreshedAt)
-}
-
-@Test func cleanSyncClearsEveryProjectionAndPreservesOutbox() throws {
-    let firstEndpointID = "https://one.example:443#daemon-one"
-    let secondEndpointID = "https://two.example:443#daemon-two"
-    let entry = DieterOutboxEntry(
-        commandID: "command-one",
-        clientID: "mac-one",
-        endpointID: firstEndpointID,
-        kind: .sendMessage,
-        request: Data([1, 2, 3]),
-        optimisticID: "message-one",
-        attempts: 0,
-        createdAt: Date(timeIntervalSince1970: 1)
-    )
-    var state = DieterSyncDiskState(
-        projections: [
-            firstEndpointID: .init(cursor: Data([1]), snapshot: Data([2])),
-            secondEndpointID: .init(cursor: Data([3]), snapshot: Data([4])),
-        ],
-        conversationRefreshedAt: [firstEndpointID: ["c_one": Date(timeIntervalSince1970: 10)]]
-    )
-
-    state.clearProjections()
-
-    #expect(state.projections.isEmpty)
-    #expect(state.conversationRefreshedAt.isEmpty)
-}
-
-@Test func permanentOutboxFailureDoesNotBlockLaterCreate() throws {
-    let endpointID = "gateway#daemon"
-    var send = Dieter_V1_SendMessageRequest()
-    send.cardID = "c_missing"
-    var create = Dieter_V1_CreateConversationRequest()
-    create.projectID = "p_one"
-    let failed = DieterOutboxEntry(
-        commandID: "send", clientID: "mac", endpointID: endpointID, kind: .sendMessage,
-        request: try send.serializedData(), optimisticID: "msg_one", attempts: 535,
-        lastError: "gRPC notFound: card not found", state: .failed, createdAt: Date(timeIntervalSince1970: 1)
-    )
-    let later = DieterOutboxEntry(
-        commandID: "create", clientID: "mac", endpointID: endpointID, kind: .createChat,
-        request: try create.serializedData(), optimisticID: "local_chat", attempts: 0,
-        createdAt: Date(timeIntervalSince1970: 2)
-    )
-
-    #expect(DieterOutboxPolicy.nextIndex(in: [failed, later], endpointID: endpointID) == 1)
-}
-
-@Test func backedOffOutboxHeadDoesNotStarveReadyEntry() throws {
-    let endpointID = "gateway#daemon"
-    var send = Dieter_V1_SendMessageRequest(); send.cardID = "c_one"
-    var delayed = DieterOutboxEntry(
-        commandID: "first", clientID: "mac", endpointID: endpointID, kind: .sendMessage,
-        request: try send.serializedData(), optimisticID: "msg_one", attempts: 1,
-        createdAt: Date(timeIntervalSince1970: 1)
-    )
-    delayed.state = .retrying
-    delayed.nextAttemptAt = Date(timeIntervalSince1970: 200)
-    let ready = DieterOutboxEntry(
-        commandID: "second", clientID: "mac", endpointID: endpointID, kind: .sendMessage,
-        request: try send.serializedData(), optimisticID: "msg_two", attempts: 0,
-        createdAt: Date(timeIntervalSince1970: 2)
-    )
-
-    #expect(
-        DieterOutboxPolicy.nextIndex(
-            in: [delayed, ready], endpointID: endpointID, now: Date(timeIntervalSince1970: 100)) == 1)
-}
-
-@Test func reachableMachineOutboxSelectionPrefersEndpointOrder() {
-    let first = DieterOutboxEntry(
-        commandID: "first", clientID: "mac", endpointID: "gateway#one", kind: .sendMessage,
-        request: Data(), optimisticID: "msg_one", attempts: 0, createdAt: Date()
-    )
-    let second = DieterOutboxEntry(
-        commandID: "second", clientID: "mac", endpointID: "gateway#two", kind: .sendMessage,
-        request: Data(), optimisticID: "msg_two", attempts: 0, createdAt: Date()
-    )
-
-    #expect(
-        DieterOutboxPolicy.nextIndex(
-            in: [first, second],
-            endpointIDs: ["gateway#two", "gateway#one"]
-        ) == 1)
-}
-
-@Test func cancelingAMachineQueueRemovesOnlyItsUndeliveredWork() {
-    let canceledMessage = DieterOutboxEntry(
-        commandID: "message", clientID: "mac", endpointID: "gateway#one", kind: .sendMessage,
-        request: Data(), optimisticID: "msg_one", attempts: 1, state: .failed,
-        createdAt: Date(timeIntervalSince1970: 1)
-    )
-    let canceledCreation = DieterOutboxEntry(
-        commandID: "creation", clientID: "mac", endpointID: "gateway#one", kind: .createChat,
-        request: Data(), optimisticID: "local_chat", attempts: 0,
-        createdAt: Date(timeIntervalSince1970: 2)
-    )
-    let accepted = DieterOutboxEntry(
-        commandID: "accepted", clientID: "mac", endpointID: "gateway#one", kind: .createCard,
-        request: Data(), optimisticID: "local_card", serverID: "c_server", attempts: 0,
-        createdAt: Date(timeIntervalSince1970: 3)
-    )
-    let anotherMachine = DieterOutboxEntry(
-        commandID: "other", clientID: "mac", endpointID: "gateway#two", kind: .sendMessage,
-        request: Data(), optimisticID: "msg_two", attempts: 0,
-        createdAt: Date(timeIntervalSince1970: 4)
-    )
-    var entries = [canceledMessage, accepted, canceledCreation, anotherMachine]
-
-    let removed = DieterOutboxPolicy.removeUndelivered(from: &entries, endpointID: "gateway#one")
-
-    #expect(Set(removed.map(\.commandID)) == ["message", "creation"])
-    #expect(entries.map(\.commandID) == ["accepted", "other"])
-}
-
-@Test func createSuccessRetargetsDependentQueuedMessages() throws {
-    var request = Dieter_V1_SendMessageRequest()
-    request.cardID = "local_chat"
-    let send = DieterOutboxEntry(
-        commandID: "send", clientID: "mac", endpointID: "endpoint", kind: .sendMessage,
-        request: try request.serializedData(), optimisticID: "msg_one", attempts: 0, createdAt: Date()
-    )
-    var entries = [send]
-
-    try DieterOutboxPolicy.retargetDependencies(in: &entries, from: "local_chat", to: "c_server")
-
-    #expect(try Dieter_V1_SendMessageRequest(serializedBytes: entries[0].request).cardID == "c_server")
-}
-
-@Test func retainedFailedSendKeepsItsOriginalTranscriptPosition() throws {
-    func message(_ id: String, role: String, createdAt: Date) throws -> Dieter_V1_UiMessage {
-        var result = Dieter_V1_UiMessage()
-        result.id = id
-        result.role = role
-        result.metadataJson = try JSONSerialization.data(withJSONObject: [
-            "createdAt": DieterTimestamp.string(from: createdAt)
-        ])
-        return result
-    }
-
-    let failedAt = Date(timeIntervalSince1970: 10)
-    var request = Dieter_V1_SendMessageRequest()
-    request.cardID = "c_chat"
-    var part = Dieter_V1_MessagePart()
-    part.type = "text"
-    part.text = "Older failed command"
-    request.parts = [part]
-    let failed = DieterOutboxEntry(
-        commandID: "failed-command",
-        clientID: "mac",
-        endpointID: "endpoint",
-        kind: .sendMessage,
-        request: try request.serializedData(),
-        optimisticID: "msg_failed",
-        attempts: 1,
-        state: .failed,
-        createdAt: failedAt
-    )
-    var staleTail = Dieter_V1_UiMessage()
-    staleTail.id = "msg_failed"
-    staleTail.role = "user"
-    staleTail.parts = [part]
-    var snapshot = Dieter_V1_ConversationSnapshot()
-    snapshot.detail.card.id = "c_chat"
-    snapshot.conversation.cardID = "c_chat"
-    snapshot.conversation.messages = [
-        try message("msg_running", role: "user", createdAt: Date(timeIntervalSince1970: 20)),
-        try message("msg_answer", role: "assistant", createdAt: Date(timeIntervalSince1970: 30)),
-        staleTail,
-    ]
-
-    let overlaid = DieterOutboxPolicy.overlayOptimisticMessages(snapshot, entries: [failed])
-
-    #expect(overlaid.conversation.messages.map(\.id) == ["msg_failed", "msg_running", "msg_answer"])
-    #expect(overlaid.conversation.messages.first?.parts.first?.text == "Older failed command")
-    #expect(!overlaid.conversation.messages.first!.metadataJson.isEmpty)
-}
-
-@Test func activeTurnSendRendersInTheQueueBeforeAdmissionCompletes() throws {
-    var request = Dieter_V1_SendMessageRequest()
-    request.cardID = "c_chat"
-    request.provider = "codex"
-    request.model = "gpt-5.6-sol"
-    var part = Dieter_V1_MessagePart()
-    part.type = "text"
-    part.text = "Please steer this turn"
-    request.parts = [part]
-    let entry = DieterOutboxEntry(
-        commandID: "queued-command",
-        clientID: "mac",
-        endpointID: "endpoint",
-        kind: .sendMessage,
-        request: try request.serializedData(),
-        optimisticID: "msg_queued",
-        attempts: 0,
-        optimisticPlacement: .queue,
-        createdAt: Date(timeIntervalSince1970: 10)
-    )
-    var snapshot = Dieter_V1_ConversationSnapshot()
-    snapshot.detail.card.id = request.cardID
-    snapshot.conversation.cardID = request.cardID
-
-    let overlaid = DieterOutboxPolicy.overlayOptimisticMessages(snapshot, entries: [entry])
-
-    #expect(overlaid.conversation.messages.isEmpty)
-    #expect(overlaid.conversation.queue.map(\.id) == [entry.optimisticID])
-    #expect(overlaid.conversation.queue.first?.parts.first?.text == part.text)
-    #expect(overlaid.conversation.queue.first?.selection.model == request.model)
-}
-
-@Test func failedSteerSendMovesToTheTranscriptFailureSurface() throws {
-    var request = Dieter_V1_SendMessageRequest()
-    request.cardID = "c_chat"
-    var part = Dieter_V1_MessagePart()
-    part.type = "text"
-    part.text = "Could not queue this"
-    request.parts = [part]
-    let entry = DieterOutboxEntry(
-        commandID: "failed-queued-command",
-        clientID: "mac",
-        endpointID: "endpoint",
-        kind: .sendMessage,
-        request: try request.serializedData(),
-        optimisticID: "msg_failed_queue",
-        attempts: 1,
-        state: .failed,
-        optimisticPlacement: .queue,
-        createdAt: Date(timeIntervalSince1970: 10)
-    )
-    var snapshot = Dieter_V1_ConversationSnapshot()
-    snapshot.detail.card.id = request.cardID
-    snapshot.conversation.cardID = request.cardID
-
-    let overlaid = DieterOutboxPolicy.overlayOptimisticMessages(snapshot, entries: [entry])
-
-    #expect(overlaid.conversation.queue.isEmpty)
-    #expect(overlaid.conversation.messages.map(\.id) == [entry.optimisticID])
-}
-
-@Test func createSuccessMergesAnOptimisticChatWithAnAlreadySynchronizedChat() {
-    var synchronized = Dieter_V1_Card()
-    synchronized.id = "c_server"
-    synchronized.title = "Synchronized title"
-    synchronized.runtime = "running"
-    var optimistic = Dieter_V1_Card()
-    optimistic.id = "local_chat"
-    optimistic.title = "Optimistic title"
-    optimistic.runtime = "pending"
-
-    let serverFirst = DieterOutboxPolicy.retargetedCards(
-        [synchronized, optimistic],
-        from: optimistic.id,
-        to: synchronized.id
-    )
-    let optimisticFirst = DieterOutboxPolicy.retargetedCards(
-        [optimistic, synchronized],
-        from: optimistic.id,
-        to: synchronized.id
-    )
-    let synchronizedInAnotherProjection = DieterOutboxPolicy.retargetedCards(
-        [optimistic],
-        from: optimistic.id,
-        to: synchronized.id,
-        authoritative: synchronized
-    )
-
-    #expect(serverFirst == [synchronized])
-    #expect(optimisticFirst == [synchronized])
-    #expect(synchronizedInAnotherProjection == [synchronized])
-}
-
-@Test func synchronizedCreateIsRecognizedBeforeUnaryResponseReturns() {
-    let entry = DieterOutboxEntry(
-        commandID: "create-1",
-        clientID: "mac-installation",
-        endpointID: "endpoint",
-        kind: .createChat,
-        request: Data(),
-        optimisticID: "local_chat",
-        attempts: 0,
-        createdAt: Date()
-    )
-    let expectedID = "c_cf6f9faf64cd8f1ea9c84d28"
-
-    #expect(
-        DieterOutboxPolicy.expectedConversationID(
-            clientID: entry.clientID,
-            commandID: entry.commandID
-        ) == expectedID)
-    #expect(
-        DieterOutboxPolicy.synchronizedConversationID(
-            for: entry,
-            visibleConversationIDs: [expectedID]
-        ) == expectedID)
-    #expect(
-        DieterOutboxPolicy.synchronizedConversationID(
-            for: entry,
-            visibleConversationIDs: ["c_another"]
-        ) == nil)
-}
-
-@Test func localConversationIDsNeverQualifyForServerFetch() {
-    #expect(!DieterConversationID.isServerBacked("local_chat"))
-    #expect(DieterConversationID.isServerBacked("c_server"))
-}
-
-@Test func rpcErrorsExposeStatusAndMessage() {
-    let error = RPCError(code: .notFound, message: "card c_missing was not found")
-
-    #expect(DieterRPCFailure.isPermanent(error))
-    #expect(DieterRPCFailure.message(for: error) == "gRPC notFound: card c_missing was not found")
-    #expect(!DieterRPCFailure.message(for: error).contains("RPCError error 1"))
-    #expect(!DieterRPCFailure.isPermanent(RPCError(code: .aborted, message: "turn teardown in progress")))
-    #expect(DieterRPCFailure.isPermanent(RPCError(code: .failedPrecondition, message: "invalid state")))
-}
-
-@Test func cancelledConversationOpenRetriesOnceWithoutReportingStaleFailures() {
-    let cancelled = RPCError(code: .cancelled, message: "request cancelled")
-
-    #expect(
-        DieterConversationOpenFailurePolicy.disposition(
-            for: cancelled,
-            selectionMatches: true,
-            recoveryAttempts: 0
-        ) == .retry)
-    #expect(
-        DieterConversationOpenFailurePolicy.disposition(
-            for: cancelled,
-            selectionMatches: true,
-            recoveryAttempts: DieterConversationOpenFailurePolicy.maximumRecoveryAttempts
-        ) == .report)
-    #expect(
-        DieterConversationOpenFailurePolicy.disposition(
-            for: RPCError(code: .notFound, message: "missing"),
-            selectionMatches: false,
-            recoveryAttempts: 0
-        ) == .ignore)
-}
-
-@Test func globalProjectionReducerAppliesMetadataChangesAndTombstones() {
-    var retained = Dieter_V1_Project(); retained.id = "p_keep"; retained.name = "Before"
-    var removed = Dieter_V1_Project(); removed.id = "p_remove"
-    var oldCard = Dieter_V1_Card(); oldCard.id = "c_remove"; oldCard.projectID = retained.id
-    var snapshot = Dieter_V1_GlobalSnapshot()
-    snapshot.state.projects = [retained, removed]
-    snapshot.state.cards = [oldCard]
-
-    retained.name = "After"
-    var added = Dieter_V1_Project(); added.id = "p_add"; added.name = "Added"
-    var chat = Dieter_V1_Card(); chat.id = "chat_add"; chat.projectID = added.id
-    var settings = Dieter_V1_Settings(); settings.updatedAt = "settings-revision"
-    var delta = Dieter_V1_GlobalDelta()
-    delta.projects = [retained, added]
-    delta.removedProjectIds = [removed.id]
-    delta.removedCardIds = [oldCard.id]
-    delta.chats = [chat]
-    delta.settings = settings
-
-    let reduced = GlobalProjectionReducer.applying(delta, to: snapshot)
-    #expect(reduced.state.projects.map(\.id) == ["p_keep", "p_add"])
-    #expect(reduced.state.projects.first?.name == "After")
-    #expect(reduced.state.cards.isEmpty)
-    #expect(reduced.state.chats.map(\.id) == ["chat_add"])
-    #expect(reduced.settings.updatedAt == "settings-revision")
-}
-
-@Test func emptyGlobalDeltaDoesNotChangeProjection() {
-    var snapshot = Dieter_V1_GlobalSnapshot()
-    var project = Dieter_V1_Project(); project.id = "p_keep"
-    snapshot.state.projects = [project]
-    let delta = Dieter_V1_GlobalDelta()
-
-    #expect(!GlobalProjectionReducer.changesProjection(delta))
-    #expect(GlobalProjectionReducer.applying(delta, to: snapshot) == snapshot)
-
-    var changed = delta
-    changed.removedProjectIds = [project.id]
-    #expect(GlobalProjectionReducer.changesProjection(changed))
-}
-
-@Test func globalProjectionReducerAppliesConversationChangesAndTombstones() {
-    var retained = Dieter_V1_ConversationSnapshot(); retained.detail.card.id = "c_keep"
-    var removed = Dieter_V1_ConversationSnapshot(); removed.detail.card.id = "c_remove"
-    var snapshot = Dieter_V1_GlobalSnapshot(); snapshot.conversations = [retained, removed]
-    retained.conversation.lastSeq = 9
-    var added = Dieter_V1_ConversationSnapshot(); added.detail.card.id = "c_add"
-    var delta = Dieter_V1_GlobalDelta()
-    delta.conversations = [retained, added]
-    delta.removedConversationIds = ["c_remove"]
-
-    let reduced = GlobalProjectionReducer.applying(delta, to: snapshot)
-    #expect(reduced.conversations.map { $0.detail.card.id } == ["c_keep", "c_add"])
-    #expect(reduced.conversations.first?.conversation.lastSeq == 9)
-}
-
-@Test func directorySnapshotStoresItsFreshConditionalCursor() throws {
-    var cursor = Dieter_V1_SyncCursor()
-    cursor.epoch = "epoch-one"
-    cursor.sequence = 42
-    var previous = Dieter_V1_GlobalSnapshot()
-    var settings = Dieter_V1_Settings()
-    settings.updatedAt = "settings-revision"
-    previous.settings = settings
-    var stale = Dieter_V1_Card()
-    stale.id = "stale-card"
-    previous.state.cards = [stale]
-
-    var fresh = Dieter_V1_Card()
-    fresh.id = "fresh-card"
-    let freshCursorData = try cursor.serializedData()
-    let replaced = DieterSyncProjectionCache.replacingMetadata(
-        in: .init(cursor: try cursor.serializedData(), snapshot: try previous.serializedData()),
-        projects: [],
-        boards: [],
-        cards: [fresh],
-        chats: [],
-        cursor: freshCursorData
-    )
-
-    #expect(replaced.cursor == freshCursorData)
-    let data = try #require(replaced.snapshot)
-    let snapshot = try Dieter_V1_GlobalSnapshot(serializedBytes: data)
-    #expect(snapshot.state.cards.map(\.id) == ["fresh-card"])
-    #expect(snapshot.settings.updatedAt == "settings-revision")
-}
-
-@Test func messageDeliveryReceiptsFollowOutboxAndSyncAcknowledgements() {
-    #expect(MessageDeliveryState(pending: true, accepted: false, failed: false) == .local)
-    #expect(MessageDeliveryState(pending: true, accepted: true, failed: false) == .accepted)
-    #expect(MessageDeliveryState(pending: false, accepted: false, failed: false, queued: true) == .queued)
-    #expect(MessageDeliveryState(pending: false, accepted: false, failed: false) == .synced)
-    #expect(MessageDeliveryState(pending: true, accepted: false, failed: true) == .failed)
-}
-
-@Test func queuedMessagesStayVisibleWithoutDuplicatingAnOptimisticBubble() {
-    var delivered = Dieter_V1_UiMessage(); delivered.id = "delivered"
-    var optimistic = Dieter_V1_UiMessage(); optimistic.id = "queued-optimistic"
-    var queued = Dieter_V1_QueuedMessage(); queued.id = optimistic.id; queued.text = "Keep me visible"
-
-    let result = ConversationQueuePresentation.deliveredMessages(
-        [delivered, optimistic],
-        whileQueued: [queued]
-    )
-
-    #expect(result.map(\.id) == [delivered.id])
-    #expect(queued.text == "Keep me visible")
-}
-
-@Test func onlyTheNextQueuedMessageCanSteerAnActiveTurn() {
-    var first = Dieter_V1_QueuedMessage(); first.id = "first"
-    var second = Dieter_V1_QueuedMessage(); second.id = "second"
-    let queue = [first, second]
-
-    #expect(ConversationQueuePresentation.canSteer(messageID: first.id, queue: queue, agentIsWorking: true))
-    #expect(!ConversationQueuePresentation.canSteer(messageID: second.id, queue: queue, agentIsWorking: true))
-    #expect(!ConversationQueuePresentation.canSteer(messageID: first.id, queue: queue, agentIsWorking: false))
 }
 
 @Test func queuedMessageEditingRestoresTextAndAttachments() {
@@ -2585,7 +1081,7 @@ private func terminalKeyEvent(
     try Data("png fixture".utf8).write(to: image)
     try Data("hello".utf8).write(to: document)
 
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
     let parts = try await store.attachmentParts([image, document])
     #expect(parts.count == 2)
     #expect(parts[0].filename == "fixture.png")
@@ -2608,7 +1104,7 @@ private func terminalKeyEvent(
             base64Encoded:
                 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
     let provider = NSItemProvider(item: png as NSData, typeIdentifier: UTType.png.identifier)
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
 
     let parts = try await store.attachmentParts([provider])
 
@@ -2627,7 +1123,7 @@ private func terminalKeyEvent(
     image.unlockFocus()
     let tiff = try #require(image.tiffRepresentation)
     let provider = NSItemProvider(item: tiff as NSData, typeIdentifier: UTType.tiff.identifier)
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
 
     let parts = try await store.attachmentParts([provider])
 
@@ -2645,7 +1141,7 @@ private func terminalKeyEvent(
     defer { pasteboard.releaseGlobally() }
     pasteboard.clearContents()
     pasteboard.setData(png, forType: NSPasteboard.PasteboardType(UTType.png.identifier))
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
 
     let input = try #require(store.pasteboardAttachmentInput(pasteboard))
     let parts = try await store.attachmentParts(input)
@@ -2662,18 +1158,11 @@ private func terminalKeyEvent(
     defer { pasteboard.releaseGlobally() }
     pasteboard.clearContents()
     pasteboard.setString("plain text", forType: .string)
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
 
     #expect(store.pasteboardAttachmentInput(pasteboard) == nil)
     #expect(!store.attachPasteboard(pasteboard))
     #expect(store.composerAttachments.isEmpty)
-}
-
-@Test func creatingTodoCardsDoesNotOpenTheirConversation() {
-    #expect(!DieterStore.shouldOpenCreatedConversation(chat: false, lane: "todo"))
-    #expect(!DieterStore.shouldOpenCreatedConversation(chat: false, lane: "Todo"))
-    #expect(DieterStore.shouldOpenCreatedConversation(chat: false, lane: "running"))
-    #expect(DieterStore.shouldOpenCreatedConversation(chat: true, lane: "todo"))
 }
 
 @Test func conversationWorkspacePickerUsesOnlySupportedCreationChoices() {
@@ -2686,83 +1175,6 @@ private func terminalKeyEvent(
     #expect(ConversationWorkspaceMode.allCases == [.worktree, .project])
     #expect(ConversationWorkspaceMode.worktree.title == "Worktree")
     #expect(ConversationWorkspaceMode.project.title == "Project directory")
-}
-
-@Test func onlyTodoCardsWhoseInitialTaskWasNeverSentCanBeEdited() {
-    var card = Dieter_V1_Card()
-    card.lane = "todo"
-    card.initialPrompt = "Draft task"
-    #expect(BoardCardEditingPolicy.canEditDraft(card))
-
-    card.lane = "Todo"
-    #expect(BoardCardEditingPolicy.canEditDraft(card))
-
-    card.lane = "running"
-    #expect(!BoardCardEditingPolicy.canEditDraft(card))
-
-    card.lane = "todo"
-    card.initialPromptSentAt = "2026-08-25T12:00:00Z"
-    #expect(!BoardCardEditingPolicy.canEditDraft(card))
-
-    card.initialPromptSentAt = ""
-    card.initialPrompt = "   "
-    #expect(!BoardCardEditingPolicy.canEditDraft(card))
-}
-
-@Test func onlyNeverStartedTodoCardsExposeTheRunAction() throws {
-    var todo = Dieter_V1_Lane(); todo.id = "todo"; todo.name = "Todo"
-    var active = Dieter_V1_Lane(); active.id = "active"; active.name = "Running"
-    var board = Dieter_V1_Board(); board.lanes = [todo, active]
-    var card = Dieter_V1_Card()
-    card.scope = "board"
-    card.lane = "todo"
-    card.initialPrompt = "Run the saved task"
-
-    #expect(BoardCardStartPolicy.canStart(card, board: board))
-    #expect(BoardCardStartPolicy.runningLaneID(in: board) == "active")
-    let optimistic = try #require(BoardCardStartPolicy.optimisticCard(card, board: board))
-    #expect(optimistic.lane == "active")
-    #expect(optimistic.runtime == "starting")
-
-    card.initialPromptSentAt = "2026-09-04T19:00:00Z"
-    #expect(!BoardCardStartPolicy.canStart(card, board: board))
-    card.initialPromptSentAt = ""
-    card.lane = "review"
-    #expect(!BoardCardStartPolicy.canStart(card, board: board))
-    card.lane = "todo"
-    card.scope = "chat"
-    #expect(!BoardCardStartPolicy.canStart(card, board: board))
-}
-
-@Test func optimisticCardStartsSurviveStaleBoardFramesUntilAdmissionIsVisible() {
-    var stale = Dieter_V1_Card()
-    stale.id = "card-start"
-    stale.lane = "todo"
-    stale.runtime = "idle"
-    let start = OptimisticCardStart(operationID: UUID(), runningLaneID: "running")
-
-    let projected = OptimisticCardProjection.reconcile(
-        cards: [stale],
-        moves: [:],
-        labels: [:],
-        starts: [stale.id: start]
-    )
-    #expect(projected.cards[0].lane == "running")
-    #expect(projected.cards[0].runtime == "starting")
-    #expect(projected.starts[stale.id] == start)
-
-    var admitted = stale
-    admitted.lane = "running"
-    admitted.runtime = "starting"
-    admitted.initialPromptSentAt = "2026-09-04T19:00:00Z"
-    let synchronized = OptimisticCardProjection.reconcile(
-        cards: [admitted],
-        moves: [:],
-        labels: [:],
-        starts: projected.starts
-    )
-    #expect(synchronized.cards[0] == admitted)
-    #expect(synchronized.starts.isEmpty)
 }
 
 @Test func embeddedMacImageAttachmentsProvidePreviewImages() throws {
@@ -2792,7 +1204,7 @@ private func terminalKeyEvent(
     defer { pasteboard.releaseGlobally() }
     pasteboard.clearContents()
     pasteboard.writeObjects([file as NSURL])
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
 
     #expect(store.attachPasteboard(pasteboard))
     let deadline = Date().addingTimeInterval(1)
@@ -2804,62 +1216,6 @@ private func terminalKeyEvent(
     #expect(attachment.data == Data("png fixture".utf8))
 }
 
-@Test(.enabled(if: ProcessInfo.processInfo.environment["DIETER_LIVE_ATTACHMENT_PORT"] != nil))
-func liveMacAttachmentDraftRoundTripsThroughTheLocalDaemon() async throws {
-    let port = try #require(Int(ProcessInfo.processInfo.environment["DIETER_LIVE_ATTACHMENT_PORT"] ?? ""))
-    let endpoint = try #require(DieterEndpoint.parse("127.0.0.1:\(port)", name: "Attachment fixture"))
-    let client = try DieterRPC(endpoint: endpoint)
-    let connection = Task { try? await client.run() }
-    defer {
-        connection.cancel()
-        client.shutdown()
-    }
-
-    let state = try await client.state()
-    let board = try #require(state.boards.first { board in board.lanes.contains { $0.id == "todo" } })
-    let catalog = try await client.harnesses()
-    let harness = try #require(catalog.harnesses.first)
-    var attachment = Dieter_V1_MessagePart()
-    attachment.type = "image"
-    attachment.mediaType = "image/png"
-    attachment.filename = "mac-fixture.png"
-    attachment.data = Data("mac attachment fixture".utf8)
-    var request = Dieter_V1_CreateConversationRequest()
-    request.projectID = board.projectID
-    request.boardID = board.id
-    request.lane = "todo"
-    request.title = "Mac attachment transport fixture"
-    request.prompt = "Keep this deferred and verify its attachment."
-    request.provider = harness.id
-    request.model = harness.defaultModel
-    request.deferStart = true
-    request.attachments = [attachment]
-
-    var created: Dieter_V1_Card?
-    do {
-        let card = try await client.createCard(request)
-        created = card
-        let snapshot = try await client.conversation(cardID: card.id)
-        let stored = try #require(snapshot.conversation.draftAttachments.first)
-        #expect(stored.filename == "mac-fixture.png")
-        #expect(stored.mediaType == "image/png")
-        #expect(stored.data == Data("mac attachment fixture".utf8))
-        var archive = Dieter_V1_ArchiveCardRequest()
-        archive.cardID = card.id
-        archive.archived = true
-        _ = try await client.archiveCard(archive)
-        created = nil
-    } catch {
-        if let created {
-            var archive = Dieter_V1_ArchiveCardRequest()
-            archive.cardID = created.id
-            archive.archived = true
-            _ = try? await client.archiveCard(archive)
-        }
-        throw error
-    }
-}
-
 private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     var card = Dieter_V1_Card()
     card.id = id
@@ -2867,174 +1223,11 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
     return card
 }
 
-@Test func sidebarMachinesAreAlwaysOrderedAlphabetically() {
-    let zulu = DieterEndpoint(name: "Zulu", host: "zulu.example", port: 443, daemonID: "zulu")
-    let alpha = DieterEndpoint(name: "alpha", host: "alpha.example", port: 443, daemonID: "alpha")
-    let alphaLater = DieterEndpoint(name: "Alpha", host: "later.example", port: 443, daemonID: "alpha-later")
-    let beta = DieterEndpoint(name: "Beta", host: "beta.example", port: 443, daemonID: "beta")
-
-    let ordered = SidebarMachineOrdering.sorted([zulu, alphaLater, beta, alpha])
-    #expect(ordered.map(\.id) == [alpha.id, alphaLater.id, beta.id, zulu.id])
-}
-
-@Test func sidebarProjectPreferencesReorderAndReconcileAvailableProjects() {
-    var preferences = SidebarProjectNavigationPreferences(projectOrder: ["p_two", "p_missing", "p_one"])
-
-    #expect(preferences.orderedIDs(from: ["p_one", "p_two", "p_three"]) == ["p_two", "p_one", "p_three"])
-    let movedToFront = preferences.move("p_three", before: "p_two", availableIDs: ["p_one", "p_two", "p_three"])
-    #expect(movedToFront)
-    #expect(preferences.orderedIDs(from: ["p_one", "p_two", "p_three"]) == ["p_three", "p_two", "p_one"])
-    let movedToEnd = preferences.move("p_three", before: nil, availableIDs: ["p_one", "p_two", "p_three"])
-    #expect(movedToEnd)
-    #expect(preferences.orderedIDs(from: ["p_one", "p_two", "p_three"]) == ["p_two", "p_one", "p_three"])
-    #expect(preferences.orderedIDs(from: ["p_one", "p_four"]) == ["p_one", "p_four"])
-    let ignoredSelfMove = preferences.move("p_one", before: "p_one", availableIDs: ["p_one", "p_two"])
-    #expect(!ignoredSelfMove)
-}
-
-@Test func sidebarProjectPreferencesRetainOrderAndExpandedState() throws {
-    let suite = "dieter-sidebar-tests-\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
-
-    // Projects are compressed by default; only explicit expansions persist.
-    var preferences = SidebarProjectNavigationPreferences()
-    #expect(!preferences.isExpanded("p_two"))
-    _ = preferences.move("p_three", before: "p_one", availableIDs: ["p_one", "p_two", "p_three"])
-    preferences.toggleExpanded("p_two")
-
-    let restored = SidebarProjectNavigationPreferences(
-        projectOrder: preferences.projectOrder, expandedProjectIDs: preferences.expandedProjectIDs)
-    #expect(restored.orderedIDs(from: ["p_one", "p_two", "p_three"]) == ["p_three", "p_one", "p_two"])
-    #expect(restored.isExpanded("p_two"))
-    #expect(!restored.isExpanded("p_one"))
-}
-
-@Test func chatProjectDisclosureRetainsIndependentCollapseAndExpansion() throws {
-    let suite = "dieter-chat-project-tests-\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
-
-    var preferences = ChatProjectDisclosurePreferences()
-    preferences.toggleCollapsed("p_collapsed")
-    preferences.toggleExpanded("p_expanded")
-
-    let restored = ChatProjectDisclosurePreferences(
-        collapsedProjectIDs: preferences.collapsedProjectIDs, expandedProjectIDs: preferences.expandedProjectIDs)
-    #expect(restored.isCollapsed("p_collapsed"))
-    #expect(!restored.isCollapsed("p_expanded"))
-    #expect(restored.isExpanded("p_expanded"))
-    #expect(!restored.isExpanded("p_collapsed"))
-}
-
 @Test func sidebarProjectDragPayloadRejectsOtherStringDrops() {
     let payload = SidebarProjectDragPayload(projectID: "p_one")
     #expect(SidebarProjectDragPayload(payload.encoded) == payload)
     #expect(SidebarProjectDragPayload("not-a-sidebar-project") == nil)
     #expect(SidebarProjectDragPayload("dieter:sidebar-project:") == nil)
-}
-
-@Test func navigationFoldersCreateMoveRenameCollapseDeleteAndEncode() throws {
-    var preferences = NavigationFolderPreferences()
-    let createdWorkID = preferences.createFolder(named: "Work")
-    let workID = try #require(createdWorkID)
-    let createdPersonalID = preferences.createFolder(named: "Personal")
-    let personalID = try #require(createdPersonalID)
-    let duplicateID = preferences.createFolder(named: " work ")
-    #expect(duplicateID == nil)
-    let oversizedCreate = preferences.createFolder(named: String(repeating: "界", count: 86))
-    let oversizedRename = preferences.renameFolder(workID, to: String(repeating: "界", count: 86))
-    #expect(oversizedCreate == nil)
-    #expect(!oversizedRename)
-    #expect(NavigationFolderPreferences.validName(String(repeating: "界", count: 85)))
-
-    let movedFirstToWork = preferences.moveItem("item_one", to: workID)
-    let movedSecondToWork = preferences.moveItem("item_two", to: workID)
-    let movedFirstToPersonal = preferences.moveItem("item_one", to: personalID)
-    #expect(movedFirstToWork)
-    #expect(movedSecondToWork)
-    #expect(movedFirstToPersonal)
-    #expect(preferences.folder(containing: "item_one")?.id == personalID)
-    #expect(preferences.folder(containing: "item_two")?.id == workID)
-    #expect(preferences.unfiledIDs(from: ["item_one", "item_two", "item_three"]) == ["item_three"])
-
-    let renamed = preferences.renameFolder(workID, to: "Client work")
-    let collapsed = preferences.toggleExpanded(personalID)
-    #expect(renamed)
-    #expect(collapsed)
-
-    var restored = NavigationFolderPreferences(
-        folders: try JSONDecoder().decode([NavigationFolder].self, from: JSONEncoder().encode(preferences.folders)))
-    #expect(restored == preferences)
-    #expect(restored.folders.first(where: { $0.id == personalID })?.isExpanded == false)
-    let removedFromFolder = restored.moveItem("item_one", to: nil)
-    #expect(removedFromFolder)
-    #expect(restored.folder(containing: "item_one") == nil)
-    let deleted = restored.deleteFolder(workID)
-    #expect(deleted)
-    #expect(restored.unfiledIDs(from: ["item_one", "item_two"]) == ["item_one", "item_two"])
-}
-
-@Test func navigationFoldersRepairDuplicateMembershipWhenLoading() {
-    let preferences = NavigationFolderPreferences(folders: [
-        NavigationFolder(id: "first", name: "First", itemIDs: ["shared", "one"]),
-        NavigationFolder(id: "second", name: "Second", itemIDs: ["shared", "two"]),
-    ])
-
-    #expect(preferences.folders[0].itemIDs == ["shared", "one"])
-    #expect(preferences.folders[1].itemIDs == ["two"])
-}
-
-@Test func pinnedChatsKeepSavedLocationsAndAppendNewPinsDeterministically() {
-    var first = Dieter_V1_Card()
-    first.id = "c_first"
-    first.position = 30
-    var second = Dieter_V1_Card()
-    second.id = "c_second"
-    second.position = 10
-    var newPin = Dieter_V1_Card()
-    newPin.id = "c_new"
-    newPin.position = 20
-
-    let ordered = PinnedChatOrdering.ordered(
-        [newPin, first, second],
-        preferredOrder: [first.id, second.id]
-    )
-    #expect(ordered.map(\.id) == [first.id, second.id, newPin.id])
-
-    let activityChanged = PinnedChatOrdering.ordered(
-        [second, first, newPin],
-        preferredOrder: ordered.map(\.id)
-    )
-    #expect(activityChanged.map(\.id) == [first.id, second.id, newPin.id])
-}
-
-@Test func pinnedChatPreferencesMatchAndroidDropTargetMovement() throws {
-    let suite = "dieter-pinned-chat-tests-\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
-
-    var first = Dieter_V1_Card()
-    first.id = "c_first"
-    var second = Dieter_V1_Card()
-    second.id = "c_second"
-    var third = Dieter_V1_Card()
-    third.id = "c_third"
-
-    var preferences = PinnedChatNavigationPreferences()
-    let initialized = preferences.initializeIfNeeded(with: [first.id, second.id, third.id])
-    #expect(initialized)
-    let movedFirst = preferences.move(first.id, to: second.id, among: [first, second, third])
-    #expect(movedFirst)
-    #expect(preferences.chatOrder == [second.id, first.id, third.id])
-    let movedThird = preferences.move(third.id, to: second.id, among: [first, second, third])
-    #expect(movedThird)
-    #expect(preferences.chatOrder == [third.id, second.id, first.id])
-
-    var restored = PinnedChatNavigationPreferences(chatOrder: preferences.chatOrder)
-    #expect(restored.chatOrder == [third.id, second.id, first.id])
-    let reinitialized = restored.initializeIfNeeded(with: [first.id])
-    #expect(!reinitialized)
 }
 
 @Test func pinnedChatDragPayloadRejectsOtherStringDrops() {
@@ -3045,7 +1238,7 @@ private func dragCard(_ id: String, position: Int64) -> Dieter_V1_Card {
 }
 
 @Test @MainActor func openingAConversationRoutesToItsChatOrBoardWorkspace() async {
-    let store = DieterStore(restoreSync: false)
+    let store = DieterStore(liveEnvironment: false)
     var firstProject = Dieter_V1_Project()
     firstProject.id = "p_first"
     firstProject.name = "First"

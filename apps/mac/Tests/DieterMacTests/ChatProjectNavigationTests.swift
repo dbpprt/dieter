@@ -14,86 +14,115 @@ import Testing
     return core.commands.compactMap(\.command)
 }
 
-@Test @MainActor func projectOrderIsSharedThroughTheCore() async throws {
+/// The navigation intents the session sent the core.
+@MainActor private func navigationEdits(_ core: ScriptedCoreClient, of store: DieterStore) async
+    -> [ClientNavigationCommand.OneOf_Action]
+{
+    await navigationCommands(core, of: store).compactMap { command in
+        if case .navigation(let edit) = command { edit.action } else { nil }
+    }
+}
+
+@Test @MainActor func projectMovesGoToTheCoreAndItsOrderShows() async throws {
     let core = ScriptedCoreClient()
-    let store = DieterStore(core: core, restoreSync: false)
-    var navigation = store.sidebarProjectNavigation
-    let moved = navigation.move("p_three", before: "p_one", availableIDs: ["p_one", "p_two", "p_three"])
-    #expect(moved)
-    store.sidebarProjectNavigation = navigation
+    let store = DieterStore(core: core, liveEnvironment: false)
+    store.moveProject("p_three", before: "p_one", ungrouped: false)
+    store.moveProject("p_two", before: nil, ungrouped: true)
+    let sent = await navigationEdits(core, of: store)
     #expect(
-        store.sidebarProjectNavigation.orderedIDs(from: ["p_one", "p_two", "p_three"]) == [
-            "p_three", "p_one", "p_two",
+        sent == [
+            .moveProject(
+                .with {
+                    $0.projectID = "p_three"; $0.beforeProjectID = "p_one"
+                }),
+            .moveProject(
+                .with {
+                    $0.projectID = "p_two"; $0.ungrouped = true
+                }),
         ])
-    let sent = await navigationCommands(core, of: store)
-    guard case .setProjectOrder(let order) = sent.last else {
-        Issue.record("expected a project order, sent \(sent)")
-        return
-    }
-    #expect(order.projectIds == store.sidebarProjectNavigation.projectOrder)
-    // What the core restores on the next launch shows as sent.
-    let relaunched = DieterStore(core: ScriptedCoreClient(), restoreSync: false)
-    relaunched.foldNavigation(.with { $0.projectOrder = order.projectIds })
-    #expect(relaunched.sidebarProjectNavigation == store.sidebarProjectNavigation)
+    // The sidebar shows the order the core lays out, not one of its own.
+    #expect(store.navigation.projects.order.isEmpty)
+    store.foldNavigation(.with { $0.projects.order = ["p_three", "p_one", "p_two"] })
+    #expect(store.navigation.projects.order == ["p_three", "p_one", "p_two"])
+    #expect(await navigationEdits(core, of: store).count == 2, "showing the core sends nothing back")
 }
 
-@Test @MainActor func projectFoldersAreSharedThroughTheCore() async throws {
+@Test @MainActor func projectFolderEditsGoToTheCore() async throws {
     let core = ScriptedCoreClient()
-    let store = DieterStore(core: core, restoreSync: false)
-    var folders = store.sidebarProjectFolders
-    let created = folders.createFolder(named: "Active work")
-    let folderID = try #require(created)
-    let moved = folders.moveItem("p_one", to: folderID)
-    #expect(moved)
-    store.sidebarProjectFolders = folders
-    let sent = await navigationCommands(core, of: store)
-    guard case .setFolders(let set) = sent.last else {
-        Issue.record("expected folders, sent \(sent)")
-        return
-    }
-    #expect(set.scope == .projects)
-    #expect(set.folders.map(\.name) == ["Active work"] && set.folders.first?.itemIds == ["p_one"])
-    let relaunched = DieterStore(core: ScriptedCoreClient(), restoreSync: false)
-    relaunched.foldNavigation(.with { $0.projectFolders = set.folders })
-    #expect(relaunched.sidebarProjectFolders == store.sidebarProjectFolders)
+    let store = DieterStore(core: core, liveEnvironment: false)
+    store.createFolder(.projects, name: "Active work")
+    store.moveToFolder(.projects, itemID: "p_one", folderID: "f_work")
+    store.renameFolder(.projects, folderID: "f_work", name: "Client work")
+    store.setFolderExpanded(.projects, folderID: "f_work", expanded: false)
+    store.moveToFolder(.projects, itemID: "p_one", folderID: nil)
+    store.deleteFolder(.projects, folderID: "f_work")
+    let sent = await navigationEdits(core, of: store)
+    #expect(
+        sent == [
+            .createFolder(
+                .with {
+                    $0.scope = .projects; $0.name = "Active work"
+                }),
+            .moveToFolder(
+                .with {
+                    $0.scope = .projects; $0.itemID = "p_one"; $0.folderID = "f_work"
+                }),
+            .renameFolder(
+                .with {
+                    $0.scope = .projects; $0.folderID = "f_work"; $0.name = "Client work"
+                }),
+            .setFolderExpanded(
+                .with {
+                    $0.scope = .projects; $0.folderID = "f_work"
+                }),
+            .moveToFolder(
+                .with {
+                    $0.scope = .projects; $0.itemID = "p_one"
+                }),
+            .deleteFolder(
+                .with {
+                    $0.scope = .projects; $0.folderID = "f_work"
+                }),
+        ])
 }
 
-@Test @MainActor func projectPinsAreSharedThroughTheCore() async throws {
+@Test @MainActor func projectPinsGoToTheCore() async throws {
     let core = ScriptedCoreClient()
-    let store = DieterStore(core: core, restoreSync: false)
-    var pins = store.pinnedProjectNavigation
-    let pinnedOne = pins.setPinned("p_one", pinned: true)
-    let pinnedTwo = pins.setPinned("p_two", pinned: true)
-    #expect(pinnedOne && pinnedTwo)
-    store.pinnedProjectNavigation = pins
-    let unpinned = pins.setPinned("p_one", pinned: false)
-    #expect(unpinned)
-    store.pinnedProjectNavigation = pins
-    let sent = await navigationCommands(core, of: store).compactMap { command -> [String]? in
-        if case .setPinnedProjects(let pinned) = command { pinned.projectIds } else { nil }
+    let store = DieterStore(core: core, liveEnvironment: false)
+    store.setProjectPinned("p_one", pinned: true)
+    store.setProjectPinned("p_two", pinned: true)
+    store.setProjectPinned("p_one", pinned: false)
+    let sent = await navigationEdits(core, of: store).compactMap { edit -> String? in
+        if case .pinProject(let pin) = edit { "\(pin.projectID) \(pin.pinned)" } else { nil }
     }
-    #expect(sent == [["p_one", "p_two"], ["p_two"]])
-    // A fold from the core is mirrored without being sent back.
-    store.foldNavigation(.with { $0.pinnedProjects = ["p_two"] })
-    #expect(store.pinnedProjectNavigation.projectOrder == ["p_two"])
-    #expect(await navigationCommands(core, of: store).count == 2)
+    #expect(sent == ["p_one true", "p_two true", "p_one false"])
+    store.foldNavigation(.with { $0.projects.pinned = ["p_two"] })
+    #expect(store.navigation.projects.pinned == ["p_two"])
+    #expect(await navigationEdits(core, of: store).count == 3, "showing the core sends nothing back")
 }
 
-@Test @MainActor func chatFoldersAreSharedThroughTheCore() async throws {
+@Test @MainActor func chatFolderAndPinnedChatEditsGoToTheCore() async throws {
     let core = ScriptedCoreClient()
-    let store = DieterStore(core: core, restoreSync: false)
-    var folders = store.allChatsFolders
-    let created = folders.createFolder(named: "Research")
-    let folderID = try #require(created)
-    let moved = folders.moveItem("c_one", to: folderID)
-    #expect(moved)
-    store.allChatsFolders = folders
-    let sent = await navigationCommands(core, of: store)
-    guard case .setFolders(let set) = sent.last else {
-        Issue.record("expected folders, sent \(sent)")
-        return
-    }
-    #expect(set.scope == .chats && set.folders.first?.itemIds == ["c_one"])
+    let store = DieterStore(core: core, liveEnvironment: false)
+    store.createFolder(.chats, name: "Research")
+    store.moveToFolder(.chats, itemID: "c_one", folderID: "f_research")
+    store.movePinnedChat("c_two", onto: "c_one")
+    let sent = await navigationEdits(core, of: store)
+    #expect(
+        sent == [
+            .createFolder(
+                .with {
+                    $0.scope = .chats; $0.name = "Research"
+                }),
+            .moveToFolder(
+                .with {
+                    $0.scope = .chats; $0.itemID = "c_one"; $0.folderID = "f_research"
+                }),
+            .movePinnedChat(
+                .with {
+                    $0.chatID = "c_two"; $0.targetChatID = "c_one"
+                }),
+        ])
 }
 
 @Test @MainActor func sharedProjectMachineBadgeRendersOnlineAndOfflineStates() {

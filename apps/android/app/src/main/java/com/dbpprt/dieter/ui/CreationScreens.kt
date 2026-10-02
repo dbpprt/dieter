@@ -6,7 +6,6 @@ import androidx.compose.runtime.collectAsState
 import com.dbpprt.dieter.core.admin.Administration
 import com.dbpprt.dieter.core.composition.Attachments
 import com.dbpprt.dieter.core.composition.Creation
-import com.dbpprt.dieter.core.composition.CreationInput
 import com.dbpprt.dieter.api.v1.HarnessSelection
 import android.app.TimePickerDialog
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -51,6 +50,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
@@ -66,11 +66,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -81,6 +79,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
@@ -91,7 +91,6 @@ import com.dbpprt.dieter.core.composition.TaskDrafts
 import com.dbpprt.dieter.core.composition.WorkspaceMode
 import com.dbpprt.dieter.core.composition.frozen
 import com.dbpprt.dieter.core.composition.task
-import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.core.presentation.DisplayPaths
 import com.dbpprt.dieter.core.schedules.Cadence
 import com.dbpprt.dieter.core.schedules.CadenceKind
@@ -107,18 +106,14 @@ import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import com.dbpprt.dieter.ui.theme.DieterText
-import com.dbpprt.dieter.api.v1.Harness
 import com.dbpprt.dieter.api.v1.MessagePart
 import com.dbpprt.dieter.api.v1.Schedule
-import com.dbpprt.dieter.api.v1.ScheduleDraft
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 import com.dbpprt.dieter.ui.theme.DieterAbyss
 
 @Composable
@@ -159,9 +154,9 @@ fun NewConversationScreen(
                 uris.map { uri -> runCatching { readAttachmentPart(context, uri, imagesOnly) } }
             }
             val incoming = results.mapNotNull(Result<MessagePart>::getOrNull)
-            val limitError = Attachments.limitError(draft.task.attachments + incoming)
-            if (limitError == null) incoming.forEach { part -> editor.edit { TaskDrafts.admit(it, part) } }
-            attachmentError = limitError ?: results.firstNotNullOfOrNull { it.exceptionOrNull()?.message }
+            var refused: String? = null
+            if (incoming.isNotEmpty()) editor.edit { current -> TaskDrafts.attach(current, incoming).getOrElse { error -> refused = error.message; current } }
+            attachmentError = refused ?: results.firstNotNullOfOrNull { it.exceptionOrNull()?.message }
         }
     }
     val imagePicker = rememberLauncherForActivityResult(
@@ -183,7 +178,7 @@ fun NewConversationScreen(
             } else {
                 {
                     Button(onClick = { model.submitTask(editor) }, enabled = canSubmit) {
-                        Text(if (Creation.startsImmediately(draft.task.lane)) "Create & run" else "Save")
+                        Text(Creation.submitTitle(draft.task.lane))
                     }
                 }
             },
@@ -429,7 +424,7 @@ internal fun NewCardBody(
             ModelSelectors(controls, onSelectionChange)
         }
         Text(
-            if (Creation.startsImmediately(task.lane)) "The first message starts immediately." else "The card is saved as a draft in Todo.",
+            Creation.startNote(task.lane),
             color = DieterMuted,
             style = MaterialTheme.typography.bodySmall,
         )
@@ -447,7 +442,7 @@ private fun WorkspaceModeChips(
             FilterChip(
                 selected = selected == mode,
                 onClick = { onSelect(mode) },
-                label = { Text(if (mode == WorkspaceMode.WORKTREE) "New worktree" else "Project directory") },
+                label = { Text(mode.choiceTitle) },
                 modifier = Modifier.testTag("workspace-mode-${mode.wire}"),
             )
         }
@@ -458,9 +453,9 @@ private fun WorkspaceModeChips(
 fun NewBoardScreen(state: DieterUiState, model: DieterViewModel, contentPadding: PaddingValues) {
     var name by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var workflow by remember { mutableStateOf("review") }
+    var workflow by remember { mutableStateOf(Administration.DEFAULT_WORKFLOW) }
     var baseRemote by remember(state.project?.id) { mutableStateOf(state.project?.base_remote.orEmpty()) }
-    var remotePublishMode by remember { mutableStateOf("manual") }
+    var remotePublishMode by remember { mutableStateOf(Administration.DEFAULT_PUBLISH_MODE) }
     val canCreate = name.isNotBlank() && state.selectedProjectId.isNotBlank() && !state.working
 
     Column(Modifier.fillMaxSize().padding(contentPadding)) {
@@ -499,24 +494,15 @@ fun NewBoardScreen(state: DieterUiState, model: DieterViewModel, contentPadding:
                 modifier = Modifier.fillMaxWidth(),
             )
             FormSection(Icons.Outlined.ViewKanban, "Workflow") {
-                FilterChip(
-                    selected = workflow == "review",
-                    onClick = { workflow = "review" },
-                    label = { Text("Todo → Running → Review → Done") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                FilterChip(
-                    selected = workflow == "direct",
-                    onClick = { workflow = "direct" },
-                    label = { Text("Todo → Running → Done") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    if (workflow == "review") "Review keeps completed agent work waiting for your approval."
-                    else "Direct moves completed work straight to Done.",
-                    color = DieterMuted,
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                Administration.WORKFLOWS.forEach { value ->
+                    FilterChip(
+                        selected = workflow == value,
+                        onClick = { workflow = value },
+                        label = { Text(Administration.workflowLanes(value)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Text(Administration.workflowDetail(workflow), color = DieterMuted, style = MaterialTheme.typography.bodySmall)
             }
             FormSection(Icons.Outlined.AccountTree, "Git publishing") {
                 OutlinedTextField(
@@ -552,14 +538,15 @@ fun ScheduleEditorScreen(
     val controls = AgentControls(ScheduleDrafts.selection(draft), state.harnesses)
     val board = state.boards.firstOrNull { it.id == draft.board_id }
     val canSave = ScheduleDrafts.canSave(draft.copy(cron = cron))
+    val view = state.scheduleWorkspace
 
     LaunchedEffect(cron, draft.timezone) { model.previewSchedule(cron, draft.timezone) }
 
     Column(Modifier.fillMaxSize().padding(contentPadding)) {
         CreationHeader(
-            eyebrow = if (schedule == null) "New automation" else "Edit automation",
-            title = if (schedule == null) "New schedule" else "Edit schedule",
-            subtitle = "Runs on the selected checkout’s machine · ${draft.timezone}",
+            eyebrow = state.project?.name,
+            title = if (schedule == null) ScheduleDrafts.NEW_TITLE else ScheduleDrafts.EDIT_TITLE,
+            subtitle = cadence.summary(draft.timezone),
             onClose = model::closeSurface,
             trailing = {
                 Button(onClick = { model.saveSchedule(schedule?.id.orEmpty(), draft.copy(cron = cron)) }, enabled = canSave && !state.working) {
@@ -588,13 +575,13 @@ fun ScheduleEditorScreen(
                 minLines = 2,
                 modifier = Modifier.fillMaxWidth(),
             )
-            FormSection(Icons.Outlined.Schedule, "Timing", trailing = { Text(cadence.summary(), color = DieterMuted, fontSize = 11.sp) }) {
+            FormSection(Icons.Outlined.Schedule, "Timing") {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     SelectorField(
                         label = "Repeats",
                         value = cadence.kind.title,
                         options = CadenceKind.entries.map { it.name to it.title },
-                        onSelect = { kind -> cadence = cadence.copy(kind = CadenceKind.valueOf(kind), custom = cadence.custom.ifBlank { cron }) },
+                        onSelect = { kind -> cadence = cadence.withKind(CadenceKind.valueOf(kind)) },
                         modifier = Modifier.weight(1f),
                     )
                     if (cadence.kind == CadenceKind.WEEKLY) {
@@ -608,13 +595,13 @@ fun ScheduleEditorScreen(
                     }
                 }
                 if (cadence.kind != CadenceKind.CUSTOM) {
-                    ScheduleTimeField(cadence.time, { cadence = cadence.at(it) }, Modifier.fillMaxWidth().testTag("schedule-time-picker"))
+                    ScheduleTimeField(cadence, { hour, minute -> cadence = cadence.copy(hour = hour, minute = minute) }, Modifier.fillMaxWidth().testTag("schedule-time-picker"))
                 } else {
                     OutlinedTextField(
                         cadence.custom,
                         { cadence = cadence.copy(custom = it) },
                         label = { Text("Cron expression") },
-                        supportingText = { Text("Five fields: minute, hour, day of month, month, day of week") },
+                        supportingText = { Text(ScheduleDrafts.CRON_HELP) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("schedule-cron"),
                     )
@@ -626,10 +613,15 @@ fun ScheduleEditorScreen(
                     onSelect = { draft = draft.copy(timezone = it) },
                     modifier = Modifier.fillMaxWidth().testTag("schedule-timezone"),
                 )
-                if (state.schedulePreview.isNotEmpty()) {
-                    Text("Next five", color = DieterMuted, fontSize = 11.sp)
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        state.schedulePreview.take(5).forEach { timestamp -> NeutralPill(schedulePreviewLabel(timestamp, draft.timezone)) }
+                val previewError = view.previewError
+                when {
+                    view.previewLoading -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    previewError != null -> Text(previewError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    view.preview.isNotEmpty() -> {
+                        Text("Next five", color = DieterMuted, fontSize = 11.sp)
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                            view.preview.take(5).forEach { timestamp -> NeutralPill(scheduleTimeLabel(timestamp, draft.timezone)) }
+                        }
                     }
                 }
             }
@@ -643,18 +635,14 @@ fun ScheduleEditorScreen(
                 )
                 Text("Place each scheduled card in", color = DieterMuted, fontSize = 12.sp)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = draft.action == ScheduleDrafts.DRAFT,
-                        onClick = { draft = draft.copy(action = ScheduleDrafts.DRAFT) },
-                        label = { Text("Todo") },
-                        modifier = Modifier.weight(1f).testTag("schedule-placement-todo"),
-                    )
-                    FilterChip(
-                        selected = draft.action == ScheduleDrafts.RUN,
-                        onClick = { draft = draft.copy(action = ScheduleDrafts.RUN) },
-                        label = { Text("Running") },
-                        modifier = Modifier.weight(1f).testTag("schedule-placement-running"),
-                    )
+                    listOf(ScheduleDrafts.DRAFT, ScheduleDrafts.RUN).forEach { action ->
+                        FilterChip(
+                            selected = draft.action == action,
+                            onClick = { draft = draft.copy(action = action) },
+                            label = { Text(ScheduleDrafts.placementTitle(action)) },
+                            modifier = Modifier.weight(1f).testTag(if (action == ScheduleDrafts.RUN) "schedule-placement-running" else "schedule-placement-todo"),
+                        )
+                    }
                 }
                 Text(ScheduleDrafts.placementDetail(draft.action), color = DieterMuted, style = MaterialTheme.typography.bodySmall)
                 Text("Workspace", color = DieterMuted, fontSize = 12.sp)
@@ -694,15 +682,15 @@ fun ScheduleEditorScreen(
                     modifier = Modifier.fillMaxWidth().testTag("schedule-prompt"),
                 )
                 ScheduleVariableButtons { variable -> draft = draft.copy(prompt_template = ScheduleTemplates.insert(draft.prompt_template, variable)) }
-                val example = scheduleExampleValues(state, draft.name, board?.name, draft.timezone)
+                val example = scheduleExampleValues(view.preview, state.project?.name, draft.name, board?.name, draft.timezone)
                 Column(
                     Modifier.fillMaxWidth().background(DieterSurfaceHigh, RoundedCornerShape(12.dp)).padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text("EXAMPLE OUTPUT", color = DieterMuted, fontSize = 10.sp, letterSpacing = 1.2.sp)
-                    Text(ScheduleTemplates.render(draft.title_template, example), fontWeight = FontWeight.SemiBold)
+                    Text(ScheduleTemplates.example(draft.title_template, example, ScheduleTemplates.TITLE_PLACEHOLDER), fontWeight = FontWeight.SemiBold)
                     Text(
-                        ScheduleTemplates.render(draft.prompt_template, example),
+                        ScheduleTemplates.example(draft.prompt_template, example, ScheduleTemplates.PROMPT_PLACEHOLDER),
                         color = DieterMuted,
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 5,
@@ -723,6 +711,7 @@ fun ScheduleEditorScreen(
                         FilterChip(selected = draft.open_card_policy == policy, onClick = { draft = draft.copy(open_card_policy = policy) }, label = { Text(title) })
                     }
                 }
+                Text(ScheduleDrafts.MISFIRE_NOTE, color = DieterMuted, style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.height(24.dp))
         }
@@ -756,7 +745,6 @@ internal fun CreationHeader(
 private fun FormSection(
     icon: ImageVector,
     title: String,
-    trailing: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -771,7 +759,6 @@ private fun FormSection(
                 Icon(icon, null, tint = DieterShell, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.size(8.dp))
                 Text(title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                trailing?.invoke()
             }
             content()
         }
@@ -882,20 +869,12 @@ internal fun SurfaceErrorBanner(error: String?, onDismiss: () -> Unit) {
     }
 }
 
-internal fun schedulePreviewLabel(timestamp: String, timezone: String): String = runCatching {
-    DateTimeFormatter.ofPattern("MMM d, HH:mm", Locale.getDefault())
-        .format(Instant.parse(timestamp).atZone(ZoneId.of(timezone)))
-}.getOrElse { timestamp.replace('T', ' ').substringBefore('+').substringBefore('Z').takeLast(11) }
-
 @Composable
-private fun ScheduleTimeField(value: String, onValueChange: (String) -> Unit, modifier: Modifier = Modifier) {
+private fun ScheduleTimeField(cadence: Cadence, onChange: (hour: Int, minute: Int) -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val parts = value.split(':')
-    val hour = parts.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 23) ?: 9
-    val minute = parts.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 59) ?: 0
     Box(modifier) {
         OutlinedTextField(
-            value = value,
+            value = cadence.time,
             onValueChange = {},
             readOnly = true,
             label = { Text("Run at") },
@@ -906,9 +885,9 @@ private fun ScheduleTimeField(value: String, onValueChange: (String) -> Unit, mo
             Modifier.matchParentSize().clickable(onClickLabel = "Choose run time") {
                 TimePickerDialog(
                     context,
-                    { _, selectedHour, selectedMinute -> onValueChange("%02d:%02d".format(selectedHour, selectedMinute)) },
-                    hour,
-                    minute,
+                    { _, selectedHour, selectedMinute -> onChange(selectedHour, selectedMinute) },
+                    cadence.hour,
+                    cadence.minute,
                     true,
                 ).show()
             },
@@ -920,14 +899,19 @@ private fun ScheduleTimeField(value: String, onValueChange: (String) -> Unit, mo
 private fun ScheduleVariableButtons(onInsert: (String) -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         ScheduleTemplates.VARIABLES.forEach { variable ->
-            AssistChip(onClick = { onInsert(variable) }, label = { Text("{{$variable}}", fontSize = 11.sp) })
+            val token = ScheduleTemplates.token(variable)
+            AssistChip(
+                onClick = { onInsert(variable) },
+                label = { Text(token, fontSize = 11.sp) },
+                modifier = Modifier.semantics { contentDescription = "$token, ${ScheduleTemplates.help(variable)}" },
+            )
         }
     }
 }
 
-/** The example's values: the next occurrence (else now), its date in the schedule's zone, and the chosen names. */
-private fun scheduleExampleValues(state: DieterUiState, scheduleName: String, boardName: String?, timezone: String): Map<String, String> {
-    val instant = state.schedulePreview.firstOrNull()?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: Instant.now()
+/** The example's values: the next occurrence in [preview] (else now), its date in the schedule's zone, and the chosen names. */
+private fun scheduleExampleValues(preview: List<String>, projectName: String?, scheduleName: String, boardName: String?, timezone: String): Map<String, String> {
+    val instant = preview.firstOrNull()?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: Instant.now()
     val zone = runCatching { ZoneId.of(timezone) }.getOrElse { ZoneId.systemDefault() }
-    return ScheduleTemplates.exampleValues(state.project?.name, boardName, scheduleName, instant.toString(), DateTimeFormatter.ISO_LOCAL_DATE.format(instant.atZone(zone)))
+    return ScheduleTemplates.exampleValues(projectName, boardName, scheduleName, instant.toString(), DateTimeFormatter.ISO_LOCAL_DATE.format(instant.atZone(zone)))
 }

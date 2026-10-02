@@ -12,12 +12,16 @@ import SharedCore
     var machineInformation: [String: Dieter_V1_MachineInformation] = [:]
     var machineCPUHistory: [String: [Double]] = [:]
     var machineGPUHistory: [String: [String: [Double]]] = [:]
+    /// Each machine's actions menu: update, restart, and shut down, as its capabilities allow.
+    var machineOperations: [String: [ClientMachineOperationState]] = [:]
     var machineInformationLoading = false
     var machineInformationError: String?
     var machineOperationMessage: String?
-    var machineOperationInFlight = false
+    /// An operation on the selected machine is on its way, as the core reports it.
+    private(set) var machineOperationInFlight = false
 
     private let directory: () -> [DieterEndpoint]
+    private let entry: (DieterEndpoint) -> ClientMachineEntry?
     private let core: CoreClient
     private let reportError: (Error) -> Void
     @ObservationIgnored private var subscription: SliceSubscription?
@@ -26,15 +30,21 @@ import SharedCore
     @ObservationIgnored private var queued: Task<Void, Never>?
     private var machines: [DieterEndpoint] { directory() }
 
-    init(machines: @escaping () -> [DieterEndpoint], core: CoreClient, reportError: @escaping (Error) -> Void) {
+    /// `entry` is how the core presents a machine: whether it can take work, and why not.
+    init(
+        machines: @escaping () -> [DieterEndpoint],
+        entry: @escaping (DieterEndpoint) -> ClientMachineEntry?,
+        core: CoreClient, reportError: @escaping (Error) -> Void
+    ) {
         directory = machines
+        self.entry = entry
         self.core = core
         self.reportError = reportError
     }
 
     func reset() {
         dismissMachinePopover()
-        machineInformation = [:]; machineCPUHistory = [:]; machineGPUHistory = [:]
+        machineInformation = [:]; machineCPUHistory = [:]; machineGPUHistory = [:]; machineOperations = [:]
         machineOperationMessage = nil; machineOperationInFlight = false
     }
 
@@ -59,10 +69,6 @@ import SharedCore
         await refreshMachineInformation(machineID: selectedMachineID)
     }
 
-    func startMachineTelemetry(machineID: String) {
-        Task { await refreshMachineInformation(machineID: machineID) }
-    }
-
     func stopMachineTelemetry() {
         machineInformationLoading = false
         enqueue { $0.select = ClientTelemetrySelect() }
@@ -75,12 +81,8 @@ import SharedCore
             machineInformationError = "This machine is no longer enrolled."
             return
         }
-        guard machine.online else {
-            machineInformationError = "\(machine.name) is offline."
-            return
-        }
-        guard machine.compatibilityState != .incompatible else {
-            machineInformationError = machine.incompatibilityDescription
+        if let reason = unavailableReason(machine) {
+            machineInformationError = reason
             return
         }
         guard let daemonID = machine.daemonID else { return }
@@ -97,24 +99,16 @@ import SharedCore
 
     /// Restarts, shuts down, or updates the selected machine; the core keeps
     /// one idempotency key per confirmed action.
-    func performMachineOperation(_ action: Dieter_V1_MachineOperationAction, confirmation: String) async {
+    func performMachineOperation(_ action: Dieter_V1_MachineOperationAction) async {
         guard let machineID = selectedMachineID, let machine = machines.first(where: { $0.id == machineID }) else {
             return
         }
-        guard machine.online else {
-            reportError(
-                NSError(
-                    domain: "DieterMachine", code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "\(machine.name) is offline."]))
-            return
-        }
-        guard machine.compatibilityState != .incompatible else {
-            machineOperationMessage = machine.incompatibilityDescription
+        if let reason = unavailableReason(machine) {
+            reportError(NSError(domain: "DieterMachine", code: 2, userInfo: [NSLocalizedDescriptionKey: reason]))
             return
         }
         guard !machineOperationInFlight else { return }
-        machineOperationInFlight = true
-        defer { machineOperationInFlight = false }
+        subscribe()
         do {
             let result = try await core.dispatch(
                 .with { $0.telemetry = .with { $0.perform = .with { $0.action = action } } })
@@ -125,6 +119,12 @@ import SharedCore
             guard selectedMachineID == machineID else { return }
             reportError(error)
         }
+    }
+
+    /// Why `machine` cannot take work now, as the core words it; nil when it can.
+    private func unavailableReason(_ machine: DieterEndpoint) -> String? {
+        guard let entry = entry(machine) else { return "\(machine.name) is unavailable." }
+        return entry.available ? nil : entry.unavailableMessage
     }
 
     private func subscribe() {
@@ -146,12 +146,16 @@ import SharedCore
             }
             let gpu = readings.gpuHistory.mapValues(\.values)
             if machineGPUHistory[machineID] != gpu { machineGPUHistory[machineID] = gpu }
+            if machineOperations[machineID] != readings.operations {
+                machineOperations[machineID] = readings.operations
+            }
             guard machineID == selectedMachineID else { continue }
             let loading = readings.loading && !readings.hasInformation
             if machineInformationLoading != loading { machineInformationLoading = loading }
             let error = readings.error.isEmpty ? nil : readings.error
             if machineInformationError != error { machineInformationError = error }
         }
+        if machineOperationInFlight != slice.operationPending { machineOperationInFlight = slice.operationPending }
         if !slice.operationResult.isEmpty, slice.operationResult != shownResult {
             shownResult = slice.operationResult
             machineOperationMessage = slice.operationResult

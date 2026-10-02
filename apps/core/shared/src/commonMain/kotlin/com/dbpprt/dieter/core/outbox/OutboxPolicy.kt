@@ -14,17 +14,14 @@ import com.dbpprt.dieter.core.journal.OutboxEntry
 import com.dbpprt.dieter.core.journal.OutboxKind
 import com.dbpprt.dieter.core.journal.OutboxPlacement
 import com.dbpprt.dieter.core.journal.OutboxState
+import com.dbpprt.dieter.core.presentation.Counts
+import com.dbpprt.dieter.core.presentation.MessageMetadata
 import com.dbpprt.dieter.core.runtime.Backoff
 import com.dbpprt.dieter.core.runtime.Failures
-import com.dbpprt.dieter.core.runtime.Timestamps
 import kotlin.time.Duration
 import kotlin.time.Instant
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import okio.ByteString.Companion.encodeUtf8
 import okio.ByteString.Companion.toByteString
 
@@ -41,22 +38,77 @@ data class MachineOutboxSummary(
     /** The daemon's disk is full; delivery retries every minute. */
     val storageBlocked: Boolean get() = Failures.isInsufficientStorage(failureMessage)
 
+    /** "1 message queued", "3 changes queued", or "2 items queued" for a mix. */
+    val queuedLabel: String
+        get() {
+            val queued = when {
+                changeCount == 0 -> Counts.of(messageCount, "message")
+                messageCount == 0 -> Counts.of(changeCount, "change")
+                else -> Counts.of(itemCount, "item")
+            }
+            return "$queued queued"
+        }
+
     /** "3 messages queued — delivers when it reconnects." */
     val deliveryLabel: String
         get() {
-            val noun = when {
-                changeCount == 0 -> if (messageCount == 1) "message" else "messages"
-                messageCount == 0 -> if (changeCount == 1) "change" else "changes"
-                else -> if (itemCount == 1) "item" else "items"
-            }
             val suffix = when {
                 failed -> "needs attention."
                 storageBlocked -> "free disk space on this machine; retries automatically every minute."
                 else -> "delivers when it reconnects."
             }
-            return "$itemCount $noun queued — $suffix"
+            return "$queuedLabel — $suffix"
         }
+
+    /** Appended to the machine's status line: " · attention needed", " · low disk space", " · retrying", or " · queued". */
+    val statusSuffix: String
+        get() = when {
+            failed -> " · attention needed"
+            storageBlocked -> " · low disk space"
+            retrying -> " · retrying"
+            else -> " · queued"
+        }
+
+    /** The machine's conversations show the low-disk banner: a full disk holds delivery and nothing was rejected. */
+    val storageBanner: Boolean get() = storageBlocked && !failed
+
+    /** Rejected work first, then a full disk, then transient retries; otherwise sending while [machineOnline], else waiting. */
+    fun phase(machineOnline: Boolean): DeliveryPhase = when {
+        failed -> DeliveryPhase.FAILED
+        storageBlocked -> DeliveryPhase.WAITING_FOR_STORAGE
+        retrying -> DeliveryPhase.RETRYING
+        machineOnline -> DeliveryPhase.SENDING
+        else -> DeliveryPhase.WAITING
+    }
+
+    /** The delivery toast's title, e.g. "Delivering to Studio" or "Low disk space on Studio". */
+    fun title(machineName: String, machineOnline: Boolean): String = when (phase(machineOnline)) {
+        DeliveryPhase.SENDING -> "Delivering to $machineName"
+        DeliveryPhase.WAITING -> "Waiting for $machineName"
+        DeliveryPhase.WAITING_FOR_STORAGE -> "Low disk space on $machineName"
+        DeliveryPhase.RETRYING -> "Retrying delivery to $machineName"
+        DeliveryPhase.FAILED -> "Delivery to $machineName failed"
+    }
+
+    /** The delivery toast's detail: what is queued and what happens next; a rejection shows the daemon's reason. */
+    fun detail(machineName: String, machineOnline: Boolean): String = when (phase(machineOnline)) {
+        DeliveryPhase.SENDING -> "$queuedLabel · Sending now"
+        DeliveryPhase.WAITING -> "$queuedLabel · Sends when it reconnects"
+        DeliveryPhase.WAITING_FOR_STORAGE -> "$queuedLabel. Free disk space on $machineName; retries automatically every minute."
+        DeliveryPhase.RETRYING -> "$queuedLabel · Trying again automatically"
+        DeliveryPhase.FAILED -> failureMessage?.takeIf { it.isNotBlank() } ?: "$queuedLabel · Try again when the machine is available"
+    }
+
+    /** The toast's retry button: "Try Again" after a failure or while retrying, "Retry Now" while waiting, none while sending. */
+    fun retryTitle(machineOnline: Boolean): String = when (phase(machineOnline)) {
+        DeliveryPhase.FAILED, DeliveryPhase.RETRYING -> "Try Again"
+        DeliveryPhase.WAITING, DeliveryPhase.WAITING_FOR_STORAGE -> "Retry Now"
+        DeliveryPhase.SENDING -> ""
+    }
 }
+
+/** Where a machine's queued work stands, as its delivery toast shows it. */
+enum class DeliveryPhase { SENDING, WAITING, WAITING_FOR_STORAGE, RETRYING, FAILED }
 
 /**
  * Pure outbox rules shared by delivery, reconciliation, and presentation.
@@ -169,36 +221,6 @@ object OutboxPolicy {
         entry
     }
 
-    /**
-     * Replaces the optimistic row with the daemon's. When sync already shows
-     * the server row, the optimistic one is dropped instead of duplicated.
-     */
-    fun retargetedCards(cards: List<Card>, from: String, to: String, authoritative: Card? = null): List<Card> {
-        if (from == to) return cards
-        if (cards.any { it.id == to }) {
-            var keptServer = false
-            return cards.mapNotNull { card ->
-                when {
-                    card.id == from -> null
-                    card.id != to -> card
-                    keptServer -> null
-                    else -> card.also { keptServer = true }
-                }
-            }
-        }
-        var retargeted = false
-        return cards.mapNotNull { card ->
-            when {
-                card.id != from -> card
-                retargeted -> null
-                else -> {
-                    retargeted = true
-                    if (authoritative?.id == to) authoritative else card.copy(id = to)
-                }
-            }
-        }
-    }
-
     /** The row shown for an undelivered or unsynchronized create. */
     fun optimisticCard(entry: OutboxEntry): Card? {
         val request = createRequest(entry) ?: return null
@@ -302,7 +324,7 @@ object OutboxPolicy {
             if (candidate.message.id in serverQueued) continue
             if (candidate.onlyWithoutUserMessage && messages.any(::isUserMessage)) continue
             val index = messages.indexOfFirst { message ->
-                messageCreatedAt(message)?.let { it.toEpochMilliseconds() > candidate.entry.created_at_millis } == true
+                MessageMetadata.createdAt(message)?.let { it.toEpochMilliseconds() > candidate.entry.created_at_millis } == true
             }.let { if (it < 0) messages.size else it }
             messages.add(index, candidate.message)
         }
@@ -361,10 +383,4 @@ object OutboxPolicy {
 
     private fun createdAtMetadata(millis: Long) =
         JsonObject(mapOf("createdAt" to JsonPrimitive(Instant.fromEpochMilliseconds(millis).toString()))).toString().encodeUtf8()
-
-    fun messageCreatedAt(message: UiMessage): Instant? {
-        if (message.metadata_json.size == 0) return null
-        val metadata = runCatching { Json.parseToJsonElement(message.metadata_json.utf8()).jsonObject }.getOrNull() ?: return null
-        return Timestamps.parse(metadata["createdAt"]?.jsonPrimitive?.contentOrNull)
-    }
 }

@@ -71,8 +71,9 @@ private func actionName(_ action: ClientScreenCommand.OneOf_Action?) -> String {
     core.emit(.screen, scope: controller.scope) {
         $0.screen = .with {
             $0.phase = "streaming"
+            $0.phaseLabel = "Live"
             $0.active = true
-            $0.ready = true
+            $0.frameRates = [30, 60, 90, 120]
             $0.controlActive = true
             $0.canTransferControl = true
             $0.routeLabel = "Direct"
@@ -100,9 +101,11 @@ private func actionName(_ action: ClientScreenCommand.OneOf_Action?) -> String {
     #expect(controller.phase == .streaming)
     #expect(controller.controlActive && controller.canTransferControl)
     #expect(controller.controlUnavailableReason.isEmpty)
+    #expect(controller.active)
     #expect(controller.routeLabel == "Direct")
     #expect(controller.sessionState.displayGeneration == 3)
-    #expect(controller.availableFrameRates == [30, 60, 90, 120])
+    #expect(controller.frameRates == [30, 60, 90, 120])
+    #expect(controller.phaseLabel == "Live")
     #expect(controller.remoteCursor.image.size == NSSize(width: 16, height: 16))
     #expect(controller.remoteCursor.hotSpot == NSPoint(x: 2, y: 3))
     #expect(controller.remoteCursorState == RemoteDesktopCursorState(visible: true, x: 0.25, y: 0.75))
@@ -119,6 +122,7 @@ private func actionName(_ action: ClientScreenCommand.OneOf_Action?) -> String {
             $0.cursorImageUnchanged = true
             $0.cursorVisible = true
             $0.capabilities = .with { $0.platform = "linux" }
+            $0.controlUnavailableReason = "Remote-control permission is required from the Linux desktop portal"
         }
     }
     #expect(controller.remoteCursor === shape)
@@ -215,6 +219,7 @@ private func actionName(_ action: ClientScreenCommand.OneOf_Action?) -> String {
     session.configureInactivityTimeout(enabled: true, minutes: 1)
     session.connect()
     controller.phase = .streaming
+    controller.active = true
     func count(_ name: String) -> Int {
         screenCommands(core).filter { actionName($0.action) == name }.count
     }
@@ -237,17 +242,4 @@ private func actionName(_ action: ClientScreenCommand.OneOf_Action?) -> String {
     session.close()
     await controller.settle()
     #expect(!core.isObserved(.screen, scope: controller.scope), "closing the tab releases the core's screen")
-}
-
-@Test func callbackCancellationCompletesWithoutWaitingForNativeCallback() async throws {
-    let callback = Mutex<(@Sendable (Result<Int, Error>) -> Void)?>(nil)
-    let task = Task { try await awaitCancellableCallback { finish in callback.withLock { $0 = finish } } as Int }
-    for _ in 0..<1_000 {
-        if callback.withLock({ $0 != nil }) { break }
-        try await Task.sleep(nanoseconds: 1_000_000)
-    }
-    task.cancel()
-    await #expect(throws: CancellationError.self) { try await task.value }
-    // A native callback after cancellation is harmless and cannot resume twice.
-    callback.withLock { $0 }?(.success(7))
 }

@@ -13,5 +13,3 @@ native:
   class: com.dbpprt.dieter.sharedcore.SharedCoreIntegrationTest
   methods:
   - relaySignInSyncsTheFixtureAndReachesItsMachine
-  - offlineNavigationEditDrainsAfterReconnect
-  - conversationQueuedOfflineReachesTheDaemonAfterReconnect

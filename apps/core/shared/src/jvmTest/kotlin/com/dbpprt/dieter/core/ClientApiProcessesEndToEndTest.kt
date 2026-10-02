@@ -5,10 +5,10 @@ import com.dbpprt.dieter.api.v1.StartExecutionRequest
 import com.dbpprt.dieter.client.v1.Command
 import com.dbpprt.dieter.client.v1.ProcessesCommand
 import com.dbpprt.dieter.client.v1.ProcessesSlice
-import com.dbpprt.dieter.client.v1.ProcessesStep
 import com.dbpprt.dieter.client.v1.ProcessesTarget
 import com.dbpprt.dieter.client.v1.SearchCommand
 import com.dbpprt.dieter.client.v1.Slice
+import com.dbpprt.dieter.client.v1.Step
 import com.dbpprt.dieter.client.v1.Update
 import com.dbpprt.dieter.core.client.ClientApi
 import com.dbpprt.dieter.core.testing.EndToEnd
@@ -61,7 +61,7 @@ class ClientApiProcessesEndToEndTest : EndToEnd() {
         assertEquals(started.id, shown.selected_id)
         assertEquals(1, shown.running)
         assertTrue(shown.can_stop)
-        api.dispatch(command(ProcessesCommand(stop = ProcessesStep())))
+        api.dispatch(command(ProcessesCommand(stop = Step())))
         processes.await(20.seconds, describe = { "stopped: ${processes.value?.processes}" }) { it?.running == 0 }
         watch.close()
     }

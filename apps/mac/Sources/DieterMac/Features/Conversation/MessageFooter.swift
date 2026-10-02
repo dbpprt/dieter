@@ -1,28 +1,19 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 
-struct MessageFooterContent: Equatable {
+/// A row's time and copy action: the core says when its last message was
+/// written and whether it has prose; copying asks the core for that prose.
+struct MessageFooterContent {
     let timestamp: Date?
-    let markdown: String
+    let copyable: Bool
+    private let messages: [Dieter_V1_UiMessage]
 
-    init(messages: [Dieter_V1_UiMessage]) {
-        if let metadata = messages.last?.metadataJson,
-            let values = try? JSONSerialization.jsonObject(with: metadata) as? [String: Any],
-            let createdAt = values["createdAt"] as? String
-        {
-            timestamp = DieterTimestamp.date(from: createdAt)
-        } else {
-            timestamp = nil
-        }
-        // Keep the original Markdown, including whitespace and code fences.
-        // Attachments and tool previews are separate content, not message prose.
-        markdown = messages.flatMap(\.parts).filter { part in
-            !ConversationMessagePartGroup.isToolCall(part)
-                && !["reasoning", "thinking", "step-start", "file", "attachment", "image"].contains(
-                    part.type.lowercased())
-                && !part.text.isEmpty
-        }.map(\.text).joined(separator: "\n\n")
+    init(row: ClientTimelineItem, messages: [Dieter_V1_UiMessage]) {
+        timestamp = Date(epochMillis: row.createdAtMillis)
+        copyable = row.copyable
+        self.messages = messages
     }
 
     var timestampLabel: String {
@@ -33,8 +24,15 @@ struct MessageFooterContent: Equatable {
         timestamp?.formatted(date: .complete, time: .standard) ?? "Message time unavailable"
     }
 
+    /// The row's prose as written, joined by blank lines.
+    var markdown: String {
+        guard copyable else { return "" }
+        return SharedRules.shared.doCopyText(messages: ClientTimelineMessages.with { $0.messages = messages }.rulesData)
+    }
+
     @MainActor @discardableResult
     func copy(to pasteboard: NSPasteboard = .general) -> Bool {
+        let markdown = markdown
         guard !markdown.isEmpty else { return false }
         pasteboard.clearContents()
         return pasteboard.setString(markdown, forType: .string)
@@ -81,7 +79,7 @@ struct MessageFooter: View {
             .quickHelp("Copy")
             .opacity(showsActions ? 1 : 0)
             .allowsHitTesting(showsActions)
-            .disabled(content.markdown.isEmpty)
+            .disabled(!content.copyable)
             .accessibilityLabel("Copy message")
             .accessibilityHint("Copies the original message text and Markdown")
             .accessibilityIdentifier("conversation.message.copy.\(messageID)")

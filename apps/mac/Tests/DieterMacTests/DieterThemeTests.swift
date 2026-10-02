@@ -434,7 +434,7 @@ struct DieterThemePerformanceTests {
 
     @MainActor
     private func makeProductionChatListFixture() -> (store: DieterStore, running: Int, total: Int) {
-        let store = DieterStore(restoreSync: false)
+        let store = DieterStore(liveEnvironment: false)
         var chats: [Dieter_V1_Card] = []
         var running = 0
         for pinnedIndex in 0..<8 {
@@ -471,7 +471,9 @@ struct DieterThemePerformanceTests {
             }
         }
         store.chats = chats
+        store.showChatsFixture()
         store.phase = .connected(version: "theme-performance-fixture")
+        store.workspaceIsLive = true
         store.section = .chats
         return (store, running, chats.count)
     }
@@ -483,7 +485,7 @@ struct DieterThemePerformanceTests {
         total: Int,
         largestLane: Int
     ) {
-        let store = DieterStore(restoreSync: false)
+        let store = DieterStore(liveEnvironment: false)
         var project = Dieter_V1_Project()
         project.id = "project-board-performance"
         project.name = "Board performance fixture"
@@ -553,7 +555,9 @@ struct DieterThemePerformanceTests {
         store.selectedProjectID = project.id
         store.selectedBoardID = board.id
         store.phase = .connected(version: "board-performance-fixture")
+        store.workspaceIsLive = true
         store.section = .board
+        store.showBoardFixture(board, cards: cards)
         return (store, board, cards.count, laneCounts.max() ?? 0)
     }
 

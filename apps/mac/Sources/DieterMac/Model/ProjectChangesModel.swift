@@ -17,8 +17,10 @@ final class ProjectChangesModel {
     private(set) var projectID = ""
     private(set) var changes: Dieter_V1_Changeset?
     private(set) var diff: Dieter_V1_FileDiff?
-    /// The diff's lines as the core numbers them.
-    private(set) var diffLines: [UnifiedDiffLine] = []
+    /// The diff laid out for this view, as the core lays it out.
+    private(set) var diffLayout = WorkspaceDiffLayout()
+    /// Checkout operations that can run now, as the core decides them.
+    private(set) var allowed: Set<String> = []
     private(set) var selection: ProjectChangeSelection?
     private(set) var operation: Dieter_V1_GitOperation?
     private(set) var refreshing = false
@@ -54,6 +56,9 @@ final class ProjectChangesModel {
     var unstagedFiles: [Dieter_V1_ChangedFile] { changes?.files.filter(\.unstaged) ?? [] }
     var mutationsDisabled: Bool { core == nil || !mutable }
 
+    /// Whether the checkout operation `kind` can run now.
+    func allows(_ kind: String) -> Bool { allowed.contains(kind) }
+
     /// Shows a checkout's changes on the machine that holds it.
     func bind(projectID: String, checkoutID: String, daemonID: String, core: CoreClient) {
         if subscription == nil {
@@ -63,14 +68,17 @@ final class ProjectChangesModel {
                 self.fold(slice)
             }
         }
+        // The core opens the first change whenever nothing is selected.
         let next = ClientProjectChangesTarget.with {
             $0.projectID = projectID
             $0.checkoutID = checkoutID
             $0.daemonID = daemonID
+            $0.selectFirst = true
         }
         guard next != bound else { return }
         if self.projectID != projectID {
-            changes = nil; diff = nil; diffLines = []; selection = nil; operation = nil
+            changes = nil; diff = nil; diffLayout = WorkspaceDiffLayout(); selection = nil; operation = nil
+            allowed = []
             commitSubject = ""; commitBody = ""; operationError = nil; notice = nil
         }
         refreshError = nil; diffError = nil
@@ -106,8 +114,12 @@ final class ProjectChangesModel {
         if self.selection != selection { self.selection = selection }
         let diff = slice.hasDiff ? slice.diff : nil
         if self.diff != diff { self.diff = diff }
-        let lines = slice.diffRows.map(UnifiedDiffLine.init)
-        if diffLines != lines { diffLines = lines }
+        let layout = diffLayout.folding(
+            rows: slice.displayRows, unchanged: slice.diffUnchanged, maxColumns: slice.diffMaxColumns,
+            split: slice.split, more: slice.diffMore, note: slice.diffTooLarge ? slice.diffNote : "")
+        if diffLayout != layout { diffLayout = layout }
+        let allowed = Set(slice.allowed)
+        if self.allowed != allowed { self.allowed = allowed }
         if diffLoading != slice.diffLoading { diffLoading = slice.diffLoading }
         let operation = slice.hasOperation ? slice.operation : nil
         if self.operation != operation { self.operation = operation }
@@ -125,16 +137,6 @@ final class ProjectChangesModel {
         if self.operationError != operationError { self.operationError = operationError }
         let notice = slice.notice.isEmpty ? nil : slice.notice
         if self.notice != notice { self.notice = notice }
-        // The view opens on the first change rather than an empty diff.
-        if selection == nil, pendingKind == nil, let changes,
-            let first = changes.files.first(where: \.unstaged).map({
-                ProjectChangeSelection(path: $0.path, section: "unstaged")
-            })
-                ?? changes.files.first(where: \.staged).map({ ProjectChangeSelection(path: $0.path, section: "staged") }
-                )
-        {
-            select(first)
-        }
     }
 
     /// Sends a command without waiting for it, after those sent before.
@@ -171,13 +173,13 @@ final class ProjectChangesModel {
 
     func refresh() async {
         guard !bound.projectID.isEmpty else { return }
-        await run { $0.refresh = ClientReviewStep() }
+        await run { $0.refresh = ClientStep() }
     }
 
     /// Shows one half of a file; the latest selection wins.
     func select(_ next: ProjectChangeSelection, reload: Bool = false, retryStale: Bool = true) {
         guard selection != next || reload || diff == nil else { return }
-        if selection != next { diff = nil; diffLines = [] }
+        if selection != next { diff = nil; diffLayout = WorkspaceDiffLayout() }
         selection = next
         requested = next
         send { command in
@@ -189,8 +191,13 @@ final class ProjectChangesModel {
     }
 
     func loadMore() {
-        guard !diffLoading, diff?.truncated == true else { return }
-        send { $0.loadMoreDiff = ClientReviewStep() }
+        guard !diffLoading, diffLayout.more else { return }
+        send { $0.loadMoreDiff = ClientStep() }
+    }
+
+    /// Lays the diff out side by side or in one column; the core keeps the choice.
+    func setLayout(split: Bool) {
+        send { $0.layout = .with { $0.split = split } }
     }
 
     func retryDiff() {
@@ -198,34 +205,24 @@ final class ProjectChangesModel {
         select(selection, reload: true)
     }
 
-    /// Waits until the selected diff has arrived.
-    func waitForDiff() async {
-        if let queued { await queued.value }
-        let deadline = ContinuousClock.now + .seconds(30)
-        while diffLoading, ContinuousClock.now < deadline, !Task.isCancelled {
-            try? await DieterTaskSleep.milliseconds(25)
-        }
-    }
-
     /// Runs a checkout operation; success is reported only after the
     /// refresh that shows it. A commit's draft survives a failure.
     @discardableResult
-    func startOperation(kind: String, path: String = "", parameters: [String: String] = [:]) -> Task<Bool, Never>? {
+    func startOperation(kind: String, path: String = "", subject: String = "", body: String = "") -> Task<Bool, Never>?
+    {
         guard !mutationsDisabled else { return nil }
-        var parameters = parameters
-        if !path.isEmpty { parameters["path"] = path }
-        let request = parameters
+        let form = ClientGitOperationForm.with {
+            $0.kind = kind
+            $0.path = path
+            $0.subject = subject
+            $0.body = body
+        }
         pendingKind = kind
         operationError = nil
         notice = nil
         return Task { [weak self] () -> Bool in
             guard let self else { return false }
-            let result = await self.run { command in
-                command.run = .with {
-                    $0.kind = kind
-                    $0.parameters = request
-                }
-            }
+            let result = await self.run { command in command.run = form }
             if self.pendingKind == kind { self.pendingKind = nil }
             guard case .outcome(let outcome)? = result?.result, outcome.succeeded else { return false }
             if kind == "commit" { self.commitSubject = ""; self.commitBody = "" }

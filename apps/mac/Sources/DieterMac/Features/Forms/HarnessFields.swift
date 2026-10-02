@@ -1,55 +1,79 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct HarnessFields: View {
-    let catalog: Dieter_V1_HarnessCatalog
-    @Binding var provider: String
-    @Binding var model: String
-    @Binding var effort: String
-    @Binding var providerOptions: [String: String]
-
-    private var harness: Dieter_V1_Harness? { catalog.harnesses.first { $0.id == provider } }
-    private var selectedModel: Dieter_V1_HarnessModel? { harness?.models.first { $0.id == model } }
+/// Agent pickers as the shared core shows them; each pick is a choice the
+/// caller applies.
+struct AgentPickerFields: View {
+    let controls: ClientAgentControlsState
+    let choose: (ClientAgentChoice.OneOf_Choice) -> Void
 
     var body: some View {
-        Picker("Agent", selection: $provider) {
-            Text("Server default").tag("")
-            ForEach(catalog.harnesses, id: \.id) { Text($0.name).tag($0.id) }
-        }.onChange(of: provider) { _, _ in
-            let selection = HarnessSelection(provider: provider).resolved(
-                in: catalog.harnesses, allowServerDefault: true)
-            model = selection?.model ?? ""
-            effort = selection?.effort ?? ""
-            providerOptions = selection?.providerOptions ?? [:]
+        Picker("Agent", selection: Binding(get: { controls.selection.provider }, set: { choose(.provider($0)) })) {
+            ForEach(controls.providers, id: \.id) { Text($0.name).tag($0.id) }
         }
-        Picker("Model", selection: $model) {
-            Text("Agent default").tag("")
-            ForEach(harness?.models ?? [], id: \.id) { Text($0.name).tag($0.id) }
-        }.onChange(of: model) { _, _ in
-            effort = selectedModel?.defaultEffort ?? ""
-            providerOptions = ProviderOptionValues.normalized(
-                for: harness, model: model, saved: providerOptions)
+        .disabled(!controls.providerEnabled)
+        Picker("Model", selection: Binding(get: { controls.selection.model }, set: { choose(.model($0)) })) {
+            ForEach(controls.models, id: \.id) { Text($0.name).tag($0.id) }
         }
-        if let efforts = selectedModel?.efforts, !efforts.isEmpty {
-            Picker("Reasoning effort", selection: $effort) {
-                Text("Agent default").tag("")
-                ForEach(efforts, id: \.self) { Text($0.capitalized).tag($0) }
+        .disabled(!controls.modelEnabled)
+        if !controls.efforts.isEmpty {
+            Picker(
+                "Reasoning effort",
+                selection: Binding(
+                    get: { controls.selection.effort.isEmpty ? "default" : controls.selection.effort },
+                    set: { choose(.effort($0)) })
+            ) {
+                Text("Default").tag("default")
+                ForEach(controls.efforts, id: \.id) { Text($0.name).tag($0.id) }
             }
+            .disabled(!controls.effortEnabled)
         }
-        ProviderOptionFields(
-            options: ProviderOptionValues.options(for: harness, model: model), values: $providerOptions)
+        ForEach(controls.options, id: \Dieter_V1_ProviderOption.id) { option in
+            ProviderOptionField(
+                option: option,
+                values: Binding(
+                    get: { controls.optionValues },
+                    set: { values in
+                        guard let value = values[option.id], value != controls.optionValues[option.id] else { return }
+                        choose(
+                            .option(
+                                .with {
+                                    $0.id = option.id
+                                    $0.optionValue = value
+                                }))
+                    })
+            )
+            .disabled(controls.optionEnabled[option.id] == false)
+        }
     }
 }
-struct ProviderOptionFields: View {
-    let options: [Dieter_V1_ProviderOption]
-    @Binding var values: [String: String]
+
+/// Agent pickers for a form outside a conversation, e.g. a schedule or a
+/// card's draft, as the shared core resolves them against the destination
+/// machine's catalog: a blank agent becomes the catalog's first, and a choice
+/// the pickers do not allow changes nothing.
+struct AgentControlFields: View {
+    let catalog: Dieter_V1_HarnessCatalog
+    @Binding var selection: Dieter_V1_HarnessSelection
 
     var body: some View {
-        ForEach(options, id: \Dieter_V1_ProviderOption.id) { option in
-            ProviderOptionField(option: option, values: $values)
+        AgentPickerFields(controls: Self.controls(selection, catalog: catalog)) { choice in
+            selection = Self.controls(selection, catalog: catalog, choice: choice).selection
         }
+    }
+
+    /// The pickers for `selection`, after `choice` when there is one.
+    static func controls(
+        _ selection: Dieter_V1_HarnessSelection, catalog: Dieter_V1_HarnessCatalog,
+        choice: ClientAgentChoice.OneOf_Choice? = nil
+    ) -> ClientAgentControlsState {
+        let choiceData = choice.map { value in ClientAgentChoice.with { $0.choice = value }.rulesData } ?? Data()
+        return ClientAgentControlsState(
+            rules: SharedRules.shared.agentControls(
+                selection: selection.rulesData, catalog: catalog.rulesData, locked: false, choice: choiceData))
     }
 }
 
@@ -80,21 +104,6 @@ struct ProviderOptionField: View {
     }
 }
 
-struct ProviderOptionChips: View {
-    let options: [Dieter_V1_ProviderOption]
-    @Binding var values: [String: String]
-    var conversationLocked = false
-
-    var body: some View {
-        ForEach(options, id: \Dieter_V1_ProviderOption.id) { option in
-            ProviderOptionChip(
-                option: option,
-                values: $values,
-                isEnabled: ProviderOptionValues.isEnabled(option, conversationLocked: conversationLocked)
-            )
-        }
-    }
-}
 struct ProviderOptionChip: View {
     let option: Dieter_V1_ProviderOption
     @Binding var values: [String: String]

@@ -7,6 +7,7 @@ import com.dbpprt.dieter.api.v1.ConversationSnapshot
 import com.dbpprt.dieter.api.v1.ConversationUpdate
 import com.dbpprt.dieter.api.v1.GetConversationRequest
 import com.dbpprt.dieter.api.v1.GetToolOutputRequest
+import com.dbpprt.dieter.api.v1.Harness
 import com.dbpprt.dieter.api.v1.HarnessSelection
 import com.dbpprt.dieter.api.v1.MessagePart
 import com.dbpprt.dieter.api.v1.QueuedMessage
@@ -29,7 +30,7 @@ import com.dbpprt.dieter.core.runtime.CoreException
 import com.dbpprt.dieter.core.runtime.CoreLogger
 import com.dbpprt.dieter.core.runtime.FailureKind
 import com.dbpprt.dieter.core.runtime.Failures
-import com.dbpprt.dieter.core.runtime.withDeadline
+import com.dbpprt.dieter.core.selection.AgentControls
 import com.dbpprt.dieter.core.selection.Selections
 import com.dbpprt.dieter.core.session.MachineSessions
 import com.dbpprt.dieter.core.store.WorkspaceStore
@@ -124,6 +125,8 @@ class ConversationSession internal constructor(
     private val cached: TranscriptState?,
     private val liveTailCurrent: (daemonId: String, cardId: String) -> Boolean,
     private val onTranscript: (String, TranscriptState) -> Unit,
+    /** A machine's agent catalog once it has loaded, else null. */
+    private val catalog: (daemonId: String) -> List<Harness>? = { null },
 ) {
     private val scope = CoroutineScope(parent.coroutineContext + SupervisorJob(parent.coroutineContext.job))
     private val mutableView = MutableStateFlow(ConversationView(cardId, pending = !OutboxPolicy.isServerBacked(cardId)))
@@ -222,9 +225,7 @@ class ConversationSession internal constructor(
         delay(config.hedgeDelay)
         if (delivered()) return
         try {
-            val snapshot = withDeadline(config.readTimeout) {
-                sessions.call(owner) { it.GetConversation().execute(GetConversationRequest(card_id = id, limit = config.pageSize)) }
-            }
+            val snapshot = sessions.call(owner, config.readTimeout) { it.GetConversation().execute(GetConversationRequest(card_id = id, limit = config.pageSize)) }
             if (!delivered()) accept(ConversationUpdate(snapshot = snapshot))
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -366,19 +367,22 @@ class ConversationSession internal constructor(
     private fun card(): Card = store.directoryProjection.item(cardId) ?: transcript.snapshot?.detail?.card
         ?: throw CoreException(FailureKind.PERMANENT, "The conversation is no longer available.")
 
-    /** A send while the agent works, or behind queued messages, joins the queue. */
-    fun placement(): OutboxPlacement {
-        val card = runCatching { card() }.getOrNull()
-        val conversation = transcript.conversation
-        val working = (card != null && Runtimes.isActive(card, conversation?.status)) || Runtimes.isActive(conversation?.status)
-        return if (working || conversation?.queue.orEmpty().isNotEmpty()) OutboxPlacement.OUTBOX_PLACEMENT_QUEUE else OutboxPlacement.OUTBOX_PLACEMENT_TRANSCRIPT
-    }
+    /** A send while the agent works, or behind queued messages, joins the queue ([Companion.placement]). */
+    fun placement(): OutboxPlacement = placement(runCatching { card() }.getOrNull(), transcript.conversation)
 
-    /** Queues a message durably; returns its ID. */
-    fun send(parts: List<MessagePart>, selection: HarnessSelection? = null): String {
-        if (parts.isEmpty()) throw CoreException(FailureKind.PERMANENT, "Write a message or attach a file.")
-        Attachments.limitError(parts.filter { it.type != "text" })?.let { throw CoreException(FailureKind.PERMANENT, it) }
-        return outbox.sendMessage(cardId, parts, Selections.forSend(selection, card()), placement()).also(::await)
+    /**
+     * Queues a message durably; returns its ID. Its agent is [selection],
+     * else the composer's choice, else the conversation's agent, with the
+     * rules of [Selections.forSend] against [harnesses] (the conversation
+     * machine's catalog). It joins the queue while the agent works or
+     * messages wait ([placement]).
+     */
+    fun send(parts: List<MessagePart>, selection: HarnessSelection? = null, harnesses: List<Harness>? = machineCatalog()): String {
+        checkSendable(parts)
+        val card = card()
+        val chosen = selection ?: draftKey()?.let { drafts.state.value[it] }?.selection
+        val agent = Selections.forSend(chosen, card, harnesses, locked = Selections.locked(card, transcript.messages.isNotEmpty()))
+        return outbox.sendMessage(cardId, parts, agent, placement()).also(::await)
     }
 
     private fun await(messageId: String, retry: Boolean = false) {
@@ -398,6 +402,45 @@ class ConversationSession internal constructor(
         val id = send(Attachments.messageParts(draft.text, draft.attachments), draft.selection)
         drafts.acceptSend(key, draft.revision)
         return id
+    }
+
+    // --- Agent -------------------------------------------------------------------
+
+    /** The conversation machine's agent catalog once it has loaded, else null. */
+    private fun machineCatalog(): List<Harness>? = daemonId?.let(catalog)
+
+    /** This conversation's composer draft, once its machine is known. */
+    private fun draftKey(): DraftKey? = daemonId?.let { DraftKey(it, cardId) }
+
+    /**
+     * The composer's agent pickers ([AgentControls.forComposer]) against
+     * [harnesses]: the composer's choice while it differs from the card's
+     * agent, else the card's agent. Null until the card is known.
+     */
+    fun agentControls(harnesses: List<Harness>? = machineCatalog()): AgentControls? {
+        val card = runCatching { card() }.getOrNull() ?: return null
+        val draft = draftKey()?.let { drafts.state.value[it] }?.selection
+        return AgentControls.forComposer(draft, card, harnesses.orEmpty(), hasMessages = transcript.messages.isNotEmpty())
+    }
+
+    /**
+     * Applies a picker choice to the composer's agent for the next message:
+     * [choose] gets the pickers ([agentControls]) and returns the next
+     * selection. False before the conversation's machine and card are known.
+     */
+    fun chooseAgent(harnesses: List<Harness>? = machineCatalog(), choose: (AgentControls) -> HarnessSelection): Boolean {
+        val key = draftKey() ?: return false
+        val controls = agentControls(harnesses) ?: return false
+        drafts.setSelection(key, choose(controls))
+        return true
+    }
+
+    /** Drops a composer choice the conversation now runs with, or can no longer take, so the composer follows the card again. */
+    private fun reconcileAgent() {
+        val key = draftKey() ?: return
+        val draft = drafts.state.value[key]?.selection ?: return
+        val card = runCatching { card() }.getOrNull() ?: return
+        if (Selections.pending(draft, card, machineCatalog().orEmpty()) == null) drafts.setSelection(key, null)
     }
 
     /** Only the next queued message may interrupt the running turn. */
@@ -492,6 +535,7 @@ class ConversationSession internal constructor(
                 retrying = awaiting?.retry == true,
             )
         }
+        reconcileAgent()
     }
 
     /** A reply, a turn that started and ended, or a rejected send ends the wait. */
@@ -534,15 +578,25 @@ class ConversationSession internal constructor(
         val directory = store.directoryProjection
         val card = directory.item(id) ?: cached?.snapshot?.detail?.card
             ?: throw CoreException(FailureKind.PERMANENT, "The conversation is no longer available.")
-        return card.owner_daemon_id.ifEmpty { null }
-            ?: directory.projects[card.project_id]?.checkouts?.firstOrNull { it.id == card.checkout_id }?.daemon_id?.ifEmpty { null }
-            ?: directory.projectReplicas[card.project_id]
+        return directory.owner(card) ?: directory.projectReplicas[card.project_id]
             ?: throw CoreException(FailureKind.TRANSIENT, "The conversation's machine is unavailable.")
     }
 
     companion object {
         private const val TAG = "Conversation"
         private const val TOOL_OUTPUT_CACHE = 32
+
+        /** A send while the agent works ([card]'s runtime or [conversation]'s status), or behind queued messages, joins the queue. */
+        fun placement(card: Card?, conversation: Conversation?): OutboxPlacement {
+            val working = (card != null && Runtimes.isActive(card, conversation?.status)) || Runtimes.isActive(conversation?.status)
+            return if (working || conversation?.queue.orEmpty().isNotEmpty()) OutboxPlacement.OUTBOX_PLACEMENT_QUEUE else OutboxPlacement.OUTBOX_PLACEMENT_TRANSCRIPT
+        }
+
+        /** Fails unless [parts] can be sent: some text or an attachment, with attachments within the daemon's limits. */
+        fun checkSendable(parts: List<MessagePart>) {
+            if (parts.none { it.type != "text" || it.text.isNotBlank() }) throw CoreException(FailureKind.PERMANENT, "Write a message or attach a file.")
+            Attachments.limitError(parts.filter { it.type != "text" })?.let { throw CoreException(FailureKind.PERMANENT, it) }
+        }
 
         /** The first resubscription is immediate; repeated failures back off to 5 s. */
         fun resubscribeDelay(consecutiveFailures: Int): Duration {

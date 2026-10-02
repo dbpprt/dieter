@@ -1,8 +1,21 @@
 package com.dbpprt.dieter.core.runtime
 
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
+
+/** How long one request to a machine or the gateway may take. */
+object Deadlines {
+    /** An ordinary read or mutation. */
+    val CALL = 15.seconds
+
+    /** A read that scans a working tree or a repository. */
+    val READ = 30.seconds
+
+    /** Work that may provision a workspace, create a repository, or restart a machine. */
+    val PROVISION = 60.seconds
+}
 
 /**
  * Runs [block] within [timeout]. An expired deadline is a transient failure,

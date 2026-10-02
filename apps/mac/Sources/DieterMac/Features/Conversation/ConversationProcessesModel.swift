@@ -18,6 +18,9 @@ final class ConversationProcessesModel {
     private(set) var outputTruncated = false
     private(set) var loading = false
     private(set) var stopping = false
+    /// How many processes run, and whether the core's selection can be stopped now.
+    private(set) var running = 0
+    private(set) var canStop = false
     private(set) var error: String?
     var active = false {
         didSet {
@@ -45,7 +48,7 @@ final class ConversationProcessesModel {
         guard self.target != target else { return }
         self.target = target
         processes = []; selectedID = nil; stdout = Data(); stderr = Data(); outputTruncated = false
-        loading = false; stopping = false; error = nil
+        loading = false; stopping = false; running = 0; canStop = false; error = nil
         sendTarget()
     }
 
@@ -73,6 +76,8 @@ final class ConversationProcessesModel {
         if outputTruncated != slice.outputTruncated { outputTruncated = slice.outputTruncated }
         if loading != slice.loading { loading = slice.loading }
         if stopping != slice.stopping { stopping = slice.stopping }
+        if running != Int(slice.running) { running = Int(slice.running) }
+        if canStop != slice.canStop { canStop = slice.canStop }
         let failure = slice.error.isEmpty ? nil : slice.error
         if error != failure { error = failure }
     }
@@ -111,7 +116,7 @@ final class ConversationProcessesModel {
     /// Stops the selected process; only an explicit stop ever ends one.
     func stopSelected() async {
         guard active, !stopping, selected?.status == "running" else { return }
-        send { $0.stop = ClientProcessesStep() }
+        send { $0.stop = ClientStep() }
         await queued?.value
     }
 }

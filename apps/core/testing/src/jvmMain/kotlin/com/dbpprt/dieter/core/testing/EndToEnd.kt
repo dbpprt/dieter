@@ -28,10 +28,8 @@ open class EndToEnd {
 
     fun e2e(block: suspend CoroutineScope.() -> Unit) = runBlocking { block() }
 
-    fun fixture(directRoute: String? = null, secondDaemon: Boolean = false, inboxFixture: Boolean = false) =
-        IsolatedGateway(directRoute, secondDaemon, inboxFixture).also(fixtures::add)
-
-    fun gatewayOf(fixture: IsolatedGateway): Gateway = requireNotNull(Gateway.parse(fixture.url))
+    fun fixture(directRoute: String? = null, secondDaemon: Boolean = false) =
+        IsolatedGateway(directRoute, secondDaemon).also(fixtures::add)
 
     suspend fun runtime(
         fixture: IsolatedGateway,
@@ -39,19 +37,16 @@ open class EndToEnd {
         token: String? = fixture.token,
         clientVersion: String = RELEASE,
         active: Boolean = true,
-        start: Boolean = true,
         configure: (RuntimeConfig) -> RuntimeConfig = { it },
     ): CoreRuntime {
         val config = configure(RuntimeConfig(clientVersion, "dieter-test://oauth/callback", includeLoopbackRoutes = true, clientIdPrefix = "e2e"))
         val runtime = CoreRuntime(platform, config)
         runtimes += runtime
-        val gateway = gatewayOf(fixture)
+        val gateway = requireNotNull(Gateway.parse(fixture.url))
         runtime.setGateways(listOf(gateway), gateway.origin)
         if (token != null) runtime.credentials.save(gateway, token)
-        if (start) {
-            runtime.start()
-            runtime.setActive(active)
-        }
+        runtime.start()
+        runtime.setActive(active)
         return runtime
     }
 

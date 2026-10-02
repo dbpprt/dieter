@@ -19,6 +19,7 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import okio.ByteString.Companion.encodeUtf8
 import okio.Path.Companion.toOkioPath
 
 /** OUTBOX scenarios: durable commands against a real daemon. */
@@ -40,8 +41,11 @@ class OutboxEndToEndTest : EndToEnd() {
         fixture.daemonOffline()
         runtime.connection.state.await(describe = { "offline: ${runtime.connection.state.value}" }) { it.phase == ConnectionPhase.NO_MACHINE }
 
-        val optimistic = runtime.createConversation(card(fixture, "Offline card"), chat = false)
+        val attachment = MessagePart(type = "file", filename = "queued.txt", media_type = "text/plain", data_ = "Exact queued attachment bytes".encodeUtf8())
+        val request = card(fixture, "Offline card").copy(attachments = listOf(attachment))
+        val optimistic = runtime.createConversation(request, chat = false, submissionId = "offline-1")
         assertTrue(optimistic.id.startsWith(OutboxPolicy.LOCAL_PREFIX))
+        assertEquals(optimistic.id, runtime.createConversation(request, chat = false, submissionId = "offline-1").id, "a repeated submission reuses the queued task")
         val pending = runtime.workspace.state.value
         assertEquals("Offline card", pending.card(optimistic.id)?.title)
         assertTrue(optimistic.id in pending.pendingCardIds)
@@ -55,6 +59,8 @@ class OutboxEndToEndTest : EndToEnd() {
         assertTrue(expected !in synced.pendingCardIds)
         runtime.outbox.view.await(describe = { "outbox drained: ${runtime.outbox.view.value.entries}" }) { it.entries.isEmpty() }
         assertEquals(expected, runtime.outbox.view.value.resolve(optimistic.id))
+        val delivered = runtime.onMachine(fixture.daemonId) { it.GetConversation().execute(GetConversationRequest(card_id = expected, limit = 50)) }
+        assertEquals(listOf(attachment), delivered.conversation?.draft_attachments, "the queued attachment reaches the daemon byte for byte")
     }
 
     @Test

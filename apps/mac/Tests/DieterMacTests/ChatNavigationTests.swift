@@ -7,18 +7,12 @@ import Testing
 
 @MainActor @Suite(.serialized)
 struct ChatNavigationTests {
-    @Test func conversationToolbarUsesOneRailOrTwoSidebarRails() {
-        #expect(ConversationToolbarRailMode(workspacePresented: false) == .unified)
-        #expect(ConversationToolbarRailMode(workspacePresented: false).railCount == 1)
-        #expect(ConversationToolbarRailMode(workspacePresented: true) == .sidebar)
-        #expect(ConversationToolbarRailMode(workspacePresented: true).railCount == 2)
-    }
 
     @Test func allChatsKeepsItsBrowserWhenTheSelectedChatPresentsContent() async throws {
         let suite = "ChatNavigationTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let store = DieterStore(themeDefaultsOverride: defaults, restoreSync: false)
+        let store = DieterStore(themeDefaultsOverride: defaults, liveEnvironment: false)
         var project = Dieter_V1_Project()
         project.id = "chat-navigation-\(UUID().uuidString)"
         project.name = "Navigation fixture"
@@ -36,6 +30,7 @@ struct ChatNavigationTests {
         store.projectDirectory[project.id] = project
         store.chats = chats
         store.state.chats = chats
+        store.showChatsFixture()
         await store.openConversation(cardID: chats[0].id, chat: true)
         let content = store.conversationContext.content
         content.currentEndpointID = { _ in "navigation-fixture" }

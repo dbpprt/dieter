@@ -35,7 +35,7 @@ struct ConversationContentPane: View {
     @Bindable var model: ConversationContentModel
 
     private var standalone: Bool {
-        (context.selectedCard ?? context.selectedDetail?.card)?.scope == "chat"
+        context.model.state.chat
     }
     private var fixedTabs: [ConversationFixedSidebarTab] {
         ConversationFixedSidebarTab.visible(standalone: standalone)
@@ -196,7 +196,7 @@ struct ConversationWorkspaceTabBar: View {
 
     private var fixedTabs: [ConversationFixedSidebarTab] {
         ConversationFixedSidebarTab.visible(
-            standalone: (context.selectedCard ?? context.selectedDetail?.card)?.scope == "chat")
+            standalone: context.model.state.chat)
     }
 
     private var selectedFixedTab: ConversationFixedSidebarTab? {
@@ -314,97 +314,6 @@ struct ConversationWorkspaceTabBar: View {
     }
 }
 
-enum ConversationToolbarRailMode: Equatable {
-    case unified
-    case sidebar
-
-    init(workspacePresented: Bool) {
-        self = workspacePresented ? .sidebar : .unified
-    }
-
-    var railCount: Int { self == .sidebar ? 2 : 1 }
-}
-
-struct ConversationToolbarSurfaceRail: View {
-    @Environment(ConversationContext.self) private var context
-    @Bindable var model: ConversationContentModel
-    let kanbanPresented: Bool
-    let toggleKanban: () -> Void
-
-    private var conversationID: String {
-        context.selectedCardID ?? context.selectedChatID ?? ""
-    }
-
-    private var workspacePresented: Bool {
-        model.isPresented(for: conversationID)
-    }
-
-    var body: some View {
-        ConversationToolbarRail(identifier: "conversation.toolbar.rail.surfaces") {
-            ConversationSurfaceToggles(
-                model: model,
-                workspacePresented: workspacePresented,
-                kanbanPresented: kanbanPresented,
-                toggleKanban: toggleKanban,
-                showsConversation: true
-            )
-        }
-    }
-}
-
-struct ConversationToolbarWorkspaceRail: View {
-    @Bindable var model: ConversationContentModel
-
-    var body: some View {
-        ConversationToolbarRail(identifier: "conversation.toolbar.rail.sidebar") {
-            ConversationWorkspaceTabBar(
-                model: model,
-                nativeToolbar: true,
-                includesConversation: false,
-                showsControls: false
-            )
-        }
-    }
-}
-
-struct ConversationToolbarUnifiedRail: View {
-    @Environment(ConversationContext.self) private var context
-    @Bindable var model: ConversationContentModel
-    let kanbanPresented: Bool
-    let toggleKanban: () -> Void
-
-    private var conversationID: String {
-        context.selectedCardID ?? context.selectedChatID ?? ""
-    }
-
-    private var workspacePresented: Bool {
-        model.isPresented(for: conversationID)
-    }
-
-    var body: some View {
-        ConversationToolbarRail(identifier: "conversation.toolbar.rail.unified") {
-            HStack(spacing: 3) {
-                ConversationSurfaceToggles(
-                    model: model,
-                    workspacePresented: workspacePresented,
-                    kanbanPresented: kanbanPresented,
-                    toggleKanban: toggleKanban,
-                    showsConversation: true
-                )
-                Divider()
-                    .frame(height: 18)
-                    .padding(.horizontal, 3)
-                ConversationWorkspaceTabBar(
-                    model: model,
-                    nativeToolbar: true,
-                    includesConversation: false,
-                    showsControls: false
-                )
-            }
-        }
-    }
-}
-
 struct ConversationSurfaceToggles: View {
     @Bindable var model: ConversationContentModel
     let workspacePresented: Bool
@@ -438,23 +347,6 @@ struct ConversationSurfaceToggles: View {
             }
         }
         .fixedSize(horizontal: true, vertical: false)
-    }
-}
-
-private struct ConversationToolbarRail<Content: View>: View {
-    let identifier: String
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        content()
-            .id(identifier)
-            .background(DieterTheme.raised.opacity(0.72), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .stroke(DieterTheme.border, lineWidth: 0.75)
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier(identifier)
     }
 }
 
@@ -751,6 +643,12 @@ private struct ConversationWorkspaceTabView: View {
                 )
                 .fixedSize()
             }
+            if tab.files.conflict {
+                Button("Reload") { Task { await tab.files.reloadDocument() } }
+                    .controlSize(.small).disabled(tab.files.saving || !active || !tab.files.isLive)
+                    .help("Replace your edits with the version on disk")
+                    .accessibilityIdentifier("conversation.content.reload").smokeTarget("conversation.content.reload")
+            }
             if tab.dirty {
                 Button("Save") { Task { await tab.files.saveCurrentDocument() } }
                     .keyboardShortcut("s", modifiers: .command)
@@ -794,9 +692,11 @@ private struct ConversationWorkspaceTabView: View {
                     Text(error).font(.caption).foregroundStyle(.secondary).padding(12)
                 }
                 if let error = tab.files.fileError {
+                    // A save conflict offers Reload in the header instead of retrying the read.
                     LoadFeedback(
                         title: "File", error: error,
-                        retry: { model.openFile(path, from: tab) }, compact: tab.files.fileDocument != nil)
+                        retry: tab.files.conflict ? nil : { model.openFile(path, from: tab) },
+                        compact: tab.files.fileDocument != nil)
                 }
                 if tab.files.fileDocument != nil {
                     ConversationContentRenderer(

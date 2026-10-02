@@ -1,6 +1,5 @@
 package com.dbpprt.dieter.ui
 
-import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -17,8 +16,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
-import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.ui.theme.DieterTheme
+import com.dbpprt.dieter.e2e.Evidence
 import com.dbpprt.dieter.api.v1.Subagent
 import org.junit.Rule
 import org.junit.Test
@@ -62,10 +61,6 @@ class SubagentStatusCardEndToEndTest {
 
     private fun capture(name: String) {
         composeRule.waitForIdle()
-        val descriptor = InstrumentationRegistry.getInstrumentation().uiAutomation
-            .executeShellCommand("screencap -p /sdcard/Download/$name")
-        ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { input ->
-            while (input.read() != -1) {}
-        }
+        Evidence.display(name)
     }
 }

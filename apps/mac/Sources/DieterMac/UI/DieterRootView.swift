@@ -1,31 +1,7 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
-
-enum WorkspaceSurfaceTreatment: Equatable {
-    case current
-    case refreshing
-    case unavailable
-
-    static func resolve(
-        showsSynchronizedWorkspace: Bool,
-        hasCachedWorkspace: Bool,
-        freshness: WorkspaceFreshnessState
-    ) -> Self {
-        guard showsSynchronizedWorkspace, hasCachedWorkspace else { return .current }
-        switch freshness {
-        case .live: return .current
-        // A live WatchSync resubscription does not make the cached workspace
-        // unavailable. Keep its compact status in the sidebar without inserting
-        // a transient banner that shifts every open surface.
-        case .syncing: return .current
-        case .reconnecting, .offline: return .unavailable
-        }
-    }
-
-    var showsNotice: Bool { self != .current }
-    var blocksInteraction: Bool { false }
-}
 
 enum SidebarSizing {
     static let storageKey = "DieterSidebarWidth"
@@ -47,7 +23,7 @@ struct DieterRootView: View {
     @State private var hasOpenedChats = false
     @State private var hasOpenedInbox = false
 
-    init(navigationDefaults: UserDefaults = SidebarProjectNavigationPreferences.applicationDefaults()) {
+    init(navigationDefaults: UserDefaults = SidebarPreferences.applicationDefaults()) {
         _navigationWidth = AppStorage(
             wrappedValue: Double(SidebarSizing.defaultWidth), SidebarSizing.storageKey, store: navigationDefaults)
     }
@@ -59,12 +35,11 @@ struct DieterRootView: View {
         }
     }
 
-    private var workspaceSurfaceTreatment: WorkspaceSurfaceTreatment {
-        WorkspaceSurfaceTreatment.resolve(
-            showsSynchronizedWorkspace: showsSynchronizedWorkspace,
-            hasCachedWorkspace: store.hasLoadedWorkspace,
-            freshness: store.workspaceFreshness
-        )
+    /// The core's notice while synchronized views show cached data; this
+    /// window decides which sections show it.
+    private var workspaceNotice: ClientWorkspaceNotice? {
+        guard showsSynchronizedWorkspace, store.hasLoadedWorkspace else { return nil }
+        return store.workspaceNotice
     }
 
     private var usesPaneTitlebar: Bool {
@@ -82,12 +57,9 @@ struct DieterRootView: View {
                 .background { DieterPaneBackground(role: .navigation, extendsUnderTitlebar: true) }
         } detail: {
             VStack(spacing: 0) {
-                if workspaceSurfaceTreatment.showsNotice {
-                    WorkspaceFreshnessBanner(
-                        freshness: store.workspaceFreshness,
-                        lastSyncedAt: store.lastSyncedAt
-                    )
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                if let notice = workspaceNotice {
+                    WorkspaceFreshnessBanner(notice: notice, lastSyncedAt: store.lastSyncedAt)
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 ZStack {
                     // Keep one board attached to this window after its first
@@ -139,6 +111,7 @@ struct DieterRootView: View {
                         ScreensView(
                             model: store.screensModel,
                             machines: store.machines, initialMachineID: store.endpoint.id,
+                            entries: store.machineEntries,
                             showInDieter: { [weak store] in
                                 store?.section = .screens
                                 store?.reopenWorkspaceWindow()
@@ -150,7 +123,7 @@ struct DieterRootView: View {
                             model: store.schedulesModel, context: store.scheduleEditorContext,
                             prepare: {
                                 let projectID = store.selectedProjectID
-                                let connected = await store.ensureReplicaConnection(projectID, reportOffline: false)
+                                let connected = await store.ensureConnected(reportOffline: false)
                                 guard connected, store.selectedProjectID == projectID, store.section == .schedules
                                 else {
                                     if !Task.isCancelled {
@@ -240,7 +213,7 @@ struct DieterRootView: View {
                 .padding(12)
             }
         }
-        .animation(.easeOut(duration: 0.18), value: workspaceSurfaceTreatment)
+        .animation(.easeOut(duration: 0.18), value: workspaceNotice)
         .background(WindowTitleBarDoubleClickHandler())
         .foregroundStyle(DieterTheme.text)
         .overlay {
@@ -299,33 +272,16 @@ struct DieterRootView: View {
 
 struct WorkspaceFreshnessBanner: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let freshness: WorkspaceFreshnessState
+    let notice: ClientWorkspaceNotice
     let lastSyncedAt: Date?
 
-    private var isWorking: Bool {
-        freshness == .syncing || freshness == .reconnecting
-    }
+    private var isWorking: Bool { notice.working }
+    private var accent: Color { notice.offline ? DieterTheme.coral : DieterTheme.amber }
+    private var title: String { notice.title }
+    private var detail: String { notice.detail }
 
-    private var accent: Color {
-        freshness == .offline ? DieterTheme.coral : DieterTheme.amber
-    }
-
-    private var title: String {
-        switch freshness {
-        case .live: "Workspace is up to date"
-        case .syncing: "Refreshing workspace"
-        case .reconnecting: "Reconnecting to Dieter"
-        case .offline: "Working from cached data"
-        }
-    }
-
-    private var detail: String {
-        switch freshness {
-        case .live: ""
-        case .syncing: "Your current workspace stays available while changes load."
-        case .reconnecting: "Cached data stays visible while the connection recovers."
-        case .offline: "Cached data is read-only until Dieter reconnects."
-        }
+    private func updated(now: Date) -> String {
+        SharedRules.shared.workspaceUpdated(atMillis: lastSyncedAt?.epochMillis ?? 0, nowMillis: now.epochMillis)
     }
 
     var body: some View {
@@ -355,7 +311,7 @@ struct WorkspaceFreshnessBanner: View {
                 .foregroundStyle(DieterTheme.tertiary)
                 .lineLimit(1)
             Spacer(minLength: 12)
-            Text(SyncFreshnessPresentation.lastUpdateLabel(lastUpdatedAt: lastSyncedAt, now: now))
+            Text(updated(now: now))
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(DieterTheme.tertiary)
                 .padding(.horizontal, 8)
@@ -368,7 +324,7 @@ struct WorkspaceFreshnessBanner: View {
         .overlay(alignment: .bottom) { Rectangle().fill(accent.opacity(0.16)).frame(height: 1) }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "\(title). \(detail) \(SyncFreshnessPresentation.lastUpdateLabel(lastUpdatedAt: lastSyncedAt, now: now))."
+            "\(title). \(detail) \(updated(now: now))."
         )
         .accessibilityIdentifier("workspace.cached")
     }
@@ -381,17 +337,15 @@ private struct SidebarConnectionStatus: View {
     @Environment(DieterStore.self) private var store
     var compact = false
 
+    /// Live, still working toward live, or offline until something changes.
     private var dotColor: Color {
-        switch store.workspaceFreshness {
-        case .live: DieterTheme.eyes
-        case .syncing, .reconnecting: DieterTheme.amber
-        case .offline: DieterTheme.coral
-        }
+        if store.workspaceIsLive { return DieterTheme.eyes }
+        return store.workspaceNotice?.offline == true ? DieterTheme.coral : DieterTheme.amber
     }
 
-    private var label: String {
-        store.workspaceFreshness.label
-    }
+    private var working: Bool { !store.workspaceIsLive && store.workspaceNotice?.offline != true }
+
+    private var label: String { store.session.phaseLabel }
 
     var body: some View {
         let now = Date()
@@ -401,7 +355,7 @@ private struct SidebarConnectionStatus: View {
                     .padding(4)
             } else {
                 HStack(spacing: 5) {
-                    if store.workspaceFreshness == .syncing || store.workspaceFreshness == .reconnecting {
+                    if working {
                         DieterActivityIndicator(color: dotColor, size: 9).accessibilityHidden(true)
                     } else {
                         Circle().fill(dotColor).frame(width: 6, height: 6).accessibilityHidden(true)
@@ -419,25 +373,13 @@ private struct SidebarConnectionStatus: View {
     }
 
     private func accessibilityLabel(now: Date) -> String {
-        let freshness = SyncFreshnessPresentation.lastConnectedLabel(
-            lastConnectedAt: store.lastSyncedAt,
-            now: now
-        )
-        return "Dieter is \(store.workspaceFreshness.label.lowercased()), \(freshness)"
+        let freshness = SharedRules.shared.lastConnected(
+            atMillis: store.lastSyncedAt?.epochMillis ?? 0, nowMillis: now.epochMillis)
+        return "Dieter is \(label.lowercased()), \(freshness)"
     }
 
     private var accessibilityIdentifier: String {
-        "connection.\(store.workspaceFreshness.label.lowercased())"
-    }
-}
-
-enum SidebarMachineOrdering {
-    static func sorted(_ machines: [DieterEndpoint]) -> [DieterEndpoint] {
-        machines.sorted { left, right in
-            let comparison = left.name.localizedCaseInsensitiveCompare(right.name)
-            if comparison == .orderedSame { return left.id < right.id }
-            return comparison == .orderedAscending
-        }
+        "connection.\(label.lowercased().replacingOccurrences(of: " ", with: "-"))"
     }
 }
 
@@ -446,15 +388,13 @@ struct AppSidebar: View {
     @State private var folderEditor: NavigationFolderEditor?
     @State private var unfiledDropTargeted = false
 
-    private var visibleProjects: [Dieter_V1_Project] {
-        let projects = store.projects.filter { !$0.archived }
-        let byID = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
-        return store.sidebarProjectNavigation.orderedIDs(from: projects.map(\.id)).compactMap { byID[$0] }
+    /// The listed projects by ID; the core's layout names them in order.
+    private var projectsByID: [String: Dieter_V1_Project] {
+        Dictionary(
+            store.projects.filter { !$0.archived }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
-    private var visibleMachines: [DieterEndpoint] {
-        SidebarMachineOrdering.sorted(store.machines)
-    }
+    private var visibleMachines: [DieterEndpoint] { store.machines }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -492,7 +432,7 @@ struct AppSidebar: View {
         .sheet(item: $folderEditor) { editor in
             NavigationFolderNameSheet(
                 editor: editor,
-                existingNames: store.sidebarProjectFolders.folders.filter { $0.id != editor.folderID }.map(\.name),
+                existingNames: store.navigation.projects.folders.filter { $0.id != editor.folderID }.map(\.name),
                 save: { saveProjectFolder(editor: editor, name: $0) }
             )
         }
@@ -537,7 +477,7 @@ struct AppSidebar: View {
             title: "Inbox",
             symbol: "tray",
             selected: store.section == .inbox,
-            badge: store.inboxEntries.filter(\.needsYou).count,
+            badge: Int(store.activity.summary.attention),
             prominentBadge: true
         ) { Task { await store.openInbox() } }
         .padding(.horizontal, 8).padding(.top, 9)
@@ -574,11 +514,12 @@ struct AppSidebar: View {
     }
 
     private var expandedProjects: some View {
-        let projects = visibleProjects
-        let projectIDs = projects.map(\.id)
-        let projectsByID = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
-        let folders = store.sidebarProjectFolders.folders
-        let unfiledProjects = store.sidebarProjectFolders.unfiledIDs(from: projectIDs).compactMap { projectsByID[$0] }
+        let layout = store.navigation.projects
+        let projectsByID = projectsByID
+        let projects = layout.order.compactMap { projectsByID[$0] }
+        let folders = layout.folders
+        let unfiledProjects = layout.unfiled.compactMap { projectsByID[$0] }
+        let expanded = Set(layout.expanded), pinned = Set(layout.pinned)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Text("PROJECTS").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
@@ -613,7 +554,7 @@ struct AppSidebar: View {
                     let value = values.first,
                     let payload = SidebarProjectDragPayload(value)
                 else { return false }
-                moveProjectToFolder(payload.projectID, folderID: nil)
+                store.moveToFolder(.projects, itemID: payload.projectID, folderID: nil)
                 return true
             } isTargeted: {
                 unfiledDropTargeted = !folders.isEmpty && $0
@@ -621,30 +562,40 @@ struct AppSidebar: View {
 
             if folders.isEmpty {
                 ForEach(projects, id: \.id) { project in
-                    projectNavigationRow(project, projectIDs: projectIDs)
+                    projectNavigationRow(
+                        project, groupIDs: layout.order, expanded: expanded.contains(project.id),
+                        pinned: pinned.contains(project.id))
                 }
             } else {
-                ForEach(folders) { folder in
-                    let folderProjects = folder.itemIDs.compactMap { projectsByID[$0] }
+                ForEach(folders, id: \.id) { folder in
+                    let folderProjects = folder.itemIds.compactMap { projectsByID[$0] }
                     SidebarProjectFolderGroup(
                         folder: folder,
                         visibleCount: folderProjects.count,
-                        toggleExpanded: { toggleProjectFolder(folder.id) },
-                        moveProjectHere: { moveProjectToFolder($0, folderID: folder.id) },
-                        rename: { folderEditor = .rename(folder) },
-                        delete: { deleteProjectFolder(folder.id) }
+                        toggleExpanded: {
+                            store.setFolderExpanded(.projects, folderID: folder.id, expanded: !folder.expanded)
+                        },
+                        moveProjectHere: { store.moveToFolder(.projects, itemID: $0, folderID: folder.id) },
+                        rename: { folderEditor = .rename(id: folder.id, name: folder.name) },
+                        delete: { store.deleteFolder(.projects, folderID: folder.id) }
                     ) {
                         ForEach(folderProjects, id: \.id) { project in
-                            projectNavigationRow(project, projectIDs: projectIDs)
+                            projectNavigationRow(
+                                project, groupIDs: folder.itemIds, expanded: expanded.contains(project.id),
+                                pinned: pinned.contains(project.id))
                         }
                     }
                 }
 
                 ForEach(unfiledProjects, id: \.id) { project in
-                    projectNavigationRow(project, projectIDs: projectIDs)
+                    projectNavigationRow(
+                        project, groupIDs: layout.unfiled, expanded: expanded.contains(project.id),
+                        pinned: pinned.contains(project.id))
                 }
             }
-            SidebarProjectInsertionTarget(beforeProjectID: nil) { moveProject($0, before: nil) }
+            SidebarProjectInsertionTarget(beforeProjectID: nil) {
+                store.moveProject($0, before: nil, ungrouped: false)
+            }
         }
         .padding(.horizontal, 8).padding(.top, 6).padding(.bottom, 10)
     }
@@ -667,7 +618,11 @@ struct AppSidebar: View {
                 HStack {
                     Text("MACHINES").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(
                         DieterTheme.tertiary)
-                    if let age = MachinePresenceText.freshestAge(store.machines.map(\.lastSeenAt), relativeTo: .now) {
+                    let age = SharedRules.shared.ago(
+                        atMillis: store.machines.map { SharedRules.shared.epochMillis(value: $0.lastSeenAt) }.max()
+                            ?? 0,
+                        nowMillis: Date.now.epochMillis)
+                    if !age.isEmpty {
                         Text(age)
                             .font(.system(size: 9, weight: .medium))
                             .foregroundStyle(DieterTheme.tertiary.opacity(0.65))
@@ -728,77 +683,35 @@ struct AppSidebar: View {
 
     }
 
-    private func toggleProject(_ projectID: String) {
-        var navigation = store.sidebarProjectNavigation
-        navigation.toggleExpanded(projectID)
-        store.sidebarProjectNavigation = navigation
-    }
-
-    private func moveProject(_ projectID: String, before targetProjectID: String?) {
-        var navigation = store.sidebarProjectNavigation
-        guard navigation.move(projectID, before: targetProjectID, availableIDs: visibleProjects.map(\.id)) else {
-            return
-        }
-        store.sidebarProjectNavigation = navigation
-    }
-
+    /// A project row and the insertion target above it. A drop moves the
+    /// project within `groupIDs`, the projects shown with it.
     @ViewBuilder
-    private func projectNavigationRow(_ project: Dieter_V1_Project, projectIDs: [String]) -> some View {
-        SidebarProjectInsertionTarget(beforeProjectID: project.id) { moveProject($0, before: project.id) }
+    private func projectNavigationRow(
+        _ project: Dieter_V1_Project, groupIDs: [String], expanded: Bool, pinned: Bool
+    ) -> some View {
+        SidebarProjectInsertionTarget(beforeProjectID: project.id) {
+            store.moveProject($0, before: project.id, ungrouped: false)
+        }
         SidebarProjectRow(
             project: project,
-            projectIDs: projectIDs,
-            expanded: store.sidebarProjectNavigation.isExpanded(project.id),
-            toggleExpanded: { toggleProject(project.id) },
-            moveProject: moveProject
+            projectIDs: groupIDs,
+            expanded: expanded,
+            pinned: pinned,
+            toggleExpanded: { store.setProjectExpanded(project.id, expanded: !expanded) },
+            moveProject: { store.moveProject($0, before: $1, ungrouped: false) }
         )
     }
 
     private func saveProjectFolder(editor: NavigationFolderEditor, name: String) {
-        var preferences = store.sidebarProjectFolders
         if let folderID = editor.folderID {
-            guard preferences.renameFolder(folderID, to: name) else { return }
+            store.renameFolder(.projects, folderID: folderID, name: name)
         } else {
-            guard preferences.createFolder(named: name) != nil else { return }
+            store.createFolder(.projects, name: name)
         }
-        store.sidebarProjectFolders = preferences
-    }
-
-    private func toggleProjectFolder(_ folderID: String) {
-        var preferences = store.sidebarProjectFolders
-        guard preferences.toggleExpanded(folderID) else { return }
-        store.sidebarProjectFolders = preferences
-    }
-
-    private func moveProjectToFolder(_ projectID: String, folderID: String?) {
-        var preferences = store.sidebarProjectFolders
-        guard preferences.moveItem(projectID, to: folderID) else { return }
-        store.sidebarProjectFolders = preferences
-    }
-
-    private func deleteProjectFolder(_ folderID: String) {
-        var preferences = store.sidebarProjectFolders
-        guard preferences.deleteFolder(folderID) else { return }
-        store.sidebarProjectFolders = preferences
     }
 
     private func machineDetail(_ machine: DieterEndpoint) -> String {
-        if let incompatibility = machine.incompatibilityDescription { return incompatibility }
-        if let connectionError = store.machineConnectionErrors[machine.id] { return connectionError }
-        if let issue = store.machineSyncIssues[machine.id] { return issue }
-        if machine.id == store.endpoint.id && !store.workspaceIsLive {
-            if store.workspaceFreshness == .syncing { return "Waiting for live sync…" }
-            return "Unavailable · \(MachinePresenceText.lastSeen(machine.lastSeenAt))"
-        }
-        guard machine.online else {
-            let suffix =
-                store.outboxSummary(for: machine).map { summary in
-                    summary.failed ? " · attention needed" : (summary.retrying ? " · retrying" : " · queued")
-                } ?? ""
-            return MachinePresenceText.lastSeen(machine.lastSeenAt) + suffix
-        }
-        guard let status = store.connectionStatus(for: machine) else { return "Measuring…" }
-        return "\(status.route.rawValue) · \(status.latencyMilliseconds) ms"
+        store.machineStatusLine(machine)
     }
 
     private func machineIsPresentedOnline(_ machine: DieterEndpoint) -> Bool {
@@ -808,7 +721,7 @@ struct AppSidebar: View {
 }
 
 private struct SidebarProjectFolderGroup<Content: View>: View {
-    let folder: NavigationFolder
+    let folder: ClientNavigationFolder
     let visibleCount: Int
     let toggleExpanded: () -> Void
     let moveProjectHere: (String) -> Void
@@ -825,7 +738,7 @@ private struct SidebarProjectFolderGroup<Content: View>: View {
                     HStack(spacing: 7) {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 8, weight: .bold))
-                            .rotationEffect(.degrees(folder.isExpanded ? 90 : 0))
+                            .rotationEffect(.degrees(folder.expanded ? 90 : 0))
                         Image(systemName: dropTargeted ? "folder.fill.badge.plus" : "folder.fill")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(dropTargeted ? DieterTheme.shell : DieterTheme.subtle)
@@ -888,13 +801,13 @@ private struct SidebarProjectFolderGroup<Content: View>: View {
             .accessibilityIdentifier("sidebar.project-folder.\(folder.id)")
             .smokeTarget("sidebar.project-folder.\(folder.id)")
 
-            if folder.isExpanded {
+            if folder.expanded {
                 VStack(alignment: .leading, spacing: 0) { content }
                     .padding(.leading, 8)
             }
         }
         .padding(.vertical, 2)
-        .animation(.snappy(duration: 0.18), value: folder.isExpanded)
+        .animation(.snappy(duration: 0.18), value: folder.expanded)
         .animation(.easeOut(duration: 0.12), value: dropTargeted)
     }
 }
@@ -906,6 +819,7 @@ private struct SidebarProjectRow: View {
     let project: Dieter_V1_Project
     let projectIDs: [String]
     let expanded: Bool
+    let pinned: Bool
     let toggleExpanded: () -> Void
     let moveProject: (String, String?) -> Void
     @State private var dropTargeted = false
@@ -935,7 +849,7 @@ private struct SidebarProjectRow: View {
                             .truncationMode(.tail)
                             .layoutPriority(1)
                             .smokeTarget("sidebar.project.\(project.id).name")
-                        if store.pinnedProjectNavigation.isPinned(project.id) {
+                        if pinned {
                             Image(systemName: "pin.fill")
                                 .font(.system(size: 8, weight: .semibold))
                                 .foregroundStyle(DieterTheme.shell)
@@ -1121,16 +1035,9 @@ private struct ProjectContextMenuModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .contextMenu {
-                Button(
-                    store.pinnedProjectNavigation.isPinned(project.id) ? "Unpin project" : "Pin project",
-                    systemImage: store.pinnedProjectNavigation.isPinned(project.id) ? "pin.slash" : "pin"
-                ) {
-                    var navigation = store.pinnedProjectNavigation
-                    guard
-                        navigation.setPinned(
-                            project.id, pinned: !navigation.isPinned(project.id))
-                    else { return }
-                    store.pinnedProjectNavigation = navigation
+                let pinned = store.navigation.projects.pinned.contains(project.id)
+                Button(pinned ? "Unpin project" : "Pin project", systemImage: pinned ? "pin.slash" : "pin") {
+                    store.setProjectPinned(project.id, pinned: !pinned)
                 }
                 Divider()
                 Button("Rename project…", systemImage: "pencil") {
@@ -1144,21 +1051,22 @@ private struct ProjectContextMenuModifier: ViewModifier {
                     store.presentNewBoard(projectID: project.id)
                 }
                 .disabled(!store.projectIsAvailable(project.id))
-                if !store.sidebarProjectFolders.folders.isEmpty {
+                let folders = store.navigation.projects.folders
+                if !folders.isEmpty {
                     Divider()
                     Menu("Move to folder", systemImage: "folder") {
-                        ForEach(store.sidebarProjectFolders.folders) { folder in
+                        ForEach(folders, id: \.id) { folder in
                             Button {
                                 moveProject(to: folder.id)
                             } label: {
-                                if folder.itemIDs.contains(project.id) {
+                                if folder.itemIds.contains(project.id) {
                                     Label(folder.name, systemImage: "checkmark")
                                 } else {
                                     Text(folder.name)
                                 }
                             }
                         }
-                        if store.sidebarProjectFolders.folder(containing: project.id) != nil {
+                        if folders.folder(containing: project.id) != nil {
                             Divider()
                             Button("No folder", systemImage: "arrow.up.backward") {
                                 moveProject(to: nil)
@@ -1188,9 +1096,7 @@ private struct ProjectContextMenuModifier: ViewModifier {
     }
 
     private func moveProject(to folderID: String?) {
-        var preferences = store.sidebarProjectFolders
-        guard preferences.moveItem(project.id, to: folderID) else { return }
-        store.sidebarProjectFolders = preferences
+        store.moveToFolder(.projects, itemID: project.id, folderID: folderID)
     }
 }
 
@@ -1306,9 +1212,7 @@ private struct SidebarProjectDestinations: View {
     }
 
     private func activeCount(_ boardID: String) -> Int {
-        store.navigationCards[project.id, default: []].filter {
-            $0.boardID == boardID && ["running", "waiting_for_user", "review"].contains($0.runtime)
-        }.count
+        Int(store.boardAttention[boardID] ?? 0)
     }
 }
 
@@ -1699,13 +1603,11 @@ private struct OnboardingGatewayRow: View {
 }
 
 private struct OnboardingMachineRow: View {
+    @Environment(DieterStore.self) private var store
     let machine: DieterEndpoint
 
-    private var detail: String {
-        if !machine.online { return MachinePresenceText.lastSeen(machine.lastSeenAt) }
-        if let incompatibility = machine.incompatibilityDescription { return incompatibility }
-        return machine.releaseVersion.isEmpty ? "Online" : "Online · Dieter \(machine.releaseVersion)"
-    }
+    private var detail: String { store.machineStatusLine(machine) }
+    private var compatible: Bool { store.machineEntry(machine)?.compatible ?? true }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -1715,19 +1617,15 @@ private struct OnboardingMachineRow: View {
                 Text(detail).font(.caption2).foregroundStyle(DieterTheme.tertiary)
             }
             Spacer()
-            Text(
-                machine.compatibilityState == .incompatible
-                    ? "Update daemon" : (machine.online ? "Included automatically" : "Offline")
-            )
-            .font(.caption2).foregroundStyle(storeColor)
+            Text(!compatible ? "Update daemon" : (machine.online ? "Included automatically" : "Offline"))
+                .font(.caption2).foregroundStyle(storeColor)
         }
         .padding(11).background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.border))
     }
 
     private var storeColor: Color {
-        machine.compatibilityState == .incompatible
-            ? DieterTheme.coral : (machine.online ? DieterTheme.shell : DieterTheme.tertiary)
+        !compatible ? DieterTheme.coral : (machine.online ? DieterTheme.shell : DieterTheme.tertiary)
     }
 }
 

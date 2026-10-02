@@ -22,7 +22,6 @@ import com.dbpprt.dieter.core.composition.CatalogState
 import com.dbpprt.dieter.core.composition.Creation
 import com.dbpprt.dieter.core.composition.CreationInput
 import com.dbpprt.dieter.core.composition.TaskDrafts
-import com.dbpprt.dieter.core.composition.ready
 import com.dbpprt.dieter.core.machines.MachineRows
 import com.dbpprt.dieter.core.state.CaptureDraft
 import com.dbpprt.dieter.ui.theme.*
@@ -45,20 +44,19 @@ internal fun DieterUiState.creationCatalog(chat: Boolean): List<Harness>? = Crea
 
 /** Why [draft] cannot be queued now, or null: the core's creation rules against this state. */
 internal fun DieterUiState.creationProblem(draft: CaptureDraft, chat: Boolean): String? {
-    val project = project ?: return "Select a project before creating a conversation."
-    if (!draft.ready) return "Finish importing or remove failed attachments before saving."
-    return Creation.problem(creationInput(draft, project, chat), creationCatalog(chat))
+    val project = project ?: return Creation.NO_PROJECT
+    return TaskDrafts.problem(draft, creationInput(draft, project, chat), creationCatalog(chat))
 }
 
 internal fun DieterUiState.canSubmitTask(draft: CaptureDraft): Boolean = !working && creationProblem(draft, chat = false) == null
 
 internal fun DieterUiState.creationInput(draft: CaptureDraft, project: Project, chat: Boolean): CreationInput {
-    val input = TaskDrafts.input(draft, project, if (chat) null else board, creationCheckout?.id ?: creationCheckoutId)
-    return if (chat) input.copy(chat = true, lane = "", labelIds = emptyList()) else input
+    val checkoutId = creationCheckout?.id ?: creationCheckoutId
+    return if (chat) TaskDrafts.chatInput(draft, project, checkoutId) else TaskDrafts.input(draft, project, board, checkoutId)
 }
 
 internal fun DieterUiState.machineLabel(daemonId: String): String =
-    MachineRows.label(presentedEndpointConnections, projectReplicas.values.associate { it.daemonId to it.hostname }, daemonId)
+    MachineRows.label(presentedEndpointConnections, emptyMap(), daemonId)
 
 internal fun DieterUiState.projectCheckoutLabel(project: Project): String {
     val machines = presentedEndpointConnections.associateBy { it.daemonId }
@@ -104,7 +102,7 @@ internal fun CreationDestinationPicker(
                     text = {
                         Column {
                             Text(state.machineLabel(checkout.daemon_id), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(checkout.name.ifBlank { "Project checkout" } + if (online) "" else " · Offline",
+                            Text(Creation.checkoutTitle(checkout, online),
                                 fontSize = 11.sp, lineHeight = 14.sp, color = DieterMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                     },

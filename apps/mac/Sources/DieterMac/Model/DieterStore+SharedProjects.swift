@@ -31,9 +31,10 @@ extension DieterStore {
         return ConversationWorkspaceRoute(endpointID: machine.id, machineName: machine.name)
     }
 
-    /// Attaches the conversation's machine so the feature panes reach it.
-    /// The conversation itself does not need this: the core opens it on its
-    /// machine either way. Never connects a session that is offline.
+    /// Attaches the conversation's machine, whose agents and settings the
+    /// composer and settings show. The conversation itself does not need
+    /// this: the core opens it on its machine either way. Never connects a
+    /// session that is offline.
     func ensureConversationConnection(_ card: Dieter_V1_Card, reportOffline: Bool = true) async -> Bool {
         guard let target = machine(for: card), target.online else {
             if reportOffline {
@@ -91,15 +92,26 @@ extension DieterStore {
         } catch { show(error); return false }
     }
 
+    /// The checkout a new conversation in the project runs on: the one picked
+    /// on this Mac, else the core's choice (`CreationSlice.checkouts`); nil
+    /// when the user must choose.
     func checkout(forProjectID id: String) -> Dieter_V1_Checkout? {
         let values = projectDirectory[id]?.checkouts.filter { !$0.detached } ?? []
-        if let selected = creationCheckoutIDs[id] { return values.first { $0.id == selected } }
-        if let daemonID = endpoint.daemonID,
-            let active = values.first(where: { $0.daemonID == daemonID })
-        {
-            return active
+        guard let chosen = creationCheckoutIDs[id] ?? creationMemory.checkouts[id] else { return nil }
+        return values.first { $0.id == chosen }
+    }
+
+    /// Picks the checkout new conversations in its project run on; the core remembers it.
+    func pickCheckout(_ checkout: Dieter_V1_Checkout) {
+        creationCheckoutIDs[checkout.projectID] = checkout.id
+        Task {
+            await perform {
+                $0.rememberCreation = .with {
+                    $0.projectID = checkout.projectID
+                    $0.checkoutID = checkout.id
+                }
+            }
         }
-        return values.count == 1 ? values.first : nil
     }
 
     func ensureCheckoutConnection(_ projectID: String) async -> Bool {
@@ -117,7 +129,7 @@ extension DieterStore {
     }
 
     func selectCheckout(_ checkout: Dieter_V1_Checkout) async {
-        creationCheckoutIDs[checkout.projectID] = checkout.id
+        pickCheckout(checkout)
         guard await ensureCheckoutConnection(checkout.projectID) else { return }
         await refreshState()
         resetFileSurface()

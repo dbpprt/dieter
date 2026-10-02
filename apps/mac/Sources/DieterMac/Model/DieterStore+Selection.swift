@@ -22,10 +22,11 @@ extension DieterStore {
         }
     }
 
+    /// The sidebar's first project, else the first listed one.
     private func preferredInitialProjectID() -> String {
-        let visible = projects.filter { !$0.archived }
-        let visibleIDs = visible.map(\.id)
-        return sidebarProjectNavigation.orderedIDs(from: visibleIDs).first
+        let visibleIDs = Set(projects.filter { !$0.archived }.map(\.id))
+        return navigation.projects.order.first(where: visibleIDs.contains)
+            ?? projects.first { !$0.archived }?.id
             ?? projects.first?.id
             ?? ""
     }
@@ -34,6 +35,7 @@ extension DieterStore {
     /// when offline and rereads the attached machine's agents and the open
     /// conversation otherwise.
     func refreshState() async {
+        stateRefreshCount &+= 1
         guard phase.isConnected else {
             await connect()
             return
@@ -49,9 +51,5 @@ extension DieterStore {
         if let cardID = selectedCardID ?? selectedChatID, isConversationServerBacked(cardID) {
             await perform { $0.refreshConversation = .with { $0.cardID = cardID } }
         }
-    }
-
-    func refreshNavigation() async {
-        await refreshState()
     }
 }

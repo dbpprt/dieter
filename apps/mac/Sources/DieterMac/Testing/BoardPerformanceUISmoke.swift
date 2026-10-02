@@ -18,7 +18,7 @@
             let sampleCount = ProcessInfo.processInfo.environment["DIETER_PERFORMANCE_LONG_TURN"] == "1" ? 6 : 30
             for index in 0..<sampleCount {
                 let card = cards[index % cards.count]
-                let stateReads = store.stateRequestGeneration
+                let stateReads = store.stateRefreshCount
                 let chatReads = store.chatsRequestGeneration
                 BoardRenderingDiagnostics.start()
                 let start = ProcessInfo.processInfo.systemUptime
@@ -62,7 +62,7 @@
                     "dispatch_ms": dispatchMS, "selection_ms": selectionMS, "content_ms": contentMS,
                     "presentation_ms": presentationMS, "displayed": displayed,
                     "fresh_and_positioned_ms": freshAndPositionedMS, "refreshed": refreshed,
-                    "project_generation": store.stateRequestGeneration - stateReads,
+                    "project_generation": store.stateRefreshCount - stateReads,
                     "chat_generation": store.chatsRequestGeneration - chatReads,
                     "footprint_bytes": performancePhysicalFootprint(), "rendering": counters,
                 ])
@@ -135,7 +135,7 @@
             store: DieterStore, section: AppSection, name: String? = nil, results: inout [String: String]
         ) async {
             try? await DieterTaskSleep.milliseconds(1_000)
-            let stateReads = store.stateRequestGeneration
+            let stateReads = store.stateRefreshCount
             let chatReads = store.chatsRequestGeneration
             let footprint = performancePhysicalFootprint()
             let start = ProcessInfo.processInfo.systemUptime
@@ -152,14 +152,14 @@
             results[metric] =
                 String(format: "cpu_s=%.6f wall_s=%.3f core_percent=%.3f", cpu, wall, 100 * cpu / wall)
                 + " footprint_start=\(footprint) footprint_end=\(performancePhysicalFootprint())"
-                + " project_generation=\(store.stateRequestGeneration - stateReads) chat_generation=\(store.chatsRequestGeneration - chatReads)"
+                + " project_generation=\(store.stateRefreshCount - stateReads) chat_generation=\(store.chatsRequestGeneration - chatReads)"
                 + " " + counts.keys.sorted().map { "\($0)=\(counts[$0]!)" }.joined(separator: " ")
         }
 
         static func runBoardCardOpeningMeasurements(
             store: DieterStore, window: NSWindow, results: inout [String: String], output: URL
         ) async {
-            guard let card = BoardCardOrdering.sorted(store.displayedCards.filter { $0.lane == "todo" }).first else {
+            guard let card = store.boardProjection.cardsByLane["todo"]?.first else {
                 results["board-card-open-measurement"] = "failed: no card"
                 return
             }
@@ -168,7 +168,7 @@
             for sample in 1...3 {
                 store.closeConversation()
                 try? await DieterTaskSleep.milliseconds(300)
-                let requests = store.stateRequestGeneration
+                let requests = store.stateRefreshCount
                 BoardRenderingDiagnostics.start()
                 let start = ProcessInfo.processInfo.systemUptime
                 let clicked = NativeUIAccessibility.click("card.\(card.id)", in: window)
@@ -188,10 +188,10 @@
                 measurements.append(
                     "sample=\(sample) clicked=\(clicked) loaded=\(loaded) selection_ms=\(String(format: "%.1f", selectedMS)) content_ms=\(String(format: "%.1f", readyMS)) \(metrics)"
                 )
-                readCounts.append(String(store.stateRequestGeneration - requests))
+                readCounts.append(String(store.stateRefreshCount - requests))
                 results["board-card-open-\(sample)"] =
                     clicked && loaded && counts["fullReload"] == 0 && counts["tableCreated"] == 0
-                        && store.stateRequestGeneration == requests
+                        && store.stateRefreshCount == requests
                     ? "passed" : "failed: card opening rebuilt lanes, fetched the project, or failed to load"
                 if sample == 1 { capture(window, to: output.appending(path: "04-card-open-board.png")) }
             }
@@ -201,8 +201,9 @@
                 "Native click invocation to observed selection and loaded snapshot, sampled every 5 ms. Rendering counters include 300 ms settling. Not compositor presentation."
             store.closeConversation()
             try? await DieterTaskSleep.milliseconds(500)
-            let rightLane = store.selectedBoard?.lanes.last?.id ?? "done"
-            let rightCard = BoardCardOrdering.sorted(store.displayedCards.filter { $0.lane == rightLane }).first
+            let rightCard = store.boardProjection.lanes.last.flatMap {
+                store.boardProjection.cardsByLane[$0.laneID]?.first
+            }
             for (index, target) in [card, rightCard].compactMap({ $0 }).enumerated() {
                 let doubleClicked = await NativeUIAccessibility.doubleClickAcrossLayout("card.\(target.id)", in: window)
                 let edited = await waitUntil(timeout: 4) {

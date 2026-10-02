@@ -690,6 +690,7 @@ private actor ConversationContentTerminalFixture: TerminalsRPC {
                     $0.projectID = "project-A"
                     $0.checkoutID = "checkout-A"
                     $0.daemonID = "remote-machine"
+                    $0.selectFirst = true
                 }
             ])
         #expect(content.isPresented(for: "card-A"))

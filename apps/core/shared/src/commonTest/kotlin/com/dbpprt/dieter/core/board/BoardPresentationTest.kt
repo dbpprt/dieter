@@ -4,6 +4,7 @@ import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.Lane
 import com.dbpprt.dieter.api.v1.Project
+import com.dbpprt.dieter.core.navigation.NavigationFolder
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -88,5 +89,60 @@ class BoardPresentationTest {
         assertEquals("2w", age("2026-07-30T12:00:00Z", ""))
         assertEquals("now", age("2026-08-14T12:00:30Z", ""))
         assertEquals("", age("", "not-a-timestamp"))
+    }
+
+    @Test fun boardAttentionCountsReviewLanesAndWorkingAgentsPerBoard() {
+        val cards = listOf(
+            Card(id = "r", board_id = "b1", lane = "In review"),
+            Card(id = "w", board_id = "b1", lane = "todo", runtime = "streaming"),
+            Card(id = "q", board_id = "b1", lane = "todo", runtime = "waiting_for_user"),
+            Card(id = "i", board_id = "b2", lane = "todo", runtime = "idle"),
+            Card(id = "c", scope = "chat", runtime = "running"),
+            Card(id = "f", scope = "chat", board_id = "b3", lane = "review"),
+        )
+        assertEquals(mapOf("b1" to 2, "b3" to 1), ProjectOverview.boardAttention(cards), "boards with none and unfiled chats are left out")
+    }
+
+    @Test fun projectListsGroupPinnedFoldersAndUnfiledProjects() {
+        val projects = listOf("zulu", "alpha", "beta", "gamma", "delta").map { Project(id = it, name = it.replaceFirstChar { char -> char.uppercase() }) }
+        val boards = mapOf("alpha" to listOf(Board(id = "a1", project_id = "alpha"), Board(id = "a2", project_id = "alpha")), "beta" to listOf(Board(id = "b1", project_id = "beta")))
+        val cards = mapOf("beta" to listOf(Card(id = "r", board_id = "b1", lane = "review")))
+        val folders = listOf(
+            NavigationFolder("work", "Work", listOf("beta", "offline", "alpha")),
+            NavigationFolder("later", "Later", listOf("delta"), expanded = false),
+        )
+        val pinned = listOf("gamma", "offline", "alpha", "gamma")
+        fun sections(query: String = "", sort: ProjectSort = ProjectSort.MANUAL, apart: Boolean = false) =
+            ProjectOverview.sections(projects, boards, cards, folders, pinned, query, sort, apart)
+
+        val all = sections()
+        assertEquals(listOf("gamma", "alpha"), all.pinned.map { it.id }, "pin order, available projects once each")
+        assertEquals(listOf("beta", "alpha"), all.folders[0].projects.map { it.id }, "the folder's order")
+        assertEquals("2 projects · 1 needs review", all.folders[0].summary)
+        assertEquals(1, all.folders[0].count)
+        assertEquals(true, all.folders[0].showProjects)
+        assertEquals("1 project · 0 boards", all.folders[1].summary)
+        assertEquals(1, all.folders[1].count, "without reviews the header counts projects")
+        assertEquals(false, all.folders[1].showProjects)
+        assertEquals(listOf("zulu", "gamma"), all.unfiled.map { it.id }, "pinned projects stay in their groups")
+
+        val apart = sections(apart = true)
+        assertEquals(listOf("beta"), apart.folders[0].projects.map { it.id })
+        assertEquals(listOf("zulu"), apart.unfiled.map { it.id })
+
+        val byName = sections(sort = ProjectSort.NAME, apart = true)
+        assertEquals(listOf("alpha", "gamma"), byName.pinned.map { it.id })
+        assertEquals(listOf("alpha", "beta", "gamma", "zulu"), sections(sort = ProjectSort.NAME).folders[0].projects.map { it.id } + sections(sort = ProjectSort.NAME).unfiled.map { it.id })
+
+        val search = sections(query = "ALP")
+        assertEquals(emptyList<Project>(), search.pinned, "the pinned shortcut hides while searching")
+        assertEquals(listOf("work"), search.folders.map { it.folder.id }, "folders without a match hide")
+        assertEquals(listOf("alpha"), search.folders.single().projects.map { it.id })
+        assertEquals(true, sections(query = "delta").folders.single().showProjects, "a search opens collapsed folders")
+        assertEquals(listOf("alpha"), sections(query = "alp", apart = true).pinned.map { it.id }, "apart, pinned matches stay in their section")
+        assertEquals(false, search.empty)
+        assertEquals(true, sections(query = "nothing").empty)
+        assertEquals("3 projects · 1 folder", ProjectOverview.summary(3, 1))
+        assertEquals("1 project · 0 folders", ProjectOverview.summary(1, 0))
     }
 }

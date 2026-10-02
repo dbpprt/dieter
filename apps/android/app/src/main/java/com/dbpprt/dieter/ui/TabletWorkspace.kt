@@ -21,21 +21,21 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dbpprt.dieter.core.activity.Activity
 import com.dbpprt.dieter.core.activity.ActivityItem
-import com.dbpprt.dieter.core.activity.ActivityKind
-import com.dbpprt.dieter.core.activity.ActivitySection
 import com.dbpprt.dieter.core.board.ProjectOverview
+import com.dbpprt.dieter.core.board.ProjectSort
+import com.dbpprt.dieter.core.machines.MachineRows
 import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.core.navigation.FolderScope
-import com.dbpprt.dieter.core.navigation.NavigationLayout
+import com.dbpprt.dieter.core.presentation.Counts
 import com.dbpprt.dieter.settings.DEFAULT_SIDEBAR_LEADING_FRACTION
 import com.dbpprt.dieter.ui.theme.*
 import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Project
-import kotlin.time.toKotlinInstant
 
 // Medium windows retain the Fold layout. Use the actual window, not the device's
 // physical size, so split-screen and freeform windows adapt without losing selection.
@@ -44,8 +44,9 @@ internal fun usesTabletWorkspace(widthDp: Float) = widthDp >= TABLET_WORKSPACE_M
 internal val LocalTabletWorkspace = staticCompositionLocalOf { false }
 private val LocalTabletStatusContent = staticCompositionLocalOf<@Composable () -> Unit> { {} }
 
-internal enum class TabletProjectTab(val label: String) {
-    BOARD("Board"), CHATS("Chats"), FILES("Files"), CHANGES("Changes"), SCHEDULES("Schedules")
+internal enum class TabletProjectTab(val label: String, val destination: Destination) {
+    BOARD("Board", Destination.BOARD), CHATS("Chats", Destination.CHATS), FILES("Files", Destination.FILES),
+    CHANGES("Changes", Destination.FILES), SCHEDULES("Schedules", Destination.SCHEDULES)
 }
 
 @Composable
@@ -59,16 +60,14 @@ internal fun TabletWorkspace(
     var projectChats by rememberSaveable { mutableStateOf(false) }
     var usage by rememberSaveable { mutableStateOf(false) }
     var manageProjects by rememberSaveable { mutableStateOf(false) }
-    val projects = state.destination in listOf(Destination.BOARD, Destination.FILES, Destination.SCHEDULES) ||
+    val projects = state.destination == Destination.BOARD || state.destination.projectScoped ||
         (state.destination == Destination.CHATS && projectChats)
     val tools = !projects && !state.destination.isPrimaryDestination() || usage
-    val attentionCount = remember(state.activityItems) {
-        state.activityItems.count { it.kind.needsYou }
-    }
+    val attentionCount = remember(state.activityItems) { Activity.needsYouCount(state.activityItems) }
     val settings = state.appSurface == AppSurface.APP_SETTINGS
     val newChat = state.appSurface == AppSurface.NEW_CHAT
     val projectTab = when {
-        state.destination == Destination.FILES && state.projectFilesMode == "changes" -> TabletProjectTab.CHANGES
+        state.destination == Destination.FILES && state.projectFilesMode == ProjectFilesTab.CHANGES -> TabletProjectTab.CHANGES
         state.destination == Destination.FILES -> TabletProjectTab.FILES
         state.destination == Destination.SCHEDULES -> TabletProjectTab.SCHEDULES
         state.destination == Destination.CHATS -> TabletProjectTab.CHATS
@@ -96,7 +95,7 @@ internal fun TabletWorkspace(
                     toolsSelected = tools && !newChat,
                     settingsSelected = settings,
                     attentionCount = attentionCount,
-                    onlineCount = state.presentedEndpointConnections.count { it.online },
+                    onlineSummary = MachineRows.onlineSummary(state.presentedEndpointConnections),
                     onNavigate = navigate,
                     onTools = { navigate(Destination.MACHINES) },
                     onCreate = { usage = false; model.openSurface(AppSurface.NEW_CHAT) },
@@ -131,7 +130,7 @@ internal fun TabletWorkspace(
                                 detail = { paneModifier ->
                                     Column(paneModifier) {
                                         if ((state.project != null && !state.boardOverviewVisible) ||
-                                            state.destination in listOf(Destination.FILES, Destination.SCHEDULES) || projectChats) {
+                                            state.destination.projectScoped || projectChats) {
                                             TabletProjectTabs(projectTab, state.projectSurfacesEnabled) { tab ->
                                                 model.closeSurface()
                                                 usage = false
@@ -192,7 +191,7 @@ internal fun TabletNavigationRail(
     toolsSelected: Boolean,
     settingsSelected: Boolean,
     attentionCount: Int,
-    onlineCount: Int,
+    onlineSummary: String,
     onNavigate: (Destination) -> Unit,
     onTools: () -> Unit,
     onCreate: () -> Unit,
@@ -231,7 +230,7 @@ internal fun TabletNavigationRail(
             modifier = Modifier.padding(top = 8.dp).testTag("tablet-connections")) {
             Column(Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Outlined.Computer, "Machines and connection status", tint = DieterEyes)
-                Text("$onlineCount online", style = MaterialTheme.typography.labelSmall, color = DieterEyes)
+                Text(onlineSummary, style = MaterialTheme.typography.labelSmall, color = DieterEyes, textAlign = TextAlign.Center)
             }
         }
         NavigationRailItem(selected = settingsSelected, onClick = onSettings,
@@ -291,7 +290,7 @@ internal fun TabletProjectTabs(selected: TabletProjectTab, projectToolsEnabled: 
             containerColor = MaterialTheme.colorScheme.background, contentColor = DieterShell) {
             TabletProjectTab.entries.forEach { tab ->
                 Tab(selected = selected == tab, onClick = { onSelect(tab) }, text = { Text(tab.label) },
-                    enabled = projectToolsEnabled || tab == TabletProjectTab.BOARD || tab == TabletProjectTab.CHATS,
+                    enabled = projectToolsEnabled || !tab.destination.projectScoped,
                     modifier = Modifier.testTag("tablet-project-${tab.name.lowercase()}"))
             }
         }
@@ -328,18 +327,19 @@ internal fun TabletProjectNavigator(
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var alphabetical by rememberSaveable { mutableStateOf(false) }
-    val boards = state.spaceBoards.groupBy { it.project_id }
-    val projects = state.projects.filter { project -> ProjectOverview.matches(project, boards[project.id].orEmpty(), query) }
-    val byId = projects.associateBy { it.id }
-    val pinned = orderedPinnedProjects(projects, state.pinnedProjectOrder)
-    val unfiled = NavigationLayout.unfiled(state.projectFolders, projects.map { it.id }).mapNotNull(byId::get)
-        .filterNot { it.id in state.pinnedProjectOrder }
-    fun ordered(items: List<Project>) = if (alphabetical) items.sortedBy { it.name.lowercase() } else items
+    val boards = remember(state.spaceBoards) { state.spaceBoards.groupBy { it.project_id } }
+    val cards = remember(state.spaceCards) { state.spaceCards.groupBy { it.project_id } }
+    val sections = remember(state.projects, boards, cards, state.projectFolders, state.pinnedProjectOrder, query, alphabetical) {
+        ProjectOverview.sections(state.projects, boards, cards, state.projectFolders, state.pinnedProjectOrder, query,
+            if (alphabetical) ProjectSort.NAME else ProjectSort.MANUAL, pinnedApart = true)
+    }
+    val pinned = sections.pinned
+    val unfiled = sections.unfiled
     Column(modifier.background(DieterSurface).semantics { paneTitle = "Projects" }.testTag("tablet-project-navigator")) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, top = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Projects", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                Text("${state.projects.size} projects · ${state.projectFolders.size} folders", style = MaterialTheme.typography.bodySmall, color = DieterMuted)
+                Text(ProjectOverview.summary(state.projects.size, state.projectFolders.size), style = MaterialTheme.typography.bodySmall, color = DieterMuted)
             }
             IconToggleButton(checked = alphabetical, onCheckedChange = { alphabetical = it }) {
                 Icon(Icons.Outlined.SortByAlpha, if (alphabetical) "Use synced project order" else "Sort projects A–Z")
@@ -351,25 +351,23 @@ internal fun TabletProjectNavigator(
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (pinned.isNotEmpty()) {
                 item { ListSectionLabel("Pinned") }
-                items(ordered(pinned), key = { "pinned-${it.id}" }) { TabletProjectRow(it, boards[it.id].orEmpty(), state, model, onOpenBoard) }
+                items(pinned, key = { "pinned-${it.id}" }) { TabletProjectRow(it, boards[it.id].orEmpty(), state, model, onOpenBoard) }
             }
-            state.projectFolders.forEach { folder ->
-                val members = ordered(folder.itemIds.mapNotNull(byId::get).filterNot { it.id in state.pinnedProjectOrder })
-                if (query.isBlank() || members.isNotEmpty()) {
-                    item(key = "folder-${folder.id}") {
-                        NavigationFolderHeader(folder, members.size, FolderScope.PROJECTS, state.projectFolders,
-                            model, revealSearchResults = query.isNotBlank())
-                    }
-                    if (folder.expanded || query.isNotBlank()) items(members, key = { "folder-project-${it.id}" }) {
-                        TabletProjectRow(it, boards[it.id].orEmpty(), state, model, onOpenBoard)
-                    }
+            sections.folders.forEach { group ->
+                val folder = group.folder
+                item(key = "folder-${folder.id}") {
+                    NavigationFolderHeader(folder, group.projects.size, FolderScope.PROJECTS, state.projectFolders,
+                        model, revealSearchResults = query.isNotBlank())
+                }
+                if (group.showProjects) items(group.projects, key = { "folder-project-${it.id}" }) {
+                    TabletProjectRow(it, boards[it.id].orEmpty(), state, model, onOpenBoard)
                 }
             }
             if (unfiled.isNotEmpty()) {
                 item { ListSectionLabel(if (pinned.isEmpty() && state.projectFolders.isEmpty()) "All projects" else "Unfiled") }
-                items(ordered(unfiled), key = { it.id }) { TabletProjectRow(it, boards[it.id].orEmpty(), state, model, onOpenBoard) }
+                items(unfiled, key = { it.id }) { TabletProjectRow(it, boards[it.id].orEmpty(), state, model, onOpenBoard) }
             }
-            if (projects.isEmpty()) item {
+            if (sections.empty) item {
                 Text(if (query.isBlank()) "Add a project to get started." else "No matching projects", color = DieterMuted, modifier = Modifier.padding(12.dp))
             }
             item {
@@ -391,7 +389,7 @@ private fun TabletProjectRow(project: Project, boards: List<Board>, state: Diete
             }
             Column(Modifier.weight(1f)) {
                 Text(project.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("${boards.size} ${plural(boards.size, "board")} · ${state.projectCheckoutLabel(project)}",
+                Text("${Counts.of(boards.size, "board")} · ${state.projectCheckoutLabel(project)}",
                     color = DieterMuted, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             Icon(if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ChevronRight, if (expanded) "Collapse ${project.name}" else "Expand ${project.name}", Modifier.size(18.dp))
@@ -475,7 +473,7 @@ internal fun TabletActivityTimeline(
                             modifier = Modifier.fillMaxWidth().testTag("tablet-activity-${interval.item.card.id}")) {
                             Column(Modifier.padding(12.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    Text(interval.item.card.title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                                    Text(interval.item.title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
                                     Text(interval.item.kind.label, style = MaterialTheme.typography.labelSmall, color = color)
                                 }
                                 Text(interval.item.detail, style = MaterialTheme.typography.bodySmall, color = DieterMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)

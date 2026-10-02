@@ -1,34 +1,34 @@
 import DieterAPI
+import DieterShared
 import SwiftUI
 
 struct ScheduleEditor: View {
     @Bindable var model: SchedulesModel
     let context: ScheduleEditorContext
     @Environment(\.dismiss) private var dismiss
-    let schedule: Dieter_V1_Schedule?
+    /// The schedule being edited; nil creates one.
+    let scheduleID: String?
     @State private var draft: Dieter_V1_ScheduleDraft
+    @State private var cadence: ClientScheduleCadence
+    @State private var timezones: [String]
     @State private var saveError = ""
-    @State private var cadence: ScheduleCadence
-    @State private var runTime: Date
-    @State private var weekday: Int
-    @State private var selectedLabelIDs: Set<String>
     @State private var saving = false
     @FocusState private var templateField: TemplateField?
 
     private enum TemplateField { case title, prompt }
+    private var options: ClientScheduleEditorOptions { .shared }
 
-    init(model: SchedulesModel, context: ScheduleEditorContext, schedule: Dieter_V1_Schedule?) {
+    /// Opens on `draft`, which the core prepared for the schedule or a new one.
+    init(model: SchedulesModel, context: ScheduleEditorContext, scheduleID: String?, draft: Dieter_V1_ScheduleDraft) {
         self.model = model
         self.context = context
-        self.schedule = schedule
-        var draft = ScheduleEditorDraft.make(from: schedule)
-        draft.checkoutID = schedule?.checkoutID ?? context.target.checkoutID
-        let timing = ScheduleTiming.parse(draft.cron)
+        self.scheduleID = scheduleID
         _draft = State(initialValue: draft)
-        _cadence = State(initialValue: timing.cadence)
-        _runTime = State(initialValue: timing.time)
-        _weekday = State(initialValue: timing.weekday)
-        _selectedLabelIDs = State(initialValue: Set(schedule?.labelIds ?? []))
+        _cadence = State(
+            initialValue: ClientScheduleCadence(rules: SharedRules.shared.scheduleCadence(cron: draft.cron)))
+        _timezones = State(
+            initialValue: SharedRules.shared.scheduleTimezones(
+                selected: draft.timezone, device: TimeZone.current.identifier, all: TimeZone.knownTimeZoneIdentifiers))
     }
 
     private var projectBoards: [Dieter_V1_Board] {
@@ -39,31 +39,61 @@ struct ScheduleEditor: View {
         projectBoards.first { $0.id == draft.boardID }
     }
 
-    private var cron: String {
-        ScheduleTiming.cron(cadence: cadence, time: runTime, weekday: weekday, custom: draft.cron)
+    private var title: String {
+        guard scheduleID != nil else { return options.newTitle }
+        return draft.name.isEmpty ? options.editTitle : draft.name
     }
 
-    private var previewKey: String { "\(cron)|\(draft.timezone)" }
+    private var previewKey: String { "\(cadence.cron)|\(draft.timezone)" }
     private var preview: [String] { context.target.projectID == model.target.projectID ? model.schedulePreview : [] }
     private var previewError: String { saveError.isEmpty ? model.schedulePreviewError ?? "" : saveError }
 
     private var canSave: Bool {
-        !saving && !draft.boardID.isEmpty
-            && !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !draft.workspaceMode.isEmpty
-            && !draft.titleTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !draft.promptTemplate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !cron.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !draft.timezone.isEmpty
+        !saving
+            && SharedRules.shared.scheduleCanSave(
+                name: draft.name, titleTemplate: draft.titleTemplate, promptTemplate: draft.promptTemplate,
+                cron: cadence.cron, timezone: draft.timezone, boardId: draft.boardID,
+                workspaceMode: draft.workspaceMode)
     }
 
-    private var sampleVariables: [String: String] {
-        ScheduleTemplateRenderer.variables(
-            scheduledAt: preview.first,
-            timezone: draft.timezone,
-            project: context.projectName,
-            board: selectedBoard?.name ?? "Board",
-            schedule: draft.name.ifBlank("Schedule")
-        )
+    /// The agent fields of the draft as one selection.
+    private var agent: Binding<Dieter_V1_HarnessSelection> {
+        Binding(
+            get: {
+                .with {
+                    $0.provider = draft.provider
+                    $0.model = draft.model
+                    $0.effort = draft.effort
+                    $0.providerOptions = draft.providerOptions
+                }
+            },
+            set: {
+                draft.provider = $0.provider
+                draft.model = $0.model
+                draft.effort = $0.effort
+                draft.providerOptions = $0.providerOptions
+            })
+    }
+
+    /// The run time as a date for the time picker.
+    private var runTime: Binding<Date> {
+        Binding(
+            get: {
+                Calendar.current.date(
+                    bySettingHour: Int(cadence.hour), minute: Int(cadence.minute), second: 0, of: Date()) ?? Date()
+            },
+            set: { date in
+                let time = Calendar.current.dateComponents([.hour, .minute], from: date)
+                update(hour: Int32(time.hour ?? 9), minute: Int32(time.minute ?? 0))
+            })
+    }
+
+    private func example(_ template: String, empty: String) -> String {
+        SharedRules.shared.scheduleTemplateExample(
+            template: template, empty: empty,
+            date: ScheduleDateFormatting.day(preview.first, timezone: draft.timezone),
+            scheduledAt: preview.first ?? DieterTimestamp.string(from: Date()),
+            project: context.projectName, board: selectedBoard?.name ?? "", schedule: draft.name)
     }
 
     var body: some View {
@@ -74,9 +104,9 @@ struct ScheduleEditor: View {
                     .frame(width: 42, height: 42).background(
                         DieterTheme.elevated, in: RoundedRectangle(cornerRadius: 11))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(schedule == nil ? "NEW AUTOMATION" : "EDIT AUTOMATION")
+                    Text(scheduleID == nil ? "NEW AUTOMATION" : "EDIT AUTOMATION")
                         .font(DieterFont.sectionLabel).tracking(1.2).foregroundStyle(DieterTheme.tertiary)
-                    Text(schedule == nil ? "Create schedule" : draft.name.ifBlank("Edit schedule"))
+                    Text(title)
                         .font(.system(size: 21, weight: .bold))
                     Text("Runs on the selected checkout’s machine · all times use \(draft.timezone)")
                         .font(.caption).foregroundStyle(DieterTheme.tertiary)
@@ -115,77 +145,7 @@ struct ScheduleEditor: View {
                             subtitle: "Choose a recurring pattern or enter cron only when needed",
                             symbol: "clock"
                         ) {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Picker("Repeats", selection: $cadence) {
-                                    ForEach(ScheduleCadence.allCases) { Text($0.title).tag($0) }
-                                }
-                                .pickerStyle(.segmented).labelsHidden()
-
-                                if cadence == .weekly {
-                                    Picker("Day", selection: $weekday) {
-                                        ForEach(ScheduleTiming.weekdays) { Text($0.short).tag($0.value) }
-                                    }
-                                    .pickerStyle(.segmented).labelsHidden()
-                                }
-
-                                if cadence == .custom {
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text("CRON EXPRESSION").font(DieterFont.sectionLabel).foregroundStyle(
-                                            DieterTheme.tertiary)
-                                        TextField("0 9 * * 1-5", text: $draft.cron)
-                                            .textFieldStyle(.roundedBorder).font(.body.monospaced())
-                                            .accessibilityIdentifier("schedule-editor.cron")
-                                        Text("Five fields: minute, hour, day of month, month, day of week.")
-                                            .font(.caption2).foregroundStyle(DieterTheme.tertiary)
-                                    }
-                                } else {
-                                    HStack {
-                                        Text("Run at").font(.system(size: 12, weight: .semibold))
-                                        Spacer()
-                                        DatePicker("Run at", selection: $runTime, displayedComponents: .hourAndMinute)
-                                            .labelsHidden().datePickerStyle(.field)
-                                            .accessibilityIdentifier("schedule-editor.time")
-                                    }
-                                }
-
-                                HStack {
-                                    Text("Timezone").font(.system(size: 12, weight: .semibold))
-                                    Spacer()
-                                    Picker("Timezone", selection: $draft.timezone) {
-                                        ForEach(ScheduleTiming.timezoneOptions(including: draft.timezone), id: \.self) {
-                                            Text($0).tag($0)
-                                        }
-                                    }
-                                    .labelsHidden().frame(maxWidth: 230)
-                                }
-
-                                Divider().overlay(DieterTheme.border)
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(ScheduleTiming.summary(cron: cron, timezone: draft.timezone)).font(
-                                            .system(size: 12, weight: .semibold))
-                                        Text(cron).font(.caption.monospaced()).foregroundStyle(DieterTheme.tertiary)
-                                    }
-                                    Spacer()
-                                    if preview.isEmpty { ProgressView().controlSize(.small) }
-                                }
-                                if !previewError.isEmpty {
-                                    Label(previewError, systemImage: "exclamationmark.triangle.fill")
-                                        .font(.caption).foregroundStyle(DieterTheme.coral)
-                                } else {
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text("NEXT RUNS").font(DieterFont.sectionLabel).foregroundStyle(
-                                            DieterTheme.tertiary)
-                                        ForEach(preview.prefix(5), id: \.self) { value in
-                                            HStack(spacing: 7) {
-                                                Image(systemName: "arrow.forward.circle.fill").foregroundStyle(
-                                                    DieterTheme.shell)
-                                                Text(ScheduleDateFormatting.full(value, timezone: draft.timezone))
-                                            }.font(.system(size: 11, weight: .medium))
-                                        }
-                                    }
-                                }
-                            }
+                            timing
                         }
 
                         ScheduleEditorSection(
@@ -193,53 +153,7 @@ struct ScheduleEditor: View {
                             subtitle: "Choose the board and whether work waits in Todo or starts immediately",
                             symbol: "rectangle.stack"
                         ) {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Picker("Board", selection: $draft.boardID) {
-                                    ForEach(projectBoards, id: \.id) { Text($0.name).tag($0.id) }
-                                }
-                                .pickerStyle(.menu)
-                                .onChange(of: draft.boardID) { _, _ in
-                                    selectedLabelIDs.formIntersection(Set(selectedBoard?.labels.map(\.id) ?? []))
-                                }
-                                Picker("Placement", selection: $draft.action) {
-                                    Text("Todo").tag("draft")
-                                    Text("Running").tag("run")
-                                }
-                                .pickerStyle(.segmented).labelsHidden().accessibilityIdentifier(
-                                    "schedule-editor.placement")
-                                Picker("Workspace", selection: $draft.workspaceMode) {
-                                    Text("New worktree").tag("worktree")
-                                    Text("Project directory").tag("project")
-                                }
-                                .pickerStyle(.segmented)
-                                .accessibilityIdentifier("schedule-editor.workspace")
-                                Label(
-                                    draft.action == "run"
-                                        ? "Creates the card and starts its agent turn on this schedule’s machine."
-                                        : "Creates a draft card in Todo. Its agent will not start until you start the card.",
-                                    systemImage: draft.action == "run" ? "bolt.fill" : "tray.full.fill"
-                                )
-                                .font(.caption).foregroundStyle(DieterTheme.tertiary)
-
-                                if let labels = selectedBoard?.labels, !labels.isEmpty {
-                                    Text("LABELS").font(DieterFont.sectionLabel).foregroundStyle(DieterTheme.tertiary)
-                                    HStack(spacing: 6) {
-                                        ForEach(labels, id: \.id) { label in
-                                            Button(label.name) {
-                                                if selectedLabelIDs.contains(label.id) {
-                                                    selectedLabelIDs.remove(label.id)
-                                                } else {
-                                                    selectedLabelIDs.insert(label.id)
-                                                }
-                                            }
-                                            .buttonStyle(.bordered).controlSize(.small)
-                                            .tint(
-                                                selectedLabelIDs.contains(label.id)
-                                                    ? DieterTheme.shell : DieterTheme.tertiary)
-                                        }
-                                    }
-                                }
-                            }
+                            destination
                         }
                     }
                     .frame(maxWidth: 390)
@@ -250,54 +164,7 @@ struct ScheduleEditor: View {
                             subtitle: "Variables are rendered by the daemon for every occurrence",
                             symbol: "curlybraces"
                         ) {
-                            VStack(alignment: .leading, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text("CARD TITLE").font(DieterFont.sectionLabel).foregroundStyle(
-                                        DieterTheme.tertiary)
-                                    TextField("Daily update · {{date}}", text: $draft.titleTemplate)
-                                        .textFieldStyle(.roundedBorder).focused($templateField, equals: .title)
-                                        .accessibilityIdentifier("schedule-editor.title-template")
-                                    TemplateVariableButtons { variable in insert(variable, into: .title) }
-                                }
-
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text("AGENT TASK").font(DieterFont.sectionLabel).foregroundStyle(
-                                        DieterTheme.tertiary)
-                                    ZStack(alignment: .topLeading) {
-                                        TextEditor(text: $draft.promptTemplate)
-                                            .font(.system(size: 12)).scrollContentBackground(.hidden)
-                                            .padding(7).frame(minHeight: 155)
-                                            .focused($templateField, equals: .prompt)
-                                        if draft.promptTemplate.isEmpty {
-                                            Text("Review {{project}} for {{date}} and summarize what needs attention.")
-                                                .font(.system(size: 12)).foregroundStyle(DieterTheme.tertiary)
-                                                .padding(.horizontal, 12).padding(.vertical, 15).allowsHitTesting(false)
-                                        }
-                                    }
-                                    .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 7))
-                                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(DieterTheme.strongBorder))
-                                    .accessibilityIdentifier("schedule-editor.prompt-template")
-                                    TemplateVariableButtons { variable in insert(variable, into: .prompt) }
-                                }
-
-                                VStack(alignment: .leading, spacing: 7) {
-                                    Text("EXAMPLE OUTPUT").font(DieterFont.sectionLabel).foregroundStyle(
-                                        DieterTheme.tertiary)
-                                    Text(
-                                        ScheduleTemplateRenderer.render(draft.titleTemplate, variables: sampleVariables)
-                                            .ifBlank("Card title preview")
-                                    )
-                                    .font(.system(size: 13, weight: .semibold))
-                                    Text(
-                                        ScheduleTemplateRenderer.render(
-                                            draft.promptTemplate, variables: sampleVariables
-                                        ).ifBlank("Agent task preview")
-                                    )
-                                    .font(.system(size: 12)).foregroundStyle(DieterTheme.subtle).lineLimit(5)
-                                }
-                                .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-                                .background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 9))
-                            }
+                            templates
                         }
 
                         ScheduleEditorSection(
@@ -305,9 +172,7 @@ struct ScheduleEditor: View {
                             subtitle: "Choose the harness saved on every card this schedule creates",
                             symbol: "cpu"
                         ) {
-                            HarnessFields(
-                                catalog: context.harnessCatalog, provider: $draft.provider, model: $draft.model,
-                                effort: $draft.effort, providerOptions: $draft.providerOptions)
+                            AgentControlFields(catalog: context.harnessCatalog, selection: agent)
                         }
 
                         ScheduleEditorSection(
@@ -318,10 +183,9 @@ struct ScheduleEditor: View {
                                 Picker(
                                     "When a prior scheduled card is still open", selection: $draft.openCardPolicy
                                 ) {
-                                    Text("Skip this occurrence").tag("skip_if_open")
-                                    Text("Always create another card").tag("always")
+                                    ForEach(options.openPolicies, id: \.key) { Text($0.title).tag($0.key) }
                                 }
-                                Text("Missed occurrences are collapsed to the latest one after the daemon returns.")
+                                Text(options.misfireNote)
                                     .font(.caption).foregroundStyle(DieterTheme.tertiary)
                             }
                         }
@@ -333,36 +197,207 @@ struct ScheduleEditor: View {
         }
         .frame(minWidth: 920, idealWidth: 980, minHeight: 760, idealHeight: 820)
         .background(DieterTheme.background)
-        .task {
-            draft.projectID = context.target.projectID
-            if !projectBoards.contains(where: { $0.id == draft.boardID }) {
-                draft.boardID =
-                    projectBoards.first(where: { $0.id == context.selectedBoardID })?.id ?? projectBoards
-                    .first?.id
-                    ?? ""
-            }
-            if draft.provider.isEmpty, let harness = context.harnessCatalog.harnesses.first {
-                draft.provider = harness.id
-                draft.model = harness.defaultModel
-                draft.effort =
-                    harness.models.first(where: { $0.id == harness.defaultModel })?.defaultEffort ?? ""
-                draft.providerOptions = ProviderOptionValues.defaults(for: harness, model: draft.model)
-            }
-        }
         .onChange(of: previewKey, initial: true) {
             guard context.target.projectID == model.target.projectID else { return }
-            model.previewSchedule(cron: cron, timezone: draft.timezone)
+            model.previewSchedule(cron: cadence.cron, timezone: draft.timezone)
         }
         .onDisappear { model.closeEditor() }
     }
 
+    private var timing: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker(
+                "Repeats",
+                selection: Binding(get: { cadence.kind.rawValue }, set: { switchKind(to: $0) })
+            ) {
+                ForEach(options.cadences, id: \.key) { Text($0.title).tag(Int($0.key) ?? 0) }
+            }
+            .pickerStyle(.segmented).labelsHidden()
+
+            if cadence.kind == .weekly {
+                Picker(
+                    "Day",
+                    selection: Binding(get: { cadence.weekday }, set: { update(weekday: $0) })
+                ) {
+                    ForEach(options.weekdays, id: \.key) { Text($0.title).tag(Int32($0.key) ?? 1) }
+                }
+                .pickerStyle(.segmented).labelsHidden()
+            }
+
+            if cadence.kind == .custom {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("CRON EXPRESSION").font(DieterFont.sectionLabel).foregroundStyle(
+                        DieterTheme.tertiary)
+                    TextField("0 9 * * 1-5", text: Binding(get: { cadence.custom }, set: { update(custom: $0) }))
+                        .textFieldStyle(.roundedBorder).font(.body.monospaced())
+                        .accessibilityIdentifier("schedule-editor.cron")
+                    Text(options.cronHelp)
+                        .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                }
+            } else {
+                HStack {
+                    Text("Run at").font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    DatePicker("Run at", selection: runTime, displayedComponents: .hourAndMinute)
+                        .labelsHidden().datePickerStyle(.field)
+                        .accessibilityIdentifier("schedule-editor.time")
+                }
+            }
+
+            HStack {
+                Text("Timezone").font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Picker("Timezone", selection: $draft.timezone) {
+                    ForEach(timezones, id: \.self) { Text($0).tag($0) }
+                }
+                .labelsHidden().frame(maxWidth: 230)
+            }
+
+            Divider().overlay(DieterTheme.border)
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(SharedRules.shared.scheduleTiming(cron: cadence.cron, timezone: draft.timezone))
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(cadence.cron).font(.caption.monospaced()).foregroundStyle(DieterTheme.tertiary)
+                }
+                Spacer()
+                if model.schedulePreviewLoading { ProgressView().controlSize(.small) }
+            }
+            if !previewError.isEmpty {
+                Label(previewError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption).foregroundStyle(DieterTheme.coral)
+            } else {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("NEXT RUNS").font(DieterFont.sectionLabel).foregroundStyle(
+                        DieterTheme.tertiary)
+                    ForEach(preview.prefix(5), id: \.self) { value in
+                        HStack(spacing: 7) {
+                            Image(systemName: "arrow.forward.circle.fill").foregroundStyle(
+                                DieterTheme.shell)
+                            Text(ScheduleDateFormatting.full(value, timezone: draft.timezone))
+                        }.font(.system(size: 11, weight: .medium))
+                    }
+                }
+            }
+        }
+    }
+
+    private var destination: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("Board", selection: $draft.boardID) {
+                ForEach(projectBoards, id: \.id) { Text($0.name).tag($0.id) }
+            }
+            .pickerStyle(.menu)
+            .onChange(of: draft.boardID) { _, _ in
+                let labels = Set(selectedBoard?.labels.map(\.id) ?? [])
+                draft.labelIds.removeAll { !labels.contains($0) }
+            }
+            Picker("Placement", selection: $draft.action) {
+                ForEach(options.placements, id: \.key) { Text($0.title).tag($0.key) }
+            }
+            .pickerStyle(.segmented).labelsHidden().accessibilityIdentifier(
+                "schedule-editor.placement")
+            Picker("Workspace", selection: $draft.workspaceMode) {
+                Text("New worktree").tag("worktree")
+                Text("Project directory").tag("project")
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("schedule-editor.workspace")
+            Label(
+                options.placements.first { $0.key == draft.action }?.detail ?? "",
+                systemImage: draft.action == "run" ? "bolt.fill" : "tray.full.fill"
+            )
+            .font(.caption).foregroundStyle(DieterTheme.tertiary)
+
+            if let labels = selectedBoard?.labels, !labels.isEmpty {
+                Text("LABELS").font(DieterFont.sectionLabel).foregroundStyle(DieterTheme.tertiary)
+                HStack(spacing: 6) {
+                    ForEach(labels, id: \.id) { label in
+                        Button(label.name) {
+                            if draft.labelIds.contains(label.id) {
+                                draft.labelIds.removeAll { $0 == label.id }
+                            } else {
+                                draft.labelIds.append(label.id)
+                            }
+                        }
+                        .buttonStyle(.bordered).controlSize(.small)
+                        .tint(
+                            draft.labelIds.contains(label.id)
+                                ? DieterTheme.shell : DieterTheme.tertiary)
+                    }
+                }
+            }
+        }
+    }
+
+    private var templates: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("CARD TITLE").font(DieterFont.sectionLabel).foregroundStyle(
+                    DieterTheme.tertiary)
+                TextField("Daily update · {{date}}", text: $draft.titleTemplate)
+                    .textFieldStyle(.roundedBorder).focused($templateField, equals: .title)
+                    .accessibilityIdentifier("schedule-editor.title-template")
+                TemplateVariableButtons { variable in insert(variable, into: .title) }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("AGENT TASK").font(DieterFont.sectionLabel).foregroundStyle(
+                    DieterTheme.tertiary)
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: $draft.promptTemplate)
+                        .font(.system(size: 12)).scrollContentBackground(.hidden)
+                        .padding(7).frame(minHeight: 155)
+                        .focused($templateField, equals: .prompt)
+                    if draft.promptTemplate.isEmpty {
+                        Text("Review {{project}} for {{date}} and summarize what needs attention.")
+                            .font(.system(size: 12)).foregroundStyle(DieterTheme.tertiary)
+                            .padding(.horizontal, 12).padding(.vertical, 15).allowsHitTesting(false)
+                    }
+                }
+                .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(DieterTheme.strongBorder))
+                .accessibilityIdentifier("schedule-editor.prompt-template")
+                TemplateVariableButtons { variable in insert(variable, into: .prompt) }
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text("EXAMPLE OUTPUT").font(DieterFont.sectionLabel).foregroundStyle(
+                    DieterTheme.tertiary)
+                Text(example(draft.titleTemplate, empty: options.titlePlaceholder))
+                    .font(.system(size: 13, weight: .semibold))
+                Text(example(draft.promptTemplate, empty: options.promptPlaceholder))
+                    .font(.system(size: 12)).foregroundStyle(DieterTheme.subtle).lineLimit(5)
+            }
+            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            .background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 9))
+        }
+    }
+
+    private func update(
+        hour: Int32? = nil, minute: Int32? = nil, weekday: Int32? = nil, custom: String? = nil
+    ) {
+        cadence = ClientScheduleCadence(
+            rules: SharedRules.shared.scheduleCadenceOf(
+                kind: Int32(cadence.kind.rawValue), hour: hour ?? cadence.hour, minute: minute ?? cadence.minute,
+                weekday: weekday ?? cadence.weekday, custom: custom ?? cadence.custom))
+    }
+
+    private func switchKind(to kind: Int) {
+        cadence = ClientScheduleCadence(
+            rules: SharedRules.shared.scheduleCadenceSwitched(
+                kind: Int32(cadence.kind.rawValue), hour: cadence.hour, minute: cadence.minute,
+                weekday: cadence.weekday, custom: cadence.custom, toKind: Int32(kind)))
+    }
+
     private func insert(_ variable: String, into field: TemplateField) {
-        let token = "{{\(variable)}}"
         switch field {
         case .title:
-            draft.titleTemplate = ScheduleTemplateRenderer.appending(token, to: draft.titleTemplate)
+            draft.titleTemplate = SharedRules.shared.scheduleInsertVariable(
+                field: draft.titleTemplate, variable: variable)
         case .prompt:
-            draft.promptTemplate = ScheduleTemplateRenderer.appending(token, to: draft.promptTemplate)
+            draft.promptTemplate = SharedRules.shared.scheduleInsertVariable(
+                field: draft.promptTemplate, variable: variable)
         }
         templateField = field
     }
@@ -370,18 +405,13 @@ struct ScheduleEditor: View {
     private func save() async {
         guard canSave else { return }
         saving = true
-        draft.projectID = context.target.projectID
-        draft.cron = cron
-        draft.labelIds = Array(selectedLabelIDs).sorted()
-        draft.misfirePolicy = "latest"
-        let saved = await model.saveSchedule(
-            id: schedule?.id, draft: draft, expectedTarget: context.target)
+        draft.cron = cadence.cron
+        let saved = await model.saveSchedule(id: scheduleID, draft: draft, expectedTarget: context.target)
         saving = false
         if saved {
             dismiss()
         } else {
-            saveError =
-                model.errorMessage ?? "This project is no longer connected. Close the editor and reconnect."
+            saveError = model.errorMessage ?? ""
         }
     }
 }

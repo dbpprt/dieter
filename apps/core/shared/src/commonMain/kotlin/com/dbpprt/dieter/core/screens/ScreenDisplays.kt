@@ -150,7 +150,7 @@ class ScreenSurface(val session: ScreenSession, private val scope: CoroutineScop
     }
 
     /** Stops matching, closes the session, and stops following it. */
-    fun close() {
+    fun stop() {
         target = null
         displays.update(null)
         session.disconnect()

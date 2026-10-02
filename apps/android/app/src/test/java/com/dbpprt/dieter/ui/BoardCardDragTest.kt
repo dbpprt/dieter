@@ -27,6 +27,8 @@ class BoardCardDragTest {
         val state = dragState()
         state.start(card, Offset(50f, 50f))
         assertNull(state.finish())
+        state.start(card.copy(lane = "Running"), Offset(50f, 50f)) // Lanes match ignoring case.
+        assertNull(state.finish())
         state.start(card, Offset(105f, 50f)) // Gap between columns.
         assertNull(state.finish())
         state.start(card, Offset(150f, 550f)) // Below the board.

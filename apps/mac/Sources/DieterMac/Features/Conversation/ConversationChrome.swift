@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterShared
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -33,7 +34,8 @@ struct ConversationChrome: View {
     @Binding var tab: String
 
     private var card: Dieter_V1_Card? { context.selectedCard ?? context.selectedDetail?.card }
-    private var status: String { context.conversation?.conversation.status ?? card?.runtime ?? "idle" }
+    /// The runtime to show, as the core presents the conversation.
+    private var status: String { context.model.state.runtime }
     private var subagentCount: Int { context.conversation?.conversation.subagents.count ?? 0 }
     private var workspacePresented: Bool {
         context.content.splitMode
@@ -66,7 +68,7 @@ struct ConversationChrome: View {
                                     )
                                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                                 }
-                                if let card, !card.workspaceMode.isEmpty {
+                                if let card, WorkspaceBadge.of(card).shown {
                                     Button {
                                         showChanges(for: card)
                                     } label: {
@@ -97,10 +99,12 @@ struct ConversationChrome: View {
                                 if card != nil {
                                     Text("·")
                                     Text(
-                                        ConversationRefreshText.label(
-                                            lastRefreshedAt: context.conversationLastRefreshedAt,
+                                        SharedRules.shared.refreshed(
+                                            atMillis: context.conversationLastRefreshedAt?.epochMillis ?? 0,
                                             syncing: context.conversationSyncing,
-                                            now: .now
+                                            nowMillis: Date.now.epochMillis,
+                                            dateTime: context.conversationLastRefreshedAt?.formatted(
+                                                date: .abbreviated, time: .shortened) ?? ""
                                         )
                                     )
                                     .lineLimit(1)
@@ -115,7 +119,7 @@ struct ConversationChrome: View {
                             ConversationModelIdentityLabel()
                         }
                         Spacer(minLength: 10)
-                        if let card, !card.workspaceMode.isEmpty {
+                        if let card, WorkspaceBadge.of(card).shown {
                             Button {
                                 showChanges(for: card)
                             } label: {
@@ -124,7 +128,7 @@ struct ConversationChrome: View {
                             .buttonStyle(.plain)
                             .accessibilityLabel("Open workspace changes")
                         }
-                        StatusPill(text: status, color: runtimeColor(status))
+                        StatusPill(runtime: status)
                             .accessibilityIdentifier("conversation.status")
                             .smokeTarget("conversation.status")
                         if !tabsInTitlebar { ConversationActionsMenu(standalone: standalone) }
@@ -164,28 +168,18 @@ struct ConversationModelIdentityLabel: View {
     @Environment(ConversationContext.self) private var context
 
     private var identity: String? {
-        let card = context.selectedCard ?? context.selectedDetail?.card
-        let provider = card?.provider.isEmpty == false ? card!.provider : context.composerProvider
-        if provider == "claude-code",
-            let assistant = context.conversation?.conversation.messages.last(where: { $0.role == "assistant" }),
-            let metadata = try? JSONSerialization.jsonObject(with: assistant.metadataJson) as? [String: Any],
-            let modelID = metadata["modelId"] as? String,
-            !modelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        {
-            return "Last reply model · \(modelID)"
+        if !context.model.state.respondingModel.isEmpty {
+            return "Last reply model · \(context.model.state.respondingModel)"
         }
-
-        let selected = context.composerModel.isEmpty ? (card?.model ?? "") : context.composerModel
-        guard !selected.isEmpty else { return nil }
-        if provider == "claude-code" {
+        // What the next send uses: the composer's choice, else the conversation's agent.
+        guard let controls = context.agentControls, !controls.selection.model.isEmpty else { return nil }
+        let selected = controls.selection.model
+        if controls.selection.provider == "claude-code" {
             return selected == "opus" || selected == "sonnet" || selected == "haiku"
                 ? "Selected alias · \(selected)"
                 : "Selected model · \(selected)"
         }
-        let name =
-            context.harnessCatalog.harnesses.first(where: { $0.id == provider })?
-            .models.first(where: { $0.id == selected })?.name ?? selected
-        return "Selected model · \(name)"
+        return "Selected model · \(controls.modelLabel)"
     }
 
     var body: some View {
@@ -208,7 +202,8 @@ struct ConversationTitleStatusMenu: View {
     var actionHeight: CGFloat = 24
 
     private var card: Dieter_V1_Card? { context.selectedCard ?? context.selectedDetail?.card }
-    private var status: String { context.conversation?.conversation.status ?? card?.runtime ?? "idle" }
+    /// The runtime to show, as the core presents the conversation.
+    private var status: String { context.model.state.runtime }
 
     var body: some View {
         HStack(spacing: 7) {
@@ -220,7 +215,7 @@ struct ConversationTitleStatusMenu: View {
                 ConversationModelIdentityLabel()
             }
             .layoutPriority(1)
-            StatusPill(text: status, color: runtimeColor(status))
+            StatusPill(runtime: status)
                 .accessibilityIdentifier("conversation.status")
                 .smokeTarget("conversation.status")
             ConversationActionsMenu(standalone: standalone, height: actionHeight)
@@ -256,7 +251,6 @@ struct ConversationActionsMenu: View {
     let standalone: Bool
     var height: CGFloat = 24
     private var card: Dieter_V1_Card? { context.selectedCard ?? context.selectedDetail?.card }
-    private var status: String { context.conversation?.conversation.status ?? card?.runtime ?? "idle" }
 
     var body: some View {
         menu
@@ -268,7 +262,7 @@ struct ConversationActionsMenu: View {
                 Button("Fork as new chat", systemImage: "arrow.triangle.branch") {
                     Task { await context.fork(card) }
                 }
-                if ["running", "starting", "waiting_for_user"].contains(status) {
+                if context.model.state.canHalt {
                     Button("Halt agent", role: .destructive) { Task { await context.cancel(card) } }
                 }
                 Divider()
@@ -344,49 +338,6 @@ struct ConversationTabBar: View {
             }
             Spacer()
         }
-    }
-}
-
-struct ConversationTitlebarHeader: View {
-    let workspacePresented: Bool
-    let workspaceEnabled: Bool
-    let toggleWorkspace: () -> Void
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Text("Conversation")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(DieterTheme.text)
-                .lineLimit(1)
-                .padding(.leading, 9)
-                .accessibilityIdentifier("conversation.titlebar-header")
-            Divider()
-                .frame(height: 16)
-            Button(action: toggleWorkspace) {
-                ConversationWorkspaceSymbol(
-                    systemName: "sidebar.right", selected: workspacePresented,
-                    frameSize: ConversationWorkspaceChromeMetrics.actionSize)
-            }
-            .buttonStyle(.plain)
-            .frame(width: 28, height: 28)
-            .background(
-                workspacePresented ? DieterTheme.elevated : .clear,
-                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-            )
-            .accessibilityLabel(workspacePresented ? "Hide workspace" : "Open workspace")
-            .accessibilityValue(workspacePresented ? "Expanded" : "Collapsed")
-            .help(workspacePresented ? "Hide workspace" : "Open workspace")
-            .accessibilityIdentifier("conversation.content.toggle")
-            .smokeTarget("conversation.content.toggle")
-            .disabled(!workspaceEnabled)
-            Spacer(minLength: 0)
-        }
-        .frame(
-            maxWidth: .infinity, minHeight: ConversationWorkspaceChromeMetrics.titlebarHeight,
-            maxHeight: ConversationWorkspaceChromeMetrics.titlebarHeight, alignment: .leading
-        )
-        .background(DieterTheme.surface)
-        .overlay(alignment: .bottom) { Divider() }
     }
 }
 

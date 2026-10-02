@@ -76,17 +76,4 @@ private func stateCard(lane: String, runtime: String, placement: UInt64, summary
     let merged = MachineDirectoryReducer.retainingOwnerDetails(done, from: running, sourceDaemonID: "peer")
     #expect(merged.runtime == "idle")
     #expect(merged.activeSubagents.isEmpty)
-    #expect(BoardAgentStatus.resolve(merged) == .idle)
-}
-
-@Test func transcriptMetadataCannotUndoAPlacementReceipt() {
-    var current = Dieter_V1_ConversationSnapshot()
-    current.detail.card = stateCard(lane: "done", runtime: "idle", placement: 2, summary: 2)
-    current.conversation.lastSeq = 20
-    var incoming = current
-    incoming.detail.card = stateCard(lane: "review", runtime: "running", placement: 1, summary: 1)
-    incoming.conversation.lastSeq = 21
-    let next = TranscriptFreshness.merging(incoming, with: current)
-    #expect(next.detail.card.lane == "done" && next.detail.card.runtime == "idle")
-    #expect(next.conversation.lastSeq == 21)
 }

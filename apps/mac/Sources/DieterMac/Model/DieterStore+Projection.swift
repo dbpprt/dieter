@@ -1,9 +1,8 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import Foundation
-import GRPCCore
 import Observation
-import OSLog
 import UniformTypeIdentifiers
 import UserNotifications
 
@@ -22,18 +21,9 @@ extension DieterStore {
 
     var projects: [Dieter_V1_Project] { replica.projects }
 
-    /// The daemon-wide card projection for cross-project navigation.
-    /// `state.cards` intentionally contains only the selected project,
-    /// while `navigationCards` is kept current by WatchSync in the background.
-    var synchronizedCards: [Dieter_V1_Card] {
-        synchronizedCardValues().sorted {
-            let lhsActivity = $0.lastActivityAt.isEmpty ? $0.updatedAt : $0.lastActivityAt
-            let rhsActivity = $1.lastActivityAt.isEmpty ? $1.updatedAt : $1.lastActivityAt
-            if lhsActivity == rhsActivity { return $0.id < $1.id }
-            return lhsActivity > rhsActivity
-        }
-    }
-
+    /// Every project's cards, for cross-project navigation. `state.cards`
+    /// holds only the selected project; the core's workspace feed keeps
+    /// `navigationCards` current in the background.
     func synchronizedCardValues() -> [Dieter_V1_Card] {
         var byID: [String: Dieter_V1_Card] = [:]
         for card in navigationCards.values.joined() where !card.id.isEmpty {
@@ -50,20 +40,15 @@ extension DieterStore {
         return Array(byID.values)
     }
 
-    func refreshIslandActivityProjection() {
-        os_signpost(.begin, log: syncPerformanceLog, name: "Derive Island activity")
-        let activity = DieterIslandActivity.resolve(entries: inboxEntries)
-        os_signpost(.end, log: syncPerformanceLog, name: "Derive Island activity")
-        guard activity != islandActivity else { return }
-        islandActivity = activity
-        islandActivityProjectionRevision += 1
+    /// The island's rows and counts from the core's activity slice.
+    func refreshIslandActivity() {
+        let next = DieterIslandActivity(activity)
+        if next != islandActivity { islandActivity = next }
     }
 
+    /// The enrolled machines in the core's order, by name.
     var machines: [DieterEndpoint] {
-        endpoints.filter { $0.daemonID != nil }.sorted {
-            if $0.online != $1.online { return $0.online && !$1.online }
-            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
+        endpoints.filter { $0.daemonID != nil }
     }
 
     var gateways: [DieterEndpoint] {
@@ -112,16 +97,20 @@ extension DieterStore {
     func replica(forProjectID projectID: String) -> DieterEndpoint? {
         // This selects a replica for shared metadata, never an execution owner.
         if endpoint.online, phase.isConnected { return endpoint }
-        return endpoints.first { $0.online && $0.daemonID != nil && $0.compatibilityState == .compatible }
-
+        return endpoints.first { $0.daemonID != nil && machineIsAvailable($0) }
     }
 
-    func connectionStatus(for machine: DieterEndpoint) -> MachineConnectionStatus? {
-        machineConnectionStatuses[machine.id]
+    /// What waits in the outbox for `machine`; nil when nothing does.
+    func outbox(for machine: DieterEndpoint) -> ClientMachineOutbox? {
+        guard let daemonID = machine.daemonID else { return nil }
+        return machineOutboxes.first { $0.daemonID == daemonID }
     }
 
-    func outboxSummary(for machine: DieterEndpoint) -> MachineOutboxSummary? {
-        machineOutboxSummaries[machine.id]
+    /// A machine's status line: the core's detail, when it was last seen
+    /// where that matters, and what waits in its outbox.
+    func machineStatusLine(_ machine: DieterEndpoint, now: Date = Date()) -> String {
+        guard let entry = machineEntry(machine) else { return "" }
+        return entry.statusLine(now: now) + (outbox(for: machine)?.statusSuffix ?? "")
     }
 
     var selectedBoard: Dieter_V1_Board? {
@@ -137,29 +126,27 @@ extension DieterStore {
         return state.cards.first { $0.id == id } ?? state.chats.first { $0.id == id } ?? chats.first { $0.id == id }
     }
 
-    var selectedSchedule: Dieter_V1_Schedule? { schedulesModel.selectedSchedule }
-    var schedulesAreLoaded: Bool { schedulesModel.schedulesAreLoaded }
-
-    var selectedTerminal: Dieter_V1_Terminal? { terminalsModel.selectedTerminal }
-
+    /// Every card the board shows, lane by lane.
     var displayedCards: [Dieter_V1_Card] {
         boardProjection.displayedCards
     }
 
-    var boardCards: [Dieter_V1_Card] {
-        boardProjection.cards
+    /// What `card` shows and offers: the board view's flags while the board
+    /// shows it, else the core's rules over the card, e.g. in the Inbox.
+    func cardFlags(_ card: Dieter_V1_Card, board: Dieter_V1_Board?) -> ClientBoardCardFlags {
+        if let flags = boardCardFlags[card.id] { return flags }
+        return ClientBoardCardFlags(
+            rules: SharedRules.shared.cardFlags(
+                card: card.rulesData, board: board?.rulesData ?? Data(),
+                operation: boardState.operations[card.id] ?? "",
+                pending: outboxState.pendingCardIds.contains(card.id), failed: outboxState.failures[card.id] != nil))
     }
 
     func refreshBoardProjection() {
-        let next = BoardProjection.resolve(
-            cards: state.cards,
-            boardID: selectedBoardID,
-            runtimeFilter: runtimeFilter,
-            labelFilter: labelFilter,
-            query: query,
-            machineFilter: machineFilter
-        )
+        bindBoardView()
+        let next = BoardProjection.resolve(view: boardView, board: selectedBoard, cards: state.cards)
         if next != boardProjection { boardProjection = next }
+        if boardCardFlags != next.view.cards { boardCardFlags = next.view.cards }
     }
 
     func boards(for projectID: String) -> [Dieter_V1_Board] {
@@ -172,5 +159,13 @@ extension DieterStore {
         return navigationBoards.values.lazy.compactMap { boards in
             boards.first(where: { $0.id == id })
         }.first
+    }
+}
+
+extension ClientMachineEntry {
+    /// The core's detail, followed by when the machine was last seen where that matters.
+    func statusLine(now: Date = Date()) -> String {
+        guard showLastSeen else { return detail }
+        return detail + " · " + SharedRules.shared.machineLastSeen(lastSeenAt: lastSeenAt, nowMillis: now.epochMillis)
     }
 }

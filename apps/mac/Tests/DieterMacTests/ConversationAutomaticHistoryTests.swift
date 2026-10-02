@@ -58,7 +58,6 @@ private func automaticHistoryMessage(_ index: Int) -> Dieter_V1_UiMessage {
     #expect(await model.loadEarlierMessages())
     #expect(model.olderConversationMessages.map(\.id) == (2_940..<3_000).map { "message-\($0)" })
     #expect(model.conversation?.conversation.messages.count == 30, "the live window stays separate")
-    #expect(model.conversationHistoryStart == 2_940)
 
     // An update that lands after the reply is still awaited.
     fixture.core.asyncHandler = { command in

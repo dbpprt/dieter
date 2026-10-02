@@ -19,10 +19,12 @@ Version 1 uses non-trickle SDP; a failed connection is replaced, not ICE-restart
 After a failed attempt, native clients and daemon peer sync continue over the
 authenticated gateway relay and delay another WebRTC attempt for two minutes.
 Repeated failures double that cooldown up to fifteen minutes. A successful
-WebRTC TLS and gRPC health check clears it. macOS retains healthy temporary
-machine routes for five minutes and probes WebRTC asynchronously after the
-cooldown, promoting only a fully authenticated healthy route. Background probes
-do not replace the displayed stable route or delay relay-backed operations.
+WebRTC TLS and gRPC health check clears it. Android and macOS select routes
+in the shared core: one data plane per machine, pinned direct TLS first, then
+WebRTC hedged against the relay. iOS retains healthy temporary machine routes
+for five minutes and probes WebRTC asynchronously after the cooldown,
+promoting only a fully authenticated healthy route. Its background probes do
+not replace the displayed stable route or delay relay-backed operations.
 
 The client opens exactly one reliable ordered data channel named
 `dieter-control-tls-v1`, without partial reliability. Messages are binary:
@@ -84,10 +86,10 @@ integrity. CLI route tests cover direct TLS, WebRTC, and relay fallback.
 
 For native integration, `DIETER_TEST_CONTROL_WEBRTC=1` enables the bridge on the
 primary daemon of `scripts/isolated-gateway`. It advertises no direct TLS route,
-forcing compatible clients through WebRTC. The shared Swift test reads the
-fixture's `DIETER_ISOLATED_*` output from `DIETER_CONTROL_FIXTURE`; Android's
-`webRTCControlCarriesRPCAndReportsICEPath` test requires the existing isolated
-fixture arguments plus `isolatedControlWebRTC=1`. No operator service is changed.
+forcing compatible clients through WebRTC. The shared Swift test
+(`controlWebRTCRoutesNativeRPCAndReportsSelectedMode`) reads the fixture's
+`DIETER_ISOLATED_*` output from `DIETER_CONTROL_FIXTURE`. Android has no
+instrumentation test for this route. No operator service is changed.
 
 ## Validation on 2026-09-19
 

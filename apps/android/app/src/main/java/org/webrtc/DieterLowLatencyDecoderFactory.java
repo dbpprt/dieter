@@ -30,16 +30,6 @@ public final class DieterLowLatencyDecoderFactory extends HardwareVideoDecoderFa
   private final LongConsumer decodedOutput;
 
   public DieterLowLatencyDecoderFactory(EglBase.Context context, Predicate<MediaCodecInfo> allowed,
-      boolean enabled, Listener listener) {
-    this(context, allowed, enabled, listener, () -> null);
-  }
-
-  public DieterLowLatencyDecoderFactory(EglBase.Context context, Predicate<MediaCodecInfo> allowed,
-      boolean enabled, Listener listener, Supplier<DecoderSurface> surface) {
-    this(context, allowed, enabled, listener, surface, timestampNs -> {});
-  }
-
-  public DieterLowLatencyDecoderFactory(EglBase.Context context, Predicate<MediaCodecInfo> allowed,
       boolean enabled, Listener listener, Supplier<DecoderSurface> surface, LongConsumer decodedOutput) {
     super(context, allowed);
     this.context = context;

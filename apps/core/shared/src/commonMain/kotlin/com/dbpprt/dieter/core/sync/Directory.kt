@@ -6,6 +6,7 @@ import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.Checkout
 import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.api.v1.SharedArchives
+import com.dbpprt.dieter.core.board.Cards
 
 /**
  * One machine's view of the shared workspace: its live feed (attached
@@ -35,9 +36,6 @@ data class DirectoryProjection(
     /** Unfiled chats, newest activity first. */
     val chats: List<Card> = emptyList(),
 ) {
-    val sortedProjects: List<Project>
-        get() = projects.values.sortedWith(compareBy<Project> { it.name.lowercase() }.thenBy { it.id })
-
     val allItems: List<Card> get() = cards.values.flatten() + chats
 
     fun board(id: String): Board? = boards.values.firstNotNullOfOrNull { list -> list.firstOrNull { it.id == id } }
@@ -45,15 +43,19 @@ data class DirectoryProjection(
     fun item(id: String): Card? = cards.values.firstNotNullOfOrNull { list -> list.firstOrNull { it.id == id } }
         ?: chats.firstOrNull { it.id == id }
 
+    /** The machine that holds [projectId]'s checkout [checkoutId]. */
+    fun checkoutMachine(projectId: String, checkoutId: String): String? =
+        projects[projectId]?.checkouts?.firstOrNull { it.id == checkoutId }?.daemon_id?.ifEmpty { null }
+
+    /** The machine that runs [card]'s conversation: its recorded owner, else its checkout's machine. */
+    fun owner(card: Card): String? = card.owner_daemon_id.ifEmpty { null } ?: checkoutMachine(card.project_id, card.checkout_id)
+
     companion object {
         val EMPTY = DirectoryProjection()
     }
 }
 
-/**
- * Merges machine snapshots into the directory. Ported from the macOS
- * `MachineDirectoryReducer`; Android's `SharedDirectory` implemented a subset.
- */
+/** Merges machine snapshots into the directory. */
 object DirectoryReducer {
     fun merge(current: DirectoryProjection, snapshots: List<MachineSnapshot>): DirectoryProjection {
         val changed = snapshots.filterNot { it.unchanged }
@@ -99,39 +101,44 @@ object DirectoryReducer {
             projectReplicas.remove(id)
         }
         val visible = items.values.filter {
-            (it.id !in removed || (it.archived && it.scope == "chat" && it.board_id.isEmpty())) && projects.containsKey(it.project_id)
+            (it.id !in removed || (it.archived && Cards.isChat(it))) && projects.containsKey(it.project_id)
         }
-        val referenced = items.values.flatMapTo(HashSet()) { card ->
-            listOf(card.board_id) + card.state_fields.filter { it.name == "placement" }
-                .flatMap { field -> field.versions.filterNot { it.deleted }.map { it.value_?.board_id.orEmpty() } }
-        }
+        val referenced = referencedBoards(items.values)
         val boards = HashMap<String, MutableList<Board>>()
         val retired = HashMap<String, Board>()
         for (candidate in allBoards.values) {
             if (!projects.containsKey(candidate.project_id)) continue
-            val board = if (candidate.retired && candidate.id in referenced) {
-                candidate.copy(retired = false, retirement_blocked = true)
-            } else {
-                candidate
-            }
+            val board = blockingReferenced(candidate, referenced)
             if (board.retired) retired[board.id] = board else boards.getOrPut(board.project_id) { mutableListOf() }.add(board)
         }
         val sortedBoards = boards.mapValues { (_, list) -> list.sortedBy { it.id } }
         for ((id, project) in projects) projects[id] = project.copy(board_count = sortedBoards[id]?.size ?: 0)
-        val boardItems = visible.filter { it.scope != "chat" || it.board_id.isNotEmpty() }.sortedBy { it.id }
-        val chats = visible.filter { it.scope == "chat" && it.board_id.isEmpty() }
-            .sortedWith(compareByDescending<Card> { activityTime(it) }.thenBy { it.id })
+        val (chats, boardItems) = visible.partition(Cards::isChat)
         return DirectoryProjection(
             projects = projects,
             projectReplicas = projectReplicas,
             boards = sortedBoards,
             retiredBoards = retired,
-            cards = boardItems.groupBy { it.project_id },
-            chats = chats,
+            cards = boardItems.sortedBy { it.id }.groupBy { it.project_id },
+            chats = chats.sortedWith(compareByDescending<Card> { activityTime(it) }.thenBy { it.id }),
         )
     }
 
     fun activityTime(card: Card): String = card.last_activity_at.ifEmpty { card.updated_at }
+
+    /** Boards a card is filed on or holds a live placement on. */
+    fun referencedBoards(items: Iterable<Card>): Set<String> = items.flatMapTo(HashSet()) { card ->
+        listOf(card.board_id) + card.state_fields.filter { it.name == "placement" }
+            .flatMap { field -> field.versions.filterNot { it.deleted }.map { it.value_?.board_id.orEmpty() } }
+    }
+
+    /** A retired board that a card still references stays shown, its retirement blocked. */
+    fun blockingReferenced(board: Board, referenced: Set<String>): Board =
+        if (board.retired && board.id in referenced) board.copy(retired = false, retirement_blocked = true) else board
+
+    /** Whether [board]'s lifecycle already includes every retirement intent of [other]. */
+    fun coversLifecycle(board: Board, other: Board): Boolean =
+        other.retirement_versions.all { version -> board.retirement_versions.any { covers(it.clock, version.clock) } }
 
     /**
      * Folds one card observed outside a machine snapshot, such as the fresh
@@ -145,7 +152,7 @@ object DirectoryReducer {
         if (merged == existing) return current
         val cards = current.cards.mapValues { (_, items) -> items.filterNot { it.id == merged.id } }.toMutableMap()
         var chats = current.chats.filterNot { it.id == merged.id }
-        if (merged.scope != "chat" || merged.board_id.isNotEmpty()) {
+        if (!Cards.isChat(merged)) {
             cards[merged.project_id] = (cards[merged.project_id].orEmpty() + merged).sortedBy { it.id }
         } else {
             chats = (chats + merged).sortedWith(compareByDescending<Card> { activityTime(it) }.thenBy { it.id })

@@ -25,7 +25,6 @@ import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -40,7 +39,6 @@ class BackgroundTranscriptSyncIntegrationTest {
 
     @Test
     fun transcriptsArriveThroughGlobalSyncWithoutOpeningTheChat() = runBlocking {
-        assumeTrue("Pass isolatedGatewayToken to run the isolated gateway test", argument("isolatedGatewayToken").isNotBlank())
         val core = container.core
         val workspace = IsolatedCore.connect(container)
         val project = workspace.projects.first()
@@ -69,7 +67,6 @@ class BackgroundTranscriptSyncIntegrationTest {
 
     @Test
     fun liveSyncKeepsTranscriptsWarmInBackground() = runBlocking {
-        assumeTrue("Pass isolatedGatewayToken to run the isolated gateway test", argument("isolatedGatewayToken").isNotBlank())
         val container = container
         val core = container.core
         val policy = container.policy

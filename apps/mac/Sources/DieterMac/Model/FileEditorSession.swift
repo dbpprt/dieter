@@ -1,4 +1,5 @@
 import AppKit
+import DieterShared
 import Foundation
 import Observation
 
@@ -111,10 +112,8 @@ final class FileEditorSession {
         isDirty = false
     }
 
+    /// Lines as the shared core counts them.
     nonisolated static func countLines(in text: String) -> Int {
-        guard !text.isEmpty else { return 1 }
-        return text.utf8.reduce(into: 1) { count, byte in
-            if byte == 0x0A { count += 1 }
-        }
+        Int(SharedRules.shared.fileLineCount(text: text))
     }
 }

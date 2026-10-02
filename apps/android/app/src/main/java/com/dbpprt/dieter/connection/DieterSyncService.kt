@@ -24,7 +24,6 @@ import com.dbpprt.dieter.R
 import com.dbpprt.dieter.core.CoreRuntime
 import com.dbpprt.dieter.core.admin.BackgroundMode
 import com.dbpprt.dieter.core.admin.BackgroundPolicy
-import com.dbpprt.dieter.core.board.Runtimes
 import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.core.notifications.BackgroundStatus
 import com.dbpprt.dieter.core.notifications.NotificationSettings
@@ -41,9 +40,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Keeps the shared core connected while the app is in the background. The
@@ -114,10 +111,6 @@ class DieterSyncService : Service() {
         when (intent?.action) {
             ACTION_DISCONNECT -> {
                 scope.launch { core.setConnected(false) }
-                stopBackground()
-                return START_NOT_STICKY
-            }
-            ACTION_STOP_BACKGROUND -> {
                 stopBackground()
                 return START_NOT_STICKY
             }
@@ -243,7 +236,7 @@ class DieterSyncService : Service() {
         .setContentIntent(AndroidNotifications.openIntent(this))
         .build()
 
-    /** Expanded shade body: board and review pills. */
+    /** Expanded shade body: board, review, and subagent pills. */
     private fun expandedView(status: BackgroundStatus): RemoteViews {
         val tokens = palette.tokens
         val view = RemoteViews(packageName, R.layout.notification_connection_expanded)
@@ -260,6 +253,10 @@ class DieterSyncService : Service() {
         status.reviewsLabel?.let { reviews ->
             view.setTextViewText(R.id.notification_chip_reviews, reviews)
             view.setViewVisibility(R.id.notification_chip_reviews, View.VISIBLE)
+        }
+        status.subagentsLabel?.let { subagents ->
+            view.setTextViewText(R.id.notification_chip_subagents, subagents)
+            view.setViewVisibility(R.id.notification_chip_subagents, View.VISIBLE)
         }
         return view
     }
@@ -299,11 +296,9 @@ class DieterSyncService : Service() {
 
     companion object {
         const val ACTION_DISCONNECT = "com.dbpprt.dieter.action.DISCONNECT"
-        const val ACTION_STOP_BACKGROUND = "com.dbpprt.dieter.action.STOP_BACKGROUND"
         const val ACTION_CHAT_NOTIFICATION_DISMISSED = "com.dbpprt.dieter.action.CHAT_NOTIFICATION_DISMISSED"
         const val ACTION_MARK_CARD_DONE = "com.dbpprt.dieter.action.MARK_CARD_DONE"
         const val EXTRA_CARD_ID = "card_id"
-        const val EXTRA_PROJECT_ID = "project_id"
         const val EXTRA_NOTIFICATION_TAG = "notification_tag"
         const val EXTRA_SHOW_CONNECTION = "show_connection"
         const val EXTRA_SESSION = "session"

@@ -6,7 +6,6 @@ import android.appwidget.AppWidgetHostView
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
-import android.graphics.Bitmap
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -27,6 +26,7 @@ import com.dbpprt.dieter.R
 import com.dbpprt.dieter.core.admin.BackgroundMode
 import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.e2e.IsolatedCore
+import com.dbpprt.dieter.e2e.Evidence
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -35,7 +35,6 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
-import java.io.File
 
 /** Exercises real quota streams, AppWidgetService, RemoteViews and refresh PendingIntents. */
 class WidgetUsageEndToEndTest {
@@ -59,7 +58,7 @@ class WidgetUsageEndToEndTest {
         val ids = mutableListOf<Int>()
         shell("appwidget grantbind --package ${context.packageName} --user $userId")
         try {
-            assertTrue("Fresh install starts without widget cache", WidgetUsagePrefs.cachedSnapshots(context).first.isEmpty())
+            assertTrue("Fresh install starts without widget cache", WidgetUsagePrefs.cachedGroups(context).isEmpty())
             IsolatedCore.connect(container)
             runBlocking { withTimeout(30_000) {
                 core.quotas.view.first { view -> view.live && view.groups.any { group ->
@@ -69,7 +68,9 @@ class WidgetUsageEndToEndTest {
             // No refresh tap and no demo cache seeding: the normal live stream
             // must populate widget storage even before a widget is added.
             compose.waitUntil(10_000) {
-                WidgetUsagePrefs.cachedSnapshots(context).first.any { it.title == "widget@example.test" && it.windows.any { window -> window.remainingPercent == 72 } }
+                WidgetUsagePrefs.cachedGroups(context).any { group ->
+                    group.accounts.any { account -> account.display_email == "widget@example.test" && account.windows.any { it.remaining_percent == 72 } }
+                }
             }
             instrumentation.runOnMainSync {
                 host = AppWidgetHost(context, 261012)
@@ -100,9 +101,9 @@ class WidgetUsageEndToEndTest {
             }
             runBlocking { withTimeout(12_000) { core.connection.state.first { it.phase == ConnectionPhase.DISCONNECTED } } }
             awaitText("72%") // Pausing the live stream retains the last numbers.
-            val lastFetch = WidgetUsagePrefs.cachedSnapshots(context).second
+            val lastFetch = WidgetUsagePrefs.fetchedAt(context)
             onView(withId(R.id.widget_usage_refresh)).perform(click())
-            compose.waitUntil(15_000) { WidgetUsagePrefs.cachedSnapshots(context).second > lastFetch }
+            compose.waitUntil(15_000) { WidgetUsagePrefs.fetchedAt(context) > lastFetch }
             awaitText("72%")
             runBlocking { withTimeout(12_000) { core.connection.state.first { it.phase == ConnectionPhase.DISCONNECTED } } }
             compose.waitUntil(12_000) { "Refreshing…" !in widgetTexts() }
@@ -140,9 +141,9 @@ class WidgetUsageEndToEndTest {
             // An unavailable connection must not replace useful cached data
             // with the quota store's empty initial state or report success.
             IsolatedCore.disconnect(container)
-            val cached = WidgetUsagePrefs.cachedSnapshots(context)
+            val cached = WidgetUsagePrefs.cachedGroups(context) to WidgetUsagePrefs.fetchedAt(context)
             assertFalse(runBlocking { DieterUsageWidgetProvider.fetch(context, requestRefresh = true) })
-            assertEquals(cached, WidgetUsagePrefs.cachedSnapshots(context))
+            assertEquals(cached, WidgetUsagePrefs.cachedGroups(context) to WidgetUsagePrefs.fetchedAt(context))
 
             WidgetUsagePrefs.saveCache(context, emptyList(), 0)
             DieterUsageWidgetProvider.updateAll(context)
@@ -214,10 +215,8 @@ class WidgetUsageEndToEndTest {
         }
         check(drawn.await(3, java.util.concurrent.TimeUnit.SECONDS)) { "Widget frame was not drawn" }
         instrumentation.uiAutomation.waitForIdle(300, 3_000)
-        val bitmap = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
-        try { File(context.getExternalFilesDir(null), "$name.png").outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) } }
-        finally { bitmap.recycle() }
-        File(context.getExternalFilesDir(null), "$name.txt").writeText(widgetTexts().joinToString("\n"))
+        Evidence.display("$name.png")
+        Evidence.text("$name.txt", widgetTexts().joinToString("\n"))
     }
     private fun shell(command: String): String =
         instrumentation.uiAutomation.executeShellCommand(command).use { descriptor ->

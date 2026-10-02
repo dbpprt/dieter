@@ -184,48 +184,6 @@ package enum MachinePresenceText {
         return age >= 0 && age < offlineAfter
     }
 
-    package static func expirationDate(_ value: String) -> Date? {
-        parse(value)?.addingTimeInterval(offlineAfter)
-    }
-
-    package static func applyingExpirations(
-        to endpoints: [DieterEndpoint],
-        relativeTo now: Date = Date()
-    ) -> [DieterEndpoint] {
-        endpoints.map { machine in
-            guard machine.daemonID != nil,
-                machine.online,
-                !machine.lastSeenAt.isEmpty,
-                !isFresh(machine.lastSeenAt, relativeTo: now)
-            else { return machine }
-            var expired = machine
-            expired.online = false
-            return expired
-        }
-    }
-
-    package static func nextExpiration(
-        in endpoints: [DieterEndpoint],
-        relativeTo now: Date = Date()
-    ) -> Date? {
-        endpoints.lazy
-            .filter { $0.daemonID != nil && $0.online }
-            .compactMap { expirationDate($0.lastSeenAt) }
-            .filter { $0 > now }
-            .min()
-    }
-
-    package static func freshestAge(_ values: [String], relativeTo now: Date = Date()) -> String? {
-        guard let date = values.compactMap(parse).max() else { return nil }
-        let seconds = max(0, Int(now.timeIntervalSince(date)))
-        switch seconds {
-        case ..<60: return "\(seconds)s ago"
-        case ..<3_600: return "\(seconds / 60)m ago"
-        case ..<86_400: return "\(seconds / 3_600)h ago"
-        default: return "\(seconds / 86_400)d ago"
-        }
-    }
-
     package static func lastSeen(_ value: String, relativeTo now: Date = Date()) -> String {
         guard let date = parse(value) else { return "Last seen unknown" }
         let seconds = max(0, Int(now.timeIntervalSince(date)))

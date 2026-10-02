@@ -1,4 +1,5 @@
 import AppKit
+import DieterShared
 import Darwin
 import Observation
 import SwiftUI
@@ -158,17 +159,9 @@ final class ConversationBrowserModel: NSObject, WKNavigationDelegate, WKUIDelega
         return scheme == "https" || scheme == "http"
     }
 
+    /// Whether `url` reaches this machine, as the shared core's browser rule sees it.
     nonisolated static func isLoopback(_ url: URL) -> Bool {
-        let host = (url.host ?? "").lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]."))
-        if host == "localhost" || host.hasSuffix(".localhost") || host == "0.0.0.0" || host == "::" { return true }
-        var ipv4 = in_addr()
-        if inet_aton(host, &ipv4) == 1 { return UInt32(bigEndian: ipv4.s_addr) >> 24 == 127 }
-        var ipv6 = in6_addr()
-        guard inet_pton(AF_INET6, host, &ipv6) == 1 else { return false }
-        return withUnsafeBytes(of: ipv6) { bytes in
-            bytes.dropLast().allSatisfy { $0 == 0 } && bytes.last == 1
-                || bytes.prefix(10).allSatisfy { $0 == 0 } && bytes[10] == 255 && bytes[11] == 255 && bytes[12] == 127
-        }
+        SharedRules.shared.isLoopbackBrowserHost(host: url.host ?? "")
     }
 
     func accepts(_ url: URL) -> Bool { Self.permits(url) && (allowsLoopback || !Self.isLoopback(url)) }

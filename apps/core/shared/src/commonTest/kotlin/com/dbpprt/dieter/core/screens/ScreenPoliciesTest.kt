@@ -1,10 +1,12 @@
 package com.dbpprt.dieter.core.screens
 
+import com.dbpprt.dieter.api.gateway.v1.RTCConfiguration
 import com.dbpprt.dieter.api.v1.RemoteDesktopCapabilities
 import com.dbpprt.dieter.api.v1.RemoteDesktopClipboardItem
 import com.dbpprt.dieter.api.v1.RemoteDesktopCodecMode
 import com.dbpprt.dieter.api.v1.RemoteDesktopCodecPreference
 import com.dbpprt.dieter.api.v1.RemoteDesktopCursor
+import com.dbpprt.dieter.api.v1.RemoteDesktopDisplayMode
 import com.dbpprt.dieter.api.v1.RemoteDesktopPointerButton
 import com.dbpprt.dieter.api.v1.RemoteDesktopReference
 import com.dbpprt.dieter.api.v1.RemoteDesktopSessionBinding
@@ -107,6 +109,81 @@ class ScreenPoliciesTest {
     }
 
     @Test
+    fun phasesReadAsStatusLinesWithProgressEllipses() {
+        assertEquals("Not connected", ScreenPhase.Idle.label)
+        assertEquals("Checking machine…", ScreenPhase.Loading.label)
+        assertEquals("Permission required", ScreenPhase.PermissionRequired("Grant Screen Recording").label)
+        assertEquals("Screen sharing unavailable", ScreenPhase.Unsupported("No display").label)
+        assertEquals("Connecting…", ScreenPhase.Connecting.label)
+        assertEquals("Waiting for approval on Linux host…", ScreenPhase.WaitingForHostApproval.label)
+        assertEquals("Live", ScreenPhase.Streaming.label)
+        assertEquals("Reconnecting…", ScreenPhase.Reconnecting().label)
+        assertEquals("Connection failed", ScreenPhase.Failed("identity changed").label)
+    }
+
+    @Test
+    fun theViewDecidesFrameRatesControlClipboardAndLatency() {
+        val mac = RemoteDesktopCapabilities(platform = "darwin", max_fps = 120)
+        // Without capabilities the host maximum is unknown, which means 60.
+        assertEquals(listOf(30, 60), ScreenView().frameRates)
+        assertEquals(listOf(30), ScreenView(capabilities = mac.copy(max_fps = 30)).frameRates)
+        assertEquals(listOf(30, 60, 90, 120), ScreenView(capabilities = mac).frameRates)
+
+        // Control is explained only while streaming without it.
+        val streaming = ScreenView(phase = ScreenPhase.Streaming, capabilities = mac, controlActive = true, canTransferControl = true)
+        assertEquals("", streaming.controlUnavailableReason)
+        assertEquals("Accessibility permission is required on the host", streaming.copy(controlActive = false, canTransferControl = false).controlUnavailableReason)
+        assertTrue(streaming.copy(capabilities = RemoteDesktopCapabilities(platform = "linux"), canTransferControl = false).controlUnavailableReason.contains("Linux desktop portal"))
+        assertEquals("", ScreenView(phase = ScreenPhase.Connecting, capabilities = mac).controlUnavailableReason)
+
+        assertTrue(streaming.copy(clipboardEnabled = true).clipboardActionsEnabled)
+        assertFalse(streaming.copy(clipboardEnabled = true, clipboardBusy = true).clipboardActionsEnabled)
+        assertFalse(streaming.copy(clipboardEnabled = false).clipboardActionsEnabled)
+        assertFalse(streaming.copy(clipboardEnabled = true, controlActive = false).clipboardActionsEnabled)
+
+        assertEquals("12 ms RTT", streaming.copy(state = RemoteDesktopSessionState(rtt_ms = 12.4)).latencyLabel)
+        assertEquals("<1 ms RTT", streaming.copy(state = RemoteDesktopSessionState(rtt_ms = 0.4)).latencyLabel)
+        assertEquals("— ms RTT", streaming.copy(state = RemoteDesktopSessionState(rtt_ms = 0.0)).latencyLabel)
+        assertEquals("— ms RTT", streaming.copy(state = RemoteDesktopSessionState(rtt_ms = Double.NaN)).latencyLabel)
+        assertEquals("— ms RTT", ScreenView(phase = ScreenPhase.Reconnecting(), state = RemoteDesktopSessionState(rtt_ms = 12.0)).latencyLabel)
+    }
+
+    @Test
+    fun theViewWordsItsStatusMetadataAndConnectionDetails() {
+        val session = RemoteDesktopSessionState(width = 1920, height = 1080, codec = "H264", connected_clients = 1, controller_name = "Pixel")
+        val streaming = ScreenView(phase = ScreenPhase.Streaming, state = session, controlActive = true, routeLabel = "WebRTC · Direct")
+        assertEquals("Connected · Control", streaming.statusLine)
+        assertEquals("Connected · View only", streaming.copy(controlActive = false).statusLine)
+        assertEquals("Checking machine…", ScreenView(phase = ScreenPhase.Loading).statusLine)
+        assertEquals("Release Control", streaming.controlAction)
+        assertEquals("Take Control", streaming.copy(controlActive = false).controlAction)
+
+        assertEquals("1920 × 1080 · H264 · 60 fps · Direct media", streaming.metadata(59.6, "Direct media"))
+        assertEquals("60 fps", streaming.copy(state = null).metadata(59.6, ""))
+        assertEquals("1920 × 1080 · H264 · 0 fps", streaming.metadata(Double.NaN, ""))
+        assertEquals("Your view stays in place while connecting", ScreenView(phase = ScreenPhase.Connecting).metadata(60.0, "Direct media"))
+
+        // The session's own problem wins, then the host's, then the phase; core labels already end in "…".
+        assertEquals("Capture denied", ScreenView(phase = ScreenPhase.Failed("Capture denied")).waitingMessage(hostReady = false, hostReason = "No login session"))
+        assertEquals("No login session", ScreenView().waitingMessage(hostReady = false, hostReason = "No login session"))
+        assertEquals("Screen sharing is unavailable on this machine.", ScreenView().waitingMessage(hostReady = false, hostReason = ""))
+        assertEquals("Connecting…", ScreenView(phase = ScreenPhase.Connecting).waitingMessage(hostReady = true, hostReason = "ignored"))
+
+        assertEquals(
+            ScreenDetails(
+                status = "Status · Live", video = "Video · Direct media", signaling = "Signaling · WebRTC · Direct", machine = "Machine · d1",
+                session = listOf("Display · 1920 × 1080 · H264", "60 fps · 1 viewer", "Controller · Pixel"),
+            ),
+            streaming.details("d1", 60.2, "Direct media"),
+        )
+        val waiting = ScreenView(phase = ScreenPhase.Connecting).details("d1", 0.0, "")
+        assertEquals("Video · Negotiating", waiting.video)
+        assertEquals("Signaling · Negotiating", waiting.signaling)
+        assertEquals(emptyList(), waiting.session)
+        assertEquals(listOf("Display · 1920 × 1080 · H264", "60 fps · 2 viewers"), streaming.copy(state = session.copy(connected_clients = 2, controller_name = "")).details("d1", 60.0, "").session)
+    }
+
+    @Test
     fun codecsPreferHardwareHevcAndFallBackToH264() {
         val codecs = listOf(RtpCodec("H264", "42e01f"), RtpCodec("VP8"), RtpCodec("H265"), RtpCodec("H264", "640c1f"), RtpCodec("flexfec-03"))
         val caps = RemoteDesktopCapabilities(codec_modes = listOf(RemoteDesktopCodecMode(codec = "H265", profile = "main", max_width = 1920, max_height = 1080, max_fps = 60)))
@@ -160,7 +237,7 @@ class ScreenPoliciesTest {
     fun startRequestCarriesPreferencesAndProtocol() {
         val caps = RemoteDesktopCapabilities(platform = "darwin", control_supported = true, control_permission = "granted", clipboard_supported = true, max_fps = 60)
         val request = ScreenRequests.start(
-            "n", com.dbpprt.dieter.api.gateway.v1.RTCConfiguration(), "v=0", caps, ScreenPreferences(maxFps = 120, displayId = "external"),
+            "n", RTCConfiguration(), "v=0", caps, ScreenPreferences(maxFps = 120, displayId = "external"),
             RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_H264, "x".repeat(100), referenceRecovery = true,
         )
         assertEquals("offer", request.offer?.type)
@@ -313,49 +390,6 @@ class ScreenPoliciesTest {
     }
 
     @Test
-    fun trackpadTapsDragsAndScrolls() {
-        val events = mutableListOf<String>()
-        val trackpad = TouchTrackpad(slop = 8.0, doubleTapSlop = 20.0, actions = object : TrackpadActions {
-            override fun move(delta: Point) { events += "move ${delta.x.toInt()},${delta.y.toInt()}" }
-            override fun button(down: Boolean, clicks: Int) { events += "button ${if (down) "down" else "up"} $clicks" }
-            override fun clicked() { events += "clicked" }
-            override fun scroll(delta: Point, phase: Int) { events += "scroll ${delta.y.toInt()} $phase" }
-            override fun transform(factor: Double, oldCenter: Point, newCenter: Point) { events += "zoom $factor" }
-        })
-        trackpad.begin(1, Point(100.0, 100.0), canControl = true)
-        trackpad.end(1, Point(101.0, 100.0), t0)
-        trackpad.begin(1, Point(105.0, 100.0), canControl = true)
-        trackpad.end(1, Point(105.0, 100.0), t0 + 200.milliseconds)
-        assertEquals(listOf("button down 1", "button up 1", "clicked", "button down 2", "button up 2", "clicked"), events)
-        events.clear()
-
-        trackpad.begin(1, Point(0.0, 0.0), canControl = true)
-        trackpad.move(mapOf(1 to Point(4.0, 0.0)))
-        trackpad.move(mapOf(1 to Point(20.0, 0.0)))
-        trackpad.move(mapOf(1 to Point(25.0, 5.0)))
-        trackpad.end(1, Point(25.0, 5.0), t0 + 1.seconds)
-        assertEquals(listOf("move 20,0", "move 5,5"), events)
-        events.clear()
-
-        trackpad.begin(1, Point(0.0, 0.0), canControl = true)
-        assertTrue(trackpad.canLongPress)
-        assertTrue(trackpad.longPress())
-        assertFalse(trackpad.longPress(), "a drag starts once")
-        trackpad.end(1, Point(0.0, 0.0), t0 + 2.seconds)
-        assertEquals(listOf("button down 1", "button up 1"), events)
-        events.clear()
-        trackpad.begin(1, Point(0.0, 0.0), canControl = false)
-        assertFalse(trackpad.longPress(), "no drag without control")
-        trackpad.cancel()
-
-        trackpad.begin(1, Point(0.0, 0.0), canControl = true)
-        trackpad.fingers(mapOf(1 to Point(0.0, 0.0), 2 to Point(10.0, 0.0), 3 to Point(20.0, 0.0)))
-        trackpad.move(mapOf(1 to Point(0.0, 30.0), 2 to Point(10.0, 30.0), 3 to Point(20.0, 30.0)))
-        trackpad.cancel()
-        assertEquals(listOf("scroll 0 1", "scroll 30 2", "scroll 0 4"), events)
-    }
-
-    @Test
     fun canvasZoomsAroundTheGestureAndKeepsTheCursorVisible() {
         val canvas = ScreenCanvas()
         canvas.resize(1000.0, 500.0, 1920.0, 1080.0)
@@ -384,8 +418,8 @@ class ScreenPoliciesTest {
     @Test
     fun displayMatchingPrefersTheClosestMode() {
         val modes = listOf(
-            com.dbpprt.dieter.api.v1.RemoteDesktopDisplayMode(logical_width = 1920, logical_height = 1080, pixel_width = 3840, pixel_height = 2160, refresh_rate = 60.0),
-            com.dbpprt.dieter.api.v1.RemoteDesktopDisplayMode(logical_width = 1512, logical_height = 982, pixel_width = 3024, pixel_height = 1964, refresh_rate = 120.0),
+            RemoteDesktopDisplayMode(logical_width = 1920, logical_height = 1080, pixel_width = 3840, pixel_height = 2160, refresh_rate = 60.0),
+            RemoteDesktopDisplayMode(logical_width = 1512, logical_height = 982, pixel_width = 3024, pixel_height = 1964, refresh_rate = 120.0),
         )
         val target = DisplayMatching.Target(1512.0, 982.0, 2.0, 120.0)
         assertEquals(1512, DisplayMatching.best(modes, target)?.logical_width)

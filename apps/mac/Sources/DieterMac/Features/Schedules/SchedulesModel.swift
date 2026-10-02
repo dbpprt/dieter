@@ -10,6 +10,8 @@ struct ScheduleEditorContext {
     let boards: [Dieter_V1_Board]
     let selectedBoardID: String
     let harnessCatalog: Dieter_V1_HarnessCatalog
+    /// The machine of each of the project's checkouts, by checkout ID.
+    var checkoutMachines: [String: String] = [:]
 }
 
 /// The shown project's schedules, kept by the shared core: lists come from
@@ -35,9 +37,17 @@ final class SchedulesModel {
     /// Next occurrences (RFC 3339) of the editor's timing, and why there are none.
     private(set) var schedulePreview: [String] = []
     private(set) var schedulePreviewError: String?
+    private(set) var schedulePreviewLoading = false
+    /// What the list area shows, its header line, and each schedule's and
+    /// run's wording, as the core presents them.
+    private(set) var state = ClientSchedulesSlice.State.loading
+    private(set) var subtitle = ""
+    private(set) var rows: [String: ClientScheduleRow] = [:]
+    private(set) var runRows: [ClientScheduleRunRow] = []
     /// The agents of a machine, by daemon, once the core has read them.
     @ObservationIgnored var catalog: (String) async -> Dieter_V1_HarnessCatalog? = { _ in nil }
     @ObservationIgnored private var core: CoreClient?
+    @ObservationIgnored private let scope = "schedules-\(UUID().uuidString)"
     @ObservationIgnored private var subscription: SliceSubscription?
     /// The project the core was last told to show; slices for another are stale.
     @ObservationIgnored private var bound = ""
@@ -53,7 +63,7 @@ final class SchedulesModel {
     func bind(target: WorkspaceTarget, core: CoreClient?) {
         if subscription == nil, let core {
             self.core = core
-            subscription = SliceSubscription(client: core, slice: .schedules, scope: "") { [weak self] update in
+            subscription = SliceSubscription(client: core, slice: .schedules, scope: scope) { [weak self] update in
                 guard let self, case .schedules(let slice) = update.value else { return }
                 self.fold(slice)
             }
@@ -65,6 +75,7 @@ final class SchedulesModel {
         schedules = []; scheduleRuns = []; selectedScheduleID = nil
         schedulesTotalCount = 0; schedulesNextPageToken = ""; scheduleRunsNextPageToken = ""
         schedulesLoadedProjectID = ""; schedulesError = nil; errorMessage = nil
+        state = .loading; subtitle = ""; rows = [:]; runRows = []
         let project = bound
         send { $0.bind = .with { $0.projectID = project } }
     }
@@ -91,6 +102,12 @@ final class SchedulesModel {
         if schedulePreview != slice.preview { schedulePreview = slice.preview }
         let previewError = slice.previewError.isEmpty ? nil : slice.previewError
         if schedulePreviewError != previewError { schedulePreviewError = previewError }
+        if schedulePreviewLoading != slice.previewLoading { schedulePreviewLoading = slice.previewLoading }
+        if state != slice.state { state = slice.state }
+        if subtitle != slice.subtitle { subtitle = slice.subtitle }
+        let rows = Dictionary(slice.rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        if self.rows != rows { self.rows = rows }
+        if runRows != slice.runRows { runRows = slice.runRows }
     }
 
     /// Sends a command without waiting for it, after those sent before.
@@ -112,6 +129,7 @@ final class SchedulesModel {
         guard let core else { return nil }
         if afterQueued, let queued { await queued.value }
         var command = ClientSchedulesCommand()
+        command.scope = scope
         build(&command)
         let sent = command, project = bound
         do {
@@ -128,21 +146,14 @@ final class SchedulesModel {
 
     func loadSchedules() async {
         guard !target.projectID.isEmpty else { return }
-        await run { $0.load = ClientScheduleStep() }
+        await run { $0.load = ClientStep() }
     }
 
     func loadMoreSchedules() async {
         guard schedulesAreLoaded, !schedulesLoading, !schedulesLoadingMore, !schedulesNextPageToken.isEmpty else {
             return
         }
-        await run { $0.loadMore = ClientScheduleStep() }
-    }
-
-    /// The owner's full definition for the editor; replicas only list a summary.
-    func editorSchedule(_ schedule: Dieter_V1_Schedule) async -> Dieter_V1_Schedule? {
-        let result = await run { command in command.details = .with { $0.scheduleID = schedule.id } }
-        guard case .schedule(let full)? = result?.result else { return nil }
-        return full
+        await run { $0.loadMore = ClientStep() }
     }
 
     func selectSchedule(_ id: String) async {
@@ -163,20 +174,37 @@ final class SchedulesModel {
         guard selectedScheduleID != nil, !scheduleRunsLoading, !scheduleRunsLoadingMore,
             !scheduleRunsNextPageToken.isEmpty
         else { return }
-        await run { $0.loadMoreRuns = ClientScheduleStep() }
+        await run { $0.loadMoreRuns = ClientStep() }
     }
 
-    /// The editor for `schedule` (or a new one) on its checkout's machine,
-    /// with that machine's agents.
-    func editorContext(schedule: Dieter_V1_Schedule?, base: ScheduleEditorContext) async -> ScheduleEditorContext? {
-        let checkoutID = schedule?.checkoutID ?? base.target.checkoutID
-        let owner = schedule?.ownerDaemonID ?? ""
+    /// The draft the editor opens on, as the core prepares it: an existing
+    /// schedule's full definition from its owner, or a new schedule's
+    /// defaults in this device's time zone.
+    func editorDraft(scheduleID: String?, context: ScheduleEditorContext) async -> Dieter_V1_ScheduleDraft? {
+        let result = await run { command in
+            command.draft = .with {
+                $0.scheduleID = scheduleID ?? ""
+                $0.checkoutID = context.target.checkoutID
+                $0.selectedBoardID = context.selectedBoardID
+                $0.timezone = TimeZone.current.identifier
+            }
+        }
+        guard case .scheduleDraft(let draft)? = result?.result else { return nil }
+        return draft
+    }
+
+    /// The editor's context with the agents of the machine that runs the
+    /// draft: the owner of an existing schedule, else the draft's checkout's.
+    func editorContext(owner: String, draft: Dieter_V1_ScheduleDraft, base: ScheduleEditorContext) async
+        -> ScheduleEditorContext
+    {
+        let machine = owner.isEmpty ? base.checkoutMachines[draft.checkoutID] ?? "" : owner
         return ScheduleEditorContext(
             target: WorkspaceTarget(
-                endpointID: base.target.endpointID, projectID: base.target.projectID, checkoutID: checkoutID),
-            projectName: base.projectName, boards: base.boards,
-            selectedBoardID: schedule?.boardID ?? base.selectedBoardID,
-            harnessCatalog: (owner.isEmpty ? nil : await catalog(owner)) ?? base.harnessCatalog)
+                endpointID: base.target.endpointID, projectID: base.target.projectID, checkoutID: draft.checkoutID),
+            projectName: base.projectName, boards: base.boards, selectedBoardID: draft.boardID,
+            harnessCatalog: (machine.isEmpty ? nil : await catalog(machine)) ?? base.harnessCatalog,
+            checkoutMachines: base.checkoutMachines)
     }
 
     /// Creates on the chosen checkout's machine, or updates on the owner.
@@ -184,9 +212,7 @@ final class SchedulesModel {
     @discardableResult
     func saveSchedule(id: String?, draft: Dieter_V1_ScheduleDraft, expectedTarget: WorkspaceTarget? = nil) async -> Bool
     {
-        guard expectedTarget == nil || expectedTarget?.projectID == target.projectID,
-            draft.projectID == target.projectID
-        else { return false }
+        guard expectedTarget == nil || expectedTarget?.projectID == target.projectID else { return false }
         let project = bound
         let result = await run { command in
             command.save = .with {
@@ -235,6 +261,6 @@ final class SchedulesModel {
 
     /// Drops the editor's preview.
     func closeEditor() {
-        send { $0.closeEditor = ClientScheduleStep() }
+        send { $0.closeEditor = ClientStep() }
     }
 }

@@ -3,7 +3,6 @@ package com.dbpprt.dieter.screens
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.*
-import android.os.SystemClock
 import android.text.Editable
 import android.text.InputType
 import android.view.*
@@ -18,7 +17,6 @@ import com.dbpprt.dieter.core.screens.Modifiers
 import com.dbpprt.dieter.core.screens.MouseButtons
 import com.dbpprt.dieter.core.screens.Point
 import com.dbpprt.dieter.core.screens.ScreenCanvas
-import com.dbpprt.dieter.core.screens.ScreenKeyboard
 import com.dbpprt.dieter.core.screens.ScreenPhase
 import com.dbpprt.dieter.core.screens.ScreenView
 import com.dbpprt.dieter.core.screens.TouchTrackpad

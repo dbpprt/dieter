@@ -8,7 +8,6 @@ extension DieterStore {
             model: conversationModel, composer: composer, worktreeChanges: worktreeChanges,
             card: { [weak self] in self?.selectedCard }, catalog: { [weak self] in self?.harnessCatalog ?? .init() },
             projectID: { [weak self] in self?.selectedProjectID ?? "" },
-            reasoning: { [weak self] in self?.showReasoning ?? false },
             pendingMessage: { [weak self] in self?.isPendingMessage($0) ?? false },
             acceptedItem: { [weak self] in self?.isAcceptedOutboxItem($0) ?? false },
             failedItem: { [weak self] in self?.isFailedOutboxItem($0) ?? false },
@@ -36,7 +35,9 @@ extension DieterStore {
         context.onRemoveQueuedMessage = { [weak self] message, edit in
             await self?.removeQueuedMessage(message, edit: edit) ?? false
         }
+        context.onSteer = { [weak self] messageID in await self?.steerConversation(messageID: messageID) }
         context.onSendComposer = { [weak self] in await self?.sendComposer() }
+        context.onChooseAgent = { [weak self] choice in await self?.chooseAgent(choice) }
         context.onShow = { [weak self] error in self?.show(error) }
         context.onToolOutput = { [weak self] messageID, toolCallID, revision in
             try await self?.toolOutput(messageID: messageID, toolCallID: toolCallID, revision: revision) ?? nil
@@ -77,14 +78,13 @@ extension DieterStore {
             else { throw CancellationError() }
             return ConversationContentScope(
                 target: target, rootPath: workspace.path,
-                card: card, doneLaneID: self.doneLane(for: card), machineName: route.machineName,
+                card: card, machineName: route.machineName,
                 workspaceMode: workspace.mode,
                 projectName: self.projects.first(where: { $0.id == card.projectID })?.name ?? "Project")
         }
         context.content.onReviewSendMessage = { [weak self] text, card, target in
             await self?.sendAgentMessage(text, card: card, endpointID: target.endpointID) ?? false
         }
-        context.content.onReviewCard = { [weak self] card in self?.acceptWorkspaceCard(card) }
         context.content.onReviewOperationFinished = { [weak self] target in
             guard let self, self.endpoint.id == target.endpointID else { return }
             await self.loadProjectWorkspaces()

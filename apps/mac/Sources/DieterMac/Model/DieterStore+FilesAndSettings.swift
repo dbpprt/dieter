@@ -2,9 +2,8 @@ import AppKit
 import DieterAPI
 import DieterCore
 import Foundation
-import GRPCCore
 import Observation
-import OSLog
+import SharedCore
 import UniformTypeIdentifiers
 import UserNotifications
 
@@ -44,21 +43,12 @@ extension DieterStore {
         resetFileSurface()
         return await filesModel.loadFiles(path: path)
     }
-    func navigateFiles(to path: String) async { resetFileSurface(); await filesModel.navigateFiles(to: path) }
-    func navigateFilesBack() async { resetFileSurface(); await filesModel.navigateFilesBack() }
-    func navigateFilesForward() async { resetFileSurface(); await filesModel.navigateFilesForward() }
     func openFile(path: String) async { resetFileSurface(); await filesModel.openFile(path: path) }
     @discardableResult func saveFile(content: String) async -> Dieter_V1_FileDocument? {
         resetFileSurface(); return await filesModel.saveFile(content: content)
     }
-    func createFile(path: String, directory: Bool) async {
-        resetFileSurface(); await filesModel.createFile(path: path, directory: directory)
-    }
-    func deleteFile(path: String, recursive: Bool) async {
-        resetFileSurface(); await filesModel.deleteFile(path: path, recursive: recursive)
-    }
-    func moveFile(source: String, destination: String) async {
-        resetFileSurface(); await filesModel.moveFile(source: source, destination: destination)
+    func createFile(name: String, directory: Bool) async {
+        resetFileSurface(); await filesModel.createFile(name: name, directory: directory)
     }
 
     /// Shows the selected project's schedules; the core reaches each
@@ -83,27 +73,15 @@ extension DieterStore {
                 checkoutID: checkout(forProjectID: selectedProjectID)?.id ?? ""),
             projectName: selectedProject?.name ?? "Project",
             boards: state.boards.filter { $0.projectID == selectedProjectID },
-            selectedBoardID: selectedBoardID, harnessCatalog: harnessCatalog)
+            selectedBoardID: selectedBoardID, harnessCatalog: harnessCatalog,
+            checkoutMachines: Dictionary(
+                (selectedProject?.checkouts ?? []).map { ($0.id, $0.daemonID) }, uniquingKeysWith: { first, _ in first }
+            ))
     }
 
     func loadSchedules() async { bindSchedules(); await schedulesModel.loadSchedules() }
-    func loadMoreSchedules() async { bindSchedules(); await schedulesModel.loadMoreSchedules() }
-    func selectSchedule(_ id: String) async { bindSchedules(); await schedulesModel.selectSchedule(id) }
-    func loadScheduleRuns(for id: String, appending: Bool = false) async {
-        bindSchedules(); await schedulesModel.loadScheduleRuns(for: id, appending: appending)
-    }
-    func loadMoreScheduleRuns() async { bindSchedules(); await schedulesModel.loadMoreScheduleRuns() }
     @discardableResult func saveSchedule(id: String?, draft: Dieter_V1_ScheduleDraft) async -> Bool {
         bindSchedules(); return await schedulesModel.saveSchedule(id: id, draft: draft)
-    }
-    func toggleSchedule(_ schedule: Dieter_V1_Schedule) async {
-        bindSchedules(); await schedulesModel.toggleSchedule(schedule)
-    }
-    func runSchedule(_ schedule: Dieter_V1_Schedule) async {
-        bindSchedules(); await schedulesModel.runSchedule(schedule)
-    }
-    func deleteSchedule(_ schedule: Dieter_V1_Schedule) async {
-        bindSchedules(); await schedulesModel.deleteSchedule(schedule)
     }
 
     func loadPromptSettings() async throws -> Dieter_V1_PromptSettings? {
@@ -126,42 +104,39 @@ extension DieterStore {
     @discardableResult
     func setSelectedProjectPromptTemplate(inherit: Bool, template: String) async throws -> Bool {
         guard let project = selectedProject else { return false }
-        acceptProject(
-            try await administer {
-                $0.setProjectPrompt = .with {
-                    $0.scopeID = project.id
-                    if !inherit { $0.template = template }
-                }
-            }.project)
+        _ = try await administer {
+            $0.setProjectPrompt = .with {
+                $0.scopeID = project.id
+                if !inherit { $0.template = template }
+            }
+        }
         return true
     }
 
     @discardableResult
     func setSelectedBoardPromptTemplate(inherit: Bool, template: String) async throws -> Bool {
         guard let board = selectedBoard else { return false }
-        acceptBoard(
-            try await administer {
-                $0.setBoardPrompt = .with {
-                    $0.scopeID = board.id
-                    if !inherit { $0.template = template }
-                }
-            }.board)
+        _ = try await administer {
+            $0.setBoardPrompt = .with {
+                $0.scopeID = board.id
+                if !inherit { $0.template = template }
+            }
+        }
         return true
     }
 
     @discardableResult
     func updatePromptInstructions(for label: Dieter_V1_Label, instructions: String) async throws -> Bool {
         guard let board = selectedBoard else { return false }
-        acceptBoard(
-            try await administer {
-                $0.updateLabel = .with {
-                    $0.boardID = board.id
-                    $0.labelID = label.id
-                    $0.name = label.name
-                    $0.color = label.color
-                    $0.instructions = instructions
-                }
-            }.board)
+        _ = try await administer {
+            $0.updateLabel = .with {
+                $0.boardID = board.id
+                $0.labelID = label.id
+                $0.name = label.name
+                $0.color = label.color
+                $0.instructions = instructions
+            }
+        }
         return true
     }
 
@@ -182,7 +157,6 @@ extension DieterStore {
         get { (environment.defaults.string(forKey: "notifications.enabled") ?? "true") == "true" }
         set {
             environment.defaults.set(newValue ? "true" : "false", forKey: "notifications.enabled")
-            environment.defaults.set(newValue, forKey: "DieterNotifications")
         }
     }
 
@@ -192,18 +166,9 @@ extension DieterStore {
 
     func show(_ error: Error) {
         guard !Self.isExpectedCancellation(error) else { return }
-        if DieterRPCFailure.isTransient(error) {
-            guard phase.isConnected else { return }
-            // A single failed operation is not proof that the shared data plane
-            // is dead. Stream supervisors and the transport runner own recovery;
-            // this caller only reports its own unsuccessful operation. Ignore a
-            // stale result after that data plane has already been released.
-            connectionLogger.info(
-                "Operation failed transiently without replacing the data plane: \(DieterRPCFailure.message(for: error), privacy: .public)"
-            )
-            errorMessage = DieterRPCFailure.message(for: error)
-            return
-        }
-        errorMessage = DieterRPCFailure.message(for: error)
+        // While the machine is unreachable the window already shows that, and
+        // the core retries its own work; a transient failure adds nothing.
+        if (error as? CoreFailure)?.kind == .transient, !phase.isConnected { return }
+        errorMessage = error.localizedDescription
     }
 }

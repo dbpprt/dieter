@@ -32,9 +32,10 @@ class TaskDraftsTest {
     @Test fun attachmentOnlyTitleUsesTheFilenameWithoutAGeneratedTitle() {
         val draft = TaskDrafts.admit(CaptureDraft(id = "c"), file("screenshot.png"))
         assertEquals("screenshot.png", TaskDrafts.creationTitle(draft))
-        assertFalse(TaskDrafts.generatesTitle(draft))
-        assertTrue(TaskDrafts.generatesTitle(TaskDrafts.prompt(draft, "Fix the crash")))
-        assertFalse(TaskDrafts.generatesTitle(TaskDrafts.title(TaskDrafts.prompt(draft, "Fix the crash"), "Crash")))
+        fun generates(draft: CaptureDraft) = Creation.request(TaskDrafts.input(draft, Project(id = "p"), board)).auto_generate_title
+        assertFalse(generates(draft))
+        assertTrue(generates(TaskDrafts.prompt(draft, "Fix the crash")))
+        assertFalse(generates(TaskDrafts.title(TaskDrafts.prompt(draft, "Fix the crash"), "Crash")))
     }
 
     @Test fun aFrozenDraftIgnoresLateEditsAndKeepsItsDestination() {
@@ -75,6 +76,7 @@ class TaskDraftsTest {
         assertEquals(listOf("l1"), moved.task.label_ids)
         assertEquals("todo", moved.task.lane, "a lane the board lacks falls back to its first")
         assertEquals("running", TaskDrafts.board(TaskDrafts.lane(draft, "running"), board).task.lane)
+        assertEquals("todo", TaskDrafts.board(TaskDrafts.lane(draft, "review"), board).task.lane, "a lane a new task cannot start in falls back too")
         assertEquals(listOf("l1", "l2"), TaskDrafts.toggleLabel(moved, "l2").task.label_ids)
         assertEquals(emptyList(), TaskDrafts.toggleLabel(moved, "l1").task.label_ids)
 
@@ -122,6 +124,40 @@ class TaskDraftsTest {
         assertFalse(TaskDrafts.importing(draft, true).ready)
         assertEquals(listOf("f0.txt", "f2.txt", "f3.txt"), TaskDrafts.removeAttachment(draft, 1).task.attachments.map { it.filename })
         assertEquals("empty.txt is empty.", TaskDrafts.admit(CaptureDraft(id = "e"), MessagePart(filename = "empty.txt")).failures.single().message)
+    }
+
+    @Test fun pickedFilesArriveTogetherOrNotAtAll() {
+        val draft = TaskDrafts.admit(CaptureDraft(id = "c"), file("one.txt"))
+        val added = TaskDrafts.attach(draft, listOf(file("two.txt"), file("three.txt"))).getOrThrow()
+        assertEquals(listOf("one.txt", "two.txt", "three.txt"), added.task.attachments.map { it.filename })
+        val tooMany = TaskDrafts.attach(added, listOf(file("four.txt"), file("five.txt")))
+        assertEquals("You can attach up to 4 images or files.", tooMany.exceptionOrNull()?.message)
+        assertEquals("empty.txt is empty.", TaskDrafts.attach(draft, listOf(MessagePart(filename = "empty.txt"))).exceptionOrNull()?.message)
+        assertTrue(added.failures.isEmpty(), "a refused batch is not recorded as an import failure")
+        val frozen = added.copy(submission_id = "submission", submitted = true)
+        assertSame(frozen, TaskDrafts.attach(frozen, listOf(file("late.txt"))).getOrThrow())
+    }
+
+    @Test fun chatsLeaveTheBoardBehindAndUnfinishedImportsBlockSubmitting() {
+        val project = Project(id = "p", base_remote = "origin", checkouts = listOf(Checkout(id = "k1", daemon_id = "d1")))
+        var draft = TaskDrafts.lane(CaptureDraft(id = "c", checkout_id = "k1"), "running")
+        draft = TaskDrafts.workspaceMode(TaskDrafts.labels(draft, listOf("l1")), WorkspaceMode.WORKTREE)
+        draft = TaskDrafts.choose(TaskDrafts.prompt(draft, "Explain this"), defaults)
+        val chat = TaskDrafts.chatInput(draft, project)
+        assertTrue(chat.chat)
+        assertNull(chat.board)
+        assertEquals("", chat.lane)
+        assertEquals(emptyList(), chat.labelIds)
+        assertEquals("k1", chat.checkoutId)
+        assertEquals("k2", TaskDrafts.chatInput(draft, project, "k2").checkoutId)
+        assertEquals("origin", Creation.request(chat).workspace_base_remote, "a chat never takes the open board's remote")
+
+        assertNull(TaskDrafts.problem(draft, chat, harnesses))
+        val importing = TaskDrafts.importing(draft, true)
+        assertEquals(TaskDrafts.NOT_READY, TaskDrafts.problem(importing, chat, harnesses))
+        assertEquals(TaskDrafts.NOT_READY, TaskDrafts.problem(TaskDrafts.fail(draft, "content://1", "Unreadable"), chat, harnesses))
+        assertEquals("Loading agent models…", TaskDrafts.problem(draft, chat, null))
+        assertEquals(Creation.NO_PROJECT, Creation.problem(chat.copy(project = Project()), harnesses))
     }
 
     @Test fun sharesMergeIntoAnOpenDraftWithContent() {
@@ -188,6 +224,22 @@ class TaskDraftsTest {
         assertEquals(listOf("todo", "running"), Creation.startLanes(board).map { it.id })
         assertTrue(Creation.startsImmediately("running"))
         assertFalse(Creation.startsImmediately("todo"))
+    }
+
+    @Test fun aNewTaskStartsInTheSelectedLaneOnlyWhenItIsAStartLane() {
+        val board = Board(id = "b", lanes = listOf(Lane(id = "todo"), Lane(id = "running"), Lane(id = "review")))
+        assertEquals("running", Creation.startLane(board, "running"))
+        assertEquals("todo", Creation.startLane(board, "review"))
+        assertEquals("todo", Creation.startLane(board, null))
+        assertEquals("todo", Creation.startLane(null, "running"))
+    }
+
+    @Test fun aCaptureSkipsTheBoardChoiceOnlyWhenOneLiveBoardRemains() {
+        val main = Board(id = "main")
+        val retired = Board(id = "old", retired = true)
+        assertEquals(main, CaptureDestinations.soleBoard(listOf(main, retired)))
+        assertEquals(null, CaptureDestinations.soleBoard(listOf(main, Board(id = "other"))))
+        assertEquals(null, CaptureDestinations.soleBoard(listOf(retired)))
     }
 
     @Test fun projectLocationsUseCheckoutOwnersOnlineFirst() {

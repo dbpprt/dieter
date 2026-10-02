@@ -1,19 +1,14 @@
 import AppKit
 import DieterAPI
-import DieterClient
 import DieterCore
 import Foundation
-import OSLog
 import SharedCore
-
-let coreSessionLogger = Logger(subsystem: "com.dbpprt.dieter.mac", category: "CoreSession")
 
 /// The session's connection, workspace, outbox, metadata, and board state
 /// come from the shared core. These folds translate its slices into the
 /// values views already read; they hold no policy of their own.
 extension AppSession {
-    /// Starts the core once, imports the legacy state on the first launch,
-    /// and subscribes to the app-wide slices.
+    /// Starts the core once and subscribes to the app-wide slices.
     func startCore() async {
         if let coreStart {
             await coreStart.value
@@ -22,9 +17,7 @@ extension AppSession {
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             self.subscribeCore()
-            if let summary = await self.coreHost?.start() {
-                coreSessionLogger.notice("Imported the legacy app state: \(summary, privacy: .public)")
-            }
+            self.coreHost?.start()
             await self.composerDrafts.load()
             self.composer.adoptSavedTexts()
             if let override = self.launchSession {
@@ -70,6 +63,7 @@ extension AppSession {
                     slice.projectReplicas = delta.projectReplicas
                     slice.retiredBoards = delta.retiredBoards
                     slice.settings = delta.settings
+                    slice.boardAttention = delta.boardAttention
                     self.coreWorkspace = slice
                 default: return
                 }
@@ -87,7 +81,7 @@ extension AppSession {
             },
             SliceSubscription(client: core, slice: .activity) { [weak self] update in
                 guard let self, case .activity(let value) = update.value else { return }
-                if self.activityRows != value.rows { self.activityRows = value.rows }
+                if self.activity != value { self.activity = value }
             },
             SliceSubscription(client: core, slice: .creation) { [weak self] update in
                 guard let self, case .creation(let value) = update.value else { return }
@@ -102,6 +96,10 @@ extension AppSession {
                 guard let self, case .board(let value) = update.value else { return }
                 self.boardState = value
                 if !self.coreFoldsHeld { self.foldBoard(value) }
+            },
+            SliceSubscription(client: core, slice: .boardView, scope: Self.boardViewScope) { [weak self] update in
+                guard let self, case .boardView(let value) = update.value else { return }
+                self.foldBoardView(value)
             },
         ]
     }
@@ -118,7 +116,14 @@ extension AppSession {
     // MARK: - Session
 
     func foldSession(_ slice: ClientSessionSlice) {
+        // Only a change the core reports wins over a toggle still on its way to it.
+        let reasoningChanged = slice.showReasoning != session.showReasoning
         session = slice
+        if reasoningChanged, showReasoning != slice.showReasoning {
+            foldingShowReasoning = true
+            showReasoning = slice.showReasoning
+            foldingShowReasoning = false
+        }
         let gateway = Self.gatewayEndpoint(slice)
         let origins = slice.gateways.compactMap { entry in
             DieterEndpoint.parse(entry.origin, name: entry.name.isEmpty ? "Dieter Gateway" : entry.name)
@@ -130,22 +135,9 @@ extension AppSession {
         let next = attached ?? gateway
         if endpoint != next { endpoint = next }
 
-        var statuses: [String: MachineConnectionStatus] = [:]
-        var errors: [String: String] = [:]
-        var issues: [String: String] = [:]
-        for (entry, machine) in zip(slice.machines, machines) {
-            if let route = Self.route(entry.route) {
-                statuses[machine.id] = MachineConnectionStatus(
-                    route: route, latencyMilliseconds: Int(entry.routeLatencyMillis))
-            }
-            if !entry.incompatibility.isEmpty { errors[machine.id] = entry.incompatibility }
-            if !entry.syncWarnings.isEmpty { issues[machine.id] = entry.syncWarnings.joined(separator: "\n") }
-        }
-        if !slice.error.isEmpty, let attached, errors[attached.id] == nil,
-            [.reconnecting, .noMachine, .updateRequired].contains(slice.phase)
-        {
-            errors[attached.id] = slice.error
-        }
+        var entries: [String: ClientMachineEntry] = [:]
+        for (entry, machine) in zip(slice.machines, machines) { entries[machine.id] = entry }
+        if machineEntries != entries { machineEntries = entries }
         if slice.hasGatewayBuild {
             let build = Dieter_Gateway_V1_GatewayInformation.with {
                 $0.releaseVersion = slice.gatewayBuild.releaseVersion
@@ -154,19 +146,13 @@ extension AppSession {
             }
             if gatewayInformation[gateway.credentialID] != build { gatewayInformation[gateway.credentialID] = build }
         }
-        if machineConnectionStatuses != statuses { machineConnectionStatuses = statuses }
-        if machineConnectionErrors != errors { machineConnectionErrors = errors }
-        if machineSyncIssues != issues { machineSyncIssues = issues }
-
         let nextPhase = Self.phase(slice, attached: attached, hasLoadedWorkspace: hasLoadedWorkspace)
         if phase != nextPhase { phase = nextPhase }
-        let syncing =
-            slice.phase == .syncing
-            || (nextPhase.isConnected && (!slice.feed.live || slice.feed.projectionPending))
-        if globalSyncing != syncing { globalSyncing = syncing }
-        if slice.feed.lastAppliedAtMillis > 0 {
-            let applied = Date(timeIntervalSince1970: Double(slice.feed.lastAppliedAtMillis) / 1_000)
-            if lastSyncedAt != applied { lastSyncedAt = applied }
+        if workspaceIsLive != slice.workspaceLive { workspaceIsLive = slice.workspaceLive }
+        let notice = slice.hasNotice ? slice.notice : nil
+        if workspaceNotice != notice { workspaceNotice = notice }
+        if let applied = Date(epochMillis: slice.feed.lastAppliedAtMillis), lastSyncedAt != applied {
+            lastSyncedAt = applied
         }
         let connected = nextPhase.isConnected ? attached?.id : nil
         if connectedMachineID != connected { connectedMachineID = connected }
@@ -204,14 +190,6 @@ extension AppSession {
         }
     }
 
-    nonisolated static func route(_ label: String) -> MachineConnectionRoute? {
-        switch label {
-        case "": nil
-        case "Relay": .gateway
-        default: MachineConnectionRoute(rawValue: label)
-        }
-    }
-
     nonisolated static func phase(
         _ slice: ClientSessionSlice, attached: DieterEndpoint?, hasLoadedWorkspace: Bool
     ) -> ConnectionPhase {
@@ -240,6 +218,7 @@ extension AppSession {
         let replicas = slice.projectReplicas.mapValues { daemonID in endpointID(forDaemon: daemonID) }
         replica.acceptCore(slice, replicaEndpointIDs: replicas, archivedChats: archivedChats)
         if boardSettings != slice.settings { boardSettings = slice.settings }
+        if boardAttention != slice.boardAttention { boardAttention = slice.boardAttention }
         refreshPendingCards()
         updateSelectedState()
         refreshReplicaPresentation()
@@ -259,14 +238,7 @@ extension AppSession {
         if acceptedOutboxIDs != accepted { acceptedOutboxIDs = accepted }
         let failed = Set(slice.failedIds)
         if failedOutboxIDs != failed { failedOutboxIDs = failed }
-        var summaries: [String: MachineOutboxSummary] = [:]
-        for machine in slice.machines {
-            summaries[endpointID(forDaemon: machine.daemonID)] = MachineOutboxSummary(
-                messageCount: Int(machine.messageCount), changeCount: Int(machine.changeCount),
-                retrying: machine.retrying, failed: machine.failed > 0,
-                failureMessage: machine.lastError.isEmpty ? nil : machine.lastError)
-        }
-        if machineOutboxSummaries != summaries { machineOutboxSummaries = summaries }
+        if machineOutboxes != slice.machines { machineOutboxes = slice.machines }
         if !slice.storageError.isEmpty, errorMessage == nil {
             errorMessage = "Could not save pending changes: \(slice.storageError)"
         }
@@ -296,11 +268,6 @@ extension AppSession {
 
     func foldMetadata(_ slice: ClientMetadataSlice) {
         machineMetadata = slice.machines
-        var catalogs: [String: Dieter_V1_HarnessCatalog] = [:]
-        for (daemonID, metadata) in slice.machines where metadata.loaded {
-            catalogs[endpointID(forDaemon: daemonID)] = metadata.harnesses
-        }
-        if harnessCatalogsByEndpoint != catalogs { harnessCatalogsByEndpoint = catalogs }
         let attached = endpoint.daemonID.flatMap { slice.machines[$0] }
         let catalog = attached?.harnesses ?? Dieter_V1_HarnessCatalog()
         if harnessCatalog != catalog { harnessCatalog = catalog }
@@ -312,26 +279,61 @@ extension AppSession {
 
     func foldBoard(_ slice: ClientBoardSlice) {
         boardState = slice
-        var moves: [String: OptimisticCardMove] = [:]
-        for move in slice.moves {
-            let card = replica.navigationCards.values.lazy.compactMap { $0.first { $0.id == move.cardID } }.first
-            moves[move.cardID] = OptimisticCardMove(
-                operationID: pendingCardMoves[move.cardID]?.operationID ?? UUID(), lane: move.lane,
-                position: card?.position ?? 0, afterCardID: move.afterCardID, beforeCardID: move.beforeCardID)
-        }
-        if pendingCardMoves != moves { pendingCardMoves = moves }
-        var starts: [String: OptimisticCardStart] = [:]
-        for (cardID, operation) in slice.operations where operation == "STARTING" {
-            let card = replica.navigationCards.values.lazy.compactMap { $0.first { $0.id == cardID } }.first
-            starts[cardID] =
-                pendingCardStarts[cardID]
-                ?? OptimisticCardStart(operationID: UUID(), runningLaneID: card?.lane ?? "running")
-        }
-        if pendingCardStarts != starts { pendingCardStarts = starts }
-        let moving = Set(moves.keys).union(slice.operations.filter { $0.value == "MOVING" }.keys)
+        let moving = Set(slice.moves.map(\.cardID)).union(slice.operations.filter { $0.value == "MOVING" }.keys)
         if movingCardIDs != moving { movingCardIDs = moving }
         let labeling = Set(slice.operations.filter { $0.value == "LABELING" }.keys)
         if labelUpdatingCardIDs != labeling { labelUpdatingCardIDs = labeling }
+    }
+
+    // MARK: - Board view
+
+    /// The scope of the core's view of the selected board.
+    static let boardViewScope = "mac-board"
+
+    /// Points the core's board view at the selected board and filters.
+    func bindBoardView() {
+        let target = ClientBoardViewTarget.with {
+            $0.boardID = selectedBoardID
+            $0.machineID = machineFilter
+            $0.labelID = labelFilter
+            $0.state = stateFilter
+            $0.query = query
+        }
+        guard target != boardViewTarget else { return }
+        boardViewTarget = target
+        guard !target.boardID.isEmpty else { return }
+        let core = core
+        Task {
+            _ = try? await core.dispatch(
+                .with {
+                    $0.boardView = .with {
+                        $0.scope = Self.boardViewScope
+                        $0.bind = target
+                    }
+                })
+        }
+    }
+
+    /// The core's view of the board the Mac shows; a view of another board is stale.
+    func foldBoardView(_ slice: ClientBoardViewSlice) {
+        guard slice.target.boardID == boardViewTarget.boardID else { return }
+        boardView = slice
+        refreshBoardProjection()
+    }
+
+    /// Drops `cardID` into `laneID` above `beforeCardID` ("" for the lane's
+    /// end), as the board view shows the lane.
+    func drop(cardID: String, laneID: String, beforeCardID: String = "") async {
+        await perform {
+            $0.boardView = .with {
+                $0.scope = Self.boardViewScope
+                $0.drop = .with {
+                    $0.cardID = cardID
+                    $0.laneID = laneID
+                    $0.beforeCardID = beforeCardID
+                }
+            }
+        }
     }
 
     /// Retries a failed or waiting outbox operation now.
@@ -339,9 +341,8 @@ extension AppSession {
         await perform { $0.retryPending = .with { $0.id = id } }
     }
 
-    /// Retries everything waiting for `machine`.
-    func retryOutbox(for machine: DieterEndpoint) async {
-        guard let daemonID = machine.daemonID else { return }
+    /// Retries everything waiting for a machine's daemon.
+    func retryOutbox(daemonID: String) async {
         await perform { $0.retryPending = .with { $0.daemonID = daemonID } }
     }
 
@@ -350,13 +351,9 @@ extension AppSession {
         await perform { $0.discardPending = .with { $0.id = id } }
     }
 
-    /// Drops everything not yet delivered to `machine`; returns how many.
-    @discardableResult
-    func discardOutbox(for machine: DieterEndpoint) async -> Int {
-        guard let daemonID = machine.daemonID else { return 0 }
-        let count = machineOutboxSummaries[machine.id]?.itemCount ?? 0
-        guard await perform({ $0.discardPending = .with { $0.daemonID = daemonID } }) != nil else { return 0 }
-        return count
+    /// Drops everything not yet delivered to a machine's daemon.
+    func discardOutbox(daemonID: String) async {
+        await perform { $0.discardPending = .with { $0.daemonID = daemonID } }
     }
 
     // MARK: - Creation memory
@@ -364,34 +361,6 @@ extension AppSession {
     func foldCreation(_ slice: ClientCreationSlice) {
         if creationMemory != slice { creationMemory = slice }
         quickTaskForm.adopt(slice)
-    }
-
-    /// What the core remembers from the last card or chat created on this Mac.
-    var creationPreferences: ConversationCreationPreferences {
-        ConversationCreationPreferences(
-            provider: creationMemory.selection.provider, model: creationMemory.selection.model,
-            effort: creationMemory.selection.effort,
-            workspaceMode: ConversationWorkspaceMode(rawValue: creationMemory.workspaceMode) ?? .worktree)
-    }
-
-    func rememberCreation(_ preferences: ConversationCreationPreferences) {
-        Task {
-            await perform {
-                $0.rememberCreation = .with {
-                    $0.selection = .with {
-                        $0.provider = preferences.provider
-                        $0.model = preferences.model
-                        $0.effort = preferences.effort
-                    }
-                    $0.workspaceMode = preferences.workspaceMode.rawValue
-                }
-            }
-        }
-    }
-
-    /// Why a machine's agents and settings could not be read, if they could not.
-    func metadataError(_ daemonID: String) -> String? {
-        machineMetadata[daemonID].flatMap { $0.error.isEmpty ? nil : $0.error }
     }
 
     /// Values derived from the session that views read directly.
@@ -440,7 +409,6 @@ extension WorkspaceReplica {
         for project in slice.projects { directory[project.id] = project }
         var boards: [String: [Dieter_V1_Board]] = [:]
         for board in slice.boards { boards[board.projectID, default: []].append(board) }
-        for id in directory.keys { directory[id]?.boardCount = Int32(boards[id]?.count ?? 0) }
         var cards: [String: [Dieter_V1_Card]] = [:]
         var chats: [Dieter_V1_Card] = []
         for card in slice.cards {

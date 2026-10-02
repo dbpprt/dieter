@@ -4,7 +4,6 @@ package com.dbpprt.dieter.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -40,14 +39,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaAvailability
 import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaProvider
 import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaSnapshot
 import com.dbpprt.dieter.core.activity.Activity
 import com.dbpprt.dieter.core.activity.ActivityItem
-import com.dbpprt.dieter.core.activity.ActivityKind
 import com.dbpprt.dieter.core.activity.ActivitySection
 import com.dbpprt.dieter.core.navigation.Destination
+import com.dbpprt.dieter.core.presentation.Counts
 import com.dbpprt.dieter.core.quotas.QuotaLevel
 import com.dbpprt.dieter.core.quotas.Quotas
 import com.dbpprt.dieter.ui.theme.*
@@ -175,9 +173,7 @@ internal fun ActivityFeed(
     val selectedProject = projectId.takeIf { it in projectNames }.orEmpty()
     val filtered = remember(entries, selectedProject, query) { Activity.filter(entries, selectedProject, query) }
     val sections = remember(filtered) { Activity.sections(filtered) }
-    val attention = sections.getValue(ActivitySection.ATTENTION)
     val running = sections.getValue(ActivitySection.RUNNING)
-    val recent = sections.getValue(ActivitySection.RECENT)
     val intervals = remember(filtered, timelineNow, hours) { Activity.timeline(filtered, timelineNow.toKotlinInstant(), hours) }
     val accounts = state.providerQuotaGroups.flatMap { group -> group.accounts.map { group.provider to it } }
     Box(modifier, contentAlignment = Alignment.TopCenter) {
@@ -191,7 +187,7 @@ internal fun ActivityFeed(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(if (tablet) "Inbox" else "Activity", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.SemiBold)
-                        Text("${state.projects.size} projects · ${attention.size} need attention · ${running.size} running",
+                        Text(Activity.overview(state.projects.size, filtered),
                             style = MaterialTheme.typography.bodySmall, color = DieterMuted)
                     }
                     IconButton(onClick = { searchOpen = !searchOpen; if (!searchOpen) query = "" }) {
@@ -301,7 +297,7 @@ private fun ActivityProjectTile(id: String, name: String, isSelected: Boolean, c
                 color = if (id.isBlank()) DieterShellTint else stableAccent(id),
                 border = if (isSelected) BorderStroke(2.dp, DieterShell) else null,
                 modifier = Modifier.size(58.dp).testTag("activity-project-${id.ifBlank { "all" }}")
-                    .semantics { selected = isSelected; contentDescription = "$name${count?.let { ", $it need attention" }.orEmpty()}" }) {
+                    .semantics { selected = isSelected; contentDescription = "$name${count?.let { ", $it ${Counts.word(it, "needs", "need")} attention" }.orEmpty()}" }) {
                 Box(contentAlignment = Alignment.Center) {
                     if (id.isBlank()) Icon(Icons.Outlined.Timeline, null, tint = DieterText)
                     else Text(name.take(1).lowercase(), color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
@@ -348,7 +344,7 @@ private fun ActivityTimelinePanel(
                 // conversation by name to touch, keyboard and accessibility users.
                 Surface(onClick = onExpand, color = Color.Transparent,
                     modifier = Modifier.fillMaxWidth().testTag("activity-timeline-expand")
-                        .semantics { contentDescription = if (expanded) "Collapse timeline details" else "Show timeline details, ${intervals.size} conversations" }) {
+                        .semantics { contentDescription = if (expanded) "Collapse timeline details" else "Show timeline details, ${Counts.of(intervals.size, "conversation")}" }) {
                     Canvas(Modifier.fillMaxWidth().height((preview.size * 15 + 12).coerceAtLeast(48).dp)) {
                         val width = (size.width - 6.dp.toPx()).coerceAtLeast(0f)
                         val rowHeight = size.height / preview.size
@@ -378,9 +374,9 @@ private fun ActivityTimelinePanel(
                     ActivityItem(card = interval.item.card, onOpen = onOpen, actions = actions(interval.item.card), color = Color.Transparent,
                         modifier = Modifier.fillMaxWidth().testTag("activity-bar-${interval.item.card.id}")) {
                         Column(Modifier.padding(vertical = 12.dp)) {
-                            Text(interval.item.card.title, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            Text(interval.item.title, maxLines = 2, overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.labelLarge)
-                            Text("${if (interval.item.card.scope == "chat") "Chat" else "Card"} · ${interval.item.detail}",
+                            Text("${interval.item.noun} · ${interval.item.detail}",
                                 color = DieterMuted, style = MaterialTheme.typography.bodySmall)
                         }
                     }
@@ -431,7 +427,7 @@ private fun ActivityAccountRow(provider: ProviderQuotaProvider, account: Provide
                     trackColor = DieterOutline, modifier = Modifier.fillMaxWidth().height(5.dp))
                 if (window.resets_at.isNotBlank()) Text(Quotas.resetText(window.resets_at, now.toKotlinInstant(), fine = false), color = DieterMuted, style = MaterialTheme.typography.labelSmall)
             }
-            if (account.windows.size == 0) Text("Usage windows unavailable", color = DieterMuted, style = MaterialTheme.typography.bodySmall)
+            if (account.windows.isEmpty()) Text(Quotas.status(account), color = DieterMuted, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

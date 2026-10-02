@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -7,7 +8,7 @@ struct LabelsSheet: View {
     @Environment(DieterStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
-    @State private var color = "#7c5cff"
+    @State private var color = SharedRules.shared.randomLabelColor(exclude: "")
     @State private var instructions = ""
     @State private var pendingDelete: Dieter_V1_Label?
     @State private var creating = false
@@ -65,8 +66,7 @@ struct LabelsSheet: View {
                             Button("Create label") { Task { await createLabel() } }
                                 .buttonStyle(.borderedProminent)
                                 .disabled(
-                                    creating || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                        || Color(hex: color) == nil)
+                                    creating || !SharedRules.shared.labelProblem(name: name, color: color).isEmpty)
                         }
                     }
                     .padding(14).dieterSurface(radius: 10)
@@ -99,6 +99,7 @@ struct LabelsSheet: View {
             instructions: instructions.trimmingCharacters(in: .whitespacesAndNewlines)
         )
         name = ""
+        color = SharedRules.shared.randomLabelColor(exclude: color)
         instructions = ""
         creating = false
     }
@@ -142,9 +143,7 @@ struct BoardLabelEditorRow: View {
                 Text("Applied only to cards carrying this label").font(.caption2).foregroundStyle(DieterTheme.tertiary)
                 Spacer()
                 Button(saving ? "Saving…" : "Save changes") { Task { await save() } }
-                    .disabled(
-                        saving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || Color(hex: color) == nil)
+                    .disabled(saving || !SharedRules.shared.labelProblem(name: name, color: color).isEmpty)
             }
         }
         .padding(14).dieterSurface(radius: 10)
@@ -163,10 +162,8 @@ struct BoardLabelEditorRow: View {
 }
 
 struct LabelColorPalette {
-    static let colors = [
-        "#7c5cff", "#3478f6", "#32ade6", "#00a896", "#34c759", "#a3c940",
-        "#ffcc00", "#ff9500", "#ff6b35", "#ff3b30", "#e83e8c", "#af52de",
-    ]
+    /// The shared label palette, in the order the core lists it.
+    static let swatches = ClientLabelPalette(rules: SharedRules.shared.labelPalette()).swatches
 
     static func hex(for color: Color) -> String? {
         guard let converted = NSColor(color).usingColorSpace(.sRGB) else { return nil }
@@ -184,7 +181,9 @@ struct LabelColorControl: View {
 
     private var pickerColor: Binding<Color> {
         Binding(
-            get: { Color(hex: color) ?? Color(hex: LabelColorPalette.colors[0])! },
+            get: {
+                Color(hex: color) ?? Color(hex: LabelColorPalette.swatches.first?.hex ?? "") ?? DieterTheme.shellDeep
+            },
             set: { if let hex = LabelColorPalette.hex(for: $0) { color = hex } }
         )
     }
@@ -192,28 +191,29 @@ struct LabelColorControl: View {
     var body: some View {
         HStack(spacing: 8) {
             Text("COLOR").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
-            ForEach(LabelColorPalette.colors, id: \.self) { hex in
+            ForEach(LabelColorPalette.swatches, id: \.hex) { swatch in
                 Button {
-                    color = hex
+                    color = swatch.hex
                 } label: {
                     Circle()
-                        .fill(Color(hex: hex)!)
+                        .fill(Color(hex: swatch.hex) ?? DieterTheme.shellDeep)
                         .frame(width: 18, height: 18)
                         .overlay(
                             Circle().stroke(
-                                Color.white.opacity(color.caseInsensitiveCompare(hex) == .orderedSame ? 0.9 : 0.18),
-                                lineWidth: color.caseInsensitiveCompare(hex) == .orderedSame ? 2 : 1)
+                                Color.white.opacity(
+                                    color.caseInsensitiveCompare(swatch.hex) == .orderedSame ? 0.9 : 0.18),
+                                lineWidth: color.caseInsensitiveCompare(swatch.hex) == .orderedSame ? 2 : 1)
                         )
                         .padding(2)
                 }
                 .buttonStyle(.plain)
-                .help(hex)
-                .accessibilityLabel("Use label color \(hex)")
+                .help(swatch.name)
+                .accessibilityLabel("Use \(swatch.name) label color")
             }
             ColorPicker("Custom label color", selection: pickerColor, supportsOpacity: false)
                 .labelsHidden()
                 .help("Choose a custom color")
-            TextField("#7c5cff", text: $color)
+            TextField(LabelColorPalette.swatches.first?.hex ?? "Hex color", text: $color)
                 .font(.body.monospaced())
                 .frame(width: 88)
                 .accessibilityLabel("Label color hex value")

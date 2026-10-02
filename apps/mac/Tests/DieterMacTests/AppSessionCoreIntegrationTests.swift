@@ -77,14 +77,14 @@ final class AppSessionCoreIntegrationTests {
         try await wait("project") { store.projectDirectory[project] != nil }
         try await wait("selected board") { store.selectedProjectID == project && store.selectedBoardID == board }
         #expect(store.machines.contains { $0.daemonID == daemon && $0.online })
-        #expect(store.connectionStatus(for: store.endpoint) != nil)
+        #expect(store.machineEntry(store.endpoint)?.route.isEmpty == false)
         try await wait("agents") { store.harnessCatalog.harnesses.contains { $0.id == "mock" } }
 
         // The project's files are listed, created, opened, and saved on its
         // checkout's machine through a core files surface.
         #expect(await store.loadFiles(), "files: \(store.filesModel.filesError ?? "")")
         #expect(!store.filesModel.files.isEmpty)
-        await store.createFile(path: "mac-session-notes.txt", directory: false)
+        await store.createFile(name: "mac-session-notes.txt", directory: false)
         #expect(store.filesModel.files.contains { $0.name == "mac-session-notes.txt" })
         await store.openFile(path: "mac-session-notes.txt")
         #expect(store.filesModel.fileDocument?.path == "mac-session-notes.txt")
@@ -96,8 +96,17 @@ final class AppSessionCoreIntegrationTests {
 
         // A board card is created through the outbox and edited on the board.
         let created = await store.createConversation(
-            title: "From the Mac session", prompt: "hello", chat: false, provider: "mock", model: "mock",
-            effort: "low", deferred: true, lane: "todo", workspace: ConversationWorkspaceDraft(mode: .project))
+            .with {
+                $0.projectID = store.selectedProjectID
+                $0.boardID = store.selectedBoardID
+                $0.lane = "todo"
+                $0.title = "From the Mac session"
+                $0.prompt = "hello"
+                $0.selection = .with {
+                    $0.provider = "mock"; $0.model = "mock"; $0.effort = "low"
+                }
+                $0.workspaceMode = "project"
+            }, chat: false)
         #expect(created)
         try await wait("synced card") {
             store.state.cards.contains { $0.title == "From the Mac session" && store.isConversationServerBacked($0.id) }
@@ -111,13 +120,20 @@ final class AppSessionCoreIntegrationTests {
         await store.move(card, lane: labelLane.id)
         // The core shows the move at once and keeps it pending until the machine confirms it.
         try await wait("moved") { store.state.cards.contains { $0.id == card.id && $0.lane == labelLane.id } }
-        try await wait("move confirmed") { store.pendingCardMoves.isEmpty && store.movingCardIDs.isEmpty }
+        try await wait("move confirmed") { store.movingCardIDs.isEmpty }
 
         // A chat opens on its machine, answers, and takes a second message
         // from the composer.
         let chatCreated = await store.createConversation(
-            title: "Session chat", prompt: "first", chat: true, provider: "mock", model: "mock", effort: "low",
-            deferred: false, workspace: ConversationWorkspaceDraft(mode: .project))
+            .with {
+                $0.projectID = store.selectedProjectID
+                $0.title = "Session chat"
+                $0.prompt = "first"
+                $0.selection = .with {
+                    $0.provider = "mock"; $0.model = "mock"; $0.effort = "low"
+                }
+                $0.workspaceMode = "project"
+            }, chat: true)
         #expect(chatCreated)
         #expect(store.section == .chats)
         func replies() -> Int { store.conversationMessages.filter { $0.role == "assistant" }.count }
@@ -132,7 +148,7 @@ final class AppSessionCoreIntegrationTests {
         await store.sendComposer()
         #expect(store.composerText.isEmpty)
         try await wait("second reply", timeout: .seconds(60)) {
-            replies() >= 2 && idle() && !store.conversationModel.awaitingReply
+            replies() >= 2 && idle() && !store.conversationModel.state.working
         }
         #expect(
             store.conversationMessages.filter { $0.role == "user" }.flatMap(\.parts).map(\.text) == ["first", "second"])

@@ -16,6 +16,7 @@ CI_COMPONENTS = ("core", "macos", "ios", "android", "kmp")
 IOS_POLICY_ROOTS = ("apps/mac/Sources/DieterIOS/", "apps/mac/Tests/DieterIOSTests/")
 IOS_ONLY_ROOTS = ("apps/ios/", *IOS_POLICY_ROOTS)
 SHARED_SWIFT_ROOTS = ("apps/mac/Sources/DieterCore/", "apps/mac/Sources/DieterClient/",
+                      "apps/mac/Sources/DieterTransport/",
                       "apps/mac/Sources/DieterAPI/", "apps/mac/Tests/DieterCoreTests/",
                       "apps/mac/Tests/DieterClientTests/", "apps/mac/Vendor/")
 SWIFT_PACKAGE_FILES = {"apps/mac/Package.swift", "apps/mac/Package.resolved"}
@@ -87,6 +88,14 @@ MAC_SMOKE_FILES = {
     "Model/SubagentUsagePresentation.swift": ("core", "board", "conversation"),
     "Model/AttachmentLoader.swift": ("core", "board", "conversation", "island"),
 }
+
+
+def android_core_source(path):
+    """Core sources the Android app compiles: not the core's tests, test fixtures, or Apple bridge."""
+    if not path.startswith("apps/core/") or path.startswith(("apps/core/testing/", "apps/core/apple/")):
+        return False
+    source_set = path.split("/src/", 1)[1].split("/", 1)[0] if "/src/" in path else ""
+    return not source_set.endswith("Test") and not source_set.startswith("apple")
 
 
 def affected_mac_smoke_suites(paths):
@@ -207,7 +216,7 @@ def plan_checks(root, paths, packages=None):
         mac_suites = MAC_SMOKE_SUITES
     android_integration = android and (schema or fixture or brand or any(
         (p.startswith("apps/android/") and not p.startswith("apps/android/app/src/test/"))
-        or p.startswith("native/android-webrtc/") or p == "just/android.just" for p in code))
+        or android_core_source(p) or p.startswith("native/android-webrtc/") or p == "just/android.just" for p in code))
 
     if e2e:
         add("just", "e2e", "check")
@@ -262,7 +271,6 @@ def plan_checks(root, paths, packages=None):
         add("just", "android", "test")
     if kmp:
         add("just", "core", "test")
-        add("just", "core", "android-test")
         add("just", "core", "apple-test")
     if shared_core:
         add("just", "mac", "core-test")

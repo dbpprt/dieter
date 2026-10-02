@@ -89,18 +89,19 @@ import Testing
     attachment.type = "file"
     attachment.filename = "notes.txt"
     let parts = [text("First paragraph."), text("Second paragraph."), attachment, text("After attachment.")]
-    let grouped = ConversationMessagePartGroup.group(parts)
-    #expect(grouped.count == 3)
-    #expect(grouped[0].parts[0].text == "First paragraph.\n\nSecond paragraph.")
-    #expect(grouped[1].parts[0] == attachment)
 
     for role in ["user", "assistant"] {
         var message = Dieter_V1_UiMessage()
         message.id = "selection-test"
         message.role = role
         message.parts = Array(parts.prefix(2))
-        let store = DieterStore(restoreSync: false)
-        let host = NSHostingView(rootView: MessageView(message: message).environment(store.conversationContext))
+        let store = DieterStore(liveEnvironment: false)
+        var snapshot = Dieter_V1_ConversationSnapshot()
+        snapshot.conversation.messages = [message]
+        store.conversation = snapshot
+        let row = try #require(store.conversationModel.timeline.first)
+        let host = NSHostingView(
+            rootView: ConversationTimelineItemView(row: row).environment(store.conversationContext))
         host.frame = NSRect(x: 0, y: 0, width: 600, height: 300)
         host.layoutSubtreeIfNeeded()
         func textViews(_ view: NSView) -> [MessageTextView] {
@@ -231,9 +232,10 @@ private let messageSizingFixture = """
     """
 
 @Test @MainActor func hostedMessageRowsReflowAfterStreamingAndResizeWithoutInteraction() async throws {
-    let state = HostedMessageSizingState()
-    let store = DieterStore(restoreSync: false)
-    let host = NSHostingView(rootView: HostedMessageSizingView(state: state).environment(store.conversationContext))
+    let store = DieterStore(liveEnvironment: false)
+    store.conversation = hostedMessageSizingSnapshot("Starting response.")
+    let host = NSHostingView(
+        rootView: HostedMessageSizingView(model: store.conversationModel).environment(store.conversationContext))
     host.sizingOptions = []
     let window = NSWindow(
         contentRect: .init(x: 0, y: 0, width: 700, height: 600),
@@ -252,7 +254,7 @@ private let messageSizingFixture = """
         (460.0, messageSizingFixture + "\n\n" + String(repeating: "More streamed words. ", count: 40)),
         (700.0, "A shorter replacement response."),
     ] {
-        state.source = source
+        store.conversation = hostedMessageSizingSnapshot(source)
         window.setContentSize(.init(width: width, height: 600))
         let expectedStrings = [source, "Following user bubble.", "Following assistant response."].map {
             MessageTextView.attributedText(source: $0, color: .labelColor).string
@@ -294,28 +296,9 @@ private let messageSizingFixture = """
     return !frames[0].intersects(frames[1]) && !frames[0].intersects(frames[2]) && !frames[1].intersects(frames[2])
 }
 
-@MainActor @Observable private final class HostedMessageSizingState {
-    var source = "Starting response."
-}
-
-private struct HostedMessageSizingView: View {
-    let state: HostedMessageSizingState
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                MessageView(message: message(id: "streaming", role: "assistant", text: state.source))
-                MessageView(message: message(id: "following-user", role: "user", text: "Following user bubble."))
-                MessageView(
-                    message: message(
-                        id: "following-assistant", role: "assistant", text: "Following assistant response."))
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-        }
-    }
-
-    private func message(id: String, role: String, text: String) -> Dieter_V1_UiMessage {
+/// A streaming assistant reply followed by a user and an assistant message.
+private func hostedMessageSizingSnapshot(_ source: String) -> Dieter_V1_ConversationSnapshot {
+    func message(id: String, role: String, text: String) -> Dieter_V1_UiMessage {
         var part = Dieter_V1_MessagePart()
         part.type = "text"
         part.text = text
@@ -324,5 +307,28 @@ private struct HostedMessageSizingView: View {
         result.role = role
         result.parts = [part]
         return result
+    }
+    var snapshot = Dieter_V1_ConversationSnapshot()
+    snapshot.conversation.messages = [
+        message(id: "streaming", role: "assistant", text: source),
+        message(id: "following-user", role: "user", text: "Following user bubble."),
+        message(id: "following-assistant", role: "assistant", text: "Following assistant response."),
+    ]
+    return snapshot
+}
+
+private struct HostedMessageSizingView: View {
+    let model: ConversationModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(model.timeline, id: \.id) { row in
+                    ConversationTimelineItemView(row: row)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+        }
     }
 }

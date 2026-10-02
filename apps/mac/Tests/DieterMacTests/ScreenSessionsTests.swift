@@ -31,7 +31,9 @@ import Testing
     model.sessions = [first, second]
     model.selectedSessionID = first.id
     first.controller.phase = .streaming
+    first.controller.active = true
     second.controller.phase = .streaming
+    second.controller.active = true
 
     #expect(model.connectedCount == 2)
     model.selectSession(second.id)
@@ -52,6 +54,7 @@ import Testing
     let session = ScreenShareSession(
         machineID: "machine", machineName: "Machine", monitorsInactivity: false)
     session.controller.phase = .streaming
+    session.controller.active = true
     session.configureInactivityTimeout(enabled: true, minutes: 2)
     let activity = Date(timeIntervalSinceReferenceDate: 100)
     session.recordActivity(at: activity)
@@ -67,6 +70,7 @@ import Testing
     let session = ScreenShareSession(
         machineID: "machine", machineName: "Machine", monitorsInactivity: false)
     session.controller.phase = .streaming
+    session.controller.active = true
     session.configureInactivityTimeout(enabled: false, minutes: 1)
     let activity = Date(timeIntervalSinceReferenceDate: 100)
     session.recordActivity(at: activity)
@@ -78,6 +82,7 @@ import Testing
 @Test @MainActor func sleepingScreenDoesNotExpireItsInactivityTimerBeforeWake() {
     let session = ScreenShareSession(machineID: "sleep-test", machineName: "Fixture", monitorsInactivity: false)
     session.controller.phase = .streaming
+    session.controller.active = true
     session.configureInactivityTimeout(enabled: true, minutes: 1)
     session.controller.prepareForSleep()
     #expect(!session.disconnectIfInactive(at: Date().addingTimeInterval(3600)))

@@ -3,6 +3,7 @@ package com.dbpprt.dieter.core.search
 import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.Project
+import com.dbpprt.dieter.core.board.Cards
 import com.dbpprt.dieter.core.navigation.Folding
 import com.dbpprt.dieter.core.navigation.NavigationFolder
 
@@ -103,7 +104,7 @@ class TaskSearchIndex(documents: List<SearchDocument>) {
                     location = listOfNotNull(projectNames[card.project_id], boardNames[card.board_id]).joinToString(" · "),
                     updatedAt = card.updated_at,
                     archived = card.archived,
-                    chat = card.scope == "chat",
+                    chat = Cards.isChat(card),
                 )
             }.sortedWith(compareBy({ it.id }, { it.updatedAt }))
         }
@@ -114,13 +115,15 @@ class TaskSearchIndex(documents: List<SearchDocument>) {
 object ListFilters {
     private fun contains(value: String, term: String) = value.contains(term, ignoreCase = true)
 
-    /** Chats whose title, project name, or folder name contains the query. */
+    /** Chats whose title, summary, project name, or folder name contains the query. */
     fun chats(chats: List<Card>, projects: List<Project>, folders: List<NavigationFolder>, query: String): List<Card> {
         val term = query.trim()
         if (term.isEmpty()) return chats
         val names = projects.associate { it.id to it.name }
         val inMatchingFolders = folders.filter { contains(it.name, term) }.flatMapTo(HashSet()) { it.itemIds }
-        return chats.filter { contains(it.title, term) || contains(names[it.project_id].orEmpty(), term) || it.id in inMatchingFolders }
+        return chats.filter {
+            contains(it.title, term) || contains(it.summary, term) || contains(names[it.project_id].orEmpty(), term) || it.id in inMatchingFolders
+        }
     }
 
     /** Projects to show beside a chat search: all when not searching, else matching ones or ones with matching chats. */
@@ -130,7 +133,6 @@ object ListFilters {
         return projects.filter { contains(it.name, query.trim()) || it.id in withChats }
     }
 
-    /** Cards on a board: title or summary. */
     /** Projects as picker options (ID to name), by name. */
     fun projectOptions(projects: List<Project>): List<Pair<String, String>> = projects.sortedBy { it.name.lowercase() }.map { it.id to it.name }
 
@@ -146,6 +148,7 @@ object ListFilters {
         return if (term.isEmpty()) boards else boards.filter { contains(it.name, term) || contains(it.description, term) }
     }
 
+    /** Cards whose title or summary contains [query]. */
     fun cards(cards: List<Card>, query: String): List<Card> {
         val term = query.trim()
         if (term.isEmpty()) return cards

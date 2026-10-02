@@ -1,6 +1,7 @@
 package com.dbpprt.dieter.core.presentation
 
 import com.dbpprt.dieter.api.v1.MessagePart
+import com.dbpprt.dieter.api.v1.ToolOutput
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -47,6 +48,9 @@ data class ToolActivity(val action: ToolAction, val target: String?, val tool: S
     }
 }
 
+/** One block of an expanded tool call: its error, input, or output. */
+data class ToolDetail(val label: String, val text: String, val error: Boolean = false)
+
 /** Tool call naming, categories, states, and previews. */
 object Tools {
     private val running = setOf("input-available", "running", "executing")
@@ -88,6 +92,34 @@ object Tools {
     }
 
     fun isRunning(part: MessagePart): Boolean = part.state.lowercase() in running && !part.has_output && part.error_text.isEmpty()
+
+    /** What a tool row says about [status]: "Approval requested", "Tool denied", or "Tool failed"; null otherwise. */
+    fun statusLabel(status: ToolStatus): String? = when (status) {
+        ToolStatus.NEEDS_APPROVAL -> "Approval requested"
+        ToolStatus.DENIED -> "Tool denied"
+        ToolStatus.FAILED -> "Tool failed"
+        else -> null
+    }
+
+    /** The transcript carries only previews; expanding [part] loads its full payload ([ToolOutput]) when it has one. */
+    fun hasPayload(part: MessagePart): Boolean = part.has_input || part.has_output
+
+    /**
+     * An expanded tool call's blocks, in order: its error, input, and
+     * output, from the full [output] once it loaded, else from [part].
+     * Input and output are trimmed; empty blocks are left out.
+     */
+    fun details(part: MessagePart, output: ToolOutput? = null): List<ToolDetail> = buildList {
+        val error = output?.error_text.orEmpty().ifBlank { part.error_text }
+        if (error.isNotBlank()) add(ToolDetail("Error", error, error = true))
+        val input = (output?.input_json ?: part.input_json).utf8().trim()
+        if (input.isNotEmpty()) add(ToolDetail("Input", input))
+        val result = (output?.output_json ?: part.output_json).utf8().trim()
+        if (result.isNotEmpty()) add(ToolDetail("Output", result))
+    }
+
+    /** Shown for an expanded tool call without [details]. */
+    const val NO_DETAILS = "No additional payload"
 
     /** "read file" for `tool-read_file`; "Tool" when unnamed. */
     fun displayName(part: MessagePart): String =

@@ -1,41 +1,23 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 import UniformTypeIdentifiers
 
-enum BoardAgentStatus: Equatable {
-    case running, failed, idle
-
-    static func resolve(_ card: Dieter_V1_Card) -> Self {
-        let active = Set(["starting", "running", "active", "working", "streaming", "cancelling"])
-        let status = card.runtime.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if active.contains(status)
-            || card.activeSubagents.contains(where: { active.contains($0.status.lowercased()) })
-        {
-            return .running
-        }
-        return ["failed", "error"].contains(status) ? .failed : .idle
-    }
-
+extension ClientBoardAgentStatus {
+    /// The status dot's colour.
     var color: Color {
         switch self {
         case .running: .green
         case .failed: .orange
-        case .idle: .white
-        }
-    }
-
-    var label: String {
-        switch self {
-        case .running: "Agent running"
-        case .failed: "Agent turn failed"
-        case .idle: "No agent work in progress"
+        default: .white
         }
     }
 }
 
 struct BoardCardDragPreview: View {
     let card: Dieter_V1_Card
+    let flags: ClientBoardCardFlags
 
     var body: some View {
         HStack(spacing: 10) {
@@ -46,8 +28,8 @@ struct BoardCardDragPreview: View {
                 )
                 .lineLimit(2)
                 HStack(spacing: 6) {
-                    Circle().fill(BoardAgentStatus.resolve(card).color).frame(width: 5, height: 5)
-                    Text(card.runtime.capitalized).font(.system(size: 9, weight: .medium)).foregroundStyle(
+                    Circle().fill(flags.agent.color).frame(width: 5, height: 5)
+                    Text(flags.runtimeLabel).font(.system(size: 9, weight: .medium)).foregroundStyle(
                         DieterTheme.tertiary)
                 }
             }
@@ -154,6 +136,7 @@ struct BoardCardHelp: ViewModifier {
     var usesTitlebarSpace = false
     var active = true
     let card: Dieter_V1_Card
+    let flags: ClientBoardCardFlags
     let labels: [Dieter_V1_Label]
     let accessibility: Bool
 
@@ -166,26 +149,23 @@ struct BoardCardHelp: ViewModifier {
     }
 
     private var metadataHelp: String {
-        let harness = store.cachedHarnessCatalog(forProjectID: card.projectID)?.harnesses.first {
+        let harness = store.machineMetadata[card.ownerDaemonID]?.harnesses.harnesses.first {
             $0.id == card.provider
         }
-        var details = [BoardAgentStatus.resolve(card).label]
+        var details = [flags.agentLabel]
         if !card.provider.isEmpty { details.append("Provider: \(harness?.name ?? card.provider)") }
         if !card.model.isEmpty {
             let name = harness?.models.first { $0.id == card.model }?.name ?? card.model
             details.append("Model: \(name)")
         }
-        let workspace = card.workspace
-        let mode = workspace.mode.isEmpty ? card.workspaceMode : workspace.mode
-        if !mode.isEmpty {
-            details.append("Workspace: \(ConversationWorkspaceMode.projectMode(mode).title)")
+        let workspace = WorkspaceBadge.of(card)
+        if workspace.shown { details.append(workspace.accessibilityLabel) }
+        if card.hasTokenUsage {
+            details.append(
+                SharedRules.shared.tokenUsageLabel(
+                    totalTokens: card.tokenUsage.totalTokens, reportedMessages: card.tokenUsage.reportedMessages,
+                    partial: card.tokenUsage.partial))
         }
-        let branch = workspace.branch.isEmpty ? card.workspaceBranch : workspace.branch
-        if !branch.isEmpty { details.append("Branch: \(branch)") }
-        if workspace.changedFiles > 0 { details.append("\(workspace.changedFiles) changed files") }
-        if workspace.state == "conflicted" { details.append("Workspace has conflicts") }
-        if card.pullRequest.number > 0 { details.append("PR #\(card.pullRequest.number)") }
-        if card.hasTokenUsage { details.append(TaskTokenUsagePresentation.label(card.tokenUsage)) }
         return details.joined(separator: "\n")
     }
 
@@ -193,8 +173,8 @@ struct BoardCardHelp: ViewModifier {
         var details = [metadataHelp]
         if !card.summary.isEmpty { details.append(card.summary) }
         if !labels.isEmpty { details.append("Labels: \(labels.map(\.name).joined(separator: ", "))") }
-        let age = BoardCardActivityText.compact(
-            updatedAt: card.updatedAt, lastActivityAt: card.lastActivityAt, relativeTo: .now)
+        let age = SharedRules.shared.cardAge(
+            updatedAt: card.updatedAt, lastActivityAt: card.lastActivityAt, nowMillis: Date.now.epochMillis)
         if !age.isEmpty { details.append("Last activity \(age)") }
         if !card.activeSubagents.isEmpty { details.append("\(card.activeSubagents.count) active subagents") }
         return details.joined(separator: ". ")
@@ -208,6 +188,8 @@ struct BoardCardView: View {
     var active = true
     let card: Dieter_V1_Card
     let board: Dieter_V1_Board?
+    /// The lane the card shows in; a card dropped on it lands there, above it.
+    let laneID: String
     private var currentBoard: Dieter_V1_Board? { board ?? store.selectedBoard }
     @State private var renamePresented = false
     @State private var editPresented = false
@@ -218,20 +200,26 @@ struct BoardCardView: View {
         cardDrop.targeted && cardDrop.payload.flatMap(BoardLabelDragPayload.init) != nil
     }
 
-    init(card: Dieter_V1_Card, board: Dieter_V1_Board? = nil, dropState: BoardCardDropState = BoardCardDropState()) {
+    init(
+        card: Dieter_V1_Card, board: Dieter_V1_Board? = nil, laneID: String? = nil,
+        dropState: BoardCardDropState = BoardCardDropState()
+    ) {
         self.card = card
         self.board = board
+        self.laneID = laneID ?? card.lane
         _cardDrop = State(initialValue: dropState)
     }
 
     var labels: [Dieter_V1_Label] {
         currentBoard?.labels.filter { card.labelIds.contains($0.id) } ?? []
     }
+    /// What the board shows for this card and offers on it.
+    private var flags: ClientBoardCardFlags { store.cardFlags(card, board: currentBoard) }
     private func canMergePayload(_ value: String) -> Bool {
-        guard let payload = BoardCardDragPayload(value),
+        guard let payload = BoardCardDragPayload(value), payload.cardID != card.id,
             let source = store.state.cards.first(where: { $0.id == payload.cardID })
         else { return false }
-        return BoardCardMergePolicy.canMerge(source, into: card)
+        return store.cardFlags(source, board: currentBoard).merges(into: flags)
     }
 
     private func performCardDrop(_ value: String, merge: Bool) -> Bool {
@@ -239,41 +227,27 @@ struct BoardCardView: View {
             guard payload.boardID == store.selectedBoardID,
                 currentBoard?.labels.contains(where: { $0.id == payload.labelID }) == true
             else { return false }
-            let ids = BoardLabelAssignment.adding(payload.labelID, to: card.labelIds)
-            guard ids != card.labelIds else { return true }
-            Task { await store.setLabels(card, ids: ids) }
+            Task { await store.addLabel(card, labelID: payload.labelID) }
             return true
         }
         guard let payload = BoardCardDragPayload(value),
             payload.boardID == store.selectedBoardID,
             let dragged = store.state.cards.first(where: { $0.id == payload.cardID })
         else { return false }
-        guard payload.cardID != card.id else { return true }
-        if merge {
+        if merge, payload.cardID != card.id {
             Task { await store.merge(dragged, into: card) }
             return true
         }
-        let anchors = BoardDropOrdering.neighbors(
-            before: card.id, movingCardID: payload.cardID,
-            cards: store.displayedCards.filter { $0.lane == card.lane },
-            direction: store.laneSortDirection(board: card.boardID, lane: card.lane),
-            moves: store.pendingCardMoves)
-        Task { await store.move(dragged, lane: card.lane, afterCardID: anchors.after, beforeCardID: anchors.before) }
+        Task { await store.drop(cardID: dragged.id, laneID: laneID, beforeCardID: card.id) }
         return true
-    }
-
-    private var starting: Bool { store.pendingCardStarts[card.id] != nil }
-    private var canStart: Bool {
-        store.isConversationServerBacked(card.id) && BoardCardStartPolicy.canStart(card, board: currentBoard)
-    }
-    private var showsRunAction: Bool { canStart || starting }
-    private var runActionAccessibilityLabel: String {
-        let title = card.title.isEmpty ? "card" : card.title
-        return starting ? "Starting \(title)" : "Run \(title)"
     }
 
     var body: some View {
         let _ = BoardRenderingDiagnostics.record(.cardBody)
+        let flags = flags
+        let starting = flags.starting
+        let showsRunAction = flags.canStart || starting
+        let runTitle = card.title.isEmpty ? "card" : card.title
         ZStack(alignment: .bottomTrailing) {
             Button {
                 Task {
@@ -286,10 +260,10 @@ struct BoardCardView: View {
                             .system(size: 13, weight: .semibold)
                         ).multilineTextAlignment(.leading).lineLimit(3)
                         Spacer(minLength: 4)
-                        Circle().fill(BoardAgentStatus.resolve(card).color).frame(width: 6, height: 6).padding(
+                        Circle().fill(flags.agent.color).frame(width: 6, height: 6).padding(
                             .top, 5
                         )
-                        .accessibilityLabel(BoardAgentStatus.resolve(card).label)
+                        .accessibilityLabel(flags.agentLabel)
                     }
                     if !card.summary.isEmpty {
                         Text(card.summary).font(.system(size: 11)).foregroundStyle(DieterTheme.subtle)
@@ -299,15 +273,13 @@ struct BoardCardView: View {
                         FlowLabels(labels: labels)
                     }
                     HStack(spacing: 7) {
-                        StatusPill(text: card.runtime, color: runtimeColor(card.runtime))
+                        StatusPill(text: flags.runtimeLabel, color: toneColor(flags.tone))
                         BoardCardMachineBadge(card: card)
                             .layoutPriority(-1)
                         Spacer(minLength: 0)
-                        let age = BoardCardActivityText.compact(
-                            updatedAt: card.updatedAt,
-                            lastActivityAt: card.lastActivityAt,
-                            relativeTo: .now
-                        )
+                        let age = SharedRules.shared.cardAge(
+                            updatedAt: card.updatedAt, lastActivityAt: card.lastActivityAt,
+                            nowMillis: Date.now.epochMillis)
                         if !age.isEmpty {
                             Text(age)
                                 .font(.system(size: 10, weight: .medium))
@@ -358,7 +330,7 @@ struct BoardCardView: View {
                     BoardCardDragPayload(cardID: card.id, boardID: card.boardID, sourceLane: card.lane)
                         .encoded
                 ) {
-                    BoardCardDragPreview(card: card)
+                    BoardCardDragPreview(card: card, flags: flags)
                 }
                 .onDrop(
                     of: [.text],
@@ -390,7 +362,7 @@ struct BoardCardView: View {
             .buttonStyle(BoardCardClickStyle(edit: openEditor))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(card.title.isEmpty ? "Untitled card" : card.title)
-            .modifier(BoardCardHelp(card: card, labels: labels, accessibility: true))
+            .modifier(BoardCardHelp(card: card, flags: flags, labels: labels, accessibility: true))
             .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier("card.open.\(card.id)")
             if !card.mergedIntoCardID.isEmpty {
@@ -425,18 +397,18 @@ struct BoardCardView: View {
                 .buttonStyle(.plain)
                 .disabled(starting)
                 .quickHelp(starting ? "Starting task" : "Run task")
-                .accessibilityLabel(runActionAccessibilityLabel)
+                .accessibilityLabel(starting ? "Starting \(runTitle)" : "Run \(runTitle)")
                 .accessibilityIdentifier("card-run.\(card.id)")
                 .padding(.trailing, 12).padding(.bottom, 12)
                 .transition(.scale(scale: 0.85).combined(with: .opacity))
             }
         }
         .onHover { hovering = $0 }
-        .modifier(BoardCardHelp(card: card, labels: labels, accessibility: false))
+        .modifier(BoardCardHelp(card: card, flags: flags, labels: labels, accessibility: false))
         .animation(.easeOut(duration: 0.12), value: hovering)
         .modifier(
             BoardCardContextMenu(
-                card: card, currentBoard: currentBoard,
+                card: card, currentBoard: currentBoard, flags: flags,
                 open: { Task { await store.openConversation(cardID: card.id) } },
                 renamePresented: $renamePresented, editPresented: $editPresented, renameText: $renameText
             )
@@ -448,7 +420,7 @@ struct BoardCardView: View {
     }
 
     private func openEditor() {
-        if BoardCardEditingPolicy.canEditDraft(card) {
+        if flags.canEditDraft {
             editPresented = true
         } else {
             renameText = card.title
@@ -461,19 +433,16 @@ struct BoardCardContextMenu: ViewModifier {
     @Environment(DieterStore.self) private var store
     let card: Dieter_V1_Card
     let currentBoard: Dieter_V1_Board?
+    let flags: ClientBoardCardFlags
     let open: () -> Void
     @Binding var renamePresented: Bool
     @Binding var editPresented: Bool
     @Binding var renameText: String
 
-    private var starting: Bool { store.pendingCardStarts[card.id] != nil }
-    private var showsRunAction: Bool {
-        starting
-            || (store.isConversationServerBacked(card.id) && BoardCardStartPolicy.canStart(card, board: currentBoard))
-    }
-
     func body(content: Content) -> some View {
-        content
+        let starting = flags.starting
+        return
+            content
             .contextMenu {
                 if store.isFailedOutboxItem(card.id) {
                     Button("Retry queued creation") { Task { await store.retryOutboxItem(card.id) } }
@@ -483,14 +452,14 @@ struct BoardCardContextMenu: ViewModifier {
                     Divider()
                 }
                 Button("Open conversation", action: open)
-                if showsRunAction {
+                if flags.canStart || starting {
                     Button(starting ? "Starting task…" : "Run task", systemImage: "play.fill") {
                         Task { await store.start(card) }
                     }
                     .disabled(starting)
                 }
                 Group {
-                    if BoardCardEditingPolicy.canEditDraft(card) { Button("Edit card…") { editPresented = true } }
+                    if flags.canEditDraft { Button("Edit card…") { editPresented = true } }
                     Button("Rename…") {
                         renameText = card.title
                         renamePresented = true
@@ -521,7 +490,7 @@ struct BoardCardContextMenu: ViewModifier {
                             }
                         }
                     }
-                    if ["running", "waiting", "review"].contains(card.runtime) {
+                    if flags.canCancel {
                         Button("Cancel turn", role: .destructive) { Task { await store.cancel(card) } }
                     }
                     Divider()
@@ -550,34 +519,6 @@ struct BoardCardContextMenu: ViewModifier {
             .sheet(isPresented: $editPresented) {
                 EditCardSheet(card: card).environment(store)
             }
-    }
-}
-
-enum BoardCardActivityText {
-    static func compact(
-        updatedAt: String,
-        lastActivityAt: String,
-        relativeTo now: Date = Date()
-    ) -> String {
-        guard let activity = latest(updatedAt: updatedAt, lastActivityAt: lastActivityAt) else {
-            return ""
-        }
-        let seconds = max(0, Int(now.timeIntervalSince(activity)))
-        switch seconds {
-        case ..<60: return "now"
-        case ..<3_600: return "\(seconds / 60)min"
-        case ..<86_400: return "\(seconds / 3_600)h"
-        case ..<604_800: return "\(seconds / 86_400)d"
-        default: return "\(seconds / 604_800)w"
-        }
-    }
-
-    private static func latest(updatedAt: String, lastActivityAt: String) -> Date? {
-        [updatedAt, lastActivityAt].compactMap(parse).max()
-    }
-
-    private static func parse(_ value: String) -> Date? {
-        DieterTimestamp.date(from: value)
     }
 }
 

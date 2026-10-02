@@ -27,9 +27,9 @@ class AccountStore(private val storage: CoreStorage) {
 
     private fun load(): Accounts {
         val saved = runCatching { storage.read(FILE)?.let(AccountsState.ADAPTER::decode) }.getOrNull()
-        val gateways = saved?.gateways?.map { it.toGateway().migrated() }?.distinctBy { it.origin }?.takeIf { it.isNotEmpty() }
+        val gateways = saved?.gateways?.map { it.toGateway() }?.distinctBy { it.origin }?.takeIf { it.isNotEmpty() }
             ?: listOf(Gateway.DEFAULT)
-        val activeOrigin = saved?.active_origin?.let { origin -> gateways.firstOrNull { it.origin == origin || migratedOrigin(origin) == it.origin } }
+        val activeOrigin = saved?.active_origin?.let { origin -> gateways.firstOrNull { it.origin == origin } }
         return Accounts(
             gateways = gateways,
             active = activeOrigin ?: gateways.first(),
@@ -37,9 +37,6 @@ class AccountStore(private val storage: CoreStorage) {
             desiredConnected = saved?.desired_connected.orEmpty(),
         )
     }
-
-    private fun migratedOrigin(origin: String): String? =
-        Gateway.parse(origin)?.migrated()?.origin
 
     /**
      * Replaces the gateway list. Gateways must be unique and, unless on

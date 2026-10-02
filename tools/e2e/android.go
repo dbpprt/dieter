@@ -61,7 +61,7 @@ func (a android) preflight(ctx context.Context) error {
 	return nil
 }
 func sourceDigest(root string) (string, error) {
-	out, err := command(context.Background(), root, nil, "git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "apps/android", "api/proto", "native/android-webrtc")
+	out, err := command(context.Background(), root, nil, "git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "apps/android", "apps/core", "api/proto", "native/android-webrtc")
 	if err != nil {
 		return "", err
 	}
@@ -197,7 +197,7 @@ func (a android) run(ctx context.Context, c Case) (result Result) {
 		result.Reason = err.Error()
 		return
 	}
-	args := map[string]string{"additionalTestOutputDir": "/sdcard/Android/data/" + a.pkg() + "/files", "isolatedGatewayHost": "127.0.0.1"}
+	args := map[string]string{"additionalTestOutputDir": "/sdcard/Android/data/" + a.pkg() + "/files"}
 	for k, v := range c.Arguments {
 		args[k] = v
 	}

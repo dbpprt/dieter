@@ -55,8 +55,8 @@ interface NativeRpcCancellable {
 
 /**
  * Where one RPC goes. [channelId] groups the calls of one logical channel
- * onto one HTTP/2 connection. Direct targets carry the pinning inputs: the
- * daemon CA and the SPIFFE identity the leaf must present.
+ * onto one HTTP/2 connection. Direct targets carry the daemon CA the leaf
+ * must chain to; the SPIFFE identity follows from [daemonId].
  */
 class NativeRpcTarget(
     val kind: String,
@@ -68,7 +68,6 @@ class NativeRpcTarget(
     val host: String,
     val port: Int,
     val daemonCaPem: String,
-    val spiffeIdentity: String,
 ) {
     companion object {
         const val GATEWAY = "gateway"
@@ -86,17 +85,17 @@ internal class NativeRpcTransport(private val bridge: NativeRpcBridge) : RpcTran
     }
 
     override fun gateway(access: GatewayAccess): RpcChannel = channel { id ->
-        NativeRpcTarget(NativeRpcTarget.GATEWAY, id, access.url, "Bearer ${access.sessionToken}", access.clientVersion, "", "", 0, "", "")
+        NativeRpcTarget(NativeRpcTarget.GATEWAY, id, access.url, "Bearer ${access.sessionToken}", access.clientVersion, "", "", 0, "")
     }
 
     override fun relay(access: GatewayAccess, daemonId: String): RpcChannel = channel { id ->
-        NativeRpcTarget(NativeRpcTarget.RELAY, id, access.url, "Bearer ${access.sessionToken}", access.clientVersion, daemonId, "", 0, "", "")
+        NativeRpcTarget(NativeRpcTarget.RELAY, id, access.url, "Bearer ${access.sessionToken}", access.clientVersion, daemonId, "", 0, "")
     }
 
     override fun direct(target: DirectTarget, tokens: DaemonTokenSource): RpcChannel = channel { id ->
         NativeRpcTarget(
             NativeRpcTarget.DIRECT, id, "https://${target.host}:${target.port}", "Bearer ${tokens.token()}", target.clientVersion,
-            target.daemonId, target.host, target.port, target.daemonCaPem, target.spiffeIdentity,
+            target.daemonId, target.host, target.port, target.daemonCaPem,
         )
     }
 }

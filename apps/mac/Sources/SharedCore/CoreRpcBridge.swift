@@ -1,5 +1,5 @@
-import DieterClient
 import DieterShared
+import DieterTransport
 import Foundation
 import GRPCCore
 import GRPCNIOTransportHTTP2
@@ -135,7 +135,7 @@ package final class CoreRpcBridge: NSObject, NativeRpcBridge, Sendable {
                 config.verifySignatureAlgorithms = [.ed25519]
                 config.customVerificationCallback = { certificates, promise in
                     let chain = certificates.compactMap { try? Data($0.toDERBytes()) }
-                    let verified = DieterRPC.verifyDaemonCertificateChain(
+                    let verified = DaemonCertificatePinning.verify(
                         chain, daemonCAPEM: daemonCAPEM, daemonID: daemonID)
                     promise.succeed(verified ? .certificateVerified(.init(nil)) : .failed)
                 }

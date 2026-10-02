@@ -44,9 +44,12 @@ import Testing
                 $0.stdout = Data("ready\n".utf8)
                 $0.stderr = Data("warning".utf8)
                 $0.outputTruncated = true
+                $0.running = 1
+                $0.canStop = true
             }
         }
         #expect(model.processes.map(\.id) == ["own"] && model.selectedID == "own")
+        #expect(model.running == 1 && model.canStop)
         #expect(String(decoding: model.stdout, as: UTF8.self) == "ready\n" && model.outputTruncated)
 
         // A late slice for the previous conversation never crosses over.
@@ -60,6 +63,7 @@ import Testing
             }
         }
         #expect(model.processes.isEmpty && model.stdout.isEmpty && model.selectedID == nil)
+        #expect(model.running == 0 && !model.canStop)
     }
 
     @Test func hidingOnlyDeactivatesAndStopIsExplicit() async {

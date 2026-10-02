@@ -3,7 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct TurnFailureBanner: View {
-    let failure: ConversationTurnFailure
+    let failure: ClientTurnFailure
     let retrying: Bool
     let onViewLog: () -> Void
     let onRetry: () -> Void

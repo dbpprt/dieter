@@ -6,6 +6,8 @@ struct ScreensView: View {
     @Bindable var model: ScreensModel
     let machines: [DieterEndpoint]
     let initialMachineID: String
+    /// Each machine as the core presents it, by machine ID.
+    var entries: [String: ClientMachineEntry] = [:]
 
     var showInDieter: @MainActor () -> Void = {}
 
@@ -95,7 +97,8 @@ struct ScreensView: View {
         }
         .background(DieterTheme.background)
         .sheet(isPresented: $model.createScreenSharePresented) {
-            NewScreenShareSheet(model: model, machines: machines, initialMachineID: initialMachineID)
+            NewScreenShareSheet(
+                model: model, machines: machines, initialMachineID: initialMachineID, entries: entries)
         }
     }
 
@@ -126,16 +129,14 @@ struct ScreensView: View {
     }
 
     @ViewBuilder private func primaryAction(_ session: ScreenShareSession) -> some View {
-        let controller = session.controller
-        switch controller.phase {
-        case .streaming, .connecting, .waitingForHostApproval, .reconnecting, .loading:
+        if session.controller.active {
             Button("Disconnect") { session.disconnect() }
                 .buttonStyle(DieterSecondaryButtonStyle())
                 .accessibilityIdentifier("screens.disconnect")
-        default:
+        } else {
             Button("Connect") { session.connect() }
                 .buttonStyle(DieterPrimaryButtonStyle())
-                .disabled(selectedMachine?.online != true)
+                .disabled(selectedMachine.flatMap { entries[$0.id] }?.canShareScreen != true)
                 .accessibilityIdentifier("screens.connect")
         }
     }
@@ -147,7 +148,7 @@ struct ScreensView: View {
             Divider().overlay(DieterTheme.border)
             HStack(spacing: 8) {
                 Circle().fill(statusColor(controller.phase)).frame(width: 6, height: 6)
-                Text(controller.phase.label)
+                Text(controller.phaseLabel)
                 if !controller.routeLabel.isEmpty {
                     Text("·")
                     Text("\(controller.routeLabel) signaling")
@@ -185,13 +186,13 @@ struct ScreensView: View {
                     )
                 }
                 Text("·")
-                Text(networkLatencyLabel(controller))
+                Text(controller.latencyLabel)
                     .monospacedDigit()
                     .fixedSize()
                     .help(
                         "Network round-trip latency to the remote Mac. Does not include capture, encoding, decoding or display delay. A dash means no current measurement is available."
                     )
-                    .accessibilityLabel("Network round-trip latency: \(networkLatencyLabel(controller))")
+                    .accessibilityLabel("Network round-trip latency: \(controller.latencyLabel)")
                     .accessibilityIdentifier("screens.latency")
             }
             .font(.system(size: 10, weight: .medium))
@@ -219,7 +220,7 @@ struct ScreensView: View {
                 if controller.phase != .streaming {
                     VStack(spacing: 10) {
                         ProgressView().controlSize(.small)
-                        Text(controller.phase.label).font(.system(size: 12, weight: .semibold))
+                        Text(controller.phaseLabel).font(.system(size: 12, weight: .semibold))
                     }
                     .padding(.horizontal, 18).padding(.vertical, 14)
                     .background(
@@ -237,7 +238,7 @@ struct ScreensView: View {
             ) { ProgressView().controlSize(.small) }
         case .permissionRequired(let reason), .unsupported(let reason):
             emptyState(
-                title: session.controller.phase.label,
+                title: session.controller.phaseLabel,
                 detail: reason.isEmpty ? "Screen sharing is unavailable on this machine." : reason,
                 symbol: "lock.shield"
             ) {
@@ -268,7 +269,7 @@ struct ScreensView: View {
         guard let machine = machines.first(where: { $0.id == session.machineID }) else {
             return "This machine is no longer enrolled."
         }
-        if !machine.online { return MachinePresenceText.lastSeen(machine.lastSeenAt) }
+        if !machine.online { return entries[machine.id]?.statusLine() ?? "" }
         return machine.remoteDesktopReason.isEmpty
             ? "Connect for an authenticated remote session with \(machine.name)."
             : machine.remoteDesktopReason
@@ -289,13 +290,6 @@ struct ScreensView: View {
         case .failed: DieterTheme.coral
         default: DieterTheme.tertiary
         }
-    }
-
-    private func networkLatencyLabel(_ controller: RemoteDesktopController) -> String {
-        let milliseconds = controller.sessionState.rttMs
-        guard controller.phase == .streaming, milliseconds.isFinite, milliseconds > 0 else { return "— ms RTT" }
-        if milliseconds < 1 { return "<1 ms RTT" }
-        return "\(milliseconds.formatted(.number.precision(.fractionLength(0)))) ms RTT"
     }
 
     private func emptyState<Accessory: View>(
@@ -393,9 +387,12 @@ private struct NewScreenShareSheet: View {
     @Bindable var model: ScreensModel
     let machines: [DieterEndpoint]
     let initialMachineID: String
+    let entries: [String: ClientMachineEntry]
     @State private var machineID = ""
 
     private var selectedMachine: DieterEndpoint? { machines.first { $0.id == machineID } }
+
+    private func canShare(_ machine: DieterEndpoint) -> Bool { entries[machine.id]?.canShareScreen == true }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -408,14 +405,14 @@ private struct NewScreenShareSheet: View {
                 ForEach(machines) { machine in
                     Text(machineLabel(machine))
                         .tag(machine.id)
-                        .disabled(!machine.online)
+                        .disabled(!canShare(machine))
                 }
             }
             .accessibilityIdentifier("screens.new.machine")
-            if let machine = selectedMachine, machine.online, !machine.remoteDesktopReady {
+            if let machine = selectedMachine, canShare(machine), !machine.remoteDesktopReady {
                 Text(
                     machine.remoteDesktopReason.isEmpty
-                        ? "This machine cannot host a screen session." : machine.remoteDesktopReason
+                        ? entries[machine.id]?.screenStatus ?? "" : machine.remoteDesktopReason
                 )
                 .font(.caption)
                 .foregroundStyle(DieterTheme.coral)
@@ -431,7 +428,7 @@ private struct NewScreenShareSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(selectedMachine?.online != true)
+                .disabled(selectedMachine.map(canShare) != true)
                 .accessibilityIdentifier("screens.new.connect")
             }
         }
@@ -440,16 +437,17 @@ private struct NewScreenShareSheet: View {
         .onAppear {
             machineID =
                 machines.first(where: {
-                    $0.id == initialMachineID && $0.online
-                })?.id ?? machines.first(where: { $0.online && $0.remoteDesktopReady })?.id
-                ?? machines.first(where: { $0.online })?.id ?? ""
+                    $0.id == initialMachineID && canShare($0)
+                })?.id ?? machines.first(where: { canShare($0) && $0.remoteDesktopReady })?.id
+                ?? machines.first(where: { canShare($0) })?.id ?? ""
         }
     }
 
     private func machineLabel(_ machine: DieterEndpoint) -> String {
-        if !machine.online { return "\(machine.name) — offline" }
-        if !machine.remoteDesktopReady { return "\(machine.name) — unavailable" }
-        return machine.name
+        guard let entry = entries[machine.id], !(entry.canShareScreen && machine.remoteDesktopReady) else {
+            return machine.name
+        }
+        return "\(machine.name) — \(entry.screenStatus)"
     }
 }
 
@@ -478,7 +476,7 @@ struct ScreenShareOptions: View {
             Button("Prefer sharp text") { controller.configure(quality: .detail) }
             Button("Prefer responsive motion") { controller.configure(quality: .motion) }
             Menu("Frame rate") {
-                ForEach(controller.availableFrameRates, id: \.self) { rate in
+                ForEach(controller.frameRates, id: \.self) { rate in
                     Button("Up to \(rate) fps") { controller.configure(maxFPS: rate) }
                 }
             }
@@ -496,9 +494,9 @@ struct ScreenShareOptions: View {
                         set: { controller.setClipboardEnabled($0) })
                 ).disabled(!controller.controlActive)
                 Button("Copy from remote") { controller.performClipboard("copy") }.disabled(
-                    !controller.controlActive || !controller.clipboardEnabled || controller.clipboardBusy)
+                    !controller.clipboardActionsEnabled)
                 Button("Paste to remote") { controller.performClipboard("paste") }.disabled(
-                    !controller.controlActive || !controller.clipboardEnabled || controller.clipboardBusy)
+                    !controller.clipboardActionsEnabled)
                 if !controller.clipboardError.isEmpty { Text(controller.clipboardError) }
             }
             Menu("Video codec") {

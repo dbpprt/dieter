@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterShared
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -7,9 +8,9 @@ struct TaskPlanView: View {
     @State private var expanded = true
 
     private var tasks: [Dieter_V1_TaskPlanItem] { plan.phases.flatMap(\.tasks) }
-    private var completed: Int { tasks.filter { $0.status == "completed" }.count }
 
     var body: some View {
+        let summary = ClientTaskPlanSummary(rules: SharedRules.shared.taskPlanSummary(plan: plan.rulesData))
         VStack(spacing: 0) {
             Button {
                 withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
@@ -18,7 +19,8 @@ struct TaskPlanView: View {
                     Image(systemName: "checklist").font(.system(size: 11)).foregroundStyle(DieterTheme.shell)
                     Text("Progress").font(.caption.weight(.semibold))
                     Spacer()
-                    Text("\(completed) of \(tasks.count)").font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                    Text("\(summary.completed) of \(summary.total)").font(.caption2).foregroundStyle(
+                        DieterTheme.tertiary)
                     Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 8, weight: .bold))
                         .foregroundStyle(DieterTheme.tertiary)
                 }.padding(.horizontal, 12).frame(height: 38)
@@ -29,21 +31,18 @@ struct TaskPlanView: View {
                     Text(plan.explanation).font(.caption).foregroundStyle(DieterTheme.subtle)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.bottom, 9)
                 }
-                ForEach(Array(tasks.enumerated()), id: \.offset) { _, task in
+                ForEach(Array(tasks.enumerated()), id: \.offset) { index, task in
                     Divider().overlay(DieterTheme.border)
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: planIcon(task.status))
                             .font(.system(size: 12, weight: .medium)).foregroundStyle(planColor(task.status)).frame(
                                 width: 14)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(
-                                task.status == "in_progress" && !task.activeForm.isEmpty
-                                    ? task.activeForm : task.content
-                            )
-                            .font(.caption).foregroundStyle(
-                                task.status == "pending" ? DieterTheme.subtle : DieterTheme.text
-                            )
-                            .fixedSize(horizontal: false, vertical: true)
+                            Text(summary.taskTexts.indices.contains(index) ? summary.taskTexts[index] : task.content)
+                                .font(.caption).foregroundStyle(
+                                    task.status == "pending" ? DieterTheme.subtle : DieterTheme.text
+                                )
+                                .fixedSize(horizontal: false, vertical: true)
                             if !task.blocker.isEmpty {
                                 Text(task.blocker).font(.caption2).foregroundStyle(DieterTheme.coral)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -96,24 +95,29 @@ struct SubagentTimelineGroup: View {
     }
 }
 
+/// A delegated agent as the core summarizes it.
+private func subagentSummary(_ agent: Dieter_V1_Subagent) -> ClientSubagentSummary {
+    ClientSubagentSummary(
+        rules: SharedRules.shared.subagentSummary(agent: agent.rulesData, nowMillis: Date.now.epochMillis))
+}
+
 struct SubagentTimelineCard: View {
     let agent: Dieter_V1_Subagent
     @State private var expanded = false
 
     var body: some View {
+        let summary = subagentSummary(agent)
         VStack(spacing: 0) {
             Button {
                 expanded.toggle()
             } label: {
                 HStack(spacing: 9) {
-                    Image(systemName: agent.status == "completed" ? "checkmark" : "circle.dotted")
+                    Image(systemName: summary.completed ? "checkmark" : "circle.dotted")
                         .foregroundStyle(runtimeColor(agent.status)).frame(width: 13)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(agent.name.isEmpty ? (agent.agentType.isEmpty ? "Subagent" : agent.agentType) : agent.name)
+                        Text(summary.title)
                             .font(.caption.weight(.semibold)).lineLimit(1)
-                        Text([agent.provider, agent.model].filter { !$0.isEmpty }.joined(separator: "/")).font(
-                            .caption2
-                        ).foregroundStyle(DieterTheme.tertiary)
+                        Text(summary.identity).font(.caption2).foregroundStyle(DieterTheme.tertiary)
                     }
                     Spacer();
                     Text(agent.status.uppercased()).font(.system(size: 9, weight: .bold)).tracking(0.8).foregroundStyle(
@@ -124,10 +128,12 @@ struct SubagentTimelineCard: View {
             }.buttonStyle(.plain)
             if expanded {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(agent.assignment.isEmpty ? agent.task : agent.assignment).font(.caption).foregroundStyle(
-                        DieterTheme.subtle)
-                    if !agent.recentOutput.isEmpty {
-                        CodeBlock(title: "Recent output", value: agent.recentOutput.joined(separator: "\n"))
+                    ForEach(Array((summary.narrative + summary.details).enumerated()), id: \.offset) { _, detail in
+                        if detail.monospace {
+                            CodeBlock(title: detail.label, value: detail.text)
+                        } else {
+                            Text(detail.text).font(.caption).foregroundStyle(DieterTheme.subtle)
+                        }
                     }
                 }.padding(.horizontal, 11).padding(.bottom, 11)
             }
@@ -140,7 +146,7 @@ struct SubagentsView: View {
     @Environment(ConversationContext.self) private var context
     var background: Color = DieterTheme.background
     private var agents: [Dieter_V1_Subagent] { context.conversation?.conversation.subagents ?? [] }
-    private var running: Int { agents.filter { ["running", "pending"].contains($0.status) }.count }
+    private var running: Int { agents.filter { subagentSummary($0).active }.count }
 
     var body: some View {
         ScrollView {
@@ -181,57 +187,45 @@ struct SubagentsView: View {
 
 struct SubagentDetailCard: View {
     let agent: Dieter_V1_Subagent
-    private var fraction: Double {
-        guard agent.contextWindow > 0 else { return agent.status == "completed" ? 1 : 0 }
-        return min(1, Double(agent.contextTokens) / Double(agent.contextWindow))
-    }
 
     var body: some View {
+        let summary = subagentSummary(agent)
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Image(systemName: agent.status == "completed" ? "checkmark.circle" : "circle.dotted")
+                    Image(systemName: summary.completed ? "checkmark.circle" : "circle.dotted")
                         .foregroundStyle(runtimeColor(agent.status))
-                    Text(agent.name.isEmpty ? (agent.agentType.isEmpty ? "Subagent" : agent.agentType) : agent.name)
+                    Text(summary.title)
                         .font(.subheadline.weight(.semibold))
-                    Spacer(); Text(duration(agent.durationMs)).font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                    Spacer(); Text(summary.elapsed).font(.caption2).foregroundStyle(DieterTheme.tertiary)
                 }
-                Text(
-                    agent.activity.isEmpty ? (agent.assignment.isEmpty ? agent.task : agent.assignment) : agent.activity
-                )
-                .font(.caption).foregroundStyle(DieterTheme.subtle).lineLimit(2)
-                let usage = SubagentUsagePresentation.resolve(
-                    tokens: agent.tokens, contextTokens: agent.contextTokens, contextWindow: agent.contextWindow)
-                if !usage.metrics.isEmpty {
-                    Text(usage.metrics.joined(separator: " · ")).font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                Text(summary.statusLine)
+                    .font(.caption).foregroundStyle(DieterTheme.subtle).lineLimit(2)
+                if !summary.usageMetrics.isEmpty {
+                    Text(summary.usageMetrics.joined(separator: " · ")).font(.caption2)
+                        .foregroundStyle(DieterTheme.tertiary)
                 }
-                if agent.status == "running" {
+                if summary.active {
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
                             Capsule().fill(DieterTheme.raised).frame(height: 3)
                             Capsule().fill(DieterTheme.primary).frame(
-                                width: max(16, geometry.size.width * fraction), height: 3)
+                                width: max(16, geometry.size.width * max(0, summary.contextFraction)), height: 3)
                         }
                     }.frame(height: 3)
                 }
             }.padding(13)
             Divider().overlay(DieterTheme.border)
             HStack {
-                Text(agent.name.isEmpty ? String(agent.id.prefix(8)) : agent.name).font(.caption.weight(.semibold))
-                Text([agent.provider, agent.model].filter { !$0.isEmpty }.joined(separator: "/")).font(.caption2)
+                Text(summary.agentLabel).font(.caption.weight(.semibold))
+                Text(summary.identity).font(.caption2)
                     .foregroundStyle(DieterTheme.tertiary)
-                Spacer(); StatusPill(text: agent.status, color: runtimeColor(agent.status))
+                Spacer(); StatusPill(runtime: agent.status)
             }.padding(.horizontal, 13).frame(height: 36)
         }
         .background(DieterTheme.surface, in: RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10).stroke(
-                agent.status == "running" ? DieterTheme.primary.opacity(0.5) : .clear))
-    }
-
-    private func duration(_ milliseconds: Int64) -> String {
-        guard milliseconds > 0 else { return "" }
-        let seconds = milliseconds / 1_000
-        return seconds >= 60 ? "\(seconds / 60)m \(seconds % 60)s" : "\(seconds)s"
+                summary.active ? DieterTheme.primary.opacity(0.5) : .clear))
     }
 }

@@ -70,11 +70,8 @@ data class DieterPaletteTokens(
     val eyesInt: Int get() = eyes.toInt()
     val lightInt: Int get() = light.toInt()
     val darkBackgroundInt: Int get() = darkBackground.toInt()
-    val darkSurfaceInt: Int get() = darkSurface.toInt()
     val mutedInt: Int get() = blendArgb(lightInt, darkBrandInt, 0.30f)
     val tertiaryInt: Int get() = blendArgb(lightInt, darkBrandInt, 0.48f)
-    val outlineInt: Int get() = blendArgb(darkRaisedInt, lightInt, 0.12f)
-    val shellTintDeepInt: Int get() = blendArgb(darkBackgroundInt, shellEndInt, 0.18f)
     val eyesTintInt: Int get() = blendArgb(darkBackgroundInt, eyesInt, 0.16f)
 
     fun textForAppearanceInt(darkMode: Boolean): Int = if (darkMode) lightInt else darkBrandInt
