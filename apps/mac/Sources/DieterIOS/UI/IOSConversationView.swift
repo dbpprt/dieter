@@ -30,35 +30,41 @@
         @State private var modelSettingsPresented = false
         @FocusState private var composerFocused: Bool
 
+        // The observation keeps its original scope while KMP resolves an optimistic card to its server ID.
+        private var isSelectedConversation: Bool { store.selectedCardID == cardID }
+
         private var card: Dieter_V1_Card? {
-            if store.selectedCard?.card.id == cardID { return store.selectedCard?.card }
+            if isSelectedConversation { return store.selectedCard?.card }
             return (store.cards + store.chats).first { $0.id == cardID }
         }
 
         private var timelineReady: Bool { timelineReadyCardID == cardID }
 
         private var messages: [Dieter_V1_UiMessage] {
-            guard store.conversation?.cardID == cardID else { return [] }
+            guard isSelectedConversation else { return [] }
             let queuedIDs = Set((store.conversation?.queue ?? []).lazy.map(\.id).filter { !$0.isEmpty })
             return (store.conversation?.messages ?? []).filter { !queuedIDs.contains($0.id) }
         }
 
         private var queue: [Dieter_V1_QueuedMessage] {
-            store.conversation?.cardID == cardID ? store.conversation?.queue ?? [] : []
+            isSelectedConversation ? store.conversation?.queue ?? [] : []
         }
 
-        private var isRunning: Bool {
-            IOSConversationPresentation.isAgentWorking(
-                conversationStatus: store.conversation?.status ?? "", cardRuntime: card?.runtime ?? "")
+        private var presentation: ClientConversationState? {
+            isSelectedConversation ? store.conversationState : nil
         }
+        private var timelineItems: [IOSConversationTimelineItem] {
+            IOSConversationPresentation.timelineItems(messages)
+        }
+        private var isRunning: Bool { presentation?.working == true }
 
         private var providerStatus: Dieter_V1_ProviderStatus? {
-            store.conversation?.cardID == cardID ? store.conversation?.activeProviderStatus : nil
+            isSelectedConversation ? store.conversation?.activeProviderStatus : nil
         }
 
         var body: some View {
             Group {
-                if let card, store.conversation?.cardID == cardID {
+                if let card, isSelectedConversation, store.conversation != nil {
                     transcript(card)
                 } else {
                     IOSConversationLoadingView(isChat: card?.scope == "chat")
@@ -265,21 +271,25 @@
                                 .padding(.vertical, 32)
                             }
 
-                            ForEach(IOSConversationPresentation.timelineItems(messages)) { item in
+                            ForEach(timelineItems) { item in
                                 if item.isActivity {
-                                    IOSConversationActivityDisclosure(steps: item.steps, identifier: item.id)
-                                        .id(item.id)
+                                    IOSConversationActivityDisclosure(
+                                        steps: item.steps, identifier: item.id, summary: item.summary
+                                    )
+                                    .id(item.id)
                                 } else if let message = item.messages.first {
-                                    IOSConversationMessage(message: message)
+                                    IOSConversationMessage(message: message, groups: item.groups)
                                         .id(item.id)
                                 }
                             }
 
                             if isRunning {
                                 IOSConversationTurnIndicator(
-                                    startedAt: IOSConversationPresentation.turnStart(
-                                        messages: messages, runtimeUpdatedAt: card.runtimeUpdatedAt),
-                                    stopping: card.runtime.lowercased() == "cancelling",
+                                    startedAt: presentation.flatMap {
+                                        $0.turnStartedAtMillis > 0
+                                            ? Date(timeIntervalSince1970: Double($0.turnStartedAtMillis) / 1_000) : nil
+                                    },
+                                    stopping: presentation?.runtime.lowercased() == "cancelling",
                                     providerStatus: providerStatus
                                 )
                                 .id("ios.conversation.agent-working")
@@ -381,7 +391,7 @@
                 }
                 pageAnchorToRestore = IOSConversationPresentation.anchorItem(
                     containing: anchor,
-                    in: IOSConversationPresentation.timelineItems(messages))
+                    in: timelineItems)
                 guard pageAnchorToRestore != nil else { return }
                 pageRestoreRequest &+= 1
             }
@@ -1199,6 +1209,7 @@
 
     private struct IOSConversationMessage: View {
         let message: Dieter_V1_UiMessage
+        let groups: [IOSConversationPartGroup]
 
         private var isUser: Bool { ["user", "human"].contains(message.role.lowercased()) }
 
@@ -1207,12 +1218,13 @@
                 Label(isUser ? "You" : "Dieter", systemImage: isUser ? "person.fill" : "sparkles")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(isUser ? Color.accentColor : Color.secondary)
-                ForEach(IOSConversationPresentation.partGroups(in: message)) { group in
+                ForEach(groups) { group in
                     if group.isActivity {
-                        IOSConversationActivityDisclosure(steps: group.steps, identifier: group.id)
+                        IOSConversationActivityDisclosure(
+                            steps: group.steps, identifier: group.id, summary: group.summary)
                     } else {
                         ForEach(group.steps) { step in
-                            IOSConversationPart(messageID: step.messageID, part: step.part, role: message.role)
+                            IOSConversationPart(step: step, role: message.role)
                         }
                     }
                 }
@@ -1236,6 +1248,7 @@
     private struct IOSConversationActivityDisclosure: View {
         let steps: [IOSConversationActivityStep]
         let identifier: String
+        let summary: String
         @State private var expanded = false
 
         var body: some View {
@@ -1243,20 +1256,20 @@
                 if expanded {
                     VStack(alignment: .leading, spacing: 9) {
                         ForEach(steps) { step in
-                            if IOSConversationPresentation.isReasoning(step.part) {
+                            if step.kind == .reasoning {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("Reasoning").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
                                     IOSMessageText(text: step.part.text)
                                 }
                             } else {
-                                IOSToolPart(messageID: step.messageID, part: step.part)
+                                IOSToolPart(step: step)
                             }
                         }
                     }
                     .padding(.top, 6)
                 }
             } label: {
-                Label(IOSConversationActivitySummary(steps: steps).title, systemImage: "waveform.path.ecg")
+                Label(summary.isEmpty ? "Activity" : summary, systemImage: "waveform.path.ecg")
                     .font(.caption.weight(.medium)).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12).padding(.vertical, 9)
@@ -1267,16 +1280,17 @@
     }
 
     private struct IOSConversationPart: View {
-        let messageID: String
-        let part: Dieter_V1_MessagePart
+        let step: IOSConversationActivityStep
         let role: String
 
+        private var part: Dieter_V1_MessagePart { step.part }
+
         var body: some View {
-            if IOSConversationPresentation.isReasoning(part) {
+            if step.kind == .reasoning {
                 DisclosureGroup("Reasoning") { IOSMessageText(text: part.text) }
                     .font(.subheadline).foregroundStyle(.secondary)
-            } else if IOSConversationPresentation.isToolCall(part) {
-                IOSToolPart(messageID: messageID, part: part)
+            } else if step.kind == .tool || step.kind == .attention {
+                IOSToolPart(step: step)
             } else if !part.text.isEmpty {
                 IOSMessageText(text: part.text)
                     .accessibilityIdentifier("ios.message.text.\(role)")
@@ -1288,14 +1302,11 @@
     }
 
     private struct IOSToolPart: View {
-        let messageID: String
-        let part: Dieter_V1_MessagePart
+        let step: IOSConversationActivityStep
         @State private var expanded = false
 
-        private var name: String {
-            let value = IOSConversationPresentation.effectiveToolName(part)
-            return value.isEmpty ? "Command" : value
-        }
+        private var part: Dieter_V1_MessagePart { step.part }
+        private var name: String { step.toolName.isEmpty ? "Command" : step.toolName }
 
         var body: some View {
             VStack(alignment: .leading, spacing: 6) {
@@ -1316,7 +1327,7 @@
                 } label: {
                     HStack(spacing: 7) {
                         Image(
-                            systemName: IOSConversationPresentation.needsAttention(part)
+                            systemName: step.needsAttention
                                 ? "exclamationmark.circle" : "terminal"
                         )
                         Text(name).font(.system(.caption, design: .monospaced).weight(.medium)).lineLimit(1)
@@ -1331,10 +1342,10 @@
                     }
                 }
                 .font(.subheadline)
-                .foregroundStyle(IOSConversationPresentation.needsAttention(part) ? Color.orange : Color.secondary)
+                .foregroundStyle(step.needsAttention ? Color.orange : Color.secondary)
             }
             .accessibilityIdentifier(
-                "ios.conversation.tool.\(messageID).\(part.toolCallID.isEmpty ? name : part.toolCallID)")
+                "ios.conversation.tool.\(step.messageID).\(part.toolCallID.isEmpty ? name : part.toolCallID)")
         }
     }
 

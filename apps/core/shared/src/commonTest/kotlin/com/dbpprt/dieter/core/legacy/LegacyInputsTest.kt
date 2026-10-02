@@ -45,6 +45,9 @@ class LegacyInputsTest {
         val relocated = LegacyInputs.apple(ios("https://board.dbpprt.com"))
         assertEquals(listOf(gateway), relocated.gateways.map { it.origin })
         assertTrue(relocated.tokens.isEmpty(), "the relocated gateway requires a new sign-in")
+        val loopback = LegacyInputs.apple(ios("http://127.0.0.1:4242"))
+        assertEquals(mapOf("http://127.0.0.1:4242" to "tok"), loopback.tokens)
+        assertEquals(mapOf("http://127.0.0.1:4242" to "d_1"), loopback.preferredMachines)
         assertTrue(LegacyInputs.apple(ios("http://192.168.1.2")).gateways.isEmpty())
     }
 }

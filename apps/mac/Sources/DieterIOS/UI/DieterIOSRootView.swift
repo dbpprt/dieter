@@ -18,6 +18,9 @@
         @State private var createPresentation: IOSCreateTaskPresentation?
         @State private var pendingShareRequest: IOSShareInbox.Request?
         @State private var loadingShareID: String?
+        @State private var sharePresentationAttempts = 0
+        @State private var sharePresentationTask: Task<Void, Never>?
+        @State private var workspaceReady = false
         @State private var shareTargetPresentation: IOSShareTargetPresentation?
         @State private var fileScope: IOSFileScope?
         @State private var drafts: [String: IOSConversationDraft] = [:]
@@ -44,7 +47,7 @@
                 if let quotaPreviewMode {
                     IOSProviderQuotaPreviewScreen(showDetails: quotaPreviewMode == "details")
                 } else if let screenFixture {
-                    IOSRemoteDesktopFixtureView(encodedFixture: screenFixture)
+                    IOSRemoteDesktopFixtureView(encodedFixture: screenFixture, store: store)
                 } else if connectionPreviewEnabled {
                     NavigationStack {
                         IOSWorkspaceBackdrop()
@@ -87,12 +90,44 @@
                     store.resume()
                     receivePendingShare()
                 } else if phase == .background {
+                    sharePresentationTask?.cancel()
                     store.suspend()
                 }
             }
             .onOpenURL { receiveShare($0) }
             .onChange(of: shareReady) { _, ready in
-                if ready { presentPendingShare() }
+                if ready { schedulePendingShare() }
+            }
+            .sheet(item: $createPresentation) { presentation in
+                IOSCreateTaskView(
+                    store: store, initialProjectID: selectedProjectID,
+                    initialBoardID: selectedBoardID, chat: presentation.chat,
+                    initialAttachments: presentation.attachments,
+                    cancelled: { completePendingShare(presentation.shareRequest) }
+                ) { id in
+                    completePendingShare(presentation.shareRequest)
+                    selectedTaskID = id
+                    preferredColumn = .detail
+                }
+            }
+            .sheet(item: $shareTargetPresentation) { presentation in
+                IOSShareTargetPicker(
+                    kind: presentation.kind,
+                    cards: presentation.kind == .task ? store.cards : store.chats,
+                    projects: store.projects,
+                    cancelled: { completePendingShare(presentation.shareRequest) }
+                ) { card in
+                    let routed = routeSharedAttachments(
+                        presentation.attachments, to: card, kind: presentation.kind)
+                    if routed { completePendingShare(presentation.shareRequest) }
+                    return routed
+                }
+            }
+            .onChange(of: createPresentation?.id) { oldValue, newValue in
+                if oldValue != nil, newValue == nil { retryPendingShare() }
+            }
+            .onChange(of: shareTargetPresentation?.id) { oldValue, newValue in
+                if oldValue != nil, newValue == nil { retryPendingShare() }
             }
             .alert(
                 "Couldn’t complete the request",
@@ -167,6 +202,14 @@
                 }
             }
             .accessibilityIdentifier("ios.workspace")
+            .onAppear {
+                workspaceReady = true
+                receivePendingShare()
+            }
+            .onDisappear {
+                workspaceReady = false
+                sharePresentationTask?.cancel()
+            }
             .sheet(isPresented: $settingsPresented) {
                 NavigationStack { IOSSettingsView(store: store) }
             }
@@ -182,25 +225,6 @@
                 }
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
-            }
-            .sheet(item: $createPresentation) { presentation in
-                IOSCreateTaskView(
-                    store: store, initialProjectID: selectedProjectID,
-                    initialBoardID: selectedBoardID, chat: presentation.chat,
-                    initialAttachments: presentation.attachments
-                ) { id in
-                    selectedTaskID = id
-                    preferredColumn = .detail
-                }
-            }
-            .sheet(item: $shareTargetPresentation) { presentation in
-                IOSShareTargetPicker(
-                    kind: presentation.kind,
-                    cards: presentation.kind == .task ? store.cards : store.chats,
-                    projects: store.projects
-                ) { card in
-                    routeSharedAttachments(presentation.attachments, to: card, kind: presentation.kind)
-                }
             }
             .sheet(item: $fileScope) { scope in
                 IOSFilesView(store: store, scope: scope)
@@ -392,7 +416,9 @@
         }
 
         private var shareReady: Bool {
-            guard let request = pendingShareRequest, store.isAuthenticated, store.phase.isConnected else {
+            guard workspaceReady, scenePhase == .active, let request = pendingShareRequest,
+                store.isAuthenticated
+            else {
                 return false
             }
             switch request.destination {
@@ -408,7 +434,7 @@
         private func receiveShare(_ url: URL) {
             guard let request = IOSShareInbox.request(from: url) else { return }
             pendingShareRequest = request
-            presentPendingShare()
+            schedulePendingShare()
         }
 
         private func receivePendingShare() {
@@ -416,7 +442,17 @@
                 let request = IOSShareInbox.pendingRequest()
             else { return }
             pendingShareRequest = request
-            presentPendingShare()
+            schedulePendingShare()
+        }
+
+        private func schedulePendingShare() {
+            guard shareReady else { return }
+            sharePresentationTask?.cancel()
+            sharePresentationTask = Task {
+                try? await DieterTaskSleep.milliseconds(750)
+                guard !Task.isCancelled else { return }
+                presentPendingShare()
+            }
         }
 
         private func presentPendingShare() {
@@ -427,23 +463,37 @@
                 do {
                     let attachments = try await IOSShareInbox.consume(id: request.id)
                     guard pendingShareRequest == request else { return }
-                    IOSShareInbox.clearPendingRequest(request)
-                    pendingShareRequest = nil
                     switch request.destination {
                     case .newTask:
-                        createPresentation = IOSCreateTaskPresentation(chat: false, attachments: attachments)
+                        createPresentation = IOSCreateTaskPresentation(
+                            chat: false, attachments: attachments, shareRequest: request)
                     case .task, .chat:
                         shareTargetPresentation = IOSShareTargetPresentation(
-                            kind: request.destination, attachments: attachments)
+                            kind: request.destination, attachments: attachments, shareRequest: request)
                     }
                 } catch {
                     if pendingShareRequest == request {
-                        IOSShareInbox.clearPendingRequest(request)
+                        IOSShareInbox.complete(request)
                         pendingShareRequest = nil
                         store.show(error)
                     }
                 }
             }
+        }
+
+        private func completePendingShare(_ request: IOSShareInbox.Request?) {
+            guard let request, pendingShareRequest == request else { return }
+            IOSShareInbox.complete(request)
+            pendingShareRequest = nil
+            sharePresentationAttempts = 0
+            sharePresentationTask?.cancel()
+            sharePresentationTask = nil
+        }
+
+        private func retryPendingShare() {
+            guard pendingShareRequest != nil, sharePresentationAttempts < 3 else { return }
+            sharePresentationAttempts += 1
+            schedulePendingShare()
         }
 
         private func routeSharedAttachments(
@@ -504,12 +554,14 @@
         let id = UUID()
         let chat: Bool
         let attachments: [Dieter_V1_MessagePart]
+        var shareRequest: IOSShareInbox.Request? = nil
     }
 
     private struct IOSShareTargetPresentation: Identifiable {
         let id = UUID()
         let kind: IOSShareInbox.Destination
         let attachments: [Dieter_V1_MessagePart]
+        var shareRequest: IOSShareInbox.Request? = nil
     }
 
     private struct IOSShareTargetPicker: View {
@@ -517,6 +569,7 @@
         let kind: IOSShareInbox.Destination
         let cards: [Dieter_V1_Card]
         let projects: [Dieter_V1_Project]
+        let cancelled: () -> Void
         let selected: (Dieter_V1_Card) -> Bool
         @State private var search = ""
 
@@ -559,8 +612,11 @@
                 }
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { dismiss() }
-                            .accessibilityIdentifier("ios.share.cancel")
+                        Button("Cancel") {
+                            cancelled()
+                            dismiss()
+                        }
+                        .accessibilityIdentifier("ios.share.cancel")
                     }
                 }
             }

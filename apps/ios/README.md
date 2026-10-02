@@ -1,10 +1,21 @@
 # Dieter for iPhone and iPad
 
-A native SwiftUI remote client for iOS 18 or later. It uses the same generated protobuf API, authenticated HTTP/2 client, certificate identity checks, and direct-TLS/relay route selection as the Mac app. The daemon continues to own tasks, transcripts, and files; the iOS app never starts a local daemon.
+A native SwiftUI remote client for iOS 18 or later. The Kotlin Multiplatform
+client core owns identity, synchronization, durable intent, presentation,
+route selection, recovery, files, terminals, and screen-session policy. Swift
+provides the native UI and platform edges: grpc-swift, Keychain, WebRTC media,
+UIKit rendering, and SwiftTerm. The daemon continues to own tasks,
+transcripts, and files; the iOS app never starts a local daemon.
 
 ## Open and build
 
 Open `apps/ios/DieterIOS.xcodeproj` in Xcode and select the **DieterIOS** scheme. The app supports iPhone and iPad. Simulator builds are signed ad hoc and need no developer account, so native Keychain access is exercised during testing. To install on a physical device, select your development team for the DieterIOSApp target and use your device as the destination. For command-line automatic signing, explicitly supply the `DIETER_IOS_TEAM_ID` Xcode build setting (for example, `DIETER_IOS_TEAM_ID=YOUR_TEAM_ID`). No team or signing identity is discovered automatically by Dieter's setup scripts.
+
+The repository build commands generate the matching debug or release KMP
+XCFramework before Swift package dependencies compile. The framework is
+generated under `apps/core/apple/build/XCFrameworks/` and is intentionally not
+checked in. Before a first direct Xcode build, run
+`just mac shared-framework debug all` once from the repository root.
 
 From the repository root:
 
@@ -26,7 +37,15 @@ simulator. Run both smoke commands above locally when adding or changing an iOS
 feature; they remain the layout and end-to-end qualification for the two device
 classes.
 
-The SwiftUI screens and iOS store live in `apps/mac/Sources/DieterIOS/` so they can compose the existing package-scoped DieterCore, DieterClient, and DieterAPI modules. The small Xcode app wraps the package's public root view and embeds its shared DieterIOS framework. The Mac executable is not linked into the iOS app.
+The SwiftUI screens and thin iOS observation adapter live in
+`apps/mac/Sources/DieterIOS/`. Production builds first generate
+`DieterShared.xcframework` from `apps/core/apple`, then link it into the shared
+Swift package framework. Commands and observable slices cross the boundary as
+the checked-in `dieter.client.v1` protobuf contract. Screen sharing uses a
+direct exported façade because Swift supplies the native WebRTC engine; the
+core still owns signaling, trust, route selection, recovery, stream policy,
+control transfer, and input framing. The small Xcode app wraps the package's
+public root view. The Mac executable is not linked into the iOS app.
 
 App icons are generated from `apps/ios/Artwork/AppIcon.svg`, adapted from Dieter's
 existing brand SVG with an opaque square background. iOS applies the icon shape.
@@ -82,7 +101,14 @@ reveal those controls. iPad keeps its split-view toolbar.
 The session closes when Screens is left, the machine changes, or iOS backgrounds
 the app; returning establishes a new signed binding and input epoch.
 
-The existing `dieter-mac://oauth/callback` redirect is deliberately reused inside ASWebAuthenticationSession, with PKCE. This keeps sign-in compatible with gateways already configured for the Mac client. Tokens are kept in device-only Keychain items, separated by gateway origin. Remote plaintext endpoints are rejected. The Debug-only isolated test gateway accepts a loopback address supplied by the smoke harness; production sign-in always requires HTTPS.
+The existing `dieter-mac://oauth/callback` redirect is deliberately reused
+inside `ASWebAuthenticationSession`. The shared core creates and validates
+PKCE state and performs the code exchange; Swift only presents the system
+authentication sheet. This keeps sign-in compatible with gateways already
+configured for the Mac client. Tokens are kept in device-only Keychain items,
+separated by gateway origin. Remote plaintext endpoints are rejected. The
+Debug-only isolated test gateway accepts a loopback address supplied by the
+smoke harness; production sign-in always requires HTTPS.
 
 ## Basic workflows
 

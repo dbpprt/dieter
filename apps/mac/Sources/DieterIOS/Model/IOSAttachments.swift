@@ -279,6 +279,22 @@ enum IOSShareInbox {
         clearPendingRequest(request, from: container)
     }
 
+    static func complete(_ request: Request) {
+        guard
+            let group = Bundle.main.object(forInfoDictionaryKey: "DieterAppGroupIdentifier") as? String,
+            let container = FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: group)
+        else { return }
+        complete(request, from: container)
+    }
+
+    static func complete(_ request: Request, from container: URL) {
+        clearPendingRequest(request, from: container)
+        let directory = container.appendingPathComponent("ShareInbox", isDirectory: true)
+            .appendingPathComponent(request.id, isDirectory: true)
+        try? FileManager.default.removeItem(at: directory)
+    }
+
     static func clearPendingRequest(_ request: Request, from container: URL) {
         let url = container.appendingPathComponent("ShareInbox", isDirectory: true)
             .appendingPathComponent(pendingRequestName, isDirectory: false)
@@ -319,12 +335,7 @@ enum IOSShareInbox {
             return IOSAttachmentSource(url: url, filename: item.filename, mediaType: item.mediaType)
         }
         do {
-            let parts = try await IOSAttachmentLoader().parts(sources: sources)
-            try? FileManager.default.removeItem(at: directory)
-            return parts
-        } catch {
-            try? FileManager.default.removeItem(at: directory)
-            throw error
-        }
+            return try await IOSAttachmentLoader().parts(sources: sources)
+        } catch { throw error }
     }
 }

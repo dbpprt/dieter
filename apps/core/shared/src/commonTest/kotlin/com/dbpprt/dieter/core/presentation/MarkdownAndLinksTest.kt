@@ -2,6 +2,7 @@ package com.dbpprt.dieter.core.presentation
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -61,6 +62,10 @@ class MarkdownAndLinksTest {
     @Test
     fun workspaceImageLinksStayInsideTheWorkspace() {
         val root = "/remote/worktree"
+        assertTrue(WorkspaceImages.isWorkspaceImage("file:///remote/worktree/docs/result.png"))
+        assertTrue(WorkspaceImages.isWorkspaceImage("../candidate.png"), "containment is checked while resolving the path")
+        assertFalse(WorkspaceImages.isWorkspaceImage("https://example.com/result.png"))
+        assertFalse(WorkspaceImages.isWorkspaceImage("README.md"))
         assertEquals("docs/screenshots/Preview One.PNG", WorkspaceImages.path("./docs/screenshots/Preview%20One.PNG#view"))
         assertEquals("images/result.webp", WorkspaceImages.path("images/result.webp"))
         assertEquals("docs/result.png", WorkspaceImages.path("file:///remote/worktree/docs/result.png", root))

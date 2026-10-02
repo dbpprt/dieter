@@ -1,704 +1,426 @@
 #if os(iOS)
-    import CryptoKit
     import DieterAPI
     import DieterClient
     import DieterCore
+    import DieterShared
     import Foundation
-    import GRPCCore
     import Observation
+    import SharedCore
 
+    /// The iOS app's SwiftUI adapter. The shared core owns identity, routing,
+    /// sync, durable intent, conversation reduction, and recovery; this type
+    /// only translates its schema-first slices into the existing views.
     @MainActor
     @Observable
     final class IOSStore {
         var gatewayAddress: String {
-            didSet {
-                if DieterEndpoint.parse(oldValue)?.credentialID != configuredOriginOrNil()?.credentialID {
-                    cancelAuthentication()
-                }
-            }
+            didSet { defaults.set(gatewayAddress, forKey: "DieterIOSGateway") }
         }
-        private(set) var phase: ConnectionPhase = .disconnected
-        private(set) var machines: [DieterEndpoint] = []
+
+        private(set) var selectedCardID: String?
         private(set) var utilityMachineID: String?
-        private(set) var projects: [Dieter_V1_Project] = []
-        private(set) var boards: [Dieter_V1_Board] = []
-        private(set) var cards: [Dieter_V1_Card] = []
-        private(set) var chats: [Dieter_V1_Card] = []
-        private(set) var selectedCard: Dieter_V1_CardDetail?
-        private(set) var conversation: Dieter_V1_Conversation?
-        private(set) var hasOlderMessages = false
-        private(set) var loadingOlder = false
-        private(set) var isAuthenticated = false
         private(set) var errorMessage: String?
-        private(set) var machineRouteDescriptions: [String: String] = [:]
-        @ObservationIgnored lazy var quotas = ProviderQuotaModel { [weak self] in
-            guard let self, self.foreground, let client = self.gateway else { throw CancellationError() }
-            // IOSStore owns the foreground gateway; the quota feature only borrows it.
-            return FeatureClientLease(client: client)
-        }
-        private(set) var machineInformation: Dieter_V1_MachineInformation?
-        private(set) var machineInformationLoading = false
-        private(set) var machineInformationError: String?
+        private var terminalLocalError: String?
         private var pendingOperations = 0
-        var busy: Bool { pendingOperations > 0 || phase == .connecting }
-        var canSendMessage: Bool {
-            IOSConversationAvailability.canSend(
-                phase: phase, busy: busy, hasConversationTransport: conversationPlane != nil,
-                hasSelection: selectedCard != nil)
-        }
-        var supportedMachines: [DieterEndpoint] { machines.filter(IOSMachinePolicy.isCompatible) }
-        var utilityMachine: DieterEndpoint? { supportedMachines.first { $0.daemonID == utilityMachineID } }
+        private var foreground = true
 
         @ObservationIgnored private let defaults: UserDefaults
-        @ObservationIgnored private let connections = ConnectionManager()
+        @ObservationIgnored private let core: IOSCoreStore
         @ObservationIgnored private var authentication: IOSAuthentication?
-        @ObservationIgnored private var authenticationOwnership = IOSAuthenticationOwnership()
-        @ObservationIgnored private var gateway: DieterRPC?
-        @ObservationIgnored private var gatewayTask: Task<Void, Never>?
-        @ObservationIgnored private var conversationPlane: DataPlaneConnection?
-        @ObservationIgnored private var transcriptTask: Task<Void, Never>?
-        @ObservationIgnored private var refreshTask: Task<Void, Never>?
-        @ObservationIgnored private var providerQuotaTask: Task<Void, Never>?
-        @ObservationIgnored private var reconnectTask: Task<Void, Never>?
-        @ObservationIgnored private var authTask: Task<String, Error>?
-        @ObservationIgnored private var connectionID = UUID()
-        @ObservationIgnored private var selectionID = UUID()
-        @ObservationIgnored private var bootstrapStarted = false
-        @ObservationIgnored private var foreground = true
-        #if DEBUG
-            @ObservationIgnored private var acceptedTestSignIn = false
-        #endif
-        @ObservationIgnored private var accessToken: String?
-        @ObservationIgnored private var connectedOrigin: DieterEndpoint?
-        @ObservationIgnored private var transcript = IOSTranscript()
-        @ObservationIgnored private var clientID: String
-        @ObservationIgnored private var createIdentity = IOSMutationIdentity()
-        @ObservationIgnored private var messageIdentity = IOSMutationIdentity()
-        @ObservationIgnored private var startIdentity = IOSMutationIdentity()
-        @ObservationIgnored private var directoryProjection = MachineDirectoryProjection(
-            projects: [:], projectReplicaEndpointIDs: [:], boards: [:], cards: [:], chats: [])
+        @ObservationIgnored private var started = false
+
+        @ObservationIgnored lazy var quotas = IOSCoreQuotas(core: core)
 
         init(defaults: UserDefaults = .standard) {
             self.defaults = defaults
-            let storedGateway = defaults.string(forKey: "DieterIOSGateway") ?? "https://gateway.getdieter.com"
-            if let endpoint = DieterEndpoint.parse(storedGateway), endpoint.currentPublicGateway != endpoint {
-                let relocatedAddress = endpoint.currentPublicGateway.address
-                gatewayAddress = relocatedAddress
-                defaults.set(relocatedAddress, forKey: "DieterIOSGateway")
-            } else {
-                gatewayAddress = storedGateway
-            }
-            clientID = defaults.string(forKey: "DieterIOSClientID") ?? "ios-\(UUID().uuidString.lowercased())"
-            defaults.set(clientID, forKey: "DieterIOSClientID")
+            var stored = defaults.string(forKey: "DieterIOSGateway") ?? "https://gateway.getdieter.com"
             #if DEBUG
-                if let address = ProcessInfo.processInfo.environment["DIETER_IOS_TEST_GATEWAY"] {
-                    gatewayAddress = address
-                }
+                stored = ProcessInfo.processInfo.environment["DIETER_IOS_TEST_GATEWAY"] ?? stored
             #endif
+            let normalizedGateway = DieterEndpoint.parse(stored)?.currentPublicGateway.address ?? stored
+            gatewayAddress = normalizedGateway
+            core = IOSCoreStore(defaults: defaults)
+            defaults.set(normalizedGateway, forKey: "DieterIOSGateway")
         }
 
-        deinit {
-            transcriptTask?.cancel()
-            refreshTask?.cancel()
-            providerQuotaTask?.cancel()
-            reconnectTask?.cancel()
-            authTask?.cancel()
-            conversationPlane?.shutdown()
-            gatewayTask?.cancel()
-            gateway?.shutdown()
+        // MARK: Shared state
+
+        var phase: ConnectionPhase {
+            switch core.session.phase {
+            case .connecting, .syncing, .reconnecting: .connecting
+            case .connected: .connected(version: DieterRelease.current)
+            case .authRequired: .authenticationRequired
+            case .updateRequired: .incompatible(found: "")
+            case .noMachine: .disconnected
+            default: .disconnected
+            }
         }
+
+        var machines: [DieterEndpoint] {
+            let gateway =
+                DieterEndpoint.parse(core.session.gatewayOrigin)
+                ?? DieterEndpoint.parse(gatewayAddress)
+                ?? DieterEndpoint.defaults[0]
+            return core.session.machines.map { machine in
+                DieterEndpoint(
+                    name: machine.name.isEmpty ? machine.id : machine.name,
+                    host: gateway.host,
+                    port: gateway.port,
+                    secure: gateway.secure,
+                    daemonID: machine.id,
+                    online: machine.online,
+                    lastSeenAt: machine.lastSeenAt,
+                    releaseVersion: machine.releaseVersion,
+                    compatibility: machine.compatible ? .compatible : .updateRequired,
+                    minimumReleaseVersion: machine.minimumReleaseVersion,
+                    remoteDesktopReady: machine.remoteDesktopReady,
+                    remoteDesktopReason: machine.remoteDesktopReason,
+                    remoteDesktopPlatform: machine.platform)
+            }
+        }
+
+        var supportedMachines: [DieterEndpoint] { machines.filter { $0.compatibility == .compatible } }
+        var utilityMachine: DieterEndpoint? {
+            supportedMachines.first { $0.daemonID == utilityMachineID }
+        }
+        var machineRouteDescriptions: [String: String] {
+            Dictionary(
+                uniqueKeysWithValues: core.session.machines.compactMap { machine in
+                    machine.route.isEmpty ? nil : (machine.id, machine.route)
+                })
+        }
+        var projects: [Dieter_V1_Project] { core.workspace.projects.filter { !$0.archived } }
+        var boards: [Dieter_V1_Board] { core.workspace.boards.filter { !$0.retired } }
+        var cards: [Dieter_V1_Card] {
+            core.workspace.cards.filter {
+                !$0.archived && !($0.scope == "chat" && $0.boardID.isEmpty)
+            }
+        }
+        var chats: [Dieter_V1_Card] {
+            core.workspace.cards.filter { !$0.archived && $0.scope == "chat" && $0.boardID.isEmpty }
+        }
+        var selectedCard: Dieter_V1_CardDetail? {
+            guard let id = selectedCardID,
+                let card = (cards + chats).first(where: { $0.id == id })
+                    ?? core.conversations[id]?.card
+            else { return nil }
+            var detail = Dieter_V1_CardDetail()
+            detail.card = card
+            if let project = projects.first(where: { $0.id == card.projectID }) { detail.project = project }
+            if let board = boards.first(where: { $0.id == card.boardID }) { detail.board = board }
+            return detail
+        }
+        var conversation: Dieter_V1_Conversation? {
+            guard let id = selectedCardID, let slice = core.conversations[id], !slice.loading else { return nil }
+            var value = slice.conversation
+            value.messages = slice.messages
+            return value
+        }
+        var conversationState: ClientConversationState? {
+            guard let id = selectedCardID, let slice = core.conversations[id] else { return nil }
+            return slice.state
+        }
+        var hasOlderMessages: Bool {
+            selectedCardID.flatMap { core.conversations[$0]?.hasEarlier_p } ?? false
+        }
+        var loadingOlder: Bool {
+            selectedCardID.flatMap { core.conversations[$0]?.loadingEarlier } ?? false
+        }
+        var isAuthenticated: Bool { core.session.signedIn }
+        var busy: Bool { pendingOperations > 0 || phase == .connecting }
+        var canSendMessage: Bool {
+            phase.isConnected && !busy && selectedCardID != nil && conversation != nil
+        }
+        var clientID: String { core.clientID }
+        var coreClient: LiveCoreClient { core.client }
+        var screenMedia: IOSScreenMedia { core.screenMedia }
+        var machineInformation: Dieter_V1_MachineInformation? {
+            guard let id = utilityMachineID, let readings = core.telemetry.machines[id], readings.hasInformation else {
+                return nil
+            }
+            return readings.information
+        }
+        var machineInformationLoading: Bool {
+            utilityMachineID.flatMap { core.telemetry.machines[$0]?.loading } ?? false
+        }
+        var machineInformationError: String? {
+            guard let id = utilityMachineID else { return nil }
+            let error = core.telemetry.machines[id]?.error ?? ""
+            return error.isEmpty ? nil : error
+        }
+        var terminalSlice: ClientTerminalsSlice { core.terminals }
+        var terminalScreens: [String: IOSTerminalScreenState] { core.terminalScreens }
+        var terminalError: String? {
+            terminalLocalError ?? (core.terminals.error.isEmpty ? nil : core.terminals.error)
+        }
+
+        // MARK: Session
 
         func bootstrap() async {
-            guard !bootstrapStarted else { return }
-            bootstrapStarted = true
-            await reconnect()
+            guard !started else { return }
+            started = true
+            if core.needsLegacyImport {
+                let endpoint = DieterEndpoint.parse(gatewayAddress)
+                let token: String?
+                #if DEBUG
+                    if ProcessInfo.processInfo.environment["DIETER_IOS_TEST_GATEWAY"] != nil {
+                        token =
+                            ProcessInfo.processInfo.environment["DIETER_IOS_TEST_START_SIGNED_OUT"] == "1"
+                            ? nil : ProcessInfo.processInfo.environment["DIETER_IOS_TEST_TOKEN"]
+                    } else if let endpoint {
+                        token = await DieterCredentialStore.token(for: endpoint)
+                    } else {
+                        token = nil
+                    }
+                #else
+                    if let endpoint {
+                        token = await DieterCredentialStore.token(for: endpoint)
+                    } else {
+                        token = nil
+                    }
+                #endif
+                let preferred = endpoint.flatMap {
+                    defaults.string(forKey: "DieterIOSUtilityMachine:\($0.credentialID)")
+                }
+                do {
+                    try await core.importLegacy(
+                        gateway: gatewayAddress, token: token, preferredMachine: preferred)
+                } catch {
+                    errorMessage = IOSUserError.message(error)
+                }
+            }
+            defaults.set(core.clientID, forKey: "DieterIOSClientID")
+            core.start()
+            await setForeground(true)
+            restoreUtilityMachine()
         }
 
         func clearError() { errorMessage = nil }
-
-        func show(_ error: Error) { errorMessage = IOSUserError.message(error) }
+        func show(_ error: Error) { errorMessage = message(error) }
 
         func signIn() async {
-            cancelAuthentication()
+            guard pendingOperations == 0 else { return }
+            pendingOperations += 1
+            defer { pendingOperations -= 1 }
+            let authentication = IOSAuthentication()
+            self.authentication = authentication
             do {
-                let origin = try configuredOrigin()
-                let flow = IOSAuthentication()
-                authentication = flow
-                await authenticate(to: origin) { try await flow.signIn(to: origin) }
-            } catch { errorMessage = IOSUserError.message(error) }
+                var begin = ClientBeginSignIn()
+                begin.gatewayURL = gatewayAddress
+                var command = ClientCommand()
+                command.beginSignIn = begin
+                let started = try await core.dispatch(command).signInStarted
+                guard let url = URL(string: started.authorizeURL) else {
+                    throw IOSAuthenticationError.invalidResponse
+                }
+                let callback = try await authentication.callback(for: url)
+                var complete = ClientCompleteSignIn()
+                complete.callbackURL = callback.absoluteString
+                command = ClientCommand()
+                command.completeSignIn = complete
+                let selected = try await core.dispatch(command).gatewaySelected
+                gatewayAddress = selected.origin
+                restoreUtilityMachine()
+            } catch is CancellationError {
+            } catch {
+                errorMessage = message(error)
+            }
+            if self.authentication === authentication { self.authentication = nil }
         }
 
         func connectWithToken(_ token: String) async {
-            let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !token.isEmpty else { errorMessage = "Enter a gateway session token."; return }
-            cancelAuthentication()
             do {
-                let origin = try configuredOrigin()
-                #if DEBUG
-                    acceptedTestSignIn = true
-                #endif
-                await authenticate(to: origin) { token }
-            } catch { errorMessage = IOSUserError.message(error) }
-        }
-
-        private func authenticate(
-            to origin: DieterEndpoint,
-            obtainToken: @MainActor @escaping () async throws -> String
-        ) async {
-            let attempt = authenticationOwnership.begin(gatewayID: origin.credentialID)
-            // Own the complete exchange and Keychain write, so canceling a
-            // replaced/sign-out attempt also cancels a not-yet-admitted save.
-            let task = Task { [weak self] in
-                let token = try await obtainToken()
-                guard let self, self.ownsAuthentication(attempt), !Task.isCancelled else {
-                    throw CancellationError()
-                }
-                try await DieterCredentialStore.save(token, for: origin)
-                guard self.ownsAuthentication(attempt), !Task.isCancelled else { throw CancellationError() }
-                return token
-            }
-            authTask = task
-            pendingOperations += 1
-            defer {
-                pendingOperations -= 1
-                // A previous task can complete after a newer sign-in starts.
-                if authenticationOwnership.finish(attempt) {
-                    authTask = nil
-                    authentication = nil
-                }
-            }
-            do {
-                _ = try await task.value
-                let shouldConnect = authenticationOwnership.shouldConnect(
-                    attempt, gatewayID: configuredOriginOrNil()?.credentialID, foreground: foreground)
-                // Authentication is complete once its token is persisted. Retire
-                // it before suspending in reconnect so a foreground return can
-                // replace that connection attempt instead of waiting on auth.
-                if authenticationOwnership.finish(attempt) {
-                    authTask = nil
-                    authentication = nil
-                }
-                if shouldConnect { await reconnect() }
-            } catch is CancellationError {
+                try await adopt(token: token, gateway: gatewayAddress)
             } catch {
-                if ownsAuthentication(attempt) { errorMessage = IOSUserError.message(error) }
+                errorMessage = message(error)
             }
         }
 
-        private func ownsAuthentication(_ attempt: IOSAuthenticationOwnership.Attempt) -> Bool {
-            authenticationOwnership.accepts(attempt, gatewayID: configuredOriginOrNil()?.credentialID)
-        }
-
-        private func cancelAuthentication() {
-            authenticationOwnership.invalidate()
-            authTask?.cancel()
-            authTask = nil
-            authentication?.cancel()
-            authentication = nil
+        private func adopt(token: String, gateway: String) async throws {
+            var payload = ClientAdoptSession()
+            payload.gatewayURL = gateway
+            payload.sessionToken = token
+            payload.name = "Custom"
+            var command = ClientCommand()
+            command.adoptSession = payload
+            _ = try await core.dispatch(command)
+            restoreUtilityMachine()
         }
 
         func signOut() async {
-            let origins = [connectedOrigin, configuredOriginOrNil()].compactMap { $0 }
-            cancelAuthentication()
-            closeConnections(clearContent: true)
-            machines = []
+            authentication?.cancel()
+            authentication = nil
+            var command = ClientCommand()
+            command.signOut = ClientSignOut()
+            do { _ = try await core.dispatch(command) } catch { errorMessage = message(error) }
+            selectedCardID = nil
             utilityMachineID = nil
-            isAuthenticated = false
-            accessToken = nil
-            #if DEBUG
-                acceptedTestSignIn = false
-            #endif
-            phase = .authenticationRequired
-            var removedOrigins = Set<String>()
-            for origin in origins where removedOrigins.insert(origin.credentialID).inserted {
-                do { try await DieterCredentialStore.remove(for: origin) } catch {
-                    errorMessage = "Could not remove the saved sign-in: \(IOSUserError.message(error))"
-                }
-            }
         }
 
         func reconnect() async {
+            var command = ClientCommand()
+            command.resync = ClientResync()
+            do { _ = try await core.dispatch(command) } catch { errorMessage = message(error) }
+        }
+
+        func refreshMachines() async { await reconnect() }
+
+        func suspend() {
             guard foreground else { return }
-            let previousCardID = selectedCard?.card.id
-            let previousUtilityID = utilityMachineID
-            let retainingSnapshot = connectedOrigin?.credentialID == configuredOriginOrNil()?.credentialID
-            closeConnections(clearContent: !retainingSnapshot)
-            let attempt = connectionID
-            phase = .connecting
-            errorMessage = nil
-            do {
-                let origin = try configuredOrigin()
-                if connectedOrigin?.credentialID != origin.credentialID {
-                    machines = []
-                    utilityMachineID = nil
-                    isAuthenticated = false
-                }
-                connectedOrigin = origin
-                var token = await DieterCredentialStore.token(for: origin)
-                #if DEBUG
-                    if ProcessInfo.processInfo.environment["DIETER_IOS_TEST_GATEWAY"] != nil {
-                        let startsSignedOut =
-                            ProcessInfo.processInfo.environment["DIETER_IOS_TEST_START_SIGNED_OUT"] == "1"
-                        token =
-                            !startsSignedOut || acceptedTestSignIn
-                            ? ProcessInfo.processInfo.environment["DIETER_IOS_TEST_TOKEN"] : nil
-                    }
-                #endif
-                guard owns(attempt) else { return }
-                guard let token, !token.isEmpty else {
-                    isAuthenticated = false; phase = .authenticationRequired; return
-                }
-                accessToken = token
-                let control = try DieterRPC(endpoint: origin, accessToken: token)
-                gateway = control
-                gatewayTask = ConnectionManager.run(control)
-                let clientCompatibility = try await control.compatibility()
-                guard clientCompatibility.status == .compatible else {
-                    throw IOSStoreError.incompatible(clientCompatibility.minimumReleaseVersion)
-                }
-                let directory = try await control.daemons()
-                guard owns(attempt) else { return }
-                updateMachines(makeMachines(directory, origin: origin), preferredUtilityID: previousUtilityID)
-                startProviderQuotaRefresh(attempt: attempt)
-                defaults.set(gatewayAddress, forKey: "DieterIOSGateway")
-                guard supportedMachines.contains(where: \.online) else {
-                    phase = .disconnected
-                    errorMessage =
-                        machines.isEmpty
-                        ? "No compatible machines are enrolled for this account."
-                        : "Your compatible machines are offline."
-                    startDirectoryRefresh(attempt: attempt)
-                    isAuthenticated = true
-                    return
-                }
-                let loadedWorkspace = await refreshGlobalDirectory(attempt: attempt)
-                guard owns(attempt) else { return }
-                guard loadedWorkspace else { throw IOSStoreError.workspaceUnavailable }
-                if let previousCardID,
-                    cards.contains(where: { $0.id == previousCardID })
-                        || chats.contains(where: { $0.id == previousCardID })
-                {
-                    await selectCard(id: previousCardID)
-                }
-                guard owns(attempt) else { return }
-                // Keep conversation mutations disabled until a retained
-                // selection has restored its owner transport. Publishing the
-                // connected phase first lets foregrounded views submit into a
-                // readable snapshot while conversationPlane is still nil.
-                phase = .connected(version: DieterRelease.current)
-                startDirectoryRefresh(attempt: attempt)
-                // Switching the root view retires the sign-in controls. Do it
-                // only after the initial workspace is readable so their task
-                // cannot leave a saved session in an empty half-connected UI.
-                isAuthenticated = true
-            } catch {
-                guard owns(attempt) else { return }
-                connectionFailed(error, attempt: attempt)
+            foreground = false
+            Task { await selectTelemetry(active: false) }
+            Task { await setForeground(false) }
+        }
+
+        func resume() {
+            guard !foreground else { return }
+            foreground = true
+            Task { await setForeground(true) }
+        }
+
+        private func setForeground(_ value: Bool) async {
+            var payload = ClientSetForeground()
+            payload.foreground = value
+            var command = ClientCommand()
+            command.setForeground = payload
+            do { _ = try await core.dispatch(command) } catch {
+                if value { errorMessage = message(error) }
             }
         }
 
-        func refreshMachines() async {
-            guard let control = gateway, let origin = connectedOrigin else { await reconnect(); return }
-            let attempt = connectionID
-            let previousCardID = selectedCard?.card.id
-            do {
-                let directory = try await control.daemons()
-                guard owns(attempt) else { return }
-                updateMachines(makeMachines(directory, origin: origin), preferredUtilityID: utilityMachineID)
-                _ = await refreshGlobalDirectory(attempt: attempt)
-                guard owns(attempt) else { return }
-                guard supportedMachines.contains(where: \.online) else {
-                    phase = .disconnected
-                    return
-                }
-                if errorMessage == "No compatible machines are enrolled for this account."
-                    || errorMessage == "Your compatible machines are offline."
-                {
-                    errorMessage = nil
-                }
-                if let previousCardID,
-                    cards.contains(where: { $0.id == previousCardID })
-                        || chats.contains(where: { $0.id == previousCardID })
-                {
-                    await selectCard(id: previousCardID)
-                }
-                guard owns(attempt) else { return }
-                phase = .connected(version: DieterRelease.current)
-            } catch {
-                guard owns(attempt) else { return }
-                connectionFailed(error, attempt: attempt)
-            }
-        }
+        // MARK: Machine utilities
 
         func selectUtilityMachine(id: String) {
-            guard let machine = supportedMachines.first(where: { $0.daemonID == id || $0.id == id }) else { return }
-            guard utilityMachineID != machine.daemonID else { return }
+            guard let machine = supportedMachines.first(where: { $0.daemonID == id || $0.id == id }) else {
+                return
+            }
             utilityMachineID = machine.daemonID
-            machineInformation = nil
-            machineInformationError = nil
-            machineRouteDescriptions.removeValue(forKey: machine.daemonID ?? machine.id)
-            defaults.set(machine.daemonID, forKey: "DieterIOSUtilityMachine:\(machine.credentialID)")
-        }
-
-        func refreshMachineInformation() async {
-            guard !machineInformationLoading else { return }
-            guard let machine = utilityMachine else {
-                machineInformation = nil
-                machineInformationError = "Choose a machine to inspect its state."
-                return
-            }
-            guard machine.online else {
-                machineInformation = nil
-                machineInformationError = "\(machine.name) is offline."
-                return
-            }
-            guard foreground, phase.isConnected else {
-                machineInformationError = "Reconnect to read live machine state."
-                return
-            }
-
-            let attempt = connectionID
-            let daemonID = machine.daemonID
-            machineInformationLoading = true
-            machineInformationError = nil
-            defer {
-                if connectionID == attempt, utilityMachineID == daemonID {
-                    machineInformationLoading = false
-                }
-            }
-            do {
-                let plane = try await dataPlaneConnection(to: machine)
-                defer { plane.shutdown() }
-                let information = try await plane.rpc.machineInformation()
-                guard owns(attempt), utilityMachineID == daemonID else { return }
-                machineInformation = information
-                machineRouteDescriptions[daemonID ?? machine.id] = routeLabel(plane.connection.route)
-            } catch is CancellationError {
-            } catch {
-                guard owns(attempt), utilityMachineID == daemonID else { return }
-                machineInformationError = IOSUserError.message(error)
+            if let endpoint = activeGatewayEndpoint() {
+                defaults.set(machine.daemonID, forKey: "DieterIOSUtilityMachine:\(endpoint.credentialID)")
             }
         }
 
-        private func dataPlaneConnection(
-            to machine: DieterEndpoint, refreshDirectToken: Bool = false
-        ) async throws -> DataPlaneConnection {
-            guard let gateway, let accessToken else { throw IOSAuthenticationError.invalidResponse }
-            guard IOSMachinePolicy.isCompatible(machine) else {
-                throw IOSStoreError.incompatible(machine.minimumReleaseVersion)
-            }
-            var candidateScope = DirectCandidateScope.nonLoopback
-            #if DEBUG
-                if ProcessInfo.processInfo.environment["DIETER_IOS_TEST_GATEWAY"] != nil { candidateScope = .all }
-            #endif
-            let plane = try await connections.selectDataPlane(
-                gateway: gateway, target: machine, gatewayAccessToken: accessToken,
-                directCandidateScope: candidateScope, refreshDirectToken: refreshDirectToken)
-            do {
-                let health = try await plane.rpc.health(timeout: .seconds(5))
-                guard health.status == "ok" else { throw IOSStoreError.workspaceUnavailable }
-            } catch {
-                plane.shutdown()
-                throw error
-            }
-            return plane
-        }
-
-        private func loadMachineSnapshot(_ machine: DieterEndpoint, attempt: UUID) async -> MachineSnapshot? {
-            guard owns(attempt), machine.online, IOSMachinePolicy.isCompatible(machine) else { return nil }
-            do {
-                let plane = try await dataPlaneConnection(to: machine)
-                defer { plane.shutdown() }
-                var request = Dieter_V1_GetStateRequest()
-                request.allProjects = true
-                let value = try await plane.rpc.state(request)
-                guard owns(attempt), !value.notModified else { return nil }
-                let key = machine.daemonID ?? machine.id
-                machineRouteDescriptions[key] = routeLabel(plane.connection.route)
-                return MachineSnapshot(
-                    endpoint: machine, connection: plane.connection,
-                    projects: value.projects, boards: value.boards, cards: value.cards,
-                    chats: value.chats, archives: value.archives)
-            } catch {
-                return nil
-            }
-        }
-
-        @discardableResult
-        private func refreshGlobalDirectory(attempt: UUID) async -> Bool {
-            let online = supportedMachines.filter(\.online)
-            let tasks = online.map { machine in
-                Task { await self.loadMachineSnapshot(machine, attempt: attempt) }
-            }
-            var snapshots: [MachineSnapshot] = []
-            for task in tasks {
-                if let snapshot = await task.value { snapshots.append(snapshot) }
-            }
-            guard owns(attempt), !snapshots.isEmpty else { return false }
-            directoryProjection = MachineDirectoryReducer.merging(directoryProjection, snapshots: snapshots)
-            publishDirectory()
-            return true
-        }
-
-        private func publishDirectory() {
-            projects = directoryProjection.sortedProjects.filter { !$0.archived }
-            boards = directoryProjection.boards.values.flatMap { $0 }.sorted { $0.id < $1.id }
-            cards = directoryProjection.cards.values.flatMap { $0 }.filter { !$0.archived }
-            chats = directoryProjection.chats.filter { !$0.archived }
-            if let selected = selectedCard,
-                let current = (cards + chats).first(where: { $0.id == selected.card.id })
-            {
-                selectedCard?.card = current
-            }
-        }
-
-        private func acceptSelectedDetail(_ incoming: Dieter_V1_CardDetail) {
-            var detail = incoming
-            let known = (directoryProjection.cards[incoming.card.projectID] ?? []) + directoryProjection.chats
-            detail.card = MachineDirectoryReducer.retainingOwnerDetails(
-                incoming.card, from: known.first { $0.id == incoming.card.id },
-                sourceDaemonID: incoming.card.ownerDaemonID)
-            detail.card = MachineDirectoryReducer.retainingOwnerDetails(
-                detail.card, from: selectedCard?.card, sourceDaemonID: incoming.card.ownerDaemonID)
-            let card = detail.card
-            if card.scope == "chat", card.boardID.isEmpty {
-                directoryProjection.chats.removeAll { $0.id == card.id }
-                directoryProjection.chats.append(card)
-            } else {
-                directoryProjection.cards[card.projectID, default: []].removeAll { $0.id == card.id }
-                directoryProjection.cards[card.projectID, default: []].append(card)
-            }
-            selectedCard = detail
-            publishDirectory()
-        }
-
-        private func updateMachines(_ values: [DieterEndpoint], preferredUtilityID: String?) {
-            let previousSupported = Set(supportedMachines.compactMap(\.daemonID))
-            // Only daemons accepted by the gateway release policy enter workspace or utility state.
-            machines = values.filter(IOSMachinePolicy.isCompatible)
-            let currentSupported = Set(supportedMachines.compactMap(\.daemonID))
-            if !previousSupported.subtracting(currentSupported).isEmpty {
-                directoryProjection = .init(
-                    projects: [:], projectReplicaEndpointIDs: [:], boards: [:], cards: [:], chats: [])
-                publishDirectory()
-            }
-            if let owner = selectedCard?.card.ownerDaemonID,
-                !owner.isEmpty, !currentSupported.contains(owner)
-            {
-                closeConversation()
-            }
-            let saved = connectedOrigin.flatMap {
+        private func restoreUtilityMachine() {
+            let saved = activeGatewayEndpoint().flatMap {
                 defaults.string(forKey: "DieterIOSUtilityMachine:\($0.credentialID)")
             }
-            let preferred = preferredUtilityID ?? saved
             utilityMachineID =
-                supportedMachines.first(where: { $0.daemonID == preferred })?.daemonID
+                supportedMachines.first(where: { $0.daemonID == saved })?.daemonID
                 ?? supportedMachines.first(where: \.online)?.daemonID
                 ?? supportedMachines.first?.daemonID
         }
 
-        private func routeLabel(_ route: MachineConnectionRoute) -> String {
-            route == .local ? "Direct TLS" : route.rawValue
-        }
-
-        private func startDirectoryRefresh(attempt: UUID) {
-            refreshTask?.cancel()
-            refreshTask = Task { [weak self] in
-                while !Task.isCancelled {
-                    do { try await DieterTaskSleep.duration(.seconds(15)) } catch { return }
-                    guard let self, self.owns(attempt) else { return }
-                    await self.refreshMachines()
-                }
+        func refreshMachineInformation() async {
+            guard let machine = utilityMachine else {
+                errorMessage = "Choose a machine to inspect its state."
+                return
             }
-        }
-
-        private func startProviderQuotaRefresh(attempt: UUID) {
-            providerQuotaTask?.cancel()
-            providerQuotaTask = Task { [weak self] in
-                guard let self else { return }
-                await self.loadProviderQuotas()
-                while !Task.isCancelled {
-                    do { try await DieterTaskSleep.seconds(60) } catch { return }
-                    guard self.owns(attempt) else { return }
-                    await self.loadProviderQuotas()
-                }
+            guard machine.online else {
+                errorMessage = "\(machine.name) is offline."
+                return
             }
+            await selectTelemetry(active: true)
         }
 
         func loadProviderQuotas(requestRefresh: Bool = false) async {
-            await quotas.load(requestRefresh: requestRefresh)
+            do { try await quotas.load(requestRefresh: requestRefresh) } catch { errorMessage = message(error) }
         }
+
         func setProviderQuotaSummaryInclusion(
             provider: Dieter_Gateway_V1_ProviderQuotaProvider, accountKey: String, included: Bool
         ) async {
-            await quotas.setInclusion(provider: provider, accountKey: accountKey, included: included)
+            do {
+                try await quotas.setSummaryInclusion(
+                    provider: provider, accountKey: accountKey, included: included)
+            } catch { errorMessage = message(error) }
         }
-        func consumeProviderQuotaReset(accountKey: String) async { await quotas.consumeReset(accountKey: accountKey) }
+
+        func consumeProviderQuotaReset(accountKey: String) async {
+            do { try await quotas.consumeReset(accountKey: accountKey) } catch { errorMessage = message(error) }
+        }
+
+        private func selectTelemetry(active: Bool) async {
+            var payload = ClientTelemetrySelect()
+            payload.daemonID = utilityMachineID ?? ""
+            payload.active = active
+            var telemetry = ClientTelemetryCommand()
+            telemetry.select = payload
+            var command = ClientCommand()
+            command.telemetry = telemetry
+            do { _ = try await core.dispatch(command) } catch {
+                if active { errorMessage = message(error) }
+            }
+        }
+
+        // MARK: Conversation
 
         func selectCard(id: String) async {
-            guard let card = (cards + chats).first(where: { $0.id == id }) else { return }
-            guard !card.ownerDaemonID.isEmpty,
-                let owner = supportedMachines.first(where: { $0.daemonID == card.ownerDaemonID }), owner.online
-            else {
-                errorMessage = "This conversation’s machine is offline or incompatible."
-                return
-            }
-            let hasReadableSnapshot = selectedCard?.card.id == id && conversation?.cardID == id
-            if hasReadableSnapshot, transcriptTask != nil { return }
-            if hasReadableSnapshot {
-                // A reconnect retired the old watch. Keep its readable snapshot
-                // while fetching a fresh one, under a new navigation generation.
-                selectionID = UUID()
-                loadingOlder = false
-            } else {
-                closeConversation()
-            }
-            let requestScope = scope
-            do {
-                let plane = try await dataPlaneConnection(to: owner, refreshDirectToken: true)
-                guard owns(requestScope) else { plane.shutdown(); return }
-                conversationPlane?.shutdown()
-                conversationPlane = plane
-                machineRouteDescriptions[owner.daemonID ?? owner.id] = routeLabel(plane.connection.route)
-            } catch {
-                guard owns(requestScope) else { return }
-                errorMessage = IOSUserError.message(error)
-                return
-            }
-            guard let rpc = conversationPlane?.rpc else { return }
-            var provisional = Dieter_V1_CardDetail(); provisional.card = card
-            selectedCard = provisional
-            do {
-                let snapshot = try await rpc.conversation(cardID: id, limit: 60)
-                guard owns(requestScope) else { return }
-                acceptSelectedDetail(snapshot.detail)
-                transcript.reset(snapshot)
-                publishTranscript()
-                watchConversation(id: id, scope: requestScope)
-            } catch {
-                guard owns(requestScope) else { return }
-                errorMessage = IOSUserError.message(error)
-                if hasReadableSnapshot {
-                    // Resume from the retained sequence even if the refresh RPC
-                    // failed. The stream already owns bounded retry handling.
-                    watchConversation(id: id, scope: requestScope)
-                }
-            }
+            guard selectedCardID != id else { return }
+            if let previous = selectedCardID { core.stopObservingConversation(previous) }
+            selectedCardID = id
+            core.observeConversation(id)
+            var visible = ClientSetVisibleConversation()
+            visible.cardID = id
+            var command = ClientCommand()
+            command.setVisibleConversation = visible
+            do { _ = try await core.dispatch(command) } catch { errorMessage = message(error) }
         }
 
         func closeConversation() {
-            selectionID = UUID()
-            transcriptTask?.cancel(); transcriptTask = nil
-            conversationPlane?.shutdown(); conversationPlane = nil
-            selectedCard = nil
-            conversation = nil
-            transcript = IOSTranscript()
-            hasOlderMessages = false
-            loadingOlder = false
-        }
-
-        private func watchConversation(id: String, scope: IOSRequestScope) {
-            transcriptTask?.cancel()
-            guard let rpc = conversationPlane?.rpc else { return }
-            let sequence = transcript.conversation?.lastSeq ?? 0
-            transcriptTask = Task { [weak self] in
-                do {
-                    try await rpc.watchConversation(cardID: id, after: sequence) { [weak self] update in
-                        await self?.receiveConversation(update, scope: scope)
-                    }
-                    guard !Task.isCancelled else { return }
-                    self?.conversationStreamFailed(IOSStoreError.streamEnded, id: id, scope: scope)
-                } catch {
-                    guard !Task.isCancelled else { return }
-                    self?.conversationStreamFailed(error, id: id, scope: scope)
-                }
-            }
-        }
-
-        private func receiveConversation(_ update: Dieter_V1_ConversationUpdate, scope: IOSRequestScope) {
-            guard owns(scope) else { return }
-            transcript.apply(update)
-            if update.hasSnapshot {
-                acceptSelectedDetail(update.snapshot.detail)
-            } else if update.hasDetail {
-                acceptSelectedDetail(update.detail)
-            }
-            publishTranscript()
-        }
-
-        private func conversationStreamFailed(_ error: Error, id: String, scope: IOSRequestScope) {
-            guard owns(scope) else { return }
-            if (error as? RPCError)?.code == .unauthenticated {
-                connectionFailed(error, attempt: scope.connection)
-                return
-            }
-            errorMessage = "Conversation interrupted. Reconnecting…"
-            transcriptTask = Task { [weak self] in
-                do { try await DieterTaskSleep.duration(.seconds(2)) } catch { return }
-                guard let self, self.owns(scope) else { return }
-                self.transcriptTask = nil
-                self.watchConversation(id: id, scope: scope)
-            }
+            if let id = selectedCardID { core.stopObservingConversation(id) }
+            selectedCardID = nil
+            var command = ClientCommand()
+            command.setVisibleConversation = ClientSetVisibleConversation()
+            Task { try? await core.dispatch(command) }
         }
 
         func loadOlderMessages() async {
-            guard !loadingOlder, hasOlderMessages, let rpc = conversationPlane?.rpc, let current = conversation else {
-                return
-            }
-            let scope = scope
-            let before = transcript.page.start
-            loadingOlder = true
-            defer { if owns(scope) { loadingOlder = false } }
-            do {
-                let previous = try await rpc.conversation(cardID: current.cardID, limit: 60, before: before)
-                guard owns(scope) else { return }
-                if transcript.prepend(previous, expectedSequence: current.lastSeq) { publishTranscript() }
-            } catch {
-                guard owns(scope) else { return }
-                errorMessage = IOSUserError.message(error)
-            }
+            guard let id = selectedCardID else { return }
+            var payload = ClientLoadEarlierMessages()
+            payload.cardID = id
+            var command = ClientCommand()
+            command.loadEarlierMessages = payload
+            do { _ = try await core.dispatch(command) } catch { errorMessage = message(error) }
         }
 
-        @discardableResult
         func trimHistoryAtBottom() -> Bool {
-            guard transcript.trimToLatest() else { return false }
-            publishTranscript()
+            guard let id = selectedCardID, core.conversations[id]?.browsingEarlier == true else { return false }
+            var payload = ClientReturnToLatest()
+            payload.cardID = id
+            var command = ClientCommand()
+            command.returnToLatest = payload
+            Task { try? await core.dispatch(command) }
             return true
         }
 
-        private func publishTranscript() {
-            conversation = transcript.conversation
-            hasOlderMessages =
-                transcript.page.hasMore_p && (conversation?.messages.count ?? 0) < IOSTranscript.maximumMessages
-        }
-
-        private func checkoutConnection(projectID: String, checkoutID: String) async throws -> DataPlaneConnection {
-            guard
-                let checkout = projects.first(where: { $0.id == projectID })?.checkouts.first(where: {
-                    $0.id == checkoutID && !$0.detached
-                }),
-                let machine = supportedMachines.first(where: { $0.daemonID == checkout.daemonID }), machine.online
-            else {
-                throw NSError(
-                    domain: "Checkout", code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Choose an available checkout and machine."])
-            }
-            return try await dataPlaneConnection(to: machine)
-        }
-
         func creationHarnesses(projectID: String, checkoutID: String) async throws -> [Dieter_V1_Harness] {
-            let plane = try await checkoutConnection(projectID: projectID, checkoutID: checkoutID)
-            defer { plane.shutdown() }
-            return try await plane.rpc.harnesses().harnesses
+            guard let project = projects.first(where: { $0.id == projectID }) else {
+                throw IOSCoreFailure(kind: .invalid, message: "Choose a project first.")
+            }
+            let daemonID =
+                project.checkouts.first(where: { $0.id == checkoutID })?.daemonID
+                ?? core.workspace.projectReplicas[projectID]
+                ?? ""
+            return try await harnesses(daemonID: daemonID)
         }
 
         func conversationHarnesses() async throws -> [Dieter_V1_Harness] {
-            guard let rpc = conversationPlane?.rpc else {
-                throw NSError(
-                    domain: "Conversation", code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "Open a conversation before changing its model settings."])
+            try await harnesses(daemonID: selectedCard?.card.ownerDaemonID ?? "")
+        }
+
+        private func harnesses(daemonID: String) async throws -> [Dieter_V1_Harness] {
+            var payload = ClientEnsureMetadata()
+            payload.daemonID = daemonID
+            var command = ClientCommand()
+            command.ensureMetadata = payload
+            _ = try await core.dispatch(command)
+            guard let metadata = core.metadata.machines[daemonID], metadata.loaded else {
+                throw IOSCoreFailure(
+                    kind: .transient,
+                    message: core.metadata.machines[daemonID]?.error.isEmpty == false
+                        ? core.metadata.machines[daemonID]!.error : "Agent choices are still loading.")
             }
-            return try await rpc.harnesses().harnesses
+            return metadata.harnesses.harnesses
         }
 
         func createTask(
@@ -707,13 +429,15 @@
             providerOptions: [String: String], attachments: [Dieter_V1_MessagePart] = [], run: Bool
         ) async -> String? {
             guard pendingOperations == 0 else { return nil }
-            let attempt = connectionID
             let prompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
             let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !prompt.isEmpty || !title.isEmpty else { errorMessage = "Describe the task first."; return nil }
-            guard !run || !prompt.isEmpty else { errorMessage = "Add an initial task before running it."; return nil }
-            guard !provider.isEmpty, !model.isEmpty else {
-                errorMessage = "Choose an available provider and model."; return nil
+            guard !prompt.isEmpty || !title.isEmpty else {
+                errorMessage = "Describe the task first."
+                return nil
+            }
+            guard !run || !prompt.isEmpty else {
+                errorMessage = "Add an initial task before running it."
+                return nil
             }
             pendingOperations += 1
             defer { pendingOperations -= 1 }
@@ -734,175 +458,119 @@
             request.attachments = attachments
             request.deferStart = !run
             request.workspaceMode = "project"
-            request.clientID = clientID
-            request.commandID = createIdentity.command(
-                for: [
-                    checkoutID, projectID, boardID ?? "", title, prompt, provider, model, effort,
-                    String(run),
-                ] + labelIDs + IOSCreateTaskProviderOptions.identity(providerOptions)
-                    + attachments.map(Self.attachmentIdentity))
+            var payload = ClientCreateConversation()
+            payload.request = request
+            payload.chat = boardID == nil
+            var command = ClientCommand()
+            command.createConversation = payload
             do {
-                let plane = try await checkoutConnection(projectID: projectID, checkoutID: checkoutID)
-                defer { plane.shutdown() }
-                let card = try await (boardID == nil ? plane.rpc.createChat(request) : plane.rpc.createCard(request))
-                guard owns(attempt) else { return nil }
-                createIdentity.acknowledge(command: request.commandID)
-                if boardID == nil {
-                    chats = IOSWorkspaceContinuity.admittingCreatedCard(card, into: chats)
-                } else {
-                    cards = IOSWorkspaceContinuity.admittingCreatedCard(card, into: cards)
-                }
+                let card = try await core.dispatch(command).card
                 await selectCard(id: card.id)
                 return card.id
             } catch {
-                guard owns(attempt) else { return nil }
-                errorMessage =
-                    "Could not confirm creation. Retrying the same task is safe. \(IOSUserError.message(error))"
+                errorMessage = message(error)
                 return nil
             }
-        }
-
-        private static func attachmentIdentity(_ part: Dieter_V1_MessagePart) -> String {
-            let digest = SHA256.hash(data: part.data).map { String(format: "%02x", $0) }.joined()
-            return [part.filename, part.mediaType, String(part.data.count), digest].joined(separator: "\u{0}")
         }
 
         func sendMessage(
             text: String, attachments: [Dieter_V1_MessagePart] = [],
             selection: Dieter_V1_HarnessSelection? = nil
         ) async -> Bool {
-            guard pendingOperations == 0, let rpc = conversationPlane?.rpc, let card = selectedCard?.card else {
-                return false
-            }
+            guard pendingOperations == 0, let card = selectedCard?.card else { return false }
             let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty || !attachments.isEmpty else { return false }
-            let scope = scope
             pendingOperations += 1
             defer { pendingOperations -= 1 }
-            var request = Dieter_V1_SendMessageRequest()
-            request.cardID = card.id
+            var payload = ClientSendMessage()
+            payload.cardID = card.id
             if !text.isEmpty {
-                var part = Dieter_V1_MessagePart(); part.type = "text"; part.text = text
-                request.parts = [part]
+                var part = Dieter_V1_MessagePart()
+                part.type = "text"
+                part.text = text
+                payload.parts = [part]
             }
-            request.parts.append(contentsOf: attachments)
-            request.provider = selection?.provider ?? card.provider
-            request.model = selection?.model ?? card.model
-            request.effort = selection?.effort ?? card.effort
-            if let selection, selection.model != card.model, selection.effort.isEmpty {
-                request.effort = "default"
-            }
-            request.providerOptions = selection?.providerOptions ?? card.providerOptions
-            request.clientID = clientID
-            let attachmentIdentity = attachments.map(Self.attachmentIdentity).joined(separator: "\u{1}")
-            let optionIdentity = request.providerOptions.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
-            let command = messageIdentity.command(
-                for: [
-                    card.ownerDaemonID, card.id, text, attachmentIdentity, request.provider, request.model,
-                    request.effort,
-                ] + optionIdentity)
-            request.commandID = command
-            request.messageID = "ios-\(command)"
+            payload.parts.append(contentsOf: attachments)
+            if let selection { payload.selection = selection }
+            var command = ClientCommand()
+            command.sendMessage = payload
             do {
-                _ = try await rpc.sendMessage(request)
-                guard owns(scope) else { return false }
-                messageIdentity.acknowledge(command: request.commandID)
+                _ = try await core.dispatch(command)
                 return true
             } catch {
-                guard owns(scope) else { return false }
-                errorMessage =
-                    "Could not confirm delivery. Retrying the same message is safe. \(IOSUserError.message(error))"
+                errorMessage = message(error)
                 return false
             }
         }
 
         func removeQueuedMessage(_ message: Dieter_V1_QueuedMessage) async -> Dieter_V1_QueuedMessage? {
-            guard pendingOperations == 0, !message.id.isEmpty, let rpc = conversationPlane?.rpc,
-                let card = selectedCard?.card, conversation?.queue.contains(where: { $0.id == message.id }) == true
-            else { return nil }
-            let scope = scope
-            pendingOperations += 1
-            defer { pendingOperations -= 1 }
-            do {
-                let removed = try await rpc.removeQueuedMessage(cardID: card.id, messageID: message.id)
-                if owns(scope) {
-                    _ = transcript.removeQueuedMessage(id: removed.id)
-                    publishTranscript()
-                }
-                return removed
-            } catch {
-                if owns(scope) { errorMessage = IOSUserError.message(error) }
+            guard let cardID = selectedCardID, !message.id.isEmpty else { return nil }
+            var payload = ClientRemoveQueuedMessage()
+            payload.cardID = cardID
+            payload.messageID = message.id
+            var command = ClientCommand()
+            command.removeQueuedMessage = payload
+            do { return try await core.dispatch(command).queuedMessage } catch {
+                errorMessage = self.message(error)
                 return nil
             }
         }
 
-        func steerQueuedMessage(_ message: Dieter_V1_QueuedMessage) async {
-            guard conversation?.queue.first?.id == message.id,
-                IOSConversationPresentation.isAgentWorking(
-                    conversationStatus: conversation?.status ?? "", cardRuntime: selectedCard?.card.runtime ?? "")
-            else { return }
-            await cancelTask()
-        }
+        func steerQueuedMessage(_ message: Dieter_V1_QueuedMessage) async { await cancelTask() }
 
         func startTask() async {
-            await mutateSelected { rpc, card in
-                var request = Dieter_V1_StartCardRequest()
-                request.cardID = card.id
-                request.clientID = self.clientID
-                request.commandID = self.startIdentity.command(for: [card.ownerDaemonID, card.id])
-                _ = try await rpc.startCard(request)
-                self.startIdentity.acknowledge(command: request.commandID)
-            }
+            guard let id = selectedCardID else { return }
+            var payload = ClientStartCard()
+            payload.cardID = id
+            payload.hasDraftAttachments_p = !(conversation?.draftAttachments.isEmpty ?? true)
+            await dispatchMutation { $0.startCard = payload }
         }
 
-        func cancelTask() async { await mutateSelected { rpc, card in try await rpc.cancelCard(id: card.id) } }
+        func cancelTask() async {
+            guard let id = selectedCardID else { return }
+            var payload = ClientCancelCard()
+            payload.cardID = id
+            await dispatchMutation { $0.cancelCard = payload }
+        }
 
         func moveTask(lane: String) async {
-            let requestScope = scope
-            await mutateSelected { rpc, card in
-                var request = Dieter_V1_MoveCardRequest(); request.cardID = card.id; request.lane = lane
-                request.expectedRevision = card.placementRevision
-                let moved = try await rpc.moveCard(request)
-                guard self.owns(requestScope), var detail = self.selectedCard, detail.card.id == moved.id else {
-                    return
-                }
-                detail.card = moved
-                self.acceptSelectedDetail(detail)
-            }
+            guard let id = selectedCardID else { return }
+            var payload = ClientMoveCard()
+            payload.cardID = id
+            payload.lane = lane
+            await dispatchMutation { $0.moveCard = payload }
         }
 
-        private func mutateSelected(_ operation: (DieterRPC, Dieter_V1_Card) async throws -> Void) async {
-            guard pendingOperations == 0, let rpc = conversationPlane?.rpc, let card = selectedCard?.card else {
-                return
-            }
-            let scope = scope
+        private func dispatchMutation(_ configure: (inout ClientCommand) -> Void) async {
+            guard pendingOperations == 0 else { return }
             pendingOperations += 1
             defer { pendingOperations -= 1 }
-            do {
-                try await operation(rpc, card)
-                guard owns(scope) else { return }
-                let detail = try await rpc.card(id: card.id)
-                guard owns(scope) else { return }
-                acceptSelectedDetail(detail)
-            } catch {
-                guard owns(scope) else { return }
-                errorMessage = IOSUserError.message(error)
-            }
+            var command = ClientCommand()
+            configure(&command)
+            do { _ = try await core.dispatch(command) } catch { errorMessage = message(error) }
         }
+
+        // MARK: Shared utility surfaces
 
         func listFiles(projectID: String, checkoutID: String, cardID: String = "", path: String = "") async
             -> Dieter_V1_FileList?
         {
-            let attempt = connectionID
-            var request = Dieter_V1_ListFilesRequest()
-            request.projectID = projectID; request.checkoutID = checkoutID; request.cardID = cardID; request.path = path
             do {
-                let plane = try await checkoutConnection(projectID: projectID, checkoutID: checkoutID)
-                defer { plane.shutdown() }
-                let value = try await plane.rpc.listFiles(request)
-                return owns(attempt) ? value : nil
+                try await bindFiles(projectID: projectID, checkoutID: checkoutID, cardID: cardID)
+                var payload = ClientFilesPath()
+                payload.path = path
+                var files = ClientFilesCommand()
+                files.scope = IOSCoreStore.filesScope
+                files.load = payload
+                var command = ClientCommand()
+                command.files = files
+                let slice = try await core.dispatch(command).files
+                var list = Dieter_V1_FileList()
+                list.path = slice.directory
+                list.entries = slice.entries
+                return list
             } catch {
-                if owns(attempt) { errorMessage = IOSUserError.message(error) }
+                errorMessage = message(error)
                 return nil
             }
         }
@@ -910,251 +578,253 @@
         func readFile(projectID: String, checkoutID: String, cardID: String = "", path: String) async
             -> Dieter_V1_FileDocument?
         {
-            let attempt = connectionID
-            var request = Dieter_V1_ReadFileRequest()
-            request.projectID = projectID; request.checkoutID = checkoutID; request.cardID = cardID; request.path = path
             do {
-                let plane = try await checkoutConnection(projectID: projectID, checkoutID: checkoutID)
-                defer { plane.shutdown() }
-                let value = try await plane.rpc.readFile(request)
-                return owns(attempt) ? value : nil
+                try await bindFiles(projectID: projectID, checkoutID: checkoutID, cardID: cardID)
+                var payload = ClientFilesPath()
+                payload.path = path
+                var files = ClientFilesCommand()
+                files.scope = IOSCoreStore.filesScope
+                files.open = payload
+                var command = ClientCommand()
+                command.files = files
+                let slice = try await core.dispatch(command).files
+                guard slice.hasDocument else {
+                    throw IOSCoreFailure(
+                        kind: .transient,
+                        message: slice.documentError.isEmpty ? "The file is still loading." : slice.documentError)
+                }
+                return slice.document
             } catch {
-                if owns(attempt) { errorMessage = IOSUserError.message(error) }
+                errorMessage = message(error)
                 return nil
             }
         }
 
-        func readConversationImage(projectID: String, cardID: String, url: URL) async -> Dieter_V1_FileDocument? {
-            guard let rpc = conversationPlane?.rpc, RemoteWorkspaceImage.isWorkspaceImageURL(url) else { return nil }
-            let attempt = connectionID
+        func readConversationImage(projectID: String, cardID: String, url: URL) async
+            -> Dieter_V1_FileDocument?
+        {
+            guard RemoteWorkspaceImage.isWorkspaceImageURL(url) else { return nil }
             do {
-                let path: String
-                if let relative = RemoteWorkspaceImage.relativePath(from: url) {
-                    path = relative
-                } else {
-                    let workspace = try await rpc.workspace(cardID: cardID)
-                    guard owns(attempt),
-                        let relative = RemoteWorkspaceImage.relativePath(from: url, workspaceRoot: workspace.path)
-                    else { return nil }
-                    path = relative
+                try await bindFiles(projectID: projectID, checkoutID: "", cardID: cardID)
+                var payload = ClientFilesPath()
+                payload.path = url.absoluteString
+                var files = ClientFilesCommand()
+                files.scope = IOSCoreStore.filesScope
+                files.open = payload
+                var command = ClientCommand()
+                command.files = files
+                let slice = try await core.dispatch(command).files
+                guard slice.hasDocument else {
+                    throw IOSCoreFailure(
+                        kind: .transient,
+                        message: slice.documentError.isEmpty ? "The image is still loading." : slice.documentError)
                 }
-                var request = Dieter_V1_ReadFileRequest()
-                request.projectID = projectID; request.cardID = cardID; request.path = path
-                let value = try await rpc.readFile(request)
-                return owns(attempt) ? value : nil
+                return slice.document
             } catch {
-                if owns(attempt) { errorMessage = IOSUserError.message(error) }
+                errorMessage = message(error)
                 return nil
             }
         }
 
         func saveFile(
-            projectID: String, checkoutID: String, cardID: String = "", document: Dieter_V1_FileDocument,
-            content: String
-        ) async
-            -> Dieter_V1_FileDocument?
-        {
+            projectID: String, checkoutID: String, cardID: String = "",
+            document: Dieter_V1_FileDocument, content: String
+        ) async -> Dieter_V1_FileDocument? {
             guard !document.binary else { return nil }
-            let attempt = connectionID
-            var request = Dieter_V1_SaveFileRequest()
-            request.projectID = projectID; request.checkoutID = checkoutID; request.cardID = cardID;
-            request.path = document.path
-            request.content = content; request.revision = document.revision
             do {
-                let plane = try await checkoutConnection(projectID: projectID, checkoutID: checkoutID)
-                defer { plane.shutdown() }
-                let value = try await plane.rpc.saveFile(request)
-                return owns(attempt) ? value : nil
+                try await bindFiles(projectID: projectID, checkoutID: checkoutID, cardID: cardID)
+                var payload = ClientFilesText()
+                payload.text = content
+                var files = ClientFilesCommand()
+                files.scope = IOSCoreStore.filesScope
+                files.save = payload
+                var command = ClientCommand()
+                command.files = files
+                return try await core.dispatch(command).fileDocument
             } catch {
-                if owns(attempt) {
-                    errorMessage =
-                        "Could not confirm the save. Your edits are still here. \(IOSUserError.message(error))"
-                }
+                errorMessage = "Could not confirm the save. Your edits are still here. \(message(error))"
                 return nil
             }
         }
 
-        func remoteDesktopConnection() async throws -> RemoteDesktopSignalingConnection {
-            guard foreground, let gateway, let accessToken, let target = utilityMachine else {
-                throw NSError(
-                    domain: "DieterScreens", code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Select a connected Dieter machine."])
-            }
-            guard target.online else {
-                throw NSError(
-                    domain: "DieterScreens", code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "\(target.name) is offline."])
-            }
-            var candidateScope = DirectCandidateScope.nonLoopback
-            #if DEBUG
-                if ProcessInfo.processInfo.environment["DIETER_IOS_TEST_GATEWAY"] != nil {
-                    candidateScope = .all
+        private func bindFiles(projectID: String, checkoutID: String, cardID: String) async throws {
+            var payload = ClientFilesTarget()
+            payload.daemonID = try fileDaemonID(
+                projectID: projectID, checkoutID: checkoutID, cardID: cardID)
+            payload.projectID = projectID
+            payload.checkoutID = checkoutID
+            payload.cardID = cardID
+            var files = ClientFilesCommand()
+            files.scope = IOSCoreStore.filesScope
+            files.bind = payload
+            var command = ClientCommand()
+            command.files = files
+            _ = try await core.dispatch(command)
+        }
+
+        private func fileDaemonID(projectID: String, checkoutID: String, cardID: String) throws -> String {
+            let daemonID =
+                if !cardID.isEmpty {
+                    (cards + chats).first(where: { $0.id == cardID })?.ownerDaemonID
+                } else {
+                    projects.first(where: { $0.id == projectID })?.checkouts
+                        .first(where: { $0.id == checkoutID })?.daemonID
+                        ?? core.workspace.projectReplicas[projectID]
                 }
-            #endif
-            return try await connections.remoteDesktopConnection(
-                gateway: gateway, target: target, gatewayAccessToken: accessToken,
-                directCandidateScope: candidateScope)
-        }
-
-        func utilityTerminalConnection() async throws -> DataPlaneConnection {
-            guard foreground, phase.isConnected, let target = utilityMachine else {
-                throw NSError(
-                    domain: "DieterTerminals", code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Choose a connected Dieter machine."])
+            guard let daemonID, supportedMachines.contains(where: { $0.daemonID == daemonID && $0.online }) else {
+                throw IOSCoreFailure(kind: .transient, message: "Choose an available checkout and machine.")
             }
-            guard target.online else {
-                throw NSError(
-                    domain: "DieterTerminals", code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "\(target.name) is offline."])
-            }
-            return try await dataPlaneConnection(to: target, refreshDirectToken: true)
+            return daemonID
         }
 
-        func suspend() {
-            foreground = false
-            // Keep an in-progress web sign-in alive for authenticator/2FA app
-            // switches. Foreground RPC streams still release their resources.
-            closeConnections(clearContent: false)
-            phase = .disconnected
-        }
-
-        func resume() {
-            guard !foreground else { return }
-            foreground = true
-            // Its completion reconnects if foreground; if it finished while
-            // suspended, the accepted token is already in Keychain below.
-            guard authTask == nil else { return }
-            reconnectTask = Task { [weak self] in
-                guard let self else { return }
-                self.reconnectTask = nil
-                await self.reconnect()
-            }
-        }
-
-        private var scope: IOSRequestScope { .init(connection: connectionID, selection: selectionID) }
-        private func owns(_ id: UUID) -> Bool { foreground && connectionID == id && !Task.isCancelled }
-        private func owns(_ scope: IOSRequestScope) -> Bool {
-            scope.accepts(connection: connectionID, selection: selectionID, active: foreground && !Task.isCancelled)
-        }
-
-        private func closeConnections(clearContent: Bool) {
-            quotas.pause()
-            connectionID = UUID()
-            selectionID = UUID()
-            loadingOlder = false
-            transcriptTask?.cancel(); transcriptTask = nil
-            refreshTask?.cancel(); refreshTask = nil
-            providerQuotaTask?.cancel(); providerQuotaTask = nil
-            reconnectTask?.cancel(); reconnectTask = nil
-            conversationPlane?.shutdown(); conversationPlane = nil
-            gatewayTask?.cancel(); gatewayTask = nil
-            gateway?.shutdown(); gateway = nil
-            connections.invalidateTemporaryLeases()
-            machineInformationLoading = false
-            if clearContent {
-                quotas.reset()
-                clearNodeContent()
-            }
-        }
-
-        private func clearNodeContent() {
-            directoryProjection = .init(
-                projects: [:], projectReplicaEndpointIDs: [:], boards: [:], cards: [:], chats: [])
-            projects = []; boards = []; cards = []; chats = []
-            machineRouteDescriptions = [:]
-            machineInformation = nil
-            machineInformationLoading = false
-            machineInformationError = nil
-            closeConversation()
-        }
-
-        private func connectionFailed(_ error: Error, attempt: UUID) {
-            guard owns(attempt) else { return }
-            // Retire every response still owned by the failed transport. Keep the
-            // last readable snapshot, but no old RPC may re-enable or replace it.
-            quotas.pause()
-            connectionID = UUID()
-            selectionID = UUID()
-            loadingOlder = false
-            let retryAttempt = connectionID
-            refreshTask?.cancel(); refreshTask = nil
-            transcriptTask?.cancel(); transcriptTask = nil
-            let requiresSignIn = (error as? RPCError)?.code == .unauthenticated
-            if case IOSStoreError.incompatible(let version) = error {
-                phase = .incompatible(found: version)
-                errorMessage = IOSUserError.message(error)
-                conversationPlane?.shutdown(); conversationPlane = nil
-                startDirectoryRefresh(attempt: retryAttempt)
+        func bindTerminals(machineID: String, active: Bool) async {
+            guard foreground, phase.isConnected,
+                supportedMachines.contains(where: { $0.daemonID == machineID && $0.online })
+            else {
+                terminalLocalError = "Choose a connected Dieter machine."
                 return
             }
-            phase = requiresSignIn ? .authenticationRequired : .failed(IOSUserError.message(error))
-            if requiresSignIn {
-                isAuthenticated = false
-                refreshTask?.cancel(); refreshTask = nil
-                gatewayTask?.cancel(); gatewayTask = nil
-                gateway?.shutdown(); gateway = nil
-                connections.invalidateTemporaryLeases()
+            terminalLocalError = nil
+            do {
+                var bind = ClientTerminalTarget()
+                bind.daemonID = machineID
+                bind.kind = .machine
+                var terminals = ClientTerminalsCommand()
+                terminals.scope = IOSCoreStore.terminalsScope
+                terminals.bind = bind
+                var command = ClientCommand()
+                command.terminals = terminals
+                _ = try await core.dispatch(command)
+                await setTerminalsActive(active)
+                await loadTerminals()
+            } catch {
+                terminalLocalError = message(error)
             }
-            errorMessage = IOSUserError.message(error)
-            conversationPlane?.shutdown(); conversationPlane = nil
-            transcriptTask?.cancel(); transcriptTask = nil
-            if !requiresSignIn, gateway != nil {
-                reconnectTask?.cancel()
-                reconnectTask = Task { [weak self] in
-                    do { try await DieterTaskSleep.duration(.seconds(3)) } catch { return }
-                    guard let self, self.owns(retryAttempt) else { return }
-                    self.reconnectTask = nil
-                    await self.reconnect()
+        }
+
+        func setTerminalsActive(_ active: Bool, clear: Bool = false) async {
+            var payload = ClientTerminalToggle()
+            payload.on = active
+            var terminals = ClientTerminalsCommand()
+            terminals.scope = IOSCoreStore.terminalsScope
+            terminals.active = payload
+            var command = ClientCommand()
+            command.terminals = terminals
+            do {
+                _ = try await core.dispatch(command)
+                if clear {
+                    var clearCommand = ClientTerminalsCommand()
+                    clearCommand.scope = IOSCoreStore.terminalsScope
+                    clearCommand.bind = ClientTerminalTarget()
+                    var reset = ClientCommand()
+                    reset.terminals = clearCommand
+                    _ = try await core.dispatch(reset)
                 }
+            } catch {
+                terminalLocalError = message(error)
             }
         }
 
-        private func configuredOrigin() throws -> DieterEndpoint {
-            guard let origin = configuredOriginOrNil() else { throw IOSStoreError.invalidGateway }
-            #if DEBUG
-                if ProcessInfo.processInfo.environment["DIETER_IOS_TEST_GATEWAY"] == gatewayAddress,
-                    IOSMachinePolicy.isLoopbackTestEndpoint(origin)
-                {
-                    return origin
-                }
-            #endif
-            guard origin.secure else { throw IOSAuthenticationError.secureEndpointRequired }
-            return origin
+        func loadTerminals() async {
+            var terminals = ClientTerminalsCommand()
+            terminals.scope = IOSCoreStore.terminalsScope
+            terminals.load = ClientTerminalStep()
+            var command = ClientCommand()
+            command.terminals = terminals
+            do { _ = try await core.dispatch(command) } catch { terminalLocalError = message(error) }
         }
 
-        private func configuredOriginOrNil() -> DieterEndpoint? {
-            DieterEndpoint.parse(gatewayAddress.trimmingCharacters(in: .whitespacesAndNewlines), name: "Gateway")
+        func selectTerminal(_ id: String) async {
+            var payload = ClientTerminalId()
+            payload.terminalID = id
+            var terminals = ClientTerminalsCommand()
+            terminals.scope = IOSCoreStore.terminalsScope
+            terminals.select = payload
+            var command = ClientCommand()
+            command.terminals = terminals
+            do { _ = try await core.dispatch(command) } catch { terminalLocalError = message(error) }
         }
 
-        private func makeMachines(_ response: Dieter_Gateway_V1_ListDaemonsResponse, origin: DieterEndpoint)
-            -> [DieterEndpoint]
-        {
-            response.daemons.map {
-                DieterEndpoint(
-                    name: $0.name.isEmpty ? $0.id : $0.name, host: origin.host, port: origin.port,
-                    secure: origin.secure, daemonID: $0.id,
-                    online: MachinePresenceText.online(serverOnline: $0.online, lastSeenAt: $0.lastSeenAt),
-                    lastSeenAt: $0.lastSeenAt, releaseVersion: $0.releaseVersion,
-                    compatibility: IOSMachinePolicy.compatibility($0.compatibility),
-                    minimumReleaseVersion: $0.minimumReleaseVersion)
-            }.sorted { left, right in
-                if left.online != right.online { return left.online }
-                return left.name.localizedStandardCompare(right.name) == .orderedAscending
+        func createTerminal(name: String, shell: String, workingDirectory: String) async -> Bool {
+            var payload = ClientCreateTerminal()
+            payload.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            payload.shell = shell
+            payload.workingDirectory = workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+            payload.columns = 80
+            payload.rows = 24
+            var terminals = ClientTerminalsCommand()
+            terminals.scope = IOSCoreStore.terminalsScope
+            terminals.create = payload
+            var command = ClientCommand()
+            command.terminals = terminals
+            do {
+                _ = try await core.dispatch(command)
+                terminalLocalError = nil
+                return true
+            } catch {
+                terminalLocalError = message(error)
+                return false
             }
+        }
+
+        func renameTerminal(id: String, name: String) async {
+            var payload = ClientTerminalRename()
+            payload.terminalID = id
+            payload.name = name
+            var terminals = ClientTerminalsCommand()
+            terminals.scope = IOSCoreStore.terminalsScope
+            terminals.rename = payload
+            var command = ClientCommand()
+            command.terminals = terminals
+            do { _ = try await core.dispatch(command) } catch { terminalLocalError = message(error) }
+        }
+
+        func closeTerminal(id: String) async {
+            var payload = ClientTerminalId()
+            payload.terminalID = id
+            var terminals = ClientTerminalsCommand()
+            terminals.scope = IOSCoreStore.terminalsScope
+            terminals.close = payload
+            var command = ClientCommand()
+            command.terminals = terminals
+            do { _ = try await core.dispatch(command) } catch { terminalLocalError = message(error) }
+        }
+
+        func resizeTerminal(columns: Int, rows: Int) async {
+            var payload = ClientTerminalGrid()
+            payload.columns = Int32(columns)
+            payload.rows = Int32(rows)
+            var terminals = ClientTerminalsCommand()
+            terminals.scope = IOSCoreStore.terminalsScope
+            terminals.grid = payload
+            var command = ClientCommand()
+            command.terminals = terminals
+            do { _ = try await core.dispatch(command) } catch { terminalLocalError = message(error) }
+        }
+
+        func sendTerminalInput(_ data: Data) {
+            guard !data.isEmpty else { return }
+            Task {
+                var payload = ClientTerminalInput()
+                payload.data = data
+                var terminals = ClientTerminalsCommand()
+                terminals.scope = IOSCoreStore.terminalsScope
+                terminals.input = payload
+                var command = ClientCommand()
+                command.terminals = terminals
+                do { _ = try await core.dispatch(command) } catch { terminalLocalError = message(error) }
+            }
+        }
+
+        func clearTerminalError() { terminalLocalError = nil }
+
+        private func activeGatewayEndpoint() -> DieterEndpoint? {
+            DieterEndpoint.parse(core.session.gatewayOrigin.isEmpty ? gatewayAddress : core.session.gatewayOrigin)
+        }
+
+        private func message(_ error: Error) -> String {
+            if let failure = error as? IOSCoreFailure { return failure.message }
+            return IOSUserError.message(error)
         }
     }
-
-    private enum IOSStoreError: LocalizedError {
-        case invalidGateway, streamEnded, workspaceUnavailable, incompatible(String)
-        var errorDescription: String? {
-            switch self {
-            case .invalidGateway: "Enter a gateway address such as https://gateway.getdieter.com."
-            case .streamEnded: "The connection ended. Reconnecting…"
-            case .workspaceUnavailable: "Couldn’t load your workspace from an online machine. Reconnecting…"
-            case .incompatible(let version):
-                "Update required · minimum Dieter release \(version.isEmpty ? "unknown" : version)."
-            }
-        }
-    }
-
 #endif

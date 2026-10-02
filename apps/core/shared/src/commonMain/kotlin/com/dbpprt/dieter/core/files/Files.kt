@@ -1,5 +1,6 @@
 package com.dbpprt.dieter.core.files
 
+import com.dbpprt.dieter.api.v1.ConversationRef
 import com.dbpprt.dieter.api.v1.CreateFileRequest
 import com.dbpprt.dieter.api.v1.DeleteFileRequest
 import com.dbpprt.dieter.api.v1.FileDocument
@@ -8,6 +9,7 @@ import com.dbpprt.dieter.api.v1.ListFilesRequest
 import com.dbpprt.dieter.api.v1.MoveFileRequest
 import com.dbpprt.dieter.api.v1.ReadFileRequest
 import com.dbpprt.dieter.api.v1.SaveFileRequest
+import com.dbpprt.dieter.core.presentation.WorkspaceImages
 import com.dbpprt.dieter.core.runtime.CoreException
 import com.dbpprt.dieter.core.runtime.FailureKind
 import com.dbpprt.dieter.core.runtime.Failures
@@ -285,22 +287,37 @@ class Files(private val sessions: MachineSessions) {
     suspend fun open(path: String) {
         val target = target()
         val bound = scope
+        val resolvedPath = resolveWorkspaceImage(path, target)
+        if (bound != scope) return
         val read = ++reads
-        mutableView.update { it.copy(selectedPath = path, document = if (it.selectedPath == path) it.document else null, documentLoading = true, documentError = null, conflict = false) }
+        mutableView.update { it.copy(selectedPath = resolvedPath, document = if (it.selectedPath == resolvedPath) it.document else null, documentLoading = true, documentError = null, conflict = false) }
         try {
-            val document = call { it.ReadFile().execute(ReadFileRequest(project_id = target.projectId, checkout_id = if (target.cardId.isEmpty()) target.checkoutId else "", card_id = target.cardId, path = path)) }
+            val document = call { it.ReadFile().execute(ReadFileRequest(project_id = target.projectId, checkout_id = if (target.cardId.isEmpty()) target.checkoutId else "", card_id = target.cardId, path = resolvedPath)) }
             if (bound != scope || read != reads) return
             mutableView.update { it.copy(document = document, draft = document.content, documentLoading = false) }
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             if (bound != scope || read != reads) return
             val message = if (error is GrpcException && error.grpcStatus == GrpcStatus.NOT_FOUND) {
-                "“${path.substringAfterLast('/')}” could not be found. Refresh the folder or select another file."
+                "“${resolvedPath.substringAfterLast('/')}” could not be found. Refresh the folder or select another file."
             } else {
                 Failures.message(error)
             }
             mutableView.update { it.copy(documentLoading = false, documentError = message) }
         }
+    }
+
+    /** Resolves absolute conversation image links against the remote workspace, never the client device. */
+    private suspend fun resolveWorkspaceImage(path: String, target: FilesTarget): String {
+        WorkspaceImages.path(path)?.let { return it }
+        if (!WorkspaceImages.isWorkspaceImage(path)) return path
+        val destination = path.trim().removeSurrounding("<", ">")
+        if (target.cardId.isEmpty() || (!destination.startsWith("/") && !destination.startsWith("file://"))) {
+            throw CoreException(FailureKind.PERMANENT, "The image is outside this workspace.")
+        }
+        val workspace = call { it.GetWorkspace().execute(ConversationRef(card_id = target.cardId)) }
+        return WorkspaceImages.path(path, workspace.path)
+            ?: throw CoreException(FailureKind.PERMANENT, "The image is outside this workspace.")
     }
 
     /** Replaces the draft of the open document. Safe from any thread, so text fields stay synchronous. */

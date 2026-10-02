@@ -1,10 +1,10 @@
 #if os(iOS)
     import DieterAPI
-    import DieterClient
     import DieterCore
+    import DieterShared
     import Foundation
     import Observation
-    import SwiftProtobuf
+    import SharedCore
     import UIKit
     @preconcurrency import WebRTC
 
@@ -34,12 +34,14 @@
         }
     }
 
+    /// SwiftUI adapter for the shared ScreenSession. Swift owns WebRTC and the
+    /// renderer; Kotlin owns signaling, identity, recovery, stream policy,
+    /// input encoding, control transfer, and session lifetime.
     @MainActor
     @Observable
     final class IOSRemoteDesktopSession {
         var phase: IOSRemoteDesktopPhase = .idle
         var capabilities = Dieter_V1_RemoteDesktopCapabilities()
-
         var sessionState = Dieter_V1_RemoteDesktopSessionState()
         var cursor = Dieter_V1_RemoteDesktopCursor()
         var routeLabel = ""
@@ -49,889 +51,422 @@
         var controlUnavailableReason = ""
         var controlTransferPending = false
         var controlTransferError = ""
-        private(set) var preferredMaxFPS = IOSRemoteDesktopFrameRate.maximum
+        private(set) var preferredMaxFPS: Int32 = 30
         var quality: Dieter_V1_RemoteDesktopQuality = .auto
         var keyboardModifiers: UInt32 = 0
         private(set) var keyboardVisible = false
         var videoSize = CGSize(width: 16, height: 9)
+        private(set) var availableFrameRates: [Int32] = []
+        private(set) var canTransferControl = false
 
-        var availableFrameRates: [Int32] {
-            IOSRemoteDesktopFrameRate.available(hostMaximum: capabilities.maxFps)
-        }
-        var canTransferControl: Bool {
-            binding?.controlGranted == true
-        }
-        @ObservationIgnored private var openConnection:
-            (@MainActor () async throws -> RemoteDesktopSignalingConnection)?
-        @ObservationIgnored private var connectTask: Task<Void, Never>?
-        @ObservationIgnored private var signalingTask: Task<Void, Never>?
-        @ObservationIgnored private var leaseTask: Task<Void, Never>?
-        @ObservationIgnored private var recoveryTask: Task<Void, Never>?
-        @ObservationIgnored private var peerWatchdog: Task<Void, Never>?
-        @ObservationIgnored private var viewportTask: Task<Void, Never>?
+        @ObservationIgnored private let media: IOSScreenMedia
+        @ObservationIgnored private let core: LiveCoreClient
+        @ObservationIgnored private let scope = "ios-screen-\(UUID().uuidString)"
+        @ObservationIgnored private var subscription: SliceSubscription?
+        @ObservationIgnored private var queued: Task<Void, Never>?
         @ObservationIgnored private var keyboardHandler: ((Bool) -> Void)?
         @ObservationIgnored private var cursorHandler: ((Dieter_V1_RemoteDesktopCursor) -> Void)?
-        @ObservationIgnored private let feedbackPump = IOSRemoteDesktopFeedbackPump()
-        @ObservationIgnored private var pointerFlushTask: Task<Void, Never>?
+        @ObservationIgnored private var displayID = ""
 
-        private var generation: UInt64 = 0
-        private var recoveryAttempts = 0
-        private var factory: RTCPeerConnectionFactory?
-        private var peerConnection: RTCPeerConnection?
-        private let peerDelegate = IOSRemoteDesktopPeerDelegate()
-        private var connection: RemoteDesktopSignalingConnection?
-        private var request: Dieter_V1_StartRemoteDesktopRequest?
-        private var binding: Dieter_V1_RemoteDesktopSessionBinding?
-        private var answerSDP: String?
-        private var sessionID = ""
-        private var remoteDescriptionApplied = false
-        private var authorized = false
-        private var localCandidates: [RTCIceCandidate] = []
-        private var remoteCandidates: [RTCIceCandidate] = []
-        private var pointerChannel: RTCDataChannel?
-        private var stateChannel: RTCDataChannel?
-        private var hostChannel: RTCDataChannel?
-        private var pointerDelegate: IOSRemoteDesktopDataChannelDelegate?
-        private var stateDelegate: IOSRemoteDesktopDataChannelDelegate?
-        private var hostDelegate: IOSRemoteDesktopDataChannelDelegate?
-        private var videoTrack: RTCVideoTrack?
-        private var videoRelay: IOSRemoteDesktopVideoRelay!
-        private var presentedGeneration: UInt64 = 0
-        private var receiverFeedbackStarted = false
-        private var pointerSequence: UInt64 = 0
-        private var stateSequence: UInt64 = 0
-        private var eventOrdinal: UInt64 = 0
-        private var lastPointer = CGPoint(x: 0.5, y: 0.5)
-        private var pendingPointer: CGPoint?
-        private var pointerLastSent: TimeInterval = -.infinity
-        private var desiredConfiguration = Dieter_V1_RemoteDesktopStreamConfiguration()
-
-        init() {
-            peerDelegate.owner = self
-            videoRelay = IOSRemoteDesktopVideoRelay { [weak self] token in
-                Task { @MainActor [weak self] in self?.presentedFrame(token: token) }
-            }
-        }
-
-        func connect(
-            machineName: String,
-            open: @escaping @MainActor () async throws -> RemoteDesktopSignalingConnection
-        ) {
-            disconnect()
-            self.machineName = machineName
-            openConnection = open
-            recoveryAttempts = 0
-            beginConnection()
-        }
-
-        func disconnect() {
-            openConnection = nil
-            teardown(nextPhase: .idle)
-        }
-
-        func reconnect() {
-            guard openConnection != nil else { return }
-            recover(immediate: true)
-        }
-
-        private func beginConnection() {
-            guard connectTask == nil, let openConnection else { return }
-            phase = recoveryAttempts == 0 ? .loading : .reconnecting
-            errorMessage = ""
-            let token = generation
-            connectTask = Task { [weak self] in
+        init(store: IOSStore) {
+            media = store.screenMedia
+            core = store.coreClient
+            subscription = SliceSubscription(client: core, slice: .screen, scope: scope) { [weak self] update in
                 guard let self else { return }
-                defer { if self.owns(token) { self.connectTask = nil } }
-                do {
-                    let connection = try await openConnection()
-                    guard self.owns(token) else { connection.shutdown(); return }
-                    self.connection = connection
-                    self.routeLabel = connection.routeLabel
-                    self.capabilities = try await connection.rpc.remoteDesktopCapabilities()
-                    guard self.owns(token) else { return }
-                    guard self.capabilities.ready else {
-                        self.phase =
-                            self.capabilities.availability == .permissionRequired
-                            ? .permissionRequired(self.capabilities.unavailableReason)
-                            : .unsupported(self.capabilities.unavailableReason)
-                        return
-                    }
-                    try await self.startPeer(generation: token)
-                } catch {
-                    guard self.owns(token) else { return }
-                    if DieterRPCFailure.isTransient(error) || DieterRPCFailure.isAuthenticationFailure(error) {
-                        self.recover()
-                    } else if !DieterRPCFailure.isCancellation(error) {
-                        self.fail(error)
-                    }
+                switch update.value {
+                case .screen(let slice): self.apply(slice)
+                case .failure(let failure):
+                    self.phase = .failed(failure.message)
+                    self.errorMessage = failure.message
+                default: break
                 }
             }
         }
 
-        private func startPeer(generation token: UInt64) async throws {
-            guard owns(token), let connection else { throw CancellationError() }
+        isolated deinit {
+            subscription?.close()
+            media.detach(scope: scope)
+        }
+
+        func connect(machineName: String, daemonID: String) {
+            self.machineName = machineName
+            send { $0.connect = .with { $0.daemonID = daemonID } }
+        }
+
+        #if DEBUG
+            func connectTestFixture(
+                machineName: String, url: String, token: String,
+                certificatePEM: Data, rtc: Data
+            ) {
+                self.machineName = machineName
+                send { $0.connect = .with { $0.daemonID = "fixture" } }
+            }
+        #endif
+
+        func disconnect() { send { $0.disconnect = ClientScreenStep() } }
+        func reconnect() { send { $0.resume = ClientScreenStep() } }
+        func suspend() {
+            send { $0.focused = .with { $0.on = false } }
+            send { $0.sleep = ClientScreenStep() }
+        }
+
+        fileprivate func apply(_ value: ClientScreenSlice) {
             phase =
-                capabilities.platform == "linux" && capabilities.capturePermission == "not_requested"
-                ? .waitingForHostApproval : .connecting
-            let rtcConfiguration = RTCConfiguration()
-            rtcConfiguration.sdpSemantics = .unifiedPlan
-            rtcConfiguration.continualGatheringPolicy = .gatherContinually
-            rtcConfiguration.iceServers = connection.rtcConfiguration.iceServers.map {
-                RTCIceServer(
-                    urlStrings: $0.urls,
-                    username: $0.username.isEmpty ? nil : $0.username,
-                    credential: $0.credential.isEmpty ? nil : $0.credential)
-            }
-            let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
-            let factory = RTCPeerConnectionFactory(
-                encoderFactory: RTCDefaultVideoEncoderFactory(), decoderFactory: RTCDefaultVideoDecoderFactory())
-            self.factory = factory
-            guard
-                let peer = factory.peerConnection(
-                    with: rtcConfiguration, constraints: constraints, delegate: peerDelegate)
-            else {
-                throw NSError(
-                    domain: "DieterScreens", code: 6,
-                    userInfo: [NSLocalizedDescriptionKey: "WebRTC could not create a peer connection."])
-            }
-            peerConnection = peer
-
-            let pointerConfiguration = RTCDataChannelConfiguration()
-            pointerConfiguration.isOrdered = false
-            pointerConfiguration.maxRetransmits = 0
-            let stateConfiguration = RTCDataChannelConfiguration()
-            stateConfiguration.isOrdered = true
-            pointerChannel = peer.dataChannel(
-                forLabel: "dieter-pointer-v\(DieterRemoteDesktopProtocol.version)", configuration: pointerConfiguration)
-            stateChannel = peer.dataChannel(
-                forLabel: "dieter-input-state-v\(DieterRemoteDesktopProtocol.version)",
-                configuration: stateConfiguration)
-            hostChannel = peer.dataChannel(
-                forLabel: "dieter-session-v\(DieterRemoteDesktopProtocol.version)", configuration: stateConfiguration)
-            pointerDelegate = IOSRemoteDesktopDataChannelDelegate(owner: self, role: .pointer)
-            stateDelegate = IOSRemoteDesktopDataChannelDelegate(owner: self, role: .state)
-            hostDelegate = IOSRemoteDesktopDataChannelDelegate(owner: self, role: .host)
-            pointerChannel?.delegate = pointerDelegate
-            stateChannel?.delegate = stateDelegate
-            hostChannel?.delegate = hostDelegate
-
-            let inputProtocolVersion: UInt32 =
-                DieterRemoteDesktopProtocol.number
-            let transceiver = RTCRtpTransceiverInit()
-            transceiver.direction = .recvOnly
-            guard let video = peer.addTransceiver(of: .video, init: transceiver) else {
-                throw NSError(
-                    domain: "DieterScreens", code: 7,
-                    userInfo: [NSLocalizedDescriptionKey: "WebRTC could not create a receive-only video track."])
-            }
-            let codecs = factory.rtpReceiverCapabilities(forKind: kRTCMediaStreamTrackKindVideo).codecs.filter {
-                $0.name.caseInsensitiveCompare("H264") == .orderedSame
-                    || $0.name.caseInsensitiveCompare("flexfec-03") == .orderedSame
-            }
-            guard !codecs.isEmpty else {
-                throw NSError(
-                    domain: "DieterScreens", code: 12,
-                    userInfo: [NSLocalizedDescriptionKey: "This device has no compatible H.264 decoder."])
-            }
-            try video.setCodecPreferences(codecs, error: ())
-            let offer = try await createOffer(peer, constraints: constraints)
-            guard owns(token), peerConnection === peer else { throw CancellationError() }
-            try await setLocalDescription(offer, on: peer)
-            guard owns(token), peerConnection === peer else { throw CancellationError() }
-
-            var request = Dieter_V1_StartRemoteDesktopRequest()
-            request.clientNonce = UUID().uuidString.lowercased()
-            request.codecPreference = .h264
-            request.referenceRecovery = false
-            request.inputProtocolVersion = inputProtocolVersion
-            request.clientName = "iOS"
-            request.rtcConfiguration = connection.rtcConfiguration
-            request.displayID =
-                capabilities.displays.first(where: { $0.id == desiredConfiguration.displayID })?.id
-                ?? capabilities.displays.first(where: \.primary)?.id
-                ?? capabilities.displays.first?.id ?? "primary"
-            request.maxFps = IOSRemoteDesktopFrameRate.capped(
-                preferredMaxFPS, hostMaximum: capabilities.maxFps)
-            request.maxBitrateKbps = 12_000
-            request.maxWidth = desiredConfiguration.maxWidth > 0 ? desiredConfiguration.maxWidth : 1_920
-            request.maxHeight = desiredConfiguration.maxHeight > 0 ? desiredConfiguration.maxHeight : 1_080
-            request.quality = quality
-            let portalCanRequestControl =
-                capabilities.platform == "linux" && capabilities.controlPermission == "not_requested"
-            request.control =
-                capabilities.controlSupported
-                && (capabilities.controlPermission == "granted" || portalCanRequestControl)
-            request.embeddedCursor = !capabilities.cursorSupported
-            request.clipboard = false
+                switch value.phase {
+                case "loading": .loading
+                case "permission_required": .permissionRequired(value.problem)
+                case "unsupported": .unsupported(value.problem)
+                case "connecting": .connecting
+                case "waiting_for_host_approval": .waitingForHostApproval
+                case "streaming": .streaming
+                case "reconnecting": .reconnecting
+                case "failed": .failed(value.problem)
+                default: .idle
+                }
+            capabilities = value.capabilities
+            sessionState = value.state
+            routeLabel = value.routeLabel
+            errorMessage = value.problem
+            controlActive = value.controlActive
+            canTransferControl = value.canTransferControl
             controlUnavailableReason =
-                !request.control
-                ? (capabilities.platform == "linux"
-                    ? "Remote-control permission is required from the Linux desktop portal"
-                    : "Accessibility permission is required on the host") : ""
-            var description = Dieter_V1_RemoteDesktopSessionDescription()
-            description.type = "offer"
-            description.sdp = offer.sdp
-            request.offer = description
-            self.request = request
-            desiredConfiguration.displayID = request.displayID
-            desiredConfiguration.maxWidth = request.maxWidth
-            desiredConfiguration.maxHeight = request.maxHeight
-            desiredConfiguration.maxFps = request.maxFps
-            desiredConfiguration.maxBitrateKbps = request.maxBitrateKbps
-            desiredConfiguration.quality = request.quality
-            desiredConfiguration.embeddedCursor = request.embeddedCursor
-            startSignaling(connection: connection, request: request)
-            startWatchdog(token: token)
+                value.capabilities.platform == "linux"
+                ? "Remote-control permission is required from the Linux desktop portal"
+                : "Accessibility permission is required on the host"
+            controlTransferPending = value.controlTransferring
+            controlTransferError = value.controlError
+            preferredMaxFPS = value.preferences.maxFps
+            quality = value.preferences.quality
+            displayID = value.preferences.displayID
+            let ceiling = value.capabilities.maxFps > 0 ? value.capabilities.maxFps : 30
+            availableFrameRates = [30, 60, 90, 120].filter { $0 <= ceiling }
+
+            var cursor = Dieter_V1_RemoteDesktopCursor()
+            cursor.shapeID = String(value.cursorImage.hashValue)
+            cursor.png = value.cursorImage
+            cursor.hotspotX = value.cursorHotspotX
+            cursor.hotspotY = value.cursorHotspotY
+            cursor.width = value.cursorWidth
+            cursor.height = value.cursorHeight
+            cursor.normalizedX = Int32((value.cursorX * 1_000_000).rounded())
+            cursor.normalizedY = Int32((value.cursorY * 1_000_000).rounded())
+            cursor.visible = value.cursorVisible
+            cursor.displayGeneration = value.state.displayGeneration
+            self.cursor = cursor
+            cursorHandler?(cursor)
         }
 
-        private func startSignaling(
-            connection: RemoteDesktopSignalingConnection,
-            request: Dieter_V1_StartRemoteDesktopRequest
-        ) {
-            signalingTask?.cancel()
-            let token = generation
-            signalingTask = Task { [weak self] in
-                do {
-                    try await connection.rpc.startRemoteDesktop(request) { [weak self] signal in
-                        guard let self else { throw CancellationError() }
-                        try await self.receive(signal, generation: token)
-                    }
-                    guard !Task.isCancelled else { return }
-                    throw NSError(
-                        domain: "DieterScreens", code: 8,
-                        userInfo: [NSLocalizedDescriptionKey: "Screen-sharing signaling ended."])
-                } catch {
-                    guard let self, self.owns(token) else { return }
-                    if DieterRPCFailure.isCancellation(error) { return }
-                    if DieterRPCFailure.isTransient(error) || DieterRPCFailure.isAuthenticationFailure(error) {
-                        self.recover()
-                    } else {
-                        self.fail(error)
-                    }
-                }
-            }
-        }
-
-        private func startWatchdog(token: UInt64) {
-            peerWatchdog?.cancel()
-            peerWatchdog = Task { [weak self] in
-                try? await DieterTaskSleep.seconds(20)
-                guard let self, self.owns(token), self.phase != .streaming else { return }
-                if self.capabilities.platform == "linux" {
-                    try? await DieterTaskSleep.seconds(150)
-                    guard self.owns(token), self.phase != .streaming else { return }
-                }
-                self.recover()
-            }
-        }
-
-        private func receive(_ signal: Dieter_V1_RemoteDesktopSignal, generation token: UInt64) async throws {
-            guard owns(token), !signal.sessionID.isEmpty else { throw CancellationError() }
-            if sessionID.isEmpty {
-                sessionID = signal.sessionID
-                flushLocalCandidates()
-                startLease(token: token)
-            } else if signal.sessionID != sessionID {
-                throw RemoteDesktopSessionTrust.Failure.invalidBinding
-            }
-            switch signal.payload {
-            case .binding(let value):
-                if let binding, binding != value { throw RemoteDesktopSessionTrust.Failure.invalidBinding }
-                binding = value
-                try await applyVerifiedAnswerIfReady(token: token)
-            case .description_p(let value):
-                guard value.type == "answer" else { throw RemoteDesktopSessionTrust.Failure.invalidBinding }
-                if let answerSDP, answerSDP != value.sdp {
-                    throw RemoteDesktopSessionTrust.Failure.invalidBinding
-                }
-                answerSDP = value.sdp
-                try await applyVerifiedAnswerIfReady(token: token)
-            case .candidate(let value):
-                let candidate = RTCIceCandidate(
-                    sdp: value.candidate, sdpMLineIndex: value.sdpMlineIndex,
-                    sdpMid: value.sdpMid.isEmpty ? nil : value.sdpMid)
-                if remoteDescriptionApplied {
-                    try await addIceCandidate(candidate)
-                } else {
-                    guard remoteCandidates.count < 256 else { throw CancellationError() }
-                    remoteCandidates.append(candidate)
-                }
-            case .state(let value):
-                applySessionState(value)
-                if value.phase == "closed" {
-                    throw NSError(
-                        domain: "DieterScreens", code: 9,
-                        userInfo: [
-                            NSLocalizedDescriptionKey: value.reason.isEmpty
-                                ? "The screen-sharing session closed." : value.reason
-                        ])
-                }
-            case .error(let value):
-                if value.recoverable {
-                    recover()
-                    throw CancellationError()
-                }
-                throw NSError(
-                    domain: "DieterScreens", code: 11,
-                    userInfo: [NSLocalizedDescriptionKey: value.message])
-            case .leaseHeartbeat, .none:
-                break
-            }
-        }
-
-        private func applyVerifiedAnswerIfReady(token: UInt64) async throws {
-            guard !remoteDescriptionApplied, let connection, let request, let binding, let answerSDP else { return }
-            try RemoteDesktopSessionTrust.verify(
-                binding: binding, sessionID: sessionID, clientNonce: request.clientNonce,
-                offerSDP: request.offer.sdp, answerSDP: answerSDP,
-                daemonCertificatePEM: connection.daemonCertificatePEM)
-            guard binding.controlGranted == request.control,
-                binding.displayID == request.displayID,
-                binding.inputProtocolVersion == request.inputProtocolVersion
-            else { throw RemoteDesktopSessionTrust.Failure.invalidBinding }
-            guard let peerConnection else { throw CancellationError() }
-            try await setRemoteDescription(
-                RTCSessionDescription(type: .answer, sdp: answerSDP), on: peerConnection)
-            guard owns(token), self.peerConnection === peerConnection else { throw CancellationError() }
-            remoteDescriptionApplied = true
-            authorized = true
-            let candidates = remoteCandidates
-            remoteCandidates.removeAll()
-            for candidate in candidates { try await addIceCandidate(candidate) }
-            updateControlReadiness()
-            startReceiverFeedbackIfPossible()
-        }
-
-        private func startLease(token: UInt64) {
-            leaseTask?.cancel()
-            guard let connection, !sessionID.isEmpty else { return }
-            let id = sessionID
-            leaseTask = Task { [weak self] in
-                var heartbeat = Dieter_V1_RemoteDesktopSignal()
-                heartbeat.sessionID = id
-                heartbeat.leaseHeartbeat = Google_Protobuf_Empty()
-                while !Task.isCancelled {
-                    do {
-                        try await DieterTaskSleep.seconds(5)
-                        try Task.checkCancellation()
-                        try await connection.rpc.sendRemoteDesktopSignal(heartbeat)
-                    } catch {
-                        guard let self, self.owns(token), !DieterRPCFailure.isCancellation(error) else { return }
-                        if self.peerConnection?.connectionState != .connected { self.recover() }
-                        return
-                    }
-                }
-            }
-        }
-
-        fileprivate func generated(candidate: RTCIceCandidate) {
-            guard !sessionID.isEmpty else {
-                if localCandidates.count < 256 { localCandidates.append(candidate) }
-                return
-            }
-            send(candidate: candidate)
-        }
-
-        private func flushLocalCandidates() {
-            let values = localCandidates
-            localCandidates.removeAll()
-            values.forEach(send(candidate:))
-        }
-
-        private func send(candidate: RTCIceCandidate) {
-            guard let connection, !sessionID.isEmpty else { return }
-            var value = Dieter_V1_RemoteDesktopICECandidate()
-            value.candidate = candidate.sdp
-            value.sdpMid = candidate.sdpMid ?? ""
-            value.sdpMlineIndex = candidate.sdpMLineIndex
-            var signal = Dieter_V1_RemoteDesktopSignal()
-            signal.sessionID = sessionID
-            signal.candidate = value
-            Task { try? await connection.rpc.sendRemoteDesktopSignal(signal) }
-        }
-
-        fileprivate func received(track: RTCVideoTrack) {
-            guard videoTrack?.isEqual(track) != true else { return }
-            videoTrack?.remove(videoRelay)
-            videoTrack = track
-            videoRelay.use(token: generation)
-            track.add(videoRelay)
-        }
-
-        fileprivate func connectionStateChanged(_ state: RTCPeerConnectionState) {
-            switch state {
-            case .connected:
-                peerWatchdog?.cancel()
-                peerWatchdog = nil
-                phase = presentedGeneration > 0 ? .streaming : .connecting
-                startReceiverFeedbackIfPossible()
-            case .disconnected:
-                releaseAllInput()
-                controlActive = false
-                feedbackPump.input(active: false)
-                phase = .reconnecting
-                let token = generation
-                peerWatchdog?.cancel()
-                peerWatchdog = Task { [weak self] in
-                    try? await DieterTaskSleep.seconds(3)
-                    guard let self, self.owns(token), self.peerConnection?.connectionState != .connected else {
-                        return
-                    }
-                    self.recover()
-                }
-            case .failed, .closed:
-                recover()
-            default:
-                break
-            }
-        }
-
-        fileprivate func channelChanged(_ channel: RTCDataChannel, role: IOSRemoteDesktopChannelRole) {
-            guard owns(channel: channel, role: role) else { return }
-            updateControlReadiness()
-            if channel.readyState == .closed, role != .pointer { recover() }
-        }
-
-        fileprivate func receiveHost(_ event: Dieter_V1_RemoteDesktopHostEvent) {
-            guard authorized else { return }
-            switch event.payload {
-            case .state(let value): applySessionState(value)
-            case .cursor(let value):
-                guard value.displayGeneration == sessionState.displayGeneration else { return }
-                cursor = value
-                cursorHandler?(value)
-            case .inputAck(let value): sessionState.lastInputOrdinal = value
-            case .reference, nil: break
-            }
-        }
-
-        private func applySessionState(_ received: Dieter_V1_RemoteDesktopSessionState) {
-            guard received.displayGeneration >= sessionState.displayGeneration else { return }
-            var state = received
-            if state.displayGeneration != sessionState.displayGeneration {
-                releaseAllInput()
-                presentedGeneration = 0
-                cursor = .init()
-                phase = .connecting
-            } else if state.mediaGeneration < sessionState.mediaGeneration {
-                state.mediaGeneration = sessionState.mediaGeneration
-                state.mediaTimestamp = sessionState.mediaTimestamp
-            }
-            if state.controlGeneration < sessionState.controlGeneration {
-                state.controlGeneration = sessionState.controlGeneration
-                state.controlActive = sessionState.controlActive
-                state.controllerName = sessionState.controllerName
-            }
-            if state.clipboardGeneration < sessionState.clipboardGeneration {
-                state.clipboardGeneration = sessionState.clipboardGeneration
-                state.clipboardEnabled = sessionState.clipboardEnabled
-            }
-            sessionState = state
-            updateControlReadiness()
-        }
-
-        private func presentedFrame(token: UInt64) {
-            guard owns(token), authorized, sessionState.displayGeneration > 0 else { return }
-            presentedGeneration = sessionState.displayGeneration
-            phase = .streaming
-            recoveryAttempts = 0
-            updateControlReadiness()
-        }
-
-        private func updateControlReadiness() {
-            controlActive =
-                authorized && binding?.controlGranted == true
-                && sessionState.controlActive
-                && pointerChannel?.readyState == .open
-                && stateChannel?.readyState == .open && hostChannel?.readyState == .open
-                && sessionState.displayGeneration > 0
-                && presentedGeneration == sessionState.displayGeneration
-            if !controlActive { keyboardModifiers = 0 }
-            feedbackPump.input(active: controlActive)
-        }
-
-        private func startReceiverFeedbackIfPossible() {
-            guard !receiverFeedbackStarted, peerConnection?.connectionState == .connected,
-                let binding, binding.inputEpoch.count == 16, let hostChannel
-            else { return }
-            receiverFeedbackStarted = true
-            feedbackPump.start(channel: hostChannel, inputEpoch: binding.inputEpoch)
-            feedbackPump.input(active: controlActive)
-        }
-
-        func attach(renderer: any RTCVideoRenderer) {
-            videoRelay.attach(renderer)
-        }
-
-        func detach(renderer: any RTCVideoRenderer) {
-            videoRelay.detach(renderer)
-        }
-
+        func attach(renderer: any RTCVideoRenderer) { media.attach(scope: scope, renderer: renderer) }
+        func detach(renderer: any RTCVideoRenderer) { media.detach(scope: scope, renderer: renderer) }
         func videoSizeChanged(_ size: CGSize) {
-            guard size.width > 0, size.height > 0 else { return }
             videoSize = size
+            media.setSize(scope: scope, size: size)
         }
 
         func setKeyboardHandler(_ handler: ((Bool) -> Void)?) { keyboardHandler = handler }
         func showKeyboard(_ show: Bool) {
-            guard !show || controlActive else {
-                keyboardVisible = false
-                return
-            }
-            guard let keyboardHandler else {
-                keyboardVisible = false
-                return
-            }
-            keyboardHandler(show)
+            guard controlActive || !show else { return }
+            keyboardVisible = show
+            keyboardHandler?(show)
         }
         func keyboardVisibilityChanged(_ visible: Bool) { keyboardVisible = visible }
         func setCursorHandler(_ handler: ((Dieter_V1_RemoteDesktopCursor) -> Void)?) {
             cursorHandler = handler
-            if let handler { handler(cursor) }
+            handler?(cursor)
         }
 
         func pointer(x: CGFloat, y: CGFloat) {
-            let point = CGPoint(x: max(0, min(1, x)), y: max(0, min(1, y)))
-            lastPointer = point
-            guard controlActive else { return }
-            pendingPointer = point
-            guard pointerFlushTask == nil else { return }
-            let delay = max(0, 0.004 - (ProcessInfo.processInfo.systemUptime - pointerLastSent))
-            if delay == 0 {
-                flushPointer()
-                return
-            }
-            pointerFlushTask = Task { [weak self] in
-                try? await DieterTaskSleep.seconds(delay)
-                guard !Task.isCancelled, let self else { return }
-                self.pointerFlushTask = nil
-                self.flushPointer()
+            send {
+                $0.pointer = .with {
+                    $0.x = x; $0.y = y
+                }
             }
         }
-
-        private func flushPointer() {
-            guard controlActive, let point = pendingPointer else {
-                pendingPointer = nil
-                return
-            }
-            pendingPointer = nil
-            pointerLastSent = ProcessInfo.processInfo.systemUptime
-            var value = Dieter_V1_RemoteDesktopPointerMove()
-            value.normalizedX = normalized(point.x)
-            value.normalizedY = normalized(point.y)
-            sendPointer(.pointerMove(value))
-        }
-
         func button(
             _ button: Dieter_V1_RemoteDesktopPointerButton.Button,
             down: Bool,
-            x: CGFloat? = nil,
-            y: CGFloat? = nil,
-            clickCount: Int = 1
+            clicks: UInt32,
+            x: CGFloat,
+            y: CGFloat
         ) {
-            if let x, let y { lastPointer = CGPoint(x: max(0, min(1, x)), y: max(0, min(1, y))) }
-            var value = Dieter_V1_RemoteDesktopPointerButton()
-            value.button = button
-            value.down = down
-            value.clickCount = Int32(max(0, min(3, clickCount)))
-            value.normalizedX = normalized(lastPointer.x)
-            value.normalizedY = normalized(lastPointer.y)
-            value.modifiers = keyboardModifiers
-            sendState(.pointerButton(value))
+            send {
+                $0.button = .with {
+                    $0.button = button; $0.down = down; $0.clicks = Int32(clicks)
+                    $0.x = x; $0.y = y; $0.modifiers = Int32(bitPattern: self.keyboardModifiers)
+                }
+            }
         }
-
-        func click(_ button: Dieter_V1_RemoteDesktopPointerButton.Button = .left) {
-            self.button(button, down: true)
-            self.button(button, down: false)
-        }
-
         func scroll(deltaX: CGFloat, deltaY: CGFloat, phase: UInt32) {
-            var value = Dieter_V1_RemoteDesktopScroll()
-            value.deltaX = Int32(clamping: Int(deltaX.rounded()))
-            value.deltaY = Int32(clamping: Int(deltaY.rounded()))
-            value.precise = true
-            value.preciseDeltaX = deltaX
-            value.preciseDeltaY = deltaY
-            value.phase = phase
-            value.modifiers = keyboardModifiers
-            sendState(.scroll(value))
+            send {
+                $0.scroll = .with {
+                    $0.dx = deltaX; $0.dy = deltaY; $0.phase = Int32(bitPattern: phase)
+                    $0.modifiers = Int32(bitPattern: self.keyboardModifiers)
+                }
+            }
         }
-
         func text(_ text: String) {
-            guard !text.isEmpty, text.utf8.count <= 8_192 else { return }
-            if let stroke = IOSRemoteDesktopKeyStroke(text: text, modifiers: keyboardModifiers) {
-                key(hid: stroke.hid, down: true, modifiers: stroke.modifiers)
-                key(hid: stroke.hid, down: false, modifiers: stroke.modifiers)
-                keyboardModifiers = 0
-                return
-            }
-            var chunk = ""
-            for character in text {
-                let value = String(character)
-                if chunk.utf8.count + value.utf8.count > 2_048 {
-                    sendTextChunk(chunk)
-                    chunk = ""
+            send {
+                $0.text = .with {
+                    $0.text = text; $0.modifiers = Int32(bitPattern: self.keyboardModifiers)
                 }
-                chunk.append(character)
             }
-            sendTextChunk(chunk)
+            keyboardModifiers = 0
         }
-
-        private func sendTextChunk(_ text: String) {
-            guard !text.isEmpty else { return }
-            var value = Dieter_V1_RemoteDesktopText()
-            value.text = text
-            sendState(.text(value))
-        }
-
-        func key(
-            hid: UInt32,
-            down: Bool,
-            repeat isRepeat: Bool = false,
-            modifiers: UInt32? = nil
-        ) {
-            var value = Dieter_V1_RemoteDesktopKey()
-            value.physicalKey = min(255, hid)
-            value.down = down
-            value.repeat = isRepeat
-            value.modifiers = modifiers ?? keyboardModifiers
-            sendState(.key(value))
-        }
-
         func hardwareKey(hid: UInt32, down: Bool, repeat isRepeat: Bool = false, modifiers: UInt32) {
-            let combinedModifiers = keyboardModifiers | modifiers
-            key(hid: hid, down: down, repeat: isRepeat, modifiers: combinedModifiers)
-            if IOSRemoteDesktopModifierPolicy.consumesArmedModifiers(hid: hid, down: down) {
-                keyboardModifiers = 0
-            }
-        }
-
-        func press(hid: UInt32) {
-            let modifiers = keyboardModifiers
-            key(hid: hid, down: true, modifiers: modifiers)
-            key(hid: hid, down: false, modifiers: modifiers)
-            keyboardModifiers = 0
-        }
-
-        func releaseAllInput() {
-            pendingPointer = nil
-            pointerFlushTask?.cancel()
-            pointerFlushTask = nil
-            pointerLastSent = -.infinity
-            keyboardModifiers = 0
-            guard controlActive else { return }
-            sendState(.releaseAll(Dieter_V1_RemoteDesktopReleaseAll()), failOnError: false)
-        }
-
-        private func sendPointer(_ payload: Dieter_V1_RemoteDesktopInput.OneOf_Payload) {
-            guard controlActive, let channel = pointerChannel, channel.readyState == .open,
-                channel.bufferedAmount < 65_536, let binding
-            else { return }
-            pointerSequence &+= 1
-            send(payload, sequence: pointerSequence, binding: binding, channel: channel)
-        }
-
-        private func sendState(
-            _ payload: Dieter_V1_RemoteDesktopInput.OneOf_Payload,
-            failOnError: Bool = true
-        ) {
-            guard controlActive, let channel = stateChannel, channel.readyState == .open,
-                channel.bufferedAmount < 65_536, let binding
-            else { return }
-            pendingPointer = nil
-            stateSequence &+= 1
-            send(
-                payload, sequence: stateSequence, binding: binding, channel: channel,
-                failOnError: failOnError)
-        }
-
-        private func send(
-            _ payload: Dieter_V1_RemoteDesktopInput.OneOf_Payload,
-            sequence: UInt64,
-            binding: Dieter_V1_RemoteDesktopSessionBinding,
-            channel: RTCDataChannel,
-            failOnError: Bool = true
-        ) {
-            var input = Dieter_V1_RemoteDesktopInput()
-            input.controlGeneration = sessionState.controlGeneration
-            input.protocolVersion = binding.inputProtocolVersion
-            input.inputEpoch = binding.inputEpoch
-            input.sequence = sequence
-            eventOrdinal &+= 1
-            input.eventOrdinal = eventOrdinal
-            input.stateBarrier = stateSequence
-            input.displayGeneration = sessionState.displayGeneration
-            input.payload = payload
-            guard let data = try? input.serializedData(), data.count <= 4_096 else { return }
-            if !channel.sendData(RTCDataBuffer(data: data, isBinary: true)), failOnError,
-                channel === stateChannel
-            {
-                controlActive = false
-                recover()
-            }
-        }
-
-        private func normalized(_ value: CGFloat) -> Int32 {
-            Int32((max(0, min(1, value)) * 1_000_000).rounded())
-        }
-
-        func transferControl(take: Bool) {
-            guard canTransferControl, !controlTransferPending, let connection else { return }
-            releaseAllInput()
-            controlTransferPending = true
-            controlTransferError = ""
-            let token = generation
-            Task { [weak self] in
-                guard let self else { return }
-                do {
-                    let value = try await connection.rpc.setRemoteDesktopControl(
-                        sessionID: self.sessionID, take: take)
-                    if self.owns(token) { self.applySessionState(value) }
-                } catch {
-                    if self.owns(token) { self.controlTransferError = IOSUserError.message(error) }
+            send {
+                $0.key = .with {
+                    $0.hid = Int32(bitPattern: hid); $0.down = down; $0.repeat = isRepeat
+                    $0.modifiers = Int32(bitPattern: modifiers | self.keyboardModifiers)
                 }
-                if self.owns(token) { self.controlTransferPending = false }
             }
+            if !down, !(224...231).contains(hid) { keyboardModifiers = 0 }
         }
-
+        func press(hid: UInt32) {
+            hardwareKey(hid: hid, down: true, modifiers: keyboardModifiers)
+            hardwareKey(hid: hid, down: false, modifiers: keyboardModifiers)
+        }
+        func releaseAllInput() {
+            send { $0.releaseInput = ClientScreenStep() }
+            keyboardModifiers = 0
+        }
+        func transferControl(take: Bool) { send { $0.control = .with { $0.on = take } } }
         func configure(
             displayID: String? = nil,
             quality: Dieter_V1_RemoteDesktopQuality? = nil,
             maxFPS: Int32? = nil,
             refresh: Bool = false
         ) {
-            guard let connection, !sessionID.isEmpty else { return }
-            releaseAllInput()
-            if let displayID { desiredConfiguration.displayID = displayID }
-            if let quality { desiredConfiguration.quality = quality; self.quality = quality }
-            if let maxFPS {
-                preferredMaxFPS = IOSRemoteDesktopFrameRate.capped(
-                    maxFPS, hostMaximum: capabilities.maxFps)
-                desiredConfiguration.maxFps = preferredMaxFPS
-            }
-            var request = Dieter_V1_UpdateRemoteDesktopSessionRequest()
-            request.sessionID = sessionID
-            request.configuration = desiredConfiguration
-            request.refresh = refresh
-            let token = generation
-            Task { [weak self] in
-                guard let self else { return }
-                do {
-                    let value = try await connection.rpc.updateRemoteDesktopSession(request)
-                    if self.owns(token) { self.applySessionState(value) }
-                } catch {
-                    if self.owns(token) { self.fail(error) }
-                }
-            }
-        }
-
-        func setViewport(_ size: CGSize, scale: CGFloat) {
-            guard size.width > 0, size.height > 0 else { return }
-            let width = Int32(max(640, min(1_920, ceil(size.width * scale / 160) * 160)))
-            let height = Int32(max(360, min(1_080, ceil(size.height * scale / 90) * 90)))
-            guard desiredConfiguration.maxWidth != width || desiredConfiguration.maxHeight != height else { return }
-            desiredConfiguration.maxWidth = width
-            desiredConfiguration.maxHeight = height
-            viewportTask?.cancel()
-            let token = generation
-            viewportTask = Task { [weak self] in
-                try? await DieterTaskSleep.seconds(0.35)
-                guard let self, self.owns(token), !self.sessionID.isEmpty else { return }
-                self.configure()
-            }
-        }
-
-        private func recover(immediate: Bool = false) {
-            guard openConnection != nil else { return }
-            let delay = immediate ? 0 : min(5, 0.25 * Double(1 << min(recoveryAttempts, 5)))
-            recoveryAttempts = min(recoveryAttempts + 1, 6)
-            teardown(keepConnectionFactory: true, nextPhase: .reconnecting)
-            let token = generation
-            recoveryTask = Task { [weak self] in
-                try? await DieterTaskSleep.seconds(delay)
-                guard let self, self.owns(token), self.openConnection != nil else { return }
-                self.recoveryTask = nil
-                self.beginConnection()
-            }
-        }
-
-        private func fail(_ error: Error) {
-            fail(message: IOSUserError.message(error))
-        }
-
-        private func fail(message: String) {
-            errorMessage = message
-            openConnection = nil
-            teardown(nextPhase: .failed(message))
-        }
-
-        private func teardown(
-            keepConnectionFactory: Bool = false,
-            nextPhase: IOSRemoteDesktopPhase
-        ) {
-            generation &+= 1
-            connectTask?.cancel(); connectTask = nil
-            signalingTask?.cancel(); signalingTask = nil
-            leaseTask?.cancel(); leaseTask = nil
-            recoveryTask?.cancel(); recoveryTask = nil
-            peerWatchdog?.cancel(); peerWatchdog = nil
-            viewportTask?.cancel(); viewportTask = nil
-            releaseAllInput()
-            feedbackPump.stop()
-            receiverFeedbackStarted = false
-            let previousConnection = connection
-            let previousSessionID = sessionID
-            videoTrack?.remove(videoRelay)
-            videoTrack = nil
-            videoRelay.use(token: generation)
-            pointerChannel?.close(); stateChannel?.close(); hostChannel?.close()
-            pointerChannel = nil; stateChannel = nil; hostChannel = nil
-            pointerDelegate = nil; stateDelegate = nil; hostDelegate = nil
-            peerConnection?.close(); peerConnection = nil
-            factory = nil
-            connection = nil
-            request = nil; binding = nil; answerSDP = nil
-            sessionID = ""; remoteDescriptionApplied = false; authorized = false
-            localCandidates.removeAll(); remoteCandidates.removeAll()
-            presentedGeneration = 0; pointerSequence = 0; stateSequence = 0; eventOrdinal = 0
-            pendingPointer = nil; pointerLastSent = -.infinity
-            sessionState = .init(); cursor = .init(); controlActive = false
-            keyboardVisible = false; keyboardModifiers = 0
-            controlTransferPending = false; controlTransferError = ""
-            routeLabel = ""
-            cursorHandler?(cursor)
-            if !keepConnectionFactory { openConnection = nil }
-            phase = nextPhase
-            if let previousConnection {
-                Task {
-                    if !previousSessionID.isEmpty {
-                        try? await previousConnection.rpc.closeRemoteDesktop(sessionID: previousSessionID)
+            if let displayID { self.displayID = displayID }
+            if let quality { self.quality = quality }
+            if let maxFPS { preferredMaxFPS = maxFPS }
+            if displayID != nil || quality != nil || maxFPS != nil {
+                send {
+                    $0.preferences = .with {
+                        $0.displayID = self.displayID; $0.quality = self.quality
+                        $0.maxFps = self.preferredMaxFPS; $0.clipboard = true
                     }
-                    previousConnection.shutdown()
+                }
+            }
+            if refresh { send { $0.refresh = ClientScreenStep() } }
+        }
+        func setViewport(_ size: CGSize, scale: CGFloat) {
+            send {
+                $0.viewport = .with {
+                    $0.widthPoints = size.width; $0.heightPoints = size.height; $0.scale = scale
                 }
             }
         }
 
-        private func owns(_ token: UInt64) -> Bool {
-            generation == token && !Task.isCancelled
+        private func send(_ build: @escaping (inout ClientScreenCommand) -> Void) {
+            var screen = ClientScreenCommand()
+            screen.scope = scope
+            build(&screen)
+            let command = ClientCommand.with { $0.screen = screen }
+            let previous = queued
+            let core = core
+            queued = Task {
+                await previous?.value
+                _ = try? await core.dispatch(command)
+            }
+        }
+    }
+
+    final class IOSScreenMedia: NSObject, NativeScreenMedia, @unchecked Sendable {
+        private let lock = NSLock()
+        private var relays: [String: IOSRemoteDesktopVideoRelay] = [:]
+        private let codecs: [RTCRtpCodecCapability]
+
+        override init() {
+            let factory = RTCPeerConnectionFactory(
+                encoderFactory: RTCDefaultVideoEncoderFactory(), decoderFactory: RTCDefaultVideoDecoderFactory())
+            codecs = factory.rtpReceiverCapabilities(forKind: kRTCMediaStreamTrackKindVideo).codecs.filter {
+                $0.name.caseInsensitiveCompare("H264") == .orderedSame
+                    || $0.name.caseInsensitiveCompare("flexfec-03") == .orderedSame
+            }
+            super.init()
         }
 
-        fileprivate func owns(channel: RTCDataChannel, role: IOSRemoteDesktopChannelRole) -> Bool {
-            switch role {
-            case .pointer: pointerChannel === channel
-            case .state: stateChannel === channel
-            case .host: hostChannel === channel
+        func capabilities() -> Data {
+            var value = ClientScreenMediaCapabilities()
+            value.receiveCodecs = codecs.map { codec in
+                .with {
+                    $0.name = codec.name
+                    $0.profile = codec.parameters["profile-level-id"] ?? ""
+                }
+            }
+            value.initializationFailure =
+                codecs.contains(where: { $0.name.caseInsensitiveCompare("H264") == .orderedSame })
+                ? "" : "This device has no compatible H.264 decoder."
+            return (try? value.serializedData()) ?? Data()
+        }
+
+        func create(
+            configuration: Data, scope: String,
+            events: NativeScreenMediaEvents
+        ) -> any NativeScreenMediaEngine {
+            let relay = relay(scope: scope)
+            relay.setEvents(events)
+            do {
+                return try IOSScreenMediaEngine(
+                    configuration: ClientScreenMediaConfig(serializedBytes: configuration),
+                    events: events, relay: relay)
+            } catch {
+                events.failure(message: error.localizedDescription)
+                return IOSFailedScreenMediaEngine(error: error)
             }
         }
 
-        fileprivate func owns(peer: RTCPeerConnection) -> Bool { peerConnection === peer }
+        func attach(scope: String, renderer: any RTCVideoRenderer) {
+            relay(scope: scope).attach(renderer)
+        }
 
-        private func createOffer(
-            _ peer: RTCPeerConnection,
-            constraints: RTCMediaConstraints
-        ) async throws -> RTCSessionDescription {
-            try await awaitCancellableCallback { completion in
-                peer.offer(for: constraints) { description, error in
+        func detach(scope: String, renderer: any RTCVideoRenderer) {
+            relay(scope: scope).detach(renderer)
+        }
+
+        func detach(scope: String) {
+            lock.withLock { relays.removeValue(forKey: scope) }?.reset()
+        }
+
+        func setSize(scope: String, size: CGSize) { relay(scope: scope).setSize(size) }
+
+        private func relay(scope: String) -> IOSRemoteDesktopVideoRelay {
+            lock.withLock {
+                if let relay = relays[scope] { return relay }
+                let relay = IOSRemoteDesktopVideoRelay()
+                relays[scope] = relay
+                return relay
+            }
+        }
+    }
+
+    final class IOSScreenFixture: NSObject, NativeScreenFixture, @unchecked Sendable {
+        private struct Payload: Decodable {
+            let url: String
+            let certificate: Data
+            let rtc: Data
+            let token: String
+        }
+
+        private let route: NativeScreenFixtureRoute
+
+        private init(_ payload: Payload) {
+            route = NativeScreenFixtureRoute(
+                url: payload.url, token: payload.token,
+                certificatePem: String(data: payload.certificate, encoding: .utf8) ?? "",
+                rtc: payload.rtc, label: "Fixture loopback")
+        }
+
+        static func fromEnvironment() -> IOSScreenFixture? {
+            #if DEBUG
+                guard
+                    let encoded = ProcessInfo.processInfo.environment["DIETER_IOS_SCREEN_FIXTURE"],
+                    let data = Data(base64Encoded: encoded),
+                    let payload = try? JSONDecoder().decode(Payload.self, from: data)
+                else { return nil }
+                return IOSScreenFixture(payload)
+            #else
+                return nil
+            #endif
+        }
+
+        func open() -> NativeScreenFixtureRoute? { route }
+    }
+
+    private final class IOSFailedScreenMediaEngine: NSObject, NativeScreenMediaEngine {
+        let error: Error
+        init(error: Error) { self.error = error }
+        func createOffer(completion: any NativeScreenTextCompletion) {
+            completion.completed(text: nil, error: error.localizedDescription)
+        }
+        func applyAnswer(sdp: String, completion: any NativeScreenDoneCompletion) {
+            completion.completed(error: error.localizedDescription)
+        }
+        func addRemoteCandidate(candidate: Data, completion: any NativeScreenDoneCompletion) {
+            completion.completed(error: error.localizedDescription)
+        }
+        func send(label: String, bytes: Data) -> Bool { false }
+        func isOpen(label: String) -> Bool { false }
+        func bufferedAmount(label: String) -> Int64 { 0 }
+        func statistics(completion: any NativeScreenSampleCompletion) { completion.completed(sample: nil) }
+        func updateFrameGate(
+            token: Int64, displayGeneration: Int64, mediaGeneration: Int64,
+            mediaTimestamp: Int64
+        ) {}
+        func resetVideo() {}
+        func close() {}
+    }
+
+    private final class IOSScreenMediaEngine: NSObject, NativeScreenMediaEngine, @unchecked Sendable {
+        private let events: NativeScreenMediaEvents
+        private let relay: IOSRemoteDesktopVideoRelay
+        private let factory: RTCPeerConnectionFactory
+        private let peer: RTCPeerConnection
+        private var channels: [String: RTCDataChannel] = [:]
+        private var channelLabels: [ObjectIdentifier: String] = [:]
+        private var videoTrack: RTCVideoTrack?
+        private var closed = false
+        init(
+            configuration: ClientScreenMediaConfig,
+            events: NativeScreenMediaEvents,
+            relay: IOSRemoteDesktopVideoRelay
+        ) throws {
+            self.events = events
+            self.relay = relay
+            factory = RTCPeerConnectionFactory(
+                encoderFactory: RTCDefaultVideoEncoderFactory(), decoderFactory: RTCDefaultVideoDecoderFactory())
+            let rtcConfiguration = RTCConfiguration()
+            rtcConfiguration.sdpSemantics = .unifiedPlan
+            rtcConfiguration.continualGatheringPolicy = .gatherContinually
+            rtcConfiguration.iceServers = configuration.rtc.iceServers.map {
+                RTCIceServer(
+                    urlStrings: $0.urls,
+                    username: $0.username.isEmpty ? nil : $0.username,
+                    credential: $0.credential.isEmpty ? nil : $0.credential)
+            }
+            let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
+            guard
+                let peer = factory.peerConnection(
+                    with: rtcConfiguration, constraints: constraints, delegate: nil)
+            else { throw IOSScreenMediaError.peerCreation }
+            self.peer = peer
+            super.init()
+            peer.delegate = self
+
+            for spec in configuration.channels {
+                let config = RTCDataChannelConfiguration()
+                config.isOrdered = spec.ordered
+                if spec.hasMaxRetransmits { config.maxRetransmits = spec.maxRetransmits }
+                guard let channel = peer.dataChannel(forLabel: spec.label, configuration: config) else {
+                    throw IOSScreenMediaError.channelCreation(spec.label)
+                }
+                channel.delegate = self
+                channels[channel.label] = channel
+                self.channelLabels[ObjectIdentifier(channel)] = channel.label
+            }
+
+            let transceiver = RTCRtpTransceiverInit()
+            transceiver.direction = .recvOnly
+            guard let video = peer.addTransceiver(of: .video, init: transceiver) else {
+                throw IOSScreenMediaError.transceiverCreation
+            }
+            let available = factory.rtpReceiverCapabilities(forKind: kRTCMediaStreamTrackKindVideo).codecs
+            let selected = available.compactMap { capability -> (Int, RTCRtpCodecCapability)? in
+                let rank = configuration.codecs.indices.first { index in
+                    configuration.codecs[index].name.caseInsensitiveCompare(capability.name) == .orderedSame
+                        && (configuration.codecs[index].profile.isEmpty
+                            || configuration.codecs[index].profile == capability.parameters["profile-level-id"])
+                }
+                return rank.map { ($0, capability) }
+            }.sorted { $0.0 < $1.0 }.map(\.1)
+            guard !selected.isEmpty else { throw IOSScreenMediaError.codecUnavailable }
+            try video.setCodecPreferences(selected, error: ())
+        }
+
+        private func offer() async throws -> String {
+            let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
+            let offer: RTCSessionDescription = try await awaitCancellableCallback { completion in
+                self.peer.offer(for: constraints) { description, error in
                     if let description {
                         completion(.success(description))
                     } else {
@@ -939,104 +474,197 @@
                     }
                 }
             }
+            try await setDescription(offer, local: true)
+            return offer.sdp
         }
 
-        private func setLocalDescription(
-            _ description: RTCSessionDescription,
-            on peer: RTCPeerConnection
-        ) async throws {
+        private func answer(_ sdp: String) async throws {
+            try await setDescription(RTCSessionDescription(type: .answer, sdp: sdp), local: false)
+        }
+
+        private func addCandidate(_ candidate: Data) async throws {
+            let value = try Dieter_V1_RemoteDesktopICECandidate(serializedBytes: candidate)
+            let ice = RTCIceCandidate(
+                sdp: value.candidate, sdpMLineIndex: value.sdpMlineIndex,
+                sdpMid: value.sdpMid.isEmpty ? nil : value.sdpMid)
             try await awaitCancellableCallback { (completion: @escaping @Sendable (Result<Void, Error>) -> Void) in
-                peer.setLocalDescription(description) { error in
+                self.peer.add(ice) { error in
                     if let error { completion(.failure(error)) } else { completion(.success(())) }
                 }
             }
         }
 
-        private func setRemoteDescription(
-            _ description: RTCSessionDescription,
-            on peer: RTCPeerConnection
-        ) async throws {
+        private func setDescription(_ description: RTCSessionDescription, local: Bool) async throws {
             try await awaitCancellableCallback { (completion: @escaping @Sendable (Result<Void, Error>) -> Void) in
-                peer.setRemoteDescription(description) { error in
+                let callback: @Sendable (Error?) -> Void = { error in
                     if let error { completion(.failure(error)) } else { completion(.success(())) }
+                }
+                if local {
+                    self.peer.setLocalDescription(description, completionHandler: callback)
+                } else {
+                    self.peer.setRemoteDescription(description, completionHandler: callback)
                 }
             }
         }
 
-        private func addIceCandidate(_ candidate: RTCIceCandidate) async throws {
-            guard let peerConnection else { throw CancellationError() }
-            try await awaitCancellableCallback { (completion: @escaping @Sendable (Result<Void, Error>) -> Void) in
-                peerConnection.add(candidate) { error in
-                    if let error { completion(.failure(error)) } else { completion(.success(())) }
+        func createOffer(completion: any NativeScreenTextCompletion) {
+            let completion = NativeCallback(completion)
+            Task {
+                do { completion.value.completed(text: try await offer(), error: nil) } catch {
+                    completion.value.completed(text: nil, error: error.localizedDescription)
                 }
             }
+        }
+
+        func applyAnswer(sdp: String, completion: any NativeScreenDoneCompletion) {
+            let completion = NativeCallback(completion)
+            Task {
+                do { try await answer(sdp); completion.value.completed(error: nil) } catch {
+                    completion.value.completed(error: error.localizedDescription)
+                }
+            }
+        }
+
+        func addRemoteCandidate(candidate: Data, completion: any NativeScreenDoneCompletion) {
+            let completion = NativeCallback(completion)
+            Task {
+                do { try await addCandidate(candidate); completion.value.completed(error: nil) } catch {
+                    completion.value.completed(error: error.localizedDescription)
+                }
+            }
+        }
+
+        func send(label: String, bytes: Data) -> Bool {
+            guard !closed, let channel = channels[label], channel.readyState == .open else { return false }
+            return channel.sendData(RTCDataBuffer(data: bytes, isBinary: true))
+        }
+        func isOpen(label: String) -> Bool { !closed && channels[label]?.readyState == .open }
+        func bufferedAmount(label: String) -> Int64 { Int64(channels[label]?.bufferedAmount ?? 0) }
+        func statistics(completion: any NativeScreenSampleCompletion) {
+            let completion = NativeCallback(completion)
+            Task { completion.value.completed(sample: await receiverSample()) }
+        }
+
+        private func receiverSample() async -> NativeReceiverSample? {
+            guard !closed else { return nil }
+            let report = await peer.statistics()
+            guard !closed else { return nil }
+            var inbound: [String: NSObject] = [:]
+            var candidatePair: [String: NSObject] = [:]
+            for statistic in report.statistics.values {
+                if statistic.type == "inbound-rtp", statistic.values["kind"] as? String == "video" {
+                    inbound = statistic.values
+                } else if statistic.type == "candidate-pair",
+                    statistic.values["nominated"] as? Bool == true,
+                    statistic.values["state"] as? String == "succeeded"
+                {
+                    candidatePair = statistic.values
+                }
+            }
+            guard !inbound.isEmpty else { return nil }
+            func value(_ key: String) -> Double { (inbound[key] as? NSNumber)?.doubleValue ?? 0 }
+            let counters = relay.presentationCounters()
+            return NativeReceiverSample(
+                atMillis: Int64(ProcessInfo.processInfo.systemUptime * 1_000),
+                framesDecoded: value("framesDecoded"), totalDecodeTime: value("totalDecodeTime"),
+                jitterBufferEmittedCount: value("jitterBufferEmittedCount"),
+                jitterBufferDelay: value("jitterBufferDelay"), packetsLost: value("packetsLost"),
+                packetsReceived: value("packetsReceived"), presented: counters.frames,
+                renderMilliseconds: counters.milliseconds,
+                jitterSeconds: (inbound["jitter"] as? NSNumber)?.doubleValue ?? 0,
+                roundTripSeconds: (candidatePair["currentRoundTripTime"] as? NSNumber)?.doubleValue ?? 0,
+                decoderImplementation: (inbound["decoderImplementation"] as? String) ?? "")
+        }
+        func updateFrameGate(
+            token: Int64, displayGeneration: Int64, mediaGeneration: Int64,
+            mediaTimestamp: Int64
+        ) {
+            relay.updateFrameGate(
+                token: token, displayGeneration: displayGeneration,
+                mediaGeneration: mediaGeneration,
+                mediaTimestamp: UInt32(truncatingIfNeeded: mediaTimestamp))
+        }
+        func resetVideo() { relay.reset() }
+
+        func close() {
+            guard !closed else { return }
+            closed = true
+            videoTrack?.remove(relay)
+            videoTrack = nil
+            channels.values.forEach { $0.close() }
+            channels.removeAll()
+            channelLabels.removeAll()
+            peer.close()
+            relay.clearFrameGate()
+        }
+
+        private func use(_ track: RTCVideoTrack) {
+            guard videoTrack !== track else { return }
+            videoTrack?.remove(relay)
+            videoTrack = track
+            track.add(relay)
         }
     }
 
-    fileprivate enum IOSRemoteDesktopChannelRole: Sendable { case pointer, state, host }
-
-    private final class IOSRemoteDesktopPeerDelegate: NSObject, RTCPeerConnectionDelegate, @unchecked Sendable {
-        weak var owner: IOSRemoteDesktopSession?
-
+    extension IOSScreenMediaEngine: RTCPeerConnectionDelegate {
         func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
         func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
-            guard let track = stream.videoTracks.first else { return }
-            Task { @MainActor [weak owner] in
-                guard let owner, owner.owns(peer: peerConnection) else { return }
-                owner.received(track: track)
-            }
+            if let track = stream.videoTracks.first { use(track) }
         }
         func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
         func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
         func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {}
         func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {}
         func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
-            Task { @MainActor [weak owner] in
-                guard let owner, owner.owns(peer: peerConnection) else { return }
-                owner.generated(candidate: candidate)
-            }
+            var value = Dieter_V1_RemoteDesktopICECandidate()
+            value.candidate = candidate.sdp
+            value.sdpMid = candidate.sdpMid ?? ""
+            value.sdpMlineIndex = candidate.sdpMLineIndex
+            if let data = try? value.serializedData() { events.localCandidate(candidate: data) }
         }
         func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
         func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}
         func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
-            Task { @MainActor [weak owner] in
-                guard let owner, owner.owns(peer: peerConnection) else { return }
-                owner.connectionStateChanged(newState)
-            }
+            let state: Int32 =
+                switch newState {
+                case .new: 0
+                case .connecting: 1
+                case .connected: 2
+                case .disconnected: 3
+                case .failed: 4
+                case .closed: 5
+                @unknown default: 4
+                }
+            events.peerState(state: state)
         }
         func peerConnection(
             _ peerConnection: RTCPeerConnection,
             didAdd rtpReceiver: RTCRtpReceiver,
             streams: [RTCMediaStream]
         ) {
-            guard let track = rtpReceiver.track as? RTCVideoTrack else { return }
-            Task { @MainActor [weak owner] in
-                guard let owner, owner.owns(peer: peerConnection) else { return }
-                owner.received(track: track)
-            }
+            if let track = rtpReceiver.track as? RTCVideoTrack { use(track) }
         }
     }
 
-    private final class IOSRemoteDesktopDataChannelDelegate: NSObject, RTCDataChannelDelegate, @unchecked Sendable {
-        weak var owner: IOSRemoteDesktopSession?
-        let role: IOSRemoteDesktopChannelRole
-
-        init(owner: IOSRemoteDesktopSession, role: IOSRemoteDesktopChannelRole) {
-            self.owner = owner
-            self.role = role
-        }
-
+    extension IOSScreenMediaEngine: RTCDataChannelDelegate {
         func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
-            Task { @MainActor [weak owner] in owner?.channelChanged(dataChannel, role: self.role) }
+            guard let label = channelLabels[ObjectIdentifier(dataChannel)] else { return }
+            events.channelState(label: label, open: dataChannel.readyState == .open)
         }
-
         func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
-            guard role == .host, buffer.isBinary, buffer.data.count <= 350_000,
-                let event = try? Dieter_V1_RemoteDesktopHostEvent(serializedBytes: buffer.data)
-            else { return }
-            Task { @MainActor [weak owner] in
-                guard let owner, owner.owns(channel: dataChannel, role: self.role) else { return }
-                owner.receiveHost(event)
+            guard buffer.isBinary, let label = channelLabels[ObjectIdentifier(dataChannel)] else { return }
+            events.channelMessage(label: label, bytes: buffer.data)
+        }
+    }
+
+    private enum IOSScreenMediaError: LocalizedError {
+        case peerCreation, channelCreation(String), transceiverCreation, codecUnavailable
+        var errorDescription: String? {
+            switch self {
+            case .peerCreation: "WebRTC could not create a peer connection."
+            case .channelCreation(let name): "WebRTC could not create the \(name) data channel."
+            case .transceiverCreation: "WebRTC could not create a receive-only video track."
+            case .codecUnavailable: "This device has no compatible H.264 decoder."
             }
         }
     }
@@ -1045,12 +673,26 @@
         private let lock = NSLock()
         private weak var renderer: (any RTCVideoRenderer)?
         private var size = CGSize.zero
-        private var token: UInt64 = 0
-        private let onFrame: @Sendable (UInt64) -> Void
+        private var events: NativeScreenMediaEvents?
+        private var frameEpoch: Int64 = -1
+        private var displayGeneration: Int64 = 0
+        private var mediaGeneration: Int64 = 0
+        private var mediaTimestamp: UInt32 = 0
+        private var pendingFrame: RTCVideoFrame?
+        private var framesPresented: Int64 = 0
+        private var totalRenderMilliseconds = 0.0
 
-        init(onFrame: @escaping @Sendable (UInt64) -> Void) { self.onFrame = onFrame }
+        func setEvents(_ events: NativeScreenMediaEvents) {
+            lock.withLock {
+                self.events = events
+                framesPresented = 0
+                totalRenderMilliseconds = 0
+            }
+        }
 
-        func use(token: UInt64) { lock.withLock { self.token = token } }
+        func presentationCounters() -> (frames: Int64, milliseconds: Double) {
+            lock.withLock { (framesPresented, totalRenderMilliseconds) }
+        }
 
         func attach(_ renderer: any RTCVideoRenderer) {
             let size = lock.withLock {
@@ -1059,7 +701,6 @@
             }
             if size.width > 0, size.height > 0 { renderer.setSize(size) }
         }
-
         func detach(_ renderer: any RTCVideoRenderer) {
             let current = lock.withLock { self.renderer }
             if (current as AnyObject?) === (renderer as AnyObject) {
@@ -1067,7 +708,6 @@
                 renderer.renderFrame(nil)
             }
         }
-
         func setSize(_ size: CGSize) {
             let renderer = lock.withLock {
                 self.size = size
@@ -1075,23 +715,92 @@
             }
             renderer?.setSize(size)
         }
-
+        func reset() {
+            let renderer = lock.withLock {
+                pendingFrame = nil
+                return self.renderer
+            }
+            renderer?.renderFrame(nil)
+        }
+        func updateFrameGate(
+            token: Int64, displayGeneration: Int64, mediaGeneration: Int64,
+            mediaTimestamp: UInt32
+        ) {
+            let output = lock.withLock {
+                () -> (RTCVideoFrame, (any RTCVideoRenderer)?, NativeScreenMediaEvents?)? in
+                if token != frameEpoch { pendingFrame = nil }
+                frameEpoch = token
+                self.displayGeneration = displayGeneration
+                self.mediaGeneration = mediaGeneration
+                self.mediaTimestamp = mediaTimestamp
+                guard frameGateReady, let frame = pendingFrame else { return nil }
+                pendingFrame = nil
+                guard belongsToCurrentGeneration(frame) else { return nil }
+                return (frame, renderer, events)
+            }
+            if let output { present(output) }
+        }
+        func clearFrameGate() {
+            lock.withLock {
+                pendingFrame = nil
+                frameEpoch = -1
+                displayGeneration = 0
+                mediaGeneration = 0
+                mediaTimestamp = 0
+            }
+        }
         func renderFrame(_ frame: RTCVideoFrame?) {
             let frame = frame.map { frame in
-                let renderTimestamp = IOSRemoteDesktopFrameTimestamp.nanoseconds(
-                    decodedNanoseconds: frame.timeStampNs,
-                    rtpTimestamp: frame.timeStamp)
-                guard renderTimestamp != frame.timeStampNs else { return frame }
-                let normalized = RTCVideoFrame(
-                    buffer: frame.buffer,
-                    rotation: frame.rotation,
-                    timeStampNs: renderTimestamp)
+                let timestamp = IOSRemoteDesktopFrameTimestamp.nanoseconds(
+                    decodedNanoseconds: frame.timeStampNs, rtpTimestamp: frame.timeStamp)
+                guard timestamp != frame.timeStampNs else { return frame }
+                let normalized = RTCVideoFrame(buffer: frame.buffer, rotation: frame.rotation, timeStampNs: timestamp)
                 normalized.timeStamp = frame.timeStamp
                 return normalized
             }
-            let (renderer, token) = lock.withLock { (self.renderer, self.token) }
+            guard let frame else {
+                lock.withLock { renderer }?.renderFrame(nil)
+                return
+            }
+            let timestamp = Int64(UInt64(UInt32(bitPattern: frame.timeStamp)))
+            lock.withLock { events }?.decoded(rtpTimestamp: timestamp)
+            let output = lock.withLock {
+                () -> (RTCVideoFrame, (any RTCVideoRenderer)?, NativeScreenMediaEvents?)? in
+                guard frameEpoch >= 0 else { return nil }
+                guard frameGateReady else {
+                    pendingFrame = frame
+                    return nil
+                }
+                guard belongsToCurrentGeneration(frame) else { return nil }
+                return (frame, renderer, events)
+            }
+            if let output { present(output) }
+        }
+
+        private var frameGateReady: Bool {
+            displayGeneration > 0 && mediaGeneration == displayGeneration
+        }
+
+        private func belongsToCurrentGeneration(_ frame: RTCVideoFrame) -> Bool {
+            let timestamp = UInt32(bitPattern: frame.timeStamp)
+            return Int32(bitPattern: timestamp &- mediaTimestamp) >= 0
+        }
+
+        private func present(
+            _ output: (RTCVideoFrame, (any RTCVideoRenderer)?, NativeScreenMediaEvents?)
+        ) {
+            let (frame, renderer, events) = output
+            let started = ProcessInfo.processInfo.systemUptime
             renderer?.renderFrame(frame)
-            if frame != nil, renderer != nil { onFrame(token) }
+            if renderer != nil {
+                let milliseconds = (ProcessInfo.processInfo.systemUptime - started) * 1_000
+                lock.withLock {
+                    framesPresented += 1
+                    totalRenderMilliseconds += milliseconds
+                }
+                events?.presented(
+                    rtpTimestamp: Int64(UInt64(UInt32(bitPattern: frame.timeStamp))))
+            }
         }
     }
 #endif
@@ -1102,91 +811,7 @@ enum IOSRemoteDesktopFrameTimestamp {
 
     static func nanoseconds(decodedNanoseconds: Int64, rtpTimestamp: Int32) -> Int64 {
         guard decodedNanoseconds == 0 else { return decodedNanoseconds }
-        // WebRTC's stock iOS renderers use timeStampNs to reject duplicate frames.
-        // Remote desktop frames can carry only their 90 kHz RTP timestamp, leaving
-        // timeStampNs at its zero sentinel and causing every frame to be skipped.
         let ticks = UInt64(UInt32(bitPattern: rtpTimestamp)) + 1
         return Int64(ticks * nanosecondsPerSecond / rtpClockRate)
-    }
-}
-
-struct IOSRemoteDesktopKeyStroke: Equatable {
-    let hid: UInt32
-    let modifiers: UInt32
-
-    init?(text: String, modifiers: UInt32) {
-        guard modifiers != 0, text.unicodeScalars.count == 1,
-            let scalar = text.unicodeScalars.first, scalar.isASCII,
-            let key = Self.key(for: UInt8(scalar.value))
-        else { return nil }
-        hid = key.hid
-        self.modifiers = modifiers | key.impliedModifiers
-    }
-
-    private static func key(for value: UInt8) -> (hid: UInt32, impliedModifiers: UInt32)? {
-        switch value {
-        case 0x61...0x7a: (UInt32(value - 0x61) + 4, 0)
-        case 0x41...0x5a: (UInt32(value - 0x41) + 4, 1)
-        case 0x31...0x39: (UInt32(value - 0x31) + 30, 0)
-        case 0x30: (39, 0)
-        case 0x0a, 0x0d: (40, 0)
-        case 0x09: (43, 0)
-        case 0x20: (44, 0)
-        case 0x2d: (45, 0)
-        case 0x3d: (46, 0)
-        case 0x5b: (47, 0)
-        case 0x5d: (48, 0)
-        case 0x5c: (49, 0)
-        case 0x3b: (51, 0)
-        case 0x27: (52, 0)
-        case 0x60: (53, 0)
-        case 0x2c: (54, 0)
-        case 0x2e: (55, 0)
-        case 0x2f: (56, 0)
-        case 0x21: (30, 1)
-        case 0x40: (31, 1)
-        case 0x23: (32, 1)
-        case 0x24: (33, 1)
-        case 0x25: (34, 1)
-        case 0x5e: (35, 1)
-        case 0x26: (36, 1)
-        case 0x2a: (37, 1)
-        case 0x28: (38, 1)
-        case 0x29: (39, 1)
-        case 0x5f: (45, 1)
-        case 0x2b: (46, 1)
-        case 0x7b: (47, 1)
-        case 0x7d: (48, 1)
-        case 0x7c: (49, 1)
-        case 0x3a: (51, 1)
-        case 0x22: (52, 1)
-        case 0x7e: (53, 1)
-        case 0x3c: (54, 1)
-        case 0x3e: (55, 1)
-        case 0x3f: (56, 1)
-        default: nil
-        }
-    }
-}
-
-enum IOSRemoteDesktopModifierPolicy {
-    static func consumesArmedModifiers(hid: UInt32, down: Bool) -> Bool {
-        !down && !(224...231).contains(hid)
-    }
-}
-
-enum IOSRemoteDesktopFrameRate {
-    static let maximum: Int32 = 30
-
-    static func available(hostMaximum: Int32) -> [Int32] {
-        [maximum].filter { $0 <= effectiveHostMaximum(hostMaximum) }
-    }
-
-    static func capped(_ requested: Int32, hostMaximum: Int32) -> Int32 {
-        max(1, min(requested, maximum, effectiveHostMaximum(hostMaximum)))
-    }
-
-    private static func effectiveHostMaximum(_ hostMaximum: Int32) -> Int32 {
-        hostMaximum > 0 ? hostMaximum : maximum
     }
 }

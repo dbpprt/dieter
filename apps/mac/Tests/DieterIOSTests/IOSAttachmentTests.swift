@@ -145,7 +145,7 @@ struct IOSAttachmentTests {
         }
     }
 
-    @Test func stagedShareBecomesAttachmentsAndIsConsumedOnce() async throws {
+    @Test func stagedShareRemainsUntilItsPresentationAcceptsTheHandoff() async throws {
         let container = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: container) }
         let id = UUID().uuidString.lowercased()
@@ -164,7 +164,14 @@ struct IOSAttachmentTests {
         #expect(parts[0].filename == "Screenshot.png")
         #expect(parts[0].mediaType == "image/png")
         #expect(parts[0].data == Data("screenshot".utf8))
+        #expect(FileManager.default.fileExists(atPath: directory.path))
+
+        let request = IOSShareInbox.Request(id: id, destination: .newTask)
+        try IOSShareInbox.recordPendingRequest(request, in: container)
+        IOSShareInbox.complete(request, from: container)
+
         #expect(!FileManager.default.fileExists(atPath: directory.path))
+        #expect(IOSShareInbox.pendingRequest(from: container) == nil)
         await #expect(throws: IOSAttachmentError.self) {
             try await IOSShareInbox.consume(id: id, from: container)
         }
