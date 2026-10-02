@@ -236,7 +236,7 @@ final class ConversationModel {
             while observedCardID == cardID, updates == before || conversationMessages.count == count,
                 ContinuousClock.now < deadline
             {
-                try await Task.sleep(for: .milliseconds(16))
+                try await DieterTaskSleep.milliseconds(16)
             }
             return observedCardID == cardID
         } catch {

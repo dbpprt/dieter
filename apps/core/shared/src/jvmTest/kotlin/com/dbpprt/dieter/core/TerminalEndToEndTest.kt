@@ -1,8 +1,11 @@
 package com.dbpprt.dieter.core
 
+import com.dbpprt.dieter.api.v1.CreateTerminalRequest
+import com.dbpprt.dieter.api.v1.TerminalRef
 import com.dbpprt.dieter.core.runtime.CoreException
 import com.dbpprt.dieter.core.terminals.TerminalInputPumps
 import com.dbpprt.dieter.core.terminals.TerminalKey
+import com.dbpprt.dieter.core.terminals.TerminalOverview
 import com.dbpprt.dieter.core.terminals.TerminalScope
 import com.dbpprt.dieter.core.terminals.TerminalScopeKind
 import com.dbpprt.dieter.core.testing.EndToEnd
@@ -161,5 +164,34 @@ class TerminalEndToEndTest : EndToEnd() {
             overview.terminals.close(first.terminal.id)
             runtime.onMachine(fixture.secondDaemonId) { it.CloseTerminal().execute(com.dbpprt.dieter.api.v1.TerminalRef(terminal_id = second.terminal.id)) }
         }
+    }
+
+    @Test
+    fun anOverviewListsAMachineAgainOnceItIsBack() = e2e {
+        val fixture = fixture(secondDaemon = true)
+        val runtime = runtime(fixture)
+        runtime.awaitConnected()
+        runtime.connection.machines.await(30.seconds, describe = { "both machines: ${runtime.connection.machines.value}" }) { directory ->
+            directory.online.count { it.compatible } >= 2
+        }
+        val returning = runtime.onMachine(fixture.secondDaemonId) {
+            it.CreateTerminal().execute(CreateTerminalRequest(name = "returning", shell = "sh", columns = 80, rows = 24, machine_home = true))
+        }
+        val everyMachine = runtime.connection.machines.value.online.filter { it.compatible }
+        // The second machine is still restarting when the overview first lists.
+        var online = everyMachine.filter { it.id != fixture.secondDaemonId }
+        val overview = TerminalOverview(runtime.sessions, { online }, runtime.terminals())
+        runtime.onCore { overview.load(preferredDaemonId = fixture.secondDaemonId) }
+        assertTrue(overview.view.value.entries.none { it.daemonId == fixture.secondDaemonId })
+        runtime.onCore { overview.relistIfStale() }
+        assertTrue(overview.view.value.entries.none { it.daemonId == fixture.secondDaemonId }, "nothing changed, so nothing is listed again")
+
+        online = everyMachine
+        runtime.onCore { overview.relistIfStale() }
+        val view = overview.view.value
+        val id = "${fixture.secondDaemonId}|${returning.id}"
+        assertTrue(view.entries.any { it.id == id }, "the returning machine's terminal is listed: ${view.entries.map { it.id }}")
+        if (view.entries.size == 1) assertEquals(id, view.selectedId, "the preferred machine's terminal is selected once listed")
+        runtime.onMachine(fixture.secondDaemonId) { it.CloseTerminal().execute(TerminalRef(terminal_id = returning.id)) }
     }
 }

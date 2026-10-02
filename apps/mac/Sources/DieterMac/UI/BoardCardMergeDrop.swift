@@ -32,7 +32,7 @@ final class BoardCardDropState {
                 self.payload = value
                 guard eligible(value) else { return }
                 self.timer = Task { @MainActor [weak self] in
-                    do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                    do { try await DieterTaskSleep.seconds(2) } catch { return }
                     guard let self, self.targeted, self.generation == token, eligible(value) else { return }
                     self.mergeReady = true
                 }

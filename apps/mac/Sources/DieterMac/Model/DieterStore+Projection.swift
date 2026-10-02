@@ -22,8 +22,8 @@ extension DieterStore {
 
     var projects: [Dieter_V1_Project] { replica.projects }
 
-    /// The daemon-wide card projection used by app-global surfaces such as the
-    /// Island. `state.cards` intentionally contains only the selected project,
+    /// The daemon-wide card projection for cross-project navigation.
+    /// `state.cards` intentionally contains only the selected project,
     /// while `navigationCards` is kept current by WatchSync in the background.
     var synchronizedCards: [Dieter_V1_Card] {
         synchronizedCardValues().sorted {
@@ -50,32 +50,12 @@ extension DieterStore {
         return Array(byID.values)
     }
 
-    func refreshIslandActivityProjection(now: Date = Date()) {
-        guard !suppressIslandActivityRefresh else { return }
-        let source = DieterIslandActivity.source(cards: synchronizedCardValues())
-        let calendar = Calendar.current
-        let day = calendar.startOfDay(for: now)
-        guard source != islandActivitySource || day != islandActivityDay else { return }
-        islandActivitySource = source
-        islandActivityDay = day
+    func refreshIslandActivityProjection() {
         os_signpost(.begin, log: syncPerformanceLog, name: "Derive Island activity")
-        islandActivity = DieterIslandActivity.resolve(source: source, now: now, calendar: calendar)
+        let activity = DieterIslandActivity.resolve(entries: inboxEntries)
         os_signpost(.end, log: syncPerformanceLog, name: "Derive Island activity")
-        islandActivityProjectionRevision += 1
-    }
-
-    func refreshIslandActivityDateBoundaryIfNeeded(now: Date) {
-        let calendar = Calendar.current
-        let day = calendar.startOfDay(for: now)
-        guard day != islandActivityDay else { return }
-        islandActivityDay = day
-        os_signpost(.begin, log: syncPerformanceLog, name: "Derive Island activity")
-        islandActivity = DieterIslandActivity.resolve(
-            source: islandActivitySource,
-            now: now,
-            calendar: calendar
-        )
-        os_signpost(.end, log: syncPerformanceLog, name: "Derive Island activity")
+        guard activity != islandActivity else { return }
+        islandActivity = activity
         islandActivityProjectionRevision += 1
     }
 

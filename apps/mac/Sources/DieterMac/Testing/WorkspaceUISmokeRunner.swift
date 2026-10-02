@@ -463,21 +463,29 @@
             }
             results["project-validate"] =
                 validated && validationFinished ? "passed" : "failed: project validation did not complete"
-            _ = await NativeUIAccessibility.wait { window.attachedSheet == nil && !model.mutationsDisabled }
-            _ = NativeUIAccessibility.click("project-changes.discard", in: window)
             _ = await NativeUIAccessibility.wait {
+                window.attachedSheet == nil && !model.mutationsDisabled && !model.busy && model.pendingKind == nil
+            }
+            // Let the accepted snapshot's SwiftUI transaction enable the header
+            // controls before delivering the native mouse-down.
+            try? await DieterTaskSleep.milliseconds(100)
+            _ = NativeUIAccessibility.click("project-changes.discard", in: window)
+            let confirmation = await NativeUIAccessibility.wait {
                 NativeUIAccessibility.find(
                     "project-changes.confirm-discard", in: window.attachedSheet ?? window,
                     fallbackLabel: "Discard changes") != nil
             }
+            try? await DieterTaskSleep.milliseconds(100)
             let discarded = NativeUIAccessibility.click(
                 "project-changes.confirm-discard", in: window.attachedSheet ?? window, fallbackLabel: "Discard changes")
             let clean = await NativeUIAccessibility.wait {
                 model.changes?.files.isEmpty == true
                     && NativeUIAccessibility.find("project-changes.clean", in: window) != nil
             }
+            let discardState =
+                "confirmation=\(confirmation), confirmed=\(discarded), files=\(model.changes?.files.map(\.path) ?? []), selection=\(model.selection?.path ?? "none"), operation=\(model.operation?.kind ?? "none")/\(model.operation?.status ?? ""), error=\(model.operationError ?? "none")"
             results["project-discard"] =
-                discarded && clean ? "passed" : "failed: native discard did not render clean checkout"
+                discarded && clean ? "passed" : "failed: native discard did not render clean checkout; \(discardState)"
             capture(window, to: output.appending(path: "09-project-changes-clean.png"))
             let updated = NativeUIAccessibility.click("project-changes.update", in: window)
             let updateFinished = await NativeUIAccessibility.wait {

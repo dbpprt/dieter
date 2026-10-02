@@ -91,7 +91,7 @@
                 while !Task.isCancelled {
                     await store.refreshMachineInformation()
                     do {
-                        try await Task.sleep(for: .seconds(5))
+                        try await DieterTaskSleep.seconds(5)
                     } catch {
                         return
                     }

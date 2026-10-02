@@ -108,7 +108,7 @@ struct ConversationTimeline: View {
     private func acknowledgeVisibleResponse() async {
         guard responseReadKey.visible else { return }
         // A transient mount during navigation is not a viewed reply.
-        do { try await Task.sleep(for: .milliseconds(200)) } catch { return }
+        do { try await DieterTaskSleep.milliseconds(200) } catch { return }
         await context.model.markResponseSeen()
     }
 
@@ -407,7 +407,7 @@ struct ConversationTimeline: View {
             for _ in 0..<20 {
                 // Yield an actual run-loop pass so AppKit can place the rows;
                 // a sequence of executor yields can all precede native layout.
-                try? await Task.sleep(for: .milliseconds(5))
+                try? await DieterTaskSleep.milliseconds(5)
                 guard !Task.isCancelled else { return }
                 guard viewportMode == .awaitingInitial(conversationID: key.conversationID) else { return }
                 if let lastID = source.last?.id, scroller.hasLaidOutMessage(lastID),

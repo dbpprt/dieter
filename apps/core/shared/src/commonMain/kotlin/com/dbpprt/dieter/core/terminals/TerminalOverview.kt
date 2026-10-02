@@ -55,22 +55,30 @@ class TerminalOverview(
     private val mutableView = MutableStateFlow(TerminalOverviewView())
     val view: StateFlow<TerminalOverviewView> = mutableView.asStateFlow()
     private var generation = 0L
+    private var preferred: String? = null
+    /** Machines the last load listed; null before the first load. */
+    private var listed: Set<String>? = null
+    private var staleChecks = 0
 
     suspend fun load(preferredDaemonId: String? = null) {
         val bound = ++generation
+        preferred = preferredDaemonId
         val candidates = machines()
         if (candidates.isEmpty()) {
+            listed = emptySet()
             mutableView.value = TerminalOverviewView(noMachines = true)
             terminals.bind(null)
             return
         }
         mutableView.update { it.copy(loading = it.entries.isEmpty(), noMachines = false) }
         val listed = mutableListOf<TerminalOverviewEntry>()
+        val reached = mutableSetOf<String>()
         val errors = LinkedHashMap<String, String>()
         for (machine in candidates) {
             try {
                 val values = withDeadline(DEADLINE) { sessions.call(machine.id) { it.ListTerminals().execute(ListTerminalsRequest()) } }.terminals
                 listed += values.map { TerminalOverviewEntry(machine.id, machine.name, it) }
+                reached += machine.id
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
@@ -79,6 +87,7 @@ class TerminalOverview(
             if (bound != generation) return
             mutableView.update { it.copy(entries = TerminalOverviewCatalog.sorted(listed)) }
         }
+        this.listed = reached
         val entries = TerminalOverviewCatalog.sorted(listed)
         val selected = TerminalOverviewCatalog.selection(entries, view.value.selectedId, preferredDaemonId)
         mutableView.update { it.copy(entries = entries, errors = errors, loading = false) }
@@ -110,25 +119,42 @@ class TerminalOverview(
     }
 
     /**
-     * Takes the selected machine's terminals from the [terminals] surface, so
-     * closes and renames made there show here without another listing. The
-     * selection follows the surface's.
+     * Shows a close or rename made through the [terminals] surface without
+     * another listing: [terminalId]'s entry takes the surface's terminal, or
+     * leaves when the surface no longer has it. A closed selection follows the
+     * surface's.
      */
-    fun reconcile() {
+    fun follow(terminalId: String) {
         val surface = terminals.view.value
         val scope = surface.scope ?: return
-        if (scope.kind != TerminalScopeKind.MACHINE || surface.loading || surface.error != null) return
+        if (scope.kind != TerminalScopeKind.MACHINE) return
+        val id = "${scope.daemonId}|$terminalId"
         val current = view.value
-        val name = current.entries.firstOrNull { it.daemonId == scope.daemonId }?.machineName
-            ?: machines().firstOrNull { it.id == scope.daemonId }?.name ?: return
-        val entries = TerminalOverviewCatalog.sorted(
-            current.entries.filterNot { it.daemonId == scope.daemonId } + surface.terminals.map { TerminalOverviewEntry(scope.daemonId, name, it) },
-        )
-        val selected = surface.selectedId?.let { "${scope.daemonId}|$it" }?.takeIf { id -> entries.any { it.id == id } }
-            ?: current.selectedId?.takeIf { id -> entries.any { it.id == id } }
-        if (entries != current.entries || selected != current.selectedId) {
-            mutableView.update { it.copy(entries = entries, selectedId = selected) }
+        if (current.entries.none { it.id == id }) return
+        val terminal = surface.terminals.firstOrNull { it.id == terminalId }
+        val entries = if (terminal == null) current.entries.filterNot { it.id == id } else current.entries.map { if (it.id == id) it.copy(terminal = terminal) else it }
+        val selected = if (current.selectedId != id || terminal != null) current.selectedId
+            else surface.selectedId?.let { "${scope.daemonId}|$it" }?.takeIf { next -> entries.any { it.id == next } }
+        mutableView.update { it.copy(entries = TerminalOverviewCatalog.sorted(entries), selectedId = selected) }
+    }
+
+    /**
+     * Lists again when the online machines differ from those the last load
+     * listed: a machine came online or back after a restart, went away, or
+     * could not be listed. Repeated misses back off. Nothing before the first
+     * load.
+     */
+    suspend fun relistIfStale() {
+        val covered = listed ?: return
+        val online = machines().map { it.id }.toSet()
+        if (online == covered) {
+            staleChecks = 0
+            return
         }
+        staleChecks++
+        // Every check at first, then every 2nd, 4th, …, at most every 8th.
+        val spacing = 1 shl minOf(3, (staleChecks - 1) / 3)
+        if ((staleChecks - 1) % spacing == 0) load(preferred)
     }
 
     private suspend fun activate(entry: TerminalOverviewEntry?) {

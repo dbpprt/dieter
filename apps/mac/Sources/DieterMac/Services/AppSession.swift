@@ -64,7 +64,9 @@ final class AppSession {
     var boardState = ClientBoardSlice()
     var creationMemory = ClientCreationSlice()
     /// The Inbox's rows, newest activity first, as the core classifies them.
-    var activityRows: [ClientActivityRow] = []
+    var activityRows: [ClientActivityRow] = [] {
+        didSet { refreshIslandActivityProjection() }
+    }
     @ObservationIgnored var machineMetadata: [String: ClientMachineMetadata] = [:]
     /// The attached machine whose metadata was last requested.
     @ObservationIgnored var requestedMetadata: String?
@@ -203,9 +205,6 @@ final class AppSession {
     var islandActivity = DieterIslandActivity.empty
     var boardProjection = BoardProjection.empty
     @ObservationIgnored var islandActivityProjectionRevision = 0
-    @ObservationIgnored var islandActivitySource: [DieterIslandActivity.SourceCard] = []
-    @ObservationIgnored var islandActivityDay = Calendar.current.startOfDay(for: Date())
-    @ObservationIgnored var suppressIslandActivityRefresh = false
 
     var workspaceFreshness: WorkspaceFreshnessState {
         WorkspaceFreshnessState.resolve(

@@ -64,7 +64,7 @@ struct CommandPalette: View {
         dismiss()
         // Let the palette sheet close before an action presents another sheet.
         Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(200))
+            try? await DieterTaskSleep.milliseconds(200)
             result.action()
         }
     }

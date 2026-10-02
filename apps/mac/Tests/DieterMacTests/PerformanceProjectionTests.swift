@@ -13,18 +13,30 @@ import Testing
     card.boardID = "board-one"
     card.runtime = "running"
     card.runtimeUpdatedAt = "2026-08-30T12:00:00.000Z"
-    store.navigationCards = [card.projectID: [card]]
+    store.activityRows = [
+        .with {
+            $0.card = card; $0.kind = card.runtime == "running" ? "RUNNING" : "ANSWER"
+        }
+    ]
 
     let initialRevision = store.islandActivityProjectionRevision
     #expect(store.islandActivity.runningCount == 1)
 
     card.workspace.changedFiles = 12
     card.workspace.additions = 500
-    store.navigationCards = [card.projectID: [card]]
+    store.activityRows = [
+        .with {
+            $0.card = card; $0.kind = card.runtime == "running" ? "RUNNING" : "ANSWER"
+        }
+    ]
     #expect(store.islandActivityProjectionRevision == initialRevision)
 
     card.runtime = "waiting_for_user"
-    store.navigationCards = [card.projectID: [card]]
+    store.activityRows = [
+        .with {
+            $0.card = card; $0.kind = card.runtime == "running" ? "RUNNING" : "ANSWER"
+        }
+    ]
     #expect(store.islandActivityProjectionRevision == initialRevision + 1)
     #expect(store.islandActivity.runningCount == 0)
 }
@@ -358,6 +370,11 @@ private actor TerminalFrameClock {
     state.projects = [project]
     state.cards = [card]
     store.foldFixture(state)
+    store.activityRows = [
+        .with {
+            $0.card = card; $0.kind = "RUNNING"
+        }
+    ]
     let islandRevision = store.islandActivityProjectionRevision
     #expect(store.islandActivity.runningCount == 1)
     // Transcript traffic arrives on the conversation slice; the workspace the

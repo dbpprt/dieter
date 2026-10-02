@@ -252,7 +252,7 @@ private struct DeferredConversationLoadFeedback: View {
         }
         .task {
             do {
-                try await Task.sleep(for: .milliseconds(180))
+                try await DieterTaskSleep.milliseconds(180)
             } catch {
                 return
             }

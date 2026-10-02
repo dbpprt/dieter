@@ -437,7 +437,7 @@
             let timestamp = ProcessInfo.processInfo.systemUptime
             let interval = min(0.15, NSEvent.doubleClickInterval / 2)
             for count in 1...2 {
-                if count == 2 { try? await Task.sleep(for: .seconds(interval)) }
+                if count == 2 { try? await DieterTaskSleep.seconds(interval) }
                 for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
                     guard
                         let event = NSEvent.mouseEvent(
