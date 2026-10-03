@@ -469,6 +469,7 @@
                     $0.phase = "streaming"
                     $0.phaseLabel = "Live"
                     $0.active = true
+                    $0.streaming = true
                 }
             }
             XCTAssertTrue(controller.streaming)
