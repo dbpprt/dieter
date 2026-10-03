@@ -30,6 +30,11 @@ module Dieter
       raise PipelineError, "CI setup requires a disposable Actions runner" unless ENV["GITHUB_ACTIONS"] == "true"
       fixture = boolean_option(fixture, "fixture")
       native = boolean_option(native, "native")
+      # ruby/setup-ruby caches gems in vendor/bundle. This repository resolves
+      # Go dependencies from its pinned module files, not that Ruby directory.
+      go_flags = [ENV["GOFLAGS"], "-mod=mod"].compact.join(" ")
+      append_env("GOFLAGS", go_flags)
+      context.environment["GOFLAGS"] = go_flags
       if RUBY_PLATFORM.include?("darwin")
         developer = ENV["RUNNER_ENVIRONMENT"] == "self-hosted" ? context.environment.fetch("DEVELOPER_DIR", "/Applications/Xcode.app/Contents/Developer") : "/Applications/Xcode_26.5.app/Contents/Developer"
         raise Unavailable, "Pinned Xcode 26.5 is unavailable on the runner" unless File.directory?(developer)

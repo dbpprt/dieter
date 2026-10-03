@@ -55,8 +55,19 @@ module Dieter
     end
 
     def release(tag)
-      # Drafts are included for authenticated users in the tagged release endpoint.
       api("releases/tags/#{URI.encode_www_form_component(tag)}")
+    rescue PipelineError => error
+      raise unless error.message.include?("404")
+      # The by-tag endpoint omits drafts, even for the token that created them.
+      # Authenticated release listings include drafts; keep the lookup bounded.
+      100.times do |page|
+        releases = api("releases?per_page=100&page=#{page + 1}")
+        matches = releases.select { |value| value.fetch("tag_name") == tag }
+        raise PipelineError, "Duplicate release identity #{tag}" if matches.length > 1
+        return matches.first unless matches.empty?
+        raise error if releases.length < 100
+      end
+      raise PipelineError, "Draft release lookup exceeded 10,000 releases"
     end
 
     def ensure_draft(identity)

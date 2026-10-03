@@ -170,18 +170,22 @@ end
 class PipelineExecutionTest < Minitest::Test
   Config = Struct.new(:root) do
     def environment = {}
-    def data = {"profiles" => {"target" => {"layout" => "iphone"}}}
+    def data = {"defaults" => {"suite" => "functional"}, "profiles" => {"target" => {"layout" => "iphone"}}}
     def default_profile(_component) = "target"
     def profile(name, **) = {"name" => name}
   end
 
   class FakeContract
-    attr_reader :reports
+    attr_reader :reports, :plans
     def initialize
       @reports = []
+      @plans = []
     end
     def call(operation, request, **)
-      return {"cases" => %w[first second].map { |id| {"id" => id, "timeout" => "10s"} }} if operation == "plan"
+      if operation == "plan"
+        @plans << request
+        return {"cases" => %w[first second].map { |id| {"id" => id, "timeout" => "10s"} }}
+      end
       @reports << Marshal.load(Marshal.dump(request.fetch(:report))) if operation == "report"
       {}
     end
@@ -220,6 +224,14 @@ class PipelineExecutionTest < Minitest::Test
     assert_equal [:admit, :prepare, "first", "second"], adapter.calls
     assert_equal %w[first second], @contract.reports.last.fetch("results").map { |value| value.fetch("id") }
     assert JSON.parse(File.read(File.join(@context.output, "cleanup.json"))).fetch("passed")
+    assert_equal "functional", @contract.plans.last.fetch(:suite)
+  end
+
+  def test_explicit_cases_do_not_expand_the_configured_default_suite
+    request = Dieter::PipelineRequest.new("e2e", "ios", {cases: "first"})
+    Dieter::Pipeline.new(@context, request, FakeAdapter.new, contract: @contract).run
+    assert_equal "", @contract.plans.last.fetch(:suite)
+    assert_equal ["first"], @contract.plans.last.fetch(:ids)
   end
 
   def test_unavailable_admission_accounts_for_every_required_case

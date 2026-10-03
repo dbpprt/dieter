@@ -65,7 +65,7 @@ module Dieter
       profile_name = options["profile"] || @context.config.default_profile(@request.component)
       raw_profile = @context.config.data.fetch("profiles").fetch(profile_name) { raise PipelineError, "Unknown profile #{profile_name}" }
       @plan = @contract.call("plan", {
-        platform: @request.component, suite: options["suite"] || (options["cases"] ? "" : "smoke"),
+        platform: @request.component, suite: options["suite"] || (options["cases"] ? "" : @context.config.data.fetch("defaults").fetch("suite")),
         ids: options.fetch("cases", "").split(","), device: raw_profile.fetch("layout", "iphone"),
         changed: options.fetch("changed", false), base: options.fetch("base", "")
       }).fetch("cases")
