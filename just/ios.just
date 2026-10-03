@@ -16,9 +16,12 @@ doctor:
 build:
     #!/usr/bin/env bash
     set -euo pipefail
+    if [[ "${DIETER_APPLE_BUILD_LEASE:-}" != "$PWD" ]]; then
+        exec python3 scripts/native_build_lock.py apple-build "$PWD" just ios build
+    fi
     release_version="${DIETER_RELEASE_VERSION:-$(just release pseudo-version)}"
     # The app links the shared core; only its arm64 simulator slice is built.
-    apps/mac/scripts/shared-framework.sh debug all
+    apps/mac/scripts/shared-framework.sh debug ios-simulator
     # A test plan from an earlier architecture set would leave the runner two to choose from.
     rm -f apps/ios/.build/DerivedData/Build/Products/*iphonesimulator*.xctestrun
     xcodebuild -skipPackagePluginValidation -project apps/ios/DieterIOS.xcodeproj -scheme DieterIOS -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath apps/ios/.build/DerivedData build-for-testing ARCHS=arm64 CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES "DIETER_RELEASE_VERSION=$release_version"
@@ -27,6 +30,9 @@ build:
 build-device:
     #!/usr/bin/env bash
     set -euo pipefail
+    if [[ "${DIETER_APPLE_BUILD_LEASE:-}" != "$PWD" ]]; then
+        exec python3 scripts/native_build_lock.py apple-build "$PWD" just ios build-device
+    fi
     release_version="${DIETER_RELEASE_VERSION:-$(just release pseudo-version)}"
     apps/mac/scripts/shared-framework.sh release all
     xcodebuild -skipPackagePluginValidation -project apps/ios/DieterIOS.xcodeproj -scheme DieterIOS -configuration Release -destination 'generic/platform=iOS' -derivedDataPath apps/ios/.build/DerivedData build CODE_SIGNING_ALLOWED=NO "DIETER_RELEASE_VERSION=$release_version"

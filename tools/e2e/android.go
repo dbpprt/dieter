@@ -46,7 +46,18 @@ func (a android) preflight(ctx context.Context) error {
 	}
 	out, err := command(ctx, a.root, nil, a.adb, "-s", a.serial, "get-state")
 	if err != nil || strings.TrimSpace(out) != "device" {
-		return fmt.Errorf("Android device %s unavailable; start the checked visible emulator", a.serial)
+		return fmt.Errorf("Android device %s unavailable; inspect adb devices -l; start the selected emulator or connect/unlock that exact physical device", a.serial)
+	}
+	if strings.HasPrefix(a.serial, "emulator-") {
+		out, err = command(ctx, a.root, nil, a.adb, "-s", a.serial, "emu", "avd", "name")
+		name := strings.Split(strings.TrimSpace(strings.ReplaceAll(out, "\r", "")), "\n")[0]
+		expected := env("DIETER_ANDROID_AVD", "Pixel_9_API_37_1")
+		if err != nil || name != expected {
+			return fmt.Errorf("Android %s is AVD %q; expected %q (set DIETER_ANDROID_AVD for an intentional override)", a.serial, name, expected)
+		}
+		fmt.Printf("Using Android emulator %s (%s); lifecycle remains with its launcher\n", a.serial, name)
+	} else {
+		fmt.Printf("Using physical Android device %s; lifecycle remains with its owner\n", a.serial)
 	}
 	for _, property := range []struct{ key, value string }{{"sys.boot_completed", "1"}, {"init.svc.bootanim", "stopped"}} {
 		out, err = a.shell(ctx, nil, "getprop", property.key)
@@ -60,14 +71,29 @@ func (a android) preflight(ctx context.Context) error {
 	}
 	return nil
 }
-func sourceDigest(root string) (string, error) {
-	out, err := command(context.Background(), root, nil, "git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "apps/android", "apps/core", "api/proto", "native/android-webrtc")
+
+// Documentation, JVM tests and the Swift-only façade do not affect the test APKs.
+func androidBuildInput(path string) bool {
+	if path == "" || strings.HasSuffix(path, ".md") || strings.HasPrefix(path, "apps/core/apple/") || strings.HasPrefix(path, "apps/core/testing/") {
+		return false
+	}
+	if strings.Contains(path, "/src/") {
+		sourceSet := strings.Split(strings.SplitN(path, "/src/", 2)[1], "/")[0]
+		if sourceSet == "test" || strings.HasSuffix(sourceSet, "Test") && sourceSet != "androidTest" || strings.HasPrefix(sourceSet, "apple") || strings.HasPrefix(sourceSet, "ios") || strings.HasPrefix(sourceSet, "macos") {
+			return false
+		}
+	}
+	return true
+}
+
+func sourceDigest(ctx context.Context, root string) (string, error) {
+	out, err := command(ctx, root, nil, "git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "apps/android", "apps/core", "api/proto", "native/android-webrtc")
 	if err != nil {
 		return "", err
 	}
 	h := sha256.New()
 	for _, p := range strings.Split(out, "\x00") {
-		if p == "" {
+		if !androidBuildInput(p) {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(root, p))
@@ -87,7 +113,7 @@ func (a android) prepare(ctx context.Context) ([]string, error) {
 	if err := os.MkdirAll(cache, 0700); err != nil {
 		return nil, err
 	}
-	key, err := sourceDigest(a.root)
+	key, err := sourceDigest(ctx, a.root)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +121,9 @@ func (a android) prepare(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("JAVA_HOME must select the Android JDK: %w", err)
 	}
-	key += java + os.Getenv("ANDROID_HOME") + os.Getenv("ANDROID_SDK_ROOT") + a.buildType()
+	for _, value := range []string{java, os.Getenv("ANDROID_HOME"), os.Getenv("ANDROID_SDK_ROOT"), a.buildType(), os.Getenv("DIETER_RELEASE_VERSION"), os.Getenv("DIETER_RELEASE_VERSION_CODE"), os.Getenv("JAVA_HOME"), os.Getenv("GRADLE_OPTS"), os.Getenv("JAVA_TOOL_OPTIONS")} {
+		key += "\x00" + value
+	}
 	if keystore, err := digest(filepath.Join(os.Getenv("HOME"), ".android/debug.keystore")); err == nil {
 		key += keystore
 	}
@@ -123,7 +151,7 @@ func (a android) prepare(ctx context.Context) ([]string, error) {
 			variant = "Performance"
 			property = "-Pdieter.testBuildType=performance"
 		}
-		out, err := command(ctx, a.root, nil, filepath.Join(a.root, "apps/android/gradlew"), "--project-dir", "apps/android", ":app:assemble"+variant, ":app:assemble"+variant+"AndroidTest", property)
+		out, err := progressCommand(ctx, a.root, "Android Gradle preparation", filepath.Join(a.root, "apps/android/gradlew"), "--project-dir", "apps/android", ":app:assemble"+variant, ":app:assemble"+variant+"AndroidTest", property)
 		_ = os.WriteFile(filepath.Join(a.output, "build.log"), []byte(out), 0600)
 		if err != nil {
 			return nil, fmt.Errorf("Android build failed: %w; see build.log\n%s", err, last(out, 3000))
@@ -142,7 +170,7 @@ func (a android) prepare(ctx context.Context) ([]string, error) {
 	} else {
 		fmt.Println("Reusing verified Android app and instrumentation; flow edits do not rebuild APKs")
 	}
-	out, err := command(ctx, a.root, nil, "go", "build", "-o", a.fixtureBinary, "./scripts/isolated-gateway")
+	out, err := progressCommand(ctx, a.root, "Android fixture preparation", "go", "build", "-o", a.fixtureBinary, "./scripts/isolated-gateway")
 	if err != nil {
 		return nil, fmt.Errorf("fixture build failed: %w\n%s", err, last(out, 3000))
 	}

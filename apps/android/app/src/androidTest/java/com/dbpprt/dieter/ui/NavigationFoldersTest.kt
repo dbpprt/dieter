@@ -268,20 +268,26 @@ class NavigationFoldersTest {
             val state by model.state.collectAsState()
             DieterTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    SpacesOverview(state.copy(projects = projects), model, Modifier.fillMaxSize())
+                    // The projects are fixture data, so derive their pins from
+                    // shared navigation rather than the empty core workspace.
+                    SpacesOverview(state.copy(projects = projects,
+                        pinnedProjectOrder = state.navigationLayout.pinnedProjects(projects.map { it.id })),
+                        model, Modifier.fillMaxSize())
                 }
             }
         }
 
         compose.onNodeWithTag("project-actions-p1").performClick()
         compose.onNodeWithTag("project-pin-p1").performClick()
+        // Shared-core persistence runs outside Compose's idling resources.
+        compose.waitUntil(5_000) { "p1" in model.state.value.navigationLayout.pinnedProjects(listOf("p1")) }
         compose.onNodeWithText("PINNED").assertIsDisplayed()
         compose.onNodeWithTag("project-pinned-p1").assertIsDisplayed()
         assertEquals(listOf("p1"), afterRestart { layout -> layout.pinnedProjects(listOf("p1")).takeIf { it.isNotEmpty() } })
 
         compose.onNodeWithTag("project-unpin-p1").performClick()
+        compose.waitUntil(5_000) { model.state.value.navigationLayout.pinnedProjects(listOf("p1")).isEmpty() }
         compose.onNodeWithTag("project-pinned-p1").assertDoesNotExist()
-        compose.waitUntil(5_000) { model.state.value.pinnedProjectOrder.isEmpty() }
         assertTrue(afterRestart { layout -> layout.pinnedProjects(listOf("p1")).takeIf { it.isEmpty() } }.isEmpty())
     }
 
@@ -332,7 +338,7 @@ class NavigationFoldersTest {
     }
 
     private fun folderID(scope: FolderScope): String {
-        compose.waitUntil { folders(scope).isNotEmpty() }
+        compose.waitUntil(5_000) { folders(scope).isNotEmpty() }
         return folders(scope).single().id
     }
 

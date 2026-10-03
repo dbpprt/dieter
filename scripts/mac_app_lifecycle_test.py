@@ -129,6 +129,7 @@ class MacAppLifecycleTests(unittest.TestCase):
             helper.parent.mkdir(parents=True)
             shutil.copy(lifecycle.ROOT / "apps/mac/scripts/build.sh", script)
             shutil.copy(lifecycle.ROOT / "scripts/mac_app_lifecycle.py", helper)
+            shutil.copy(lifecycle.ROOT / "scripts/native_build_lock.py", root / "scripts/native_build_lock.py")
             commands = root / "bin"
             commands.mkdir()
             for name, body in {
@@ -149,7 +150,7 @@ class MacAppLifecycleTests(unittest.TestCase):
         # fixture. Neither a compiler nor the desktop is involved.
         with tempfile.TemporaryDirectory(prefix="dieter compiler controls ") as directory:
             root = Path(directory)
-            for relative in ["apps/mac/scripts/build.sh", "scripts/mac_app_lifecycle.py", "just/mac.just"]:
+            for relative in ["apps/mac/scripts/build.sh", "scripts/mac_app_lifecycle.py", "scripts/native_build_lock.py", "just/mac.just"]:
                 target = root / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(lifecycle.ROOT / relative, target)

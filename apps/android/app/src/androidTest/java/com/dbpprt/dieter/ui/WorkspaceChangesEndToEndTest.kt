@@ -115,6 +115,15 @@ class WorkspaceChangesEndToEndTest {
             composeRule.waitForIdle()
             capture("workspace-tab-opened-e2e.png")
             composeRule.waitUntil(60_000) {
+                composeRule.onAllNodesWithTag("workspace-changes-list").fetchSemanticsNodes().isNotEmpty() ||
+                    composeRule.onAllNodesWithTag("workspace-diff-back").fetchSemanticsNodes().isNotEmpty()
+            }
+            // The core selects the first patch on entry. Return to the compact
+            // file list before exercising explicit selection and commit controls.
+            if (composeRule.onAllNodesWithTag("workspace-diff-back").fetchSemanticsNodes().isNotEmpty()) {
+                composeRule.onAllNodesWithTag("workspace-diff-back")[0].performClick()
+            }
+            composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("workspace-changes-list").fetchSemanticsNodes().isNotEmpty()
             }
             composeRule.waitUntil(60_000) {

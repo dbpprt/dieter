@@ -122,16 +122,22 @@ func runMac(ctx context.Context, root, output string, cases []Case) error {
 	if err != nil {
 		return unavailable(err)
 	}
+	ctx, unlockApple, err := leaseAppleBuild(ctx, root)
+	if err != nil {
+		unlockBuild()
+		return unavailable(err)
+	}
+	defer unlockApple() // Preserve this bundle and shared framework through every phase.
 	buildCtx, cancel := context.WithTimeout(ctx, 20*time.Minute)
 	fmt.Println("Preparing packaged Mac app with the canonical SwiftPM cache")
 	buildStarted := time.Now()
-	out, buildErr := command(buildCtx, root, nil, "just", "mac", "build")
+	out, buildErr := progressCommand(buildCtx, root, "Mac build with canonical SwiftPM cache", "just", "mac", "build")
 	_ = os.WriteFile(filepath.Join(output, "build.log"), []byte(out), 0600)
 	if buildErr == nil {
 		buildErr = os.MkdirAll(filepath.Dir(m.fixtureBinary), 0700)
 	}
 	if buildErr == nil {
-		out, buildErr = command(buildCtx, root, nil, "go", "build", "-o", m.fixtureBinary, "./scripts/isolated-gateway")
+		out, buildErr = progressCommand(buildCtx, root, "Mac fixture preparation", "go", "build", "-o", m.fixtureBinary, "./scripts/isolated-gateway")
 		_ = os.WriteFile(filepath.Join(output, "fixture-build.log"), []byte(out), 0600)
 	}
 	cancel()

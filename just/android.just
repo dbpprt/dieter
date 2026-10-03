@@ -44,8 +44,15 @@ emulator-status:
 
 # Start or reuse the visible AVD and require a complete healthy boot.
 emulator-start:
+    go run ./tools/e2e device-lease "{{ serial }}" just android _emulator-start
+
+[private]
+_emulator-start:
     #!/usr/bin/env bash
     set -euo pipefail
+    [[ "{{ serial }}" =~ ^emulator-([0-9]+)$ ]] || { echo "emulator-start requires an emulator-N serial, not a physical device." >&2; exit 1; }
+    emulator_port="${BASH_REMATCH[1]}"
+    (( emulator_port >= 5554 && emulator_port <= 5682 && emulator_port % 2 == 0 )) || { echo "Emulator console port must be even and between 5554 and 5682." >&2; exit 1; }
     mkdir -p "{{ app_root }}/build/emulator"
     launched=false
     emulator_dir="$PWD/{{ app_root }}/build/emulator"
@@ -109,7 +116,7 @@ emulator-start:
             cd "$emulator_dir"
             # Loading remains enabled, but shutdown saving is done explicitly
             # after GPU-heavy app processes have been quiesced below.
-            screen -L -dmS "{{ screen_session }}" "{{ emulator }}" @"{{ avd }}" -gpu host -no-snapshot-save
+            screen -L -dmS "{{ screen_session }}" "{{ emulator }}" @"{{ avd }}" -port "$emulator_port" -gpu host -no-snapshot-save
         )
         launched=true
     fi
@@ -188,6 +195,10 @@ emulator-start:
 
 # Gracefully close the selected AVD and wait for its serial to disappear.
 emulator-stop:
+    go run ./tools/e2e device-lease "{{ serial }}" just android _emulator-stop
+
+[private]
+_emulator-stop:
     #!/usr/bin/env bash
     set -euo pipefail
     avd_registry="${ANDROID_AVD_HOME:-${ANDROID_USER_HOME:-$HOME/.android}/avd}"

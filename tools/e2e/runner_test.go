@@ -321,3 +321,15 @@ func TestActivityReplyProbes(t *testing.T) {
 		}
 	}
 }
+
+func TestDeviceFlagsCannotSilentlyTargetAnotherPlatform(t *testing.T) {
+	for _, args := range [][]string{
+		{"run", "--platform", "ios", "--serial", "physical-iphone"},
+		{"prepare", "--platform", "mac", "--serial", "emulator-5554"},
+		{"run", "--platform", "android", "--device", "ipad"},
+	} {
+		if err := execute(context.Background(), args); err == nil || !strings.Contains(err.Error(), "only") {
+			t.Fatal("platform-inappropriate device flag was ignored", args, err)
+		}
+	}
+}

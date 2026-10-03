@@ -85,9 +85,59 @@ func buildCommand(ctx context.Context, executable string, args ...string) (*exec
 	}
 }
 
+// Emit bounded, credential-free progress while native tools buffer their output.
+// This reports liveness and the deadline, not successful test progress.
+func progress(ctx context.Context, label string) func() {
+	started := time.Now()
+	fmt.Println(label)
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				remaining := ""
+				if deadline, ok := ctx.Deadline(); ok {
+					remaining = fmt.Sprintf("; deadline in %s", time.Until(deadline).Round(time.Second))
+				}
+				fmt.Printf("Still running %s: elapsed %s%s\n", label, time.Since(started).Round(time.Second), remaining)
+			}
+		}
+	}()
+	return func() { close(stop); <-done }
+}
+
+func progressCommand(ctx context.Context, root, label string, args ...string) (string, error) {
+	stop := progress(ctx, label)
+	defer stop()
+	return command(ctx, root, nil, args...)
+}
+
+type appleBuildLeaseRoot struct{}
+
+func leaseAppleBuild(ctx context.Context, root string) (context.Context, func(), error) {
+	canonical, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return ctx, nil, err
+	}
+	path := filepath.Join(os.TempDir(), fmt.Sprintf("dieter-apple-build-%x.lock", sha256.Sum256([]byte(canonical))))
+	unlock, err := acquireLease(path)
+	if err != nil {
+		return ctx, nil, err
+	}
+	return context.WithValue(ctx, appleBuildLeaseRoot{}, root), unlock, nil
+}
+
 func command(ctx context.Context, root string, input []byte, args ...string) (string, error) {
 	c, finish := buildCommand(ctx, args[0], args[1:]...)
 	c.Dir = root
+	if leaseRoot, ok := ctx.Value(appleBuildLeaseRoot{}).(string); ok {
+		c.Env = append(os.Environ(), "DIETER_APPLE_BUILD_LEASE="+leaseRoot)
+	}
 	if input != nil {
 		c.Stdin = bytes.NewReader(input)
 	}
@@ -116,8 +166,10 @@ func acquireLease(path string) (func(), error) {
 		return nil, err
 	}
 	if err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		owner := make([]byte, 512)
+		n, _ := f.ReadAt(owner, 0)
 		f.Close()
-		return nil, fmt.Errorf("resource leased by another process: %s", path)
+		return nil, fmt.Errorf("resource leased by another process: %s; owner %s (inspect that PID; do not delete the lock)", path, strings.TrimSpace(string(owner[:n])))
 	}
 	if err = f.Truncate(0); err != nil {
 		f.Close()

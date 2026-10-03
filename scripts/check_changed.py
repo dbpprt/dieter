@@ -17,7 +17,7 @@ IOS_POLICY_ROOTS = ("apps/mac/Sources/DieterIOS/", "apps/mac/Tests/DieterIOSTest
 IOS_ONLY_ROOTS = ("apps/ios/", *IOS_POLICY_ROOTS)
 SHARED_SWIFT_ROOTS = ("apps/mac/Sources/DieterTransport/", "apps/mac/Sources/DieterAPI/", "apps/mac/Vendor/")
 SWIFT_PACKAGE_FILES = {"apps/mac/Package.swift", "apps/mac/Package.resolved"}
-MAC_LIFECYCLE_FILES = {"scripts/mac_app_lifecycle.py", "scripts/mac_app_lifecycle_test.py", "scripts/mac_bundle.py", "scripts/mac_bundle_test.py", "scripts/sync_apple_proto.py", "scripts/sync_apple_proto_test.py"}
+MAC_LIFECYCLE_FILES = {"scripts/native_build_lock.py", "scripts/mac_app_lifecycle.py", "scripts/mac_app_lifecycle_test.py", "scripts/mac_bundle.py", "scripts/mac_bundle_test.py", "scripts/sync_apple_proto.py", "scripts/sync_apple_proto_test.py"}
 # These SwiftPM sources are also compiled directly into the capture helper.
 CAPTURE_SHARED_FILES = {"apps/mac/Sources/DieterTransport/RemoteDesktopKeyMap.swift",
                         "apps/mac/Sources/DieterTransport/ScreenClipboardContent.swift"}
@@ -165,6 +165,24 @@ def changed_code_paths(paths):
     return [path for path in paths if not path.endswith((".md", ".txt")) or "/testdata/" in path]
 
 
+def e2e_platforms(paths):
+    """Driver-only edits exercise their platform; Go test edits need no devices."""
+    platforms = set()
+    drivers = {"android.go": "android", "qualification.go": "android",
+               "ios.go": "ios", "mac.go": "mac"}
+    for path in paths:
+        if path.startswith("tools/e2e/"):
+            if path.endswith("_test.go"):
+                continue
+            platforms.update([drivers[Path(path).name]] if Path(path).name in drivers
+                             else ["android", "mac", "ios"])
+        elif path.startswith("tests/e2e/cases/"):
+            platforms.add(path.split("/")[3])
+        elif path.startswith("tests/e2e/") or path == "just/e2e.just":
+            platforms.update(["android", "mac", "ios"])
+    return platforms
+
+
 def includes_go_changes(paths):
     return any(
         path.endswith(".go") or path in {"go.mod", "go.sum", "just/daemon.just", "just/gateway.just"}
@@ -189,6 +207,7 @@ def plan_checks(root, paths, packages=None):
     ios = schema or fixture or brand or any(p.startswith(IOS_ONLY_ROOTS + SHARED_SWIFT_ROOTS)
                                             or p in SWIFT_PACKAGE_FILES | {"just/ios.just"} for p in code)
     e2e = any(p.startswith(("tools/e2e/", "tests/e2e/")) or p == "just/e2e.just" for p in code)
+    native_e2e = e2e_platforms(code)
     # The shared Kotlin core compiles the API schema and tests against the isolated fixture.
     kmp = schema or fixture or any(p.startswith("apps/core/") or p == "just/core.just" for p in code)
     # The Android app compiles the core from source, so core changes rebuild it.
@@ -196,13 +215,13 @@ def plan_checks(root, paths, packages=None):
     # The Mac app links the core (DieterShared) through its SharedCore bridge,
     # so core changes rebuild it and can change any Mac surface.
     shared_core = kmp or any(p.startswith(("apps/mac/Sources/SharedCore/", "apps/mac/Tests/SharedCoreTests/"))
-                             or p == "apps/mac/scripts/shared-framework.sh" for p in code)
+                             or p in {"apps/mac/scripts/shared-framework.sh", "scripts/native_build_lock.py"} for p in code)
     mac = mac or shared_core
     # The iOS app links the same core through SharedCore (its tests excluded).
     ios = ios or kmp or any(p.startswith("apps/mac/Sources/SharedCore/")
-                            or p == "apps/mac/scripts/shared-framework.sh" for p in code)
+                            or p in {"apps/mac/scripts/shared-framework.sh", "scripts/native_build_lock.py"} for p in code)
     mac_suites = MAC_SMOKE_SUITES if kmp else affected_mac_smoke_suites(code)
-    if any(p.startswith(("tools/e2e/", "tests/e2e/cases/mac/")) or p in {"tests/e2e/schema.json", "just/e2e.just"} for p in code):
+    if "mac" in native_e2e:
         mac_suites = MAC_SMOKE_SUITES
     android_integration = android and (schema or fixture or brand or any(
         (p.startswith("apps/android/") and not p.startswith("apps/android/app/src/test/"))
@@ -212,6 +231,8 @@ def plan_checks(root, paths, packages=None):
         add("just", "e2e", "check")
     if any(p.startswith("scripts/check_changed") or p in {"justfile", "just/mac.just", "just/ios.just"} for p in code):
         add("python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "check_changed_test.py")
+    if any(p in {"apps/mac/scripts/shared-framework.sh", "scripts/native_build_lock.py", "scripts/mac_shared_framework_test.py"} for p in code):
+        add("python3", "-m", "unittest", "discover", "-s", "scripts", "-p", "mac_shared_framework_test.py")
     if any(p in MAC_LIFECYCLE_FILES | {"just/mac.just", "apps/mac/scripts/build.sh"} for p in code):
         add("just", "mac", "lifecycle-test")
     if any(p.startswith("scripts/qualify_screens") or p == "docs/screenshare-qualification-local.json" for p in code):
@@ -234,9 +255,13 @@ def plan_checks(root, paths, packages=None):
         add("just", "release", "test")
     if schema:
         add("just", "proto")
-    go_changed = schema or includes_go_changes(code)
+    apple_lock = "scripts/native_build_lock.py" in code
+    go_changed = schema or includes_go_changes(code) or apple_lock
     if go_changed:
-        affected = affected_go_packages(root, code, go_packages(root) if packages is None else packages)
+        go_inputs = code + (["tools/e2e/process.go"] if apple_lock else [])
+        affected = affected_go_packages(root, go_inputs, go_packages(root) if packages is None else packages)
+        if apple_lock and not affected:
+            affected = ["./tools/e2e"]
         if schema and not affected:
             affected = ["./..."]
         if affected:
@@ -262,18 +287,19 @@ def plan_checks(root, paths, packages=None):
     if kmp:
         add("just", "core", "test")
         add("just", "core", "apple-test")
-    if shared_core:
+    # apple-test already runs the complete Swift bridge integration recipe.
+    if shared_core and not kmp:
         add("just", "mac", "core-test")
     if ios:
         add("just", "ios", "build")
-    if ios or any(p.startswith(("tools/e2e/", "tests/e2e/cases/ios/")) or p in {"tests/e2e/schema.json", "just/e2e.just"} for p in code):
+    if ios or "ios" in native_e2e:
         add("just", "e2e", "run", "--platform", "ios", "--device", "iphone", "--suite", "smoke")
         add("just", "e2e", "run", "--platform", "ios", "--device", "ipad", "--suite", "smoke")
     if mac_suites == MAC_SMOKE_SUITES:
         add("just", "e2e", "run", "--platform", "mac", "--suite", "smoke")
     elif mac_suites:
         add("just", "e2e", "run", "--platform", "mac", "--case", ",".join("mac." + suite for suite in mac_suites))
-    if android_integration or e2e:
+    if android_integration or "android" in native_e2e:
         add("just", "e2e", "run", "--suite", "functional", "--changed")
     if screens or any(p.startswith("native/android-webrtc/") or
                       p.startswith("apps/android/app/src/main/java/org/webrtc/") or

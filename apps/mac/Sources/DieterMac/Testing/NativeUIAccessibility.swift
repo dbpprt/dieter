@@ -524,7 +524,8 @@
             var pending = [root]
             while let view = pending.popLast() {
                 pending.append(contentsOf: view.subviews)
-                if let scroll = view as? NSScrollView,
+                if let scroll = view as? NSScrollView, scroll.window === window,
+                    !scroll.isHiddenOrHasHiddenAncestor,
                     (scroll.documentView?.frame.width ?? 0) > scroll.contentSize.width + 1
                 {
                     let screenFrame = window.convertToScreen(scroll.convert(scroll.bounds, to: nil))

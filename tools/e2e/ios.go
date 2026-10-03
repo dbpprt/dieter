@@ -18,7 +18,11 @@ import (
 // iOS uses owned, disposable simulators. No existing simulator or operator app
 // is installed over, shut down, or deleted. A repository lease protects Xcode's
 // build products for the entire run, including private xctestrun preparation.
-type iosDriver struct{ root, output, device, deviceType, runtime, products, fixtureBinary string }
+type iosDriver struct {
+	root, output, device, deviceType, runtime, products, fixtureBinary string
+	sharedSimulator                                                    *string
+	simulatorJournal                                                   string
+}
 type simulatorInventory struct {
 	DeviceTypes []struct {
 		Name       string `json:"name"`
@@ -102,6 +106,20 @@ func runIOS(ctx context.Context, root, output, device string, cases []Case) erro
 		return unavailable(err)
 	}
 	defer unlock()
+	unlockHost, err := acquireLease(filepath.Join(os.TempDir(), fmt.Sprintf("dieter-ios-simulator-%d.lock", os.Getuid())))
+	if err != nil {
+		return unavailable(err)
+	}
+	defer unlockHost()
+	ctx, unlockBuild, err := leaseAppleBuild(ctx, root)
+	if err != nil {
+		return unavailable(err)
+	}
+	defer unlockBuild() // Test-without-building still consumes these exact products.
+	journal := filepath.Join(root, "tmp/e2e-cache/ios-simulator.json")
+	if err = recoverIOSSimulator(ctx, root, journal); err != nil {
+		return unavailable(err)
+	}
 	preflight, cancel := context.WithTimeout(ctx, iosSimulatorInventoryTimeout)
 	out, err := binaryCommand(preflight, root, "xcrun", "simctl", "list", "-j")
 	cancel()
@@ -121,7 +139,7 @@ func runIOS(ctx context.Context, root, output, device string, cases []Case) erro
 	build, cancel := context.WithTimeout(ctx, 20*time.Minute)
 	buildStarted := time.Now()
 	for _, argv := range [][]string{{"just", "ios", "build"}, {"go", "build", "-o", d.fixtureBinary, "./scripts/isolated-gateway"}} {
-		out, err = command(build, root, nil, argv...)
+		out, err = progressCommand(build, root, "iOS preparation: "+argv[0], argv...)
 		name := "build.log"
 		if argv[0] == "go" {
 			name = "fixture-build.log"
@@ -136,7 +154,83 @@ func runIOS(ctx context.Context, root, output, device string, cases []Case) erro
 	if err != nil {
 		return unavailable(fmt.Errorf("iOS preparation failed: %w; see build logs", err))
 	}
-	return runCases(ctx, output, started, &report, cases, d.run)
+	shared := ""
+	d.sharedSimulator, d.simulatorJournal = &shared, journal
+	runErr := runCases(ctx, output, started, &report, cases, d.run)
+	if shared != "" {
+		if err := cleanupIOSSimulator(root, shared); err != nil {
+			report.Results[len(report.Results)-1].CleanupError = err.Error()
+			report.Results[len(report.Results)-1].Status = "failed"
+			runErr = fmt.Errorf("%v; simulator cleanup: %w", runErr, err)
+		} else if err := os.Remove(journal); err != nil && !os.IsNotExist(err) {
+			runErr = fmt.Errorf("%v; remove simulator ownership journal: %w", runErr, err)
+		}
+	}
+	report.DurationMS = time.Since(started).Milliseconds()
+	if err := writeReport(output, report); err != nil {
+		return err
+	}
+	return runErr
+}
+
+type iosSimulatorOwnership struct{ ID, Name string }
+
+func cleanupIOSSimulator(root, id string) error {
+	for _, action := range []string{"shutdown", "delete"} {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		_, err := command(ctx, root, nil, "xcrun", "simctl", action, id)
+		cancel()
+		if err != nil && action == "delete" {
+			return fmt.Errorf("delete owned simulator %s: %w", id, err)
+		}
+	}
+	return nil
+}
+
+// A killed runner cannot execute defers. Under the exclusive run lease, recover
+// only the exact UUID/name recorded by this checkout; never sweep by name prefix.
+func recoverIOSSimulator(ctx context.Context, root, journal string) error {
+	data, err := os.ReadFile(journal)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var owner iosSimulatorOwnership
+	if err = json.Unmarshal(data, &owner); err != nil || !simulatorID.MatchString(owner.ID) || !strings.HasPrefix(owner.Name, "Dieter E2E dieter-ios-case-") {
+		return fmt.Errorf("invalid simulator ownership journal: %s", journal)
+	}
+	probe, cancel := context.WithTimeout(ctx, iosSimulatorInventoryTimeout)
+	defer cancel()
+	out, err := binaryCommand(probe, root, "xcrun", "simctl", "list", "devices", "-j")
+	if err != nil {
+		return err
+	}
+	var inventory struct {
+		Devices map[string][]struct {
+			ID   string `json:"udid"`
+			Name string `json:"name"`
+		} `json:"devices"`
+	}
+	if err = json.Unmarshal([]byte(out), &inventory); err != nil {
+		return err
+	}
+	for _, devices := range inventory.Devices {
+		for _, device := range devices {
+			if device.ID != owner.ID {
+				continue
+			}
+			if device.Name != owner.Name {
+				return fmt.Errorf("owned simulator identity changed: %s; preserving it", owner.ID)
+			}
+			fmt.Println("Recovering interrupted run's owned simulator " + owner.ID)
+			if err = cleanupIOSSimulator(root, owner.ID); err != nil {
+				return err
+			}
+		}
+	}
+	return os.Remove(journal)
 }
 
 var simulatorID = regexp.MustCompile(`^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$`)
@@ -175,7 +269,7 @@ func (d iosDriver) run(ctx context.Context, c Case) (result Result) {
 				problems = append(problems, "retain gateway log: "+e.Error())
 			}
 		}
-		if simulator != "" {
+		if simulator != "" && d.sharedSimulator == nil {
 			// Cleanup gets independent bounded contexts even after cancellation. Attempt
 			// deletion after shutdown failure; deletion is the final ownership check.
 			for _, action := range []string{"shutdown", "delete"} {
@@ -251,37 +345,67 @@ func (d iosDriver) run(ctx context.Context, c Case) (result Result) {
 		}
 		testEnv["DIETER_IOS_TEST_SCREEN_FIXTURE"] = screenValues["screenFixture"]
 	}
-	create, cancel := context.WithTimeout(ctx, 30*time.Second)
-	out, err := binaryCommand(create, d.root, "xcrun", "simctl", "create", "Dieter E2E "+filepath.Base(state), d.deviceType, d.runtime)
-	cancel()
-	simulator = strings.TrimSpace(out)
-	if err != nil {
+	var out string
+	if d.sharedSimulator != nil {
+		simulator = *d.sharedSimulator
+	}
+	if simulator == "" {
+		create, cancel := context.WithTimeout(ctx, 30*time.Second)
+		out, err := binaryCommand(create, d.root, "xcrun", "simctl", "create", "Dieter E2E "+filepath.Base(state), d.deviceType, d.runtime)
+		cancel()
+		simulator = strings.TrimSpace(out)
+		if err != nil {
+			if !simulatorID.MatchString(simulator) {
+				simulator = ""
+			}
+			fail(fmt.Errorf("create simulator: %w", err))
+			return
+		}
 		if !simulatorID.MatchString(simulator) {
 			simulator = ""
+			fail(fmt.Errorf("simctl returned invalid owned simulator identity"))
+			return
 		}
-		fail(fmt.Errorf("create simulator: %w", err))
-		return
-	}
-	if !simulatorID.MatchString(simulator) {
-		simulator = ""
-		fail(fmt.Errorf("simctl returned invalid owned simulator identity"))
-		return
+		if d.sharedSimulator != nil {
+			*d.sharedSimulator = simulator // Own it before any later failure.
+			if err = writeJSON(d.simulatorJournal, iosSimulatorOwnership{ID: simulator, Name: "Dieter E2E " + filepath.Base(state)}); err != nil {
+				fail(err)
+				return
+			}
+		}
+		boot, bootCancel := context.WithTimeout(ctx, 3*time.Minute)
+		out, err = progressCommand(boot, d.root, "Booting owned iOS simulator "+simulator, "xcrun", "simctl", "bootstatus", simulator, "-b")
+		bootCancel()
+		_ = os.WriteFile(filepath.Join(dir, "boot.log"), []byte(out), 0600)
+		if err != nil {
+			fail(fmt.Errorf("boot simulator: %w", err))
+			return
+		}
+		// First-use keyboard coaching is simulator setup, not a Dieter interaction.
+		// XCTest can spend repeated idle timeouts trying to tap its Continue button
+		// over a live terminal. Configure only this owned simulator before
+		// launching any app; the native tests still type through the real keyboard.
+		if _, err = command(ctx, d.root, nil, "xcrun", "simctl", "spawn", simulator,
+			"defaults", "write", "com.apple.keyboard.preferences", "DidShowContinuousPathIntroduction", "-bool", "true"); err != nil {
+			fail(fmt.Errorf("prepare simulator keyboard: %w", err))
+			return
+		}
+	} else {
+		fmt.Println("Reusing run-owned iOS simulator " + simulator)
 	}
 	_ = os.WriteFile(filepath.Join(dir, "simulator.txt"), []byte(simulator+"\n"), 0600)
-	out, err = command(ctx, d.root, nil, "xcrun", "simctl", "bootstatus", simulator, "-b")
-	_ = os.WriteFile(filepath.Join(dir, "boot.log"), []byte(out), 0600)
-	if err != nil {
-		fail(fmt.Errorf("boot simulator: %w", err))
-		return
-	}
-	// First-use keyboard coaching is simulator setup, not a Dieter interaction.
-	// XCTest can spend repeated idle timeouts trying to tap its Continue button
-	// over a live terminal. Configure only this owned simulator before
-	// launching any app; the native tests still type through the real keyboard.
-	if _, err = command(ctx, d.root, nil, "xcrun", "simctl", "spawn", simulator,
-		"defaults", "write", "com.apple.keyboard.preferences", "DidShowContinuousPathIntroduction", "-bool", "true"); err != nil {
-		fail(fmt.Errorf("prepare simulator keyboard: %w", err))
-		return
+	// These packages exist only on this run's disposable simulator. Reinstall
+	// them with empty containers; UI credentials are per-launch memory stores,
+	// and native Keychain tests use unique accounts with their own teardown.
+	if d.sharedSimulator != nil {
+		for _, pkg := range []string{"com.dbpprt.dieter.ios", "com.dbpprt.dieter.ios.native-tests", "com.dbpprt.dieter.ios.uitests.xctrunner"} {
+			if _, exists := command(ctx, d.root, nil, "xcrun", "simctl", "get_app_container", simulator, pkg); exists == nil {
+				if _, err = command(ctx, d.root, nil, "xcrun", "simctl", "uninstall", simulator, pkg); err != nil {
+					fail(fmt.Errorf("reset owned test app %s: %w", pkg, err))
+					return
+				}
+			}
+		}
 	}
 	if c.ID == "ios.share-extension" {
 		if _, err = command(ctx, d.root, nil, "xcrun", "simctl", "addmedia", simulator, filepath.Join(d.root, "apps/android/design/reference/phone-board.png")); err != nil {
@@ -299,10 +423,11 @@ func (d iosDriver) run(ctx context.Context, c Case) (result Result) {
 	// Preserve XCTest results, console and attachments below. Whole-simulator
 	// sysdiagnose collection can outlive the case deadline after an assertion
 	// failure and prevent Xcode from finalizing the useful result bundle.
-	argv := []string{"xcodebuild", "test-without-building", "-xctestrun", testRun, "-destination", "platform=iOS Simulator,id=" + simulator, "-parallel-testing-enabled", "NO", "-collect-test-diagnostics", "never", "-resultBundlePath", bundle}
+	argv := []string{"xcodebuild", "test-without-building", "-xctestrun", testRun, "-destination", "platform=iOS Simulator,id=" + simulator, "-parallel-testing-enabled", "NO", "-destination-timeout", "30", "-collect-test-diagnostics", "never", "-resultBundlePath", bundle}
 	for _, method := range c.Native.Methods {
 		argv = append(argv, "-only-testing:"+c.Native.Target+"/"+c.Native.Class+"/"+method)
 	}
+	fmt.Printf("%s: executing %d XCTest methods on owned simulator %s\n", c.ID, len(c.Native.Methods), simulator)
 	execution := time.Now()
 	out, testErr := d.runXCTest(ctx, simulator, bundle, argv)
 	result.ExecutionMS = time.Since(execution).Milliseconds()

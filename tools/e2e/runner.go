@@ -18,7 +18,9 @@ func runCases(ctx context.Context, output string, started time.Time, report *Rep
 		fmt.Printf("Running %s (%s, fresh app state)\n", c.ID, c.Fixture)
 		duration, _ := time.ParseDuration(c.Timeout)
 		caseCtx, cancel := context.WithTimeout(ctx, duration)
+		stopProgress := progress(caseCtx, c.ID)
 		result := run(caseCtx, c)
+		stopProgress()
 		if caseCtx.Err() != nil {
 			result.Status = "interrupted"
 			result.Reason = caseCtx.Err().Error()

@@ -30,7 +30,7 @@ func execute(ctx context.Context, args []string) error {
 		return leasedCommand(ctx, args[1:])
 	}
 	if len(args) == 0 || args[0] == "--help" || args[0] == "help" {
-		fmt.Println("Usage: just e2e <list|lint|plan|prepare|run> [--platform android|mac|ios] [--suite smoke|functional|component|sync|screens|performance] [--case ID] [--serial SERIAL] [--changed] [--base REF]\nAndroid, Mac and iOS execute against isolated app/daemon state. Required skipped/missing tests fail. --changed selects conservatively from Git; --base includes branch changes. prepare emits a versioned native-driver JSON plan without starting apps.")
+		fmt.Println("Usage: just e2e <list|lint|plan|prepare|run> [--platform android|mac|ios] [--suite smoke|functional|component|sync|screens|performance] [--case ID] [--serial SERIAL] [--device iphone|ipad] [--changed] [--base REF]\nAndroid, Mac and iOS execute against isolated app/daemon state. Required skipped/missing tests fail. --changed selects conservatively from Git; --base includes branch changes. prepare emits a versioned native-driver JSON plan without starting apps. --serial is Android-only; iOS owns disposable simulators selected by --device and does not execute on physical devices.")
 		return nil
 	}
 	action := args[0]
@@ -51,6 +51,17 @@ func execute(ctx context.Context, args []string) error {
 			return nil
 		}
 		return err
+	}
+	explicitSerial, explicitDevice := false, false
+	flags.Visit(func(f *flag.Flag) {
+		explicitSerial = explicitSerial || f.Name == "serial"
+		explicitDevice = explicitDevice || f.Name == "device"
+	})
+	if explicitSerial && *platform != "android" {
+		return fmt.Errorf("--serial selects Android devices only; iOS execution supports owned simulators with --device iphone|ipad (physical iOS execution is unavailable)")
+	}
+	if explicitDevice && *platform != "ios" {
+		return fmt.Errorf("--device selects an iOS simulator layout only; use --serial for an exact Android device")
 	}
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected positional arguments")
@@ -124,13 +135,14 @@ func execute(ctx context.Context, args []string) error {
 		return nil
 	}
 	if action == "plan" || action == "prepare" {
+		selectedDevice := map[string]string{"android": *serial, "ios": *device, "mac": "local-desktop"}[*platform]
 		data, err := json.MarshalIndent(struct {
 			Version   int    `json:"version"`
 			Platform  string `json:"platform"`
 			Execution string `json:"execution"`
 			Device    string `json:"device"`
 			Cases     []Case `json:"cases"`
-		}{1, *platform, map[string]string{"android": "enabled", "mac": "enabled", "ios": "enabled"}[*platform], *device, selected}, "", "  ")
+		}{1, *platform, map[string]string{"android": "enabled", "mac": "enabled", "ios": "enabled"}[*platform], selectedDevice, selected}, "", "  ")
 		if err != nil {
 			return err
 		}

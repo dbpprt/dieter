@@ -39,6 +39,7 @@ import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.Lane
 import com.dbpprt.dieter.api.v1.Project
+import com.dbpprt.dieter.core.activity.Activity
 import java.time.Instant
 import org.junit.After
 import org.junit.Assert.*
@@ -65,6 +66,7 @@ class TabletWorkspaceTest {
     private val fixture get() = DieterUiState(
         loading = false, desiredConnected = false, connectionPhase = ConnectionPhase.CONNECTED,
         projects = projects, boards = listOf(board), spaceBoards = listOf(board), cards = cards, spaceCards = cards,
+        activityItems = Activity.project(cards, emptyMap(), projects, listOf(board)),
         selectedProjectId = "dieter", selectedBoardId = "main", selectedLane = "todo", boardOverviewVisible = false,
         pinnedProjectOrder = listOf("dieter"),
         projectFolders = listOf(NavigationFolder("work", "Work", listOf("infra", "atlas"))),
@@ -74,9 +76,10 @@ class TabletWorkspaceTest {
         check(context.packageName.endsWith(".e2e")) { "Tablet tests require the isolated E2E package" }
         core = TestCore(navigationAccount = "component-fixture")
         compose.runOnUiThread {
-            model = core.viewModel()
+            model = core.viewModel(withCaptures = true)
             lifecycle.put("tablet", model)
         }
+        compose.waitUntil(5_000) { core.core.captures.view.value.bound }
     }
 
     @After fun cleanup() {
@@ -463,6 +466,7 @@ class TabletWorkspaceTest {
         verifyButtonInList()
         capture("activity-phone-new-task")
         compose.onNodeWithTag("inbox-new-task").performClick()
+        compose.waitUntil(5_000) { model.captureChooserVisible }
         compose.runOnIdle { assertTrue("New task opens the capture chooser", model.captureChooserVisible) }
     }
 

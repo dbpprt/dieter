@@ -107,6 +107,14 @@ native synthetic video and hardware H.264 with dry-run input. Set
 input target. Mac companion execution is disabled; iOS supports preparation
 only. Unavailable prerequisites fail required cases and are never green skips.
 
+Emulator start and stop hold the same serial lease as installation and E2E
+runs, and refuse a leased device with its owner PID. The launcher uses the port
+from `ANDROID_SERIAL=emulator-N`; it does not let the emulator choose a different
+serial. E2E verifies the selected AVD name before any build or installation.
+For a physical phone, pass its exact ADB serial; E2E uses separate fixture
+packages and leaves the phone's lifecycle and operator app with their owner.
+Physical iOS execution is not supported by this runner; `--serial` is Android-only.
+
 The install recipe and E2E runner select `ANDROID_SERIAL=emulator-5554` by
 default. Keep an explicit serial on every Gradle task which can select a device; otherwise
 Gradle may silently choose an attached physical phone even when every separate

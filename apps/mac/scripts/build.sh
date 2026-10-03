@@ -4,6 +4,9 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 APP_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$APP_ROOT/../.." && pwd)
+if [ "${DIETER_APPLE_BUILD_LEASE:-}" != "$REPO_ROOT" ]; then
+    exec python3 "$REPO_ROOT/scripts/native_build_lock.py" apple-build "$REPO_ROOT" "$0" "$@"
+fi
 CONFIGURATION=${CONFIGURATION:-debug}
 SWIFT_SCRATCH_PATH=${DIETER_SWIFT_SCRATCH_PATH:-$APP_ROOT/.build/dieter-local}
 

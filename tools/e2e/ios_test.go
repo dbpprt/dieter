@@ -177,7 +177,7 @@ func TestIOSCatalogCoverageAndLayout(t *testing.T) {
 // Exercise the actual driver lifecycle against stub tool executables. No Apple
 // tools, simulator, gateway or operator state is needed for failure-path tests.
 func TestIOSDriverCleansOnlyOwnedSimulatorOnEveryExit(t *testing.T) {
-	for _, mode := range []string{"success", "destination-retry", "launch-retry", "launch-progress-retry", "screen-retry", "boot-failure", "keyboard-failure", "test-failure", "assertion-failure", "delete-failure", "missing-result", "canceled"} {
+	for _, mode := range []string{"success", "reuse", "destination-retry", "launch-retry", "launch-progress-retry", "screen-retry", "boot-failure", "keyboard-failure", "test-failure", "assertion-failure", "delete-failure", "missing-result", "canceled"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			bin := filepath.Join(root, "bin")
@@ -248,14 +248,19 @@ fi
 				t.Fatal(err)
 			}
 			d := iosDriver{root: root, products: products, output: output, device: "iphone", deviceType: "owned-type", runtime: "owned-runtime"}
-			timeout := 5 * time.Second
+			timeout := 30 * time.Second
 			if mode == "canceled" {
 				timeout = 200 * time.Millisecond
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
+			shared := ""
+			if mode == "reuse" {
+				d.sharedSimulator = &shared
+				d.simulatorJournal = filepath.Join(root, "owner.json")
+			}
 			result := d.run(ctx, Case{ID: "ios.stub", Fixture: "none", Native: &Native{Target: "DieterIOSUITests", Class: "RemoteNodeUITests", Methods: []string{"testOne"}}})
-			if (result.Status == "passed" && result.CleanupError == "") != (mode == "success" || mode == "destination-retry" || mode == "launch-retry" || mode == "launch-progress-retry" || mode == "screen-retry") {
+			if (result.Status == "passed" && result.CleanupError == "") != (mode == "success" || mode == "reuse" || mode == "destination-retry" || mode == "launch-retry" || mode == "launch-progress-retry" || mode == "screen-retry") {
 				t.Fatalf("%+v", result)
 			}
 			if mode == "destination-retry" || mode == "launch-retry" || mode == "launch-progress-retry" || mode == "screen-retry" {
@@ -266,6 +271,20 @@ fi
 			}
 			if mode == "assertion-failure" && (!strings.Contains(result.Reason, "The shared screenshot is absent.") || strings.Contains(result.Reason, "Attributes:")) {
 				t.Fatalf("lost bounded XCTest assertion: %+v", result)
+			}
+			if mode == "reuse" {
+				second := d.run(ctx, Case{ID: "ios.second", Fixture: "none", Native: &Native{Target: "DieterIOSUITests", Class: "RemoteNodeUITests", Methods: []string{"testOne"}}})
+				if second.Status != "passed" || second.CleanupError != "" {
+					t.Fatalf("%+v", second)
+				}
+				commands, _ := os.ReadFile(filepath.Join(root, "commands"))
+				log := string(commands)
+				if strings.Count(log, "simctl create ") != 1 || strings.Count(log, "simctl bootstatus ") != 1 || strings.Contains(log, "simctl delete ") || strings.Count(log, "simctl uninstall ") != 6 {
+					t.Fatalf("suite did not reuse one owned simulator with fresh app containers: %s", log)
+				}
+				if err := cleanupIOSSimulator(root, shared); err != nil {
+					t.Fatal(err)
+				}
 			}
 			data, err := os.ReadFile(filepath.Join(root, "commands"))
 			if err != nil {
@@ -340,5 +359,52 @@ func TestIOSPrivateConfigurationWithNativePlutil(t *testing.T) {
 	info, err := os.Stat(path)
 	if err != nil || info.Mode().Perm() != 0600 {
 		t.Fatal("private test configuration permissions", err)
+	}
+}
+
+func TestIOSRecoveryRequiresExactRecordedIdentity(t *testing.T) {
+	for _, mode := range []string{"owned", "renamed", "absent", "delete-failure"} {
+		t.Run(mode, func(t *testing.T) {
+			root := t.TempDir()
+			bin := filepath.Join(root, "bin")
+			if err := os.Mkdir(bin, 0700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("IOS_RECOVERY_MODE", mode)
+			t.Setenv("IOS_RECOVERY_LOG", filepath.Join(root, "commands"))
+			script := `#!/bin/sh
+printf '%s\n' "$*" >> "$IOS_RECOVERY_LOG"
+if [ "$2" = list ]; then
+ if [ "$IOS_RECOVERY_MODE" = absent ]; then echo '{"devices":{}}'; exit; fi
+ name='Dieter E2E dieter-ios-case-123'
+ if [ "$IOS_RECOVERY_MODE" = renamed ]; then name='Operator Simulator'; fi
+ printf '{"devices":{"runtime":[{"udid":"AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE","name":"%s"}]}}\n' "$name"
+fi
+if [ "$2" = delete ] && [ "$IOS_RECOVERY_MODE" = delete-failure ]; then exit 1; fi
+`
+			if err := os.WriteFile(filepath.Join(bin, "xcrun"), []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			journal := filepath.Join(root, "owner.json")
+			if err := writeJSON(journal, iosSimulatorOwnership{ID: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", Name: "Dieter E2E dieter-ios-case-123"}); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			err := recoverIOSSimulator(ctx, root, journal)
+			wantFailure := mode == "renamed" || mode == "delete-failure"
+			if (err != nil) != wantFailure {
+				t.Fatal(mode, err)
+			}
+			_, statErr := os.Stat(journal)
+			if os.IsNotExist(statErr) == wantFailure {
+				t.Fatal("incorrect journal retention", mode, statErr)
+			}
+			log, _ := os.ReadFile(filepath.Join(root, "commands"))
+			if (mode == "renamed" || mode == "absent") && strings.Contains(string(log), "simctl delete") {
+				t.Fatal("deleted an unowned simulator", string(log))
+			}
+		})
 	}
 }

@@ -169,6 +169,7 @@
                     && NativeUISmokeTargets.diffSplit == true
                     && NativeUIAccessibility.horizontalScrollView("project-changes.diff", in: window) != nil
             }
+            let diffReady = await NativeUIAccessibility.waitForInteractiveTarget("project-changes.diff", in: window)
             capture(window, to: output.appending(path: "11-design-dark-split.png"))
             let hunkID =
                 model.diffLayout.rows.first {
@@ -186,9 +187,9 @@
             let hunkAfter = NativeUIAccessibility.find(hunkTarget, in: window)?.recordedFrame
             let pinned = hunkBefore != nil && hunkAfter != nil && abs(hunkBefore!.minX - hunkAfter!.minX) < 2
             results["project-split-horizontal-scroll"] =
-                rendered && scrolled && offsetChanged && pinned
+                rendered && diffReady && scrolled && offsetChanged && pinned
                 ? "passed"
-                : "failed: rendered=\(rendered), scrolled=\(scrolled), offset changed=\(offsetChanged), headers pinned=\(pinned)"
+                : "failed: rendered=\(rendered), ready=\(diffReady), scrolled=\(scrolled), offset changed=\(offsetChanged), headers pinned=\(pinned)"
             _ = NativeUIAccessibility.scrollHorizontally("project-changes.diff", in: window, delta: 220)
             results["project-design-mixed-staging"] =
                 refreshed && selected && visible
@@ -369,14 +370,22 @@
                     NativeUIAccessibility.find($0, in: window) != nil
                 } ? "passed" : "failed: expected board, Files, Changes, Schedules"
 
-            _ = NativeUIAccessibility.click("project-changes.unstaged.project-scratch.txt", in: window)
+            // The model can finish loading before SwiftUI attaches the file rows.
+            // Wait for native geometry, then deliver one real click and verify it.
+            let scratchReady = await NativeUIAccessibility.waitForInteractiveTarget(
+                "project-changes.unstaged.project-scratch.txt", in: window)
+            let scratchClicked = scratchReady && NativeUIAccessibility.click(
+                "project-changes.unstaged.project-scratch.txt", in: window)
             let scratchVisible = await NativeUIAccessibility.wait {
-                model.diff?.path == "project-scratch.txt"
+                scratchClicked && model.diff?.path == "project-scratch.txt"
                     && NativeUIAccessibility.containsText("temporary project note", in: window)
             }
-            _ = NativeUIAccessibility.click("project-changes.unstaged.README.md", in: window)
+            let readmeReady = await NativeUIAccessibility.waitForInteractiveTarget(
+                "project-changes.unstaged.README.md", in: window)
+            let readmeClicked = readmeReady && NativeUIAccessibility.click(
+                "project-changes.unstaged.README.md", in: window)
             let readmeVisible = await NativeUIAccessibility.wait {
-                model.diff?.path == "README.md"
+                readmeClicked && model.diff?.path == "README.md"
                     && NativeUIAccessibility.containsText("Project checkout local edit", in: window)
             }
             results["project-file-selection"] =

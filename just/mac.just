@@ -66,6 +66,9 @@ shared-framework configuration="debug" platforms="macos":
 core-test filter="SharedCoreIntegrationTests|AppSessionCoreIntegrationTests":
     #!/usr/bin/env bash
     set -euo pipefail
+    if [[ "${DIETER_APPLE_BUILD_LEASE:-}" != "$PWD" ]]; then
+        exec python3 scripts/native_build_lock.py apple-build "$PWD" just mac core-test "{{ filter }}"
+    fi
     {{ app_root }}/scripts/shared-framework.sh debug macos
     work=$(mktemp -d "${TMPDIR:-/tmp}/dieter-mac-core.XXXXXX")
     fixture_pid=""
@@ -99,6 +102,9 @@ core-test filter="SharedCoreIntegrationTests|AppSessionCoreIntegrationTests":
 test filter="":
     #!/usr/bin/env bash
     set -euo pipefail
+    if [[ "${DIETER_APPLE_BUILD_LEASE:-}" != "$PWD" ]]; then
+        exec python3 scripts/native_build_lock.py apple-build "$PWD" just mac test "{{ filter }}"
+    fi
     {{ app_root }}/scripts/shared-framework.sh debug macos
     arguments=(
         test

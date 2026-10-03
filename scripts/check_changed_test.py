@@ -38,9 +38,33 @@ class CheckChangedTests(unittest.TestCase):
             self.assertIn(["just", "e2e", "check"], plan)
             self.assertIn(["just", "e2e", "run", "--suite", "functional", "--changed"], plan)
             self.assertFalse(any(command[:2] in (["just", "mac"], ["just", "ios"]) for command in plan))
-            for device in (() if path.startswith("tests/e2e/cases/android/") else ("iphone", "ipad")):
+            for device in (("iphone", "ipad") if path == "just/e2e.just" else ()):
                 self.assertIn(["just", "e2e", "run", "--platform", "ios", "--device", device, "--suite", "smoke"], plan)
-            self.assertEqual(self.components(path), {"core", "android"} if path.startswith("tests/e2e/cases/android/") else {"core", "android", "macos", "ios"})
+            self.assertEqual(self.components(path), {"core", "android", "macos", "ios"} if path == "just/e2e.just" else {"core", "android"})
+
+    def test_driver_changes_select_only_owning_native_platform(self):
+        for filename, platform in (("ios.go", "ios"), ("mac.go", "mac"), ("android.go", "android")):
+            plan = self.plan("tools/e2e/" + filename)
+            runs = [c for c in plan if c[:3] == ["just", "e2e", "run"]]
+            self.assertTrue(runs)
+            for command in runs:
+                self.assertEqual(command[command.index("--platform") + 1] if "--platform" in command else "android", platform)
+        for filename in ("ios_test.go", "process_test.go", "runner_test.go"):
+            self.assertFalse(any(c[:3] == ["just", "e2e", "run"] for c in self.plan("tools/e2e/" + filename)))
+        self.assertEqual(self.components("tests/e2e/cases/ios/ios.credentials.yaml"), {"core", "ios"})
+
+    def test_apple_lock_changes_cover_direct_recipes_and_runner_interoperability(self):
+        plan = self.plan("scripts/native_build_lock.py")
+        self.assertIn(["just", "mac", "lifecycle-test"], plan)
+        self.assertIn(["go", "test", "-race", "./tools/e2e"], plan)
+        self.assertIn(["just", "ios", "build"], plan)
+        self.assertNotIn(["just", "e2e", "run", "--suite", "functional", "--changed"], plan)
+
+    def test_mixed_lock_and_go_changes_do_not_repeat_runner_tests(self):
+        packages = [{"ImportPath": "example/tools/e2e", "Dir": "/repo/tools/e2e"}]
+        plan = plan_checks(self.root, ["scripts/native_build_lock.py", "tools/e2e/process.go"], packages=packages)
+        tests = [command for command in plan if command[:3] == ["go", "test", "-race"]]
+        self.assertEqual(tests, [["go", "test", "-race", "example/tools/e2e"]])
 
     def test_no_changes_or_docs_need_no_checks(self):
         self.assertEqual(self.plan(), [])
@@ -85,7 +109,7 @@ class CheckChangedTests(unittest.TestCase):
                 # suite run.
                 self.assertIn(["just", "android", "test"], plan)
                 self.assertIn(["just", "mac", "test"], plan)
-                self.assertIn(["just", "mac", "core-test"], plan)
+                self.assertNotIn(["just", "mac", "core-test"], plan, "core apple-test already runs the Swift bridge suite")
                 self.assertIn(["just", "e2e", "run", "--platform", "mac", "--suite", "smoke"], plan)
                 self.assertIn(["just", "ios", "build"], plan)
                 for device in ("iphone", "ipad"):
@@ -107,7 +131,7 @@ class CheckChangedTests(unittest.TestCase):
                 self.assertNotIn(["just", "core", "test"], plan)
                 # Both Apple apps link the core through SharedCore.
                 self.assertIn(["just", "ios", "build"], plan)
-                self.assertEqual(self.components(path), {"macos", "ios"})
+                self.assertEqual(self.components(path), {"core", "macos", "ios"} if path.endswith("shared-framework.sh") else {"macos", "ios"})
         # The bridge's own tests run on the Mac only.
         self.assertNotIn(["just", "ios", "build"], self.plan("apps/mac/Tests/SharedCoreTests/SharedAdapterTests.swift"))
         for path in ("api/proto/dieter/v1/dieter.proto", "scripts/isolated-gateway/main.go"):

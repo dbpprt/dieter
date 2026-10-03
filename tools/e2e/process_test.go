@@ -68,3 +68,36 @@ fi
 		t.Fatal(fmt.Sprintf("grandchild %d remains: %v", pid, err))
 	}
 }
+
+func TestAppleBuildLeaseInteroperatesWithDirectRecipes(t *testing.T) {
+	root := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	leased, unlock, err := leaseAppleBuild(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	released := false
+	defer func() {
+		if !released {
+			unlock()
+		}
+	}()
+	out, err := command(leased, root, nil, "/bin/sh", "-c", `printf '%s' "$DIETER_APPLE_BUILD_LEASE"`)
+	if err != nil || out != root {
+		t.Fatal("nested recipe did not inherit the owned lease", out, err)
+	}
+	helper, err := filepath.Abs("../../scripts/native_build_lock.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err = command(ctx, root, nil, "python3", helper, "apple-build", root, "/bin/sh", "-c", "exit 0")
+	if err == nil || !strings.Contains(out, "Native build resource busy") || !strings.Contains(out, strconv.Itoa(os.Getpid())) {
+		t.Fatal("direct recipe bypassed runner lease", out, err)
+	}
+	unlock()
+	released = true
+	if out, err = command(ctx, root, nil, "python3", helper, "apple-build", root, "/bin/sh", "-c", "exit 0"); err != nil {
+		t.Fatal("lease not released", out, err)
+	}
+}

@@ -26,8 +26,10 @@ Use `$dieter-cli` for daemon-side inspection and never edit `DIETER_HOME`.
 Do not run `swift run DieterMac`, create alternate scratch paths, delete
 `.build`, or use `swift package clean`. `just mac build` packages the app with
 the canonical app cache, while `just mac test` uses the canonical test cache so
-their incompatible compiler flags cannot invalidate each other. Do not run two
-commands against the same cache concurrently.
+their incompatible compiler flags cannot invalidate each other. The Mac build/test/core-test and iOS build commands share an Apple build lease.
+Apple E2E holds it until its packaged app/test products are no longer in use.
+Contention fails promptly with the owner PID; inspect the active command and
+retry after it completes. Never delete its lock to bypass admission.
 
 When compiler processes contend for memory, run builds and tests sequentially
 and set `DIETER_SWIFT_JOBS=2` on `just mac build`, `just mac test`, or the Mac
@@ -63,6 +65,11 @@ configuration, or source change can be long. A second unchanged command should
 be incremental. If it is not, compare the Xcode version, configuration,
 `Package.resolved`, and the command's canonical scratch path before cleaning
 anything. Never point builds at `dieter-tests` or tests at `dieter-local`.
+Shared-core framework preparation uses a cross-process publication lease,
+hashes production sources/schema/toolchains, and preserves identical framework
+bytes and timestamps. `ios-simulator` builds only macOS and simulator slices;
+Mac refreshes retain any existing slices of the same configuration. Test and
+documentation edits do not replace the framework.
 
 `just mac run` refuses conflicting processes, launches without `open -n`, and
 requires exactly one canonical executable. If that app is already running, it

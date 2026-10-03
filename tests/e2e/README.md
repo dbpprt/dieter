@@ -35,10 +35,18 @@ just e2e run --platform mac --case mac.navigation,mac.sidebar
 
 iOS requires macOS, Xcode, and an installed iOS Simulator runtime. `--device
 iphone` selects iPhone 17 Pro; `--device ipad` selects iPad Pro 11-inch (M5).
-The runner builds once, leases the Xcode products, creates a fresh owned simulator
-and fixture per case, and deletes only those resources afterward. It selects
+The runner builds once, holds the shared Apple build lease while consuming the
+Xcode products, boots one owned simulator per run and creates fresh fixtures and
+app containers per case. It deletes that exact simulator at the end. The checkout records its
+UUID and name; the next leased run recovers only that recorded simulator if a
+previous runner was killed. A host simulator lease prevents overlapping managed
+runs. Boot is bounded to three minutes; device discovery and XCTest retain
+separate deadlines. Existing operator simulators are preserved. It selects
 exact XCTest methods and qualifies the structured xcresult test tree. Missing,
-skipped, duplicate, failed or interrupted methods fail the run. No simulator
+skipped, duplicate, failed or interrupted methods fail the run. `--serial`
+selects Android only; physical iOS test execution is unavailable and is rejected
+explicitly. `just ios build-device` compiles an unsigned device app;
+it does not install, launch or manage a physical iPhone/iPad. No simulator
 runtime is installed automatically. Missing prerequisites produce unavailable
 results and a nonzero exit.
 
@@ -64,6 +72,14 @@ an unavailable host is reported as unavailable, never a pass. Mac companion scre
 native methods are listed; skipped, missing, duplicate, failed, and interrupted
 results fail the command. Native assertions remain native code. Ordinary journeys
 are YAML, interpreted by Compose; adding a flow does not require a new APK.
+
+Android's default target is `emulator-5554` running `Pixel_9_API_37_1`.
+Override both `--serial`/`ANDROID_SERIAL` and `DIETER_ANDROID_AVD` deliberately
+when choosing another emulator. The runner verifies its reported AVD name;
+physical devices use their exact ADB serial and are never auto-selected. Start
+and stop recipes use the same serial lease as tests and installation. The
+launcher passes the selected console port rather than relying on automatic
+port allocation. Tests reuse the device and leave its lifecycle with its owner.
 
 Each physical device or emulator gets one lease; runs on different devices may
 execute concurrently after serialized shared-build preparation. The runner validates before building, acquires the per-device lease, prepares
@@ -105,7 +121,9 @@ Artifacts are in `tmp/e2e-<run>/`: `plan.json`, `results.json`, `junit.xml`,
 per-case native logs and captures, flow step events, and failure evidence. Use
 `--output PATH` to select a fresh directory (existing paths are refused). CI uploads
 only that run’s directory, excluding build caches and prior runs. Reports
-separate build, installation, setup, and execution time. Gate on results, not
+separate build, installation, setup, and execution time. Builds and running cases
+emit credential-free elapsed/deadline progress every 30 seconds; this proves the
+runner is active, not that its assertions have passed. Gate on results, not
 the shell exit status of `am instrument`. The runner stops owned processes and
 removes only owned reverses; failed cleanup also fails qualification.
 
