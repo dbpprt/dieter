@@ -28,8 +28,8 @@ module Dieter
 
     def self.setup(context, component, fixture, native)
       raise PipelineError, "CI setup requires a disposable Actions runner" unless ENV["GITHUB_ACTIONS"] == "true"
-      raise PipelineError, "fixture must be true or false" unless %w[true false].include?(fixture)
-      raise PipelineError, "native must be true or false" unless %w[true false].include?(native)
+      fixture = boolean_option(fixture, "fixture")
+      native = boolean_option(native, "native")
       if RUBY_PLATFORM.include?("darwin")
         developer = ENV["RUNNER_ENVIRONMENT"] == "self-hosted" ? context.environment.fetch("DEVELOPER_DIR", "/Applications/Xcode.app/Contents/Developer") : "/Applications/Xcode_26.5.app/Contents/Developer"
         raise Unavailable, "Pinned Xcode 26.5 is unavailable on the runner" unless File.directory?(developer)
@@ -60,6 +60,13 @@ module Dieter
         File.open(ENV.fetch("GITHUB_PATH"), "a") { |file| file.puts(File.join(context.root, "bin")) }
       end
       context.command(["npm", "--prefix", "internal/harness/runtime", "ci"], timeout: 300) if fixture == "true" || component == "portable"
+    end
+
+    # Fastlane's CLI parser turns literal true/false lane values into booleans;
+    # direct composition callers can still supply their JSON/string values.
+    def self.boolean_option(value, name)
+      return value.to_s if value == true || value == false || %w[true false].include?(value)
+      raise PipelineError, "#{name} must be true or false"
     end
 
     def self.check(context, component)
