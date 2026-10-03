@@ -96,7 +96,7 @@
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
-            .environment(\.openURL, OpenURLAction(handler: openConversationURL))
+            .environment(\.openURL, OpenURLAction { openConversationURL($0) })
             .overlay {
                 if let loadingTitle = images.loadingTitle {
                     ProgressView("Loading \(loadingTitle)…")
@@ -424,7 +424,7 @@
                 let target = WorkspaceTarget(
                     endpointID: IOSAppModel.endpointID(daemonID: model.daemonID), projectID: card.projectID,
                     conversationID: card.id)
-                Task { await images.open(destination, target: target, core: app.core, show: app.show) }
+                Task { await images.open(destination, target: target, core: app.core, show: { app.show($0) }) }
                 return .handled
             }
             // Without a workspace, a file link is the only kind that fails for want of one.

@@ -34,7 +34,7 @@
                         .frame(maxWidth: .infinity, minHeight: 260)
                         .modifier(IOSGlassCardModifier(shape: RoundedRectangle(cornerRadius: 24, style: .continuous)))
                     } else {
-                        ForEach(machines, id: \.id, content: row)
+                        ForEach(machines, id: \.id) { row($0) }
                     }
                 }
                 .padding(18)

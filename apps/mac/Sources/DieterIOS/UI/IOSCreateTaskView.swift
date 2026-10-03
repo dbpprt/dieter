@@ -223,7 +223,7 @@
                 }
                 Picker(
                     "Machine & checkout",
-                    selection: Binding(get: { resolved.checkoutID }, set: pickCheckout)
+                    selection: Binding(get: { resolved.checkoutID }, set: { pickCheckout($0) })
                 ) {
                     if resolved.checkoutID.isEmpty { Text("Choose a checkout").tag("") }
                     ForEach(checkouts, id: \.id) { checkout in

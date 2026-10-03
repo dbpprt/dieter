@@ -195,7 +195,7 @@
                 .frame(maxWidth: .infinity, minHeight: 92)
                 .modifier(IOSGlassCardModifier(shape: RoundedRectangle(cornerRadius: 24, style: .continuous)))
             } else if layout.folders.isEmpty {
-                ForEach(layout.order, id: \.self, content: projectCard)
+                ForEach(layout.order, id: \.self) { projectCard($0) }
             } else {
                 ForEach(layout.folders, id: \.id) { folder in
                     Label(folder.name, systemImage: "folder")
@@ -203,9 +203,9 @@
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 8)
                         .accessibilityIdentifier("ios.project-folder.\(folder.id)")
-                    ForEach(folder.itemIds, id: \.self, content: projectCard)
+                    ForEach(folder.itemIds, id: \.self) { projectCard($0) }
                 }
-                ForEach(layout.unfiled, id: \.self, content: projectCard)
+                ForEach(layout.unfiled, id: \.self) { projectCard($0) }
             }
         }
 
