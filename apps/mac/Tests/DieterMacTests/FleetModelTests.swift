@@ -1,24 +1,25 @@
 import DieterAPI
-import DieterCore
 import Foundation
 import SharedCore
 import Testing
 @testable import DieterMac
 
-private let fixture = DieterEndpoint(name: "Fixture", host: "127.0.0.1", port: 4242, daemonID: "d_fixture")
+private let fixture = MachineEndpoint(name: "Fixture", host: "127.0.0.1", port: 4242, daemonID: "d_fixture")
 
-/// The core's entry for a fixture machine: available while online.
-private func availableEntry(_ machine: DieterEndpoint) -> ClientMachineEntry {
-    .with {
-        $0.available = machine.online
-        $0.unavailableMessage = machine.online ? "" : "\(machine.name) is offline."
-    }
+/// A fixture machine as the fleet addresses it: available while online.
+private func fleetMachine(_ machine: MachineEndpoint) -> FleetMachine {
+    FleetMachine(
+        id: machine.id, daemonID: machine.daemonID ?? "", name: machine.name,
+        entry: .with {
+            $0.available = machine.online
+            $0.unavailableMessage = machine.online ? "" : "\(machine.name) is offline."
+        })
 }
 
 @Test @MainActor func fleetShowsTheSelectedMachineThroughTheCoreUnderItsMachineID() async throws {
     let core = ScriptedCoreClient()
-    let fleet = FleetModel(machines: { [fixture] }, entry: availableEntry, core: core, reportError: { _ in })
-    await fleet.openMachine(fixture)
+    let fleet = FleetModel(machines: { [fleetMachine(fixture)] }, core: core, reportError: { _ in })
+    await fleet.openMachine(fixture.id)
     #expect(
         core.commands.last?.telemetry.action
             == .select(
@@ -59,7 +60,7 @@ private func availableEntry(_ machine: DieterEndpoint) -> ClientMachineEntry {
     var errors: [String] = []
     var machines = [fixture]
     let fleet = FleetModel(
-        machines: { machines }, entry: availableEntry, core: core,
+        machines: { machines.map(fleetMachine) }, core: core,
         reportError: { errors.append($0.localizedDescription) })
     core.handler = { command in
         if case .perform? = command.telemetry.action {
@@ -74,7 +75,7 @@ private func availableEntry(_ machine: DieterEndpoint) -> ClientMachineEntry {
     #expect(!fleet.machineOperationInFlight)
 
     let commands = core.commands.count
-    machines = [DieterEndpoint(name: "Fixture", host: "127.0.0.1", port: 4242, daemonID: "d_fixture", online: false)]
+    machines = [MachineEndpoint(name: "Fixture", host: "127.0.0.1", port: 4242, daemonID: "d_fixture", online: false)]
     await fleet.performMachineOperation(.restart)
     #expect(core.commands.count == commands)
     #expect(errors == ["Fixture is offline."])

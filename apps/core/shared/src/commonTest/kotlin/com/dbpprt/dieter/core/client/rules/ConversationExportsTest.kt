@@ -1,6 +1,8 @@
 package com.dbpprt.dieter.core.client.rules
 
+import com.dbpprt.dieter.api.v1.HarnessSelection
 import com.dbpprt.dieter.api.v1.MessagePart
+import com.dbpprt.dieter.api.v1.QueuedMessage
 import com.dbpprt.dieter.api.v1.Subagent
 import com.dbpprt.dieter.api.v1.TaskPlan
 import com.dbpprt.dieter.api.v1.TaskPlanItem
@@ -54,6 +56,24 @@ class ConversationExportsTest {
         val reasoning = ConversationExports.timelineRows(messages, emptyList(), showReasoning = true).items
         assertTrue(reasoning.any { row -> row.groups.any { group -> group.steps.any { it.kind == TimelineStepKind.TIMELINE_STEP_KIND_REASONING } } }, "reasoning shows when asked")
         assertEquals("message:q", reasoning.last().id)
+    }
+
+    @Test
+    fun anEditedQueuedMessageGoesAheadOfTheComposersDraft() {
+        val image = MessagePart(type = "file", media_type = "image/png", filename = "shot.png")
+        val selection = HarnessSelection(provider = "mock", model = "mock")
+        val queued = QueuedMessage(
+            id = "q1", text = "ignored",
+            parts = listOf(MessagePart(type = "text", text = " First "), image, MessagePart(type = "text", text = "second")),
+            selection = selection,
+        )
+        val restored = ConversationExports.restoredDraft(queued, currentText = "Typed meanwhile")
+        assertEquals("First \n\nsecond\n\nTyped meanwhile", restored.text, "the queued text leads, a blank line apart")
+        assertEquals(listOf(image), restored.parts, "only attachments return as parts")
+        assertEquals(selection, restored.selection)
+        val plain = ConversationExports.restoredDraft(QueuedMessage(id = "q2", text = " Only text "), currentText = " ")
+        assertEquals("Only text", plain.text, "a message without text parts restores its text; a blank draft adds nothing")
+        assertEquals(null, plain.selection)
     }
 
     @Test
@@ -125,5 +145,11 @@ class ConversationExportsTest {
         assertEquals(-1.0, unmeasured.context_fraction, "unknown context")
         assertEquals("", unmeasured.elapsed)
         assertTrue(ConversationExports.subagent(Subagent(), now).usage_metrics.isEmpty())
+    }
+
+    @Test
+    fun localConversationIdsAreNotServerBacked() {
+        assertTrue(ConversationExports.isServerBacked("c_0123456789"))
+        assertFalse(ConversationExports.isServerBacked("local_0123456789"))
     }
 }

@@ -90,18 +90,9 @@ struct ToolCallView: View {
     @State private var loading = false
 
     private var completed: Bool { step.toolStatus == .completed }
-    private var needsAttention: Bool { [.failed, .needsApproval, .denied].contains(step.toolStatus) }
+    private var needsAttention: Bool { step.toolAttention }
 
-    private var statusLabel: String {
-        switch step.toolStatus {
-        case .running: "running"
-        case .completed: "completed"
-        case .failed: "failed"
-        case .needsApproval: "needs approval"
-        case .denied: "denied"
-        default: "tool"
-        }
-    }
+    private var statusLabel: String { step.toolStatusLabel }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

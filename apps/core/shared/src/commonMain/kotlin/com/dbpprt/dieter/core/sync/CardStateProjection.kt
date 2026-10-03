@@ -14,7 +14,7 @@ internal const val UNOBSERVED_JOIN = "unobserved-join"
 /**
  * Joins placement and runtime separately; transport order and wall clocks are
  * not revisions. Moved from apps/android `connection/CardStateProjection.kt`
- * (protobuf-lite) and replaces `DieterCore/CardStateProjection.swift`.
+ * (protobuf-lite); it also replaced the Apple apps' Swift projection.
  */
 fun mergeCardState(incoming: Card, previous: Card?): Card {
     if (previous == null || previous.id != incoming.id) return incoming

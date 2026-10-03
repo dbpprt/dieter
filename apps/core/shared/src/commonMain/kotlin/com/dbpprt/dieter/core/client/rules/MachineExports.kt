@@ -5,6 +5,7 @@ import com.dbpprt.dieter.api.v1.MachineOperationAction
 import com.dbpprt.dieter.client.v1.MachineOperationCopy
 import com.dbpprt.dieter.core.admin.MachineOperations
 import com.dbpprt.dieter.core.connection.Availability
+import com.dbpprt.dieter.core.identity.Gateway
 import com.dbpprt.dieter.core.machines.MachineFormats
 import kotlin.time.Instant
 
@@ -75,6 +76,18 @@ object MachineExports {
     /** The daemon row: its build's release, else the release the gateway reports, with the build's short revision. */
     fun daemonVersion(buildVersion: String, releaseVersion: String, revision: String): String =
         MachineFormats.daemonVersion(buildVersion, releaseVersion, revision)
+
+    // --- Gateways ---
+
+    /**
+     * The origin (`https://host:port`) of a gateway [address] as `SetGateways`
+     * accepts it: `host`, `host:port`, or a URL; plaintext only on loopback.
+     * Empty when the address does not parse or is not permitted.
+     */
+    fun gatewayOrigin(address: String): String = Gateway.parse(address)?.takeIf { it.permitted }?.origin ?: ""
+
+    /** The built-in gateway's origin, which gateway lists mark as primary. */
+    fun defaultGatewayOrigin(): String = Gateway.DEFAULT.origin
 
     // --- Operations ---
 

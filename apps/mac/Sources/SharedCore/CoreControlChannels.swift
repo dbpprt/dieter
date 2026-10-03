@@ -11,7 +11,8 @@ package final class CoreControlChannels: NSObject, NativeControlChannels, Sendab
         let completion = NativeCallback(completion)
         do {
             let parsed = try Dieter_Gateway_V1_RTCConfiguration(serializedBytes: configuration)
-            completion.value.completed(channel: CoreControlChannel(try ControlRTCBridge(configuration: parsed)), error: nil)
+            completion.value.completed(
+                channel: CoreControlChannel(try ControlRTCBridge(configuration: parsed)), error: nil)
         } catch {
             completion.value.completed(channel: nil, error: error.localizedDescription)
         }

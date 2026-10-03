@@ -1,14 +1,17 @@
 package com.dbpprt.dieter.core.client.rules
 
+import com.dbpprt.dieter.api.v1.QueuedMessage
 import com.dbpprt.dieter.api.v1.Subagent
 import com.dbpprt.dieter.api.v1.TaskPlan
 import com.dbpprt.dieter.client.v1.SubagentDetail
 import com.dbpprt.dieter.client.v1.SubagentSummary
 import com.dbpprt.dieter.client.v1.TaskPlanSummary
-import com.dbpprt.dieter.client.v1.MessageDelivery
 import com.dbpprt.dieter.client.v1.TimelineMessages
 import com.dbpprt.dieter.client.v1.TimelineRows
 import com.dbpprt.dieter.core.client.timelineItem
+import com.dbpprt.dieter.core.composition.RestoredMessage
+import com.dbpprt.dieter.core.outbox.OutboxPolicy
+import com.dbpprt.dieter.core.presentation.DeliveryState
 import com.dbpprt.dieter.core.presentation.Parts
 import com.dbpprt.dieter.core.presentation.SubagentPresentation
 import com.dbpprt.dieter.core.presentation.TaskPlans
@@ -41,7 +44,7 @@ object ConversationExports {
      */
     fun timelineRows(messages: TimelineMessages, queuedIds: List<String>, showReasoning: Boolean): TimelineRows {
         val timeline = TimelineBuilder.build(messages.messages, queuedIds.toSet(), options = TimelineOptions(showReasoning = showReasoning))
-        return TimelineRows(timeline.items.map { timelineItem(it, { MessageDelivery.MESSAGE_DELIVERY_SYNCED }, { false }) })
+        return TimelineRows(timeline.items.map { timelineItem(it, { DeliveryState.SYNCED }, { false }) })
     }
 
     /** What a row's "copy message" action copies: its messages' prose parts as written, separated by a blank line. */
@@ -70,4 +73,19 @@ object ConversationExports {
     }
 
     private fun detail(section: SubagentPresentation.DetailSection) = SubagentDetail(label = section.label, text = section.bounded(), monospace = section.monospace)
+
+    /**
+     * The composer after [message] comes back for editing (`RemoveQueuedMessage`
+     * with `edit`), as the core restores its own draft: `text` is the
+     * message's text ahead of [currentText], a blank line apart, and `parts`
+     * are its attachments, which go ahead of the composer's. `selection` is
+     * its agent choice, unset when it had none.
+     */
+    fun restoredDraft(message: QueuedMessage, currentText: String): QueuedMessage {
+        val restored = RestoredMessage.from(message)
+        return QueuedMessage(id = message.id, text = restored.textBefore(currentText), parts = restored.attachments, selection = restored.selection)
+    }
+
+    /** Whether a machine has accepted [conversationId]; false for the local ID of a creation still in the outbox. */
+    fun isServerBacked(conversationId: String): Boolean = OutboxPolicy.isServerBacked(conversationId)
 }

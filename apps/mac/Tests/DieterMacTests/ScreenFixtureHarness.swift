@@ -1,7 +1,5 @@
 import AppKit
 import DieterAPI
-import DieterClient
-import DieterCore
 import DieterShared
 import Foundation
 import SharedCore
@@ -55,7 +53,7 @@ final class ScreenFixtureRoutes: NSObject, NativeScreenFixture, @unchecked Senda
 /// signed in) whose screens signal through the fixture and render through the
 /// Mac's WebRTC engine. It never touches the operator's app, daemon, or state.
 @MainActor final class ScreenFixtureCore {
-    let media = CoreScreenMedia()
+    let media = CoreScreenMedia.mac()
     let routes: ScreenFixtureRoutes
     let host: CoreHost
     private let root: URL
@@ -68,11 +66,11 @@ final class ScreenFixtureRoutes: NSObject, NativeScreenFixture, @unchecked Senda
         let defaults = try #require(UserDefaults(suiteName: suite))
         host = try CoreHost(
             configuration: CoreHostConfiguration(
-                root: root, credentialsFile: root.appending(path: "gateway-sessions.json"),
-                clientVersion: DieterRelease.current, oauthRedirectURI: "dieter-mac://oauth/callback",
-                clientIDPrefix: "mac", logSubsystem: "com.dbpprt.dieter.mac.tests"),
-            defaults: defaults, notificationsEnabled: { false },
-            screens: CoreHostScreens(media: media, clipboard: clipboard, fixture: routes))
+                root: root, clientVersion: DieterRelease.current, logSubsystem: "com.dbpprt.dieter.mac.tests"),
+            platform: .mac(
+                credentialsFile: root.appending(path: "gateway-sessions.json"), notificationsEnabled: { false },
+                clipboard: clipboard),
+            defaults: defaults, screens: CoreHostScreens(media: media, fixture: routes))
     }
 
     func controller() -> RemoteDesktopController { RemoteDesktopController(core: host.client, media: media) }
@@ -103,9 +101,8 @@ final class ScreenFixtureRoutes: NSObject, NativeScreenFixture, @unchecked Senda
 }
 
 /// A direct client to the fixture for host-side assertions the app never makes.
-func screenFixtureRPC(_ fixture: ScreenFixtureConnection) throws -> (DieterRPC, Task<Void, Never>) {
-    let rpc = try DieterRPC(endpoint: #require(DieterEndpoint.parse(fixture.url)), accessToken: fixture.token)
-    return (rpc, Task { try? await rpc.run() })
+func screenFixtureRPC(_ fixture: ScreenFixtureConnection) throws -> SmokeFixtureClient {
+    try SmokeFixtureClient(origin: fixture.url, token: fixture.token)
 }
 
 @MainActor func screenWait(_ label: String, timeout: Double, condition: () -> Bool) async throws {

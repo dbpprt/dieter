@@ -1,6 +1,5 @@
 import AppKit
 import DieterAPI
-import DieterCore
 import Foundation
 import SharedCore
 
@@ -51,20 +50,7 @@ extension AppSession {
                 guard let self else { return }
                 switch update.value {
                 case .workspace(let value): self.coreWorkspace = value
-                case .workspaceDelta(let delta):
-                    var slice = self.coreWorkspace
-                    slice.projects = delta.projects
-                    slice.boards = delta.boards
-                    slice.cards = KeyedList.apply(
-                        slice.cards, upserted: delta.upsertedCards, removed: delta.removedCardIds,
-                        order: delta.orderChanged ? delta.cardOrder : nil, key: \.id)
-                    slice.pendingCardIds = delta.pendingCardIds
-                    slice.loaded = delta.loaded
-                    slice.projectReplicas = delta.projectReplicas
-                    slice.retiredBoards = delta.retiredBoards
-                    slice.settings = delta.settings
-                    slice.boardAttention = delta.boardAttention
-                    self.coreWorkspace = slice
+                case .workspaceDelta(let delta): self.coreWorkspace = self.coreWorkspace.applying(delta)
                 default: return
                 }
                 if !self.coreFoldsHeld { self.foldWorkspace(self.coreWorkspace) }
@@ -126,7 +112,7 @@ extension AppSession {
         }
         let gateway = Self.gatewayEndpoint(slice)
         let origins = slice.gateways.compactMap { entry in
-            DieterEndpoint.parse(entry.origin, name: entry.name.isEmpty ? "Dieter Gateway" : entry.name)
+            MachineEndpoint(origin: entry.origin, name: entry.name.isEmpty ? "Dieter Gateway" : entry.name)
         }
         if gatewayOrigins != origins { gatewayOrigins = origins.isEmpty ? [gateway] : origins }
         let machines = slice.machines.map { Self.machineEndpoint($0, gateway: gateway) }
@@ -166,32 +152,23 @@ extension AppSession {
         coreSessionChanged()
     }
 
-    nonisolated static func gatewayEndpoint(_ slice: ClientSessionSlice) -> DieterEndpoint {
+    nonisolated static func gatewayEndpoint(_ slice: ClientSessionSlice) -> MachineEndpoint {
         let name = slice.gateways.first { $0.origin == slice.gatewayOrigin }?.name ?? ""
-        return DieterEndpoint.parse(slice.gatewayOrigin, name: name.isEmpty ? "Dieter Gateway" : name)
-            ?? DieterEndpoint.defaults[0]
+        return MachineEndpoint(origin: slice.gatewayOrigin, name: name.isEmpty ? "Dieter Gateway" : name)
+            ?? MachineEndpoint.defaultGateway
     }
 
-    nonisolated static func machineEndpoint(_ entry: ClientMachineEntry, gateway: DieterEndpoint) -> DieterEndpoint {
-        DieterEndpoint(
+    nonisolated static func machineEndpoint(_ entry: ClientMachineEntry, gateway: MachineEndpoint) -> MachineEndpoint {
+        MachineEndpoint(
             name: entry.name.isEmpty ? entry.id : entry.name, host: gateway.host, port: gateway.port,
             secure: gateway.secure, daemonID: entry.id, online: entry.online, lastSeenAt: entry.lastSeenAt,
-            releaseVersion: entry.releaseVersion, compatibility: compatibility(entry.compatibility),
-            minimumReleaseVersion: entry.minimumReleaseVersion, remoteDesktopReady: entry.remoteDesktopReady,
+            releaseVersion: entry.releaseVersion, minimumReleaseVersion: entry.minimumReleaseVersion,
+            remoteDesktopReady: entry.remoteDesktopReady,
             remoteDesktopReason: entry.remoteDesktopReason, remoteDesktopPlatform: entry.platform)
     }
 
-    nonisolated static func compatibility(_ name: String) -> DieterCompatibility {
-        switch name {
-        case "COMPATIBILITY_STATUS_COMPATIBLE": .compatible
-        case "COMPATIBILITY_STATUS_UPDATE_REQUIRED": .updateRequired
-        case "COMPATIBILITY_STATUS_INVALID_VERSION": .invalidVersion
-        default: .unknown
-        }
-    }
-
     nonisolated static func phase(
-        _ slice: ClientSessionSlice, attached: DieterEndpoint?, hasLoadedWorkspace: Bool
+        _ slice: ClientSessionSlice, attached: MachineEndpoint?, hasLoadedWorkspace: Bool
     ) -> ConnectionPhase {
         switch slice.phase {
         case .disconnected: return .disconnected
@@ -438,13 +415,5 @@ extension AppSession {
         let daemonID = WorkspaceTarget(endpointID: endpointID, projectID: "").daemonID
         return phase.isConnected && !daemonID.isEmpty
             && session.machines.contains { $0.id == daemonID && $0.local }
-    }
-}
-
-extension WorkspaceTarget {
-    /// The daemon of a machine target (`origin#daemon`); the core addresses
-    /// machines by daemon.
-    var daemonID: String {
-        endpointID.split(separator: "#", maxSplits: 1).dropFirst().first.map(String.init) ?? ""
     }
 }

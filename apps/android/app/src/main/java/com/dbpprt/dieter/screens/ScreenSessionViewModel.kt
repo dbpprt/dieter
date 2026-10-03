@@ -5,8 +5,8 @@ import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.api.v1.RemoteDesktopCodecPreference
-import com.dbpprt.dieter.api.v1.RemoteDesktopPointerButton
 import com.dbpprt.dieter.api.v1.RemoteDesktopQuality
+import com.dbpprt.dieter.client.v1.ScreenCommand
 import com.dbpprt.dieter.core.CoreRuntime
 import com.dbpprt.dieter.core.screens.ScreenCanvas
 import com.dbpprt.dieter.core.screens.ScreenConfig
@@ -71,12 +71,11 @@ class ScreenHost internal constructor(
     fun holdCursor(holding: Boolean) = onCore { holdingCursor = holding }
 
     fun pointer(x: Double, y: Double) = onCore { pointer(x, y) }
-    fun button(button: RemoteDesktopPointerButton.Button, down: Boolean, clicks: Int, x: Double, y: Double, modifiers: Int) =
-        onCore { button(button, down, clicks, x, y, modifiers) }
-    fun scroll(dx: Double, dy: Double, phase: Int) = onCore { scroll(dx, dy, phase) }
     fun key(hid: Int, down: Boolean, modifiers: Int = 0, repeat: Boolean = false) = onCore { key(hid, down, repeat, modifiers) }
     fun text(value: String, modifiers: Int = 0) = onCore { text(value, modifiers) }
     fun releaseInput() = onCore { releaseInput() }
+    /** The input a [ScreenCommand] carries, as the core's touch input produces it. */
+    fun send(command: ScreenCommand) = onCore { applyInput(command) }
 
     fun copy() = onCore { performClipboard("copy") }
     fun cut() = onCore { performClipboard("cut") }

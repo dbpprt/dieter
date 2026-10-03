@@ -103,6 +103,141 @@ public nonisolated enum ClientCreationCatalogState: SwiftProtobuf.Enum, Swift.Ca
 
 }
 
+/// A key a terminal's accessory bar sends (SharedRules.terminalKey).
+public nonisolated enum ClientTerminalKey: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case unspecified // = 0
+  case escape // = 1
+  case tab // = 2
+  case enter // = 3
+  case backspace // = 4
+  case up // = 5
+  case down // = 6
+  case right // = 7
+  case left // = 8
+  case home // = 9
+  case end // = 10
+  case pageUp // = 11
+  case pageDown // = 12
+  case insert // = 13
+  case delete // = 14
+  case f1 // = 15
+  case f2 // = 16
+  case f3 // = 17
+  case f4 // = 18
+  case f5 // = 19
+  case f6 // = 20
+  case f7 // = 21
+  case f8 // = 22
+  case f9 // = 23
+  case f10 // = 24
+  case f11 // = 25
+  case f12 // = 26
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .unspecified
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .unspecified
+    case 1: self = .escape
+    case 2: self = .tab
+    case 3: self = .enter
+    case 4: self = .backspace
+    case 5: self = .up
+    case 6: self = .down
+    case 7: self = .right
+    case 8: self = .left
+    case 9: self = .home
+    case 10: self = .end
+    case 11: self = .pageUp
+    case 12: self = .pageDown
+    case 13: self = .insert
+    case 14: self = .delete
+    case 15: self = .f1
+    case 16: self = .f2
+    case 17: self = .f3
+    case 18: self = .f4
+    case 19: self = .f5
+    case 20: self = .f6
+    case 21: self = .f7
+    case 22: self = .f8
+    case 23: self = .f9
+    case 24: self = .f10
+    case 25: self = .f11
+    case 26: self = .f12
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .unspecified: return 0
+    case .escape: return 1
+    case .tab: return 2
+    case .enter: return 3
+    case .backspace: return 4
+    case .up: return 5
+    case .down: return 6
+    case .right: return 7
+    case .left: return 8
+    case .home: return 9
+    case .end: return 10
+    case .pageUp: return 11
+    case .pageDown: return 12
+    case .insert: return 13
+    case .delete: return 14
+    case .f1: return 15
+    case .f2: return 16
+    case .f3: return 17
+    case .f4: return 18
+    case .f5: return 19
+    case .f6: return 20
+    case .f7: return 21
+    case .f8: return 22
+    case .f9: return 23
+    case .f10: return 24
+    case .f11: return 25
+    case .f12: return 26
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [ClientTerminalKey] = [
+    .unspecified,
+    .escape,
+    .tab,
+    .enter,
+    .backspace,
+    .up,
+    .down,
+    .right,
+    .left,
+    .home,
+    .end,
+    .pageUp,
+    .pageDown,
+    .insert,
+    .delete,
+    .f1,
+    .f2,
+    .f3,
+    .f4,
+    .f5,
+    .f6,
+    .f7,
+    .f8,
+    .f9,
+    .f10,
+    .f11,
+    .f12,
+  ]
+
+}
+
 public nonisolated enum ClientSlice: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case unspecified // = 0
@@ -1456,6 +1591,22 @@ public nonisolated struct ClientCommand: Sendable {
     set {command = .chooseAgent(newValue)}
   }
 
+  public var signOut: ClientSignOut {
+    get {
+      if case .signOut(let v)? = command {return v}
+      return ClientSignOut()
+    }
+    set {command = .signOut(newValue)}
+  }
+
+  public var reconnect: ClientReconnect {
+    get {
+      if case .reconnect(let v)? = command {return v}
+      return ClientReconnect()
+    }
+    set {command = .reconnect(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Command: Equatable, Sendable {
@@ -1528,6 +1679,8 @@ public nonisolated struct ClientCommand: Sendable {
     case navigation(ClientNavigationCommand)
     case creationPreview(ClientCreationPreviewCommand)
     case chooseAgent(ClientChooseAgent)
+    case signOut(ClientSignOut)
+    case reconnect(ClientReconnect)
 
   }
 
@@ -1600,6 +1753,19 @@ public nonisolated struct ClientCompleteSignIn: Sendable {
   public init() {}
 }
 
+/// Forgets the active gateway's session and everything this device kept for
+/// that account: undelivered changes, drafts, captures, navigation, and the
+/// cached workspace. The gateway stays listed and asks for sign-in again.
+public nonisolated struct ClientSignOut: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 public nonisolated struct ClientSelectGateway: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -1630,6 +1796,19 @@ public nonisolated struct ClientSetConnected: Sendable {
   // methods supported on all messages.
 
   public var connected: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// Connects to the active gateway now: restarts the connection, so routes and
+/// the feed open again without waiting for the next retry, and connects again
+/// when the person had disconnected. A pull to refresh or a Retry button.
+public nonisolated struct ClientReconnect: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1688,7 +1867,11 @@ public nonisolated struct ClientSendMessage: Sendable {
 
   public var cardID: String = String()
 
+  /// The attachments; `text` goes ahead of them.
   public var parts: [Dieter_V1_MessagePart] = []
+
+  /// The composer's text; trimmed, it is sent as the first part unless empty.
+  public var text: String = String()
 
   /// The agent for this message; unset uses the composer's choice
   /// (ChooseAgent), else the conversation's agent. Gaps are filled from the
@@ -6502,6 +6685,11 @@ public nonisolated struct ClientTimelineItem: Sendable {
   /// renders dimmed.
   public var unconfirmed: Bool = false
 
+  /// A user message's delivery as a receipt says it: "Waiting to send",
+  /// "Accepted by daemon", "Queued for the next turn", "Synced", or "Send
+  /// failed; retry or remove this message"; empty for other rows.
+  public var deliveryLabel: String = String()
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -6556,6 +6744,13 @@ public nonisolated struct ClientTimelineStep: Sendable {
   public var toolStatus: ClientToolCallStatus = .unspecified
 
   public var toolTitle: String = String()
+
+  /// A TOOL step's status as its row says it: "running", "completed",
+  /// "failed", "needs approval", or "denied"; empty otherwise.
+  public var toolStatusLabel: String = String()
+
+  /// A TOOL step that failed, awaits approval, or was denied.
+  public var toolAttention: Bool = false
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -11521,6 +11716,89 @@ public nonisolated struct ClientClipboardContent: Sendable {
   public init() {}
 }
 
+/// The stream choices a screen's options offer, in menu order
+/// (SharedRules.screenStreamOptions).
+public nonisolated struct ClientScreenStreamOptions: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// "Automatic quality", "Sharp text", "Responsive motion".
+  public var qualities: [ClientScreenQualityOption] = []
+
+  /// "Automatic codec", "H.264 compatibility", "HEVC · up to 1080p60".
+  public var codecs: [ClientScreenCodecOption] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientScreenQualityOption: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var label: String = String()
+
+  public var quality: Dieter_V1_RemoteDesktopQuality = .auto
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientScreenCodecOption: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var label: String = String()
+
+  public var codec: Dieter_V1_RemoteDesktopCodecPreference = .auto
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// The keys a touch screen's toolbar offers (SharedRules.screenToolbarKeys).
+public nonisolated struct ClientScreenToolbarKeys: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Control, Option, Shift, and Command, which arm a modifier.
+  public var modifiers: [ClientScreenToolbarKey] = []
+
+  /// Escape, Tab, the arrows, Enter, Backspace, Delete, Home, End, Page Up,
+  /// Page Down, and F1 to F12, in toolbar order.
+  public var special: [ClientScreenToolbarKey] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// One toolbar key: its label, e.g. "Esc", and USB HID usage.
+public nonisolated struct ClientScreenToolbarKey: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var label: String = String()
+
+  public var hid: Int32 = 0
+
+  /// The modifier bit a modifier key arms (Shift 1, Control 2, Option 4,
+  /// Command 8); 0 for other keys.
+  public var modifier: Int32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 // MARK: - Code below here is support for the SwiftProtobuf runtime.
 
 fileprivate nonisolated let _protobuf_package = "dieter.client.v1"
@@ -11531,6 +11809,10 @@ nonisolated extension ClientFolderScope: SwiftProtobuf._ProtoNameProviding {
 
 nonisolated extension ClientCreationCatalogState: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CREATION_CATALOG_STATE_NONE\0\u{1}CREATION_CATALOG_STATE_CACHED\0\u{1}CREATION_CATALOG_STATE_LIVE\0")
+}
+
+nonisolated extension ClientTerminalKey: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0TERMINAL_KEY_UNSPECIFIED\0\u{1}TERMINAL_KEY_ESCAPE\0\u{1}TERMINAL_KEY_TAB\0\u{1}TERMINAL_KEY_ENTER\0\u{1}TERMINAL_KEY_BACKSPACE\0\u{1}TERMINAL_KEY_UP\0\u{1}TERMINAL_KEY_DOWN\0\u{1}TERMINAL_KEY_RIGHT\0\u{1}TERMINAL_KEY_LEFT\0\u{1}TERMINAL_KEY_HOME\0\u{1}TERMINAL_KEY_END\0\u{1}TERMINAL_KEY_PAGE_UP\0\u{1}TERMINAL_KEY_PAGE_DOWN\0\u{1}TERMINAL_KEY_INSERT\0\u{1}TERMINAL_KEY_DELETE\0\u{1}TERMINAL_KEY_F1\0\u{1}TERMINAL_KEY_F2\0\u{1}TERMINAL_KEY_F3\0\u{1}TERMINAL_KEY_F4\0\u{1}TERMINAL_KEY_F5\0\u{1}TERMINAL_KEY_F6\0\u{1}TERMINAL_KEY_F7\0\u{1}TERMINAL_KEY_F8\0\u{1}TERMINAL_KEY_F9\0\u{1}TERMINAL_KEY_F10\0\u{1}TERMINAL_KEY_F11\0\u{1}TERMINAL_KEY_F12\0")
 }
 
 nonisolated extension ClientSlice: SwiftProtobuf._ProtoNameProviding {
@@ -11587,7 +11869,7 @@ nonisolated extension ClientQuotaSeverity: SwiftProtobuf._ProtoNameProviding {
 
 nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Command"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}adopt_session\0\u{3}begin_sign_in\0\u{3}complete_sign_in\0\u{4}\u{2}select_gateway\0\u{3}attach_machine\0\u{3}set_connected\0\u{3}set_foreground\0\u{4}\u{2}create_conversation\0\u{3}send_message\0\u{3}start_card\0\u{3}move_card\0\u{3}finish_card\0\u{3}set_card_labels\0\u{3}set_card_pinned\0\u{3}rename_card\0\u{3}archive_card\0\u{3}cancel_card\0\u{3}mark_card_read\0\u{3}retry_pending\0\u{3}discard_pending\0\u{3}restore_card\0\u{3}add_card_label\0\u{3}update_card_draft\0\u{3}merge_card\0\u{3}fork_card\0\u{3}list_archived_cards\0\u{4}\u{2}load_earlier_messages\0\u{3}return_to_latest\0\u{3}refresh_conversation\0\u{3}set_visible_conversation\0\u{3}load_later_messages\0\u{3}retry_failed_turn\0\u{3}remove_queued_message\0\u{3}steer_conversation\0\u{3}load_tool_output\0\u{4}\u{2}rename_machine\0\u{3}revoke_machine\0\u{3}ensure_metadata\0\u{3}set_gateways\0\u{1}resync\0\u{3}set_project_order\0\u{4}\u{3}set_project_expanded\0\u{3}set_chat_section_collapsed\0\u{3}set_chats_show_all\0\u{3}set_lane_descending\0\u{3}set_folders\0\u{3}list_drafts\0\u{3}set_draft_text\0\u{3}remember_creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}admin\0\u{1}telemetry\0\u{1}quotas\0\u{1}processes\0\u{1}search\0\u{1}screen\0\u{4}\u{2}set_show_reasoning\0\u{3}board_view\0\u{2}\u{2}chats\0\u{1}navigation\0\u{3}creation_preview\0\u{3}choose_agent\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}adopt_session\0\u{3}begin_sign_in\0\u{3}complete_sign_in\0\u{4}\u{2}select_gateway\0\u{3}attach_machine\0\u{3}set_connected\0\u{3}set_foreground\0\u{4}\u{2}create_conversation\0\u{3}send_message\0\u{3}start_card\0\u{3}move_card\0\u{3}finish_card\0\u{3}set_card_labels\0\u{3}set_card_pinned\0\u{3}rename_card\0\u{3}archive_card\0\u{3}cancel_card\0\u{3}mark_card_read\0\u{3}retry_pending\0\u{3}discard_pending\0\u{3}restore_card\0\u{3}add_card_label\0\u{3}update_card_draft\0\u{3}merge_card\0\u{3}fork_card\0\u{3}list_archived_cards\0\u{4}\u{2}load_earlier_messages\0\u{3}return_to_latest\0\u{3}refresh_conversation\0\u{3}set_visible_conversation\0\u{3}load_later_messages\0\u{3}retry_failed_turn\0\u{3}remove_queued_message\0\u{3}steer_conversation\0\u{3}load_tool_output\0\u{4}\u{2}rename_machine\0\u{3}revoke_machine\0\u{3}ensure_metadata\0\u{3}set_gateways\0\u{1}resync\0\u{3}set_project_order\0\u{4}\u{3}set_project_expanded\0\u{3}set_chat_section_collapsed\0\u{3}set_chats_show_all\0\u{3}set_lane_descending\0\u{3}set_folders\0\u{3}list_drafts\0\u{3}set_draft_text\0\u{3}remember_creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}admin\0\u{1}telemetry\0\u{1}quotas\0\u{1}processes\0\u{1}search\0\u{1}screen\0\u{4}\u{2}set_show_reasoning\0\u{3}board_view\0\u{2}\u{2}chats\0\u{1}navigation\0\u{3}creation_preview\0\u{3}choose_agent\0\u{3}sign_out\0\u{1}reconnect\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -12492,6 +12774,32 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
           self.command = .chooseAgent(v)
         }
       }()
+      case 78: try {
+        var v: ClientSignOut?
+        var hadOneofValue = false
+        if let current = self.command {
+          hadOneofValue = true
+          if case .signOut(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.command = .signOut(v)
+        }
+      }()
+      case 79: try {
+        var v: ClientReconnect?
+        var hadOneofValue = false
+        if let current = self.command {
+          hadOneofValue = true
+          if case .reconnect(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.command = .reconnect(v)
+        }
+      }()
       default: break
       }
     }
@@ -12779,6 +13087,14 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
       guard case .chooseAgent(let v)? = self.command else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 77)
     }()
+    case .signOut?: try {
+      guard case .signOut(let v)? = self.command else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 78)
+    }()
+    case .reconnect?: try {
+      guard case .reconnect(let v)? = self.command else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 79)
+    }()
     case nil: break
     }
     try unknownFields.traverse(visitor: &visitor)
@@ -12940,6 +13256,25 @@ nonisolated extension ClientCompleteSignIn: SwiftProtobuf.Message, SwiftProtobuf
   }
 }
 
+nonisolated extension ClientSignOut: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".SignOut"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientSignOut, rhs: ClientSignOut) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 nonisolated extension ClientSelectGateway: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SelectGateway"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}origin\0")
@@ -13030,6 +13365,25 @@ nonisolated extension ClientSetConnected: SwiftProtobuf.Message, SwiftProtobuf._
   }
 }
 
+nonisolated extension ClientReconnect: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".Reconnect"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientReconnect, rhs: ClientReconnect) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 nonisolated extension ClientSetForeground: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SetForeground"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}foreground\0")
@@ -13106,7 +13460,7 @@ nonisolated extension ClientCreateConversation: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension ClientSendMessage: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SendMessage"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}parts\0\u{1}selection\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}card_id\0\u{1}parts\0\u{1}selection\0\u{1}text\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -13117,6 +13471,7 @@ nonisolated extension ClientSendMessage: SwiftProtobuf.Message, SwiftProtobuf._M
       case 1: try { try decoder.decodeSingularStringField(value: &self.cardID) }()
       case 2: try { try decoder.decodeRepeatedMessageField(value: &self.parts) }()
       case 3: try { try decoder.decodeSingularMessageField(value: &self._selection) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.text) }()
       default: break
       }
     }
@@ -13136,12 +13491,16 @@ nonisolated extension ClientSendMessage: SwiftProtobuf.Message, SwiftProtobuf._M
     try { if let v = self._selection {
       try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
     } }()
+    if !self.text.isEmpty {
+      try visitor.visitSingularStringField(value: self.text, fieldNumber: 4)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: ClientSendMessage, rhs: ClientSendMessage) -> Bool {
     if lhs.cardID != rhs.cardID {return false}
     if lhs.parts != rhs.parts {return false}
+    if lhs.text != rhs.text {return false}
     if lhs._selection != rhs._selection {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
@@ -21559,7 +21918,7 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension ClientTimelineItem: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".TimelineItem"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}message_ids\0\u{1}activity\0\u{1}user\0\u{1}summary\0\u{1}groups\0\u{3}plan_ids\0\u{3}subagent_ids\0\u{3}created_at_millis\0\u{1}copyable\0\u{1}delivery\0\u{1}unconfirmed\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}message_ids\0\u{1}activity\0\u{1}user\0\u{1}summary\0\u{1}groups\0\u{3}plan_ids\0\u{3}subagent_ids\0\u{3}created_at_millis\0\u{1}copyable\0\u{1}delivery\0\u{1}unconfirmed\0\u{3}delivery_label\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -21579,6 +21938,7 @@ nonisolated extension ClientTimelineItem: SwiftProtobuf.Message, SwiftProtobuf._
       case 10: try { try decoder.decodeSingularBoolField(value: &self.copyable) }()
       case 11: try { try decoder.decodeSingularEnumField(value: &self.delivery) }()
       case 12: try { try decoder.decodeSingularBoolField(value: &self.unconfirmed) }()
+      case 13: try { try decoder.decodeSingularStringField(value: &self.deliveryLabel) }()
       default: break
       }
     }
@@ -21621,6 +21981,9 @@ nonisolated extension ClientTimelineItem: SwiftProtobuf.Message, SwiftProtobuf._
     if self.unconfirmed != false {
       try visitor.visitSingularBoolField(value: self.unconfirmed, fieldNumber: 12)
     }
+    if !self.deliveryLabel.isEmpty {
+      try visitor.visitSingularStringField(value: self.deliveryLabel, fieldNumber: 13)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -21637,6 +22000,7 @@ nonisolated extension ClientTimelineItem: SwiftProtobuf.Message, SwiftProtobuf._
     if lhs.copyable != rhs.copyable {return false}
     if lhs.delivery != rhs.delivery {return false}
     if lhs.unconfirmed != rhs.unconfirmed {return false}
+    if lhs.deliveryLabel != rhs.deliveryLabel {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -21689,7 +22053,7 @@ nonisolated extension ClientTimelineStepGroup: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension ClientTimelineStep: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".TimelineStep"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}message_id\0\u{1}kind\0\u{3}part_index\0\u{1}text\0\u{1}routine\0\u{3}tool_status\0\u{3}tool_title\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}message_id\0\u{1}kind\0\u{3}part_index\0\u{1}text\0\u{1}routine\0\u{3}tool_status\0\u{3}tool_title\0\u{3}tool_status_label\0\u{3}tool_attention\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -21705,6 +22069,8 @@ nonisolated extension ClientTimelineStep: SwiftProtobuf.Message, SwiftProtobuf._
       case 6: try { try decoder.decodeSingularBoolField(value: &self.routine) }()
       case 7: try { try decoder.decodeSingularEnumField(value: &self.toolStatus) }()
       case 8: try { try decoder.decodeSingularStringField(value: &self.toolTitle) }()
+      case 9: try { try decoder.decodeSingularStringField(value: &self.toolStatusLabel) }()
+      case 10: try { try decoder.decodeSingularBoolField(value: &self.toolAttention) }()
       default: break
       }
     }
@@ -21735,6 +22101,12 @@ nonisolated extension ClientTimelineStep: SwiftProtobuf.Message, SwiftProtobuf._
     if !self.toolTitle.isEmpty {
       try visitor.visitSingularStringField(value: self.toolTitle, fieldNumber: 8)
     }
+    if !self.toolStatusLabel.isEmpty {
+      try visitor.visitSingularStringField(value: self.toolStatusLabel, fieldNumber: 9)
+    }
+    if self.toolAttention != false {
+      try visitor.visitSingularBoolField(value: self.toolAttention, fieldNumber: 10)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -21747,6 +22119,8 @@ nonisolated extension ClientTimelineStep: SwiftProtobuf.Message, SwiftProtobuf._
     if lhs.routine != rhs.routine {return false}
     if lhs.toolStatus != rhs.toolStatus {return false}
     if lhs.toolTitle != rhs.toolTitle {return false}
+    if lhs.toolStatusLabel != rhs.toolStatusLabel {return false}
+    if lhs.toolAttention != rhs.toolAttention {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -30539,6 +30913,186 @@ nonisolated extension ClientClipboardContent: SwiftProtobuf.Message, SwiftProtob
   public static func ==(lhs: ClientClipboardContent, rhs: ClientClipboardContent) -> Bool {
     if lhs.text != rhs.text {return false}
     if lhs.items != rhs.items {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientScreenStreamOptions: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ScreenStreamOptions"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}qualities\0\u{1}codecs\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.qualities) }()
+      case 2: try { try decoder.decodeRepeatedMessageField(value: &self.codecs) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.qualities.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.qualities, fieldNumber: 1)
+    }
+    if !self.codecs.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.codecs, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientScreenStreamOptions, rhs: ClientScreenStreamOptions) -> Bool {
+    if lhs.qualities != rhs.qualities {return false}
+    if lhs.codecs != rhs.codecs {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientScreenQualityOption: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ScreenQualityOption"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}label\0\u{1}quality\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.label) }()
+      case 2: try { try decoder.decodeSingularEnumField(value: &self.quality) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.label.isEmpty {
+      try visitor.visitSingularStringField(value: self.label, fieldNumber: 1)
+    }
+    if self.quality != .auto {
+      try visitor.visitSingularEnumField(value: self.quality, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientScreenQualityOption, rhs: ClientScreenQualityOption) -> Bool {
+    if lhs.label != rhs.label {return false}
+    if lhs.quality != rhs.quality {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientScreenCodecOption: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ScreenCodecOption"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}label\0\u{1}codec\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.label) }()
+      case 2: try { try decoder.decodeSingularEnumField(value: &self.codec) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.label.isEmpty {
+      try visitor.visitSingularStringField(value: self.label, fieldNumber: 1)
+    }
+    if self.codec != .auto {
+      try visitor.visitSingularEnumField(value: self.codec, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientScreenCodecOption, rhs: ClientScreenCodecOption) -> Bool {
+    if lhs.label != rhs.label {return false}
+    if lhs.codec != rhs.codec {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientScreenToolbarKeys: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ScreenToolbarKeys"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}modifiers\0\u{1}special\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.modifiers) }()
+      case 2: try { try decoder.decodeRepeatedMessageField(value: &self.special) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.modifiers.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.modifiers, fieldNumber: 1)
+    }
+    if !self.special.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.special, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientScreenToolbarKeys, rhs: ClientScreenToolbarKeys) -> Bool {
+    if lhs.modifiers != rhs.modifiers {return false}
+    if lhs.special != rhs.special {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientScreenToolbarKey: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ScreenToolbarKey"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}label\0\u{1}hid\0\u{1}modifier\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.label) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.hid) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.modifier) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.label.isEmpty {
+      try visitor.visitSingularStringField(value: self.label, fieldNumber: 1)
+    }
+    if self.hid != 0 {
+      try visitor.visitSingularInt32Field(value: self.hid, fieldNumber: 2)
+    }
+    if self.modifier != 0 {
+      try visitor.visitSingularInt32Field(value: self.modifier, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientScreenToolbarKey, rhs: ClientScreenToolbarKey) -> Bool {
+    if lhs.label != rhs.label {return false}
+    if lhs.hid != rhs.hid {return false}
+    if lhs.modifier != rhs.modifier {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

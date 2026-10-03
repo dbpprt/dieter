@@ -2,6 +2,7 @@ import AppKit
 import DieterShared
 import Foundation
 import Observation
+import SharedCore
 
 /// Owns the live AppKit editor buffer. Observable UI state stays small while
 /// the full document string crosses into the store only at open/save
@@ -117,3 +118,8 @@ final class FileEditorSession {
         Int(SharedRules.shared.fileLineCount(text: text))
     }
 }
+
+extension FileEditorSession: FileEditorBuffer {}
+
+/// A files surface whose editor buffer is the Mac's AppKit text view.
+typealias FilesModel = FilesSurfaceModel<FileEditorSession>

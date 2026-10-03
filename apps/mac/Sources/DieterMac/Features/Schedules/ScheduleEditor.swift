@@ -92,7 +92,7 @@ struct ScheduleEditor: View {
         SharedRules.shared.scheduleTemplateExample(
             template: template, empty: empty,
             date: ScheduleDateFormatting.day(preview.first, timezone: draft.timezone),
-            scheduledAt: preview.first ?? DieterTimestamp.string(from: Date()),
+            scheduledAt: preview.first ?? Date().formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)),
             project: context.projectName, board: selectedBoard?.name ?? "", schedule: draft.name)
     }
 
@@ -298,8 +298,9 @@ struct ScheduleEditor: View {
             .pickerStyle(.segmented).labelsHidden().accessibilityIdentifier(
                 "schedule-editor.placement")
             Picker("Workspace", selection: $draft.workspaceMode) {
-                Text("New worktree").tag("worktree")
-                Text("Project directory").tag("project")
+                ForEach(SharedRules.shared.workspaceModes(), id: \.self) { mode in
+                    Text(SharedRules.shared.workspaceModeChoiceTitle(mode: mode)).tag(mode)
+                }
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("schedule-editor.workspace")

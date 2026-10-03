@@ -37,9 +37,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.dbpprt.dieter.api.v1.RemoteDesktopCodecPreference
 import com.dbpprt.dieter.api.v1.RemoteDesktopPointerButton.Button
-import com.dbpprt.dieter.api.v1.RemoteDesktopQuality
 import com.dbpprt.dieter.core.machines.MachineRow
 import com.dbpprt.dieter.core.machines.MachineRows
 import com.dbpprt.dieter.core.screens.*
@@ -314,19 +312,16 @@ private fun ScreenSpecialKeys(enabled: Boolean, modifiers: Int, onModifier: (Int
 @Composable
 private fun ScreenQualityMenu(expanded: Boolean, dismiss: () -> Unit, frameRates: List<Int>, host: ScreenHost) {
     DropdownMenu(expanded, dismiss) {
-        listOf("Auto" to RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_AUTO, "Detail" to RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_DETAIL,
-            "Responsive motion" to RemoteDesktopQuality.REMOTE_DESKTOP_QUALITY_MOTION).forEach { (label, value) ->
-            DropdownMenuItem(text = { Text(label) }, onClick = { host.selectQuality(value); dismiss() })
+        ScreenOptions.qualities.forEach { choice ->
+            DropdownMenuItem(text = { Text(choice.label) }, onClick = { host.selectQuality(choice.value); dismiss() })
         }
         HorizontalDivider()
-        listOf("Automatic codec" to RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_AUTO,
-            "H.264 compatibility" to RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_H264,
-            "HEVC · up to 1080p60" to RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_HEVC).forEach { (label, value) ->
-            DropdownMenuItem(text = { Text(label) }, onClick = { host.selectCodec(value); dismiss() })
+        ScreenOptions.codecs.forEach { choice ->
+            DropdownMenuItem(text = { Text(choice.label) }, onClick = { host.selectCodec(choice.value); dismiss() })
         }
         HorizontalDivider()
         frameRates.forEach { fps ->
-            DropdownMenuItem(text = { Text("Up to $fps fps") }, onClick = { host.selectMaxFps(fps); dismiss() })
+            DropdownMenuItem(text = { Text(ScreenOptions.frameRate(fps)) }, onClick = { host.selectMaxFps(fps); dismiss() })
         }
     }
 }

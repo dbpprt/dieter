@@ -122,14 +122,25 @@ while rendering (ages, sizes, labels, flags). Add or change a rule in the
 core, as its [README](../core/README.md#adding-a-rule) describes, not in
 Swift. `DieterMac/Features` contains native presentation models that observe
 core slices and send commands. The editor buffer, SwiftTerm, Markdown
-rendering, the transcript scroll controller, and the WebRTC, VideoToolbox, and
-Metal screen engine stay native. `SharedCore` carries the core's RPCs over
-grpc-swift through `DieterTransport` (the WebRTC control channel, daemon
-certificate pinning, and resolver targets). `DieterCore` and `DieterClient`
-are the iOS app's model and gRPC client; the Mac uses only `DieterCore`'s
-shared types and helpers (endpoints, sleeps, the key map), and `DieterClient`
-only in the debug UI smoke fixtures. `AppSession` owns the menu-bar lifetime
-and `WindowWorkspace` owns the workspace window.
+rendering, the transcript scroll controller, and the VideoToolbox and Metal
+screen renderer stay native. `AppSession` owns the menu-bar lifetime and
+`WindowWorkspace` owns the workspace window.
+
+The package's modules:
+
+- `SharedCore`: the bridge to `DieterShared` both Apple apps use (`CoreHost`,
+  the platform services, the command/slice client), the adapter models both
+  present (chats, creation, files, terminals, fleet, quotas, drafts, and the
+  keyed delta folds), and the WebRTC screen engine, which draws through each
+  app's renderer.
+- `DieterTransport`: the native transport (the WebRTC control channel, daemon
+  certificate pinning, and resolver targets), plus the screen key map and
+  clipboard content that `native/macos-capture` also compiles by path.
+- `DieterAPI`: the generated protobuf and gRPC types.
+- `DieterMac` and `DieterIOS`: the two apps' presentation. The iOS app's
+  Xcode project is in `apps/ios`.
+
+The Mac links grpc-swift directly only for its debug UI smoke fixtures.
 
 SwiftProtobuf messages and grpc-swift v2 stubs are checked in. `just proto`
 regenerates authoritative schema outputs; `just mac proto-check` checks fingerprints.

@@ -95,18 +95,24 @@ func TestAffectedSharedCore(t *testing.T) {
 		path string
 		want []string
 	}{
-		{"apps/core/shared/src/commonMain/kotlin/com/dbpprt/dieter/core/machines/MachineRows.kt", []string{"mac", "android", "android-machines"}},
-		{"apps/core/shared/src/jvmSharedMain/kotlin/com/dbpprt/dieter/core/platform/OkHttpTransport.kt", []string{"mac", "android", "android-machines"}},
-		{"apps/core/model/src/commonMain/proto/dieter/client/v1/client.proto", []string{"mac", "android", "android-machines"}},
-		{"apps/core/gradle/libs.versions.toml", []string{"mac", "android", "android-machines"}},
-		{"apps/core/build-logic/src/main/kotlin/dieter.kmp.gradle.kts", []string{"mac", "android", "android-machines"}},
-		{"apps/core/apple/src/appleMain/kotlin/com/dbpprt/dieter/shared/DieterShared.kt", []string{"mac"}},
-		{"apps/core/apple/build.gradle.kts", []string{"mac"}},
-		{"apps/core/shared/src/appleMain/kotlin/com/dbpprt/dieter/core/runtime/CoreLock.apple.kt", []string{"mac"}},
+		{"apps/core/shared/src/commonMain/kotlin/com/dbpprt/dieter/core/machines/MachineRows.kt", []string{"mac", "android", "android-machines", "ios"}},
+		{"apps/core/shared/src/jvmSharedMain/kotlin/com/dbpprt/dieter/core/platform/OkHttpTransport.kt", []string{"mac", "android", "android-machines", "ios"}},
+		{"apps/core/model/src/commonMain/proto/dieter/client/v1/client.proto", []string{"mac", "android", "android-machines", "ios"}},
+		{"apps/core/gradle/libs.versions.toml", []string{"mac", "android", "android-machines", "ios"}},
+		{"apps/core/build-logic/src/main/kotlin/dieter.kmp.gradle.kts", []string{"mac", "android", "android-machines", "ios"}},
+		{"apps/core/apple/src/appleMain/kotlin/com/dbpprt/dieter/shared/DieterShared.kt", []string{"mac", "ios"}},
+		{"apps/core/apple/build.gradle.kts", []string{"mac", "ios"}},
+		{"apps/core/shared/src/appleMain/kotlin/com/dbpprt/dieter/core/runtime/CoreLock.apple.kt", []string{"mac", "ios"}},
 		{"apps/core/shared/src/commonTest/kotlin/com/dbpprt/dieter/core/machines/MachineRowsTest.kt", nil},
 		{"apps/core/shared/src/jvmTest/kotlin/com/dbpprt/dieter/core/OutboxEndToEndTest.kt", nil},
 		{"apps/core/testing/src/jvmMain/kotlin/com/dbpprt/dieter/core/testing/IsolatedGateway.kt", nil},
 		{"apps/core/README.md", nil},
+		// The Apple apps' side of the core reaches both Apple apps.
+		{"apps/mac/Sources/SharedCore/CoreHost.swift", []string{"mac", "ios"}},
+		{"apps/mac/Sources/DieterTransport/ControlRTCBridge.swift", []string{"mac", "ios"}},
+		{"apps/mac/scripts/shared-framework.sh", []string{"mac", "ios"}},
+		// The iOS adapter tests run in the simulator only.
+		{"apps/mac/Tests/DieterIOSTests/IOSCoreAdapterTests.swift", []string{"ios"}},
 	} {
 		got := []string{}
 		for _, c := range affected(cases, []string{tc.path}) {

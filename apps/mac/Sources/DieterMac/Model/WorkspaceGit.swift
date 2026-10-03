@@ -17,6 +17,9 @@ enum ConversationWorkspaceMode: String, CaseIterable, Identifiable, Sendable {
     /// What the mode does.
     var detail: String { SharedRules.shared.workspaceModeDetail(mode: rawValue) }
 
+    /// "New worktree" or "Project directory", as a picker offers it for a new conversation.
+    var choiceTitle: String { SharedRules.shared.workspaceModeChoiceTitle(mode: rawValue) }
+
     static func projectMode(_ value: String) -> ConversationWorkspaceMode {
         selectable(value)
     }

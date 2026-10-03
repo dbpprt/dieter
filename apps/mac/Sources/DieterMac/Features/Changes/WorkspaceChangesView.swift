@@ -109,7 +109,7 @@ struct WorkspaceChangesView: View {
             // The core refreshes an active review, idle checkouts included:
             // external edits and short turns can happen between two reads.
             model.active = active
-            guard active, let id = card?.id, DieterConversationID.isServerBacked(id) else { return }
+            guard active, let id = card?.id, SharedRules.shared.isServerBacked(conversationId: id) else { return }
             await model.loadWorkspaceSurface()
         }
         .onDisappear { model.active = false }

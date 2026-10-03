@@ -282,11 +282,13 @@ func affected(cases []Case, paths []string) []Case {
 		if p == "" || strings.HasSuffix(p, ".md") || strings.HasSuffix(p, ".txt") {
 			continue
 		}
-		if strings.HasPrefix(p, "apps/ios/") || strings.HasPrefix(p, "apps/mac/Sources/DieterIOS/") || strings.HasPrefix(p, "tests/e2e/cases/ios/") || p == "just/ios.just" {
+		// The iOS adapter tests in DieterIOSTests also run in the simulator.
+		if strings.HasPrefix(p, "apps/ios/") || strings.HasPrefix(p, "apps/mac/Sources/DieterIOS/") || strings.HasPrefix(p, "apps/mac/Tests/DieterIOSTests/") || strings.HasPrefix(p, "tests/e2e/cases/ios/") || p == "just/ios.just" {
 			iosChanged = true
 			continue
 		}
-		if strings.HasPrefix(p, "apps/mac/Sources/DieterCore/") || strings.HasPrefix(p, "apps/mac/Sources/DieterClient/") || strings.HasPrefix(p, "apps/mac/Sources/DieterAPI/") || p == "apps/mac/Package.swift" {
+		// Both Apple apps link the shared core through SharedCore and DieterTransport.
+		if strings.HasPrefix(p, "apps/mac/Sources/SharedCore/") || strings.HasPrefix(p, "apps/mac/Sources/DieterTransport/") || strings.HasPrefix(p, "apps/mac/Sources/DieterAPI/") || p == "apps/mac/Package.swift" || p == "apps/mac/scripts/shared-framework.sh" {
 			iosChanged = true
 		}
 		if strings.HasPrefix(p, "tests/e2e/cases/mac/") {
@@ -305,15 +307,16 @@ func affected(cases []Case, paths []string) []Case {
 			macChanged = true
 			continue
 		}
-		// Android compiles the shared core from source and the Mac links it as
-		// DieterShared. Apple-only core code reaches only the Mac; code that only
-		// the core's own tests compile reaches neither app.
+		// Android compiles the shared core from source and the Apple apps link
+		// it as DieterShared. Apple-only core code reaches only the Apple apps;
+		// code that only the core's own tests compile reaches none.
 		if strings.HasPrefix(p, "apps/core/") {
 			sourceSet := coreSourceSet(p)
 			if strings.HasPrefix(p, "apps/core/testing/") || strings.HasSuffix(sourceSet, "Test") {
 				continue
 			}
 			macChanged = true
+			iosChanged = true
 			if !strings.HasPrefix(p, "apps/core/apple/") && !strings.HasPrefix(sourceSet, "apple") {
 				androidChanged = true
 			}

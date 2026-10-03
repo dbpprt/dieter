@@ -175,6 +175,18 @@ object ContentLinks {
 object WorkspaceImages {
     private val extensions = setOf("apng", "avif", "bmp", "gif", "heic", "heif", "ico", "jpeg", "jpg", "png", "tif", "tiff", "webp")
 
+    /**
+     * Whether [destination] names an image that may belong to a workspace: a
+     * relative, absolute, or `file://` image path. Whether it stays inside
+     * the workspace is decided when [path] resolves it.
+     */
+    fun isWorkspaceImage(destination: String): Boolean {
+        val raw = destination.trim().removeSurrounding("<", ">")
+        if (Regex("^[A-Za-z][A-Za-z0-9+.-]*://").containsMatchIn(raw) && !raw.startsWith("file://")) return false
+        val decoded = Urls.decodePath(raw.substringBefore('#').substringBefore('?'))
+        return decoded.isNotEmpty() && decoded.none { it == '\\' || it.code < 0x20 } && decoded.substringAfterLast('.', "").lowercase() in extensions
+    }
+
     /** The workspace-relative path of an image link, or null when it is not a workspace image. */
     fun path(destination: String, workspaceRoot: String? = null): String? {
         val raw = destination.trim().removeSurrounding("<", ">")
@@ -299,5 +311,14 @@ object Delivery {
         messageId !in pending -> DeliveryState.SYNCED
         messageId in accepted -> DeliveryState.ACCEPTED
         else -> DeliveryState.LOCAL
+    }
+
+    /** What a user message's receipt says about [state]. */
+    fun label(state: DeliveryState): String = when (state) {
+        DeliveryState.LOCAL -> "Waiting to send"
+        DeliveryState.ACCEPTED -> "Accepted by daemon"
+        DeliveryState.QUEUED -> "Queued for the next turn"
+        DeliveryState.SYNCED -> "Synced"
+        DeliveryState.FAILED -> "Send failed; retry or remove this message"
     }
 }

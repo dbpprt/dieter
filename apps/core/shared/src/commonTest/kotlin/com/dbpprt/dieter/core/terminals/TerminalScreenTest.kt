@@ -1,5 +1,6 @@
 package com.dbpprt.dieter.core.terminals
 
+import com.dbpprt.dieter.client.v1.TerminalKey
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -65,5 +66,60 @@ class TerminalScreenTest {
         assertEquals(listOf<Byte>(0x7f), TerminalKeys.control("?".encodeToByteArray())?.toList())
         assertNull(TerminalKeys.control("1".encodeToByteArray()))
         assertNull(TerminalKeys.control("ab".encodeToByteArray()))
+    }
+
+    private fun key(key: TerminalKey, shift: Boolean = false, alt: Boolean = false, control: Boolean = false, application: Boolean = false) =
+        TerminalKeys.sequence(key, shift, alt, control, application).decodeToString()
+
+    @Test
+    fun specialKeysUseStandardVtSequences() {
+        // Ported from the iOS accessory bar's tests.
+        assertEquals("\u001b[A", key(TerminalKey.TERMINAL_KEY_UP))
+        assertEquals("\u001b[B", key(TerminalKey.TERMINAL_KEY_DOWN))
+        assertEquals("\u001b[D", key(TerminalKey.TERMINAL_KEY_LEFT))
+        assertEquals("\u001b[C", key(TerminalKey.TERMINAL_KEY_RIGHT))
+        assertEquals("\u001bOP", key(TerminalKeys.function(1)!!))
+        assertEquals("\u001b[24~", key(TerminalKeys.function(12)!!))
+        assertNull(TerminalKeys.function(13))
+        assertNull(TerminalKeys.function(0))
+        assertEquals("\u001b", key(TerminalKey.TERMINAL_KEY_ESCAPE))
+        assertEquals("\t", key(TerminalKey.TERMINAL_KEY_TAB))
+        assertEquals("\r", key(TerminalKey.TERMINAL_KEY_ENTER))
+        assertEquals("\u007f", key(TerminalKey.TERMINAL_KEY_BACKSPACE))
+        assertEquals("", key(TerminalKey.TERMINAL_KEY_UNSPECIFIED))
+        val functions = (1..12).map { key(TerminalKeys.function(it)!!) }
+        assertEquals(
+            listOf("OP", "OQ", "OR", "OS", "[15~", "[17~", "[18~", "[19~", "[20~", "[21~", "[23~", "[24~").map { "\u001b$it" },
+            functions,
+        )
+        assertEquals("\u001b[H", key(TerminalKey.TERMINAL_KEY_HOME))
+        assertEquals("\u001b[F", key(TerminalKey.TERMINAL_KEY_END))
+        assertEquals("\u001b[5~", key(TerminalKey.TERMINAL_KEY_PAGE_UP))
+        assertEquals("\u001b[6~", key(TerminalKey.TERMINAL_KEY_PAGE_DOWN))
+        assertEquals("\u001b[2~", key(TerminalKey.TERMINAL_KEY_INSERT))
+        assertEquals("\u001b[3~", key(TerminalKey.TERMINAL_KEY_DELETE))
+    }
+
+    @Test
+    fun cursorModeAndModifiersFollowXterm() {
+        assertEquals("\u001bOA", key(TerminalKey.TERMINAL_KEY_UP, application = true), "application cursor mode")
+        assertEquals("\u001bOH", key(TerminalKey.TERMINAL_KEY_HOME, application = true))
+        assertEquals("\u001b[1;5A", key(TerminalKey.TERMINAL_KEY_UP, control = true, application = true), "a modifier overrides the mode")
+        assertEquals("\u001b[1;2D", key(TerminalKey.TERMINAL_KEY_LEFT, shift = true))
+        assertEquals("\u001b[1;3C", key(TerminalKey.TERMINAL_KEY_RIGHT, alt = true))
+        assertEquals("\u001b[1;8B", key(TerminalKey.TERMINAL_KEY_DOWN, shift = true, alt = true, control = true))
+        assertEquals("\u001b[1;5P", key(TerminalKey.TERMINAL_KEY_F1, control = true))
+        assertEquals("\u001b[5;5~", key(TerminalKey.TERMINAL_KEY_PAGE_UP, control = true))
+        assertEquals("\u001b[24;2~", key(TerminalKey.TERMINAL_KEY_F12, shift = true))
+        assertEquals("\u001b[Z", key(TerminalKey.TERMINAL_KEY_TAB, shift = true))
+        assertEquals("\u001b\r", key(TerminalKey.TERMINAL_KEY_ENTER, alt = true))
+        assertEquals("\b", key(TerminalKey.TERMINAL_KEY_BACKSPACE, control = true))
+    }
+
+    @Test
+    fun stickyControlMatchesTheIosAccessoryBar() {
+        assertEquals(listOf<Byte>(0x1b), TerminalKeys.control("[".encodeToByteArray())?.toList())
+        assertNull(TerminalKeys.control("paste".encodeToByteArray()))
+        assertNull(TerminalKeys.control("é".encodeToByteArray()))
     }
 }

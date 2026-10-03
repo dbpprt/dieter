@@ -100,4 +100,17 @@ class LinkExportsTest {
             assertFalse(LinkExports.isLoopbackBrowserHost(host), host)
         }
     }
+
+    @Test
+    fun workspaceImagesAreRecognizedAndResolvedInsideTheWorkspace() {
+        assertTrue(LinkExports.isWorkspaceImage("file:///remote/worktrees/task/docs/result.png"))
+        assertTrue(LinkExports.isWorkspaceImage("<shots/a%20b.PNG>"))
+        assertFalse(LinkExports.isWorkspaceImage("https://example.com/result.png"))
+        assertFalse(LinkExports.isWorkspaceImage("notes/plan.md"))
+        assertEquals("docs/result.png", LinkExports.workspaceImagePath("file:///remote/worktrees/task/docs/result.png", root))
+        assertEquals("shots/a b.PNG", LinkExports.workspaceImagePath("<shots/a%20b.PNG>", ""))
+        assertEquals("", LinkExports.workspaceImagePath("/remote/worktrees/task/docs/result.png", ""), "an absolute link needs the workspace root")
+        assertEquals("", LinkExports.workspaceImagePath("file:///remote/elsewhere/result.png", root))
+        assertEquals("", LinkExports.workspaceImagePath("../secret.png", root))
+    }
 }

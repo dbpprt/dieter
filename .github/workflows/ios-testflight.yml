@@ -40,6 +40,18 @@ jobs:
         run: just release select-xcode
       - name: Test release setup and packaging
         run: just release test
+      # The app links the shared Kotlin core (DieterShared.xcframework), which
+      # the release build assembles from apps/core with Gradle.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Restore the shared core release framework
+        uses: actions/cache@v4
+        with:
+          path: apps/mac/Frameworks
+          key: ${{ runner.os }}-${{ runner.arch }}-dieter-shared-ios-release-v1-${{ hashFiles('apps/core/**', 'apps/mac/scripts/shared-framework.sh') }}
       - name: Restore iOS build cache
         uses: actions/cache@v4
         with:

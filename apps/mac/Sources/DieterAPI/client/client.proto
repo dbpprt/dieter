@@ -87,6 +87,8 @@ message Command {
     NavigationCommand navigation = 75;
     CreationPreviewCommand creation_preview = 76;
     ChooseAgent choose_agent = 77;
+    SignOut sign_out = 78;
+    Reconnect reconnect = 79;
   }
 }
 
@@ -106,9 +108,19 @@ message AdoptSession {
 
 message BeginSignIn { string gateway_url = 1; }
 message CompleteSignIn { string callback_url = 1; }
+
+// Forgets the active gateway's session and everything this device kept for
+// that account: undelivered changes, drafts, captures, navigation, and the
+// cached workspace. The gateway stays listed and asks for sign-in again.
+message SignOut {}
 message SelectGateway { string origin = 1; }
 message AttachMachine { string daemon_id = 1; }
 message SetConnected { bool connected = 1; }
+
+// Connects to the active gateway now: restarts the connection, so routes and
+// the feed open again without waiting for the next retry, and connects again
+// when the person had disconnected. A pull to refresh or a Retry button.
+message Reconnect {}
 
 // The app is in the foreground (keeps the feed live) or in the background.
 message SetForeground { bool foreground = 1; }
@@ -128,7 +140,10 @@ message CreateConversation {
 // messages itself, and checks the message and its attachments.
 message SendMessage {
   string card_id = 1;
+  // The attachments; `text` goes ahead of them.
   repeated dieter.v1.MessagePart parts = 2;
+  // The composer's text; trimmed, it is sent as the first part unless empty.
+  string text = 4;
   // The agent for this message; unset uses the composer's choice
   // (ChooseAgent), else the conversation's agent. Gaps are filled from the
   // conversation's agent, and a started conversation keeps its provider and
@@ -967,6 +982,37 @@ message TerminalGrid {
   int32 rows = 2;
 }
 
+// A key a terminal's accessory bar sends (SharedRules.terminalKey).
+enum TerminalKey {
+  TERMINAL_KEY_UNSPECIFIED = 0;
+  TERMINAL_KEY_ESCAPE = 1;
+  TERMINAL_KEY_TAB = 2;
+  TERMINAL_KEY_ENTER = 3;
+  TERMINAL_KEY_BACKSPACE = 4;
+  TERMINAL_KEY_UP = 5;
+  TERMINAL_KEY_DOWN = 6;
+  TERMINAL_KEY_RIGHT = 7;
+  TERMINAL_KEY_LEFT = 8;
+  TERMINAL_KEY_HOME = 9;
+  TERMINAL_KEY_END = 10;
+  TERMINAL_KEY_PAGE_UP = 11;
+  TERMINAL_KEY_PAGE_DOWN = 12;
+  TERMINAL_KEY_INSERT = 13;
+  TERMINAL_KEY_DELETE = 14;
+  TERMINAL_KEY_F1 = 15;
+  TERMINAL_KEY_F2 = 16;
+  TERMINAL_KEY_F3 = 17;
+  TERMINAL_KEY_F4 = 18;
+  TERMINAL_KEY_F5 = 19;
+  TERMINAL_KEY_F6 = 20;
+  TERMINAL_KEY_F7 = 21;
+  TERMINAL_KEY_F8 = 22;
+  TERMINAL_KEY_F9 = 23;
+  TERMINAL_KEY_F10 = 24;
+  TERMINAL_KEY_F11 = 25;
+  TERMINAL_KEY_F12 = 26;
+}
+
 message TerminalOverviewCommand {
   string scope = 1;
   oneof action {
@@ -1563,6 +1609,10 @@ message TimelineItem {
   // A user message this device sent that the daemon has not confirmed; it
   // renders dimmed.
   bool unconfirmed = 12;
+  // A user message's delivery as a receipt says it: "Waiting to send",
+  // "Accepted by daemon", "Queued for the next turn", "Synced", or "Send
+  // failed; retry or remove this message"; empty for other rows.
+  string delivery_label = 13;
 }
 
 // Consecutive routine steps of one message form a group; every other step
@@ -1592,6 +1642,11 @@ message TimelineStep {
   // A TOOL step's status and title, e.g. "read file".
   ToolCallStatus tool_status = 7;
   string tool_title = 8;
+  // A TOOL step's status as its row says it: "running", "completed",
+  // "failed", "needs approval", or "denied"; empty otherwise.
+  string tool_status_label = 9;
+  // A TOOL step that failed, awaits approval, or was denied.
+  bool tool_attention = 10;
 }
 
 enum TimelineStepKind {
@@ -3377,4 +3432,41 @@ message ScreenChannel {
 message ClipboardContent {
   string text = 1;
   repeated dieter.v1.RemoteDesktopClipboardItem items = 2;
+}
+
+// The stream choices a screen's options offer, in menu order
+// (SharedRules.screenStreamOptions).
+message ScreenStreamOptions {
+  // "Automatic quality", "Sharp text", "Responsive motion".
+  repeated ScreenQualityOption qualities = 1;
+  // "Automatic codec", "H.264 compatibility", "HEVC · up to 1080p60".
+  repeated ScreenCodecOption codecs = 2;
+}
+
+message ScreenQualityOption {
+  string label = 1;
+  dieter.v1.RemoteDesktopQuality quality = 2;
+}
+
+message ScreenCodecOption {
+  string label = 1;
+  dieter.v1.RemoteDesktopCodecPreference codec = 2;
+}
+
+// The keys a touch screen's toolbar offers (SharedRules.screenToolbarKeys).
+message ScreenToolbarKeys {
+  // Control, Option, Shift, and Command, which arm a modifier.
+  repeated ScreenToolbarKey modifiers = 1;
+  // Escape, Tab, the arrows, Enter, Backspace, Delete, Home, End, Page Up,
+  // Page Down, and F1 to F12, in toolbar order.
+  repeated ScreenToolbarKey special = 2;
+}
+
+// One toolbar key: its label, e.g. "Esc", and USB HID usage.
+message ScreenToolbarKey {
+  string label = 1;
+  int32 hid = 2;
+  // The modifier bit a modifier key arms (Shift 1, Control 2, Option 4,
+  // Command 8); 0 for other keys.
+  int32 modifier = 3;
 }

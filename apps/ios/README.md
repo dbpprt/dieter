@@ -1,6 +1,6 @@
 # Dieter for iPhone and iPad
 
-A native SwiftUI remote client for iOS 18 or later. It uses the same generated protobuf API, authenticated HTTP/2 client, certificate identity checks, and direct-TLS/relay route selection as the Mac app. The daemon continues to own tasks, transcripts, and files; the iOS app never starts a local daemon.
+A native SwiftUI remote client for iOS 18 or later. Like the Android and Mac apps, it is a presentation-only client of the [shared Kotlin core](../core/README.md), which owns the session, routing, sync, the outbox, and every rule; the app observes the core's slices and sends its commands through the `SharedCore` target. The daemon continues to own tasks, transcripts, and files; the iOS app never starts a local daemon.
 
 ## Open and build
 
@@ -17,16 +17,17 @@ just e2e run --platform ios --device iphone --suite smoke
 just e2e run --platform ios --device ipad --suite smoke
 ```
 
-`build-device` compiles the device architecture without signing; installation on a device still requires Xcode signing. Build products stay under `apps/ios/.build/`; shared-runner reports and screenshots are in `tmp/e2e-<run>/`.
+`build` and `build-device` first assemble the shared core's `DieterShared.xcframework` with its iOS slices (`apps/mac/scripts/shared-framework.sh debug|release all`), which needs a Java runtime; Android Studio's bundled JBR is used when `JAVA_HOME` is unset. Simulator builds are arm64 only. `build-device` compiles the device architecture without signing; installation on a device still requires Xcode signing. Build products stay under `apps/ios/.build/`; shared-runner reports and screenshots are in `tmp/e2e-<run>/`.
 Source builds embed `just release pseudo-version` as their gateway compatibility identity, including builds launched directly from the shared Xcode scheme. Versioned archives embed the requested marketing release instead. This identity is independent of the Apple build number.
 
 Pull-request CI intentionally stays fast: it runs the portable `DieterIOSTests`
-suite and compiles the app plus its iPhone/iPad test bundles without booting a
+suite on the Mac host (share inbox, attachments, and architecture checks) and
+compiles the app plus its iPhone/iPad test bundles without booting a
 simulator. Run both smoke commands above locally when adding or changing an iOS
 feature; they remain the layout and end-to-end qualification for the two device
 classes.
 
-The SwiftUI screens and iOS store live in `apps/mac/Sources/DieterIOS/` so they can compose the existing package-scoped DieterCore, DieterClient, and DieterAPI modules. The small Xcode app wraps the package's public root view and embeds its shared DieterIOS framework. The Mac executable is not linked into the iOS app.
+The SwiftUI screens and their models live in `apps/mac/Sources/DieterIOS/` so they can use the package-scoped `SharedCore`, `DieterTransport`, and `DieterAPI` modules and the `DieterShared` framework. `IOSAppModel` hosts the core and observes the app-wide slices; each feature view owns its own model and slice scope, closed when the view goes away. The small Xcode app wraps the package's public root view and embeds its shared DieterIOS framework. The Mac executable is not linked into the iOS app. The share extension does not link the core, to stay within its memory budget; it stages files in the App Group, and the app validates them with the core's attachment rules when it takes them.
 
 App icons are generated from `apps/ios/Artwork/AppIcon.svg`, adapted from Dieter's
 existing brand SVG with an opaque square background. iOS applies the icon shape.
@@ -66,27 +67,26 @@ just --yes ios testflight 0.1.0 1.1 --upload
 1. Enter your HTTPS Dieter gateway in the sign-in screen.
 2. Sign in with GitHub using the native authentication session, or supply an existing gateway session token in the advanced section.
 3. The app loads one global workspace from every enrolled, online machine accepted by the gateway's release policy. Daemons requiring an update or reporting an invalid version are excluded.
-4. Open a project and board, create a task on one of its checkouts, or continue a conversation. The app routes each operation to that checkout or conversation's machine without changing the workspace.
-5. Open **Machine state** to choose a machine and inspect live CPU, memory, storage, network, GPU, daemon build, and Dieter process telemetry.
+4. Use **Inbox** for what needs you, is running, or finished recently; **Projects** for a project's boards and their lanes; and **Chats** for standalone chats. Create a task on a board's checkout or continue a conversation; the core routes each operation to that checkout or conversation's machine without changing the workspace.
+5. Open **Machine state** from the machines menu to choose a machine and inspect live CPU, memory, storage, network, GPU, daemon build, and Dieter process telemetry.
 
 Select **Screens** in the sidebar, then choose a machine to open its remote desktop.
-The app negotiates an independently authenticated H.264 WebRTC session over the
-machine's verified direct route or gateway relay. Tap to click, move the pointer
-with one finger, hold and move to drag, scroll with two fingers, and use the
-keyboard and special-key menus for text and HID input. Display, quality, refresh,
-frame-rate, and protocol-3 control handoff are available from the screen toolbar.
-On iPhone, the viewer follows the device orientation chosen by the user and
-supports both portrait and landscape. It replaces the navigation bar with
-floating Back and stream-settings controls; tap the live canvas to hide or
-reveal those controls. iPad keeps its split-view toolbar.
-The session closes when Screens is left, the machine changes, or iOS backgrounds
-the app; returning establishes a new signed binding and input epoch.
+The core negotiates an independently authenticated WebRTC session over the
+machine's verified direct route or gateway relay; the app decodes and draws it.
+The device works as the host's trackpad, as on Android: one finger moves the
+cursor, a tap clicks, a long press drags, two fingers zoom and pan, and three
+fingers scroll. Use the keyboard and the toolbar keys for text and HID input; the
+toolbar arms a one-shot right click and modifiers for the next click or key.
+Display, quality, codec, frame rate, refresh, and control handoff are available
+from the screen toolbar. The session closes when the screen is left; when iOS
+backgrounds the app, input is released and the session sleeps, and it resumes
+on return.
 
-The existing `dieter-mac://oauth/callback` redirect is deliberately reused inside ASWebAuthenticationSession, with PKCE. This keeps sign-in compatible with gateways already configured for the Mac client. Tokens are kept in device-only Keychain items, separated by gateway origin. Remote plaintext endpoints are rejected. The Debug-only isolated test gateway accepts a loopback address supplied by the smoke harness; production sign-in always requires HTTPS.
+The existing `dieter-mac://oauth/callback` redirect is deliberately reused inside ASWebAuthenticationSession, with PKCE; the core begins and completes the sign-in. This keeps sign-in compatible with gateways already configured for the Mac client. Tokens are kept in device-only Keychain items of the `com.dbpprt.dieter.ios.core` service, one per gateway origin. Sessions saved by releases before the shared core are not read, so every install signs in once. **Sign out** forgets the session and this device's unsent changes for the account. Remote plaintext endpoints are rejected. The Debug-only isolated test gateway accepts a loopback address supplied by the smoke harness; production sign-in always requires HTTPS.
 
 ## Basic workflows
 
-- Browse projects, boards, tasks, and standalone chats across compatible remote machines.
+- Browse the Inbox, projects, boards, tasks, and standalone chats across compatible remote machines.
 - Create a draft or immediately run a task with provider, model, and reasoning selection.
 - Attach photos, pasted screenshots, and files from New Task or any conversation. The iOS share extension can route a shared screenshot or file into a new task, an existing task, or an existing chat. After choosing the destination, tap **Done** and open Dieter to continue; iOS does not allow a Share extension to launch its containing app directly.
 - Start a draft, send follow-up messages, stop an active turn, and read live transcript updates and older messages.
@@ -95,7 +95,7 @@ The existing `dieter-mac://oauth/callback` redirect is deliberately reused insid
 - View and control a chosen machine through authenticated remote screen sharing.
 - Suspend observation while the app is in the background and reconnect on return. Transport disconnects do not cancel agent work.
 
-The phone uses stacked navigation; iPad uses sidebar, task list, and conversation columns. Navigation is global within the selected gateway; machine selection is local to Screens and Machine state.
+The phone uses stacked navigation; iPad uses sidebar, list, and conversation columns. Navigation is global within the selected gateway; machine selection is local to Screens and Machine state.
 
 ## Verification
 
@@ -103,7 +103,12 @@ See [implementation validation](VALIDATION.md) for observed results and current 
 
 The shared E2E runner creates its own simulator, temporary gateway, enrolled daemon, mock harness, and Git repository. It exercises real native controls and real remote RPCs without production accounts or provider credentials. It stops only those owned resources and preserves test results and screenshots. Existing simulators and operator daemons are left untouched.
 
-Fixtures include an incompatible node so exact application-contract filtering can be verified. Certificate tests cover exact enrolled daemon URI identity and reject the wrong daemon, wrong CA, and tampered certificates. Pure model tests cover sign-in request validation, ownership across backgrounding, stale-response isolation, and bounded transcript handling. Native application-hosted tests also exercise device-only Keychain persistence and certificate trust on iOS.
+Fixtures include an incompatible node so exact application-contract filtering can be verified. The rules themselves are tested in the core. The app's tests are:
+
+- `DieterIOSTests` (`just mac test DieterIOSTests`, on the Mac host): share inbox hand-off and validation, attachment reading, and an architecture check that the app reaches gateways only through `SharedCore` and that the share extension does not link the core.
+- `IOSCoreAdapterTests` (in `apps/mac/Tests/DieterIOSTests`, compiled into the app-hosted `DieterIOSNativeTests` target; case `ios.adapters`): the app's adapters against a scripted core — launch configuration, test-session adoption, foreground, sign-out and reconnect commands, delta folds and stale targets, and per-view scopes.
+- `IOSCredentialNativeTests` (`ios.credentials`): device-only Keychain persistence through the core's secure store.
+- `RemoteNodeUITests`: the isolated journeys.
 
 An optional, read-only check verifies that an HTTPS gateway returns its explicit authentication error for an invalid session:
 

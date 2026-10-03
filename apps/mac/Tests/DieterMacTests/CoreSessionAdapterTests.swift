@@ -1,5 +1,4 @@
 import DieterAPI
-import DieterCore
 import Foundation
 import SharedCore
 import Testing
@@ -89,7 +88,7 @@ struct CoreSessionAdapterTests {
     }
 
     @Test func machineQueuesShowWhatTheCoreSaysIsWaiting() {
-        let machine = DieterEndpoint(
+        let machine = MachineEndpoint(
             name: "Offline", host: "gateway.getdieter.com", port: 443, secure: true, daemonID: "d_offline",
             online: false)
         store.endpoints = [machine]
@@ -244,7 +243,7 @@ struct CoreSessionAdapterTests {
         await store.startCore()
         #expect(core.isObserved(.session) && core.isObserved(.workspace) && core.isObserved(.outbox))
         store.coreFoldsHeld = true
-        let injected = DieterEndpoint(name: "Fixture", host: "h", port: 1, daemonID: "d_fixture")
+        let injected = MachineEndpoint(name: "Fixture", host: "h", port: 1, daemonID: "d_fixture")
         store.endpoints = [injected]
         core.emit(.session) { $0.session = .with { $0.phase = .connecting } }
         #expect(store.endpoints == [injected])

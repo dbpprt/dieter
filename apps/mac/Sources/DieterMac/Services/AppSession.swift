@@ -1,6 +1,5 @@
 import AppKit
 import DieterAPI
-import DieterCore
 import Foundation
 import Observation
 import OSLog
@@ -50,14 +49,14 @@ final class AppSession {
             ? terminalOverviewMachines.contains(where: machineIsAvailable)
             : workspaceIsLive
     }
-    var endpoint: DieterEndpoint {
+    var endpoint: MachineEndpoint {
         didSet {
             if endpoint.id != oldValue.id {
                 bindComposer(); resetFileSurface(); bindSchedules(); bindConversation(); bindWorktree(); bindTerminals()
             }
         }
     }
-    var endpoints: [DieterEndpoint]
+    var endpoints: [MachineEndpoint]
     var health = Dieter_V1_HealthResponse()
     var runtime = Dieter_V1_RuntimeStatus()
     let replica = WorkspaceReplica()
@@ -85,17 +84,20 @@ final class AppSession {
         didSet { if oldValue, !coreFoldsHeld { releaseHeldFolds() } }
     }
     /// A session this launch adopts from `--dieter-endpoint` and `--dieter-access-token-file`.
-    let launchSession: (gateway: DieterEndpoint, token: String)?
+    let launchSession: (gateway: MachineEndpoint, token: String)?
     var harnessCatalog = Dieter_V1_HarnessCatalog()
     var boardSettings = Dieter_V1_Settings()
     var settingsOptions = Dieter_V1_SettingsOptions()
     @ObservationIgnored lazy var fleet = FleetModel(
         machines: { [weak self] in
             guard let self else { return [] }
-            return self.machines.contains(where: { $0.id == self.endpoint.id })
+            let machines =
+                self.machines.contains(where: { $0.id == self.endpoint.id })
                 ? self.machines : self.machines + [self.endpoint]
+            return machines.map {
+                FleetMachine(id: $0.id, daemonID: $0.daemonID ?? "", name: $0.name, entry: self.machineEntry($0))
+            }
         },
-        entry: { [weak self] in self?.machineEntry($0) },
         core: core, reportError: { [weak self] in self?.show($0) })
     var gatewayInformation: [String: Dieter_Gateway_V1_GatewayInformation] = [:]
     @ObservationIgnored lazy var quotas = CoreProviderQuotas(core: core)
@@ -107,7 +109,7 @@ final class AppSession {
     /// projects, folders, and pins, and the saved disclosure of each list.
     var navigation = ClientNavigationSlice()
     /// The chats pane's list, as the core lays it out.
-    let chatsList = ChatsListModel()
+    let chatsList = ChatsListModel(scope: "mac-chats")
 
     @ObservationIgnored var navigationEditTail: Task<Void, Never>?
     var navigationPendingCount = 0
@@ -200,17 +202,17 @@ final class AppSession {
     }
 
     /// `machine` as the core presents it; nil for a machine it does not list.
-    func machineEntry(_ machine: DieterEndpoint) -> ClientMachineEntry? {
+    func machineEntry(_ machine: MachineEndpoint) -> ClientMachineEntry? {
         machineEntries[machine.id]
     }
 
     /// Whether `machine` can host projects, terminals, and operations now.
-    func machineIsAvailable(_ machine: DieterEndpoint) -> Bool {
+    func machineIsAvailable(_ machine: MachineEndpoint) -> Bool {
         machineEntry(machine)?.available == true
     }
 
     /// Why `machine` cannot take work now, as the core words it; nil when it can.
-    func unavailableReason(_ machine: DieterEndpoint) -> String? {
+    func unavailableReason(_ machine: MachineEndpoint) -> String? {
         guard let entry = machineEntry(machine) else { return "\(machine.name) is unavailable." }
         return entry.available ? nil : entry.unavailableMessage
     }
@@ -252,7 +254,7 @@ final class AppSession {
         let accessTokenOverride: String?
     #endif
     @ObservationIgnored let themeDefaults: UserDefaults
-    var gatewayOrigins: [DieterEndpoint]
+    var gatewayOrigins: [MachineEndpoint]
     @ObservationIgnored let environment: DieterAppEnvironment
     let attachmentLoader = AttachmentLoader()
 
@@ -295,9 +297,9 @@ final class AppSession {
         #endif
         let override = arguments.firstIndex(of: "--dieter-endpoint")
             .flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
-            .flatMap { DieterEndpoint.parse($0, name: "Command line") }
+            .flatMap { MachineEndpoint(address: $0, name: "Command line") }
         launchSession = override.flatMap { gateway in tokenOverride.map { (gateway, $0) } }
-        let gateway = override ?? DieterEndpoint.defaults[0]
+        let gateway = override ?? MachineEndpoint.defaultGateway
         endpoints = []
         endpoint = gateway
         gatewayOrigins = [gateway]
@@ -305,16 +307,15 @@ final class AppSession {
         var screenMedia: CoreScreenMedia?
         if liveCore, core == nil {
             let defaults = environment.defaults
-            let media = CoreScreenMedia()
+            let media = CoreScreenMedia.mac()
             screenMedia = media
             host = try? CoreHost(
                 configuration: CoreHostConfiguration(
-                    root: root,
-                    credentialsFile: environment.credentialsFile,
-                    clientVersion: DieterRelease.current, oauthRedirectURI: "dieter-mac://oauth/callback",
-                    clientIDPrefix: "mac", logSubsystem: "com.dbpprt.dieter.mac"),
-                defaults: defaults, notificationsEnabled: { true },
-                screens: CoreHostScreens(media: media, clipboard: CoreScreenClipboard()))
+                    root: root, clientVersion: DieterRelease.current, logSubsystem: "com.dbpprt.dieter.mac"),
+                platform: .mac(
+                    credentialsFile: environment.credentialsFile, notificationsEnabled: { true },
+                    clipboard: CoreScreenClipboard()),
+                defaults: defaults, screens: CoreHostScreens(media: media))
         }
         let resolved: CoreClient = core ?? host?.client ?? ScriptedCoreClient()
         self.core = resolved

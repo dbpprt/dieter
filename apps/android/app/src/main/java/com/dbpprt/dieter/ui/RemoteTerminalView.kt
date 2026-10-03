@@ -1,5 +1,6 @@
 package com.dbpprt.dieter.ui
 
+import com.dbpprt.dieter.client.v1.TerminalKey
 import com.dbpprt.dieter.core.terminals.TerminalKeys
 import com.dbpprt.dieter.core.terminals.TerminalReplayCursor
 import com.dbpprt.dieter.core.terminals.TerminalRendererSink
@@ -204,15 +205,12 @@ class RemoteTerminalView(
         showKeyboard()
     }
 
-    fun sendKeyCode(keyCode: Int) {
-        val modifiers = if (consumeControl()) KeyHandler.KEYMOD_CTRL else 0
-        val sequence = KeyHandler.getCode(
-            keyCode,
-            modifiers,
-            emulator.isCursorKeysApplicationMode,
-            emulator.isKeypadApplicationMode,
-        ) ?: return
-        sendText(sequence, applyControl = false)
+    /** An accessory-bar key, encoded by the core with an armed Control and the emulator's cursor key mode. */
+    fun sendKey(key: TerminalKey) {
+        val sequence = TerminalKeys.sequence(key, control = consumeControl(), applicationCursor = emulator.isCursorKeysApplicationMode)
+        if (sequence.isEmpty()) return
+        onInput(sequence)
+        revealCursorAndRestartBlink()
     }
 
     fun sendBytes(bytes: ByteArray) {

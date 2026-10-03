@@ -1,6 +1,7 @@
 import AppKit
 import DieterAPI
-import DieterCore
+import DieterShared
+import DieterTransport
 import Foundation
 import Observation
 import SharedCore
@@ -29,6 +30,31 @@ enum RemoteDesktopPhase: Equatable, Sendable {
         case "failed": self = .failed(problem)
         default: self = .idle
         }
+    }
+}
+
+extension RemoteDesktopPhase {
+    /// The core's phase name and the reason it carries.
+    var core: (phase: String, problem: String) {
+        switch self {
+        case .idle: ("idle", "")
+        case .loading: ("loading", "")
+        case .permissionRequired(let reason): ("permission_required", reason)
+        case .unsupported(let reason): ("unsupported", reason)
+        case .connecting: ("connecting", "")
+        case .waitingForHostApproval: ("waiting_for_host_approval", "")
+        case .streaming: ("streaming", "")
+        case .reconnecting: ("reconnecting", "")
+        case .failed(let message): ("failed", message)
+        }
+    }
+
+    /// What a screen view says in this phase while not streaming, as the core
+    /// words it, given whether the host can share (`hostReady`, `hostReason`).
+    func waitingMessage(hostReady: Bool, hostReason: String) -> String {
+        let core = core
+        return SharedRules.shared.screenWaitingMessage(
+            phase: core.phase, problem: core.problem, hostReady: hostReady, hostReason: hostReason)
     }
 }
 

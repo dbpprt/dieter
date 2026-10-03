@@ -132,7 +132,7 @@ struct RenameProjectSheet: View {
 struct RenameMachineSheet: View {
     @Environment(DieterStore.self) private var store
     @Environment(\.dismiss) private var dismiss
-    let machine: DieterEndpoint
+    let machine: MachineEndpoint
     @State private var name = ""
     @State private var saving = false
 

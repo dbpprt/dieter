@@ -1,123 +1,158 @@
 #if os(iOS)
     import DieterAPI
-    import DieterCore
+    import DieterShared
+    import SharedCore
     @preconcurrency import SwiftTerm
     import SwiftUI
     import UIKit
 
-    @MainActor
+    /// The machines that can host terminals, as the core lists them; choosing
+    /// one opens its terminals in the detail column.
     struct IOSTerminalsMachinePickerView: View {
-        @Bindable var store: IOSStore
-        let select: (String) -> Void
+        @Environment(IOSAppModel.self) private var app
+        @Environment(IOSWorkspaceNavigation.self) private var navigation
 
-        private var machines: [DieterEndpoint] {
-            store.supportedMachines.sorted {
-                if $0.online != $1.online { return $0.online && !$1.online }
-                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-            }
-        }
+        private var machines: [ClientMachineEntry] { app.session.machines.filter(\.compatible) }
 
         var body: some View {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Label("Choose where to open a shell", systemImage: "terminal")
-                            .font(.title2.bold())
-                        Text("Terminals run on one machine and keep running when you leave this screen.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 4)
+            TimelineView(.periodic(from: .now, by: 30)) { clock in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Label("Choose where to open a shell", systemImage: "terminal")
+                                .font(.title2.bold())
+                            Text("Terminals run on one machine and keep running when you leave this screen.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 4)
 
-                    if machines.isEmpty {
-                        ContentUnavailableView(
-                            "No compatible machines",
-                            systemImage: "desktopcomputer.trianglebadge.exclamationmark",
-                            description: Text("Bring an enrolled machine online, then refresh.")
-                        )
-                        .frame(maxWidth: .infinity, minHeight: 260)
-                        .modifier(
-                            IOSGlassCardModifier(
-                                shape: RoundedRectangle(cornerRadius: 24, style: .continuous)))
-                    } else {
-                        ForEach(machines) { machine in
-                            Button {
-                                select(machine.daemonID ?? machine.id)
-                            } label: {
-                                HStack(spacing: 14) {
-                                    Image(systemName: "terminal.fill")
-                                        .font(.title2.weight(.semibold))
-                                        .foregroundStyle(machine.online ? Color.orange : Color.secondary)
-                                        .frame(width: 48, height: 48)
-                                        .background(
-                                            (machine.online ? Color.orange : Color.secondary).opacity(0.12),
-                                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                                    VStack(alignment: .leading, spacing: 5) {
-                                        Text(machine.name).font(.headline).foregroundStyle(.primary)
-                                        HStack(spacing: 6) {
-                                            Circle()
-                                                .fill(machine.online ? Color.green : Color.orange)
-                                                .frame(width: 7, height: 7)
-                                            Text(
-                                                machine.online
-                                                    ? "Persistent machine-home shells"
-                                                    : MachinePresenceText.lastSeen(machine.lastSeenAt))
-                                        }
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    }
-                                    Spacer(minLength: 8)
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption.bold())
-                                        .foregroundStyle(.tertiary)
-                                }
-                                .padding(16)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(!machine.online || !store.phase.isConnected)
-                            .modifier(
-                                IOSGlassCardModifier(
-                                    shape: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        if machines.isEmpty {
+                            ContentUnavailableView(
+                                "No compatible machines",
+                                systemImage: "desktopcomputer.trianglebadge.exclamationmark",
+                                description: Text("Bring an enrolled machine online, then refresh.")
                             )
-                            .accessibilityIdentifier(
-                                "ios.terminals.machine-choice.\(machine.daemonID ?? machine.id)")
+                            .frame(maxWidth: .infinity, minHeight: 260)
+                            .modifier(
+                                IOSGlassCardModifier(shape: RoundedRectangle(cornerRadius: 24, style: .continuous)))
+                        } else {
+                            ForEach(machines, id: \.id) { machine in
+                                row(machine, now: clock.date)
+                            }
                         }
                     }
+                    .padding(18)
                 }
-                .padding(18)
             }
             .background { IOSWorkspaceBackdrop() }
             .navigationTitle("Choose a terminal host")
             .navigationBarTitleDisplayMode(.inline)
-            .refreshable { await store.refreshMachines() }
+            .refreshable { await app.reconnect() }
             .accessibilityIdentifier("ios.terminals.machine-picker-view")
+        }
+
+        private func row(_ machine: ClientMachineEntry, now: Date) -> some View {
+            let selected = navigation.terminalMachineID == machine.id
+            return Button {
+                navigation.openTerminals(machine.id)
+            } label: {
+                HStack(spacing: 14) {
+                    Image(systemName: "terminal.fill")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(machine.available ? Color.orange : Color.secondary)
+                        .frame(width: 48, height: 48)
+                        .background(
+                            (machine.available ? Color.orange : Color.secondary).opacity(0.12),
+                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(machine.name.isEmpty ? machine.id : machine.name)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(machine.available ? Color.green : Color.orange)
+                                .frame(width: 7, height: 7)
+                            Text(app.machineStatus(machine, now: now)).lineLimit(2)
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.bold())
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(16)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!machine.available)
+            .modifier(IOSGlassCardModifier(shape: RoundedRectangle(cornerRadius: 22, style: .continuous)))
+            .accessibilityHint(machine.unavailableMessage)
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityIdentifier("ios.terminals.machine-choice.\(machine.id)")
         }
     }
 
+    /// The detail column before a terminal host is chosen.
+    struct IOSTerminalsPlaceholderView: View {
+        @Environment(IOSWorkspaceNavigation.self) private var navigation
+
+        var body: some View {
+            ContentUnavailableView {
+                Label("Choose a terminal host", systemImage: "terminal")
+            } description: {
+                Text("Pick an enrolled machine before opening a persistent shell.")
+            } actions: {
+                Button("Choose Machine") { navigation.preferredColumn = .content }
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    /// The SwiftTerm view of the selected terminal, which the accessory bar
+    /// asks for the terminal's cursor key mode.
     @MainActor
+    final class IOSTerminalHandle {
+        weak var view: SwiftTerm.TerminalView?
+        var applicationCursor: Bool { view?.getTerminal().applicationCursor ?? false }
+    }
+
+    /// A machine's persistent terminals, kept by the shared core on that
+    /// machine. Only the selected terminal streams while the view is on screen
+    /// and the app is active; leaving never ends a shell.
     struct IOSTerminalsView: View {
-        @Bindable var store: IOSStore
-        let backAction: (() -> Void)?
-        @State private var model = IOSTerminalsModel()
-        @State private var createPresented = false
+        @Environment(IOSAppModel.self) private var app
+        @Environment(IOSWorkspaceNavigation.self) private var navigation
+        @Environment(\.scenePhase) private var scenePhase
+        let machineID: String
+        @State private var model = TerminalsModel(scope: "ios-terminals-\(UUID().uuidString.lowercased())")
+        @State private var handle = IOSTerminalHandle()
+        @State private var visible = false
         @State private var renamePresented = false
         @State private var renameValue = ""
         @State private var closeCandidate: Dieter_V1_Terminal?
         @State private var controlArmed = false
         @State private var keyboardDismissRevision = 0
 
-        private var machine: DieterEndpoint? { store.utilityMachine }
-
-        init(store: IOSStore, backAction: (() -> Void)? = nil) {
-            self.store = store
-            self.backAction = backAction
-        }
+        private var machine: ClientMachineEntry? { app.machine(machineID) }
+        private var live: Bool { machine?.available == true }
 
         var body: some View {
+            @Bindable var model = model
             VStack(spacing: 0) {
                 terminalTabs
                 Divider()
+                if let error = model.terminalError, !model.terminals.isEmpty {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .accessibilityIdentifier("ios.terminals.error")
+                }
                 terminalContent
             }
             .background(Color(uiColor: .systemBackground))
@@ -125,15 +160,16 @@
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    if let backAction {
-                        Button("Choose machine", systemImage: "chevron.left", action: backAction)
-                            .labelStyle(.iconOnly)
-                            .accessibilityIdentifier("ios.terminals.back")
+                    Button("Choose machine", systemImage: "chevron.left") {
+                        navigation.terminalMachineID = nil
+                        navigation.preferredColumn = .content
                     }
+                    .labelStyle(.iconOnly)
+                    .accessibilityIdentifier("ios.terminals.back")
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button("New terminal", systemImage: "plus") { createPresented = true }
-                        .disabled(machine?.online != true || !store.phase.isConnected)
+                    Button("New terminal", systemImage: "plus") { model.createTerminalPresented = true }
+                        .disabled(!live)
                         .accessibilityIdentifier("ios.terminals.new")
                     if let terminal = model.selectedTerminal {
                         Menu("Terminal actions", systemImage: "ellipsis.circle") {
@@ -149,19 +185,31 @@
                     }
                 }
             }
-            .task(id: machine?.daemonID) {
-                model.disconnect(clear: true)
-                guard let machine else { return }
-                model.connect(machineName: machine.name) {
-                    try await store.utilityTerminalConnection()
-                }
+            .task(id: machineID) {
+                model.bind(
+                    target: WorkspaceTarget(
+                        endpointID: IOSAppModel.endpointID(daemonID: machineID), projectID: ""),
+                    core: app.core)
+                model.machineName = machine?.name ?? machineID
+                model.isLive = live
+                visible = true
+                updateActive()
+                await model.loadTerminals()
             }
-            .onDisappear { model.disconnect() }
-            .refreshable { model.refresh() }
-            .sheet(isPresented: $createPresented) {
+            .onDisappear {
+                visible = false
+                updateActive()
+            }
+            .onChange(of: scenePhase) { _, _ in updateActive() }
+            .onChange(of: live) { _, live in
+                model.isLive = live
+                if live { Task { await model.loadTerminals() } }
+            }
+            .onChange(of: model.selectedTerminalID) { _, _ in controlArmed = false }
+            .refreshable { await model.loadTerminals() }
+            .sheet(isPresented: $model.createTerminalPresented) {
                 IOSTerminalCreateView(machineName: machine?.name ?? "Machine") { name, shell, directory in
-                    let created = await model.create(name: name, shell: shell, workingDirectory: directory)
-                    if created { createPresented = false }
+                    await self.model.createTerminal(name: name, shell: shell, workingDirectory: directory)
                 }
             }
             .alert("Rename terminal", isPresented: $renamePresented) {
@@ -169,8 +217,9 @@
                     .accessibilityIdentifier("ios.terminals.rename-name")
                 Button("Cancel", role: .cancel) {}
                 Button("Rename") {
-                    guard let id = model.selectedTerminalID else { return }
-                    Task { await model.rename(id: id, name: renameValue) }
+                    guard let id = self.model.selectedTerminalID else { return }
+                    let name = renameValue
+                    Task { await self.model.renameTerminal(id: id, name: name) }
                 }
                 .accessibilityIdentifier("ios.terminals.rename-confirm")
             } message: {
@@ -178,14 +227,12 @@
             }
             .confirmationDialog(
                 "Close \(closeCandidate?.name ?? "terminal")?",
-                isPresented: Binding(
-                    get: { closeCandidate != nil },
-                    set: { if !$0 { closeCandidate = nil } })
+                isPresented: Binding(get: { closeCandidate != nil }, set: { if !$0 { closeCandidate = nil } })
             ) {
                 if let terminal = closeCandidate {
                     Button("Close terminal", role: .destructive) {
                         closeCandidate = nil
-                        Task { await model.close(id: terminal.id) }
+                        Task { await self.model.closeTerminal(id: terminal.id) }
                     }
                     .accessibilityIdentifier("ios.terminals.close-confirm")
                 }
@@ -199,61 +246,62 @@
             .alert(
                 "Terminal",
                 isPresented: Binding(
-                    get: { model.errorMessage != nil },
-                    set: { if !$0 { model.errorMessage = nil } })
+                    get: { model.errorMessage != nil }, set: { if !$0 { self.model.errorMessage = nil } })
             ) {
-                Button("OK") { model.errorMessage = nil }
+                Button("OK") { self.model.errorMessage = nil }
             } message: {
                 Text(model.errorMessage ?? "")
             }
         }
 
+        /// The selected terminal streams while this view shows it and the
+        /// app is in the foreground.
+        private func updateActive() {
+            let active = visible && scenePhase == .active
+            if model.active != active { model.active = active }
+        }
+
         @ViewBuilder private var terminalContent: some View {
-            if model.loading, model.terminals.isEmpty {
+            if model.terminalLoading, model.terminals.isEmpty {
                 ProgressView("Loading persistent terminals…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let terminal = model.selectedTerminal {
+                let running = terminal.status == "running"
+                let acceptsInput = running && model.terminalStreamConnected
                 VStack(spacing: 0) {
                     IOSTerminalSurface(
                         terminalID: terminal.id,
                         initialColumns: Int(terminal.columns),
                         initialRows: Int(terminal.rows),
-                        screen: model.screens[terminal.id] ?? IOSTerminalScreenState(),
-                        acceptsInput: terminal.status == "running" && model.streamConnected,
+                        screen: model.terminalScreens[terminal.id] ?? TerminalScreenState(),
+                        acceptsInput: acceptsInput,
                         controlArmed: controlArmed,
                         keyboardDismissRevision: keyboardDismissRevision,
-                        send: { model.send(id: terminal.id, data: $0) },
+                        handle: handle,
+                        send: { model.sendTerminalInput(id: terminal.id, data: $0) },
                         consumeControl: { controlArmed = false },
                         resize: { columns, rows in
-                            Task { await model.resize(id: terminal.id, columns: columns, rows: rows) }
+                            Task { await model.resizeTerminal(id: terminal.id, columns: columns, rows: rows) }
                         }
                     )
                     .id(terminal.id)
                     .background(Color(red: 0.035, green: 0.047, blue: 0.055))
 
                     IOSTerminalAccessoryBar(
-                        acceptsInput: terminal.status == "running" && model.streamConnected,
+                        acceptsInput: acceptsInput,
                         controlArmed: controlArmed,
                         toggleControl: { controlArmed.toggle() },
                         hideKeyboard: { keyboardDismissRevision &+= 1 },
-                        send: { data, appliesControl in
-                            var payload = data
-                            if appliesControl, controlArmed,
-                                let modified = IOSTerminalKeyInput.controlModified(data)
-                            {
-                                payload = modified
-                                controlArmed = false
-                            }
-                            model.send(id: terminal.id, data: payload)
-                        }
+                        sendKey: { send(key: $0, to: terminal.id) },
+                        sendText: { send(text: $0, to: terminal.id) }
                     )
 
                     HStack(spacing: 7) {
                         Circle()
                             .fill(statusColor(terminal))
                             .frame(width: 7, height: 7)
-                        Text(statusText(terminal))
-                        if !model.routeLabel.isEmpty { Text("· \(model.routeLabel)") }
+                        Text(status(terminal))
+                            .accessibilityIdentifier("ios.terminals.status")
                         Spacer(minLength: 8)
                         Text("\(terminal.columns)×\(terminal.rows)")
                         Text("· \(terminal.shell)")
@@ -264,15 +312,25 @@
                     .frame(minHeight: 32)
                     .background(.bar)
                 }
+            } else if let error = model.terminalError {
+                ContentUnavailableView {
+                    Label("Terminals unavailable", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(error)
+                } actions: {
+                    Button("Try again") { Task { await model.loadTerminals() } }
+                        .disabled(!live)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ContentUnavailableView {
                     Label("No terminals", systemImage: "terminal")
                 } description: {
                     Text("Open a persistent shell on \(machine?.name ?? "this machine").")
                 } actions: {
-                    Button("Open a terminal") { createPresented = true }
+                    Button("Open a terminal") { model.createTerminalPresented = true }
                         .buttonStyle(.borderedProminent)
-                        .disabled(machine?.online != true || !store.phase.isConnected)
+                        .disabled(!live)
                         .accessibilityIdentifier("ios.terminals.empty-new")
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -283,9 +341,9 @@
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(model.terminals, id: \.id) { terminal in
+                        let selected = model.selectedTerminalID == terminal.id
                         Button {
-                            controlArmed = false
-                            model.select(terminal.id)
+                            model.selectTerminal(terminal.id)
                         } label: {
                             HStack(spacing: 7) {
                                 Circle()
@@ -293,17 +351,16 @@
                                     .frame(width: 6, height: 6)
                                 Text(terminal.name).lineLimit(1)
                                 if terminal.status != "running" {
-                                    Text("exited").foregroundStyle(.secondary)
+                                    Text(status(terminal)).foregroundStyle(.secondary)
                                 }
                             }
-                            .font(.caption.weight(model.selectedTerminalID == terminal.id ? .semibold : .regular))
+                            .font(.caption.weight(selected ? .semibold : .regular))
                             .padding(.horizontal, 12)
                             .frame(minHeight: 36)
-                            .background(
-                                model.selectedTerminalID == terminal.id ? Color.orange.opacity(0.16) : .clear,
-                                in: Capsule())
+                            .background(selected ? Color.orange.opacity(0.16) : .clear, in: Capsule())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityAddTraits(selected ? .isSelected : [])
                         .accessibilityIdentifier("ios.terminals.select.\(terminal.id)")
                     }
                 }
@@ -314,39 +371,67 @@
             .accessibilityIdentifier("ios.terminals.view")
         }
 
-        private func statusColor(_ terminal: Dieter_V1_Terminal) -> SwiftUI.Color {
-            if terminal.status != "running" { return terminal.hasExitCode && terminal.exitCode == 0 ? .gray : .red }
-            return model.streamConnected ? .green : .orange
+        private func status(_ terminal: Dieter_V1_Terminal) -> String {
+            SharedRules.shared.terminalStatus(
+                status: terminal.status, exitCode: terminal.exitCode, hasExitCode: terminal.hasExitCode,
+                streamConnected: model.terminalStreamConnected)
         }
 
-        private func statusText(_ terminal: Dieter_V1_Terminal) -> String {
-            if terminal.status == "running" { return model.streamConnected ? "Connected" : "Reconnecting" }
-            return terminal.hasExitCode ? "Exited \(terminal.exitCode)" : "Exited"
+        private func statusColor(_ terminal: Dieter_V1_Terminal) -> SwiftUI.Color {
+            if terminal.status != "running" { return terminal.hasExitCode && terminal.exitCode == 0 ? .gray : .red }
+            return model.terminalStreamConnected ? .green : .orange
+        }
+
+        // MARK: - Input
+
+        /// A named key, with an armed Control applied as the core encodes it.
+        private func send(key: ClientTerminalKey, to terminalID: String) {
+            let control = controlArmed
+            controlArmed = false
+            let bytes = SharedRules.shared.terminalKey(
+                key: Int32(key.rawValue), shift: false, alt: false, control: control,
+                applicationCursor: handle.applicationCursor)
+            model.sendTerminalInput(id: terminalID, data: bytes)
+        }
+
+        /// Typed text; an armed Control turns one character into its control code.
+        private func send(text: String, to terminalID: String) {
+            var bytes = Data(text.utf8)
+            if controlArmed, let modified = SharedRules.shared.terminalControl(bytes: bytes) {
+                bytes = modified
+                controlArmed = false
+            }
+            model.sendTerminalInput(id: terminalID, data: bytes)
         }
     }
+
+    // MARK: - Accessory bar
 
     private struct IOSTerminalAccessoryBar: View {
         let acceptsInput: Bool
         let controlArmed: Bool
         let toggleControl: () -> Void
         let hideKeyboard: () -> Void
-        let send: (Data, Bool) -> Void
+        let sendKey: (ClientTerminalKey) -> Void
+        let sendText: (String) -> Void
 
         var body: some View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 7) {
-                    key("Esc", identifier: "escape") { send(IOSTerminalKeyInput.escape, false) }
-                    key("Tab", identifier: "tab") { send(IOSTerminalKeyInput.tab, false) }
+                    key("Esc", identifier: "escape") { sendKey(.escape) }
+                    key("Tab", identifier: "tab") { sendKey(.tab) }
                     Button("Ctrl", action: toggleControl)
                         .buttonStyle(IOSTerminalAccessoryKeyStyle(active: controlArmed))
                         .accessibilityLabel(controlArmed ? "Control key armed" : "Control key")
-                        .accessibilityHint("Applies Control to the next typed key")
+                        .accessibilityHint("Applies Control to the next key")
                         .accessibilityIdentifier("ios.terminals.key.control")
 
                     Menu {
                         ForEach(1...12, id: \.self) { number in
                             Button("F\(number)") {
-                                if let data = IOSTerminalKeyInput.function(number) { send(data, false) }
+                                let key = ClientTerminalKey(
+                                    rawValue: Int(SharedRules.shared.terminalFunctionKey(number: Int32(number))))
+                                if let key, key != .unspecified { sendKey(key) }
                             }
                         }
                     } label: {
@@ -355,15 +440,13 @@
                     .buttonStyle(IOSTerminalAccessoryKeyStyle())
                     .accessibilityIdentifier("ios.terminals.key.function")
 
-                    IOSDirectionalTerminalKey { send(IOSTerminalKeyInput.arrow($0), false) }
+                    IOSDirectionalTerminalKey(send: sendKey)
 
-                    textKey("/", identifier: "slash") { Data("/".utf8) }
-                    textKey(":", identifier: "colon") { Data(":".utf8) }
-                    textKey("−", identifier: "minus") { Data("-".utf8) }
-                    textKey("|", identifier: "pipe") { Data("|".utf8) }
-                    key("Return", systemImage: "return", identifier: "return") {
-                        send(IOSTerminalKeyInput.enter, false)
-                    }
+                    key("/", identifier: "slash") { sendText("/") }
+                    key(":", identifier: "colon") { sendText(":") }
+                    key("−", identifier: "minus") { sendText("-") }
+                    key("|", identifier: "pipe") { sendText("|") }
+                    key("Return", systemImage: "return", identifier: "return") { sendKey(.enter) }
                     key("Hide keyboard", systemImage: "keyboard.chevron.compact.down", identifier: "hide-keyboard") {
                         hideKeyboard()
                     }
@@ -376,10 +459,7 @@
         }
 
         private func key(
-            _ title: String,
-            systemImage: String? = nil,
-            identifier: String,
-            action: @escaping () -> Void
+            _ title: String, systemImage: String? = nil, identifier: String, action: @escaping () -> Void
         ) -> some View {
             Button(action: action) {
                 if let systemImage {
@@ -391,14 +471,6 @@
             .buttonStyle(IOSTerminalAccessoryKeyStyle())
             .accessibilityLabel(title)
             .accessibilityIdentifier("ios.terminals.key.\(identifier)")
-        }
-
-        private func textKey(
-            _ title: String,
-            identifier: String,
-            data: @escaping () -> Data
-        ) -> some View {
-            key(title, identifier: identifier) { send(data(), true) }
         }
     }
 
@@ -425,9 +497,11 @@
         }
     }
 
+    /// One key for the four arrows: hold and drag toward a direction; it
+    /// repeats while held.
     private struct IOSDirectionalTerminalKey: View {
-        let send: (IOSTerminalDirection) -> Void
-        @State private var activeDirection: IOSTerminalDirection?
+        let send: (ClientTerminalKey) -> Void
+        @State private var activeDirection: ClientTerminalKey?
         @State private var repeatTask: Task<Void, Never>?
 
         var body: some View {
@@ -462,23 +536,23 @@
         private func update(translation: CGSize) {
             let deadZone: CGFloat = 10
             guard max(abs(translation.width), abs(translation.height)) >= deadZone else { return }
-            let direction: IOSTerminalDirection
-            if abs(translation.width) > abs(translation.height) {
-                direction = translation.width < 0 ? .left : .right
-            } else {
-                direction = translation.height < 0 ? .up : .down
-            }
+            let direction: ClientTerminalKey =
+                abs(translation.width) > abs(translation.height)
+                ? (translation.width < 0 ? .left : .right)
+                : (translation.height < 0 ? .up : .down)
             guard direction != activeDirection else { return }
             repeatTask?.cancel()
             activeDirection = direction
             send(direction)
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             repeatTask = Task { @MainActor in
-                try? await DieterTaskSleep.milliseconds(360)
-                while !Task.isCancelled {
-                    send(direction)
-                    try? await DieterTaskSleep.milliseconds(85)
-                }
+                do {
+                    try await DieterTaskSleep.milliseconds(360)
+                    while !Task.isCancelled {
+                        send(direction)
+                        try await DieterTaskSleep.milliseconds(85)
+                    }
+                } catch {}
             }
         }
 
@@ -489,13 +563,15 @@
         }
     }
 
+    // MARK: - New terminal
+
     private struct IOSTerminalCreateView: View {
         @Environment(\.dismiss) private var dismiss
         let machineName: String
         let create: (String, String, String) async -> Void
         @State private var name = ""
         @State private var shell = ""
-        @State private var directory = "~"
+        @State private var directory = ""
         @State private var creating = false
 
         var body: some View {
@@ -503,7 +579,6 @@
                 Form {
                     Section("Destination") {
                         Label(machineName, systemImage: "desktopcomputer")
-                        Label("Machine home", systemImage: "house")
                     }
                     Section("Session") {
                         TextField("Name (optional)", text: $name)
@@ -515,7 +590,7 @@
                             Text("fish").tag("fish")
                             Text("sh").tag("sh")
                         }
-                        TextField("Starting directory", text: $directory)
+                        TextField("Starting directory (machine home)", text: $directory)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .accessibilityIdentifier("ios.terminals.create-directory")
@@ -543,7 +618,7 @@
                                 creating = false
                             }
                         }
-                        .disabled(creating || directory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(creating)
                         .accessibilityIdentifier("ios.terminals.create-confirm")
                     }
                 }
@@ -553,29 +628,36 @@
         }
     }
 
-    struct IOSTerminalsPlaceholderView: View {
-        let open: () -> Void
+    // MARK: - Terminal surface
 
-        var body: some View {
-            ContentUnavailableView {
-                Label("Choose a terminal host", systemImage: "terminal")
-            } description: {
-                Text("Pick an enrolled machine before opening a persistent shell.")
-            } actions: {
-                Button("Choose Machine", action: open)
-                    .buttonStyle(.borderedProminent)
+    extension TerminalScreenState {
+        /// The latest output as text, for VoiceOver and UI tests.
+        fileprivate var accessibilityText: String {
+            let limit = 16 * 1_024
+            var skip = max(0, byteCount - limit)
+            var suffix = Data(capacity: min(limit, byteCount))
+            for chunk in chunks {
+                if skip >= chunk.count {
+                    skip -= chunk.count
+                    continue
+                }
+                suffix.append(chunk.dropFirst(skip))
+                skip = 0
             }
+            return String(decoding: suffix, as: UTF8.self)
         }
     }
 
+    /// SwiftTerm fed from the core's output; typed bytes go to the core.
     private struct IOSTerminalSurface: UIViewRepresentable {
         let terminalID: String
         let initialColumns: Int
         let initialRows: Int
-        let screen: IOSTerminalScreenState
+        let screen: TerminalScreenState
         let acceptsInput: Bool
         let controlArmed: Bool
         let keyboardDismissRevision: Int
+        let handle: IOSTerminalHandle
         let send: (Data) -> Void
         let consumeControl: () -> Void
         let resize: (Int, Int) -> Void
@@ -586,18 +668,17 @@
 
         func makeUIView(context: Context) -> SwiftTerm.TerminalView {
             let view = SwiftTerm.TerminalView(
-                frame: .zero,
-                font: .monospacedSystemFont(ofSize: 13, weight: .regular))
+                frame: .zero, font: .monospacedSystemFont(ofSize: 13, weight: .regular))
             view.nativeForegroundColor = UIColor(white: 0.9, alpha: 1)
             view.nativeBackgroundColor = UIColor(red: 0.035, green: 0.047, blue: 0.055, alpha: 1)
             view.caretColor = UIColor.systemOrange
             view.resize(cols: max(2, initialColumns), rows: max(1, initialRows))
             view.terminalDelegate = context.coordinator
-            // Dieter supplies the reference-style SwiftUI key bar above. Keep
-            // SwiftTerm's generic accessory from creating a second key row.
+            // The SwiftUI key bar replaces SwiftTerm's generic accessory row.
             view.inputAccessoryView = nil
             view.accessibilityIdentifier = "ios.terminals.surface"
             view.accessibilityLabel = "Remote terminal"
+            handle.view = view
             context.coordinator.acceptsInput = acceptsInput
             context.coordinator.controlArmed = controlArmed
             context.coordinator.keyboardDismissRevision = keyboardDismissRevision
@@ -609,16 +690,22 @@
         }
 
         func updateUIView(_ view: SwiftTerm.TerminalView, context: Context) {
-            context.coordinator.send = send
-            context.coordinator.resize = resize
-            context.coordinator.consumeControl = consumeControl
-            context.coordinator.acceptsInput = acceptsInput
-            context.coordinator.controlArmed = controlArmed
-            if context.coordinator.keyboardDismissRevision != keyboardDismissRevision {
-                context.coordinator.keyboardDismissRevision = keyboardDismissRevision
-                view.resignFirstResponder()
+            let coordinator = context.coordinator
+            handle.view = view
+            coordinator.send = send
+            coordinator.resize = resize
+            coordinator.consumeControl = consumeControl
+            coordinator.acceptsInput = acceptsInput
+            coordinator.controlArmed = controlArmed
+            if coordinator.keyboardDismissRevision != keyboardDismissRevision {
+                coordinator.keyboardDismissRevision = keyboardDismissRevision
+                _ = view.resignFirstResponder()
             }
-            context.coordinator.apply(screen, to: view)
+            coordinator.apply(screen, to: view)
+        }
+
+        static func dismantleUIView(_ view: SwiftTerm.TerminalView, coordinator: Coordinator) {
+            coordinator.resizeTask?.cancel()
         }
 
         @MainActor
@@ -629,13 +716,12 @@
             var acceptsInput = false
             var controlArmed = false
             var keyboardDismissRevision = 0
+            var resizeTask: Task<Void, Never>?
             private var consumedBytes = 0
             private var resetRevision = -1
-            private var resizeTask: Task<Void, Never>?
 
             init(
-                send: @escaping (Data) -> Void,
-                consumeControl: @escaping () -> Void,
+                send: @escaping (Data) -> Void, consumeControl: @escaping () -> Void,
                 resize: @escaping (Int, Int) -> Void
             ) {
                 self.send = send
@@ -643,7 +729,8 @@
                 self.resize = resize
             }
 
-            func apply(_ screen: IOSTerminalScreenState, to view: SwiftTerm.TerminalView) {
+            /// Feeds the output SwiftTerm has not drawn; a reset starts over.
+            func apply(_ screen: TerminalScreenState, to view: SwiftTerm.TerminalView) {
                 let reset = resetRevision != screen.resetRevision || consumedBytes > screen.byteCount
                 if reset {
                     let resetSequence: [UInt8] = [0x1b, 0x63]
@@ -651,43 +738,39 @@
                     consumedBytes = 0
                     resetRevision = screen.resetRevision
                 }
-                if screen.byteCount > consumedBytes {
-                    var skipped = consumedBytes
-                    for chunk in screen.chunks {
-                        if skipped >= chunk.count {
-                            skipped -= chunk.count
-                            continue
-                        }
-                        let bytes = [UInt8](chunk.dropFirst(skipped))
-                        skipped = 0
-                        if !bytes.isEmpty { view.feed(byteArray: bytes[...]) }
+                guard screen.byteCount > consumedBytes else { return }
+                var skipped = consumedBytes
+                for chunk in screen.chunks {
+                    if skipped >= chunk.count {
+                        skipped -= chunk.count
+                        continue
                     }
-                    consumedBytes = screen.byteCount
-                } else if reset {
-                    let empty = [UInt8]()
-                    view.feed(byteArray: empty[...])
+                    let bytes = [UInt8](chunk.dropFirst(skipped))
+                    skipped = 0
+                    if !bytes.isEmpty { view.feed(byteArray: bytes[...]) }
                 }
+                consumedBytes = screen.byteCount
                 view.accessibilityValue = screen.accessibilityText
             }
 
             func send(source: SwiftTerm.TerminalView, data: ArraySlice<UInt8>) {
                 guard acceptsInput else { return }
-                let data = Data(data)
-                if controlArmed, let modified = IOSTerminalKeyInput.controlModified(data) {
+                let bytes = Data(data)
+                if controlArmed, let modified = SharedRules.shared.terminalControl(bytes: bytes) {
                     controlArmed = false
                     consumeControl()
                     send(modified)
                 } else {
-                    send(data)
+                    send(bytes)
                 }
             }
 
             func sizeChanged(source: SwiftTerm.TerminalView, newCols: Int, newRows: Int) {
+                // The core debounces the machine's resize; this only skips layout churn.
                 resizeTask?.cancel()
                 resizeTask = Task { [weak self] in
-                    try? await DieterTaskSleep.milliseconds(120)
-                    guard !Task.isCancelled, let self else { return }
-                    self.resize(newCols, newRows)
+                    do { try await DieterTaskSleep.milliseconds(120) } catch { return }
+                    self?.resize(newCols, newRows)
                 }
             }
 
@@ -695,7 +778,9 @@
             func hostCurrentDirectoryUpdate(source: SwiftTerm.TerminalView, directory: String?) {}
             func scrolled(source: SwiftTerm.TerminalView, position: Double) {}
             func requestOpenLink(source: SwiftTerm.TerminalView, link: String, params: [String: String]) {
-                guard let url = URL(string: link), ["http", "https"].contains(url.scheme?.lowercased()) else { return }
+                let resolution = ClientContentLinkResolution(
+                    rules: SharedRules.shared.resolveContentLink(url: link, workspaceRoot: "", relativeTo: ""))
+                guard case .webURL = resolution.result, let url = URL(string: link) else { return }
                 UIApplication.shared.open(url)
             }
             func clipboardCopy(source: SwiftTerm.TerminalView, content: Data) {

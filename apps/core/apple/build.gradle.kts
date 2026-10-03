@@ -7,7 +7,7 @@ plugins {
 // Only this module's public API reaches the Objective-C header. Keeping the
 // shared module and its Wire models unexported keeps the header small and
 // avoids generating Objective-C adapters for every protocol message.
-// The framework is DieterShared: DieterCore is already a Swift target.
+// The framework is DieterShared; the apps' Swift side of it is SharedCore.
 kotlin {
     val xcframework = XCFramework("DieterShared")
     listOf(iosArm64(), iosSimulatorArm64(), macosArm64()).forEach { target ->
@@ -25,6 +25,9 @@ kotlin {
         }
         appleMain.dependencies {
             implementation(project(":shared"))
+        }
+        appleTest.dependencies {
+            implementation(kotlin("test"))
         }
     }
 }

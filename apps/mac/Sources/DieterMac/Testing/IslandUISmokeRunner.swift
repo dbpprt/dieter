@@ -444,7 +444,7 @@
         }
 
         private static func installFixture(in store: DieterStore) {
-            let now = DieterTimestamp.string(from: Date())
+            let now = Date().formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
             var board = Dieter_V1_Board()
             board.id = "island-board"
             board.name = "Mac polish"

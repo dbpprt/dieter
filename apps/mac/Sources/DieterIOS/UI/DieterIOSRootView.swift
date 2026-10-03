@@ -1,58 +1,148 @@
 #if os(iOS)
     import DieterAPI
-    import DieterCore
     import SwiftUI
 
+    /// The app's root: a DEBUG preview the UI tests asked for, or the app on
+    /// the shared core.
     @MainActor
     public struct DieterIOSRootView: View {
-        @Environment(\.scenePhase) private var scenePhase
-        @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-        @State private var store = IOSStore()
-        @State private var destination: IOSWorkspaceDestination?
-        @State private var selectedTaskID: String?
-        @State private var selectedScreenMachineID: String?
-        @State private var selectedTerminalMachineID: String?
-        @State private var preferredColumn: NavigationSplitViewColumn = .sidebar
-        @State private var settingsPresented = false
-        @State private var machineStatePresented = false
-        @State private var createPresentation: IOSCreateTaskPresentation?
-        @State private var pendingShareRequest: IOSShareInbox.Request?
-        @State private var loadingShareID: String?
-        @State private var shareTargetPresentation: IOSShareTargetPresentation?
-        @State private var fileScope: IOSFileScope?
-        @State private var drafts: [String: IOSConversationDraft] = [:]
-
         public init() {}
 
-        #if DEBUG
-            private var quotaPreviewMode: String? {
-                ProcessInfo.processInfo.environment["DIETER_IOS_QUOTA_PREVIEW"]
-            }
-
-            private var connectionPreviewEnabled: Bool {
-                ProcessInfo.processInfo.environment["DIETER_IOS_CONNECTION_PREVIEW"] == "1"
-            }
-
-            private var screenFixture: String? {
-                ProcessInfo.processInfo.environment["DIETER_IOS_SCREEN_FIXTURE"]
-            }
-        #endif
-
-        @ViewBuilder
         public var body: some View {
             #if DEBUG
-                if let quotaPreviewMode {
-                    IOSProviderQuotaPreviewScreen(showDetails: quotaPreviewMode == "details")
-                } else if let screenFixture {
-                    IOSRemoteDesktopFixtureView(encodedFixture: screenFixture)
-                } else if connectionPreviewEnabled {
+                if let preview = IOSLaunchConfiguration.shared.preview {
+                    IOSPreviewRoot(preview: preview)
+                } else {
+                    IOSAppRoot()
+                }
+            #else
+                IOSAppRoot()
+            #endif
+        }
+    }
+
+    /// Sign-in or the workspace, as the core's session says, plus the scene
+    /// lifecycle and the share extension's handoff.
+    private struct IOSAppRoot: View {
+        @Environment(\.scenePhase) private var scenePhase
+        @State private var app = IOSAppModel.live
+        @State private var navigation = IOSWorkspaceNavigation()
+        @State private var pendingShare: IOSShareInbox.Request?
+        @State private var loadingShareID: String?
+
+        var body: some View {
+            Group {
+                if !app.launched {
+                    IOSWorkspaceBackdrop()
+                        .overlay { ProgressView().controlSize(.large) }
+                        .accessibilityIdentifier("ios.launching")
+                } else if app.signedIn {
+                    IOSWorkspaceView()
+                } else {
+                    NavigationStack { IOSGatewayView() }
+                }
+            }
+            .environment(app)
+            .environment(navigation)
+            .tint(.blue)
+            .task {
+                await app.start()
+                receivePendingShare()
+            }
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                switch phase {
+                case .active:
+                    app.setForeground(true)
+                    receivePendingShare()
+                case .background:
+                    app.setForeground(false)
+                    // Unsent text is saved in short batches; keep the last one.
+                    Task { await app.drafts.save() }
+                default:
+                    break
+                }
+            }
+            .onChange(of: app.signedIn) { _, signedIn in
+                // Another account's selection and sheets never carry over.
+                if !signedIn { navigation = IOSWorkspaceNavigation() }
+            }
+            .onOpenURL { url in
+                guard let request = IOSShareInbox.request(from: url) else { return }
+                pendingShare = request
+                presentPendingShare()
+            }
+            .onChange(of: shareReady) { _, ready in
+                if ready { presentPendingShare() }
+            }
+            .alert(
+                "Couldn’t complete the request",
+                isPresented: Binding(
+                    get: { app.errorMessage != nil },
+                    set: { if !$0 { app.errorMessage = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) { app.errorMessage = nil }
+            } message: {
+                Text(app.errorMessage ?? "")
+            }
+        }
+
+        // MARK: - Share extension handoff
+
+        /// A shared item opens once the workspace is current.
+        private var shareReady: Bool {
+            pendingShare != nil && app.signedIn && app.session.workspaceLive
+        }
+
+        private func receivePendingShare() {
+            guard pendingShare == nil, loadingShareID == nil, let request = IOSShareInbox.pendingRequest() else {
+                return
+            }
+            pendingShare = request
+            presentPendingShare()
+        }
+
+        private func presentPendingShare() {
+            guard shareReady, let request = pendingShare, loadingShareID == nil else { return }
+            loadingShareID = request.id
+            Task {
+                defer { if loadingShareID == request.id { loadingShareID = nil } }
+                do {
+                    let attachments = try await IOSShareInbox.consume(id: request.id)
+                    guard pendingShare == request else { return }
+                    IOSShareInbox.clearPendingRequest(request)
+                    pendingShare = nil
+                    switch request.destination {
+                    case .newTask:
+                        navigation.create(chat: false, attachments: attachments)
+                    case .task, .chat:
+                        navigation.sheet = .shareTarget(
+                            IOSShareTargetRequest(kind: request.destination, attachments: attachments))
+                    }
+                } catch {
+                    if pendingShare == request {
+                        IOSShareInbox.clearPendingRequest(request)
+                        pendingShare = nil
+                        app.show(error)
+                    }
+                }
+            }
+        }
+    }
+
+    #if DEBUG
+        /// The fixed screens the UI tests launch into.
+        private struct IOSPreviewRoot: View {
+            let preview: IOSLaunchConfiguration.Preview
+
+            var body: some View {
+                switch preview {
+                case .connecting:
                     NavigationStack {
                         IOSWorkspaceBackdrop()
                             .overlay(alignment: .bottom) {
                                 IOSConnectionBanner(
-                                    title: "Connecting…",
-                                    detail: "Your draft will stay here.",
-                                    isConnecting: true,
+                                    title: "Connecting…", detail: "Your draft will stay here.", isConnecting: true,
                                     retry: {}
                                 )
                                 .padding(12)
@@ -61,617 +151,12 @@
                             .navigationBarTitleDisplayMode(.inline)
                     }
                     .tint(.blue)
-                } else {
-                    connectedContent
-                }
-            #else
-                connectedContent
-            #endif
-        }
-
-        private var connectedContent: some View {
-            Group {
-                if store.isAuthenticated {
-                    workspace
-                } else {
-                    NavigationStack { IOSGatewayView(store: store) }
-                }
-            }
-            .tint(.blue)
-            .task {
-                await store.bootstrap()
-                receivePendingShare()
-            }
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .active {
-                    store.resume()
-                    receivePendingShare()
-                } else if phase == .background {
-                    store.suspend()
-                }
-            }
-            .onOpenURL { receiveShare($0) }
-            .onChange(of: shareReady) { _, ready in
-                if ready { presentPendingShare() }
-            }
-            .alert(
-                "Couldn’t complete the request",
-                isPresented: Binding(
-                    get: { store.errorMessage != nil },
-                    set: { if !$0 { store.clearError() } }
-                )
-            ) {
-                Button("OK", role: .cancel) { store.clearError() }
-            } message: {
-                Text(store.errorMessage ?? "Please try again.")
-            }
-        }
-
-        private var workspace: some View {
-            NavigationSplitView(preferredCompactColumn: $preferredColumn) {
-                sidebar
-                    .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 340)
-            } content: {
-                if destination == .screens {
-                    IOSScreensMachinePickerView(store: store) { machineID in
-                        store.selectUtilityMachine(id: machineID)
-                        selectedScreenMachineID = machineID
-                        preferredColumn = .detail
-                    }
-                    .navigationSplitViewColumnWidth(min: 280, ideal: 350, max: 480)
-                } else if destination == .terminals {
-                    IOSTerminalsMachinePickerView(store: store) { machineID in
-                        store.selectUtilityMachine(id: machineID)
-                        selectedTerminalMachineID = machineID
-                        preferredColumn = .detail
-                    }
-                    .navigationSplitViewColumnWidth(min: 280, ideal: 350, max: 480)
-                } else {
-                    IOSTaskListView(
-                        store: store, destination: destination ?? .allTasks, selectedTaskID: $selectedTaskID,
-                        createTask: presentTaskCreation
-                    )
-                    .navigationSplitViewColumnWidth(min: 280, ideal: 350, max: 480)
-                }
-            } detail: {
-                if destination == .screens {
-                    if selectedScreenMachineID != nil {
-                        IOSScreensView(store: store) {
-                            selectedScreenMachineID = nil
-                            preferredColumn = .content
-                        }
-                        .id(selectedScreenMachineID ?? "")
-                    } else {
-                        IOSScreensPlaceholderView { preferredColumn = .content }
-                    }
-                } else if destination == .terminals {
-                    if selectedTerminalMachineID != nil {
-                        IOSTerminalsView(store: store) {
-                            selectedTerminalMachineID = nil
-                            preferredColumn = .content
-                        }
-                        .id(selectedTerminalMachineID ?? "")
-                    } else {
-                        IOSTerminalsPlaceholderView { preferredColumn = .content }
-                    }
-                } else if let id = selectedTaskID {
-                    IOSConversationView(
-                        store: store, cardID: id, draft: draftBinding(for: id),
-                        browseFiles: { openFiles(for: store.selectedCard?.card) }
-                    )
-                    .id(id)
-                } else {
-                    ContentUnavailableView(
-                        "Choose a task", systemImage: "bubble.left.and.bubble.right",
-                        description: Text("Open a task to read its conversation and continue working."))
-                }
-            }
-            .accessibilityIdentifier("ios.workspace")
-            .sheet(isPresented: $settingsPresented) {
-                NavigationStack { IOSSettingsView(store: store) }
-            }
-            .sheet(isPresented: $machineStatePresented) {
-                NavigationStack {
-                    IOSMachineStateView(store: store)
-                        .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button("Done") { machineStatePresented = false }
-                                    .accessibilityIdentifier("ios.machine-state.done")
-                            }
-                        }
-                }
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-            }
-            .sheet(item: $createPresentation) { presentation in
-                IOSCreateTaskView(
-                    store: store, initialProjectID: selectedProjectID,
-                    initialBoardID: selectedBoardID, chat: presentation.chat,
-                    initialAttachments: presentation.attachments
-                ) { id in
-                    selectedTaskID = id
-                    preferredColumn = .detail
-                }
-            }
-            .sheet(item: $shareTargetPresentation) { presentation in
-                IOSShareTargetPicker(
-                    kind: presentation.kind,
-                    cards: presentation.kind == .task ? store.cards : store.chats,
-                    projects: store.projects
-                ) { card in
-                    routeSharedAttachments(presentation.attachments, to: card, kind: presentation.kind)
-                }
-            }
-            .sheet(item: $fileScope) { scope in
-                IOSFilesView(store: store, scope: scope)
-            }
-            .onChange(of: destination) { oldValue, newValue in
-                if !selectedTaskBelongsToDestination {
-                    selectedTaskID = nil
-                    store.closeConversation()
-                }
-                if newValue == .screens, oldValue != .screens {
-                    selectedScreenMachineID = nil
-                    preferredColumn = .content
-                } else if newValue == .terminals, oldValue != .terminals {
-                    selectedTerminalMachineID = nil
-                    preferredColumn = .content
-                } else if newValue != nil {
-                    preferredColumn = .content
-                }
-            }
-            .onChange(of: selectedTaskID) { _, id in
-                if id != nil { preferredColumn = .detail } else { store.closeConversation() }
-            }
-        }
-
-        private var sidebar: some View {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 22) {
-                    if !store.phase.isConnected {
-                        IOSConnectionBanner(
-                            title: store.phase.label,
-                            detail: "Reconnect to continue working.",
-                            isConnecting: store.phase == .connecting
-                        ) {
-                            Task { await store.reconnect() }
-                        }
-                    }
-
-                    VStack(spacing: 0) {
-                        sidebarDestinationRow(
-                            .allTasks, title: "All tasks", systemImage: "square.grid.2x2",
-                            identifier: "ios.all-tasks")
-                        sidebarDivider()
-                        sidebarDestinationRow(
-                            .chats, title: "Chats", systemImage: "bubble.left.and.bubble.right",
-                            identifier: "ios.chats")
-                        sidebarDivider()
-                        sidebarDestinationRow(
-                            .terminals, title: "Terminals", systemImage: "terminal",
-                            identifier: "ios.terminals.open")
-                        sidebarDivider()
-                        sidebarDestinationRow(
-                            .screens, title: "Screens", systemImage: "display",
-                            identifier: "ios.screens.open")
-                    }
-                    .modifier(
-                        IOSGlassCardModifier(
-                            shape: RoundedRectangle(cornerRadius: 24, style: .continuous)))
-
-                    Text("Projects")
-                        .font(.title3.bold())
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-
-                    if store.projects.isEmpty {
-                        Text(store.busy ? "Loading projects…" : "No projects")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, minHeight: 92)
-                            .modifier(
-                                IOSGlassCardModifier(
-                                    shape: RoundedRectangle(cornerRadius: 24, style: .continuous)))
-                    }
-                    ForEach(store.projects, id: \.id) { project in
-                        VStack(spacing: 0) {
-                            sidebarDestinationRow(
-                                .project(project.id), title: project.name, systemImage: "folder",
-                                identifier: "ios.project.\(project.id)", emphasized: true
-                            )
-                            .contextMenu {
-                                Menu("Browse files", systemImage: "folder") {
-                                    ForEach(project.checkouts.filter { !$0.detached }, id: \.id) { checkout in
-                                        let machine = store.supportedMachines.first {
-                                            $0.daemonID == checkout.daemonID
-                                        }
-                                        Button("\(machine?.name ?? checkout.daemonID) · \(checkout.name)") {
-                                            openProjectFiles(project, checkout: checkout)
-                                        }.disabled(machine?.online != true)
-                                    }
-                                }
-                            }
-                            ForEach(store.boards.filter { $0.projectID == project.id }, id: \.id) { board in
-                                sidebarDivider(leading: 58)
-                                sidebarDestinationRow(
-                                    .board(board.id), title: board.name, systemImage: "rectangle.split.3x1",
-                                    identifier: "ios.board.\(board.id)", indent: 16)
-                            }
-                        }
-                        .modifier(
-                            IOSGlassCardModifier(
-                                shape: RoundedRectangle(cornerRadius: 24, style: .continuous)))
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-            }
-            .background { IOSWorkspaceBackdrop() }
-            .navigationTitle("Dieter")
-            .accessibilityIdentifier("ios.sidebar")
-            .refreshable {
-                await store.refreshMachines()
-            }
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Settings", systemImage: "gearshape") { settingsPresented = true }
-                        .accessibilityIdentifier("ios.settings")
-                }
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    IOSProviderQuotaCompactView(store: store)
-                    Button("Machine state", systemImage: "gauge.with.dots.needle.67percent") {
-                        machineStatePresented = true
-                    }
-                    .disabled(store.supportedMachines.isEmpty)
-                    .accessibilityIdentifier("ios.machine-state.open")
-                    if horizontalSizeClass == .compact {
-                        Button("New task", systemImage: "square.and.pencil", action: presentTaskCreation)
-                            .disabled(!store.phase.isConnected || store.projects.isEmpty)
-                            .accessibilityIdentifier("ios.new-task")
-                    }
+                case .quotas(let details):
+                    IOSProviderQuotaPreviewScreen(showDetails: details)
+                case .screen:
+                    IOSScreenFixtureView()
                 }
             }
         }
-
-        private func sidebarDestinationRow(
-            _ value: IOSWorkspaceDestination,
-            title: String,
-            systemImage: String,
-            identifier: String,
-            indent: CGFloat = 0,
-            emphasized: Bool = false
-        ) -> some View {
-            Button {
-                destination = value
-            } label: {
-                HStack(spacing: 14) {
-                    Image(systemName: systemImage)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(destination == value ? Color.accentColor : Color.primary)
-                        .frame(width: 28)
-                    Text(title)
-                        .font(emphasized ? .headline : .body)
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                    Spacer(minLength: 8)
-                    Image(systemName: "chevron.right")
-                        .font(.caption.bold())
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(.leading, 18 + indent)
-                .padding(.trailing, 16)
-                .frame(minHeight: 56)
-                .background(destination == value ? Color.accentColor.opacity(0.12) : .clear)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier(identifier)
-            .accessibilityAddTraits(destination == value ? .isSelected : [])
-        }
-
-        private func sidebarDivider(leading: CGFloat = 58) -> some View {
-            Divider().padding(.leading, leading)
-        }
-
-        private var selectedProjectID: String {
-            switch destination {
-            case let .project(id): return id
-            case let .board(id): return store.boards.first { $0.id == id }?.projectID ?? ""
-            default: return store.projects.first?.id ?? ""
-            }
-        }
-
-        private var selectedBoardID: String? {
-            if case let .board(id) = destination { return id }
-            return store.boards.first { $0.projectID == selectedProjectID }?.id
-        }
-
-        private func draftBinding(for id: String) -> Binding<IOSConversationDraft> {
-            let key = draftKey(for: id)
-            return Binding(get: { drafts[key] ?? IOSConversationDraft() }, set: { drafts[key] = $0 })
-        }
-
-        private var shareReady: Bool {
-            guard let request = pendingShareRequest, store.isAuthenticated, store.phase.isConnected else {
-                return false
-            }
-            switch request.destination {
-            case .newTask: return !store.projects.isEmpty
-            case .task, .chat: return true
-            }
-        }
-
-        private func presentTaskCreation() {
-            createPresentation = IOSCreateTaskPresentation(chat: destination == .chats, attachments: [])
-        }
-
-        private func receiveShare(_ url: URL) {
-            guard let request = IOSShareInbox.request(from: url) else { return }
-            pendingShareRequest = request
-            presentPendingShare()
-        }
-
-        private func receivePendingShare() {
-            guard pendingShareRequest == nil, loadingShareID == nil,
-                let request = IOSShareInbox.pendingRequest()
-            else { return }
-            pendingShareRequest = request
-            presentPendingShare()
-        }
-
-        private func presentPendingShare() {
-            guard shareReady, let request = pendingShareRequest, loadingShareID == nil else { return }
-            loadingShareID = request.id
-            Task {
-                defer { if loadingShareID == request.id { loadingShareID = nil } }
-                do {
-                    let attachments = try await IOSShareInbox.consume(id: request.id)
-                    guard pendingShareRequest == request else { return }
-                    IOSShareInbox.clearPendingRequest(request)
-                    pendingShareRequest = nil
-                    switch request.destination {
-                    case .newTask:
-                        createPresentation = IOSCreateTaskPresentation(chat: false, attachments: attachments)
-                    case .task, .chat:
-                        shareTargetPresentation = IOSShareTargetPresentation(
-                            kind: request.destination, attachments: attachments)
-                    }
-                } catch {
-                    if pendingShareRequest == request {
-                        IOSShareInbox.clearPendingRequest(request)
-                        pendingShareRequest = nil
-                        store.show(error)
-                    }
-                }
-            }
-        }
-
-        private func routeSharedAttachments(
-            _ attachments: [Dieter_V1_MessagePart], to card: Dieter_V1_Card,
-            kind: IOSShareInbox.Destination
-        ) -> Bool {
-            let key = draftKey(for: card.id)
-            var draft = drafts[key] ?? IOSConversationDraft()
-            do {
-                draft.attachments = try IOSAttachmentLoader.appending(attachments, to: draft.attachments)
-            } catch {
-                store.show(error)
-                return false
-            }
-            drafts[key] = draft
-            destination = kind == .chat ? .chats : .board(card.boardID)
-            selectedTaskID = card.id
-            preferredColumn = .detail
-            return true
-        }
-
-        private func draftKey(for cardID: String) -> String {
-            let owner = (store.cards + store.chats).first { $0.id == cardID }?.ownerDaemonID ?? ""
-            return owner + ":" + cardID
-        }
-
-        private var selectedTaskBelongsToDestination: Bool {
-            guard let selectedTaskID, let destination else { return false }
-            switch destination {
-            case .allTasks:
-                return store.cards.contains { $0.id == selectedTaskID }
-            case .chats:
-                return store.chats.contains { $0.id == selectedTaskID }
-            case .screens, .terminals:
-                return false
-            case let .project(id):
-                return store.cards.contains { $0.id == selectedTaskID && $0.projectID == id }
-            case let .board(id):
-                return store.cards.contains { $0.id == selectedTaskID && $0.boardID == id }
-            }
-        }
-
-        private func openProjectFiles(_ project: Dieter_V1_Project, checkout: Dieter_V1_Checkout) {
-            fileScope = IOSFileScope(
-                machineID: checkout.daemonID, projectID: project.id, checkoutID: checkout.id, cardID: "",
-                title: project.name)
-        }
-
-        private func openFiles(for card: Dieter_V1_Card?) {
-            guard let card else { return }
-            fileScope = IOSFileScope(
-                machineID: card.ownerDaemonID, projectID: card.projectID, checkoutID: card.checkoutID, cardID: card.id,
-                title: card.title)
-        }
-    }
-
-    private struct IOSCreateTaskPresentation: Identifiable {
-        let id = UUID()
-        let chat: Bool
-        let attachments: [Dieter_V1_MessagePart]
-    }
-
-    private struct IOSShareTargetPresentation: Identifiable {
-        let id = UUID()
-        let kind: IOSShareInbox.Destination
-        let attachments: [Dieter_V1_MessagePart]
-    }
-
-    private struct IOSShareTargetPicker: View {
-        @Environment(\.dismiss) private var dismiss
-        let kind: IOSShareInbox.Destination
-        let cards: [Dieter_V1_Card]
-        let projects: [Dieter_V1_Project]
-        let selected: (Dieter_V1_Card) -> Bool
-        @State private var search = ""
-
-        private var matches: [Dieter_V1_Card] {
-            cards.filter { card in
-                !card.archived
-                    && (search.isEmpty || card.title.localizedCaseInsensitiveContains(search)
-                        || card.initialPrompt.localizedCaseInsensitiveContains(search))
-            }.sorted { $0.updatedAt > $1.updatedAt }
-        }
-
-        private var title: String { kind == .chat ? "Choose Chat" : "Choose Task" }
-
-        var body: some View {
-            NavigationStack {
-                List(matches, id: \.id) { card in
-                    Button {
-                        if selected(card) { dismiss() }
-                    } label: {
-                        IOSTaskRow(
-                            card: card,
-                            projectName: projects.first { $0.id == card.projectID }?.name)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("ios.share.destination.\(card.id)")
-                }
-                .searchable(text: $search, prompt: kind == .chat ? "Search chats" : "Search tasks")
-                .navigationTitle(title)
-                .navigationBarTitleDisplayMode(.inline)
-                .overlay {
-                    if matches.isEmpty {
-                        ContentUnavailableView(
-                            search.isEmpty ? (kind == .chat ? "No chats" : "No tasks") : "No matches",
-                            systemImage: kind == .chat ? "bubble.left.and.bubble.right" : "checklist",
-                            description: Text(
-                                search.isEmpty
-                                    ? "Create one in Dieter, then share this item again."
-                                    : "Try a different search."))
-                    }
-                }
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { dismiss() }
-                            .accessibilityIdentifier("ios.share.cancel")
-                    }
-                }
-            }
-            .presentationDetents([.medium, .large])
-        }
-    }
-
-    struct IOSTaskListView: View {
-        @Bindable var store: IOSStore
-        let destination: IOSWorkspaceDestination
-        @Binding var selectedTaskID: String?
-        let createTask: () -> Void
-        @State private var search = ""
-        @State private var lane = ""
-
-        private var title: String {
-            switch destination {
-            case .allTasks: "All tasks"
-            case .chats: "Chats"
-            case .terminals: "Terminals"
-            case .screens: "Screens"
-            case let .project(id): store.projects.first { $0.id == id }?.name ?? "Project"
-            case let .board(id): store.boards.first { $0.id == id }?.name ?? "Board"
-            }
-        }
-
-        private var tasks: [Dieter_V1_Card] {
-            let source = destination == .chats ? store.chats : store.cards
-            return source.filter { card in
-                guard !card.archived else { return false }
-                switch destination {
-                case let .project(id): if card.projectID != id { return false }
-                case let .board(id): if card.boardID != id { return false }
-                case .screens, .terminals: return false
-                default: break
-                }
-                return (lane.isEmpty || destination == .chats || card.lane == lane)
-                    && (search.isEmpty || card.title.localizedCaseInsensitiveContains(search)
-                        || card.initialPrompt.localizedCaseInsensitiveContains(search))
-            }.sorted { $0.updatedAt > $1.updatedAt }
-        }
-
-        var body: some View {
-            List(selection: $selectedTaskID) {
-                ForEach(tasks, id: \.id) { card in
-                    NavigationLink(value: card.id) {
-                        IOSTaskRow(
-                            card: card, projectName: store.projects.first { $0.id == card.projectID }?.name,
-                            machineName: store.machines.first { $0.daemonID == card.ownerDaemonID }?.name,
-                            machineOnline: store.supportedMachines.first {
-                                $0.daemonID == card.ownerDaemonID
-                            }?.online == true)
-                    }
-                    .accessibilityIdentifier("ios.task.\(card.id)")
-                }
-            }
-            .listStyle(.plain)
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $search, prompt: "Search tasks")
-            .accessibilityIdentifier("ios.task-list")
-            .overlay {
-                if tasks.isEmpty {
-                    if store.busy {
-                        ProgressView("Loading tasks…")
-                    } else if !search.isEmpty {
-                        ContentUnavailableView.search(text: search)
-                    } else {
-                        ContentUnavailableView {
-                            Label("No tasks here", systemImage: "tray")
-                        } description: {
-                            Text(
-                                lane.isEmpty ? "Create a task to get started." : "Choose another lane or create a task."
-                            )
-                        } actions: {
-                            Button("New task", action: createTask)
-                                .buttonStyle(.borderedProminent)
-                                .disabled(!store.phase.isConnected || store.projects.isEmpty)
-                        }
-                    }
-                }
-            }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if destination != .chats {
-                    HStack {
-                        Picker("Lane", selection: $lane) {
-                            Text("All lanes").tag("")
-                            Text("Todo").tag("todo")
-                            Text("Running").tag("running")
-                            Text("Review").tag("review")
-                            Text("Done").tag("done")
-                        }
-                        .pickerStyle(.menu)
-                        .accessibilityIdentifier("ios.lane-filter")
-                        Spacer()
-                        Text("\(tasks.count) tasks").font(.caption).foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal).padding(.vertical, 8).background(.bar)
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("New task", systemImage: "plus", action: createTask)
-                        .disabled(!store.phase.isConnected || store.projects.isEmpty)
-                        .accessibilityIdentifier("ios.list.new-task")
-                }
-            }
-            .refreshable { await store.reconnect() }
-            .onChange(of: destination) { _, _ in
-                search = ""; lane = ""
-            }
-        }
-    }
+    #endif
 #endif

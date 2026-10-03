@@ -47,20 +47,20 @@ extension DieterStore {
     }
 
     /// The enrolled machines in the core's order, by name.
-    var machines: [DieterEndpoint] {
+    var machines: [MachineEndpoint] {
         endpoints.filter { $0.daemonID != nil }
     }
 
-    var gateways: [DieterEndpoint] {
+    var gateways: [MachineEndpoint] {
         gatewayOrigins.sorted {
-            let lhsPrimary = $0.credentialID == DieterEndpoint.defaults.first?.credentialID
-            let rhsPrimary = $1.credentialID == DieterEndpoint.defaults.first?.credentialID
+            let lhsPrimary = $0.isPrimaryGateway
+            let rhsPrimary = $1.isPrimaryGateway
             if lhsPrimary != rhsPrimary { return lhsPrimary }
             return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
     }
 
-    var activeGateway: DieterEndpoint {
+    var activeGateway: MachineEndpoint {
         gatewayOrigins.first(where: { $0.credentialID == endpoint.credentialID }) ?? endpoint.gatewayEndpoint
     }
 
@@ -75,7 +75,7 @@ extension DieterStore {
     func isPendingCard(_ id: String) -> Bool { pendingCardIDs.contains(id) }
     /// The conversation exists on its machine, not only in this Mac's outbox.
     func isConversationServerBacked(_ id: String) -> Bool {
-        DieterConversationID.isServerBacked(id) && !outboxState.pendingCardIds.contains(id)
+        SharedRules.shared.isServerBacked(conversationId: id) && !outboxState.pendingCardIds.contains(id)
     }
     func isPendingMessage(_ id: String) -> Bool { pendingMessageIDs.contains(id) }
     func isAcceptedOutboxItem(_ id: String) -> Bool { acceptedOutboxIDs.contains(id) }
@@ -94,21 +94,21 @@ extension DieterStore {
         }
     }
 
-    func replica(forProjectID projectID: String) -> DieterEndpoint? {
+    func replica(forProjectID projectID: String) -> MachineEndpoint? {
         // This selects a replica for shared metadata, never an execution owner.
         if endpoint.online, phase.isConnected { return endpoint }
         return endpoints.first { $0.daemonID != nil && machineIsAvailable($0) }
     }
 
     /// What waits in the outbox for `machine`; nil when nothing does.
-    func outbox(for machine: DieterEndpoint) -> ClientMachineOutbox? {
+    func outbox(for machine: MachineEndpoint) -> ClientMachineOutbox? {
         guard let daemonID = machine.daemonID else { return nil }
         return machineOutboxes.first { $0.daemonID == daemonID }
     }
 
     /// A machine's status line: the core's detail, when it was last seen
     /// where that matters, and what waits in its outbox.
-    func machineStatusLine(_ machine: DieterEndpoint, now: Date = Date()) -> String {
+    func machineStatusLine(_ machine: MachineEndpoint, now: Date = Date()) -> String {
         guard let entry = machineEntry(machine) else { return "" }
         return entry.statusLine(now: now) + (outbox(for: machine)?.statusSuffix ?? "")
     }

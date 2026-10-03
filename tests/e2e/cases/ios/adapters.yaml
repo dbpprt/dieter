@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: ios.adapters
+platform: ios
+suites: [smoke, functional, component]
+components: [ios]
+fixture: none
+timeout: 10m
+# The app's shared-core adapters against a scripted core, in the app host.
+native:
+  target: DieterIOSNativeTests
+  class: IOSCoreAdapterTests
+  methods:
+  - testLaunchConfigurationMapsOnlyTheIsolatedTestEnvironment
+  - testStartObservesTheAppSlicesAndAdoptsTheTestSessionOnce
+  - testALaunchWithoutATestSessionAdoptsNothing
+  - testForegroundChangesReachTheCoreInOrderOnceStarted
+  - testSignOutAndReconnectAreCoreCommands
+  - testRefusedCommandsShowTheCoresMessage
+  - testTheSessionSliceDecidesLaunchAndSignIn
+  - testWorkspaceDeltasFoldOntoTheSnapshotInOrder
+  - testTheVisibleConversationFollowsTheScreenInOrder
+  - testABoardViewBindsAfterItsFirstSnapshotAndDropsStaleTargets
+  - testABoardViewBindsAgainAfterALostUpdate
+  - testEveryBoardViewOwnsItsScope
+  - testAConversationFoldsDeltasOnlyOntoASnapshot
+  - testSendingUsesTheMessageTextAndClearsTheDraft
+  - testFilesViewsBindTheirOwnSurfacesAndIgnoreOtherTargets
+  - testTerminalViewsBindTheMachinesOwnSurface
+  - testAScreenIsObservedBeforeItConnectsAndClosingReleasesItsScope

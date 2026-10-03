@@ -15,15 +15,12 @@ MAC_SOURCE_ROOT = "apps/mac/Sources/DieterMac/"
 CI_COMPONENTS = ("core", "macos", "ios", "android", "kmp")
 IOS_POLICY_ROOTS = ("apps/mac/Sources/DieterIOS/", "apps/mac/Tests/DieterIOSTests/")
 IOS_ONLY_ROOTS = ("apps/ios/", *IOS_POLICY_ROOTS)
-SHARED_SWIFT_ROOTS = ("apps/mac/Sources/DieterCore/", "apps/mac/Sources/DieterClient/",
-                      "apps/mac/Sources/DieterTransport/",
-                      "apps/mac/Sources/DieterAPI/", "apps/mac/Tests/DieterCoreTests/",
-                      "apps/mac/Tests/DieterClientTests/", "apps/mac/Vendor/")
+SHARED_SWIFT_ROOTS = ("apps/mac/Sources/DieterTransport/", "apps/mac/Sources/DieterAPI/", "apps/mac/Vendor/")
 SWIFT_PACKAGE_FILES = {"apps/mac/Package.swift", "apps/mac/Package.resolved"}
 MAC_LIFECYCLE_FILES = {"scripts/mac_app_lifecycle.py", "scripts/mac_app_lifecycle_test.py", "scripts/mac_bundle.py", "scripts/mac_bundle_test.py", "scripts/sync_apple_proto.py", "scripts/sync_apple_proto_test.py"}
 # These SwiftPM sources are also compiled directly into the capture helper.
-CAPTURE_SHARED_FILES = {"apps/mac/Sources/DieterCore/RemoteDesktopKeyMap.swift",
-                        "apps/mac/Sources/DieterCore/ScreenClipboardContent.swift"}
+CAPTURE_SHARED_FILES = {"apps/mac/Sources/DieterTransport/RemoteDesktopKeyMap.swift",
+                        "apps/mac/Sources/DieterTransport/ScreenClipboardContent.swift"}
 
 # This is a conservative component map, not a Swift dependency graph. Shared
 # app/store/navigation/theme code and unclassified paths always run every suite.
@@ -211,6 +208,9 @@ def plan_checks(root, paths, packages=None):
     shared_core = kmp or any(p.startswith(("apps/mac/Sources/SharedCore/", "apps/mac/Tests/SharedCoreTests/"))
                              or p == "apps/mac/scripts/shared-framework.sh" for p in code)
     mac = mac or shared_core
+    # The iOS app links the same core through SharedCore (its tests excluded).
+    ios = ios or kmp or any(p.startswith("apps/mac/Sources/SharedCore/")
+                            or p == "apps/mac/scripts/shared-framework.sh" for p in code)
     mac_suites = MAC_SMOKE_SUITES if kmp else affected_mac_smoke_suites(code)
     if any(p.startswith(("tools/e2e/", "tests/e2e/cases/mac/")) or p in {"tests/e2e/schema.json", "just/e2e.just"} for p in code):
         mac_suites = MAC_SMOKE_SUITES

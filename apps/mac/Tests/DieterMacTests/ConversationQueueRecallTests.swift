@@ -1,5 +1,4 @@
 import DieterAPI
-import DieterCore
 import Foundation
 import SwiftUI
 import Testing

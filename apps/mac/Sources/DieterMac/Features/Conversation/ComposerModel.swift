@@ -1,6 +1,7 @@
 import DieterAPI
 import Foundation
 import Observation
+import SharedCore
 
 /// A conversation keeps its own draft across navigation. Async intake and send
 /// completions retain this object rather than resolving the selected

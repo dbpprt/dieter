@@ -1,10 +1,10 @@
 # Dieter shared client core (Kotlin Multiplatform)
 
-This is the client business logic of the Dieter apps. The Android and macOS
-apps run on it; the iOS app does not link it yet. It was built through work
-packages F–W6 of the
-[implementation plan](../../docs/kmp-core-implementation-plan-2026-09-30.md)
-and the [macOS cutover](../../docs/mac-shared-core-cutover-plan-2026-10-01.md),
+This is the client business logic of the Dieter apps. The Android, macOS, and
+iOS apps run on it. It was built through work packages F–W6 of the
+[implementation plan](../../docs/kmp-core-implementation-plan-2026-09-30.md),
+the [macOS cutover](../../docs/mac-shared-core-cutover-plan-2026-10-01.md), and
+the [iOS cutover](../../docs/ios-shared-core-integration-plan-2026-10-02.md),
 and it is tested end to end on the JVM (over the OkHttp transport Android
 shares), on native macOS, and from Swift.
 
@@ -34,25 +34,32 @@ Android runs entirely on the core:
   (`gradle/libs.versions.toml`) as `coreLibs`, so both apply the same Kotlin,
   AGP, coroutines, and OkHttp versions.
 
-The macOS app runs on the core. Its `SharedCore` target
-(`apps/mac/Sources/SharedCore`) links `DieterShared`, carries the core's RPCs
-over grpc-swift through the `DieterTransport` target (the WebRTC control
+Both Apple apps run on the core through the `SharedCore` target
+(`apps/mac/Sources/SharedCore`). It links `DieterShared`, carries the core's
+RPCs over grpc-swift through the `DieterTransport` target (the WebRTC control
 bridge, daemon certificate pinning, and resolver targets), and provides the
-platform services. Every Mac feature observes a slice and sends commands;
-views call `SharedRules` for rules they need while rendering. The Mac keeps
-presentation, the editor, terminal rendering, and the WebRTC, VideoToolbox, and
-Metal screen engine.
+platform services (`CoreHost` with a per-platform `CoreHostPlatform`). It also
+holds the adapter models both apps present (chats, creation, files, terminals,
+fleet, quotas, the delta folds, and drafts) and the WebRTC screen engine, which
+draws through a per-app renderer. Every feature observes a slice and sends
+commands; views call `SharedRules` for rules they need while rendering.
 
-The iOS app (`apps/ios`, `apps/mac/Sources/DieterIOS`) still runs on the Swift
-`DieterCore` and `DieterClient` modules. Its cutover follows the Mac's: slice
-and `SharedRules` adapters, then deleting those modules.
+- The macOS app keeps presentation, the editor, terminal rendering, and the
+  VideoToolbox and Metal screen renderer.
+- The iOS app (`apps/ios`, `apps/mac/Sources/DieterIOS`) keeps SwiftUI
+  presentation, `ASWebAuthenticationSession` sign-in, the Keychain store
+  (`CoreKeychainSecureStore`), SwiftTerm, the UIKit screen renderer and
+  pasteboard, and the native attachment pickers. Touch input on shared
+  screens is the core's `SharedTouchScreen`. Sign-out (`SignOut`) and
+  reconnect (`Reconnect`) are core commands. The share extension does not
+  link the core; the app validates what it hands over with `SharedRules`.
 
 | Module | Role |
 | --- | --- |
 | `model` | Wire models and gRPC stubs generated from `api/proto`, relocated to `com.dbpprt.dieter.api.*`. It also holds the core's on-device records (`dieter/core/v1`) and the UI contract (`dieter/client/v1/client.proto`, D7). |
 | `shared` | All client logic, the platform-extension contracts (`platform/Platform.kt`, `screens/ScreenMedia.kt`, `terminals/TerminalScreen.kt`), and the OkHttp transport for Android and the JVM (`jvmSharedMain`). |
 | `testing` | Fakes, `SliceFolds` (applies keyed deltas as a Swift observer does), the JVM platform, the JDK's Ed25519 verifier, and the `IsolatedGateway` fixture launcher used by every end-to-end test. |
-| `apple` | The only module exported to Swift: the `DieterShared` façade (`dispatch(command)` and `observe(slice, scope)` over encoded `dieter.client.v1` messages), the synchronous `SharedRules` exports (`SharedRules.kt`), and the native extension protocols, including the RPC bridge the Mac implements with grpc-swift (`NativeRpc.kt`). |
+| `apple` | The only module exported to Swift: the `DieterShared` façade (`dispatch(command)` and `observe(slice, scope)` over encoded `dieter.client.v1` messages), the synchronous `SharedRules` exports (`SharedRules.kt`), the `SharedTouchScreen` touch input for shared screens (`TouchScreen.kt`), and the native extension protocols, including the RPC bridge the Mac implements with grpc-swift (`NativeRpc.kt`). |
 
 ## Architecture
 
@@ -156,8 +163,8 @@ Status key:
 | W6 Screens | `screens` (trust, session controller, recovery, input, gestures, mouse buttons, clipboard, frame gating, receiver feedback), `platform/ControlFrames.kt` | `ScreenPoliciesTest`, `ScreenFramesTest`, `MouseButtonsTest`, `ControlFramesTest`, `ScreenSessionTest` (scripted daemon and engine), `ClientApiScreenEndToEndTest` | done, façade (screen) |
 | D7 UI contract | `client` (`ClientApi`, per-scope surfaces, domain command handlers, slice mappers, keyed deltas), `apple` | `KeyedTest`, the `client/*SliceTest`s, the `ClientApi*EndToEndTest`s, `just mac core-test` | done |
 | Rules for Swift | `client/rules` (`*Exports`), `apple/SharedRules.kt` | the `*ExportsTest`s, `SharedCoreTests` (Swift) | done, façade (`SharedRules`) |
-| F5 App integration | Android `sharedcore/` (`SharedCore`, `ConnectionPolicy`); macOS `SharedCore`, `DieterTransport`, and slice adapters | Android unit tests and instrumentation catalog (`tests/e2e`); `just mac test`, `just mac core-test`, `just mac screens-test` | Android and macOS on the core; iOS not yet. |
-| W7 Consolidation | — | — | Android: legacy logic, protobuf-lite, grpc-java, and rule duplicates deleted. macOS: the legacy feature plane, the legacy importer, and the Swift rule copies deleted. iOS: not started. |
+| F5 App integration | Android `sharedcore/` (`SharedCore`, `ConnectionPolicy`); Apple `SharedCore`, `DieterTransport`, and slice adapters (`DieterMac`, `DieterIOS`) | Android unit tests and instrumentation catalog (`tests/e2e`); `just mac test`, `just mac core-test`, `just mac screens-test`; `just ios build` and the iOS cases (`ios.adapters`, `ios.credentials`, `RemoteNodeUITests`) | Android, macOS, and iOS on the core. |
+| W7 Consolidation | — | — | Android: legacy logic, protobuf-lite, grpc-java, and rule duplicates deleted. macOS and iOS: the legacy feature plane, the legacy importer, the Swift rule copies, and the `DieterCore` and `DieterClient` modules deleted. |
 
 **On the Apple façade:** every feature, as `client.proto` commands and
 slices, plus `SharedRules` for render-time rules. Screens take a
@@ -203,6 +210,16 @@ output reaches Swift through the terminals slice.
 - **Android credentials** stay in the app's Keystore-backed
   `DieterCredentialStore`, which is keyed by origin as the core is; the core
   uses it as its `SecureStore`.
+- **iOS starts clean.** Its sessions live in a new Keychain service
+  (`com.dbpprt.dieter.ios.core`); earlier installs' items and defaults are not
+  read, so every install signs in once.
+- **iOS navigation follows Android.** Inbox (`SLICE_ACTIVITY`), Projects (a
+  board view per board), and Chats replace the earlier "All tasks" list; no
+  task-list slice was added.
+- **iOS screens use the trackpad model.** The core's `TouchScreenInput`
+  (also behind Android's canvas) replaced the iOS gesture and geometry code.
+  The one-shot right click and armed modifiers live there too, but only the
+  iOS toolbar uses them so far.
 - **Pending cards** carry aliases (the deterministic and the acknowledged
   daemon ID), so a card never shows twice when sync delivers it before the
   create reply.

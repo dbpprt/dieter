@@ -10,7 +10,7 @@ extension DieterStore {
     /// Connects to the active gateway, or to `newEndpoint`: a machine is
     /// attached, a gateway becomes active. Returns once the core is
     /// connected, fails, or the attempt times out.
-    func connect(to newEndpoint: DieterEndpoint? = nil, automatic: Bool = false) async {
+    func connect(to newEndpoint: MachineEndpoint? = nil, automatic: Bool = false) async {
         await startCore()
         if let daemonID = newEndpoint?.daemonID {
             guard await perform({ $0.attachMachine = .with { $0.daemonID = daemonID } }) != nil else { return }
@@ -68,13 +68,13 @@ extension DieterStore {
         await perform { $0.resync = ClientResync() }
     }
 
-    func chooseGateway(_ gateway: DieterEndpoint) async {
+    func chooseGateway(_ gateway: MachineEndpoint) async {
         guard gateway.daemonID == nil else { return }
         await useGateway(gateway)
         await connect()
     }
 
-    func saveEndpoint(_ endpoint: DieterEndpoint) async {
+    func saveEndpoint(_ endpoint: MachineEndpoint) async {
         var gateways = gatewayOrigins
         if let index = gateways.firstIndex(where: {
             $0.credentialID == endpoint.credentialID || $0.name == endpoint.name
@@ -87,14 +87,14 @@ extension DieterStore {
         await connect()
     }
 
-    func deleteEndpoint(_ endpoint: DieterEndpoint) {
+    func deleteEndpoint(_ endpoint: MachineEndpoint) {
         guard endpoint.daemonID == nil, gatewayOrigins.count > 1 else { return }
         let remaining = gatewayOrigins.filter { $0.credentialID != endpoint.credentialID }
         Task { await setGateways(remaining, active: nil) }
     }
 
     /// Makes `gateway` active, adding it to the configured gateways.
-    private func useGateway(_ gateway: DieterEndpoint) async {
+    private func useGateway(_ gateway: MachineEndpoint) async {
         if gatewayOrigins.contains(where: { $0.credentialID == gateway.credentialID }) {
             await perform { $0.selectGateway = .with { $0.origin = gateway.credentialID } }
         } else {
@@ -103,7 +103,7 @@ extension DieterStore {
     }
 
     @discardableResult
-    private func setGateways(_ gateways: [DieterEndpoint], active: DieterEndpoint?) async -> Bool {
+    private func setGateways(_ gateways: [MachineEndpoint], active: MachineEndpoint?) async -> Bool {
         await perform {
             $0.setGateways = .with { command in
                 command.gateways = gateways.map { gateway in
@@ -117,12 +117,12 @@ extension DieterStore {
         } != nil
     }
 
-    func revokeDaemon(_ endpoint: DieterEndpoint) async {
+    func revokeDaemon(_ endpoint: MachineEndpoint) async {
         guard let daemonID = endpoint.daemonID else { return }
         await perform { $0.revokeMachine = .with { $0.daemonID = daemonID } }
     }
 
-    func renameMachine(_ endpoint: DieterEndpoint, name: String) async {
+    func renameMachine(_ endpoint: MachineEndpoint, name: String) async {
         let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let daemonID = endpoint.daemonID, !normalized.isEmpty else { return }
         await perform {

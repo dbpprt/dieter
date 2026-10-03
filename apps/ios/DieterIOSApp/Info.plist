@@ -14,6 +14,7 @@
 <key>ITSAppUsesNonExemptEncryption</key><false/>
 <key>DieterAppGroupIdentifier</key><string>$(DIETER_IOS_APP_GROUP_ID)</string>
 <key>LSRequiresIPhoneOS</key><true/>
+<key>UIApplicationSupportsIndirectInputEvents</key><true/>
 <key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
 <key>UILaunchScreen</key><dict/>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>

@@ -1,6 +1,5 @@
 #if DIETER_UI_SMOKE
     import AppKit
-    import DieterCore
     import Foundation
 
     /// A runner-owned launch advertises its exact PID only after the app scene is ready.

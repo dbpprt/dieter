@@ -1,6 +1,5 @@
 package com.dbpprt.dieter.ui
 
-import android.view.KeyEvent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -67,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.dbpprt.dieter.client.v1.TerminalKey as AccessoryKey
 import com.dbpprt.dieter.core.machines.MachineRow
 import com.dbpprt.dieter.core.machines.MachineRows
 import com.dbpprt.dieter.core.terminals.NewTerminal
@@ -151,6 +151,7 @@ fun TerminalsScreen(
         } else {
             val screen = state.terminalWorkspace.screen(selected.id)
             val running = selected.running
+            val status = TerminalsView.terminalStatus(selected.status, selected.exit_code, state.terminalStreamConnected)
             Surface(
                 color = TerminalCanvas,
                 border = BorderStroke(1.dp, DieterOutline.copy(alpha = 0.72f)),
@@ -176,7 +177,7 @@ fun TerminalsScreen(
                         },
                         modifier = Modifier.fillMaxSize().testTag("terminal-canvas")
                             .semantics {
-                                contentDescription = "Terminal ${selected.name}; ${if (running) "running" else selected.status}"
+                                contentDescription = "Terminal ${selected.name}; $status"
                             },
                     )
                 }
@@ -185,8 +186,7 @@ fun TerminalsScreen(
                 enabled = running,
                 controlArmed = controlArmed,
                 onControl = { terminalView?.toggleControl() },
-                onKey = { terminalView?.sendKeyCode(it) },
-                onBytes = { terminalView?.sendBytes(it) },
+                onKey = { terminalView?.sendKey(it) },
                 onPaste = { terminalView?.pasteClipboard() },
             )
             TerminalStatusBar(
@@ -194,6 +194,7 @@ fun TerminalsScreen(
                 project = state.projects.firstOrNull { it.id == selected.project_id },
                 hostname = state.presentedProjectReplicas[selected.project_id]?.label.orEmpty(),
                 connected = state.terminalStreamConnected,
+                status = status,
             )
         }
     }
@@ -402,8 +403,7 @@ private fun TerminalAccessoryBar(
     enabled: Boolean,
     controlArmed: Boolean,
     onControl: () -> Unit,
-    onKey: (Int) -> Unit,
-    onBytes: (ByteArray) -> Unit,
+    onKey: (AccessoryKey) -> Unit,
     onPaste: () -> Unit,
 ) {
     Row(
@@ -412,13 +412,13 @@ private fun TerminalAccessoryBar(
         horizontalArrangement = Arrangement.spacedBy(5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TerminalKey("esc", enabled) { onBytes(byteArrayOf(0x1b)) }
+        TerminalKey("esc", enabled) { onKey(AccessoryKey.TERMINAL_KEY_ESCAPE) }
         TerminalKey("ctrl", enabled, selected = controlArmed, onClick = onControl)
-        TerminalKey("tab", enabled) { onKey(KeyEvent.KEYCODE_TAB) }
-        TerminalKey("←", enabled) { onKey(KeyEvent.KEYCODE_DPAD_LEFT) }
-        TerminalKey("↓", enabled) { onKey(KeyEvent.KEYCODE_DPAD_DOWN) }
-        TerminalKey("↑", enabled) { onKey(KeyEvent.KEYCODE_DPAD_UP) }
-        TerminalKey("→", enabled) { onKey(KeyEvent.KEYCODE_DPAD_RIGHT) }
+        TerminalKey("tab", enabled) { onKey(AccessoryKey.TERMINAL_KEY_TAB) }
+        TerminalKey("←", enabled) { onKey(AccessoryKey.TERMINAL_KEY_LEFT) }
+        TerminalKey("↓", enabled) { onKey(AccessoryKey.TERMINAL_KEY_DOWN) }
+        TerminalKey("↑", enabled) { onKey(AccessoryKey.TERMINAL_KEY_UP) }
+        TerminalKey("→", enabled) { onKey(AccessoryKey.TERMINAL_KEY_RIGHT) }
         TerminalKey("paste", enabled, onClick = onPaste)
     }
 }
@@ -441,7 +441,7 @@ private fun TerminalKey(label: String, enabled: Boolean, selected: Boolean = fal
 }
 
 @Composable
-private fun TerminalStatusBar(terminal: Terminal, project: Project?, hostname: String, connected: Boolean) {
+private fun TerminalStatusBar(terminal: Terminal, project: Project?, hostname: String, connected: Boolean, status: String) {
     Row(
         Modifier.fillMaxWidth().height(31.dp).background(TerminalBar).padding(horizontal = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -449,7 +449,7 @@ private fun TerminalStatusBar(terminal: Terminal, project: Project?, hostname: S
         Box(Modifier.size(6.dp).background(if (connected) DieterEyes else DieterMuted, CircleShape))
         Spacer(Modifier.width(7.dp))
         Text(
-            listOfNotNull(hostname.takeIf(String::isNotBlank), project?.name).joinToString(" · ").ifBlank { "remote Mac" },
+            listOfNotNull(status, hostname.takeIf(String::isNotBlank), project?.name).joinToString(" · "),
             color = DieterMuted,
             fontSize = 9.sp,
             fontWeight = FontWeight.SemiBold,

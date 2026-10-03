@@ -210,6 +210,9 @@ class ScreenEndToEndTest {
             }
 
             compose.onNodeWithText("Done").performClick()
+            // The test clock recomposes only when the test synchronizes; pixel
+            // captures do not, so close the details before sampling the video.
+            compose.onNodeWithText("Connection details").assertDoesNotExist()
             // Capture the actual GPU output, not only a composable placeholder.
             val screenshot = captureScreenFixture()
             val samples = mutableSetOf<Int>()

@@ -1,6 +1,5 @@
 import Testing
 import DieterAPI
-import DieterCore
 import AppKit
 import Foundation
 import Observation
@@ -206,7 +205,7 @@ private actor ScheduleRPCStub: DieterScheduleRPC {
 }
 
 @Test func daemonEndpointKeepsHostnamePresenceAndGatewayCredentialIdentity() throws {
-    let endpoint = DieterEndpoint(
+    let endpoint = MachineEndpoint(
         name: "Studio Mac",
         host: "dieter.example",
         port: 443,
@@ -215,19 +214,19 @@ private actor ScheduleRPCStub: DieterScheduleRPC {
         online: false,
         lastSeenAt: "2026-08-18T12:00:00Z",
         releaseVersion: "0.4.92",
-        compatibility: .compatible,
         minimumReleaseVersion: "0.4.80"
     )
     #expect(endpoint.id == "https://dieter.example:443#daemon-1")
     #expect(endpoint.credentialID == "https://dieter.example:443")
     #expect(endpoint.name == "Studio Mac")
     #expect(!endpoint.online)
-    #expect(endpoint.compatibility == .compatible)
     #expect(endpoint.gatewayEndpoint.daemonID == nil)
     #expect(endpoint.gatewayEndpoint.credentialID == endpoint.credentialID)
-
-    let decoded = try JSONDecoder().decode(DieterEndpoint.self, from: JSONEncoder().encode(endpoint))
-    #expect(decoded == endpoint)
+    // The core's origins round-trip; anything else is not a gateway.
+    let gateway = MachineEndpoint(origin: "https://dieter.example:443", name: "Gateway")
+    #expect(gateway?.credentialID == endpoint.credentialID)
+    #expect(MachineEndpoint(origin: "http://::1:4242", name: "Local")?.host == "::1")
+    #expect(MachineEndpoint(origin: "", name: "None") == nil)
 }
 
 @Test func cardDragPayloadRejectsUnrelatedText() {
@@ -749,10 +748,10 @@ private func terminalKeyEvent(
 
 @Test @MainActor func conversationWorkspaceRouteUsesTheConversationOwnerNotTheProjectReplica() throws {
     let store = DieterStore(liveEnvironment: false)
-    let projectReplica = DieterEndpoint(
+    let projectReplica = MachineEndpoint(
         name: "MBP", host: "mbp.invalid", port: 443, secure: true,
         daemonID: "daemon-mbp", online: true)
-    let conversationOwner = DieterEndpoint(
+    let conversationOwner = MachineEndpoint(
         name: "Mini", host: "mini.invalid", port: 443, secure: true,
         daemonID: "daemon-mini", online: true)
     store.endpoint = conversationOwner
@@ -826,16 +825,15 @@ private func terminalKeyEvent(
     #expect(ConnectionPhase.authenticationRequired.needsConnectionOverlay)
     #expect(!ConnectionPhase.connecting.needsConnectionOverlay)
     #expect(!ConnectionPhase.disconnected.needsConnectionOverlay)
-    #expect(ConnectionPhase.incompatible(found: "1").label == "Update required")
 }
 
 @Test func projectDestinationsGroupDuplicateNamesByOwningMachine() throws {
-    let gateway = DieterEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
-    let home = DieterEndpoint(
+    let gateway = MachineEndpoint(name: "Gateway", host: "example.com", port: 443, secure: true)
+    let home = MachineEndpoint(
         name: "mini-home", host: gateway.host, port: gateway.port, secure: true,
         daemonID: "home", online: true, releaseVersion: "0.4.92"
     )
-    let office = DieterEndpoint(
+    let office = MachineEndpoint(
         name: "mini-office", host: gateway.host, port: gateway.port, secure: true,
         daemonID: "office", online: false, releaseVersion: "0.4.57"
     )
@@ -866,7 +864,7 @@ private func terminalKeyEvent(
 }
 
 @Test func projectWithoutACheckoutHasNoExecutionDestination() throws {
-    let machine = DieterEndpoint(
+    let machine = MachineEndpoint(
         name: "Studio Mac", host: "example.com", port: 443, secure: true,
         daemonID: "studio", online: true
     )
@@ -886,11 +884,11 @@ private func terminalKeyEvent(
 }
 
 @Test func projectDestinationDefaultsToTheCurrentMachineAndAllowsAnExplicitCheckoutOverride() throws {
-    let current = DieterEndpoint(
+    let current = MachineEndpoint(
         name: "Zulu current Mac", host: "example.com", port: 443, secure: true,
         daemonID: "current", online: true
     )
-    let remote = DieterEndpoint(
+    let remote = MachineEndpoint(
         name: "Alpha remote Mac", host: "example.com", port: 443, secure: true,
         daemonID: "remote", online: true
     )

@@ -208,7 +208,7 @@ struct UserMessageBubble: View {
         .opacity(row.unconfirmed && row.delivery != .failed ? 0.52 : 1)
         .overlay(alignment: .bottomTrailing) {
             if row.delivery != .failed, row.delivery != .unspecified {
-                MessageDeliveryReceipt(delivery: row.delivery)
+                MessageDeliveryReceipt(delivery: row.delivery, label: row.deliveryLabel)
                     .padding(.trailing, 4)
                     .padding(.bottom, 4)
             }
@@ -227,6 +227,8 @@ struct UserMessageBubble: View {
 /// A user message's delivery, as the core reports it.
 struct MessageDeliveryReceipt: View {
     let delivery: ClientMessageDelivery
+    /// What the receipt says, as the core words it.
+    let label: String
 
     var body: some View {
         Group {
@@ -254,17 +256,7 @@ struct MessageDeliveryReceipt: View {
             delivery == .failed
                 ? DieterTheme.coral : (delivery == .queued ? DieterTheme.amber : DieterTheme.tertiary)
         )
-        .accessibilityLabel(accessibilityLabel)
-        .help(accessibilityLabel)
-    }
-
-    private var accessibilityLabel: String {
-        switch delivery {
-        case .accepted: "Accepted by daemon"
-        case .queued: "Queued for the next turn"
-        case .synced: "Synced"
-        case .failed: "Send failed; retry or remove this message"
-        default: "Waiting to send"
-        }
+        .accessibilityLabel(label)
+        .help(label)
     }
 }

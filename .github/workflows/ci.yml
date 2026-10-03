@@ -245,11 +245,13 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
-      - name: Restore the shared core framework
+      # The iOS app links the shared core's iOS slices; the Mac job's
+      # framework cache may hold only the macOS slice.
+      - name: Restore the shared core framework with iOS slices
         uses: actions/cache@v4
         with:
           path: apps/mac/Frameworks
-          key: ${{ runner.os }}-${{ runner.arch }}-dieter-shared-v1-${{ hashFiles('apps/core/**', 'apps/mac/scripts/shared-framework.sh') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-dieter-shared-ios-v1-${{ hashFiles('apps/core/**', 'apps/mac/scripts/shared-framework.sh') }}
       - name: Restore iOS build cache
         uses: actions/cache@v4
         with:
@@ -257,6 +259,8 @@ jobs:
             apps/ios/.build/DerivedData
             apps/mac/.build/dieter-tests
           key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.5-ios-quick-v1-${{ hashFiles('apps/mac/Package.swift', 'apps/mac/Package.resolved', 'apps/ios/**/Package.resolved', 'apps/mac/Vendor/**/Package.swift') }}
+      # The macOS-portable iOS tests (share inbox, attachments, architecture).
+      # The UIKit adapter tests compile into DieterIOSNativeTests below.
       - name: Run portable iOS tests
         run: just mac test DieterIOSTests
       - name: Compile iPhone and iPad test bundles

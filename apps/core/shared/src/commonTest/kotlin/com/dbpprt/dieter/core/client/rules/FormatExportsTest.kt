@@ -105,4 +105,32 @@ class FormatExportsTest {
         assertEquals("SVG · 512 B", FormatExports.attachmentDetails("", "image/svg+xml", 512))
         assertEquals("Up to 4 attachments · 5 MB each · 6 MB total", FormatExports.attachmentLimits())
     }
+
+    @Test
+    fun attachmentsMatchTheIosPickersAndShareExtension() {
+        // Ported from the iOS attachment tests: 4 files, 5 MB each, 6 MB total, with existing draft files counted.
+        val mb = 1024L * 1024
+        assertEquals("", FormatExports.attachmentLimitError(List(4) { "$it.txt" }, List(4) { 1L }))
+        assertEquals("You can attach up to 4 images or files.", FormatExports.attachmentLimitError(List(4) { "$it.png" } + "extra.txt", List(5) { 1L }))
+        assertEquals("Each attachment must be at most 5 MB.", FormatExports.attachmentLimitError(listOf("oversized.bin"), listOf(5 * mb + 1)))
+        assertEquals("", FormatExports.attachmentLimitError(listOf("exact.bin"), listOf(5 * mb)))
+        assertEquals("Attachments must total at most 6 MB.", FormatExports.attachmentLimitError(listOf("existing.bin", "extra.bin"), listOf(5 * mb, mb + 1)))
+        assertEquals("", FormatExports.attachmentLimitError(listOf("a.bin", "b.bin"), listOf(3 * mb, 3 * mb)))
+
+        // Declared types are normalized; undeclared ones follow the extension as UTType reports it.
+        assertEquals("image/png", FormatExports.attachmentMediaType("IMAGE/PNG; charset=binary", "Pasted Screenshot 2.png"))
+        assertEquals("image/png", FormatExports.attachmentMediaType("", "screenshot.png"))
+        assertEquals("text/plain", FormatExports.attachmentMediaType("", "notes.txt"))
+        assertEquals("image/jpeg", FormatExports.attachmentMediaType("", "Photo.JPG"))
+        assertEquals("image/heic", FormatExports.attachmentMediaType("", "Photo 2.heic"))
+        assertEquals("video/quicktime", FormatExports.attachmentMediaType("", "Recording.mov"))
+        assertEquals("application/vnd.openxmlformats-officedocument.wordprocessingml.document", FormatExports.attachmentMediaType("", "brief.docx"))
+        assertEquals("application/octet-stream", FormatExports.attachmentMediaType("png", "blob"), "a declared type needs a slash")
+        assertEquals("application/octet-stream", FormatExports.attachmentMediaType("", "oversized.bin"))
+
+        assertEquals("Pasted Screenshot 2.png", FormatExports.attachmentFilename("../Pasted Screenshot 2.png", "image/png"))
+        assertEquals("notes.txt", FormatExports.attachmentFilename("  notes.txt ", "text/plain"))
+        assertEquals("attachment", FormatExports.attachmentFilename("", "application/pdf"))
+        assertEquals("attached-image", FormatExports.attachmentFilename("", "image/png"))
+    }
 }

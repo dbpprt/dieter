@@ -16,7 +16,8 @@
                     && store.navigationCards.values.joined().contains { $0.title.hasPrefix("Inbox waiting:") }
             }
             guard connected, let window = NSApp.windows.first(where: { $0.title == "Dieter" && $0.isVisible }) else {
-                results["connection-fixture"] = "failed: authenticated workspace unavailable (\(store.phase.label))"
+                results["connection-fixture"] =
+                    "failed: authenticated workspace unavailable (\(store.session.phaseLabel))"
                 return
             }
             let trace = NativeUIWindowLifecycleTrace(
@@ -40,7 +41,8 @@
                 let notes = store.chats.first(where: { $0.title.hasPrefix("Inbox notes:") }),
                 let pending = cards.first(where: { $0.title.hasPrefix("Inbox pending:") })
             else {
-                results["connection-fixture"] = "failed: authenticated Inbox fixture unavailable (\(store.phase.label))"
+                results["connection-fixture"] =
+                    "failed: authenticated Inbox fixture unavailable (\(store.session.phaseLabel))"
                 return
             }
             results["connection-fixture"] = "passed"

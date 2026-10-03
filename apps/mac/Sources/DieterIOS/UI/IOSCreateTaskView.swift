@@ -1,170 +1,56 @@
-import DieterAPI
-import DieterCore
-
 #if os(iOS)
+    import DieterAPI
+    import DieterShared
     import PhotosUI
+    import SharedCore
     import SwiftUI
-    import UniformTypeIdentifiers
     import UIKit
+    import UniformTypeIdentifiers
 
+    /// A new task or chat on the shared core's creation form: the core fills
+    /// in the defaults, says why it cannot be created yet, words the title
+    /// and destination, and resolves the agent pickers against the
+    /// destination machine's catalog. The new conversation opens.
     struct IOSCreateTaskView: View {
         @Environment(\.dismiss) private var dismiss
-        @Bindable var store: IOSStore
-        let chat: Bool
-        let created: (String) -> Void
-        @State private var projectID: String
-        @State private var boardID: String
-        @State private var checkoutID = ""
-        @State private var creationHarnesses: [Dieter_V1_Harness] = []
-        @State private var catalogCheckoutID = ""
-        @State private var title = ""
-        @State private var prompt = ""
-        @State private var provider = ""
-        @State private var model = ""
-        @State private var effort = ""
-        @State private var providerOptions: [String: String] = [:]
-        @State private var selectedLabelIDs: Set<String> = []
-        @State private var attachments: [Dieter_V1_MessagePart]
+        @Environment(IOSAppModel.self) private var app
+        @Environment(IOSWorkspaceNavigation.self) private var navigation
+        let request: IOSCreateRequest
+        @State private var form: CreationFormModel
+        @State private var prepared = false
         @State private var photoItems: [PhotosPickerItem] = []
         @State private var fileImporterPresented = false
         @State private var attachmentError: String?
-        @State private var submitting = false
-        @State private var runRequested = false
+        @State private var submittingLane: String?
         private enum Field: Hashable { case title, prompt }
         @FocusState private var focusedField: Field?
 
-        init(
-            store: IOSStore, initialProjectID: String, initialBoardID: String?, chat: Bool,
-            initialAttachments: [Dieter_V1_MessagePart] = [],
-            created: @escaping (String) -> Void
-        ) {
-            self.store = store
-            self.chat = chat
-            self.created = created
-            _projectID = State(initialValue: initialProjectID)
-            _boardID = State(initialValue: initialBoardID ?? "")
-            _attachments = State(initialValue: initialAttachments)
+        init(request: IOSCreateRequest) {
+            self.request = request
+            _form = State(
+                initialValue: CreationFormModel(
+                    chat: request.chat, scope: "ios-creation-\(UUID().uuidString.lowercased())"))
         }
 
+        private var chat: Bool { request.chat }
+        private var preview: ClientCreationPreview { form.preview }
+        /// The choices with the core's defaults applied.
+        private var resolved: ClientCreationIntent { preview.intent }
+        private var projectID: String { form.intent.projectID.isEmpty ? resolved.projectID : form.intent.projectID }
+        private var boardID: String { form.intent.boardID.isEmpty ? resolved.boardID : form.intent.boardID }
+        private var board: Dieter_V1_Board? { app.board(boardID) }
         private var checkouts: [Dieter_V1_Checkout] {
-            store.projects.first { $0.id == projectID }?.checkouts.filter { !$0.detached } ?? []
+            app.project(projectID)?.checkouts.filter { !$0.detached } ?? []
         }
-        private var boards: [Dieter_V1_Board] { store.boards.filter { $0.projectID == projectID } }
-        private var selectedBoard: Dieter_V1_Board? { boards.first { $0.id == boardID } }
-        private var labels: [Dieter_V1_Label] { chat ? [] : selectedBoard?.labels ?? [] }
-        private var harness: Dieter_V1_Harness? { creationHarnesses.first { $0.id == provider } }
-        private var models: [Dieter_V1_HarnessModel] { harness?.models ?? [] }
-        private var selectedModel: Dieter_V1_HarnessModel? { models.first { $0.id == model } }
-        private var fastModeOption: Dieter_V1_ProviderOption? {
-            IOSCreateTaskProviderOptions.fastModeOption(for: harness, model: model)
-        }
-        private var efforts: [String] {
-            guard let selectedModel else { return [] }
-            return selectedModel.efforts.isEmpty ? (harness?.effort.options.map(\.id) ?? []) : selectedModel.efforts
-        }
-        private func effortName(_ value: String) -> String {
-            let options: [Dieter_V1_EffortOption] = harness?.effort.options ?? []
-            return options.first(where: { $0.id == value })?.name ?? value.capitalized
-        }
-        private var canSubmit: Bool {
-            !submitting && store.phase.isConnected && !projectID.isEmpty && (chat || !boardID.isEmpty)
-                && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && !provider.isEmpty && !model.isEmpty && !checkoutID.isEmpty && catalogCheckoutID == checkoutID
-        }
-        private var hasModifiedProviderOptions: Bool {
-            providerOptions
-                != IOSCreateTaskProviderOptions.normalized(for: harness, model: model, saved: [:])
+        private var labels: [Dieter_V1_Label] { chat ? [] : board?.labels ?? [] }
+        private var submitting: Bool { submittingLane != nil }
+        private var canSubmit: Bool { !submitting && form.previewed && preview.problem.isEmpty }
+        private var edited: Bool {
+            !form.intent.title.isEmpty || !form.intent.prompt.isEmpty || !form.intent.labelIds.isEmpty
+                || !form.attachments.isEmpty
         }
 
         var body: some View {
-            navigationView
-                .interactiveDismissDisabled(
-                    submitting || !prompt.isEmpty || !title.isEmpty || !selectedLabelIDs.isEmpty || !attachments.isEmpty
-                        || hasModifiedProviderOptions
-                )
-                .fileImporter(
-                    isPresented: $fileImporterPresented,
-                    allowedContentTypes: [.item],
-                    allowsMultipleSelection: true,
-                    onCompletion: importFiles
-                )
-                .onChange(of: photoItems) { _, items in
-                    guard !items.isEmpty else { return }
-                    photoItems = []
-                    focusedField = nil
-                    Task {
-                        do {
-                            attachments = try await IOSAttachmentLoader().parts(
-                                photoItems: items, appendingTo: attachments)
-                            attachmentError = nil
-                        } catch {
-                            showAttachmentError(error)
-                        }
-                    }
-                }
-                .task {
-                    if projectID.isEmpty { projectID = store.projects.first?.id ?? "" }
-                    if !boards.contains(where: { $0.id == boardID }) { boardID = boards.first?.id ?? "" }
-                    if checkouts.count == 1 { checkoutID = checkouts[0].id }
-                }
-                .task(id: checkoutID) { await loadCreationHarnesses() }
-                .onChange(of: projectID) { _, _ in
-                    focusedField = nil
-                    selectedLabelIDs.removeAll()
-                    boardID = boards.first?.id ?? ""
-                    checkoutID = checkouts.count == 1 ? checkouts[0].id : ""
-                }
-                .onChange(of: boardID) { _, _ in
-                    focusedField = nil
-                    selectedLabelIDs.removeAll()
-                }
-                .onChange(of: labels.map(\.id)) { _, availableIDs in
-                    selectedLabelIDs.formIntersection(availableIDs)
-                }
-                .onChange(of: provider) { _, _ in
-                    focusedField = nil; resetModel()
-                }
-                .onChange(of: model) { _, _ in
-                    focusedField = nil
-                    resetEffort()
-                    providerOptions = IOSCreateTaskProviderOptions.normalized(
-                        for: harness, model: model, saved: providerOptions)
-                }
-                .onChange(of: effort) { _, _ in focusedField = nil }
-        }
-
-        private func importFiles(_ result: Result<[URL], Error>) {
-            switch result {
-            case .success(let urls):
-                Task {
-                    do {
-                        attachments = try await IOSAttachmentLoader().parts(
-                            urls: urls, appendingTo: attachments)
-                        attachmentError = nil
-                    } catch {
-                        attachmentError = error.localizedDescription
-                    }
-                }
-            case .failure(let error):
-                if (error as NSError).code != NSUserCancelledError {
-                    attachmentError = error.localizedDescription
-                }
-            }
-        }
-
-        private func loadCreationHarnesses() async {
-            catalogCheckoutID = ""; creationHarnesses = []
-            guard !checkoutID.isEmpty else { return }
-            let requested = checkoutID
-            do {
-                let catalog = try await store.creationHarnesses(projectID: projectID, checkoutID: requested)
-                guard !Task.isCancelled, checkoutID == requested else { return }
-                creationHarnesses = catalog; catalogCheckoutID = requested
-                provider = catalog.first?.id ?? ""; resetModel()
-            } catch { if !Task.isCancelled { store.show(error) } }
-        }
-
-        private var navigationView: some View {
             NavigationStack {
                 Form {
                     taskSection
@@ -172,9 +58,6 @@ import DieterCore
                     destinationSection
                     labelsSection
                     agentSection
-                    if !store.phase.isConnected {
-                        Section { Text("Reconnect to create this task.").foregroundStyle(.secondary) }
-                    }
                 }
                 .accessibilityIdentifier("ios.create.form")
                 .scrollDismissesKeyboard(.interactively)
@@ -194,79 +77,90 @@ import DieterCore
                             .accessibilityIdentifier("ios.create.keyboard-done")
                     }
                 }
-                .safeAreaInset(edge: .bottom) {
-                    submissionBar
+                .safeAreaInset(edge: .bottom) { submissionBar }
+            }
+            .interactiveDismissDisabled(submitting || edited)
+            .task { prepare() }
+            .task(id: PreviewKey(prepared: prepared, intent: form.intent, attachments: form.attachments.count)) {
+                guard prepared else { return }
+                await form.refresh()
+            }
+            .fileImporter(
+                isPresented: $fileImporterPresented, allowedContentTypes: [.item], allowsMultipleSelection: true
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    intake { try await IOSAttachmentLoader().parts(urls: urls, appendingTo: $0) }
+                case .failure(let error):
+                    if (error as NSError).code != NSUserCancelledError { attachmentError = error.localizedDescription }
                 }
+            }
+            .onChange(of: photoItems) { _, items in
+                guard !items.isEmpty else { return }
+                photoItems = []
+                focusedField = nil
+                intake { try await IOSAttachmentLoader().parts(photoItems: items, appendingTo: $0) }
             }
         }
 
-        private var submissionBar: some View {
-            HStack(spacing: 12) {
-                Button {
-                    submit(run: false)
-                } label: {
-                    HStack {
-                        if submitting && !runRequested { ProgressView() }
-                        Text("Add task").frame(maxWidth: .infinity)
-                    }
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("ios.create.add")
-                Button {
-                    submit(run: true)
-                } label: {
-                    HStack {
-                        if submitting && runRequested { ProgressView().tint(.white) }
-                        Label("Run task", systemImage: "play.fill").frame(maxWidth: .infinity)
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("ios.create.run")
-            }
-            .controlSize(.large)
-            .disabled(!canSubmit)
-            .padding().background(.bar)
+        /// What a preview depends on: the choices and how many files are attached.
+        private struct PreviewKey: Equatable {
+            let prepared: Bool
+            let intent: ClientCreationIntent
+            let attachments: Int
         }
+
+        private func prepare() {
+            guard !prepared else { return }
+            form.attach(app.core)
+            form.intent.projectID = request.projectID
+            form.intent.boardID = chat ? "" : request.boardID
+            form.attachments = request.attachments
+            prepared = true
+        }
+
+        // MARK: - Sections
 
         private var taskSection: some View {
             Section("Task") {
-                TextField("Title (optional)", text: $title)
-                    .focused($focusedField, equals: .title)
-                    .submitLabel(.next)
-                    .onSubmit { focusedField = .prompt }
-                    .accessibilityIdentifier("ios.create.title")
+                TextField(
+                    "Title", text: $form.intent.title,
+                    prompt: Text(preview.title.isEmpty ? "Title (optional)" : preview.title)
+                )
+                .focused($focusedField, equals: .title)
+                .submitLabel(.next)
+                .onSubmit { focusedField = .prompt }
+                .accessibilityIdentifier("ios.create.title")
                 IOSAttachmentTextEditor(
-                    text: $prompt,
+                    text: $form.intent.prompt,
                     isFocused: Binding(
                         get: { focusedField == .prompt },
                         set: { focusedField = $0 ? .prompt : nil }
                     ),
-                    placeholder: "What should the agent do?",
+                    placeholder: chat ? "Ask anything" : "What should the agent do?",
                     minimumLines: 6,
                     maximumLines: 12,
                     accessibilityIdentifier: "ios.create.prompt",
                     keyboardDoneAccessibilityIdentifier: "ios.create.keyboard-done",
-                    pastedImages: appendPastedImages,
-                    pasteFailed: showAttachmentError
+                    pastedImages: { payloads in
+                        intake { try await IOSAttachmentLoader().parts(payloads: payloads, appendingTo: $0) }
+                    },
+                    pasteFailed: { attachmentError = $0.localizedDescription }
                 )
             }
         }
 
         private var attachmentsSection: some View {
-            Section("Attachments") {
-                ForEach(Array(attachments.enumerated()), id: \.offset) { index, part in
+            let slots = IOSAttachmentLoader.remainingSlots(after: form.attachments)
+            return Section("Attachments") {
+                ForEach(Array(form.attachments.enumerated()), id: \.offset) { index, part in
                     attachmentRow(part, index: index)
                 }
                 HStack(spacing: 20) {
-                    PhotosPicker(
-                        selection: $photoItems,
-                        maxSelectionCount: max(
-                            1, IOSAttachmentLoader.maximumCount - attachments.count),
-                        matching: .images
-                    ) {
+                    PhotosPicker(selection: $photoItems, maxSelectionCount: max(1, slots), matching: .images) {
                         Label("Photos", systemImage: "photo.on.rectangle")
                     }
-                    .disabled(attachments.count >= IOSAttachmentLoader.maximumCount)
+                    .disabled(slots == 0)
                     .accessibilityIdentifier("ios.create.attach-photos")
                     Button {
                         focusedField = nil
@@ -274,10 +168,11 @@ import DieterCore
                     } label: {
                         Label("Files", systemImage: "folder")
                     }
-                    .disabled(attachments.count >= IOSAttachmentLoader.maximumCount)
+                    .disabled(slots == 0)
                     .accessibilityIdentifier("ios.create.attach-files")
                 }
-                Text("Up to 4 files, 5 MB each and 6 MB total.")
+                .buttonStyle(.borderless)
+                Text(IOSAttachmentLoader.limits)
                     .font(.caption).foregroundStyle(.secondary)
                 if let attachmentError {
                     Text(attachmentError).font(.caption).foregroundStyle(.red)
@@ -287,27 +182,79 @@ import DieterCore
         }
 
         private var destinationSection: some View {
-            Section("Destination") {
-                Picker("Project", selection: $projectID) {
-                    ForEach(store.projects, id: \.id) { Text($0.name).tag($0.id) }
+            Section {
+                Picker(
+                    "Project",
+                    selection: Binding(
+                        get: { projectID },
+                        set: { id in
+                            focusedField = nil
+                            form.intent.projectID = id
+                            form.intent.boardID = ""
+                            form.intent.checkoutID = ""
+                            form.intent.labelIds = []
+                        })
+                ) {
+                    if projectID.isEmpty { Text("Choose a project").tag("") }
+                    ForEach(app.workspace.projects, id: \.id) { Text($0.name).tag($0.id) }
                 }
                 .accessibilityIdentifier("ios.create.project")
                 if !chat {
-                    Picker("Board", selection: $boardID) {
-                        ForEach(boards, id: \.id) { Text($0.name).tag($0.id) }
+                    Picker(
+                        "Board",
+                        selection: Binding(
+                            get: { boardID },
+                            set: { id in
+                                focusedField = nil
+                                form.intent.boardID = id
+                                form.intent.labelIds = []
+                            })
+                    ) {
+                        if boardID.isEmpty { Text("Choose a board").tag("") }
+                        ForEach(app.boards(in: projectID), id: \.id) { Text($0.name).tag($0.id) }
                     }
                     .accessibilityIdentifier("ios.create.board")
+                    if !preview.startLanes.isEmpty {
+                        Picker("Start in", selection: Binding(get: { form.lane }, set: { form.intent.lane = $0 })) {
+                            ForEach(preview.startLanes, id: \.id) { Text($0.name).tag($0.id) }
+                        }
+                        .accessibilityIdentifier("ios.create.lane")
+                    }
                 }
-                Picker("Machine & checkout", selection: $checkoutID) {
-                    Text("Choose a checkout").tag("")
+                Picker(
+                    "Machine & checkout",
+                    selection: Binding(get: { resolved.checkoutID }, set: pickCheckout)
+                ) {
+                    if resolved.checkoutID.isEmpty { Text("Choose a checkout").tag("") }
                     ForEach(checkouts, id: \.id) { checkout in
-                        let machine = store.machines.first { $0.daemonID == checkout.daemonID }
                         Text(
-                            "\(machine?.name ?? checkout.daemonID) · \(checkout.name.isEmpty ? checkout.id : checkout.name)\(machine?.online == true ? "" : " · Offline")"
-                        ).tag(checkout.id)
+                            [app.machine(checkout.daemonID)?.name ?? checkout.daemonID, checkout.name]
+                                .filter { !$0.isEmpty }.joined(separator: " · ")
+                        )
+                        .tag(checkout.id)
                     }
                 }
                 .accessibilityIdentifier("ios.create.checkout")
+                Picker(
+                    "Workspace",
+                    selection: Binding(
+                        get: { resolved.workspaceMode },
+                        set: { form.intent.workspaceMode = $0 })
+                ) {
+                    ForEach(SharedRules.shared.workspaceModes(), id: \.self) { mode in
+                        Text(SharedRules.shared.workspaceModeChoiceTitle(mode: mode)).tag(mode)
+                    }
+                }
+                .accessibilityIdentifier("ios.create.workspace-mode")
+            } header: {
+                Text("Destination")
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    if !preview.workspaceDetail.isEmpty { Text(preview.workspaceDetail) }
+                    if !preview.destinationStatus.isEmpty {
+                        Text(preview.destinationStatus).accessibilityIdentifier("ios.create.destination-status")
+                    }
+                }
             }
         }
 
@@ -326,85 +273,83 @@ import DieterCore
         }
 
         private var agentSection: some View {
-            Section("Agent") {
-                Picker("Provider", selection: $provider) {
-                    ForEach(creationHarnesses, id: \.id) { Text($0.name).tag($0.id) }
-                }
-                .accessibilityIdentifier("ios.create.provider")
-                .accessibilityValue(harness?.name ?? provider)
-                Picker("Model", selection: $model) {
-                    ForEach(models, id: \.id) { (option: Dieter_V1_HarnessModel) in
-                        Text(option.name).tag(option.id)
+            Section {
+                if preview.catalog == .none {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text(preview.destinationStatus.isEmpty ? "Loading agent models…" : preview.destinationStatus)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityIdentifier("ios.create.harness-loading")
+                } else {
+                    IOSAgentPickers(controls: preview.agent, identifierPrefix: "ios.create") { choice in
+                        focusedField = nil
+                        Task { await form.refresh(choice: choice) }
                     }
                 }
-                .accessibilityIdentifier("ios.create.model")
-                .accessibilityValue(selectedModel?.name ?? model)
-                if !efforts.isEmpty {
-                    Picker("Reasoning", selection: $effort) {
-                        ForEach(efforts, id: \.self) { value in
-                            Text(effortName(value))
-                                .tag(value)
+            } header: {
+                Text("Agent")
+            } footer: {
+                if !preview.offlineHint.isEmpty {
+                    Label(preview.offlineHint, systemImage: "exclamationmark.triangle")
+                        .accessibilityIdentifier("ios.create.offline-hint")
+                }
+            }
+        }
+
+        private var submissionBar: some View {
+            VStack(spacing: 8) {
+                if form.previewed {
+                    Text(preview.problem.isEmpty ? preview.summary : preview.problem)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("ios.create.status")
+                }
+                HStack(spacing: 12) {
+                    if chat {
+                        submitButton(lane: "", title: "Start chat", systemImage: "paperplane.fill", prominent: true)
+                    } else {
+                        ForEach(preview.startLanes, id: \.id) { lane in
+                            if SharedRules.shared.opensAfterCreate(chat: false, lane: lane.id) {
+                                submitButton(
+                                    lane: lane.id, title: "Run task", systemImage: "play.fill", prominent: true)
+                            } else {
+                                submitButton(
+                                    lane: lane.id, title: "Add to \(lane.name)", systemImage: nil, prominent: false)
+                            }
                         }
                     }
-                    .accessibilityIdentifier("ios.create.effort")
                 }
-                if let fastModeOption {
-                    Toggle(
-                        fastModeOption.name.isEmpty ? "Fast mode" : fastModeOption.name,
-                        isOn: fastModeSelection
-                    )
-                    .accessibilityIdentifier("ios.create.fast-mode")
-                }
+                .controlSize(.large)
+                .disabled(!canSubmit)
             }
+            .padding()
+            .background(.bar)
         }
 
-        private func resetModel() {
-            let preferred = harness?.defaultModel ?? ""
-            model =
-                harness?.models.contains(where: { $0.id == preferred }) == true
-                ? preferred : harness?.models.first?.id ?? ""
-            resetEffort()
-            providerOptions = IOSCreateTaskProviderOptions.normalized(for: harness, model: model, saved: [:])
-        }
-
-        private func resetEffort() {
-            let preferred = selectedModel?.defaultEffort ?? ""
-            effort = efforts.contains(preferred) ? preferred : efforts.first ?? ""
-        }
-
-        private func appendPastedImages(_ payloads: [IOSAttachmentPayload]) {
-            Task {
-                do {
-                    attachments = try await IOSAttachmentLoader().parts(
-                        payloads: payloads,
-                        appendingTo: attachments)
-                    attachmentError = nil
-                } catch {
-                    showAttachmentError(error)
-                }
-            }
-        }
-
-        private func showAttachmentError(_ error: Error) {
-            attachmentError = error.localizedDescription
-        }
-
-        private func labelSelection(_ id: String) -> Binding<Bool> {
-            Binding(
-                get: { selectedLabelIDs.contains(id) },
-                set: { selected in
-                    if selected {
-                        selectedLabelIDs.insert(id)
+        @ViewBuilder
+        private func submitButton(lane: String, title: String, systemImage: String?, prominent: Bool) -> some View {
+            let starts = chat || SharedRules.shared.opensAfterCreate(chat: false, lane: lane)
+            let button = Button {
+                submit(lane: lane)
+            } label: {
+                HStack {
+                    if submittingLane == lane { ProgressView().tint(prominent ? .white : nil) }
+                    if let systemImage {
+                        Label(title, systemImage: systemImage)
                     } else {
-                        selectedLabelIDs.remove(id)
+                        Text(title)
                     }
-                })
-        }
-
-        private var fastModeSelection: Binding<Bool> {
-            Binding(
-                get: { providerOptions["fast_mode", default: fastModeOption?.defaultValue ?? "false"] == "true" },
-                set: { providerOptions["fast_mode"] = $0 ? "true" : "false" })
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .accessibilityIdentifier(starts ? "ios.create.run" : "ios.create.add")
+            if prominent {
+                button.buttonStyle(.borderedProminent)
+            } else {
+                button.buttonStyle(.bordered)
+            }
         }
 
         private func attachmentRow(_ part: Dieter_V1_MessagePart, index: Int) -> some View {
@@ -421,13 +366,16 @@ import DieterCore
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(part.filename).lineLimit(1)
-                    Text(ByteCountFormatter.string(fromByteCount: Int64(part.data.count), countStyle: .file))
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text(
+                        SharedRules.shared.attachmentDetails(
+                            filename: part.filename, mediaType: part.mediaType, bytes: Int64(part.data.count))
+                    )
+                    .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
                 Button("Remove", systemImage: "xmark.circle.fill", role: .destructive) {
-                    guard attachments.indices.contains(index), attachments[index] == part else { return }
-                    attachments.remove(at: index)
+                    guard form.attachments.indices.contains(index), form.attachments[index] == part else { return }
+                    form.attachments.remove(at: index)
                     attachmentError = nil
                 }
                 .labelStyle(.iconOnly)
@@ -437,52 +385,66 @@ import DieterCore
             .accessibilityIdentifier("ios.create.attachment.\(index)")
         }
 
-        private func submit(run: Bool) {
+        // MARK: - Choices
+
+        private func labelSelection(_ id: String) -> Binding<Bool> {
+            Binding(
+                get: { form.intent.labelIds.contains(id) },
+                set: { selected in
+                    form.intent.labelIds.removeAll { $0 == id }
+                    if selected { form.intent.labelIds = (form.intent.labelIds + [id]).sorted() }
+                })
+        }
+
+        /// New conversations in the project run on the picked checkout; the core remembers it.
+        private func pickCheckout(_ id: String) {
+            focusedField = nil
+            form.intent.checkoutID = id
+            guard !id.isEmpty else { return }
+            let project = projectID
+            Task {
+                await app.perform {
+                    $0.rememberCreation = .with {
+                        $0.projectID = project
+                        $0.checkoutID = id
+                    }
+                }
+            }
+        }
+
+        /// Reads picked or pasted files into the form, within the core's limits.
+        private func intake(
+            _ read: @escaping @Sendable ([Dieter_V1_MessagePart]) async throws -> [Dieter_V1_MessagePart]
+        ) {
+            let existing = form.attachments
+            Task { @MainActor in
+                do {
+                    let parts = try await read(existing)
+                    let added = Array(parts.dropFirst(existing.count))
+                    form.attachments = try IOSAttachmentLoader.appending(added, to: form.attachments)
+                    attachmentError = nil
+                } catch {
+                    attachmentError = error.localizedDescription
+                }
+            }
+        }
+
+        private func submit(lane: String) {
             guard canSubmit else { return }
             focusedField = nil
-            submitting = true
-            runRequested = run
-            let labelIDs = IOSCreateTaskLabels.normalized(selected: selectedLabelIDs, available: labels)
-            let providerOptions = IOSCreateTaskProviderOptions.normalized(
-                for: harness, model: model, saved: providerOptions)
+            if !chat { form.intent.lane = lane }
+            submittingLane = lane
             Task {
-                let id = await store.createTask(
-                    projectID: projectID, checkoutID: checkoutID, boardID: chat ? nil : boardID, title: title,
-                    prompt: prompt,
-                    provider: provider, model: model, effort: effort, labelIDs: labelIDs,
-                    providerOptions: providerOptions, attachments: attachments, run: run)
-                submitting = false
-                if let id { created(id); dismiss() }
+                var created: Dieter_V1_Card?
+                _ = await form.create { intent, chat, submissionID in
+                    created = await app.createConversation(intent, chat: chat, submissionID: submissionID)
+                    return created != nil
+                }
+                submittingLane = nil
+                guard let created else { return }
+                dismiss()
+                navigation.openConversation(created.id)
             }
         }
     }
-
 #endif
-
-enum IOSCreateTaskLabels {
-    static func normalized(selected: Set<String>, available: [Dieter_V1_Label]) -> [String] {
-        let availableIDs = Set(available.lazy.map(\.id))
-        return selected.intersection(availableIDs).sorted()
-    }
-}
-
-enum IOSCreateTaskProviderOptions {
-    static func fastModeOption(
-        for harness: Dieter_V1_Harness?, model: String
-    ) -> Dieter_V1_ProviderOption? {
-        ProviderOptionValues.options(for: harness, model: model).first { $0.id == "fast_mode" }
-    }
-
-    static func normalized(
-        for harness: Dieter_V1_Harness?, model: String, saved: [String: String]
-    ) -> [String: String] {
-        guard fastModeOption(for: harness, model: model) != nil else { return [:] }
-        let values = ProviderOptionValues.normalized(for: harness, model: model, saved: saved)
-        guard let fastMode = values["fast_mode"] else { return [:] }
-        return ["fast_mode": fastMode]
-    }
-
-    static func identity(_ values: [String: String]) -> [String] {
-        values.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
-    }
-}

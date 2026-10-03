@@ -284,8 +284,11 @@ class ReleaseTests(unittest.TestCase):
             result = release.archive_unsigned(self.root, "1.2.3", "42", {})
         material.assert_not_called()
         self.assertEqual(result, self.root / "apps/ios/.build/release/1.2.3-42/Dieter.xcarchive")
-        self.assertEqual(len(commands.calls), 1)
-        argv = commands.calls[0][0]
+        self.assertEqual(len(commands.calls), 2)
+        # The shared core's release framework is built before the archive links it.
+        self.assertEqual(commands.calls[0][0],
+                         [str(self.root / "apps/mac/scripts/shared-framework.sh"), "release", "all"])
+        argv = commands.calls[1][0]
         self.assertIn("CODE_SIGNING_ALLOWED=NO", argv)
         self.assertIn("DIETER_RELEASE_VERSION=1.2.3", argv)
         self.assertEqual(argv[argv.index("-destination") + 1], "generic/platform=iOS")
@@ -300,6 +303,10 @@ class ReleaseTests(unittest.TestCase):
         self.assert_clean(commands)
         self.assertFalse(self.profile.exists())
         self.assertFalse(self.share_profile.exists())
+        labels = [label for _, label in commands.calls]
+        # The shared core builds before any signing state exists on the runner.
+        self.assertEqual(labels[0], "Shared core framework build")
+        self.assertLess(labels.index("Shared core framework build"), labels.index("Temporary keychain creation"))
         archive = next(argv for argv, _ in commands.calls if "archive" in argv)
         for setting in (
             f"DIETER_IOS_TEAM_ID={META['team_id']}", "DIETER_IOS_SIGN_STYLE=Manual",
@@ -362,6 +369,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_cleanup_on_each_signing_archive_export_and_upload_failure(self):
         labels = (
+            "Shared core framework build",
             "Temporary keychain creation", "Temporary keychain settings", "Temporary keychain unlock",
             "Dedicated iOS certificate import", "Temporary signing key access", "Temporary iOS signing identity lookup",
             "Temporary keychain search list", "Signed iOS archive", "Archived iOS signature verification",

@@ -38,7 +38,7 @@
             store.quotas.install(groups: [group])
             for count in [5, 20] {
                 store.endpoints = (0..<count).map { index in
-                    DieterEndpoint(
+                    MachineEndpoint(
                         name: "Machine \(index + 1)", host: "127.0.0.1", port: 4242 + index,
                         daemonID: "chrome-machine-\(index)", online: false, releaseVersion: "fixture")
                 }

@@ -27,7 +27,7 @@ struct MachinePopover: View {
     @Environment(DieterStore.self) private var store
     @State private var pendingAction: Dieter_V1_MachineOperationAction?
 
-    private var machine: DieterEndpoint? {
+    private var machine: MachineEndpoint? {
         guard let id = store.fleet.selectedMachineID else { return store.machines.first }
         return store.machines.first { $0.id == id }
     }
@@ -86,7 +86,7 @@ struct MachinePopover: View {
         }
     }
 
-    private func machineBody(_ machine: DieterEndpoint) -> some View {
+    private func machineBody(_ machine: MachineEndpoint) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 machineIdentity(machine)
@@ -123,7 +123,7 @@ struct MachinePopover: View {
         .accessibilityIdentifier("machine.detail")
     }
 
-    private func machineIdentity(_ machine: DieterEndpoint) -> some View {
+    private func machineIdentity(_ machine: MachineEndpoint) -> some View {
         HStack(spacing: 14) {
             Image(systemName: "desktopcomputer")
                 .font(.system(size: 23, weight: .medium))
@@ -205,7 +205,7 @@ struct MachinePopover: View {
         }
     }
 
-    private func machineSubtitle(_ machine: DieterEndpoint) -> String {
+    private func machineSubtitle(_ machine: MachineEndpoint) -> String {
         guard let information else {
             if store.fleet.machineInformationError != nil { return "Machine information unavailable" }
             return machine.online ? "Loading machine information…" : store.machineStatusLine(machine)
@@ -367,7 +367,7 @@ struct MachinePopover: View {
         }
     }
 
-    private func softwarePanel(_ information: Dieter_V1_MachineInformation, machine: DieterEndpoint) -> some View {
+    private func softwarePanel(_ information: Dieter_V1_MachineInformation, machine: MachineEndpoint) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("SOFTWARE").font(DieterFont.sectionLabel).tracking(1).foregroundStyle(DieterTheme.tertiary)
             VStack(spacing: 0) {
@@ -431,7 +431,7 @@ struct MachinePopover: View {
         }
     }
 
-    private func machineFooter(_ information: Dieter_V1_MachineInformation, machine: DieterEndpoint) -> some View {
+    private func machineFooter(_ information: Dieter_V1_MachineInformation, machine: MachineEndpoint) -> some View {
         HStack(spacing: 18) {
             Label(
                 SharedRules.shared.machineDisk(freeBytes: Int64(clamping: information.diskFreeBytes)),
@@ -462,7 +462,7 @@ struct MachinePopover: View {
         .padding(.top, 2)
     }
 
-    private func machineUnavailable(_ machine: DieterEndpoint) -> some View {
+    private func machineUnavailable(_ machine: MachineEndpoint) -> some View {
         VStack(spacing: 10) {
             Image(
                 systemName: machine.online

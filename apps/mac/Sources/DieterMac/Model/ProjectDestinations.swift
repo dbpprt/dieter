@@ -36,8 +36,8 @@ enum ProjectDestinationCatalog {
     static func groups(
         projects: [Dieter_V1_Project],
         projectReplicaEndpointIDs: [String: String],
-        endpoints: [DieterEndpoint],
-        fallbackEndpoint: DieterEndpoint
+        endpoints: [MachineEndpoint],
+        fallbackEndpoint: MachineEndpoint
     ) -> [ProjectDestinationGroup] {
         let fallbackMachine = fallbackEndpoint.daemonID == nil ? nil : fallbackEndpoint
         let destinations = projects.flatMap { project -> [ProjectDestination] in

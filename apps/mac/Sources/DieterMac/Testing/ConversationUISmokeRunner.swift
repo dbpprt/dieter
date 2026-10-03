@@ -59,18 +59,18 @@
 
             var results: [String: String] = [:]
             var waited = 0
-            progress("runner started, phase \(store.phase.label)", in: output)
+            progress("runner started, phase \(store.session.phaseLabel)", in: output)
             while !store.phase.isConnected && waited < 30 {
                 try? await DieterTaskSleep.seconds(1)
                 waited += 1
             }
-            progress("wait finished after \(waited)s, phase \(store.phase.label)", in: output)
+            progress("wait finished after \(waited)s, phase \(store.session.phaseLabel)", in: output)
             guard store.phase.isConnected else {
                 let detail: String
                 if case .failed(let message) = store.phase {
                     detail = message
                 } else {
-                    detail = store.phase.label
+                    detail = store.session.phaseLabel
                 }
                 results["connection"] = "failed: daemon connection did not become ready (\(detail))"
                 writeReport(results, to: output)
@@ -2069,7 +2069,7 @@
             card.projectID = project.id
             card.title = "Conversation renderer fixture"
             card.runtime = "idle"
-            card.updatedAt = DieterTimestamp.string(from: Date())
+            card.updatedAt = Date().formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
             card.workspaceMode = "worktree"
             card.workspace.mode = "worktree"
             card.workspace.state = "ready"
@@ -2157,7 +2157,7 @@
             card.scope = chat ? "chat" : "card"
             card.title = chat ? "Long standalone chat" : "Long board card"
             card.runtime = "running"
-            card.updatedAt = DieterTimestamp.string(from: Date())
+            card.updatedAt = Date().formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
 
             if chat {
                 card.boardID = ""

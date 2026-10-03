@@ -17,7 +17,7 @@ struct RemoteDirectoryBrowserSheet: View {
     @State private var newFolderName = ""
     @State private var activeLoadID = UUID()
 
-    private var machine: DieterEndpoint? {
+    private var machine: MachineEndpoint? {
         store.machines.first { $0.id == machineID } ?? (store.endpoint.id == machineID ? store.endpoint : nil)
     }
     private var entries: [Dieter_V1_DirectoryEntry] {

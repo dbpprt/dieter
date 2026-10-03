@@ -196,7 +196,9 @@ private struct Destination: Sendable {
         var metadata = Metadata()
         metadata.addString(target.authorization, forKey: "authorization")
         metadata.addString(target.clientVersion, forKey: "x-dieter-client-version")
-        if target.kind == NativeRpcTarget.companion.RELAY { metadata.addString(target.daemonId, forKey: "x-dieter-daemon-id") }
+        if target.kind == NativeRpcTarget.companion.RELAY {
+            metadata.addString(target.daemonId, forKey: "x-dieter-daemon-id")
+        }
         self.metadata = metadata
     }
 }

@@ -85,10 +85,10 @@ struct SharedCoreIntegrationTests {
     func host(root: URL, defaults: UserDefaults) throws -> CoreHost {
         try CoreHost(
             configuration: CoreHostConfiguration(
-                root: root, credentialsFile: root.appending(path: "gateway-sessions.json"),
-                clientVersion: "0.0.0-dev.0", oauthRedirectURI: "dieter-mac://oauth/callback",
-                clientIDPrefix: "mac", logSubsystem: "com.dbpprt.dieter.mac.tests"),
-            defaults: defaults, notificationsEnabled: { false })
+                root: root, clientVersion: "0.0.0-dev.0", logSubsystem: "com.dbpprt.dieter.mac.tests"),
+            platform: .mac(
+                credentialsFile: root.appending(path: "gateway-sessions.json"), notificationsEnabled: { false }),
+            defaults: defaults)
     }
 
     @Test func theMacDrivesTheSharedCoreOverAPinnedDirectRoute() async throws {

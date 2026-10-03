@@ -1,6 +1,6 @@
 import DieterAPI
-import DieterCore
 import Foundation
+import GRPCCore
 import SharedCore
 
 /// The shared core's schedules (`Schedules.kt`) over RPC fakes, so tests
@@ -124,7 +124,7 @@ import SharedCore
             guard bound == binding, request == listRequest else { return }
             view.loading = false
             view.loadingMore = false
-            view.error = DieterRPCFailure.message(for: error)
+            view.error = (error as? CoreFailure)?.message ?? (error as? RPCError)?.message ?? error.localizedDescription
             return
         }
         guard bound == binding, request == listRequest else { return }

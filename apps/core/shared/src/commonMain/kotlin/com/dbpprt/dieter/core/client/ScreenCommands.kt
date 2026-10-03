@@ -24,12 +24,7 @@ internal suspend fun ScreenSurface.execute(command: ScreenCommand, routes: (daem
             )
         }
     }
-    command.pointer?.let { session.pointer(it.x, it.y) }
-    command.button?.let { session.button(it.button, it.down, it.clicks, it.x, it.y, it.modifiers) }
-    command.scroll?.let { session.scroll(it.dx, it.dy, it.phase, it.momentum, it.modifiers, it.precise) }
-    command.key?.let { session.key(it.hid, it.down, it.repeat, it.modifiers) }
-    command.text?.let { session.text(it.text, it.modifiers) }
-    command.release_input?.let { session.releaseInput() }
+    session.applyInput(command)
     command.resume?.let { session.resume() }
     command.sleep?.let { session.sleep() }
     command.focused?.let { session.setFocused(it.on) }

@@ -6,7 +6,7 @@
     @Suite struct MachineGPUTelemetrySmokeTests {
         @MainActor
         @Test func powerControlRequiresExactOwnedFixtureIdentity() {
-            let machine = DieterEndpoint(
+            let machine = MachineEndpoint(
                 name: "Fixture", host: "127.0.0.1", port: 12345, daemonID: "owned-daemon")
             #expect(
                 MachineUISmokeRunner.isOwnedFixture(
@@ -23,7 +23,7 @@
                     !MachineUISmokeRunner.isOwnedFixture(
                         machine: machine, expectedDaemonID: "owned-daemon", fixtureEndpoint: endpoint))
             }
-            let remote = DieterEndpoint(name: "Operator", host: "example.com", port: 12345, daemonID: "owned-daemon")
+            let remote = MachineEndpoint(name: "Operator", host: "example.com", port: 12345, daemonID: "owned-daemon")
             #expect(
                 !MachineUISmokeRunner.isOwnedFixture(
                     machine: remote, expectedDaemonID: "owned-daemon", fixtureEndpoint: "http://example.com:12345"))

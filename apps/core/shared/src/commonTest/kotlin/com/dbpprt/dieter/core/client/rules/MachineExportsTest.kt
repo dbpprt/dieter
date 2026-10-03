@@ -59,4 +59,15 @@ class MachineExportsTest {
         assertTrue(restart.destructive)
         assertEquals(MachineOperationCopy(), MachineExports.operationCopy(99))
     }
+
+    @Test
+    fun gatewayOriginsAreCanonicalAndRefuseRemotePlaintext() {
+        assertEquals("https://gateway.example.com:443", MachineExports.gatewayOrigin(" https://gateway.example.com "))
+        assertEquals("https://gateway.example.com:8443", MachineExports.gatewayOrigin("grpcs://gateway.example.com:8443"))
+        assertEquals("http://127.0.0.1:4242", MachineExports.gatewayOrigin("http://127.0.0.1"))
+        assertEquals("", MachineExports.gatewayOrigin("http://gateway.example.com"))
+        assertEquals("", MachineExports.gatewayOrigin("https://gateway.example.com/path"))
+        assertEquals("", MachineExports.gatewayOrigin(""))
+        assertEquals("https://gateway.getdieter.com:443", MachineExports.defaultGatewayOrigin())
+    }
 }

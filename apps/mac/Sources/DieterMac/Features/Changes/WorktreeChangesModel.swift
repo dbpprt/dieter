@@ -1,5 +1,5 @@
 import DieterAPI
-import DieterCore
+import DieterShared
 import Foundation
 import Observation
 import SharedCore
@@ -95,7 +95,7 @@ final class WorktreeChangesModel {
         resetWorkspaceSurface()
         let id = target.conversationID
         bound = ClientReviewTarget.with {
-            $0.cardID = DieterConversationID.isServerBacked(id) ? id : ""
+            $0.cardID = SharedRules.shared.isServerBacked(conversationId: id) ? id : ""
             $0.daemonID = target.daemonID
         }
         let review = bound, on = active

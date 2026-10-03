@@ -19,6 +19,7 @@ import com.dbpprt.dieter.client.v1.Slice
 import com.dbpprt.dieter.client.v1.Update
 import com.dbpprt.dieter.client.v1.WorkspaceSlice
 import com.dbpprt.dieter.core.CoreRuntime
+import com.dbpprt.dieter.core.composition.Attachments
 import com.dbpprt.dieter.core.board.BoardOperations
 import com.dbpprt.dieter.core.board.DropAnchors
 import com.dbpprt.dieter.core.composition.DraftKey
@@ -107,9 +108,11 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         }
         command.begin_sign_in?.let { return Result(sign_in_started = SignInStarted(runtime.beginSignIn(gateway(it.gateway_url, "")))) }
         command.complete_sign_in?.let { runtime.completeSignIn(it.callback_url); return done }
+        command.sign_out?.let { runtime.signOut(); return done }
         command.select_gateway?.let { runtime.selectGateway(it.origin); return done }
         command.attach_machine?.let { runtime.attachMachine(it.daemon_id); return done }
         command.set_connected?.let { runtime.setConnected(it.connected); return done }
+        command.reconnect?.let { runtime.reconnect(); return done }
         command.set_foreground?.let { runtime.setActive(it.foreground); return done }
         command.set_show_reasoning?.let { runtime.conversations.setShowReasoning(it.show); return done }
         command.create_conversation?.let { create ->
@@ -117,7 +120,10 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
             return Result(card = runtime.createFromIntent(intent, create.chat, create.submission_id.ifEmpty { null }))
         }
         command.creation_preview?.let { return Result(creation_preview = (surfaces.creationPreviews[it.scope] ?: invalid("Open the creation preview first.")).bind(it)) }
-        command.send_message?.let { send -> return Result(message_queued = MessageQueued(runtime.sendMessage(send.card_id, send.parts, send.selection))) }
+        command.send_message?.let { send ->
+            val parts = Attachments.messageParts(send.text, send.parts)
+            return Result(message_queued = MessageQueued(runtime.sendMessage(send.card_id, parts, send.selection)))
+        }
         command.choose_agent?.let { choose ->
             val choice = choose.choice ?: invalid("Choose an agent setting.")
             val session = conversation(choose.card_id)
@@ -267,7 +273,8 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
      * Delivers [slice] to [observer] on the core dispatcher: a snapshot first,
      * then deltas for keyed slices. [scope] is the card ID for conversations
      * and the owning view for view-owned surfaces. A slice whose surface
-     * cannot open delivers one update carrying the failure.
+     * cannot open delivers one update carrying the failure; an unspecified
+     * slice throws [ClientFailure].
      */
     fun observe(slice: Slice, scope: String, observer: (Update) -> Unit): ClientSubscription {
         var sequence = 0L
@@ -384,7 +391,7 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
                     }
                 }
             }
-            Slice.SLICE_UNSPECIFIED -> throw IllegalArgumentException("Choose a slice to observe.")
+            Slice.SLICE_UNSPECIFIED -> invalid("Choose a slice to observe.")
         }
         return ClientSubscription { job.cancel() }
     }

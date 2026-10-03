@@ -1,8 +1,12 @@
 package com.dbpprt.dieter.core
 
+import com.dbpprt.dieter.api.v1.CreateConversationRequest
 import com.dbpprt.dieter.core.files.FileConflictException
 import com.dbpprt.dieter.core.files.FilesTarget
+import com.dbpprt.dieter.core.runtime.CoreException
 import com.dbpprt.dieter.core.testing.EndToEnd
+import com.dbpprt.dieter.core.testing.await
+import java.io.File
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -10,6 +14,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 /** FILES scenario: a checkout is browsed and edited; a stale save is a conflict that keeps the edits. */
 class FilesEndToEndTest : EndToEnd() {
@@ -72,5 +77,29 @@ class FilesEndToEndTest : EndToEnd() {
         runtime.onCore { files.delete("notes", recursive = true) }
         assertTrue(files.view.value.entries.none { it.name == "notes" })
         assertTrue(files.view.value.entries.any { it.name == "todo.txt" })
+
+        // Conversation image links name files on the remote workspace. The core resolves an
+        // absolute file URL through GetWorkspace before ReadFile, so a native client never
+        // interprets the path against its own filesystem.
+        val local = runtime.createConversation(
+            CreateConversationRequest(
+                project_id = fixture.projectId, board_id = fixture.boardId, lane = "todo", title = "Workspace image", prompt = "later",
+                defer_start = true, workspace_mode = "project",
+            ),
+            chat = false,
+        )
+        val cardId = runtime.outbox.view.await(45.seconds) { local.id in it.resolutions }.resolve(local.id)
+        runtime.workspace.state.await(30.seconds) { it.card(cardId) != null }
+        val image = File(checkout.path, "workspace-image.png")
+        image.writeBytes(byteArrayOf(1, 2, 3, 4))
+        runtime.onCore {
+            files.bind(FilesTarget(fixture.daemonId, fixture.projectId, cardId = cardId))
+            files.open("file://${image.absolutePath}")
+        }
+        assertEquals("workspace-image.png", files.view.value.selectedPath)
+        assertEquals("workspace-image.png", files.view.value.document?.path)
+        assertEquals(4L, files.view.value.document?.size)
+        val outside = assertFailsWith<CoreException> { runtime.onCore { files.open("file:///elsewhere/secret.png") } }
+        assertEquals("The image is outside this workspace.", outside.message)
     }
 }

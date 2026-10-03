@@ -1,5 +1,4 @@
 import DieterAPI
-import DieterCore
 import Foundation
 import GRPCCore
 import SharedCore
@@ -73,12 +72,4 @@ import Testing
     relaunched.draft.acceptSend(revision: relaunched.draft.revision)
     await relaunchedDrafts.save()
     #expect(saved == ["machine/card": "Unsent card draft"])
-}
-
-@Test func unrelatedResourceLimitsAndInvalidInputAreNotDiskPressure() {
-    for message in ["concurrent stream limit reached", "global capacity exceeded", "invalid model"] {
-        #expect(!DieterRPCFailure.isInsufficientStorage(message))
-    }
-    #expect(DieterRPCFailure.isPermanent(RPCError(code: .invalidArgument, message: "invalid model")))
-    #expect(DieterRPCFailure.isPermanent(RPCError(code: .permissionDenied, message: "no space left on device")))
 }

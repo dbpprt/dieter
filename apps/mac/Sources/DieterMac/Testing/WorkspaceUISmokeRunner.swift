@@ -24,7 +24,7 @@
             try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
             var results: [String: String] = [:]
 
-            progress("runner started, phase \(store.phase.label)", in: output)
+            progress("runner started, phase \(store.session.phaseLabel)", in: output)
             var waited = 0
             while !(store.phase.isConnected && !store.projects.isEmpty
                 && store.projects.contains(where: { !store.boards(for: $0.id).isEmpty })) && waited < 30
@@ -35,7 +35,7 @@
             guard store.phase.isConnected, let project = store.projects.first,
                 let board = store.boards(for: project.id).first
             else {
-                results["connection"] = "failed: fixture project did not become ready (\(store.phase.label))"
+                results["connection"] = "failed: fixture project did not become ready (\(store.session.phaseLabel))"
                 writeReport(results, to: output)
                 return
             }

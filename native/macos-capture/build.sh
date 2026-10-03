@@ -16,8 +16,8 @@ xcrun swiftc \
   -framework ScreenCaptureKit \
   -framework VideoToolbox \
   "$SCRIPT_DIR"/*.swift \
-  "$SCRIPT_DIR/../../apps/mac/Sources/DieterCore/RemoteDesktopKeyMap.swift" \
-  "$SCRIPT_DIR/../../apps/mac/Sources/DieterCore/ScreenClipboardContent.swift" \
+  "$SCRIPT_DIR/../../apps/mac/Sources/DieterTransport/RemoteDesktopKeyMap.swift" \
+  "$SCRIPT_DIR/../../apps/mac/Sources/DieterTransport/ScreenClipboardContent.swift" \
   -o "$OUTPUT"
 codesign --force --sign - "$OUTPUT"
 echo "$OUTPUT"

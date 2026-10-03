@@ -1,5 +1,4 @@
 import DieterAPI
-import DieterCore
 import DieterShared
 import Foundation
 import Observation
@@ -112,34 +111,8 @@ final class ConversationModel {
         case .conversation(let value):
             slice = value
         case .conversationDelta(let delta):
-            guard var value = slice else { return }
-            value.card = delta.card
-            value.conversation = delta.conversation
-            value.messages = KeyedList.apply(
-                value.messages, upserted: delta.upsertedMessages, removed: delta.removedMessageIds,
-                order: delta.orderChanged ? delta.messageOrder : nil, key: \.id)
-            value.timeline = KeyedList.apply(
-                value.timeline, upserted: delta.upsertedTimeline, removed: delta.removedTimelineIds,
-                order: delta.timelineOrderChanged ? delta.timelineOrder : nil, key: \.id)
-            value.unattachedPlanIds = delta.unattachedPlanIds
-            value.loading = delta.loading
-            value.syncing = delta.syncing
-            value.error = delta.error
-            value.pending = delta.pending
-            value.hasEarlier_p = delta.hasEarlier_p
-            value.loadingEarlier = delta.loadingEarlier
-            value.browsingEarlier = delta.browsingEarlier
-            value.retrying = delta.retrying
-            value.refreshedAtMillis = delta.refreshedAtMillis
-            if delta.hasTurnFailure { value.turnFailure = delta.turnFailure } else { value.clearTurnFailure() }
-            value.project = delta.project
-            value.board = delta.board
-            value.page = delta.page
-            if !delta.cardID.isEmpty { value.cardID = delta.cardID }
-            value.daemonID = delta.daemonID
-            value.earlierCount = delta.earlierCount
-            value.state = delta.state
-            slice = value
+            guard let value = slice else { return }
+            slice = value.applying(delta)
         case .failure(let failure):
             conversationError = failure.message
             conversationLoading = false

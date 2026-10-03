@@ -2,8 +2,9 @@
 
 ## Purpose
 
-Dieter has a local Go daemon, a machine-only Go gateway, and native macOS and
-Android clients. Every card is one durable local AI SDK Harness conversation.
+Dieter has a local Go daemon, a machine-only Go gateway, and native macOS, iOS,
+and Android clients. Every card is one durable local AI SDK Harness
+conversation.
 
 ## Invariants
 
@@ -66,6 +67,11 @@ and explicitly requested repository-wide validation.
 The shared Kotlin client core in `apps/core` has its own checks: `just core
 test` (JVM unit and isolated end-to-end tests over the OkHttp transport that
 Android shares) and, on macOS, `just core apple-test`. See `apps/core/README.md`.
+All three native clients are presentation-only clients of the core; the macOS
+and iOS apps link it as `DieterShared` through `apps/mac/Sources/SharedCore`.
+Put rules in the core, not in an app. `just ios build` assembles the iOS
+framework slices (it needs a Java runtime) and compiles the iOS app and its test
+bundles; the iOS tests run through `just e2e run --platform ios`.
 
 Android builds use Android Studio's bundled JBR. If `JAVA_HOME` is absent or
 points to a removed Homebrew JDK, use:
@@ -78,6 +84,7 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 just harness install
 just check
 just mac test
+just ios build
 just android test
 ```
 

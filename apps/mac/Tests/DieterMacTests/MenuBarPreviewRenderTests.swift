@@ -62,8 +62,8 @@ private func writePNG(_ image: NSImage, scale: CGFloat, to path: String) throws 
     let store = DieterStore(liveEnvironment: false)
     store.phase = .connected(version: "1.0.0")
 
-    let miniHome = DieterEndpoint(name: "mac-mini", host: "100.121.53.82", port: 4242, daemonID: "d1", online: true)
-    let laptop = DieterEndpoint(
+    let miniHome = MachineEndpoint(name: "mac-mini", host: "100.121.53.82", port: 4242, daemonID: "d1", online: true)
+    let laptop = MachineEndpoint(
         name: "macbook-pro", host: "192.168.254.70", port: 4242, daemonID: "d2", online: false,
         lastSeenAt: isoDate(secondsAgo: 7_200))
     store.endpoints = [miniHome, laptop]

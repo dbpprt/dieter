@@ -20,6 +20,13 @@ class ActivityExportsTest {
     }
 
     @Test
+    fun untitledConversationsAreNamedByKind() {
+        assertEquals("Ship it", ActivityExports.conversationTitle("Ship it", "card", "b1"))
+        assertEquals("Untitled chat", ActivityExports.conversationTitle(" ", "chat", ""))
+        assertEquals("Untitled card", ActivityExports.conversationTitle("", "chat", "b1"), "a chat filed on a board is a card")
+    }
+
+    @Test
     fun timelineBarsUseFractionsOfTheWindow() {
         val bar = ActivityExports.timelineBar(now - 2 * hour, now - minute, running = false, nowMillis = now, hours = 1)
         assertEquals(ActivityTimelineBar(shown = true, start_fraction = 0.0, end_fraction = 3540.0 / 3600, point = false), bar)

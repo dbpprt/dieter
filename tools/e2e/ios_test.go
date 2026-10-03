@@ -151,7 +151,7 @@ func TestIOSCatalogCoverageAndLayout(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"apps/ios/DieterIOSUITests/RemoteNodeUITests.swift", "apps/ios/DieterIOSNativeTests/IOSCredentialNativeTests.swift"} {
+	for _, path := range []string{"apps/ios/DieterIOSUITests/RemoteNodeUITests.swift", "apps/ios/DieterIOSNativeTests/IOSCredentialNativeTests.swift", "apps/mac/Tests/DieterIOSTests/IOSCoreAdapterTests.swift"} {
 		data, err := os.ReadFile(filepath.Join(root, path))
 		if err != nil {
 			t.Fatal(err)
@@ -166,9 +166,9 @@ func TestIOSCatalogCoverageAndLayout(t *testing.T) {
 			}
 		}
 	}
-	for _, path := range []string{"apps/ios/DieterIOSUITests/RemoteNodeUITests.swift", "apps/mac/Sources/DieterIOS/UI/Root.swift", "tests/e2e/cases/ios/credentials.yaml"} {
+	for _, path := range []string{"apps/ios/DieterIOSUITests/RemoteNodeUITests.swift", "apps/mac/Sources/DieterIOS/UI/Root.swift", "apps/mac/Tests/DieterIOSTests/IOSCoreAdapterTests.swift", "tests/e2e/cases/ios/credentials.yaml"} {
 		got := affected(cases, []string{path})
-		if len(got) != 7 {
+		if len(got) != 8 {
 			t.Fatal(path, len(got))
 		}
 	}

@@ -47,7 +47,7 @@ struct ConversationWorkspacePickerSheet: View {
                 Section {
                     Picker("Work in", selection: $draftMode) {
                         ForEach(ConversationWorkspaceMode.allCases) { mode in
-                            Text(mode == .worktree ? "New worktree" : "Project directory")
+                            Text(mode.choiceTitle)
                                 .tag(mode)
                                 .accessibilityIdentifier("workspace.mode.\(mode.rawValue)")
                                 .smokeTarget("workspace.mode.\(mode.rawValue)")

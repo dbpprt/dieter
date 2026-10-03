@@ -57,12 +57,14 @@ class ConversationSliceTest {
         val first = slice.timeline[0]
         assertTrue(first.user)
         assertEquals(MessageDelivery.MESSAGE_DELIVERY_ACCEPTED, first.delivery)
+        assertEquals("Accepted by daemon", first.delivery_label)
         assertTrue(first.unconfirmed)
         assertTrue(first.copyable)
         assertEquals(Instant.parse("2026-09-30T10:00:00Z").toEpochMilliseconds(), first.created_at_millis)
 
         val prose = slice.timeline[1]
         assertEquals(MessageDelivery.MESSAGE_DELIVERY_UNSPECIFIED, prose.delivery)
+        assertEquals("", prose.delivery_label, "only user messages have a receipt")
         assertFalse(prose.unconfirmed)
         assertEquals(0L, prose.created_at_millis, "no time in the metadata")
         assertEquals(listOf("p"), prose.plan_ids)
@@ -77,6 +79,9 @@ class ConversationSliceTest {
         val readStep = read.steps.single()
         assertEquals(ToolCallStatus.TOOL_CALL_STATUS_COMPLETED, readStep.tool_status)
         assertEquals("read file", readStep.tool_title)
+        assertEquals("completed", readStep.tool_status_label)
+        assertFalse(readStep.tool_attention)
+        assertEquals("", text.tool_status_label, "prose has no tool status")
         assertEquals(2, readStep.part_index)
         assertEquals("", readStep.text, "a single part's text is not repeated")
         assertTrue(readStep.routine)
@@ -87,6 +92,7 @@ class ConversationSliceTest {
         assertEquals(listOf("w"), activity.message_ids)
         assertEquals(listOf("w:part:0"), activity.groups.map { it.id })
         assertEquals(ToolCallStatus.TOOL_CALL_STATUS_RUNNING, activity.groups.single().steps.single().tool_status)
+        assertEquals("running", activity.groups.single().steps.single().tool_status_label)
         assertFalse(activity.copyable)
         assertTrue(slice.state!!.working)
     }

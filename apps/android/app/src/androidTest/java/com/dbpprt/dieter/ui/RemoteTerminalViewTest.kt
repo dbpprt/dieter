@@ -1,8 +1,8 @@
 package com.dbpprt.dieter.ui
 
+import com.dbpprt.dieter.client.v1.TerminalKey
 import com.dbpprt.dieter.core.terminals.TerminalScreen
 import okio.ByteString.Companion.encodeUtf8
-import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
@@ -79,7 +79,7 @@ class RemoteTerminalViewTest {
             val connection = terminal.onCreateInputConnection(EditorInfo())
             connection.commitText("abc", 1)
             connection.deleteSurroundingText(1, 0)
-            terminal.sendKeyCode(KeyEvent.KEYCODE_DPAD_LEFT)
+            terminal.sendKey(TerminalKey.TERMINAL_KEY_LEFT)
 
             assertArrayEquals(
                 byteArrayOf('a'.code.toByte(), 'b'.code.toByte(), 'c'.code.toByte(), 0x7f, 0x1b, '['.code.toByte(), 'D'.code.toByte()),

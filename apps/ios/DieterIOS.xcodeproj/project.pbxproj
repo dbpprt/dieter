@@ -251,7 +251,7 @@
 			"runOnlyForDeploymentPostprocessing" = "0";
 		};
 		"7D83A439AB6ED86EE285B1CD" = {
-			"path" = "../mac/Tests/DieterClientTests/CrossPlatformClientTests.swift";
+			"path" = "../mac/Tests/DieterIOSTests/IOSCoreAdapterTests.swift";
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
 			"sourceTree" = "SOURCE_ROOT";

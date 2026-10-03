@@ -1,290 +1,236 @@
 #if os(iOS)
     import DieterAPI
-    import DieterCore
+    import DieterShared
     import PhotosUI
+    import SharedCore
     import SwiftUI
     import UniformTypeIdentifiers
 
-    struct IOSConversationView: View {
-        @Bindable var store: IOSStore
+    /// The open conversation: its model is created once per card and observes
+    /// the core's conversation slice while the screen is shown.
+    struct IOSConversationScreen: View {
+        @Environment(IOSAppModel.self) private var app
+        @Environment(IOSWorkspaceNavigation.self) private var navigation
         let cardID: String
-        @Binding var draft: IOSConversationDraft
-        let browseFiles: () -> Void
-        @State private var sending = false
+        @State private var model: IOSConversationModel?
+
+        var body: some View {
+            Group {
+                if let model {
+                    IOSConversationView(model: model)
+                } else {
+                    IOSConversationLoadingView(isChat: false)
+                }
+            }
+            .task(id: cardID) {
+                let model =
+                    self.model
+                    ?? IOSConversationModel(
+                        cardID: cardID, core: app.core, drafts: app.drafts, show: { [app] in app.show($0) })
+                self.model = model
+                model.observe()
+                takeSharedAttachments(into: model)
+            }
+            .onChange(of: navigation.sharedAttachments[cardID]?.count ?? 0) { _, _ in
+                if let model { takeSharedAttachments(into: model) }
+            }
+            .onAppear { app.setVisibleConversation(cardID) }
+            .onDisappear {
+                model?.close()
+                app.conversationHidden(cardID)
+            }
+        }
+
+        /// Shared items routed here join the composer, within the core's limits.
+        private func takeSharedAttachments(into model: IOSConversationModel) {
+            guard let shared = navigation.sharedAttachments.removeValue(forKey: cardID), !shared.isEmpty else {
+                return
+            }
+            do {
+                model.draftAttachments = try IOSAttachmentLoader.appending(shared, to: model.draftAttachments)
+            } catch {
+                app.show(error)
+            }
+        }
+    }
+
+    private struct IOSConversationView: View {
+        @Environment(IOSAppModel.self) private var app
+        @Environment(IOSWorkspaceNavigation.self) private var navigation
+        @Environment(\.scenePhase) private var scenePhase
+        @Bindable var model: IOSConversationModel
         @State private var followsLatest = true
         @State private var isAtLatest = false
         @State private var showsJumpToLatest = false
         @State private var contentCanScroll = false
         @State private var userScrolling = false
-        @State private var timelineReadyCardID: String?
+        @State private var timelineReady = false
         @State private var pageAnchorToRestore: String?
         @State private var pageRestoreRequest = 0
         @State private var attachmentError: String?
         @State private var photoItems: [PhotosPickerItem] = []
         @State private var fileImporterPresented = false
-        @State private var imageLoadID: UUID?
-        @State private var imageLoadingTitle: String?
-        @State private var imagePreview: IOSConversationImagePreview?
-        @State private var harnesses: [Dieter_V1_Harness] = []
-        @State private var harnessError: String?
         @State private var modelSettingsPresented = false
+        @State private var failureLog: IOSConversationLog?
+        @State private var images = IOSConversationImages()
         @FocusState private var composerFocused: Bool
 
-        private var card: Dieter_V1_Card? {
-            if store.selectedCard?.card.id == cardID { return store.selectedCard?.card }
-            return (store.cards + store.chats).first { $0.id == cardID }
-        }
-
-        private var timelineReady: Bool { timelineReadyCardID == cardID }
-
-        private var messages: [Dieter_V1_UiMessage] {
-            guard store.conversation?.cardID == cardID else { return [] }
-            let queuedIDs = Set((store.conversation?.queue ?? []).lazy.map(\.id).filter { !$0.isEmpty })
-            return (store.conversation?.messages ?? []).filter { !queuedIDs.contains($0.id) }
-        }
-
-        private var queue: [Dieter_V1_QueuedMessage] {
-            store.conversation?.cardID == cardID ? store.conversation?.queue ?? [] : []
-        }
-
-        private var isRunning: Bool {
-            IOSConversationPresentation.isAgentWorking(
-                conversationStatus: store.conversation?.status ?? "", cardRuntime: card?.runtime ?? "")
-        }
-
-        private var providerStatus: Dieter_V1_ProviderStatus? {
-            store.conversation?.cardID == cardID ? store.conversation?.activeProviderStatus : nil
+        private var state: ClientConversationState { model.state }
+        private var card: Dieter_V1_Card? { model.card ?? app.card(model.cardID) }
+        private var title: String {
+            guard let card else { return "Conversation" }
+            return SharedRules.shared.conversationTitle(title: card.title, scope: card.scope, boardId: card.boardID)
         }
 
         var body: some View {
             Group {
-                if let card, store.conversation?.cardID == cardID {
-                    transcript(card)
+                if model.loading {
+                    IOSConversationLoadingView(isChat: state.chat)
+                } else if let error = model.error, model.card == nil {
+                    ContentUnavailableView(
+                        "Conversation unavailable", systemImage: "exclamationmark.bubble",
+                        description: Text(error))
                 } else {
-                    IOSConversationLoadingView(isChat: card?.scope == "chat")
+                    transcript
                 }
             }
-            .navigationTitle(card?.title ?? "Conversation")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .environment(\.openURL, OpenURLAction(handler: openConversationURL))
             .overlay {
-                if let imageLoadingTitle {
-                    ProgressView("Loading \(imageLoadingTitle)…")
+                if let loadingTitle = images.loadingTitle {
+                    ProgressView("Loading \(loadingTitle)…")
                         .padding(.horizontal, 18).padding(.vertical, 14)
                         .background(.regularMaterial, in: Capsule())
                         .accessibilityIdentifier("ios.conversation.image-loading")
                 }
             }
-            .fullScreenCover(item: $imagePreview) { preview in
+            .fullScreenCover(item: $images.preview) { preview in
                 IOSConversationImageLightbox(preview: preview)
             }
             .sheet(isPresented: $modelSettingsPresented) {
-                if let card {
-                    IOSConversationModelSettingsView(
-                        card: card,
-                        harnesses: harnesses,
-                        conversationLocked: conversationLocked,
-                        selection: selectionBinding(for: card)
-                    )
+                IOSConversationModelSettingsView(model: model)
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
-                }
             }
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    if let card {
-                        Button("Model settings", systemImage: "slider.horizontal.3") {
-                            modelSettingsPresented = true
-                        }
-                        // Preserve the Start button's position while the catalog loads.
-                        .disabled(harnesses.isEmpty)
-                        .accessibilityIdentifier("ios.conversation.model-settings")
-                        .accessibilityValue(selectionSummary(for: card))
-                    }
-                    if let card {
-                        IOSConversationProviderQuotaView(store: store, card: card)
-                    }
-                    if isRunning {
-                        Button("Stop task", systemImage: "stop.circle") { Task { await store.cancelTask() } }
-                            .disabled(!store.phase.isConnected || store.busy)
-                            .accessibilityIdentifier("ios.task.stop")
-                    } else {
-                        Button("Start task", systemImage: "play.circle") { Task { await store.startTask() } }
-                            .disabled(card == nil || !store.phase.isConnected || store.busy)
-                            .accessibilityIdentifier("ios.task.start")
-                    }
-                    Menu {
-                        Button("Browse files", systemImage: "folder", action: browseFiles)
-                            .accessibilityIdentifier("ios.task.files")
-                        if card?.scope != "chat" {
-                            Menu("Move task", systemImage: "rectangle.3.group") {
-                                ForEach(["todo", "running", "review", "done"], id: \.self) { lane in
-                                    Button(lane.capitalized) { Task { await store.moveTask(lane: lane) } }
-                                        .accessibilityIdentifier("ios.task.move.\(lane)")
-                                }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                    .accessibilityLabel("Task actions")
-                    .accessibilityIdentifier("ios.task.actions")
-                    .disabled(card == nil || !store.phase.isConnected)
-                }
+            .sheet(item: $failureLog) { log in
+                IOSConversationLogView(log: log)
             }
-            .task(id: cardID) {
-                imageLoadID = nil
-                imageLoadingTitle = nil
-                imagePreview = nil
-                timelineReadyCardID = nil
-                followsLatest = true
-                isAtLatest = false
-                showsJumpToLatest = false
-                contentCanScroll = false
-                userScrolling = false
-                pageAnchorToRestore = nil
-                pageRestoreRequest = 0
-                harnesses = []
-                harnessError = nil
-                await store.selectCard(id: cardID)
-                await loadHarnesses()
-            }
+            .toolbar { toolbar }
             .fileImporter(
-                isPresented: $fileImporterPresented,
-                allowedContentTypes: [.item],
-                allowsMultipleSelection: true
+                isPresented: $fileImporterPresented, allowedContentTypes: [.item], allowsMultipleSelection: true
             ) { result in
                 switch result {
                 case .success(let urls):
-                    Task {
-                        do {
-                            draft.attachments = try await IOSAttachmentLoader().parts(
-                                urls: urls, appendingTo: draft.attachments)
-                            attachmentError = nil
-                        } catch {
-                            showAttachmentError(error)
-                        }
-                    }
+                    intake { try await IOSAttachmentLoader().parts(urls: urls, appendingTo: $0) }
                 case .failure(let error):
-                    if (error as NSError).code != NSUserCancelledError {
-                        showAttachmentError(error)
-                    }
+                    if (error as NSError).code != NSUserCancelledError { attachmentError = error.localizedDescription }
                 }
             }
             .onChange(of: photoItems) { _, items in
                 guard !items.isEmpty else { return }
                 photoItems = []
-                Task {
-                    do {
-                        draft.attachments = try await IOSAttachmentLoader().parts(
-                            photoItems: items, appendingTo: draft.attachments)
-                        attachmentError = nil
-                    } catch {
-                        showAttachmentError(error)
-                    }
-                }
+                intake { try await IOSAttachmentLoader().parts(photoItems: items, appendingTo: $0) }
             }
         }
 
-        private func openConversationURL(_ url: URL) -> OpenURLAction.Result {
-            guard RemoteWorkspaceImage.isWorkspaceImageURL(url), let projectID = card?.projectID else {
-                return .systemAction(url)
-            }
-            let requestID = UUID()
-            let title = (url.path as NSString).lastPathComponent
-            imageLoadID = requestID
-            imageLoadingTitle = title
-            Task { @MainActor in
-                guard
-                    let document = await store.readConversationImage(projectID: projectID, cardID: cardID, url: url),
-                    imageLoadID == requestID
-                else {
-                    if imageLoadID == requestID {
-                        imageLoadID = nil
-                        imageLoadingTitle = nil
-                        if store.errorMessage == nil { store.show(IOSConversationImageError(name: title)) }
+        // MARK: - Toolbar
+
+        @ToolbarContentBuilder
+        private var toolbar: some ToolbarContent {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button("Model settings", systemImage: "slider.horizontal.3") {
+                    composerFocused = false
+                    modelSettingsPresented = true
+                }
+                // Keeps the Start button's position while the catalog loads.
+                .disabled(model.agent == nil)
+                .accessibilityIdentifier("ios.conversation.model-settings")
+                .accessibilityValue(model.agent.map(IOSAgentSummary.text) ?? "")
+                if let card {
+                    IOSConversationProviderQuotaView(accountKey: card.providerAccountKey)
+                }
+                if state.canHalt {
+                    Button("Stop", systemImage: "stop.circle") { Task { await model.cancel() } }
+                        .accessibilityIdentifier("ios.task.stop")
+                } else if state.canStart || state.starting {
+                    Button("Start task", systemImage: "play.circle") { Task { await model.start() } }
+                        .disabled(state.starting)
+                        .accessibilityIdentifier("ios.task.start")
+                }
+                Menu {
+                    Button("Browse files", systemImage: "folder", action: browseFiles)
+                        .disabled(model.daemonID.isEmpty || card == nil)
+                        .accessibilityIdentifier("ios.task.files")
+                    if !state.chat, let lanes = model.slice?.board.lanes, !lanes.isEmpty {
+                        Menu("Move task", systemImage: "rectangle.3.group") {
+                            ForEach(lanes, id: \.id) { lane in
+                                Button(lane.name) { Task { await model.move(toLane: lane.id) } }
+                                    .disabled(lane.id == card?.lane)
+                                    .accessibilityIdentifier("ios.task.move.\(lane.id)")
+                            }
+                        }
                     }
-                    return
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
-                let data = document.binary ? document.data : Data(document.content.utf8)
-                guard let image = UIImage(data: data) else {
-                    imageLoadID = nil
-                    imageLoadingTitle = nil
-                    store.show(IOSConversationImageError(name: title))
-                    return
-                }
-                imageLoadID = nil
-                imageLoadingTitle = nil
-                imagePreview = IOSConversationImagePreview(title: title, image: image)
+                .accessibilityLabel("Task actions")
+                .accessibilityIdentifier("ios.task.actions")
+                .disabled(card == nil)
             }
-            return .handled
         }
 
-        private func transcript(_ card: Dieter_V1_Card) -> some View {
+        private func browseFiles() {
+            guard let card else { return }
+            navigation.sheet = .files(
+                IOSFileScope(
+                    machineID: model.daemonID, projectID: card.projectID, checkoutID: card.checkoutID,
+                    cardID: card.id, title: title))
+        }
+
+        // MARK: - Transcript
+
+        private var transcript: some View {
             ScrollViewReader { proxy in
                 ZStack {
                     ScrollView {
-                        // The transcript is bounded to 240 messages. An eager stack keeps every explicit
-                        // scroll target alive while pages are prepended or the retained tail is compacted.
+                        // An eager stack keeps every explicit scroll target alive while
+                        // earlier pages are prepended or the core drops loaded history.
                         VStack(alignment: .leading, spacing: 22) {
-                            HStack(spacing: 10) {
-                                IOSStatusBadge(state: card.runtime)
-                                Spacer(minLength: 12)
-                                Label(card.model, systemImage: "sparkles")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
+                            header
+                            if model.hasEarlier || model.loadingEarlier {
+                                earlierButton
                             }
-                            .padding(.horizontal, 12)
-                            .frame(minHeight: 36)
-                            .background(.thinMaterial, in: Capsule())
-
-                            if store.hasOlderMessages {
-                                Button {
-                                    loadOlderMessages(keeping: messages.first?.id)
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        if store.loadingOlder { ProgressView().controlSize(.small) }
-                                        Text(
-                                            store.loadingOlder
-                                                ? "Loading earlier messages…" : "Load earlier messages")
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                }
-                                .buttonStyle(.bordered)
-                                .disabled(store.loadingOlder || !store.phase.isConnected)
-                                .accessibilityIdentifier("ios.conversation.earlier")
-                            }
-
-                            if messages.isEmpty {
+                            if model.timeline.isEmpty, !state.working {
                                 ContentUnavailableView(
                                     "Ready when you are", systemImage: "bubble.left.and.bubble.right",
                                     description: Text(
-                                        card.initialPrompt.isEmpty ? "Send a message to begin." : card.initialPrompt)
+                                        state.unsentTask.isEmpty ? "Send a message to begin." : state.unsentTask)
                                 )
                                 .padding(.vertical, 32)
                             }
-
-                            ForEach(IOSConversationPresentation.timelineItems(messages)) { item in
-                                if item.isActivity {
-                                    IOSConversationActivityDisclosure(steps: item.steps, identifier: item.id)
-                                        .id(item.id)
-                                } else if let message = item.messages.first {
-                                    IOSConversationMessage(message: message)
-                                        .id(item.id)
-                                }
+                            ForEach(model.timeline, id: \.id) { row in
+                                IOSTimelineRowView(model: model, row: row)
+                                    .id(row.id)
                             }
-
-                            if isRunning {
+                            ForEach(model.taskPlans(ids: model.slice?.unattachedPlanIds ?? []), id: \.id) { plan in
+                                IOSTaskPlanView(plan: plan)
+                            }
+                            if state.working {
                                 IOSConversationTurnIndicator(
-                                    startedAt: IOSConversationPresentation.turnStart(
-                                        messages: messages, runtimeUpdatedAt: card.runtimeUpdatedAt),
-                                    stopping: card.runtime.lowercased() == "cancelling",
-                                    providerStatus: providerStatus
+                                    label: state.showReasoning ? state.liveReasoning : state.liveActivity,
+                                    detail: state.pendingToolsSummary, startedAt: model.turnStartedAt
                                 )
                                 .id("ios.conversation.agent-working")
                             }
-
+                            if let failure = model.turnFailure {
+                                IOSTurnFailureView(
+                                    failure: failure, retrying: model.retrying || model.retryingFailure,
+                                    viewLog: { failureLog = IOSConversationLog(title: "Turn log", text: failure.log) },
+                                    retry: { Task { await model.retryFailedTurn() } }
+                                )
+                                .id("ios.conversation.turn-failure")
+                            }
                             Color.clear.frame(height: 1).id(IOSConversationScrollBehavior.bottomID)
                         }
                         .padding(.horizontal, 20)
@@ -306,7 +252,7 @@
                         showsJumpToLatest = current.showsJumpToLatest
                         contentCanScroll = current.canScroll
                         if userScrolling { followsLatest = current.atEnd }
-                        if !timelineReady, current.atEnd { timelineReadyCardID = cardID }
+                        if !timelineReady, current.atEnd { timelineReady = true }
                         if !userScrolling, followsLatest, !current.atEnd, current.layout != previous.layout {
                             requestLatestScroll(proxy)
                         }
@@ -319,12 +265,13 @@
                             followsLatest = isAtLatest
                         } else if wasUserScrolling {
                             followsLatest = isAtLatest
-                            if isAtLatest, !store.loadingOlder, store.trimHistoryAtBottom() {
-                                requestLatestScroll(proxy)
-                            }
+                            if isAtLatest, model.returnToLatest() { requestLatestScroll(proxy) }
                         }
                     }
-                    .onChange(of: store.conversation?.lastSeq) { _, _ in
+                    .onChange(of: model.timeline.last?.id) { _, _ in
+                        if followsLatest { requestLatestScroll(proxy) }
+                    }
+                    .onChange(of: model.timeline.last) { _, _ in
                         if followsLatest { requestLatestScroll(proxy) }
                     }
                     .onChange(of: pageRestoreRequest) { _, _ in
@@ -336,60 +283,88 @@
                         }
                     }
                     .overlay(alignment: .bottom) {
-                        if timelineReady, contentCanScroll, showsJumpToLatest, !messages.isEmpty {
-                            Button("Jump to latest", systemImage: "arrow.down") {
-                                jumpToLatest(proxy)
-                            }
-                            .font(.subheadline.weight(.semibold))
-                            .padding(.horizontal, 14).padding(.vertical, 10)
-                            .modifier(IOSFloatingGlassModifier(shape: Capsule()))
-                            .buttonStyle(.plain)
-                            .padding(.bottom, 10)
-                            .accessibilityIdentifier("ios.conversation.latest")
+                        if timelineReady, contentCanScroll, showsJumpToLatest, !model.timeline.isEmpty {
+                            Button("Jump to latest", systemImage: "arrow.down") { jumpToLatest(proxy) }
+                                .font(.subheadline.weight(.semibold))
+                                .padding(.horizontal, 14).padding(.vertical, 10)
+                                .modifier(IOSFloatingGlassModifier(shape: Capsule()))
+                                .buttonStyle(.plain)
+                                .padding(.bottom, 10)
+                                .accessibilityIdentifier("ios.conversation.latest")
                         }
                     }
                     .background(Color(uiColor: .systemBackground))
 
                     if !timelineReady {
-                        IOSConversationLoadingView(isChat: card.scope == "chat", preparingTimeline: true)
+                        IOSConversationLoadingView(isChat: state.chat, preparingTimeline: true)
                             .allowsHitTesting(false)
                     }
                 }
-                .task(id: cardID) {
-                    // Give the eager stack more than one layout pass before revealing it. If a proxy request
-                    // arrives before its target is mounted, the next pass repeats it and geometry still keeps
-                    // the recovery button honest instead of claiming that an offset viewport is at the tail.
+                .task(id: model.cardID) {
+                    // Give the eager stack more than one layout pass before revealing it.
                     for _ in 0..<3 {
                         await Task.yield()
                         scroll(proxy, to: IOSConversationScrollBehavior.bottomID, anchor: .bottom)
                     }
                     await Task.yield()
-                    timelineReadyCardID = cardID
+                    timelineReady = true
+                }
+                .task(id: ResponseReadKey(model: model, visible: readVisible)) {
+                    await acknowledgeVisibleResponse()
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) { composer }
             }
         }
 
-        private func loadOlderMessages(keeping anchor: String?) {
-            guard let anchor else { return }
+        private var header: some View {
+            HStack(spacing: 10) {
+                Text(SharedRules.shared.runtimeLabel(runtime: state.runtime))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(
+                        SharedRules.shared.runtimeActive(runtime: state.runtime) ? Color.accentColor : .secondary)
+                Spacer(minLength: 12)
+                if let agent = model.agent {
+                    Label(agent.modelLabel, systemImage: "sparkles")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(minHeight: 36)
+            .background(.thinMaterial, in: Capsule())
+        }
+
+        private var earlierButton: some View {
+            Button {
+                loadEarlierMessages()
+            } label: {
+                HStack(spacing: 8) {
+                    if model.loadingEarlier { ProgressView().controlSize(.small) }
+                    Text(model.loadingEarlier ? "Loading earlier messages…" : "Load earlier messages")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.loadingEarlier)
+            .accessibilityIdentifier("ios.conversation.earlier")
+        }
+
+        private func loadEarlierMessages() {
+            let anchor = model.timeline.first?.id
             followsLatest = false
             Task { @MainActor in
-                let previousFirst = messages.first?.id
-                await store.loadOlderMessages()
-                guard previousFirst != messages.first?.id else {
-                    return
-                }
-                pageAnchorToRestore = IOSConversationPresentation.anchorItem(
-                    containing: anchor,
-                    in: IOSConversationPresentation.timelineItems(messages))
-                guard pageAnchorToRestore != nil else { return }
+                guard await model.loadEarlierMessages(), let anchor, model.timeline.first?.id != anchor,
+                    model.timeline.contains(where: { $0.id == anchor })
+                else { return }
+                pageAnchorToRestore = anchor
                 pageRestoreRequest &+= 1
             }
         }
 
         private func jumpToLatest(_ proxy: ScrollViewProxy) {
             followsLatest = true
-            if !store.loadingOlder { store.trimHistoryAtBottom() }
+            model.returnToLatest()
             requestLatestScroll(proxy)
         }
 
@@ -406,78 +381,115 @@
             withTransaction(transaction) { proxy.scrollTo(id, anchor: anchor) }
         }
 
+        // MARK: - Read receipts
+
+        /// The latest reply is on screen: the scene is active and the
+        /// transcript rests at its end.
+        private var readVisible: Bool {
+            scenePhase == .active && timelineReady && isAtLatest && !model.browsingEarlier
+        }
+
+        private struct ResponseReadKey: Equatable {
+            let cardID: String
+            let responseSeq: Int64
+            let lastSeq: Int64
+            let visible: Bool
+
+            @MainActor init(model: IOSConversationModel, visible: Bool) {
+                cardID = model.cardID
+                responseSeq = model.card?.responseSeq ?? 0
+                lastSeq = model.slice?.conversation.lastSeq ?? 0
+                self.visible = visible
+            }
+        }
+
+        /// Shows the conversation as on screen once a reply has settled into
+        /// view; the core marks it read when it holds that reply. Scrolling
+        /// away or leaving first cancels this.
+        private func acknowledgeVisibleResponse() async {
+            guard readVisible else { return }
+            do { try await DieterTaskSleep.milliseconds(200) } catch { return }
+            guard readVisible else { return }
+            app.setVisibleConversation(model.cardID)
+        }
+
+        // MARK: - Workspace links
+
+        /// Workspace images open in the lightbox and other workspace files in
+        /// the files sheet; web and other links go to the system.
+        private func openConversationURL(_ url: URL) -> OpenURLAction.Result {
+            guard let card else { return .systemAction(url) }
+            let destination = url.isFileURL ? url.path : url.absoluteString
+            if SharedRules.shared.isWorkspaceImage(destination: destination) {
+                let target = WorkspaceTarget(
+                    endpointID: IOSAppModel.endpointID(daemonID: model.daemonID), projectID: card.projectID,
+                    conversationID: card.id)
+                Task { await images.open(destination, target: target, core: app.core, show: app.show) }
+                return .handled
+            }
+            // Without a workspace, a file link is the only kind that fails for want of one.
+            let outside = ClientContentLinkResolution(
+                rules: SharedRules.shared.resolveContentLink(url: url.relativeString, workspaceRoot: "", relativeTo: "")
+            )
+            guard case .failure(let failure) = outside.result, failure.kind == .invalidWorkspace else {
+                return .systemAction(url)
+            }
+            Task { await openWorkspaceFile(url, card: card) }
+            return .handled
+        }
+
+        /// Resolves a file link against the conversation's workspace on its
+        /// machine and opens the file there.
+        private func openWorkspaceFile(_ url: URL, card: Dieter_V1_Card) async {
+            guard
+                let workspace = await app.perform({
+                    $0.admin = .with { $0.conversationWorkspace = .with { $0.cardID = card.id } }
+                })?.workspace
+            else { return }
+            let resolution = ClientContentLinkResolution(
+                rules: SharedRules.shared.resolveContentLink(
+                    url: url.relativeString, workspaceRoot: workspace.path, relativeTo: ""))
+            switch resolution.result {
+            case .file(let file):
+                navigation.sheet = .files(
+                    IOSFileScope(
+                        machineID: model.daemonID, projectID: card.projectID, checkoutID: card.checkoutID,
+                        cardID: card.id, title: title, openPath: file.path))
+            case .failure(let failure):
+                app.errorMessage = failure.message
+            default:
+                break
+            }
+        }
+
+        // MARK: - Composer
+
         private var composer: some View {
             VStack(spacing: 8) {
-                if !store.phase.isConnected {
+                if app.session.hasNotice {
+                    let notice = app.session.notice
                     IOSConnectionBanner(
-                        title: store.phase.label,
-                        detail: "Your draft will stay here.",
-                        isConnecting: store.phase == .connecting
-                    ) {
-                        Task { await store.reconnect() }
-                    }
+                        title: notice.title,
+                        detail: notice.detail.isEmpty ? "Your draft will stay here." : notice.detail,
+                        isConnecting: notice.working,
+                        retry: notice.working ? nil : { Task { await app.reconnect() } })
                 }
-                if !queue.isEmpty {
-                    IOSQueuedMessageTray(
-                        store: store, messages: queue, agentIsWorking: isRunning, draft: $draft,
-                        focusComposer: { composerFocused = true }
-                    )
-                    .frame(maxWidth: 900)
+                if !model.queue.isEmpty {
+                    IOSQueuedMessageTray(model: model, focusComposer: { composerFocused = true })
+                        .frame(maxWidth: 900)
                 }
-                if let card, !harnesses.isEmpty {
-                    Button {
-                        composerFocused = false
-                        modelSettingsPresented = true
-                    } label: {
-                        HStack(spacing: 7) {
-                            Image(systemName: fastModeEnabled(for: card) ? "bolt.fill" : "sparkles")
-                                .foregroundStyle(fastModeEnabled(for: card) ? Color.orange : Color.accentColor)
-                            Text(selectionSummary(for: card))
-                                .lineLimit(1)
-                            Image(systemName: "chevron.down")
-                                .font(.caption2.bold())
-                                .foregroundStyle(.tertiary)
-                        }
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 12)
-                        .frame(minHeight: 34)
-                        .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .modifier(IOSFloatingGlassModifier(shape: Capsule()))
-                    .frame(maxWidth: 900, alignment: .leading)
-                    .accessibilityLabel("Next message model settings")
-                    .accessibilityValue(selectionSummary(for: card))
-                    .accessibilityIdentifier("ios.composer.model-settings")
-                } else if let harnessError, !harnessError.isEmpty {
-                    Label(harnessError, systemImage: "exclamationmark.triangle")
-                        .font(.caption)
+                if let agent = model.agent {
+                    agentPill(agent)
+                }
+                if !state.respondingModel.isEmpty {
+                    Text("Last response model: \(state.respondingModel)")
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: 900, alignment: .leading)
+                        .accessibilityIdentifier("ios.composer.responding-model")
                 }
-                if !draft.attachments.isEmpty {
-                    ScrollView(.horizontal) {
-                        HStack(spacing: 8) {
-                            ForEach(Array(draft.attachments.enumerated()), id: \.offset) { index, attachment in
-                                HStack(spacing: 6) {
-                                    Image(systemName: attachment.mediaType.hasPrefix("image/") ? "photo" : "doc")
-                                    Text(attachment.filename.isEmpty ? "Attachment" : attachment.filename)
-                                        .lineLimit(1)
-                                    Button("Remove attachment", systemImage: "xmark") {
-                                        draft.attachments.remove(at: index)
-                                    }
-                                    .labelStyle(.iconOnly)
-                                    .accessibilityIdentifier("ios.composer.attachment.remove.\(index)")
-                                }
-                                .font(.caption)
-                                .padding(.horizontal, 10).padding(.vertical, 7)
-                                .modifier(IOSFloatingGlassModifier(shape: Capsule()))
-                            }
-                        }
-                    }
-                    .scrollIndicators(.hidden)
-                    .frame(maxWidth: 900, alignment: .leading)
-                    .accessibilityIdentifier("ios.composer.attachments")
+                if !model.draftAttachments.isEmpty {
+                    attachmentsStrip
                 }
                 if let attachmentError {
                     Text(attachmentError)
@@ -494,11 +506,76 @@
             .background {
                 LinearGradient(
                     colors: [.clear, Color(uiColor: .systemBackground).opacity(0.92)],
-                    startPoint: .top,
-                    endPoint: .center
+                    startPoint: .top, endPoint: .center
                 )
                 .ignoresSafeArea()
             }
+        }
+
+        private func agentPill(_ agent: ClientAgentControlsState) -> some View {
+            let fast = IOSAgentSummary.fastMode(agent)
+            return HStack(spacing: 8) {
+                Button {
+                    composerFocused = false
+                    modelSettingsPresented = true
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: fast ? "bolt.fill" : "sparkles")
+                            .foregroundStyle(fast ? Color.orange : Color.accentColor)
+                        Text(IOSAgentSummary.text(agent)).lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.caption2.bold())
+                            .foregroundStyle(.tertiary)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 34)
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .modifier(IOSFloatingGlassModifier(shape: Capsule()))
+                .accessibilityLabel("Next message model settings")
+                .accessibilityValue(IOSAgentSummary.text(agent))
+                .accessibilityIdentifier("ios.composer.model-settings")
+                Spacer(minLength: 8)
+                if state.contextUsedTokens > 0, state.contextWindowTokens > 0 {
+                    Text(
+                        "\(SharedRules.shared.compactTokens(value: state.contextUsedTokens)) · \(state.contextPercent)%"
+                    )
+                    .font(.caption.weight(.medium).monospacedDigit())
+                    .foregroundStyle(state.contextNearLimit ? Color.orange : Color.secondary)
+                    .accessibilityLabel("Context used")
+                    .accessibilityValue("\(state.contextPercent) percent")
+                    .accessibilityIdentifier("ios.composer.context")
+                }
+            }
+            .frame(maxWidth: 900)
+        }
+
+        private var attachmentsStrip: some View {
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(Array(model.draftAttachments.enumerated()), id: \.offset) { index, attachment in
+                        HStack(spacing: 6) {
+                            Image(systemName: attachment.mediaType.hasPrefix("image/") ? "photo" : "doc")
+                            Text(attachment.filename).lineLimit(1)
+                            Button("Remove attachment", systemImage: "xmark") {
+                                guard model.draftAttachments.indices.contains(index) else { return }
+                                model.draftAttachments.remove(at: index)
+                                attachmentError = nil
+                            }
+                            .labelStyle(.iconOnly)
+                            .accessibilityIdentifier("ios.composer.attachment.remove.\(index)")
+                        }
+                        .font(.caption)
+                        .padding(.horizontal, 10).padding(.vertical, 7)
+                        .modifier(IOSFloatingGlassModifier(shape: Capsule()))
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+            .frame(maxWidth: 900, alignment: .leading)
+            .accessibilityIdentifier("ios.composer.attachments")
         }
 
         @ViewBuilder private var composerInput: some View {
@@ -517,23 +594,18 @@
         }
 
         private var composerControls: some View {
-            let sendEnabled = !sending && !draft.isEmpty && store.canSendMessage
-
+            let sendEnabled = !model.sending && model.hasDraft
+            let slots = IOSAttachmentLoader.remainingSlots(after: model.draftAttachments)
             return HStack(alignment: .bottom, spacing: 8) {
                 VStack(spacing: 0) {
-                    PhotosPicker(
-                        selection: $photoItems,
-                        maxSelectionCount: max(
-                            1, IOSAttachmentLoader.maximumCount - draft.attachments.count),
-                        matching: .images
-                    ) {
+                    PhotosPicker(selection: $photoItems, maxSelectionCount: max(1, slots), matching: .images) {
                         Image(systemName: "photo")
                             .font(.system(size: 13, weight: .semibold))
                             .frame(width: 30, height: 25)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(draft.attachments.count >= IOSAttachmentLoader.maximumCount)
+                    .disabled(slots == 0)
                     .accessibilityLabel("Attach photos")
                     .accessibilityIdentifier("ios.composer.attach-photos")
 
@@ -549,7 +621,7 @@
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(draft.attachments.count >= IOSAttachmentLoader.maximumCount)
+                    .disabled(slots == 0)
                     .accessibilityLabel("Attach files")
                     .accessibilityIdentifier("ios.composer.attach-files")
                 }
@@ -558,29 +630,30 @@
                 .padding(.bottom, 1)
 
                 IOSAttachmentTextEditor(
-                    text: $draft.text,
-                    isFocused: Binding(
-                        get: { composerFocused },
-                        set: { composerFocused = $0 }
-                    ),
+                    text: $model.draftText,
+                    isFocused: Binding(get: { composerFocused }, set: { composerFocused = $0 }),
                     placeholder: "Message Dieter…",
                     minimumLines: 1,
                     maximumLines: 8,
                     accessibilityIdentifier: "ios.composer.message",
-                    pastedImages: appendPastedImages,
-                    pasteFailed: showAttachmentError
+                    pastedImages: { payloads in
+                        intake { try await IOSAttachmentLoader().parts(payloads: payloads, appendingTo: $0) }
+                    },
+                    pasteFailed: { attachmentError = $0.localizedDescription }
                 )
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .contentShape(Rectangle())
                 .simultaneousGesture(TapGesture().onEnded { composerFocused = true })
 
-                Button(action: sendDraft) {
+                Button {
+                    followsLatest = true
+                    Task { await model.send() }
+                } label: {
                     Group {
-                        if sending {
+                        if model.sending {
                             ProgressView().tint(.white)
                         } else {
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 15, weight: .bold))
+                            Image(systemName: "arrow.up").font(.system(size: 15, weight: .bold))
                         }
                     }
                     .frame(width: 36, height: 36)
@@ -591,537 +664,344 @@
                 .buttonStyle(.plain)
                 .padding(.bottom, 3)
                 .disabled(!sendEnabled)
-                .accessibilityLabel("Send message")
+                .accessibilityLabel(state.working ? "Queue message" : "Send message")
                 .accessibilityIdentifier("ios.composer.send")
             }
         }
 
-        private func sendDraft() {
-            let message = draft
-            followsLatest = true
-            sending = true
+        /// Reads picked or pasted files into the draft of this conversation.
+        private func intake(
+            _ read: @escaping @Sendable ([Dieter_V1_MessagePart]) async throws -> [Dieter_V1_MessagePart]
+        ) {
+            let existing = model.draftAttachments
             Task { @MainActor in
-                let accepted = await store.sendMessage(
-                    text: message.text, attachments: message.attachments, selection: message.selection)
-                if accepted, draft.text == message.text,
-                    IOSConversationPresentation.attachmentIdentity(draft.attachments)
-                        == IOSConversationPresentation.attachmentIdentity(message.attachments),
-                    draft.selection == message.selection
-                {
-                    draft.text = ""
-                    draft.attachments = []
-                }
-                sending = false
-            }
-        }
-
-        private var conversationLocked: Bool {
-            guard let card else { return false }
-            return !card.initialPromptSentAt.isEmpty || !messages.isEmpty || isRunning
-        }
-
-        private func loadHarnesses() async {
-            do {
-                harnesses = try await store.conversationHarnesses()
-                harnessError = nil
-                if let card, draft.selection == nil {
-                    draft.selection = resolvedSelection(for: card)
-                }
-            } catch {
-                harnessError = IOSUserError.message(error)
-            }
-        }
-
-        private func selectionBinding(for card: Dieter_V1_Card) -> Binding<Dieter_V1_HarnessSelection> {
-            Binding(
-                get: { draft.selection ?? resolvedSelection(for: card) },
-                set: { draft.selection = $0 })
-        }
-
-        private func resolvedSelection(for card: Dieter_V1_Card) -> Dieter_V1_HarnessSelection {
-            let harness = harnesses.first { $0.id == card.provider }
-            var selection = Dieter_V1_HarnessSelection()
-            selection.provider = card.provider
-            selection.model = card.model
-            selection.effort = card.effort
-            selection.providerOptions = ProviderOptionValues.normalized(
-                for: harness, model: card.model, saved: card.providerOptions)
-            return selection
-        }
-
-        private func selectionSummary(for card: Dieter_V1_Card) -> String {
-            let selection = draft.selection ?? resolvedSelection(for: card)
-            let harness = harnesses.first { $0.id == selection.provider }
-            let model = harness?.models.first { $0.id == selection.model }
-            var labels = [model?.name ?? selection.model]
-            if !selection.effort.isEmpty {
-                labels.append(selection.effort == "default" ? "Default reasoning" : selection.effort.capitalized)
-            }
-            if selection.providerOptions["fast_mode"]?.lowercased() == "true" { labels.append("Fast") }
-            return labels.filter { !$0.isEmpty }.joined(separator: " · ")
-        }
-
-        private func fastModeEnabled(for card: Dieter_V1_Card) -> Bool {
-            let selection = draft.selection ?? resolvedSelection(for: card)
-            return selection.providerOptions["fast_mode"]?.lowercased() == "true"
-        }
-
-        private func appendPastedImages(_ payloads: [IOSAttachmentPayload]) {
-            Task {
                 do {
-                    draft.attachments = try await IOSAttachmentLoader().parts(
-                        payloads: payloads,
-                        appendingTo: draft.attachments)
+                    let parts = try await read(existing)
+                    // Attachments added meanwhile stay; the result is checked again.
+                    let added = Array(parts.dropFirst(existing.count))
+                    model.draftAttachments = try IOSAttachmentLoader.appending(added, to: model.draftAttachments)
                     attachmentError = nil
                 } catch {
-                    showAttachmentError(error)
+                    attachmentError = error.localizedDescription
                 }
             }
-        }
-
-        private func showAttachmentError(_ error: Error) {
-            attachmentError = error.localizedDescription
         }
     }
 
-    private struct IOSConversationModelSettingsView: View {
-        @Environment(\.dismiss) private var dismiss
-        let card: Dieter_V1_Card
-        let harnesses: [Dieter_V1_Harness]
-        let conversationLocked: Bool
-        @Binding var selection: Dieter_V1_HarnessSelection
+    // MARK: - Timeline rows
 
-        private var harness: Dieter_V1_Harness? {
-            harnesses.first { $0.id == selection.provider }
-                ?? harnesses.first { $0.id == card.provider }
-        }
-
-        private var model: Dieter_V1_HarnessModel? {
-            harness?.models.first { $0.id == selection.model }
-        }
-
-        private var efforts: [String] {
-            guard let harness, let model else { return [] }
-            let supported = model.efforts.isEmpty ? harness.effort.options.map(\.id) : model.efforts
-            return Array(Set(supported)).sorted()
-        }
-
-        private var options: [Dieter_V1_ProviderOption] {
-            ProviderOptionValues.options(for: harness, model: selection.model)
-        }
+    /// One transcript row as the core lays it out: a user message, an
+    /// assistant message's step groups, or a run of routine work.
+    private struct IOSTimelineRowView: View {
+        let model: IOSConversationModel
+        let row: ClientTimelineItem
 
         var body: some View {
-            NavigationStack {
-                Form {
-                    Section {
-                        LabeledContent("Provider", value: harness?.name ?? selection.provider)
-                        Picker("Model", selection: modelBinding) {
-                            ForEach(harness?.models ?? [], id: \.id) { model in
-                                Text(model.name).tag(model.id)
-                            }
-                        }
-                        .disabled(!canChange("model-selection"))
-                        .accessibilityIdentifier("ios.conversation.model")
-
-                        if !efforts.isEmpty {
-                            Picker("Reasoning", selection: effortBinding) {
-                                Text("Default").tag("default")
-                                ForEach(efforts.filter { $0 != "default" }, id: \.self) { effort in
-                                    Text(effort.capitalized).tag(effort)
-                                }
-                            }
-                            .disabled(!canChange("effort-selection"))
-                            .accessibilityIdentifier("ios.conversation.effort")
-                        }
-                    } header: {
-                        Text("Agent")
-                    } footer: {
-                        if conversationLocked {
-                            Text(
-                                "Changes apply to the next message. Each agent controls which settings stay mutable after a conversation starts."
-                            )
-                        } else {
-                            Text("These settings apply when the conversation starts.")
-                        }
-                    }
-
-                    if !options.isEmpty {
-                        Section("Provider options") {
-                            ForEach(options, id: \.id) { option in
-                                optionField(option)
-                            }
-                        }
-                    }
-                }
-                .scrollContentBackground(.hidden)
-                .background { IOSWorkspaceBackdrop() }
-                .navigationTitle("Next message")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { dismiss() }
-                            .accessibilityIdentifier("ios.conversation.model-settings.done")
-                    }
-                }
-            }
-            .onAppear { normalizeSelection() }
-            .accessibilityIdentifier("ios.conversation.model-settings.sheet")
-        }
-
-        private var modelBinding: Binding<String> {
-            Binding(
-                get: { selection.model },
-                set: { modelID in
-                    var next = selection
-                    next.provider = harness?.id ?? card.provider
-                    next.model = modelID
-                    if canChange("effort-selection") {
-                        let preferred = harness?.models.first { $0.id == modelID }?.defaultEffort ?? ""
-                        next.effort = preferred.isEmpty ? "default" : preferred
-                    }
-                    next.providerOptions = ProviderOptionValues.normalized(
-                        for: harness, model: modelID, saved: next.providerOptions)
-                    selection = next
-                })
-        }
-
-        private var effortBinding: Binding<String> {
-            Binding(
-                get: {
-                    let current = selection.effort
-                    return current.isEmpty ? "default" : current
-                },
-                set: { value in
-                    var next = selection
-                    next.effort = value
-                    selection = next
-                })
-        }
-
-        @ViewBuilder
-        private func optionField(_ option: Dieter_V1_ProviderOption) -> some View {
-            let enabled = ProviderOptionValues.isEnabled(option, conversationLocked: conversationLocked)
-            let value = optionBinding(option)
-            if ["boolean", "bool"].contains(option.type.lowercased()) {
-                Toggle(
-                    isOn: Binding(
-                        get: { value.wrappedValue.lowercased() == "true" },
-                        set: { value.wrappedValue = $0 ? "true" : "false" }
-                    )
-                ) {
-                    Label(option.name, systemImage: option.id == "fast_mode" ? "bolt.fill" : "switch.2")
-                }
-                .disabled(!enabled)
-                .accessibilityIdentifier("ios.conversation.option.\(option.id)")
-            } else if ["enum", "select"].contains(option.type.lowercased()) {
-                Picker(option.name, selection: value) {
-                    ForEach(option.choices, id: \.value) { choice in
-                        Text(choice.name.isEmpty ? choice.value : choice.name).tag(choice.value)
-                    }
-                }
-                .disabled(!enabled)
-                .accessibilityIdentifier("ios.conversation.option.\(option.id)")
+            if row.activity {
+                IOSActivityDisclosure(
+                    model: model, title: row.summary, steps: row.groups.flatMap(\.steps), identifier: row.id)
             } else {
-                TextField(option.name, text: value)
-                    .disabled(!enabled)
-                    .accessibilityIdentifier("ios.conversation.option.\(option.id)")
+                VStack(alignment: .leading, spacing: 10) {
+                    Label(row.user ? "You" : "Dieter", systemImage: row.user ? "person.fill" : "sparkles")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(row.user ? Color.accentColor : Color.secondary)
+                    ForEach(row.groups, id: \.id) { group in
+                        if group.activity {
+                            IOSActivityDisclosure(
+                                model: model, title: group.summary, steps: group.steps, identifier: group.id)
+                        } else {
+                            ForEach(group.steps, id: \.id) { step in
+                                IOSTimelineStepView(
+                                    model: model, step: step, user: row.user, subagentIDs: row.subagentIds)
+                            }
+                        }
+                    }
+                    ForEach(model.taskPlans(ids: row.planIds), id: \.id) { plan in
+                        IOSTaskPlanView(plan: plan)
+                    }
+                    if row.user, row.delivery != .unspecified, row.delivery != .synced {
+                        IOSMessageDelivery(row: row)
+                    }
+                }
+                .padding(row.user ? 14 : 0)
+                .background {
+                    if row.user {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(Color.accentColor.opacity(0.10))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                    .stroke(Color.accentColor.opacity(0.16), lineWidth: 0.75)
+                            }
+                    }
+                }
+                .opacity(row.unconfirmed && row.delivery != .failed ? 0.6 : 1)
+                .padding(.leading, row.user ? 34 : 0)
+                .frame(maxWidth: .infinity, alignment: row.user ? .trailing : .leading)
+                .contextMenu {
+                    if row.copyable {
+                        Button("Copy message", systemImage: "doc.on.doc") {
+                            UIPasteboard.general.string = model.copyText(row)
+                        }
+                    }
+                }
             }
-        }
-
-        private func optionBinding(_ option: Dieter_V1_ProviderOption) -> Binding<String> {
-            Binding(
-                get: { selection.providerOptions[option.id, default: option.defaultValue] },
-                set: { value in
-                    var next = selection
-                    next.providerOptions[option.id] = value
-                    selection = next
-                })
-        }
-
-        private func canChange(_ capability: String) -> Bool {
-            !conversationLocked
-                || harness?.capabilities.contains {
-                    $0.id == capability && $0.level == "between-turns"
-                } == true
-        }
-
-        private func normalizeSelection() {
-            guard let harness else { return }
-            var next = selection
-            next.provider = harness.id
-            if !harness.models.contains(where: { $0.id == next.model }) {
-                next.model = harness.defaultModel.isEmpty ? (harness.models.first?.id ?? "") : harness.defaultModel
-            }
-            if next.effort.isEmpty {
-                let preferred = harness.models.first { $0.id == next.model }?.defaultEffort ?? ""
-                next.effort = preferred.isEmpty ? "default" : preferred
-            }
-            next.providerOptions = ProviderOptionValues.normalized(
-                for: harness, model: next.model, saved: next.providerOptions)
-            selection = next
         }
     }
 
-    private struct IOSConversationLoadingView: View {
-        let isChat: Bool
-        var preparingTimeline = false
+    /// A user message that has not synced yet, as the core reports it.
+    private struct IOSMessageDelivery: View {
+        @Environment(IOSAppModel.self) private var app
+        let row: ClientTimelineItem
+
+        private var messageID: String { row.messageIds.first ?? "" }
 
         var body: some View {
-            VStack(spacing: 20) {
-                IOSDieterActivityGlyph(size: 82)
-                VStack(spacing: 6) {
-                    Text(
-                        preparingTimeline ? "Finishing the conversation…" : (isChat ? "Opening chat…" : "Opening task…")
+            if row.delivery == .failed {
+                HStack(spacing: 8) {
+                    Label("Send failed", systemImage: "exclamationmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.red)
+                    Spacer(minLength: 8)
+                    Button("Retry") { Task { await app.perform { $0.retryPending = .with { $0.id = messageID } } } }
+                        .accessibilityIdentifier("ios.message.retry.\(messageID)")
+                    Button("Remove", role: .destructive) {
+                        Task { await app.perform { $0.discardPending = .with { $0.id = messageID } } }
+                    }
+                    .accessibilityIdentifier("ios.message.remove.\(messageID)")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            } else {
+                Label(row.deliveryLabel, systemImage: row.delivery == .queued ? "clock.badge.checkmark" : "clock")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
+    }
+
+    /// One visible part of a message.
+    private struct IOSTimelineStepView: View {
+        let model: IOSConversationModel
+        let step: ClientTimelineStep
+        let user: Bool
+        let subagentIDs: [String]
+
+        var body: some View {
+            switch step.kind {
+            case .subagents:
+                ForEach(model.subagents(ids: subagentIDs), id: \.id) { agent in
+                    IOSSubagentView(agent: agent)
+                }
+            case .tool:
+                IOSToolStepView(step: step, part: model.part(for: step))
+            case .attention where step.toolStatus != .unspecified:
+                // A tool call that failed or waits for a decision.
+                IOSToolStepView(step: step, part: model.part(for: step))
+            case .reasoning:
+                DisclosureGroup("Reasoning") { IOSMessageText(text: model.part(for: step)?.text ?? step.text) }
+                    .font(.subheadline).foregroundStyle(.secondary)
+            case .attachment:
+                if let part = model.part(for: step) {
+                    Label(
+                        part.filename.isEmpty ? "Attachment" : part.filename,
+                        systemImage: part.mediaType.hasPrefix("image/") ? "photo" : "doc"
                     )
-                    .font(.headline)
-                    Text("Syncing the latest conversation")
-                        .font(.subheadline)
+                    .font(.subheadline).foregroundStyle(.secondary)
+                }
+            default:
+                if let text = (model.part(for: step)?.text).flatMap({ $0.isEmpty ? nil : $0 }) {
+                    IOSMessageText(text: text)
+                        .foregroundStyle(step.kind == .attention ? Color.orange : Color.primary)
+                        .accessibilityIdentifier("ios.message.text.\(user ? "user" : "assistant")")
+                }
+            }
+        }
+    }
+
+    /// Routine work behind one disclosure titled by the core's summary.
+    private struct IOSActivityDisclosure: View {
+        let model: IOSConversationModel
+        let title: String
+        let steps: [ClientTimelineStep]
+        let identifier: String
+        @State private var expanded = false
+
+        var body: some View {
+            DisclosureGroup(isExpanded: $expanded) {
+                if expanded {
+                    VStack(alignment: .leading, spacing: 9) {
+                        ForEach(steps, id: \.id) { step in
+                            if step.kind == .reasoning {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Reasoning").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
+                                    IOSMessageText(text: model.part(for: step)?.text ?? step.text)
+                                }
+                            } else {
+                                IOSToolStepView(step: step, part: model.part(for: step))
+                            }
+                        }
+                    }
+                    .padding(.top, 6)
+                }
+            } label: {
+                Label(title.isEmpty ? "Activity" : title, systemImage: "waveform.path.ecg")
+                    .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .accessibilityIdentifier("ios.conversation.activity.\(identifier)")
+            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+        }
+    }
+
+    /// A tool call: the core's title and status, with its previews behind a disclosure.
+    private struct IOSToolStepView: View {
+        let step: ClientTimelineStep
+        let part: Dieter_V1_MessagePart?
+        @State private var expanded = false
+
+        private var attention: Bool { step.kind == .attention || step.toolAttention }
+
+        private var status: String { step.toolStatusLabel }
+
+        var body: some View {
+            DisclosureGroup(isExpanded: $expanded) {
+                if expanded, let part {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if !part.inputPreview.isEmpty {
+                            Text(part.inputPreview).font(.system(.caption, design: .monospaced))
+                        }
+                        if !part.outputPreview.isEmpty {
+                            Text(part.outputPreview).font(.system(.caption, design: .monospaced))
+                        }
+                        if !part.errorText.isEmpty { Text(part.errorText).foregroundStyle(.red) }
+                    }
+                    .textSelection(.enabled)
+                    .padding(.top, 4)
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    Image(
+                        systemName: attention
+                            ? "exclamationmark.circle"
+                            : (step.toolStatus == .completed ? "checkmark.circle" : "terminal"))
+                    Text(step.toolTitle.isEmpty ? "Tool" : step.toolTitle)
+                        .font(.system(.caption, design: .monospaced).weight(.medium))
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    if step.toolStatus == .running {
+                        ProgressView().controlSize(.mini)
+                    } else if !status.isEmpty {
+                        Text(status).font(.caption2).foregroundStyle(.tertiary)
+                    }
+                }
+            }
+            .font(.subheadline)
+            .foregroundStyle(attention ? Color.orange : Color.secondary)
+            .accessibilityIdentifier("ios.conversation.tool.\(step.id)")
+        }
+    }
+
+    /// A task plan's progress and tasks, as the core words them.
+    private struct IOSTaskPlanView: View {
+        let plan: Dieter_V1_TaskPlan
+
+        var body: some View {
+            let summary = ClientTaskPlanSummary(rules: SharedRules.shared.taskPlanSummary(plan: plan.rulesData))
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Label("Plan", systemImage: summary.active ? "list.bullet.clipboard.fill" : "list.bullet.clipboard")
+                        .font(.caption.weight(.semibold))
+                    Spacer()
+                    Text("\(summary.completed)/\(summary.total)")
+                        .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
+                if summary.total > 0 {
+                    ProgressView(value: Double(summary.completed), total: Double(summary.total))
+                }
+                ForEach(Array(summary.taskTexts.enumerated()), id: \.offset) { _, text in
+                    Text(text).font(.caption).foregroundStyle(.secondary)
+                }
             }
-            .padding(32)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background {
-                RadialGradient(
-                    colors: [Color.accentColor.opacity(0.08), .clear],
-                    center: .center,
-                    startRadius: 0,
-                    endRadius: 220)
-            }
+            .padding(12)
+            .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("ios.conversation.loading")
+            .accessibilityIdentifier("ios.conversation.plan.\(plan.id)")
         }
     }
 
-    struct IOSDieterActivityGlyph: View {
-        let size: CGFloat
-        var tint: Color = .accentColor
-        @Environment(\.accessibilityReduceMotion) private var reduceMotion
-        @State private var rotation = Angle.zero
-        @State private var breathing = false
+    /// A delegated agent, as the core words it.
+    private struct IOSSubagentView: View {
+        let agent: Dieter_V1_Subagent
 
         var body: some View {
-            ZStack {
-                Circle()
-                    .fill(tint.opacity(0.16))
-                    .frame(width: size * 1.18, height: size * 1.18)
-                    .blur(radius: size * 0.17)
-                    .scaleEffect(breathing ? 1.08 : 0.92)
-                Circle()
-                    .stroke(tint.opacity(0.14), lineWidth: max(1, size * 0.025))
-                    .frame(width: size, height: size)
-                Circle()
-                    .trim(from: 0.08, to: 0.73)
-                    .stroke(
-                        AngularGradient(
-                            colors: [.clear, tint.opacity(0.35), tint, .clear],
-                            center: .center),
-                        style: StrokeStyle(lineWidth: max(2, size * 0.055), lineCap: .round)
-                    )
-                    .frame(width: size, height: size)
-                    .rotationEffect(rotation)
-                Circle()
-                    .fill(.ultraThinMaterial)
-                    .frame(width: size * 0.7, height: size * 0.7)
-                    .overlay(Circle().stroke(.white.opacity(0.22), lineWidth: 0.75))
-                IOSDieterMark()
-                    .frame(width: size * 0.52, height: size * 0.52)
-                    .scaleEffect(breathing ? 1.04 : 0.94)
-                    .rotationEffect(breathing ? .degrees(2) : .degrees(-2))
-                    .shadow(color: tint.opacity(0.22), radius: size * 0.06, y: size * 0.02)
-            }
-            .frame(width: size * 1.25, height: size * 1.25)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.linear(duration: 1.7).repeatForever(autoreverses: false)) {
-                    rotation = .degrees(360)
+            TimelineView(.periodic(from: .now, by: 1)) { clock in
+                let summary = ClientSubagentSummary(
+                    rules: SharedRules.shared.subagentSummary(agent: agent.rulesData, nowMillis: clock.date.epochMillis)
+                )
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 7) {
+                        Image(systemName: summary.active ? "person.2.wave.2" : "person.2")
+                        Text(summary.title).font(.subheadline.weight(.medium)).lineLimit(1)
+                        Spacer(minLength: 8)
+                        if !summary.elapsed.isEmpty {
+                            Text(summary.elapsed).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                        }
+                    }
+                    Text([summary.agentLabel, summary.identity].filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(.caption2).foregroundStyle(.secondary)
+                    if !summary.statusLine.isEmpty {
+                        Text(summary.statusLine).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                    }
                 }
-                withAnimation(.easeInOut(duration: 1.15).repeatForever(autoreverses: true)) {
-                    breathing = true
-                }
+                .padding(12)
+                .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .accessibilityElement(children: .combine)
             }
-            .accessibilityHidden(true)
+            .accessibilityIdentifier("ios.conversation.subagent.\(agent.id)")
         }
     }
 
-    private struct IOSDieterMark: View {
-        var body: some View {
-            Canvas { context, size in
-                let scale = min(size.width, size.height) / 1_024
-                context.translateBy(
-                    x: (size.width - 1_024 * scale) / 2,
-                    y: (size.height - 1_024 * scale) / 2)
-                context.scaleBy(x: scale, y: scale)
-
-                context.fill(
-                    shell,
-                    with: .linearGradient(
-                        Gradient(colors: [
-                            Color(red: 0.55, green: 0.85, blue: 0.91),
-                            Color(red: 0.24, green: 0.43, blue: 0.52),
-                            Color(red: 0.20, green: 0.35, blue: 0.43),
-                        ]),
-                        startPoint: CGPoint(x: 190, y: 160),
-                        endPoint: CGPoint(x: 862, y: 912)))
-                context.fill(operatorBody, with: .color(Color(red: 0.05, green: 0.11, blue: 0.14)))
-                context.fill(
-                    panes,
-                    with: .linearGradient(
-                        Gradient(colors: [
-                            Color(red: 0.84, green: 0.95, blue: 0.96),
-                            Color(red: 0.55, green: 0.85, blue: 0.91),
-                            Color(red: 0.38, green: 0.71, blue: 0.80),
-                        ]),
-                        startPoint: CGPoint(x: 250, y: 220),
-                        endPoint: CGPoint(x: 730, y: 850)))
-                context.fill(eyes, with: .color(Color(red: 0.74, green: 0.92, blue: 0.95)))
-            }
-            .accessibilityHidden(true)
-        }
-
-        private var shell: Path {
-            var path = Path()
-            path.move(to: CGPoint(x: 742, y: 104))
-            path.addLine(to: CGPoint(x: 862, y: 104))
-            path.addLine(to: CGPoint(x: 862, y: 686))
-            path.addCurve(
-                to: CGPoint(x: 630, y: 918),
-                control1: CGPoint(x: 862, y: 814),
-                control2: CGPoint(x: 758, y: 918))
-            path.addLine(to: CGPoint(x: 394, y: 918))
-            path.addCurve(
-                to: CGPoint(x: 162, y: 686),
-                control1: CGPoint(x: 266, y: 918),
-                control2: CGPoint(x: 162, y: 814))
-            path.addLine(to: CGPoint(x: 162, y: 493))
-            path.addCurve(
-                to: CGPoint(x: 512, y: 143),
-                control1: CGPoint(x: 162, y: 300),
-                control2: CGPoint(x: 319, y: 143))
-            path.addCurve(
-                to: CGPoint(x: 742, y: 226),
-                control1: CGPoint(x: 599, y: 143),
-                control2: CGPoint(x: 679, y: 175))
-            path.closeSubpath()
-            return path
-        }
-
-        private var operatorBody: Path {
-            var path = Path()
-            path.move(to: CGPoint(x: 512, y: 342))
-            path.addCurve(
-                to: CGPoint(x: 288, y: 534),
-                control1: CGPoint(x: 374, y: 342),
-                control2: CGPoint(x: 288, y: 425))
-            path.addCurve(
-                to: CGPoint(x: 394, y: 688),
-                control1: CGPoint(x: 288, y: 603),
-                control2: CGPoint(x: 326, y: 650))
-            path.addLine(to: CGPoint(x: 394, y: 786))
-            path.addCurve(
-                to: CGPoint(x: 495, y: 887),
-                control1: CGPoint(x: 394, y: 842),
-                control2: CGPoint(x: 439, y: 887))
-            path.addLine(to: CGPoint(x: 529, y: 887))
-            path.addCurve(
-                to: CGPoint(x: 630, y: 786),
-                control1: CGPoint(x: 585, y: 887),
-                control2: CGPoint(x: 630, y: 842))
-            path.addLine(to: CGPoint(x: 630, y: 688))
-            path.addCurve(
-                to: CGPoint(x: 736, y: 534),
-                control1: CGPoint(x: 698, y: 650),
-                control2: CGPoint(x: 736, y: 603))
-            path.addCurve(
-                to: CGPoint(x: 512, y: 342),
-                control1: CGPoint(x: 736, y: 425),
-                control2: CGPoint(x: 650, y: 342))
-            path.closeSubpath()
-            return path
-        }
-
-        private var panes: Path {
-            var path = Path(
-                roundedRect: CGRect(x: 412, y: 224, width: 200, height: 142),
-                cornerSize: CGSize(width: 36, height: 36))
-            path.addPath(sidePane(mirrored: false))
-            path.addPath(sidePane(mirrored: true))
-            return path
-        }
-
-        private func sidePane(mirrored: Bool) -> Path {
-            var path = Path()
-            path.move(to: CGPoint(x: 218, y: 668))
-            path.addCurve(
-                to: CGPoint(x: 277, y: 622),
-                control1: CGPoint(x: 218, y: 636),
-                control2: CGPoint(x: 246, y: 614))
-            path.addLine(to: CGPoint(x: 370, y: 647))
-            path.addCurve(
-                to: CGPoint(x: 418, y: 710),
-                control1: CGPoint(x: 398, y: 655),
-                control2: CGPoint(x: 418, y: 680))
-            path.addLine(to: CGPoint(x: 418, y: 817))
-            path.addCurve(
-                to: CGPoint(x: 361, y: 864),
-                control1: CGPoint(x: 418, y: 847),
-                control2: CGPoint(x: 390, y: 870))
-            path.addLine(to: CGPoint(x: 275, y: 847))
-            path.addCurve(
-                to: CGPoint(x: 218, y: 778),
-                control1: CGPoint(x: 242, y: 840),
-                control2: CGPoint(x: 218, y: 811))
-            path.closeSubpath()
-            guard mirrored else { return path }
-            return path.applying(CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: 1_024, ty: 0))
-        }
-
-        private var eyes: Path {
-            var path = Path(
-                roundedRect: CGRect(x: 376, y: 516, width: 88, height: 36),
-                cornerSize: CGSize(width: 18, height: 18))
-            path.addRoundedRect(
-                in: CGRect(x: 560, y: 516, width: 88, height: 36),
-                cornerSize: CGSize(width: 18, height: 18))
-            return path
-        }
-    }
+    // MARK: - Turn state
 
     private struct IOSConversationTurnIndicator: View {
+        let label: String
+        let detail: String
         let startedAt: Date?
-        let stopping: Bool
-        let providerStatus: Dieter_V1_ProviderStatus?
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @State private var shimmer = false
 
-        private var label: String {
-            if stopping { return "Dieter is stopping…" }
-            return providerStatus.flatMap(ProviderStatusPresentation.label) ?? "Dieter is working…"
-        }
+        private var title: String { label.isEmpty ? "Dieter is working…" : label }
 
         var body: some View {
             HStack(spacing: 9) {
                 IOSDieterActivityGlyph(size: 16)
-                Text(label)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .overlay {
-                        if !reduceMotion {
-                            GeometryReader { geometry in
-                                LinearGradient(
-                                    colors: [.clear, .primary.opacity(0.8), .clear],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                                .frame(width: geometry.size.width)
-                                .offset(x: shimmer ? geometry.size.width : -geometry.size.width)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .overlay {
+                            if !reduceMotion {
+                                GeometryReader { geometry in
+                                    LinearGradient(
+                                        colors: [.clear, .primary.opacity(0.8), .clear],
+                                        startPoint: .leading, endPoint: .trailing
+                                    )
+                                    .frame(width: geometry.size.width)
+                                    .offset(x: shimmer ? geometry.size.width : -geometry.size.width)
+                                }
+                                .mask(Text(title).font(.caption.weight(.medium)))
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
                             }
-                            .mask(Text(label).font(.caption.weight(.medium)))
-                            .allowsHitTesting(false)
-                            .accessibilityHidden(true)
                         }
+                        .lineLimit(1)
+                    if !detail.isEmpty {
+                        Text(detail).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                     }
-                    .lineLimit(1)
+                }
                 Spacer(minLength: 8)
                 if let startedAt {
                     Text(startedAt, style: .timer)
@@ -1144,6 +1024,342 @@
         }
     }
 
+    /// The last turn failed, as the core reads it.
+    private struct IOSTurnFailureView: View {
+        let failure: ClientTurnFailure
+        let retrying: Bool
+        let viewLog: () -> Void
+        let retry: () -> Void
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                Label(failure.summary, systemImage: "exclamationmark.triangle.fill")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.orange)
+                HStack(spacing: 10) {
+                    if !failure.log.isEmpty {
+                        Button("View log", action: viewLog)
+                            .accessibilityIdentifier("ios.conversation.failure.log")
+                    }
+                    Spacer(minLength: 0)
+                    if failure.retryable {
+                        Button(retrying ? "Retry queued…" : "Retry turn", action: retry)
+                            .buttonStyle(.borderedProminent)
+                            .disabled(retrying)
+                            .accessibilityIdentifier("ios.conversation.failure.retry")
+                    }
+                }
+                .controlSize(.small)
+            }
+            .padding(14)
+            .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("ios.conversation.failure")
+        }
+    }
+
+    private struct IOSConversationLog: Identifiable {
+        let id = UUID()
+        let title: String
+        let text: String
+    }
+
+    private struct IOSConversationLogView: View {
+        @Environment(\.dismiss) private var dismiss
+        let log: IOSConversationLog
+
+        var body: some View {
+            NavigationStack {
+                ScrollView {
+                    Text(log.text)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                }
+                .navigationTitle(log.title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Copy", systemImage: "doc.on.doc") { UIPasteboard.general.string = log.text }
+                    }
+                }
+            }
+            .accessibilityIdentifier("ios.conversation.log")
+        }
+    }
+
+    // MARK: - Queued messages
+
+    private struct IOSQueuedMessageTray: View {
+        let model: IOSConversationModel
+        let focusComposer: () -> Void
+
+        var body: some View {
+            ScrollView(.vertical) {
+                LazyVStack(spacing: 7) {
+                    ForEach(model.queue, id: \.id) { message in
+                        IOSQueuedMessageRow(model: model, message: message, focusComposer: focusComposer)
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+            .frame(height: min(CGFloat(model.queue.count) * 68, 196))
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Queued messages")
+            .accessibilityIdentifier("ios.conversation.queue")
+        }
+    }
+
+    private struct IOSQueuedMessageRow: View {
+        let model: IOSConversationModel
+        let message: Dieter_V1_QueuedMessage
+        let focusComposer: () -> Void
+
+        private var restored: Dieter_V1_QueuedMessage {
+            Dieter_V1_QueuedMessage(
+                rules: SharedRules.shared.restoredDraft(message: message.rulesData, currentText: ""))
+        }
+        private var busy: Bool { model.queueActionID != nil }
+        private var acting: Bool { model.queueActionID == message.id }
+        private var canSteer: Bool { message.id == model.state.steerableID }
+
+        var body: some View {
+            let restored = restored
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.turn.down.right")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(restored.text.isEmpty ? (restored.parts.first?.filename ?? "") : restored.text)
+                        .font(.subheadline.weight(.medium)).lineLimit(2)
+                    HStack(spacing: 5) {
+                        Text("Queued")
+                        if !restored.parts.isEmpty {
+                            Image(systemName: "paperclip")
+                            Text(restored.parts.count, format: .number)
+                        }
+                    }
+                    .font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 4)
+                if canSteer {
+                    Button(acting ? "Steering…" : "Steer") { Task { await model.steer(message.id) } }
+                        .buttonStyle(.bordered).controlSize(.small)
+                        .disabled(busy)
+                        .accessibilityIdentifier("ios.queued-message.steer.\(message.id)")
+                }
+                Menu {
+                    Button("Edit queued message", systemImage: "pencil") {
+                        Task { if await model.removeQueued(message, edit: true) { focusComposer() } }
+                    }
+                    Button("Remove queued message", systemImage: "trash", role: .destructive) {
+                        Task { await model.removeQueued(message, edit: false) }
+                    }
+                } label: {
+                    if acting {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+                .disabled(busy || model.sending)
+                .accessibilityLabel("Queued message actions")
+                .accessibilityIdentifier("ios.queued-message.menu.\(message.id)")
+            }
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .frame(minHeight: 60)
+            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.secondary.opacity(0.18)))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("ios.queued-message.\(message.id)")
+        }
+    }
+
+    // MARK: - Agent settings
+
+    /// The composer's agent in one line: the core's provider, model, and
+    /// effort labels, and whether fast mode is on.
+    enum IOSAgentSummary {
+        static func text(_ agent: ClientAgentControlsState) -> String {
+            [agent.modelLabel, agent.effortLabel].filter { !$0.isEmpty }.joined(separator: " · ")
+        }
+
+        /// Fast mode shows as a bolt; the option is the provider's.
+        static func fastMode(_ agent: ClientAgentControlsState) -> Bool {
+            agent.options.contains { $0.id == "fast_mode" } && agent.optionValues["fast_mode"] == "true"
+        }
+    }
+
+    /// The pickers of the core's `AgentControlsState`; each pick is a choice
+    /// the caller sends (ChooseAgent, or a creation preview).
+    struct IOSAgentPickers: View {
+        let controls: ClientAgentControlsState
+        /// The pickers' accessibility identifiers start with this.
+        let identifierPrefix: String
+        let choose: (ClientAgentChoice.OneOf_Choice) -> Void
+
+        var body: some View {
+            Picker("Provider", selection: Binding(get: { controls.selection.provider }, set: { choose(.provider($0)) }))
+            {
+                ForEach(controls.providers, id: \.id) { Text($0.name).tag($0.id) }
+            }
+            .disabled(!controls.providerEnabled)
+            .accessibilityIdentifier("\(identifierPrefix).provider")
+            .accessibilityValue(controls.providerLabel)
+            Picker("Model", selection: Binding(get: { controls.selection.model }, set: { choose(.model($0)) })) {
+                ForEach(controls.models, id: \.id) { Text($0.name).tag($0.id) }
+            }
+            .disabled(!controls.modelEnabled)
+            .accessibilityIdentifier("\(identifierPrefix).model")
+            .accessibilityValue(controls.modelLabel)
+            if !controls.efforts.isEmpty {
+                Picker(
+                    "Reasoning",
+                    selection: Binding(
+                        get: { controls.selection.effort.isEmpty ? "default" : controls.selection.effort },
+                        set: { choose(.effort($0)) })
+                ) {
+                    Text("Default").tag("default")
+                    ForEach(controls.efforts, id: \.id) { Text($0.name).tag($0.id) }
+                }
+                .disabled(!controls.effortEnabled)
+                .accessibilityIdentifier("\(identifierPrefix).effort")
+                .accessibilityValue(controls.effortLabel)
+            }
+            ForEach(controls.options, id: \.id) { option in
+                optionField(option)
+                    .disabled(controls.optionEnabled[option.id] == false)
+                    .accessibilityIdentifier("\(identifierPrefix).option.\(option.id)")
+            }
+        }
+
+        @ViewBuilder
+        private func optionField(_ option: Dieter_V1_ProviderOption) -> some View {
+            let value = Binding(
+                get: { controls.optionValues[option.id] ?? option.defaultValue },
+                set: { next in
+                    guard next != (controls.optionValues[option.id] ?? option.defaultValue) else { return }
+                    choose(
+                        .option(
+                            .with {
+                                $0.id = option.id
+                                $0.optionValue = next
+                            }))
+                })
+            switch option.type.lowercased() {
+            case "boolean", "bool":
+                Toggle(
+                    isOn: Binding(
+                        get: { value.wrappedValue.lowercased() == "true" },
+                        set: { value.wrappedValue = $0 ? "true" : "false" })
+                ) {
+                    Label(option.name, systemImage: option.id == "fast_mode" ? "bolt.fill" : "switch.2")
+                }
+            case "enum", "select":
+                Picker(option.name, selection: value) {
+                    ForEach(option.choices, id: \.value) { choice in
+                        Text(choice.name.isEmpty ? choice.value : choice.name).tag(choice.value)
+                    }
+                }
+            default:
+                TextField(option.name, text: value)
+            }
+        }
+    }
+
+    private struct IOSConversationModelSettingsView: View {
+        @Environment(\.dismiss) private var dismiss
+        let model: IOSConversationModel
+
+        var body: some View {
+            NavigationStack {
+                Form {
+                    if let agent = model.agent {
+                        Section {
+                            IOSAgentPickers(controls: agent, identifierPrefix: "ios.conversation") { choice in
+                                Task { await model.chooseAgent(choice) }
+                            }
+                        } header: {
+                            Text("Agent")
+                        } footer: {
+                            Text(
+                                "Applies to your next message. Settings the agent cannot change mid-conversation stay locked."
+                            )
+                        }
+                    } else {
+                        ProgressView("Loading agent models…")
+                    }
+                }
+                .scrollContentBackground(.hidden)
+                .background { IOSWorkspaceBackdrop() }
+                .navigationTitle("Next message")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                            .accessibilityIdentifier("ios.conversation.model-settings.done")
+                    }
+                }
+            }
+            .accessibilityIdentifier("ios.conversation.model-settings.sheet")
+        }
+    }
+
+    // MARK: - Loading
+
+    struct IOSConversationLoadingView: View {
+        let isChat: Bool
+        var preparingTimeline = false
+
+        var body: some View {
+            VStack(spacing: 20) {
+                IOSDieterActivityGlyph(size: 82)
+                VStack(spacing: 6) {
+                    Text(
+                        preparingTimeline ? "Finishing the conversation…" : (isChat ? "Opening chat…" : "Opening task…")
+                    )
+                    .font(.headline)
+                    Text("Syncing the latest conversation")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(32)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background {
+                RadialGradient(
+                    colors: [Color.accentColor.opacity(0.08), .clear], center: .center, startRadius: 0,
+                    endRadius: 220)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("ios.conversation.loading")
+        }
+    }
+
+    private struct IOSComposerSendVisualStyle: ViewModifier {
+        let enabled: Bool
+
+        @ViewBuilder func body(content: Content) -> some View {
+            if #available(iOS 26.0, *) {
+                content
+                    .foregroundStyle(enabled ? Color.white : Color.secondary.opacity(0.72))
+                    .glassEffect(
+                        .regular.tint(enabled ? Color.accentColor : Color.secondary.opacity(0.12)).interactive(),
+                        in: Circle())
+            } else {
+                content
+                    .foregroundStyle(enabled ? Color.white : Color.secondary.opacity(0.72))
+                    .background(enabled ? Color.accentColor : Color.secondary.opacity(0.12), in: Circle())
+                    .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 0.75))
+            }
+        }
+    }
+
+    // MARK: - Scroll position
+
     private struct IOSConversationScrollLayout: Equatable {
         let contentHeight: CGFloat
         let viewportHeight: CGFloat
@@ -1158,311 +1374,52 @@
 
         init(_ geometry: ScrollGeometry) {
             layout = IOSConversationScrollLayout(
-                contentHeight: geometry.contentSize.height,
-                viewportHeight: geometry.visibleRect.height,
+                contentHeight: geometry.contentSize.height, viewportHeight: geometry.visibleRect.height,
                 bottomInset: geometry.contentInsets.bottom)
             atEnd = IOSConversationScrollBehavior.isAtLatest(
-                visibleMaxY: geometry.visibleRect.maxY,
-                contentHeight: geometry.contentSize.height,
+                visibleMaxY: geometry.visibleRect.maxY, contentHeight: geometry.contentSize.height,
                 bottomInset: geometry.contentInsets.bottom)
             showsJumpToLatest = IOSConversationScrollBehavior.shouldShowJumpToLatest(
-                visibleMaxY: geometry.visibleRect.maxY,
-                contentHeight: geometry.contentSize.height,
+                visibleMaxY: geometry.visibleRect.maxY, contentHeight: geometry.contentSize.height,
                 bottomInset: geometry.contentInsets.bottom)
             canScroll = geometry.contentSize.height > geometry.visibleRect.height - geometry.contentInsets.bottom + 2
         }
     }
 
-    private struct IOSComposerSendVisualStyle: ViewModifier {
-        let enabled: Bool
+    // MARK: - Images
 
-        @ViewBuilder func body(content: Content) -> some View {
-            if #available(iOS 26.0, *) {
-                content
-                    .foregroundStyle(enabled ? Color.white : Color.secondary.opacity(0.72))
-                    .glassEffect(
-                        .regular
-                            .tint(enabled ? Color.accentColor : Color.secondary.opacity(0.12))
-                            .interactive(),
-                        in: Circle())
+    /// A workspace image a transcript links to: the files surface reads it
+    /// on the conversation's machine, resolving `file://` and absolute paths
+    /// against the conversation's workspace.
+    @MainActor
+    @Observable
+    private final class IOSConversationImages {
+        var loadingTitle: String?
+        var preview: IOSConversationImagePreview?
+        @ObservationIgnored private var files: IOSFilesModel?
+        @ObservationIgnored private var request = UUID()
+
+        func open(
+            _ destination: String, target: WorkspaceTarget, core: CoreClient, show: @MainActor (any Error) -> Void
+        ) async {
+            let requestID = UUID()
+            request = requestID
+            let title = (destination as NSString).lastPathComponent
+            loadingTitle = title
+            defer { if request == requestID { loadingTitle = nil } }
+            let files =
+                self.files
+                ?? IOSFilesModel(scope: "ios-conversation-images-\(UUID().uuidString.lowercased())")
+            self.files = files
+            files.bind(target: target, core: core)
+            await files.openFile(path: destination)
+            guard request == requestID else { return }
+            if let document = files.fileDocument,
+                let image = UIImage(data: document.binary ? document.data : Data(document.content.utf8))
+            {
+                preview = IOSConversationImagePreview(title: title, image: image)
             } else {
-                content
-                    .foregroundStyle(enabled ? Color.white : Color.secondary.opacity(0.72))
-                    .background(
-                        enabled ? Color.accentColor : Color.secondary.opacity(0.12),
-                        in: Circle()
-                    )
-                    .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 0.75))
-            }
-        }
-    }
-
-    private struct IOSConversationMessage: View {
-        let message: Dieter_V1_UiMessage
-
-        private var isUser: Bool { ["user", "human"].contains(message.role.lowercased()) }
-
-        var body: some View {
-            VStack(alignment: .leading, spacing: 10) {
-                Label(isUser ? "You" : "Dieter", systemImage: isUser ? "person.fill" : "sparkles")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(isUser ? Color.accentColor : Color.secondary)
-                ForEach(IOSConversationPresentation.partGroups(in: message)) { group in
-                    if group.isActivity {
-                        IOSConversationActivityDisclosure(steps: group.steps, identifier: group.id)
-                    } else {
-                        ForEach(group.steps) { step in
-                            IOSConversationPart(messageID: step.messageID, part: step.part, role: message.role)
-                        }
-                    }
-                }
-            }
-            .padding(isUser ? 14 : 0)
-            .background {
-                if isUser {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(Color.accentColor.opacity(0.10))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                .stroke(Color.accentColor.opacity(0.16), lineWidth: 0.75)
-                        }
-                }
-            }
-            .padding(.leading, isUser ? 34 : 0)
-            .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
-        }
-    }
-
-    private struct IOSConversationActivityDisclosure: View {
-        let steps: [IOSConversationActivityStep]
-        let identifier: String
-        @State private var expanded = false
-
-        var body: some View {
-            DisclosureGroup(isExpanded: $expanded) {
-                if expanded {
-                    VStack(alignment: .leading, spacing: 9) {
-                        ForEach(steps) { step in
-                            if IOSConversationPresentation.isReasoning(step.part) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Reasoning").font(.caption2.weight(.medium)).foregroundStyle(.secondary)
-                                    IOSMessageText(text: step.part.text)
-                                }
-                            } else {
-                                IOSToolPart(messageID: step.messageID, part: step.part)
-                            }
-                        }
-                    }
-                    .padding(.top, 6)
-                }
-            } label: {
-                Label(IOSConversationActivitySummary(steps: steps).title, systemImage: "waveform.path.ecg")
-                    .font(.caption.weight(.medium)).foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 9)
-            .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .accessibilityIdentifier("ios.conversation.activity.\(identifier)")
-            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
-        }
-    }
-
-    private struct IOSConversationPart: View {
-        let messageID: String
-        let part: Dieter_V1_MessagePart
-        let role: String
-
-        var body: some View {
-            if IOSConversationPresentation.isReasoning(part) {
-                DisclosureGroup("Reasoning") { IOSMessageText(text: part.text) }
-                    .font(.subheadline).foregroundStyle(.secondary)
-            } else if IOSConversationPresentation.isToolCall(part) {
-                IOSToolPart(messageID: messageID, part: part)
-            } else if !part.text.isEmpty {
-                IOSMessageText(text: part.text)
-                    .accessibilityIdentifier("ios.message.text.\(role)")
-            } else if !part.filename.isEmpty {
-                Label(part.filename, systemImage: part.mediaType.hasPrefix("image/") ? "photo" : "doc")
-                    .font(.subheadline).foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private struct IOSToolPart: View {
-        let messageID: String
-        let part: Dieter_V1_MessagePart
-        @State private var expanded = false
-
-        private var name: String {
-            let value = IOSConversationPresentation.effectiveToolName(part)
-            return value.isEmpty ? "Command" : value
-        }
-
-        var body: some View {
-            VStack(alignment: .leading, spacing: 6) {
-                DisclosureGroup(isExpanded: $expanded) {
-                    if expanded {
-                        VStack(alignment: .leading, spacing: 8) {
-                            if !part.inputPreview.isEmpty {
-                                Text(part.inputPreview).font(.system(.caption, design: .monospaced))
-                            }
-                            if !part.outputPreview.isEmpty {
-                                Text(part.outputPreview).font(.system(.caption, design: .monospaced))
-                            }
-                            if !part.errorText.isEmpty { Text(part.errorText).foregroundStyle(.red) }
-                        }
-                        .textSelection(.enabled)
-                        .padding(.top, 4)
-                    }
-                } label: {
-                    HStack(spacing: 7) {
-                        Image(
-                            systemName: IOSConversationPresentation.needsAttention(part)
-                                ? "exclamationmark.circle" : "terminal"
-                        )
-                        Text(name).font(.system(.caption, design: .monospaced).weight(.medium)).lineLimit(1)
-                        Spacer(minLength: 8)
-                        if !part.state.isEmpty {
-                            Text(
-                                part.state == "output-error"
-                                    ? "failed" : part.state.replacingOccurrences(of: "_", with: " ")
-                            )
-                            .font(.caption2).foregroundStyle(.tertiary)
-                        }
-                    }
-                }
-                .font(.subheadline)
-                .foregroundStyle(IOSConversationPresentation.needsAttention(part) ? Color.orange : Color.secondary)
-            }
-            .accessibilityIdentifier(
-                "ios.conversation.tool.\(messageID).\(part.toolCallID.isEmpty ? name : part.toolCallID)")
-        }
-    }
-
-    private struct IOSQueuedMessageTray: View {
-        @Bindable var store: IOSStore
-        let messages: [Dieter_V1_QueuedMessage]
-        let agentIsWorking: Bool
-        @Binding var draft: IOSConversationDraft
-        let focusComposer: () -> Void
-
-        var body: some View {
-            ScrollView(.vertical) {
-                LazyVStack(spacing: 7) {
-                    ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
-                        IOSQueuedMessageRow(
-                            store: store, message: message,
-                            canSteer: index == 0 && agentIsWorking,
-                            draft: $draft, focusComposer: focusComposer
-                        )
-                    }
-                }
-            }
-            .scrollIndicators(.hidden)
-            .frame(height: min(CGFloat(messages.count) * 68, 196))
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Queued messages")
-            .accessibilityIdentifier("ios.conversation.queue")
-        }
-    }
-
-    private struct IOSQueuedMessageRow: View {
-        private enum Action { case edit, remove, steer }
-
-        @Bindable var store: IOSStore
-        let message: Dieter_V1_QueuedMessage
-        let canSteer: Bool
-        @Binding var draft: IOSConversationDraft
-        let focusComposer: () -> Void
-        @State private var action: Action?
-
-        private var queuedDraft: IOSConversationDraft {
-            IOSConversationPresentation.queuedDraft(for: message)
-        }
-
-        private var summary: String {
-            if !queuedDraft.text.isEmpty { return queuedDraft.text }
-            if queuedDraft.attachments.count == 1 { return "1 attachment" }
-            if !queuedDraft.attachments.isEmpty { return "\(queuedDraft.attachments.count) attachments" }
-            return "Queued message"
-        }
-
-        var body: some View {
-            HStack(spacing: 10) {
-                Image(systemName: "arrow.turn.down.right")
-                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(summary).font(.subheadline.weight(.medium)).lineLimit(2)
-                    HStack(spacing: 5) {
-                        Text("Queued")
-                        if !queuedDraft.attachments.isEmpty {
-                            Text(
-                                "· \(queuedDraft.attachments.count) attachment"
-                                    + (queuedDraft.attachments.count == 1 ? "" : "s"))
-                        }
-                    }
-                    .font(.caption2).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 4)
-                if canSteer {
-                    Button(action == .steer ? "Steering…" : "Steer") { performSteer() }
-                        .buttonStyle(.bordered).controlSize(.small)
-                        .disabled(action != nil || store.busy || !store.phase.isConnected)
-                        .accessibilityIdentifier("ios.queued-message.steer.\(message.id)")
-                }
-                Menu {
-                    Button("Edit queued message", systemImage: "pencil") { performEdit() }
-                    Button("Remove queued message", systemImage: "trash", role: .destructive) { performRemove() }
-                } label: {
-                    if action == .edit || action == .remove {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                }
-                .disabled(action != nil || store.busy || !store.phase.isConnected)
-                .accessibilityLabel("Queued message actions")
-                .accessibilityIdentifier("ios.queued-message.menu.\(message.id)")
-            }
-            .padding(.horizontal, 12).padding(.vertical, 9)
-            .frame(minHeight: 60)
-            .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.secondary.opacity(0.18)))
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("ios.queued-message.\(message.id)")
-        }
-
-        private func performEdit() {
-            guard action == nil else { return }
-            action = .edit
-            Task { @MainActor in
-                if let removed = await store.removeQueuedMessage(message) {
-                    let restored = IOSConversationPresentation.queuedDraft(for: removed)
-                    var next = draft
-                    next.text = [restored.text, next.text].filter { !$0.isEmpty }.joined(separator: "\n\n")
-                    next.attachments = restored.attachments + next.attachments
-                    if let selection = restored.selection { next.selection = selection }
-                    draft = next
-                    focusComposer()
-                }
-                action = nil
-            }
-        }
-
-        private func performRemove() {
-            guard action == nil else { return }
-            action = .remove
-            Task { @MainActor in
-                _ = await store.removeQueuedMessage(message)
-                action = nil
-            }
-        }
-
-        private func performSteer() {
-            guard action == nil, canSteer else { return }
-            action = .steer
-            Task { @MainActor in
-                await store.steerQueuedMessage(message)
-                action = nil
+                show(IOSConversationImageError(name: title, reason: files.fileError))
             }
         }
     }
@@ -1475,7 +1432,8 @@
 
     private struct IOSConversationImageError: LocalizedError {
         let name: String
-        var errorDescription: String? { "\(name) is not a supported image." }
+        let reason: String?
+        var errorDescription: String? { reason ?? "\(name) is not a supported image." }
     }
 
     private struct IOSConversationImageLightbox: View {

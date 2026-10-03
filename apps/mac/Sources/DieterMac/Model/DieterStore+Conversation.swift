@@ -117,7 +117,7 @@ extension DieterStore {
     func resetWorkspaceSurface() { worktreeChanges.resetWorkspaceSurface() }
 
     nonisolated static func isExpectedCancellation(_ error: Error) -> Bool {
-        DieterRPCFailure.isCancellation(error)
+        Task.isCancelled || error is CancellationError
     }
 
     func sendComposer() async {
@@ -129,19 +129,15 @@ extension DieterStore {
         draft.sending = true
         defer { draft.sending = false }
         let draftRevision = draft.revision
-        var parts = draft.attachments
-        if !text.isEmpty {
-            var part = Dieter_V1_MessagePart()
-            part.type = "text"
-            part.text = text
-            parts.insert(part, at: 0)
-        }
+        let attachments = draft.attachments
         do {
-            // The core sends with the composer's agent choice, else the conversation's agent.
+            // The core sends the trimmed text ahead of the attachments, with the
+            // composer's agent choice, else the conversation's agent.
             try await core.dispatch {
                 $0.sendMessage = .with { send in
                     send.cardID = id
-                    send.parts = parts
+                    send.text = text
+                    send.parts = attachments
                 }
             }
             draft.acceptSend(revision: draftRevision)
@@ -594,7 +590,7 @@ extension DieterStore {
         } catch {
             guard generation == archiveRequestGeneration else { return }
             if !Self.isExpectedCancellation(error) {
-                archiveError = (error as? CoreFailure)?.message ?? DieterRPCFailure.message(for: error)
+                archiveError = (error as? CoreFailure)?.message ?? error.localizedDescription
             }
         }
     }

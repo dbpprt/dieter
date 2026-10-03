@@ -394,7 +394,7 @@ struct AppSidebar: View {
             store.projects.filter { !$0.archived }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
-    private var visibleMachines: [DieterEndpoint] { store.machines }
+    private var visibleMachines: [MachineEndpoint] { store.machines }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -633,7 +633,7 @@ struct AppSidebar: View {
                 ForEach(visibleMachines) { machine in
                     VStack(alignment: .leading, spacing: 5) {
                         Button {
-                            Task { await store.fleet.openMachine(machine) }
+                            Task { await store.fleet.openMachine(machine.id) }
                         } label: {
                             HStack(spacing: 8) {
                                 Circle().fill(
@@ -710,11 +710,11 @@ struct AppSidebar: View {
         }
     }
 
-    private func machineDetail(_ machine: DieterEndpoint) -> String {
+    private func machineDetail(_ machine: MachineEndpoint) -> String {
         store.machineStatusLine(machine)
     }
 
-    private func machineIsPresentedOnline(_ machine: DieterEndpoint) -> Bool {
+    private func machineIsPresentedOnline(_ machine: MachineEndpoint) -> Bool {
         store.machineIsAvailable(machine)
     }
 
@@ -968,7 +968,7 @@ private struct SidebarProjectRow: View {
 
 /// Compact host marker shown beside each project name.
 struct ProjectMachineBadge: View {
-    let machine: DieterEndpoint
+    let machine: MachineEndpoint
     let online: Bool
     var compact = false
     var alignsWithStatus = false
@@ -1526,11 +1526,11 @@ struct ConnectionOverlay: View {
                         HStack {
                             TextField("https://dieter.example.com", text: $address).textFieldStyle(.roundedBorder)
                             Button("Save and discover") {
-                                if let gateway = DieterEndpoint.parse(address, name: "Custom gateway"), gateway.secure {
+                                if let gateway = MachineEndpoint(address: address, name: "Custom gateway") {
                                     Task { await store.saveEndpoint(gateway) }
                                     address = ""
                                 }
-                            }.disabled(DieterEndpoint.parse(address)?.secure != true)
+                            }.disabled(MachineEndpoint(address: address, name: "") == nil)
                         }.padding(.top, 8)
                     }
                     .font(.caption)
@@ -1578,7 +1578,7 @@ private struct OnboardingConnectionConcept: View {
 }
 
 private struct OnboardingGatewayRow: View {
-    let gateway: DieterEndpoint
+    let gateway: MachineEndpoint
     let active: Bool
 
     var body: some View {
@@ -1587,7 +1587,7 @@ private struct OnboardingGatewayRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(gateway.name).font(.system(size: 12, weight: .semibold))
-                    if gateway.credentialID == DieterEndpoint.defaults.first?.credentialID {
+                    if gateway.isPrimaryGateway {
                         Text("PRIMARY").font(.system(size: 8, weight: .bold)).foregroundStyle(DieterTheme.eyes)
                     }
                 }
@@ -1604,7 +1604,7 @@ private struct OnboardingGatewayRow: View {
 
 private struct OnboardingMachineRow: View {
     @Environment(DieterStore.self) private var store
-    let machine: DieterEndpoint
+    let machine: MachineEndpoint
 
     private var detail: String { store.machineStatusLine(machine) }
     private var compatible: Bool { store.machineEntry(machine)?.compatible ?? true }

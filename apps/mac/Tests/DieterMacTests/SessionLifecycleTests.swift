@@ -1,6 +1,5 @@
 import AppKit
 import DieterAPI
-import DieterCore
 import Foundation
 import SharedCore
 import Synchronization

@@ -17,12 +17,20 @@ object Attachments {
     /** The limits, as shown next to attachment pickers. */
     const val LIMITS = "Up to 4 attachments · 5 MB each · 6 MB total"
 
+    // What the platforms' type systems (UTType, MimeTypeMap) report for common
+    // files, so a file without a declared type gets the same one everywhere.
     private val extensions = mapOf(
         "png" to "image/png", "jpg" to "image/jpeg", "jpeg" to "image/jpeg", "gif" to "image/gif", "webp" to "image/webp",
         "heic" to "image/heic", "heif" to "image/heif", "bmp" to "image/bmp", "tif" to "image/tiff", "tiff" to "image/tiff",
-        "svg" to "image/svg+xml", "pdf" to "application/pdf", "txt" to "text/plain", "md" to "text/markdown",
-        "json" to "application/json", "csv" to "text/csv", "html" to "text/html", "xml" to "application/xml",
-        "zip" to "application/zip", "log" to "text/plain", "yaml" to "application/yaml", "yml" to "application/yaml",
+        "avif" to "image/avif", "svg" to "image/svg+xml", "pdf" to "application/pdf", "txt" to "text/plain", "md" to "text/markdown",
+        "json" to "application/json", "csv" to "text/csv", "tsv" to "text/tab-separated-values", "html" to "text/html",
+        "htm" to "text/html", "css" to "text/css", "js" to "text/javascript", "xml" to "application/xml", "rtf" to "text/rtf",
+        "zip" to "application/zip", "gz" to "application/gzip", "tar" to "application/x-tar", "log" to "text/plain",
+        "yaml" to "application/yaml", "yml" to "application/yaml", "mov" to "video/quicktime", "mp4" to "video/mp4",
+        "m4v" to "video/x-m4v", "mp3" to "audio/mpeg", "m4a" to "audio/mp4", "wav" to "audio/wav",
+        "doc" to "application/msword", "docx" to "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xls" to "application/vnd.ms-excel", "xlsx" to "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "ppt" to "application/vnd.ms-powerpoint", "pptx" to "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     )
 
     /** Bytes the daemon will receive: the data, or the decoded size of a base64 data URL. */

@@ -19,9 +19,22 @@ extension AppSession {
         if navigationSyncError != error { navigationSyncError = error }
         navigationCaughtUp = slice.caughtUp
         #if DIETER_UI_SMOKE
-            if coreFoldsHeld { chatsList.showFixture(of: self) }
+            if coreFoldsHeld { showFixtureChats() }
         #endif
     }
+
+    #if DIETER_UI_SMOKE
+        /// While folds are held, the chats list lays out the chats a UI fixture
+        /// installed on this Mac only.
+        func showFixtureChats() {
+            chatsList.fixture = { [weak self] query in
+                guard let self, self.coreFoldsHeld else { return nil }
+                return NavigationFixture.chats(
+                    self.chats, projects: self.projects, navigation: self.navigation, query: query)
+            }
+            chatsList.showFixture()
+        }
+    #endif
 
     /// Sends a layout edit the user made, after the ones made before it.
     private func editNavigation(_ build: @escaping (inout ClientCommand) -> Void) {

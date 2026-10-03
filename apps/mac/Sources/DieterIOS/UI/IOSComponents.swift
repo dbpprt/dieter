@@ -1,65 +1,6 @@
 #if os(iOS)
-    import DieterAPI
     import SwiftUI
     import Textual
-
-    struct IOSStatusBadge: View {
-        let state: String
-
-        private var tint: Color {
-            switch state.lowercased() {
-            case "running", "starting", "resuming", "connected": .green
-            case "failed", "error", "offline": .orange
-            case "waiting", "queued", "pending": .blue
-            default: .secondary
-            }
-        }
-
-        var body: some View {
-            HStack(spacing: 5) {
-                Circle().fill(tint).frame(width: 6, height: 6)
-                Text(state.isEmpty ? "Idle" : state.replacingOccurrences(of: "_", with: " ").capitalized)
-                    .font(.caption.weight(.medium))
-            }
-            .foregroundStyle(.secondary)
-            .accessibilityElement(children: .combine)
-        }
-    }
-
-    struct IOSTaskRow: View {
-        let card: Dieter_V1_Card
-        var projectName: String?
-        var machineName: String?
-        var machineOnline = false
-
-        var body: some View {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(card.title.isEmpty ? "Untitled task" : card.title)
-                    .font(.headline)
-                    .lineLimit(3)
-                    .foregroundStyle(.primary)
-                if let projectName, !projectName.isEmpty {
-                    Text(projectName).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                if !card.ownerDaemonID.isEmpty {
-                    Label(
-                        "\(machineName ?? card.ownerDaemonID)\(machineOnline ? "" : " · Offline")",
-                        systemImage: "desktopcomputer"
-                    )
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                HStack(spacing: 10) {
-                    IOSStatusBadge(state: card.runtime)
-                    if !card.lane.isEmpty {
-                        Text(card.lane.capitalized).font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
-                }
-            }
-            .padding(.vertical, 5)
-            .accessibilityElement(children: .combine)
-        }
-    }
 
     struct IOSMessageText: View {
         let text: String
@@ -201,21 +142,16 @@
         }
     }
 
-    enum IOSWorkspaceDestination: Hashable {
-        case allTasks
-        case chats
-        case terminals
-        case screens
-        case project(String)
-        case board(String)
-    }
-
+    /// Whose files the files sheet shows: a conversation's workspace or a
+    /// project checkout on the machine that holds it.
     struct IOSFileScope: Identifiable {
         let machineID: String
         let projectID: String
         let checkoutID: String
         let cardID: String
         let title: String
-        var id: String { machineID + ":" + checkoutID + ":" + cardID }
+        /// A workspace-relative file to open once the folder is listed.
+        var openPath = ""
+        var id: String { machineID + ":" + checkoutID + ":" + cardID + ":" + openPath }
     }
 #endif

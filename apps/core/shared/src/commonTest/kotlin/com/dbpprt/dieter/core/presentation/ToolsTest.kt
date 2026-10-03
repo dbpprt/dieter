@@ -24,6 +24,26 @@ class ToolsTest {
     }
 
     @Test
+    fun compactRowsWordEveryStatusAndFlagThoseNeedingAttention() {
+        assertEquals(
+            listOf("running", "completed", "failed", "needs approval", "denied", ""),
+            listOf(ToolStatus.RUNNING, ToolStatus.COMPLETED, ToolStatus.FAILED, ToolStatus.NEEDS_APPROVAL, ToolStatus.DENIED, ToolStatus.OTHER).map(Tools::statusText),
+        )
+        assertEquals(
+            listOf(ToolStatus.FAILED, ToolStatus.NEEDS_APPROVAL, ToolStatus.DENIED),
+            ToolStatus.entries.filter(Tools::needsAttention),
+        )
+    }
+
+    @Test
+    fun receiptsWordEveryDelivery() {
+        assertEquals(
+            listOf("Waiting to send", "Accepted by daemon", "Queued for the next turn", "Synced", "Send failed; retry or remove this message"),
+            DeliveryState.entries.map(Delivery::label),
+        )
+    }
+
+    @Test
     fun expandedCallsShowTheirErrorInputAndOutputFromTheFullPayloadOnceLoaded() {
         val part = tool(error = "exit status 1").copy(input_json = " {\"cmd\":\"ls\"} \n".encodeUtf8(), output_json = "a.txt".encodeUtf8(), has_input = true, has_output = true)
         assertTrue(Tools.hasPayload(part))

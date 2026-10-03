@@ -19,8 +19,7 @@ import com.dbpprt.dieter.core.screens.Point
 import com.dbpprt.dieter.core.screens.ScreenCanvas
 import com.dbpprt.dieter.core.screens.ScreenPhase
 import com.dbpprt.dieter.core.screens.ScreenView
-import com.dbpprt.dieter.core.screens.TouchTrackpad
-import com.dbpprt.dieter.core.screens.TrackpadActions
+import com.dbpprt.dieter.core.screens.TouchScreenInput
 import okio.ByteString
 import org.webrtc.*
 import java.util.concurrent.CountDownLatch
@@ -83,27 +82,16 @@ class ScreenCanvasView(context: Context, val host: ScreenHost) : FrameLayout(con
     var onCanvasChanged: (() -> Unit)? = null
     private var controlling = false
     private var holding = false
-    var modifiers = 0
-    private val gestures = TouchTrackpad(
-        touchConfiguration.scaledTouchSlop.toDouble(), touchConfiguration.scaledDoubleTapSlop.toDouble(),
-        ViewConfiguration.getDoubleTapTimeout().toLong(),
-        object : TrackpadActions {
-            override fun move(delta: Point) {
-                canvasModel.move(delta.x, delta.y)
-                host.pointer(canvasModel.cursor.x, canvasModel.cursor.y)
-                applyCanvasTransform()
-            }
-            override fun transform(factor: Double, oldCenter: Point, newCenter: Point) {
-                canvasModel.transform(factor, oldCenter, newCenter); applyCanvasTransform()
-            }
-            override fun button(down: Boolean, clicks: Int) = button(Button.BUTTON_LEFT, down, clicks)
-            override fun scroll(delta: Point, phase: Int) {
-                val density = resources.displayMetrics.density
-                host.scroll(delta.x / density, delta.y / density, phase)
-            }
-            override fun clicked() = notifyClick()
-        },
+    /** The core's touch input: the trackpad over [canvasModel], pointer buttons, and scrolls, sent to the host in order. */
+    private val input = TouchScreenInput(
+        scope = "", slop = touchConfiguration.scaledTouchSlop.toDouble(), doubleTapSlop = touchConfiguration.scaledDoubleTapSlop.toDouble(),
+        doubleTapTimeoutMs = ViewConfiguration.getDoubleTapTimeout().toLong(), canvas = canvasModel,
+        scrollScale = 1.0 / resources.displayMetrics.density, clicked = ::notifyClick, send = host::send,
     )
+    /** The special-key toolbar's sticky modifiers, held down on the host; clicks and keys carry them. */
+    var modifiers: Int
+        get() = input.heldModifiers
+        set(value) { input.heldModifiers = value }
     private val mouseButtons = MouseButtons(ViewConfiguration.getDoubleTapTimeout().toLong(),
         touchConfiguration.scaledTouchSlop.toFloat()) { mask, down, count ->
         val which = when (mask) {
@@ -113,10 +101,10 @@ class ScreenCanvasView(context: Context, val host: ScreenHost) : FrameLayout(con
             MotionEvent.BUTTON_FORWARD -> Button.BUTTON_FORWARD
             else -> Button.BUTTON_LEFT
         }
-        button(which, down, count)
+        input.button(which, down, count)
     }
     private val longPress = Runnable {
-        if (controlling && gestures.longPress()) {
+        if (controlling && input.longPress()) {
             performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
             syncHolding()
         }
@@ -126,6 +114,9 @@ class ScreenCanvasView(context: Context, val host: ScreenHost) : FrameLayout(con
     init {
         setBackgroundColor(Color.rgb(12, 15, 20))
         isFocusable = true; isFocusableInTouchMode = true; keepScreenOn = true
+        // Outside touch mode (keyboard, mouse, injected input) the platform would tint
+        // the whole focused view; the remote desktop must keep its real pixels.
+        defaultFocusHighlightEnabled = false
         contentDescription = "Remote screen. One finger moves the cursor; tap clicks; hold and move drags. Two fingers zoom and pan. Three fingers scroll."
         if (direct) {
             surface?.tag = "dieter-direct-output"
@@ -401,21 +392,20 @@ class ScreenCanvasView(context: Context, val host: ScreenHost) : FrameLayout(con
             paint.style = Paint.Style.STROKE; paint.strokeWidth = size; paint.color = Color.BLACK; canvas.drawPath(path, paint); paint.style = Paint.Style.FILL
         }
     }
-    private fun button(which: Button, down: Boolean, count: Int = 1) = host.button(which, down, count, canvasModel.cursor.x, canvasModel.cursor.y, modifiers)
     private fun notifyClick() { super.performClick() }
     fun click(which: Button = Button.BUTTON_LEFT) {
         if (!controlling) return
         requestFocus()
-        button(which, true); button(which, false); notifyClick()
+        input.button(which, true, 1); input.button(which, false, 1); notifyClick()
     }
     override fun performClick(): Boolean {
         if (!controlling) return false
         click(); return true
     }
-    private fun cancelGesture() { removeCallbacks(longPress); gestures.cancel(); syncHolding() }
+    private fun cancelGesture() { removeCallbacks(longPress); input.cancelGesture(); syncHolding() }
     /** Tells the core while a finger or mouse drag holds the cursor, so host updates do not fight it. */
     private fun syncHolding() {
-        val value = gestures.holdingCursor || mouseButtons.isDragging
+        val value = input.holdingCursor || mouseButtons.isDragging
         if (value != holding) { holding = value; host.holdCursor(value) }
     }
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -426,25 +416,27 @@ class ScreenCanvasView(context: Context, val host: ScreenHost) : FrameLayout(con
             MotionEvent.ACTION_DOWN -> {
                 canvasAnimation?.cancel(); requestFocus()
                 parent?.requestDisallowInterceptTouchEvent(true)
-                gestures.begin(event.getPointerId(0), point(0), controlling)
+                input.begin(event.getPointerId(0), event.getX(0).toDouble(), event.getY(0).toDouble(), controlling)
                 postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())
             }
-            MotionEvent.ACTION_POINTER_DOWN -> { removeCallbacks(longPress); gestures.fingers(fingers()) }
-            MotionEvent.ACTION_POINTER_UP -> { removeCallbacks(longPress); gestures.fingers(fingers(except = event.actionIndex)) }
+            MotionEvent.ACTION_POINTER_DOWN -> { removeCallbacks(longPress); input.fingers(fingers()) }
+            MotionEvent.ACTION_POINTER_UP -> { removeCallbacks(longPress); input.fingers(fingers(except = event.actionIndex)) }
             MotionEvent.ACTION_MOVE -> {
-                gestures.move(fingers())
-                if (!gestures.canLongPress) removeCallbacks(longPress)
+                input.move(fingers())
+                if (!input.canLongPress) removeCallbacks(longPress)
             }
             MotionEvent.ACTION_UP -> {
                 removeCallbacks(longPress)
-                gestures.end(event.getPointerId(0), point(0), Instant.fromEpochMilliseconds(event.eventTime))
+                input.end(event.getPointerId(0), event.getX(0).toDouble(), event.getY(0).toDouble(), Instant.fromEpochMilliseconds(event.eventTime))
                 parent?.requestDisallowInterceptTouchEvent(false)
             }
             MotionEvent.ACTION_CANCEL -> {
-                cancelGesture(); host.releaseInput()
+                removeCallbacks(longPress); input.cancel()
                 parent?.requestDisallowInterceptTouchEvent(false)
             }
         }
+        // The trackpad moves the cursor and zooms or pans the canvas.
+        applyCanvasTransform()
         syncHolding()
         return true
     }
@@ -454,11 +446,8 @@ class ScreenCanvasView(context: Context, val host: ScreenHost) : FrameLayout(con
         }
         val m = canvasModel
         val inside = m.contains(event.x.toDouble(), event.y.toDouble())
-        if (controlling && (inside || mouseButtons.isDragging)) {
-            m.setCursor((event.x - m.left) / (m.remoteWidth * m.scale), (event.y - m.top) / (m.remoteHeight * m.scale))
-            host.pointer(m.cursor.x, m.cursor.y)
-            invalidate()
-        }
+        // A drag that leaves the desktop keeps the cursor at its edge.
+        if (controlling && (inside || mouseButtons.isDragging) && input.point(event.x.toDouble(), event.y.toDouble(), clamp = true)) invalidate()
         val buttons = when (event.actionMasked) {
             MotionEvent.ACTION_UP -> 0
             MotionEvent.ACTION_BUTTON_RELEASE -> event.buttonState and event.actionButton.inv()
@@ -470,7 +459,7 @@ class ScreenCanvasView(context: Context, val host: ScreenHost) : FrameLayout(con
             newGesture = event.actionMasked == MotionEvent.ACTION_DOWN, time = event.eventTime, x = event.x, y = event.y)
         syncHolding()
         if (inside && event.actionMasked == MotionEvent.ACTION_SCROLL)
-            host.scroll(event.getAxisValue(MotionEvent.AXIS_HSCROLL) * 40.0, event.getAxisValue(MotionEvent.AXIS_VSCROLL) * 40.0, 0)
+            input.scroll(event.getAxisValue(MotionEvent.AXIS_HSCROLL) * 40.0, event.getAxisValue(MotionEvent.AXIS_VSCROLL) * 40.0, 0, 0)
         return true
     }
     override fun onGenericMotionEvent(event: MotionEvent): Boolean =

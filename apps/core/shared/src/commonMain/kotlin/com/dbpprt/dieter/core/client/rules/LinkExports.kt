@@ -11,6 +11,7 @@ import com.dbpprt.dieter.core.presentation.ContentLinks
 import com.dbpprt.dieter.core.presentation.DetectedLinks
 import com.dbpprt.dieter.core.presentation.LinkError
 import com.dbpprt.dieter.core.presentation.LinkException
+import com.dbpprt.dieter.core.presentation.WorkspaceImages
 
 /** Links in conversations and the workspace browser's rules, as views call them while rendering or opening a link. */
 object LinkExports {
@@ -31,6 +32,20 @@ object LinkExports {
     /** The web links in prose [text], in order, with UTF-16 ranges. */
     fun detectLinks(text: String): DetectedLinkList =
         DetectedLinkList(links = DetectedLinks.find(text).map { DetectedLink(start = it.range.first, length = it.range.last + 1 - it.range.first, url = it.url) })
+
+    /**
+     * Whether a conversation's image [destination] may be a workspace file:
+     * a relative, absolute, or `file://` image path. Opening it through the
+     * files surface resolves it against the card's workspace.
+     */
+    fun isWorkspaceImage(destination: String): Boolean = WorkspaceImages.isWorkspaceImage(destination)
+
+    /**
+     * The workspace-relative path of an image [destination], "" when it is not
+     * an image inside [workspaceRoot] (empty for none: only relative links resolve).
+     */
+    fun workspaceImagePath(destination: String, workspaceRoot: String): String =
+        WorkspaceImages.path(destination, workspaceRoot.ifEmpty { null }).orEmpty()
 
     /** Whether the workspace browser hands an http(s) [url] to the system browser under the user's [rules]. */
     fun externalBrowserRuleMatches(url: String, rules: List<String>): Boolean = BrowserRules.matches(url, rules)

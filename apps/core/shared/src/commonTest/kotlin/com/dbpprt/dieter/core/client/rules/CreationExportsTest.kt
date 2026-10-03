@@ -54,6 +54,12 @@ class CreationExportsTest {
     }
 
     @Test
+    fun pickersOfferAWorktreeFirst() {
+        assertEquals(listOf("worktree", "project"), CreationExports.workspaceModes())
+        assertEquals(listOf("New worktree", "Project directory"), CreationExports.workspaceModes().map(CreationExports::workspaceModeChoiceTitle))
+    }
+
+    @Test
     fun chatsAndStartedTasksOpenOnceCreated() {
         assertTrue(CreationExports.opensAfterCreate(chat = true, lane = ""))
         assertTrue(CreationExports.opensAfterCreate(chat = false, lane = "running"))

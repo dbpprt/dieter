@@ -93,6 +93,19 @@ object Tools {
 
     fun isRunning(part: MessagePart): Boolean = part.state.lowercase() in running && !part.has_output && part.error_text.isEmpty()
 
+    /** A tool call's status as its compact row says it: "running", "completed", "failed", "needs approval", or "denied"; empty otherwise. */
+    fun statusText(status: ToolStatus): String = when (status) {
+        ToolStatus.RUNNING -> "running"
+        ToolStatus.COMPLETED -> "completed"
+        ToolStatus.FAILED -> "failed"
+        ToolStatus.NEEDS_APPROVAL -> "needs approval"
+        ToolStatus.DENIED -> "denied"
+        ToolStatus.OTHER -> ""
+    }
+
+    /** A tool call that needs the user's attention: it failed, awaits approval, or was denied. */
+    fun needsAttention(status: ToolStatus): Boolean = status == ToolStatus.FAILED || status == ToolStatus.NEEDS_APPROVAL || status == ToolStatus.DENIED
+
     /** What a tool row says about [status]: "Approval requested", "Tool denied", or "Tool failed"; null otherwise. */
     fun statusLabel(status: ToolStatus): String? = when (status) {
         ToolStatus.NEEDS_APPROVAL -> "Approval requested"

@@ -1,5 +1,6 @@
 package com.dbpprt.dieter.core.terminals
 
+import com.dbpprt.dieter.client.v1.TerminalKey
 import okio.Buffer
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
@@ -106,7 +107,64 @@ class TerminalReplayCursor {
     }
 }
 
+/**
+ * The bytes a terminal's keys send, as xterm encodes them, for accessory bars
+ * on touch devices. Android's Termux renderer encodes hardware keys the same
+ * way.
+ */
 object TerminalKeys {
+    /**
+     * The bytes [key] sends; empty for an unspecified key. Cursor keys follow
+     * application cursor mode unless a modifier is held. Held modifiers become
+     * xterm's `;N` parameter (1 + Shift 1, Alt 2, Control 4); Shift turns Tab
+     * into back-tab, Alt prefixes Enter and Backspace with Escape, and Control
+     * turns Backspace into BS.
+     */
+    fun sequence(key: TerminalKey, shift: Boolean = false, alt: Boolean = false, control: Boolean = false, applicationCursor: Boolean = false): ByteArray {
+        val modifier = 1 + (if (shift) 1 else 0) + (if (alt) 2 else 0) + (if (control) 4 else 0)
+        // Cursor and F1–F4 keys: `ESC [ x` or `ESC O x` alone, `ESC [ 1 ; N x` with modifiers.
+        fun cursor(final: Char, application: Boolean) =
+            if (modifier > 1) "$ESC[1;$modifier$final" else if (application) "${ESC}O$final" else "$ESC[$final"
+        // Editing and F5–F12 keys: `ESC [ n ~`, `ESC [ n ; N ~` with modifiers.
+        fun tilde(code: Int) = if (modifier > 1) "$ESC[$code;$modifier~" else "$ESC[$code~"
+        val text = when (key) {
+            TerminalKey.TERMINAL_KEY_UNSPECIFIED -> ""
+            TerminalKey.TERMINAL_KEY_ESCAPE -> ESC
+            TerminalKey.TERMINAL_KEY_TAB -> if (shift) "$ESC[Z" else "\t"
+            TerminalKey.TERMINAL_KEY_ENTER -> (if (alt) ESC else "") + "\r"
+            TerminalKey.TERMINAL_KEY_BACKSPACE -> (if (alt) ESC else "") + if (control) "\b" else "\u007f"
+            TerminalKey.TERMINAL_KEY_UP -> cursor('A', applicationCursor)
+            TerminalKey.TERMINAL_KEY_DOWN -> cursor('B', applicationCursor)
+            TerminalKey.TERMINAL_KEY_RIGHT -> cursor('C', applicationCursor)
+            TerminalKey.TERMINAL_KEY_LEFT -> cursor('D', applicationCursor)
+            TerminalKey.TERMINAL_KEY_HOME -> cursor('H', applicationCursor)
+            TerminalKey.TERMINAL_KEY_END -> cursor('F', applicationCursor)
+            TerminalKey.TERMINAL_KEY_PAGE_UP -> tilde(5)
+            TerminalKey.TERMINAL_KEY_PAGE_DOWN -> tilde(6)
+            TerminalKey.TERMINAL_KEY_INSERT -> tilde(2)
+            TerminalKey.TERMINAL_KEY_DELETE -> tilde(3)
+            TerminalKey.TERMINAL_KEY_F1 -> cursor('P', application = true)
+            TerminalKey.TERMINAL_KEY_F2 -> cursor('Q', application = true)
+            TerminalKey.TERMINAL_KEY_F3 -> cursor('R', application = true)
+            TerminalKey.TERMINAL_KEY_F4 -> cursor('S', application = true)
+            TerminalKey.TERMINAL_KEY_F5 -> tilde(15)
+            TerminalKey.TERMINAL_KEY_F6 -> tilde(17)
+            TerminalKey.TERMINAL_KEY_F7 -> tilde(18)
+            TerminalKey.TERMINAL_KEY_F8 -> tilde(19)
+            TerminalKey.TERMINAL_KEY_F9 -> tilde(20)
+            TerminalKey.TERMINAL_KEY_F10 -> tilde(21)
+            TerminalKey.TERMINAL_KEY_F11 -> tilde(23)
+            TerminalKey.TERMINAL_KEY_F12 -> tilde(24)
+        }
+        return text.encodeToByteArray()
+    }
+
+    /** F1 to F12 by [number]; null for any other number. */
+    fun function(number: Int): TerminalKey? =
+        if (number in 1..12) TerminalKey.fromValue(TerminalKey.TERMINAL_KEY_F1.value + number - 1) else null
+
+    private const val ESC = "\u001b"
+
     /** Sticky Ctrl for one typed ASCII byte: letters and `@`..`_` to control codes, space to NUL, `?` to DEL. */
     fun control(bytes: ByteArray): ByteArray? {
         if (bytes.size != 1) return null

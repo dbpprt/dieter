@@ -236,8 +236,8 @@ import Testing
 
 @Test @MainActor func boardLaneReplicaRefreshDoesNotChangeVisibleCardsOrGeometry() async throws {
     let store = boardLaneFixtureStore()
-    let owner = DieterEndpoint(name: "Owner", host: "test", port: 443, daemonID: "owner")
-    let peer = DieterEndpoint(name: "Peer", host: "test", port: 443, daemonID: "peer")
+    let owner = MachineEndpoint(name: "Owner", host: "test", port: 443, daemonID: "owner")
+    let peer = MachineEndpoint(name: "Peer", host: "test", port: 443, daemonID: "peer")
     store.endpoint = owner; store.endpoints = [owner, peer]
     var cards = boardLaneFixtureCards(count: 3)
     for index in cards.indices {

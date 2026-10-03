@@ -15,9 +15,9 @@ default:
 test *args:
     {{ gradle }} :shared:jvmTest {{ args }}
 
-# Run the common tests natively on macOS and assemble the DieterShared XCFramework.
+# Run the common and façade tests natively on macOS and assemble the DieterShared XCFramework.
 native-test:
-    {{ gradle }} :shared:macosArm64Test :apple:assembleDieterSharedDebugXCFramework
+    {{ gradle }} :shared:macosArm64Test :apple:macosArm64Test :apple:assembleDieterSharedDebugXCFramework
 
 # Drive DieterShared from Swift through the Mac app's bridge (SharedCore)
 # against an isolated gateway and daemon.

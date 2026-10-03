@@ -1,5 +1,5 @@
 import AppKit
-import DieterCore
+import DieterTransport
 import Foundation
 import Testing
 @testable import DieterMac

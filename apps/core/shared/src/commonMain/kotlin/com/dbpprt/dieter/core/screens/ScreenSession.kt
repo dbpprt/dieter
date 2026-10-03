@@ -16,6 +16,7 @@ import com.dbpprt.dieter.api.v1.RemoteDesktopSignal
 import com.dbpprt.dieter.api.v1.RemoteDesktopStreamConfiguration
 import com.dbpprt.dieter.api.v1.StartRemoteDesktopRequest
 import com.dbpprt.dieter.api.v1.UpdateRemoteDesktopSessionRequest
+import com.dbpprt.dieter.client.v1.ScreenCommand
 import com.dbpprt.dieter.core.platform.SignatureVerifier
 import com.dbpprt.dieter.core.runtime.CoreLogger
 import com.dbpprt.dieter.core.runtime.Deadlines
@@ -695,6 +696,16 @@ class ScreenSession(
 
     /** Releases every held key and button on the host. */
     fun releaseInput() = input.release()
+
+    /** The input [command] carries: a pointer move, button, scroll, key, text, or input release; other members are ignored. */
+    fun applyInput(command: ScreenCommand) {
+        command.pointer?.let { pointer(it.x, it.y) }
+        command.button?.let { button(it.button, it.down, it.clicks, it.x, it.y, it.modifiers) }
+        command.scroll?.let { scroll(it.dx, it.dy, it.phase, it.momentum, it.modifiers, it.precise) }
+        command.key?.let { key(it.hid, it.down, it.repeat, it.modifiers) }
+        command.text?.let { text(it.text, it.modifiers) }
+        command.release_input?.let { releaseInput() }
+    }
 
     // --- Clipboard ----------------------------------------------------------------------
 

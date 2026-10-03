@@ -61,11 +61,12 @@ enum ScheduleDateFormatting {
     static func day(_ value: String?, timezone: String) -> String {
         let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"
         formatter.timeZone = TimeZone(identifier: timezone) ?? .current
-        return formatter.string(from: value.flatMap { DieterTimestamp.date(from: $0) } ?? Date())
+        let date = value.flatMap { Date(epochMillis: SharedRules.shared.epochMillis(value: $0)) }
+        return formatter.string(from: date ?? Date())
     }
 
     private static func format(_ value: String, timezone: String, pattern: String) -> String {
-        guard let date = DieterTimestamp.date(from: value) else { return value }
+        guard let date = Date(epochMillis: SharedRules.shared.epochMillis(value: value)) else { return value }
         let formatter = DateFormatter(); formatter.dateFormat = pattern
         formatter.timeZone = TimeZone(identifier: timezone) ?? .current
         return formatter.string(from: date)

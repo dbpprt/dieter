@@ -16,11 +16,11 @@ struct NewProjectSheet: View {
     @State private var suggestedName = ""
     @State private var workspaceSettingsExpanded = false
 
-    private var availableMachines: [DieterEndpoint] {
+    private var availableMachines: [MachineEndpoint] {
         store.machines.isEmpty ? [store.endpoint] : store.machines
     }
 
-    private var selectedMachine: DieterEndpoint? {
+    private var selectedMachine: MachineEndpoint? {
         availableMachines.first { $0.id == machineID }
     }
 
@@ -335,7 +335,7 @@ struct NewProjectSheet: View {
                 dismiss()
             } catch {
                 submitting = false
-                errorMessage = DieterRPCFailure.message(for: error)
+                errorMessage = ((error as? CoreFailure)?.message ?? error.localizedDescription)
             }
         }
     }

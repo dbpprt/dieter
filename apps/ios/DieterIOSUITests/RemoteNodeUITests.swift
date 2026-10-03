@@ -104,6 +104,43 @@ final class RemoteNodeUITests: XCTestCase {
             .tap()
     }
 
+    private func tapVisibleFrame(
+        _ app: XCUIApplication, _ identifier: String, timeout: TimeInterval = 20
+    ) {
+        let control = app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+        XCTAssertTrue(
+            control.waitForExistence(timeout: timeout), "Missing \(identifier).\n\(app.debugDescription)")
+        let frame = control.frame
+        XCTAssertTrue(hasUsableFrame(frame), "\(identifier) must have a finite visible frame.")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+            .withOffset(CGVector(dx: frame.midX, dy: frame.midY))
+            .tap()
+    }
+
+    /// Taps `identifier` once it is enabled, then expects `opening` (the New
+    /// Task form by default) to appear.
+    private func tapWhenEnabled(
+        _ app: XCUIApplication, _ identifier: String, timeout: TimeInterval = 40, opening: XCUIElement? = nil
+    ) {
+        let control = app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+        let ready = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND hittable == true AND enabled == true"),
+            object: control)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [ready], timeout: timeout), .completed,
+            "\(identifier) must become enabled.\n\(app.debugDescription)")
+        control.tap()
+        let opened = opening ?? app.collectionViews.matching(identifier: "ios.create.form").firstMatch
+        if !opened.waitForExistence(timeout: 2) {
+            // The KMP projection can replace the compact split-view toolbar
+            // between XCTest resolving the element and delivering its tap.
+            // Resolve the current native control and use a human-length press.
+            let current = app.buttons.matching(identifier: identifier).firstMatch
+            XCTAssertTrue(current.waitForExistence(timeout: 5))
+            current.press(forDuration: 0.1)
+        }
+    }
+
     private func fillTask(_ app: XCUIApplication, title: String, prompt: String) {
         // Configure the isolated provider while submission is still disabled.
         // A compact iPad sheet scrolls the Agent section beneath its fixed footer.
@@ -117,9 +154,11 @@ final class RemoteNodeUITests: XCTestCase {
         // frame is read again while scrolling back to the title field.
         // SwiftUI can also keep the off-screen Agent rows out of the iPad
         // accessibility hierarchy until the form scrolls near them.
+        // The core shows a loading row until the destination machine's agent
+        // catalog arrives; give each scroll position a moment for the pickers.
         var providerFrame: CGRect?
-        for _ in 0..<6 {
-            if provider.exists {
+        for _ in 0..<8 {
+            if provider.exists || provider.waitForExistence(timeout: 2) {
                 let candidateFrame = provider.frame
                 if hasUsableFrame(candidateFrame), app.frame.contains(candidateFrame),
                     candidateFrame.maxY < footer.frame.minY - 8,
@@ -187,7 +226,8 @@ final class RemoteNodeUITests: XCTestCase {
             let selectionResult = XCTWaiter.wait(for: [selectedMock], timeout: 5)
             XCTAssertTrue(
                 selectionResult == .completed || picker.value as? String == "Mock",
-                "\(identifier) should select Mock; label=\(picker.label), value=\(String(describing: picker.value)).\n\(app.debugDescription)"
+                "\(identifier) should select Mock; label=\(picker.label), "
+                    + "value=\(String(describing: picker.value)).\n\(app.debugDescription)"
             )
         }
         // Return to the first form section after selecting the provider.
@@ -285,15 +325,20 @@ final class RemoteNodeUITests: XCTestCase {
             banner.waitForExistence(timeout: 45),
             "Taking the isolated daemon offline must present the connection state.\n\(app.debugDescription)")
 
-        let disconnected = app.staticTexts["Disconnected"]
+        // The core words the notice by phase: reconnecting while it retries the
+        // feed, then cached data once presence reports the machine offline.
+        let noticeTitles = ["Reconnecting to Dieter", "Working from cached data", "Dieter is unavailable"]
+        let notice = banner.staticTexts.matching(NSPredicate(format: "label IN %@", noticeTitles)).firstMatch
         XCTAssertTrue(
-            disconnected.waitForExistence(timeout: 20),
-            "An unavailable isolated daemon must settle into a retryable state.\n\(app.debugDescription)")
+            notice.waitForExistence(timeout: 20),
+            "An unavailable isolated daemon must present the core's connection notice.\n\(app.debugDescription)")
         let requestAlert = app.alerts["Couldn’t complete the request"]
         if requestAlert.exists { requestAlert.buttons["OK"].tap() }
 
         try FileManager.default.removeItem(at: trigger)
-        let retry = app.buttons["Retry"]
+        // Only a settled (not working) notice offers Retry; otherwise the core
+        // reconnects on its own backoff.
+        let retry = banner.buttons["Retry"]
         if retry.waitForExistence(timeout: 5), retry.isHittable { retry.tap() }
         let recovered = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == false"), object: banner)
@@ -305,16 +350,16 @@ final class RemoteNodeUITests: XCTestCase {
     private func waitForBoard(
         _ app: XCUIApplication, project: String, board: String, requireHittable: Bool = true
     ) {
-        // The machine name appears before its workspace loads. Project links
-        // navigate away from the sidebar; board links are their siblings.
+        // The sidebar lists each project with its boards beneath it once the
+        // core's workspace slice has loaded; both rows navigate away from it.
         let predicate = requireHittable ? "exists == true AND hittable == true" : "exists == true"
         // Do not call `element`, which performs a synchronous `.exists` probe
         // before returning. A freshly relaunched iPad can spend XCTest's whole
         // snapshot timeout on that first probe even though the board appears
         // moments later. The predicate expectation owns the bounded wait.
-        // SwiftUI may expose a sidebar NavigationLink as a button on iPhone
-        // and as another accessibility element type in the iPad split view.
-        // Match by the stable identifier instead of assuming its element type.
+        // SwiftUI may expose a sidebar row as a button on iPhone and as
+        // another accessibility element type in the iPad split view. Match
+        // by the stable identifier instead of assuming its element type.
         let boardButton = app.descendants(matching: .any)
             .matching(identifier: "ios.board.\(board)").firstMatch
         let ready = XCTNSPredicateExpectation(
@@ -327,6 +372,26 @@ final class RemoteNodeUITests: XCTestCase {
             .matching(identifier: "ios.project.\(project)").firstMatch
         XCTAssertTrue(
             projectButton.waitForExistence(timeout: 10), "The fixture project must be present.")
+    }
+
+    private func openBoard(_ app: XCUIApplication, board: String) {
+        tap(app, "ios.board.\(board)")
+        // Only the core board view shows the state filter. Waiting for it keeps
+        // the next New Task on this board rather than the Inbox it replaces.
+        let stateFilter = app.descendants(matching: .any)
+            .matching(identifier: "ios.board.state-filter").firstMatch
+        XCTAssertTrue(
+            stateFilter.waitForExistence(timeout: 20),
+            "Opening the fixture board must show its lanes.\n\(app.debugDescription)")
+    }
+
+    private func boardCardExists(_ app: XCUIApplication, title: String, timeout: TimeInterval = 30) {
+        // Board rows combine their texts into one `ios.task.<card id>` button.
+        let card = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'ios.task.' AND label CONTAINS %@", title)
+        ).firstMatch
+        XCTAssertTrue(
+            card.waitForExistence(timeout: timeout), "Missing board card \(title).\n\(app.debugDescription)")
     }
 
     private func screenshot(_ app: XCUIApplication, _ name: String) {
@@ -351,13 +416,20 @@ final class RemoteNodeUITests: XCTestCase {
         app.launchEnvironment["DIETER_IOS_TEST_GATEWAY"] = gateway
         app.launchEnvironment["DIETER_IOS_TEST_TOKEN"] = "invalid-ios-tls-probe"
         app.launch()
-        XCTAssertTrue(
-            app.alerts.staticTexts["authentication required"].waitForExistence(timeout: 35),
+        // The core returns to sign-in and keeps the gateway's rejection as the
+        // session error, which the sign-in form shows inline.
+        let error = app.staticTexts.matching(identifier: "ios.auth.error").firstMatch
+        let rejected = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND label CONTAINS[c] 'authentication required'"),
+            object: error)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [rejected], timeout: 35), .completed,
             "Expected the HTTPS gateway’s explicit invalid-session response.\n\(app.debugDescription)")
         XCTAssertTrue(element(app, "ios.auth").exists)
         XCTAssertFalse(element(app, "ios.workspace").exists)
         screenshot(app, "00-verified-https-auth-rejection")
-        app.alerts.buttons["OK"].tap()
+        let requestAlert = app.alerts["Couldn’t complete the request"]
+        if requestAlert.exists { requestAlert.buttons["OK"].tap() }
         XCTAssertTrue(element(app, "ios.auth.sign-in").isHittable)
     }
 
@@ -463,13 +535,13 @@ final class RemoteNodeUITests: XCTestCase {
         }
         tap(app, "ios.terminals.machine-choice.\(daemon)")
         XCTAssertTrue(element(app, "ios.terminals.view").waitForExistence(timeout: 15))
+        // Both New Terminal controls stay disabled until the core reports the
+        // machine available.
+        let createConfirm = app.buttons.matching(identifier: "ios.terminals.create-confirm").firstMatch
         let emptyNew = element(app, "ios.terminals.empty-new")
-        if emptyNew.waitForExistence(timeout: 5) {
-            emptyNew.tap()
-        } else {
-            tap(app, "ios.terminals.new")
-        }
-        XCTAssertTrue(element(app, "ios.terminals.create-confirm").waitForExistence(timeout: 10))
+        let newIdentifier = emptyNew.waitForExistence(timeout: 5) ? "ios.terminals.empty-new" : "ios.terminals.new"
+        tapWhenEnabled(app, newIdentifier, timeout: 20, opening: createConfirm)
+        XCTAssertTrue(createConfirm.waitForExistence(timeout: 10))
         tap(app, "ios.terminals.create-confirm")
 
         let surface = element(app, "ios.terminals.surface")
@@ -510,8 +582,8 @@ final class RemoteNodeUITests: XCTestCase {
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 20))
         waitForBoard(app, project: project, board: board)
         screenshot(app, "01-connected-remote-projects")
-        tap(app, "ios.board.\(board)")
-        if element(app, "ios.list.new-task").exists { tap(app, "ios.list.new-task") } else { tap(app, "ios.new-task") }
+        openBoard(app, board: board)
+        tapWhenEnabled(app, "ios.list.new-task")
         fillTask(app, title: "iOS remote smoke task", prompt: "Verify this request came from iOS")
         screenshot(app, "02-create-remote-task")
         let run = app.buttons.matching(identifier: "ios.create.run").firstMatch
@@ -561,17 +633,17 @@ final class RemoteNodeUITests: XCTestCase {
         let editor = app.textViews.matching(identifier: "ios.files.editor").firstMatch
         XCTAssertTrue(editor.waitForExistence(timeout: 20))
         XCTAssertTrue((editor.value as? String)?.contains("Isolated E2E") == true)
-        // UITextView’s accessibility frame includes the full sheet. Target the
-        // trailing edge of the visible first line beneath its breadcrumb. The
-        // leading edge can select a word and leave XCTest waiting for text
-        // selection UI instead of presenting the keyboard.
+        // Target the trailing edge of the visible first line, beneath the
+        // breadcrumb when the editor's frame reaches behind it. The leading
+        // edge can select a word and leave XCTest waiting for text selection
+        // UI instead of presenting the keyboard.
         let breadcrumb = app.staticTexts.matching(identifier: "ios.files.path").firstMatch
         XCTAssertTrue(breadcrumb.waitForExistence(timeout: 5))
         let editorText = editor.coordinate(withNormalizedOffset: .zero)
             .withOffset(
                 CGVector(
                     dx: editor.frame.width - 40,
-                    dy: breadcrumb.frame.maxY - editor.frame.minY + 20))
+                    dy: max(breadcrumb.frame.maxY - editor.frame.minY, 0) + 20))
         var editorActivated = false
         for attempt in 0..<2 {
             editorText.tap()
@@ -611,11 +683,11 @@ final class RemoteNodeUITests: XCTestCase {
         app.terminate()
         app.launch()
         waitForBoard(app, project: project, board: board)
-        tap(app, "ios.board.\(board)")
-        textExists(app, "iOS remote smoke task")
+        openBoard(app, board: board)
+        boardCardExists(app, title: "iOS remote smoke task")
         screenshot(app, "06-task-survives-relaunch")
 
-        if element(app, "ios.list.new-task").exists { tap(app, "ios.list.new-task") } else { tap(app, "ios.new-task") }
+        tapWhenEnabled(app, "ios.list.new-task")
         fillTask(app, title: "iOS draft smoke task", prompt: "Start the saved iOS draft")
         tap(app, "ios.create.add")
         textExists(app, "Ready when you are")
@@ -662,13 +734,32 @@ final class RemoteNodeUITests: XCTestCase {
         screenshot(app, "09-global-workspace")
 
         tap(app, "ios.provider-quotas")
-        XCTAssertTrue(element(app, "ios.provider-quotas.details").waitForExistence(timeout: 20))
+        let quotaDetails = element(app, "ios.provider-quotas.details")
+        XCTAssertTrue(quotaDetails.waitForExistence(timeout: 20))
         screenshot(app, "10-provider-quotas")
         tap(app, "ios.provider-quotas.done")
+        let quotaDismissed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: quotaDetails)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [quotaDismissed], timeout: 10), .completed,
+            "The quota sheet must finish dismissing before another presentation opens.")
 
-        tap(app, "ios.machine-state.open")
+        // Machine state lives in the sidebar's Machines toolbar menu.
+        tapVisibleFrame(app, "ios.machines.menu", timeout: 10)
+        tap(app, "ios.machine-state.open", timeout: 10)
         let machineState = app.descendants(matching: .any)
             .matching(identifier: "ios.machine-state").firstMatch
+        if !machineState.waitForExistence(timeout: 2) {
+            // The projection can rebuild the toolbar while its menu opens and
+            // drop the item tap. Reopen the menu only if it closed.
+            var current = app.buttons.matching(identifier: "ios.machine-state.open").firstMatch
+            if !current.exists {
+                tapVisibleFrame(app, "ios.machines.menu", timeout: 10)
+                current = app.buttons.matching(identifier: "ios.machine-state.open").firstMatch
+            }
+            XCTAssertTrue(current.waitForExistence(timeout: 5))
+            current.press(forDuration: 0.1)
+        }
         XCTAssertTrue(machineState.waitForExistence(timeout: 20))
         tap(app, "ios.machine-state.machine-picker")
         XCTAssertFalse(
@@ -838,7 +929,9 @@ final class RemoteNodeUITests: XCTestCase {
         // whole-app `.any` query can stall SwiftUI's accessibility traversal
         // while the form is being presented on Xcode 26.5.
         let form = app.collectionViews.matching(identifier: "ios.create.form").firstMatch
-        XCTAssertTrue(form.waitForExistence(timeout: 45), "The shared request must open New Task.")
+        XCTAssertTrue(
+            form.waitForExistence(timeout: 45),
+            "The shared request must open New Task.\n\(app.debugDescription)")
         let attachment = form.buttons.matching(identifier: "ios.create.attachment.remove.0").firstMatch
         XCTAssertTrue(
             attachment.waitForExistence(timeout: 15),

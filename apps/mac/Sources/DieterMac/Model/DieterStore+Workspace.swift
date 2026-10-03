@@ -1,6 +1,5 @@
 import AppKit
 import DieterAPI
-import DieterCore
 import Foundation
 import SharedCore
 import OSLog
@@ -205,7 +204,7 @@ extension DieterStore {
         async throws
         -> Dieter_V1_CreateProjectResponse
     {
-        let target: DieterEndpoint
+        let target: MachineEndpoint
         if let machineID {
             guard
                 let selected = machines.first(where: { $0.id == machineID })

@@ -1,6 +1,5 @@
 import Foundation
 import DieterAPI
-import DieterCore
 import SharedCore
 import SwiftUI
 import Testing
@@ -126,7 +125,7 @@ import Testing
 }
 
 @Test @MainActor func sharedProjectMachineBadgeRendersOnlineAndOfflineStates() {
-    let machine = DieterEndpoint(
+    let machine = MachineEndpoint(
         name: "mini-home-workstation", host: "build.example", port: 443, daemonID: "build-mac", online: true)
 
     for online in [true, false] {

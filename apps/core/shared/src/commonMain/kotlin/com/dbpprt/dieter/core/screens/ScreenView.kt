@@ -29,6 +29,20 @@ sealed interface ScreenPhase {
             else -> null
         }
 
+    /** The phase's name in the client contract, e.g. "waiting_for_host_approval". */
+    val wire: String
+        get() = when (this) {
+            Idle -> "idle"
+            Loading -> "loading"
+            is PermissionRequired -> "permission_required"
+            is Unsupported -> "unsupported"
+            Connecting -> "connecting"
+            WaitingForHostApproval -> "waiting_for_host_approval"
+            Streaming -> "streaming"
+            is Reconnecting -> "reconnecting"
+            is Failed -> "failed"
+        }
+
     /** The phase as status lines show it; phases still in progress end with "…". */
     val label: String
         get() = when (this) {
@@ -42,6 +56,27 @@ sealed interface ScreenPhase {
             is Reconnecting -> "Reconnecting…"
             is Failed -> "Connection failed"
         }
+
+    /** What a screen view says in this phase while not streaming: why no session can run, else why the host cannot share ([hostReady], [hostReason]), else [label]. */
+    fun waitingMessage(hostReady: Boolean, hostReason: String): String =
+        problem?.takeIf { it.isNotBlank() }
+            ?: (if (hostReady) null else hostReason.ifBlank { "Screen sharing is unavailable on this machine." })
+            ?: label
+
+    companion object {
+        /** The phase whose [wire] name is [wire], with the [problem] a blocked or reconnecting phase carries; unknown names are idle. */
+        fun of(wire: String, problem: String): ScreenPhase = when (wire) {
+            "loading" -> Loading
+            "permission_required" -> PermissionRequired(problem)
+            "unsupported" -> Unsupported(problem)
+            "connecting" -> Connecting
+            "waiting_for_host_approval" -> WaitingForHostApproval
+            "streaming" -> Streaming
+            "reconnecting" -> Reconnecting(problem.ifEmpty { null })
+            "failed" -> Failed(problem)
+            else -> Idle
+        }
+    }
 }
 
 /** What local input a view change invalidates. */
@@ -121,7 +156,7 @@ data class ScreenView(
         get() = if (phase == ScreenPhase.Streaming) "Connected · ${if (controlActive) "Control" else "View only"}" else phase.label
 
     /** The button that takes or releases control. */
-    val controlAction: String get() = if (controlActive) "Release Control" else "Take Control"
+    val controlAction: String get() = ScreenOptions.controlAction(controlActive)
 
     /**
      * The line above the canvas while streaming, e.g. "1920 × 1080 · H264 · 60 fps · Direct media",
@@ -133,9 +168,11 @@ data class ScreenView(
         return listOf(session?.let { "${it.width} × ${it.height}" }.orEmpty(), session?.codec.orEmpty(), rate(fps), mediaRoute).filter { it.isNotBlank() }.joinToString(" · ")
     }
 
-    /** What the canvas says while not streaming: why no session can run, else why the host cannot share ([hostReady], [hostReason]), else the phase. */
-    fun waitingMessage(hostReady: Boolean, hostReason: String): String =
-        phase.problem ?: (if (hostReady) null else hostReason.ifBlank { "Screen sharing is unavailable on this machine." }) ?: phase.label
+    /**
+     * What the canvas says while not streaming: why no session can run, else
+     * why the host cannot share ([hostReady], [hostReason]), else the phase.
+     */
+    fun waitingMessage(hostReady: Boolean, hostReason: String): String = phase.waitingMessage(hostReady, hostReason)
 
     /** The connection details of a session with the machine [daemonId]; [fps] and [mediaRoute] are the media engine's own. */
     fun details(daemonId: String, fps: Double, mediaRoute: String): ScreenDetails {

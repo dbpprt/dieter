@@ -1,8 +1,6 @@
 import AppKit
 import CryptoKit
 import DieterAPI
-import DieterClient
-import DieterCore
 import Foundation
 import SharedCore
 import SwiftUI
@@ -716,8 +714,8 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
     let root = URL(fileURLWithPath: path).deletingLastPathComponent()
     let fixture = try JSONDecoder().decode(
         ScreenFixtureConnection.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
-    let (rpc, rpcTask) = try screenFixtureRPC(fixture)
-    defer { rpcTask.cancel() }
+    let rpc = try screenFixtureRPC(fixture)
+    defer { rpc.shutdown() }
     let core = try ScreenFixtureCore(fixture, clipboard: CoreScreenClipboard())
     let controller = core.controller()
     NSApplication.shared.setActivationPolicy(.regular)
@@ -801,8 +799,8 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
         if process.isRunning { process.terminate(); process.waitUntilExit() }; try? handle.close();
         print("Undocked screen evidence: \(output.path)")
     }
-    let (rpc, rpcTask) = try screenFixtureRPC(fixture)
-    defer { rpcTask.cancel() }
+    let rpc = try screenFixtureRPC(fixture)
+    defer { rpc.shutdown() }
     let core = try ScreenFixtureCore(fixture, clipboard: CoreScreenClipboard())
     let suite = "dieter-undocked-" + UUID().uuidString
     let defaults = try #require(UserDefaults(suiteName: suite));

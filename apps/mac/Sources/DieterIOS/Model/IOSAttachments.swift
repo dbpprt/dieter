@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterShared
 import Foundation
 import UniformTypeIdentifiers
 #if os(iOS)
@@ -24,11 +25,10 @@ struct IOSAttachmentPayload: Sendable {
     let mediaType: String
 }
 
-enum IOSAttachmentError: LocalizedError {
-    case tooMany
-    case fileTooLarge(String)
-    case totalTooLarge
-    case empty(String)
+/// Why an attachment could not be read. The shared core's limits arrive as
+/// `limit` with its wording.
+enum IOSAttachmentError: LocalizedError, Equatable {
+    case limit(String)
     case notAFile(String)
     case unavailableShare
     case invalidShare
@@ -36,10 +36,7 @@ enum IOSAttachmentError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .tooMany: "You can attach up to 4 images or files."
-        case .fileTooLarge(let name): "\(name) must be at most 5 MB."
-        case .totalTooLarge: "Attachments must total at most 6 MB."
-        case .empty(let name): "\(name) is empty."
+        case .limit(let problem): problem
         case .notAFile(let name): "\(name) is not a regular file."
         case .unavailableShare: "The shared item is no longer available. Share it again and retry."
         case .invalidShare: "Dieter could not read the shared item."
@@ -48,10 +45,47 @@ enum IOSAttachmentError: LocalizedError {
     }
 }
 
+/// Reads picked, pasted, and shared files into message parts. What may be
+/// attached, and how parts are named and typed, are the shared core's rules;
+/// reading the bytes stays native.
 actor IOSAttachmentLoader {
-    static let maximumCount = 4
-    static let maximumBytes = 5 * 1_024 * 1_024
-    static let maximumTotalBytes = 6 * 1_024 * 1_024
+    /// Throws the core's problem with attachments measured but not read
+    /// yet; `names` and `sizes` pair up, and a size of zero is an empty file.
+    nonisolated static func checkLimits(names: [String], sizes: [Int64]) throws {
+        let problem = SharedRules.shared.attachmentLimitError(
+            names: names, sizes: sizes.map { KotlinLong(value: $0) })
+        guard problem.isEmpty else { throw IOSAttachmentError.limit(problem) }
+    }
+
+    /// `incoming` after `existing`, when the result stays within the limits.
+    nonisolated static func appending(
+        _ incoming: [Dieter_V1_MessagePart],
+        to existing: [Dieter_V1_MessagePart]
+    ) throws -> [Dieter_V1_MessagePart] {
+        let parts = existing + incoming
+        try checkLimits(names: parts.map(\.filename), sizes: parts.map { Int64($0.data.count) })
+        return parts
+    }
+
+    /// How many more files fit beside `existing`: none once another would
+    /// break a limit. Pickers offer at most this many.
+    nonisolated static func remainingSlots(after existing: [Dieter_V1_MessagePart]) -> Int {
+        let names = existing.map(\.filename)
+        let sizes = existing.map { Int64($0.data.count) }
+        var slots = 0
+        while slots < 64,
+            SharedRules.shared.attachmentLimitError(
+                names: names + Array(repeating: "", count: slots + 1),
+                sizes: (sizes + Array(repeating: 1, count: slots + 1)).map { KotlinLong(value: $0) }
+            ).isEmpty
+        {
+            slots += 1
+        }
+        return slots
+    }
+
+    /// The limits, as shown next to attachment pickers.
+    nonisolated static var limits: String { SharedRules.shared.attachmentLimits() }
 
     func parts(
         urls: [URL],
@@ -64,66 +98,41 @@ actor IOSAttachmentLoader {
         sources: [IOSAttachmentSource],
         appendingTo existing: [Dieter_V1_MessagePart] = []
     ) throws -> [Dieter_V1_MessagePart] {
-        guard existing.count + sources.count <= Self.maximumCount else {
-            throw IOSAttachmentError.tooMany
-        }
-        var result = existing
-        var total = existing.reduce(0) { $0 + $1.data.count }
+        var measured: [(source: IOSAttachmentSource, values: URLResourceValues)] = []
         for source in sources {
             let accessed = source.url.startAccessingSecurityScopedResource()
             defer { if accessed { source.url.stopAccessingSecurityScopedResource() } }
-            let values = try source.url.resourceValues(
-                forKeys: [.contentTypeKey, .fileSizeKey, .isRegularFileKey])
-            let filename = sanitizedFilename(source.filename ?? source.url.lastPathComponent)
-            guard values.isRegularFile != false else { throw IOSAttachmentError.notAFile(filename) }
-            if let size = values.fileSize, size > Self.maximumBytes {
-                throw IOSAttachmentError.fileTooLarge(filename)
+            let values = try source.url.resourceValues(forKeys: [.contentTypeKey, .fileSizeKey, .isRegularFileKey])
+            guard values.isRegularFile != false else {
+                throw IOSAttachmentError.notAFile(source.filename ?? source.url.lastPathComponent)
             }
-            let data = try Data(contentsOf: source.url, options: [.mappedIfSafe])
-            guard !data.isEmpty else { throw IOSAttachmentError.empty(filename) }
-            guard data.count <= Self.maximumBytes else {
-                throw IOSAttachmentError.fileTooLarge(filename)
-            }
-            total += data.count
-            guard total <= Self.maximumTotalBytes else { throw IOSAttachmentError.totalTooLarge }
-            let type = values.contentType ?? UTType(filenameExtension: source.url.pathExtension)
-            var part = Dieter_V1_MessagePart()
-            part.type = "file"
-            part.mediaType = normalizedMediaType(source.mediaType, fallback: type)
-            part.filename = filename
-            part.data = data
-            result.append(part)
+            measured.append((source, values))
         }
-        return result
+        // Measured sizes rule out oversized files before any is read; an
+        // unknown size is checked once the file is read.
+        try Self.checkLimits(
+            names: existing.map(\.filename) + measured.map { $0.source.filename ?? $0.source.url.lastPathComponent },
+            sizes: existing.map { Int64($0.data.count) } + measured.map { Int64($0.values.fileSize ?? 1) })
+        var result = existing
+        for (source, values) in measured {
+            let accessed = source.url.startAccessingSecurityScopedResource()
+            defer { if accessed { source.url.stopAccessingSecurityScopedResource() } }
+            let data = try Data(contentsOf: source.url, options: [.mappedIfSafe])
+            let type = values.contentType ?? UTType(filenameExtension: source.url.pathExtension)
+            result.append(
+                Self.part(
+                    data: data, filename: source.filename ?? source.url.lastPathComponent,
+                    declaredType: source.mediaType ?? type?.preferredMIMEType ?? ""))
+        }
+        return try Self.appending([], to: result)
     }
 
     func parts(
         payloads: [IOSAttachmentPayload],
         appendingTo existing: [Dieter_V1_MessagePart] = []
     ) throws -> [Dieter_V1_MessagePart] {
-        guard existing.count + payloads.count <= Self.maximumCount else {
-            throw IOSAttachmentError.tooMany
-        }
-        var result = existing
-        var total = existing.reduce(0) { $0 + $1.data.count }
-        for payload in payloads {
-            let filename = sanitizedFilename(payload.filename)
-            guard !payload.data.isEmpty else { throw IOSAttachmentError.empty(filename) }
-            guard payload.data.count <= Self.maximumBytes else {
-                throw IOSAttachmentError.fileTooLarge(filename)
-            }
-            total += payload.data.count
-            guard total <= Self.maximumTotalBytes else { throw IOSAttachmentError.totalTooLarge }
-            var part = Dieter_V1_MessagePart()
-            part.type = "file"
-            part.mediaType = normalizedMediaType(
-                payload.mediaType,
-                fallback: UTType(filenameExtension: URL(fileURLWithPath: filename).pathExtension))
-            part.filename = filename
-            part.data = payload.data
-            result.append(part)
-        }
-        return result
+        let parts = payloads.map { Self.part(data: $0.data, filename: $0.filename, declaredType: $0.mediaType) }
+        return try Self.appending(parts, to: existing)
     }
 
     #if os(iOS)
@@ -131,9 +140,10 @@ actor IOSAttachmentLoader {
             photoItems: [PhotosPickerItem],
             appendingTo existing: [Dieter_V1_MessagePart] = []
         ) async throws -> [Dieter_V1_MessagePart] {
-            guard existing.count + photoItems.count <= Self.maximumCount else {
-                throw IOSAttachmentError.tooMany
-            }
+            // Rule out too many photos before loading any.
+            try Self.checkLimits(
+                names: existing.map(\.filename) + photoItems.map { _ in "" },
+                sizes: existing.map { Int64($0.data.count) } + photoItems.map { _ in 1 })
             var payloads: [IOSAttachmentPayload] = []
             payloads.reserveCapacity(photoItems.count)
             for (index, item) in photoItems.enumerated() {
@@ -145,45 +155,21 @@ actor IOSAttachmentLoader {
                 let number = photoItems.count == 1 ? "" : " \(index + 1)"
                 payloads.append(
                     IOSAttachmentPayload(
-                        data: data,
-                        filename: "Photo\(number).\(suffix)",
-                        mediaType: type?.preferredMIMEType ?? "image/png"))
+                        data: data, filename: "Photo\(number).\(suffix)", mediaType: type?.preferredMIMEType ?? ""))
             }
             return try parts(payloads: payloads, appendingTo: existing)
         }
     #endif
 
-    static func appending(
-        _ incoming: [Dieter_V1_MessagePart],
-        to existing: [Dieter_V1_MessagePart]
-    ) throws -> [Dieter_V1_MessagePart] {
-        guard existing.count + incoming.count <= maximumCount else {
-            throw IOSAttachmentError.tooMany
-        }
-        var total = existing.reduce(0) { $0 + $1.data.count }
-        for part in incoming {
-            let filename = part.filename.isEmpty ? "attachment" : part.filename
-            guard !part.data.isEmpty else { throw IOSAttachmentError.empty(filename) }
-            guard part.data.count <= maximumBytes else {
-                throw IOSAttachmentError.fileTooLarge(filename)
-            }
-            total += part.data.count
-            guard total <= maximumTotalBytes else { throw IOSAttachmentError.totalTooLarge }
-        }
-        return existing + incoming
-    }
-
-    private func sanitizedFilename(_ value: String) -> String {
-        let filename = URL(fileURLWithPath: value).lastPathComponent
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return filename.isEmpty ? "attachment" : filename
-    }
-
-    private func normalizedMediaType(_ value: String?, fallback: UTType?) -> String {
-        let candidate = value?.split(separator: ";", maxSplits: 1).first.map(String.init)?
-            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if let candidate, candidate.contains("/") { return candidate }
-        return fallback?.preferredMIMEType ?? "application/octet-stream"
+    /// A file part named and typed by the core's rules.
+    private static func part(data: Data, filename: String, declaredType: String) -> Dieter_V1_MessagePart {
+        let mediaType = SharedRules.shared.attachmentMediaType(declared: declaredType, filename: filename)
+        var part = Dieter_V1_MessagePart()
+        part.type = "file"
+        part.mediaType = mediaType
+        part.filename = SharedRules.shared.attachmentFilename(raw: filename, mediaType: mediaType)
+        part.data = data
+        return part
     }
 }
 
@@ -306,7 +292,8 @@ enum IOSShareInbox {
         let manifestURL = directory.appendingPathComponent("manifest.json", isDirectory: false)
         guard let data = try? Data(contentsOf: manifestURL), data.count <= 64 * 1_024,
             let manifest = try? JSONDecoder().decode(Manifest.self, from: data),
-            !manifest.items.isEmpty, manifest.items.count <= IOSAttachmentLoader.maximumCount
+            // A bound on the manifest only; the loader applies the core's limits.
+            !manifest.items.isEmpty, manifest.items.count <= 64
         else { throw IOSAttachmentError.invalidShare }
         let sources = try manifest.items.map { item -> IOSAttachmentSource in
             guard item.storedName == URL(fileURLWithPath: item.storedName).lastPathComponent,

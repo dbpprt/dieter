@@ -107,6 +107,17 @@ data class TerminalsView(
             count == 0 -> "Daemon-owned · survive app disconnects"
             else -> "${Counts.of(count, "persistent session")} · ${if (streamConnected) "live" else "reconnecting"}"
         }
+
+        /**
+         * One terminal's status: "Connected" or "Reconnecting" while it runs,
+         * by whether its output streams; otherwise "Exited", with the
+         * [exitCode] when the daemon reported one.
+         */
+        fun terminalStatus(status: String, exitCode: Int?, streamConnected: Boolean): String = when {
+            status == "running" -> if (streamConnected) "Connected" else "Reconnecting"
+            exitCode != null -> "Exited $exitCode"
+            else -> "Exited"
+        }
     }
 }
 

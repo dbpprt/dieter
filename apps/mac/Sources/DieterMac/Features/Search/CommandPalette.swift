@@ -1,5 +1,4 @@
 import DieterAPI
-import DieterCore
 import SwiftUI
 
 struct CommandPalette: View {

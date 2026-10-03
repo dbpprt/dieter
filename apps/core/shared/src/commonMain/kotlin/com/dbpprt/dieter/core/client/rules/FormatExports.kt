@@ -76,6 +76,9 @@ object FormatExports {
     /** A media type the daemon accepts: [declared] lowercased without parameters, else guessed from [filename]. */
     fun attachmentMediaType(declared: String, filename: String): String = Attachments.mediaType(declared, filename)
 
+    /** The base name an attachment is sent under: no directories, and a readable default when [raw] is empty. */
+    fun attachmentFilename(raw: String, mediaType: String): String = Attachments.filename(raw, mediaType)
+
     /** "PNG · 1.2 MB", or just the type when [bytes] is 0. */
     fun attachmentDetails(filename: String, mediaType: String, bytes: Long): String = Attachments.details(filename, mediaType, bytes)
 

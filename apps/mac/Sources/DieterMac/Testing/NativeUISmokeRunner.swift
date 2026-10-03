@@ -72,12 +72,12 @@
                 if case .failed(let message) = store.phase {
                     phaseDetail = message
                 } else {
-                    phaseDetail = store.phase.label
+                    phaseDetail = store.session.phaseLabel
                 }
                 writeReport(
                     [
                         "connection": "failed: fixture workspace did not become ready",
-                        "phase": store.phase.label,
+                        "phase": store.session.phaseLabel,
                         "phase-detail": phaseDetail,
                         "projects": "\(store.projects.count)",
                     ], to: output)
@@ -208,7 +208,7 @@
             results["connection-overlap-ownership"] =
                 newestConnectionSurvived
                 ? "passed"
-                : "failed: stale attempt displaced the newest connection (\(store.phase.label))"
+                : "failed: stale attempt displaced the newest connection (\(store.session.phaseLabel))"
             if !newestConnectionSurvived {
                 _ = await waitUntil(timeout: 25) { store.workspaceIsLive }
             }
@@ -986,7 +986,7 @@
             results["10b-settings-clean-sync"] =
                 cleanSyncRecovered
                 ? "passed"
-                : "failed: clean sync did not rebuild the workspace (\(store.phase.label), \(store.projects.count) projects)"
+                : "failed: clean sync did not rebuild the workspace (\(store.session.phaseLabel), \(store.projects.count) projects)"
 
             store.openSettings(section: .prompts)
             _ = await waitUntil(timeout: 5) { store.settingsSection == .prompts }
@@ -1291,7 +1291,7 @@
             // core's folds so its authoritative directory cannot remove the
             // injected endpoint while the view settles or screenshots render.
             store.coreFoldsHeld = true
-            let duplicateMachine = DieterEndpoint(
+            let duplicateMachine = MachineEndpoint(
                 name: "Smoke remote Mac",
                 host: store.endpoint.host,
                 port: store.endpoint.port,
@@ -1389,7 +1389,8 @@
                     ? "passed"
                     : "failed: created path was not a Git working tree or board ownership was wrong"
             } catch {
-                results["15b-create-git-project"] = "failed: \(DieterRPCFailure.message(for: error))"
+                let message = (error as? CoreFailure)?.message ?? error.localizedDescription
+                results["15b-create-git-project"] = "failed: \(message)"
             }
 
             var linkedWorktreeDraft = ProjectSetupDraft()
@@ -1408,7 +1409,8 @@
                     ? "passed"
                     : "failed: linked worktree was not registered as a distinct Git project"
             } catch {
-                results["15c-open-linked-worktree"] = "failed: \(DieterRPCFailure.message(for: error))"
+                let message = (error as? CoreFailure)?.message ?? error.localizedDescription
+                results["15c-open-linked-worktree"] = "failed: \(message)"
             }
 
             await store.openBoard(board.id, projectID: project.id)
@@ -1601,7 +1603,7 @@
                 results["17-offline-cached-board-navigation"] =
                     stayedUsable
                     ? "passed"
-                    : "failed: section=\(store.section.rawValue), board=\(store.selectedBoard?.id ?? "none"), phase=\(store.phase.label), freshness=\(offlineLabel), error=\(store.errorMessage ?? "none")"
+                    : "failed: section=\(store.section.rawValue), board=\(store.selectedBoard?.id ?? "none"), phase=\(store.session.phaseLabel), freshness=\(offlineLabel), error=\(store.errorMessage ?? "none")"
                 await captureAppearances(
                     window, named: "17-offline-cached-board-navigation.png", in: output)
                 if let trigger = offlineTrigger() {

@@ -4,6 +4,7 @@ import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.HarnessCatalog
 import com.dbpprt.dieter.api.v1.HarnessSelection
+import com.dbpprt.dieter.api.v1.QueuedMessage
 import com.dbpprt.dieter.api.v1.Subagent
 import com.dbpprt.dieter.api.v1.TaskPlan
 import com.dbpprt.dieter.client.v1.ActivityTimelineBar
@@ -28,6 +29,8 @@ import com.dbpprt.dieter.client.v1.QuotaGroupList
 import com.dbpprt.dieter.client.v1.QuotaGroupRows
 import com.dbpprt.dieter.client.v1.ScheduleCadence
 import com.dbpprt.dieter.client.v1.ScheduleEditorOptions
+import com.dbpprt.dieter.client.v1.ScreenStreamOptions
+import com.dbpprt.dieter.client.v1.ScreenToolbarKeys
 import com.dbpprt.dieter.client.v1.SubagentSummary
 import com.dbpprt.dieter.client.v1.SyntaxHighlights
 import com.dbpprt.dieter.client.v1.TaskPlanSummary
@@ -46,6 +49,8 @@ import com.dbpprt.dieter.core.client.rules.MachineExports
 import com.dbpprt.dieter.core.client.rules.NavigationExports
 import com.dbpprt.dieter.core.client.rules.QuotaExports
 import com.dbpprt.dieter.core.client.rules.ScheduleExports
+import com.dbpprt.dieter.core.client.rules.ScreenExports
+import com.dbpprt.dieter.core.client.rules.TerminalExports
 import com.dbpprt.dieter.core.client.rules.WorkspaceExports
 import platform.Foundation.NSData
 
@@ -86,6 +91,8 @@ object SharedRules {
 
     fun attachmentMediaType(declared: String, filename: String): String = FormatExports.attachmentMediaType(declared, filename)
 
+    fun attachmentFilename(raw: String, mediaType: String): String = FormatExports.attachmentFilename(raw, mediaType)
+
     fun attachmentDetails(filename: String, mediaType: String, bytes: Long): String = FormatExports.attachmentDetails(filename, mediaType, bytes)
 
     fun attachmentLimits(): String = FormatExports.attachmentLimits()
@@ -124,6 +131,44 @@ object SharedRules {
     /** A `FileIconKind` value. */
     fun fileIconKind(name: String, directory: Boolean): Int = FileExports.iconKind(name, directory).value
 
+    // --- Screens ------------------------------------------------------------------
+
+    /** An encoded `ScreenToolbarKeys`: the modifier toggles and special keys a touch screen's toolbar offers. */
+    fun screenToolbarKeys(): NSData = ScreenToolbarKeys.ADAPTER.encode(ScreenExports.toolbarKeys()).toNSData()
+
+    /** An encoded `ScreenStreamOptions`: the quality and codec choices, in menu order. */
+    fun screenStreamOptions(): NSData = ScreenStreamOptions.ADAPTER.encode(ScreenExports.streamOptions()).toNSData()
+
+    /** A frame-rate choice: "Up to 60 fps". */
+    fun screenFrameRate(fps: Int): String = ScreenExports.frameRate(fps)
+
+    /** "Take Control", or "Release Control" while [controlActive]. */
+    fun screenControlAction(controlActive: Boolean): String = ScreenExports.controlAction(controlActive)
+
+    /**
+     * What a screen view says while not streaming; [phase] and [problem] are
+     * the screen slice's, [hostReady] and [hostReason] the machine's
+     * `remote_desktop_ready` and `remote_desktop_reason`.
+     */
+    fun screenWaitingMessage(phase: String, problem: String, hostReady: Boolean, hostReason: String): String =
+        ScreenExports.waitingMessage(phase, problem, hostReady, hostReason)
+
+    // --- Terminals ----------------------------------------------------------------
+
+    /** The bytes [key] (a `TerminalKey` value) sends; empty when unknown. [applicationCursor] is the terminal's cursor key mode. */
+    fun terminalKey(key: Int, shift: Boolean, alt: Boolean, control: Boolean, applicationCursor: Boolean): NSData =
+        TerminalExports.key(key, shift, alt, control, applicationCursor).toNSData()
+
+    /** A `TerminalKey` value for F[number]; 0 outside F1 to F12. */
+    fun terminalFunctionKey(number: Int): Int = TerminalExports.functionKey(number)
+
+    /** What an armed Control turns one typed key into; nil when Control does not apply. */
+    fun terminalControl(bytes: NSData): NSData? = TerminalExports.control(bytes.toByteArray())?.toNSData()
+
+    /** "Connected", "Reconnecting", "Exited 1", or "Exited"; [status] is the terminal's, e.g. "running". */
+    fun terminalStatus(status: String, exitCode: Int, hasExitCode: Boolean, streamConnected: Boolean): String =
+        TerminalExports.status(status, exitCode, hasExitCode, streamConnected)
+
     // --- Links --------------------------------------------------------------------
 
     /** An encoded `ContentLinkResolution`; empty [workspaceRoot] or [relativeTo] means none. */
@@ -139,6 +184,12 @@ object SharedRules {
     fun normalizeExternalBrowserRule(input: String): String = LinkExports.normalizeExternalBrowserRule(input)
 
     fun isLoopbackBrowserHost(host: String): Boolean = LinkExports.isLoopbackBrowserHost(host)
+
+    /** Whether an image link may name a workspace file; the files surface's `open` resolves it. */
+    fun isWorkspaceImage(destination: String): Boolean = LinkExports.isWorkspaceImage(destination)
+
+    /** The workspace-relative path of an image link, "" when none; empty [workspaceRoot] resolves only relative links. */
+    fun workspaceImagePath(destination: String, workspaceRoot: String): String = LinkExports.workspaceImagePath(destination, workspaceRoot)
 
     // --- Schedules ----------------------------------------------------------------
 
@@ -169,6 +220,11 @@ object SharedRules {
         ScheduleExports.canSave(name, titleTemplate, promptTemplate, cron, timezone, boardId, workspaceMode)
 
     // --- Machines -----------------------------------------------------------------
+
+    /** A gateway address's origin as `SetGateways` accepts it; empty when invalid or remote plaintext. */
+    fun gatewayOrigin(address: String): String = MachineExports.gatewayOrigin(address)
+
+    fun defaultGatewayOrigin(): String = MachineExports.defaultGatewayOrigin()
 
     fun machineLastSeen(lastSeenAt: String, nowMillis: Long): String = MachineExports.lastSeen(lastSeenAt, nowMillis)
 
@@ -212,6 +268,9 @@ object SharedRules {
 
     // --- Conversation -------------------------------------------------------------
 
+    /** False for the local ID of a conversation whose creation is still in the outbox. */
+    fun isServerBacked(conversationId: String): Boolean = ConversationExports.isServerBacked(conversationId)
+
     /** The first step group a long message shows; empty [fromId] means none was pinned yet. */
     fun timelineVisibleStart(groupIds: List<String>, fromId: String): Int = ConversationExports.visibleStart(groupIds, fromId)
 
@@ -223,6 +282,10 @@ object SharedRules {
 
     /** [messages] is an encoded `TimelineMessages`. */
     fun copyText(messages: NSData): String = ConversationExports.copyText(TimelineMessages.ADAPTER.decode(messages.toByteArray()))
+
+    /** [message] is the encoded `dieter.v1.QueuedMessage` an edit removed; returns the composer's restored text and attachments as one. */
+    fun restoredDraft(message: NSData, currentText: String): NSData =
+        QueuedMessage.ADAPTER.encode(ConversationExports.restoredDraft(QueuedMessage.ADAPTER.decode(message.toByteArray()), currentText)).toNSData()
 
     /** [plan] is an encoded `dieter.v1.TaskPlan`; returns an encoded `TaskPlanSummary`. */
     fun taskPlanSummary(plan: NSData): NSData = TaskPlanSummary.ADAPTER.encode(ConversationExports.taskPlan(TaskPlan.ADAPTER.decode(plan.toByteArray()))).toNSData()
@@ -281,6 +344,9 @@ object SharedRules {
 
     fun activityMatches(query: String, title: String, projectName: String, boardName: String): Boolean = ActivityExports.activityMatches(query, title, projectName, boardName)
 
+    /** A conversation's title, or "Untitled chat" / "Untitled card" when blank. */
+    fun conversationTitle(title: String, scope: String, boardId: String): String = ActivityExports.conversationTitle(title, scope, boardId)
+
     /** An encoded `ActivityTimelineBar`. */
     fun timelineBar(startMillis: Long, atMillis: Long, running: Boolean, nowMillis: Long, hours: Int): NSData =
         ActivityTimelineBar.ADAPTER.encode(ActivityExports.timelineBar(startMillis, atMillis, running, nowMillis, hours)).toNSData()
@@ -310,6 +376,12 @@ object SharedRules {
     fun workspaceModeShortTitle(mode: String): String = CreationExports.workspaceModeShortTitle(mode)
 
     fun workspaceModeDetail(mode: String): String = CreationExports.workspaceModeDetail(mode)
+
+    /** The modes a picker offers, in order: "worktree", then "project". */
+    fun workspaceModes(): List<String> = CreationExports.workspaceModes()
+
+    /** "New worktree" or "Project directory", as a picker offers the mode for a new conversation. */
+    fun workspaceModeChoiceTitle(mode: String): String = CreationExports.workspaceModeChoiceTitle(mode)
 
     fun opensAfterCreate(chat: Boolean, lane: String): Boolean = CreationExports.opensAfterCreate(chat, lane)
 

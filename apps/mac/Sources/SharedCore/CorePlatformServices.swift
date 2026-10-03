@@ -42,7 +42,8 @@ package final class CoreFileSecureStore: NSObject, NativeSecureStore, Sendable {
     private func persist(_ tokens: [String: String]) throws {
         let directory = fileURL.deletingLastPathComponent()
         let manager = FileManager.default
-        try manager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try manager.createDirectory(
+            at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         try JSONEncoder().encode(tokens).write(to: fileURL, options: .atomic)
         try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
@@ -152,10 +153,13 @@ package final class CoreUserNotifications: NSObject, NativeNotifications, Sendab
             if isNew {
                 center.getNotificationCategories { existing in
                     let buttons = actions.map { name in
-                        UNNotificationAction(identifier: name, title: Self.titles[name] ?? name, options: name == "OPEN" ? [.foreground] : [])
+                        UNNotificationAction(
+                            identifier: name, title: Self.titles[name] ?? name,
+                            options: name == "OPEN" ? [.foreground] : [])
                     }
                     var categories = existing.filter { $0.identifier != category }
-                    categories.insert(UNNotificationCategory(identifier: category, actions: buttons, intentIdentifiers: []))
+                    categories.insert(
+                        UNNotificationCategory(identifier: category, actions: buttons, intentIdentifiers: []))
                     UNUserNotificationCenter.current().setNotificationCategories(categories)
                 }
             }

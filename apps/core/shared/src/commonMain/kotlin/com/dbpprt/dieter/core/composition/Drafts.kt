@@ -44,6 +44,9 @@ data class RestoredMessage(val text: String, val attachments: List<MessagePart>,
             return RestoredMessage(text, message.parts.filter { it.type != "text" }, message.selection?.takeIf { it.provider.isNotEmpty() })
         }
     }
+
+    /** The composer's text with this message's ahead of [current], a blank line apart. */
+    fun textBefore(current: String): String = listOf(text, current).filter { it.isNotBlank() }.joinToString("\n\n")
 }
 
 /** [next] as a change of [current]: a text or attachment change advances the revision past both. */
@@ -197,7 +200,7 @@ class ConversationDrafts(
         if (removed == null) return@update done
         val restored = RestoredMessage.from(removed)
         done.copy(
-            text = listOf(restored.text, draft.text).filter { it.isNotBlank() }.joinToString("\n\n"),
+            text = restored.textBefore(draft.text),
             attachments = restored.attachments + draft.attachments,
             selection = restored.selection ?: draft.selection,
         )

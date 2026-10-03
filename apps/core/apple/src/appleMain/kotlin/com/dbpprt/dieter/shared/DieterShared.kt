@@ -15,6 +15,7 @@ import com.dbpprt.dieter.client.v1.ScreenChannel
 import com.dbpprt.dieter.client.v1.ScreenMediaCapabilities as ClientScreenMediaCapabilities
 import com.dbpprt.dieter.client.v1.ScreenMediaConfig as ClientScreenMediaConfig
 import com.dbpprt.dieter.client.v1.Slice
+import com.dbpprt.dieter.client.v1.Update
 import com.dbpprt.dieter.core.CoreRuntime
 import com.dbpprt.dieter.core.RuntimeConfig
 import com.dbpprt.dieter.core.client.ClientApi
@@ -368,9 +369,25 @@ class DieterShared(configuration: SharedConfiguration, extensions: SharedExtensi
     /**
      * Observes [slice] (a `dieter.client.v1.Slice` number); [scope] is the card
      * ID for conversations and the view's surface key for view-owned surfaces.
+     * A slice this core does not know is reported as one `Update` carrying a
+     * failure, never as an exception, which would abort the process at the
+     * Objective-C boundary.
      */
-    fun observe(slice: Int, scope: String, observer: SharedObserver): SharedSubscription =
-        SharedSubscription(api.observe(Slice.fromValue(slice) ?: Slice.SLICE_UNSPECIFIED, scope) { update -> observer.update(update.encode().toNSData()) })
+    fun observe(slice: Int, scope: String, observer: SharedObserver): SharedSubscription {
+        val kind = Slice.fromValue(slice) ?: Slice.SLICE_UNSPECIFIED
+        fun failed(failure: Failure): ClientSubscription {
+            observer.update(Update(slice = kind, scope = scope, sequence = 1, failure = failure).encode().toNSData())
+            return ClientSubscription {}
+        }
+        val subscription = try {
+            api.observe(kind, scope) { update -> observer.update(update.encode().toNSData()) }
+        } catch (failure: ClientFailure) {
+            failed(failure.failure)
+        } catch (invalid: IllegalArgumentException) {
+            failed(Failure(Failure.Kind.KIND_INVALID, invalid.message ?: "The slice could not be observed."))
+        }
+        return SharedSubscription(subscription)
+    }
 
     @Throws(CancellationException::class)
     suspend fun shutdown() = runtime.shutdown()

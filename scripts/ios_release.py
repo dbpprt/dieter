@@ -308,6 +308,11 @@ def signing_environment(material, runner_temp, *, home=None):
             raise ReleaseError("Could not completely restore the temporary signing environment; inspect the CI runner before reuse.")
 
 
+def shared_framework_command(root):
+    # The app links the shared Kotlin core; archives use its optimized device slices.
+    return [root / "apps/mac/scripts/shared-framework.sh", "release", "all"]
+
+
 def archive_command(root, archive, version, build, bundle_id):
     return [
         "xcodebuild", "-skipPackagePluginValidation",
@@ -403,6 +408,7 @@ def archive_unsigned(root, version, build, env):
     output = release_directory(root, version, build)
     output.mkdir(parents=True)
     archive = output / "Dieter.xcarchive"
+    command(shared_framework_command(root), label="Shared core framework build", timeout=3600)
     command(archive_command(root, archive, version, build, bundle_id) + ["CODE_SIGNING_ALLOWED=NO"],
             label="Unsigned iOS archive", diagnostic_secrets=())
     validate_archive(archive, version, build, bundle_id, signed=False)
@@ -420,6 +426,8 @@ def testflight(root, version, build, env, *, upload=False):
     output = release_directory(root, version, build)
     material = load_material(env)
     metadata = material.metadata
+    # Build the shared core before any signing state exists on the runner.
+    command(shared_framework_command(root), label="Shared core framework build", timeout=3600)
     with signing_environment(material, runner_temp) as context:
         diagnostic_secrets = (
             material.certificate, material.password, material.profile, material.key,

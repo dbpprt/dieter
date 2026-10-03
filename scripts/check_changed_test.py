@@ -56,7 +56,7 @@ class CheckChangedTests(unittest.TestCase):
             ("apps/mac/Sources/DieterIOS/UI/Root.swift",): {"macos", "ios"},
             ("apps/android/app/src/main/java/Conversation.kt",): {"android"},
             ("native/android-webrtc/build_sdk.py",): {"android"},
-            ("apps/mac/Sources/DieterClient/DieterRPC.swift",): {"macos", "ios"},
+            ("apps/mac/Sources/DieterTransport/ControlRTCBridge.swift",): {"macos", "ios"},
             ("apps/mac/MarkdownPreview/src/chart-sizing.js",): {"core", "macos"},
         }
         for paths, expected in cases.items():
@@ -80,14 +80,18 @@ class CheckChangedTests(unittest.TestCase):
                 plan = self.plan(path)
                 for command in core:
                     self.assertIn(command, plan)
-                # Android compiles the core from source; the Mac links it, so its
-                # unit tests, the Swift bridge suite, and every smoke suite run.
+                # Android compiles the core from source; the Mac and iOS apps link
+                # it, so their unit tests, the Swift bridge suite, and every smoke
+                # suite run.
                 self.assertIn(["just", "android", "test"], plan)
                 self.assertIn(["just", "mac", "test"], plan)
                 self.assertIn(["just", "mac", "core-test"], plan)
                 self.assertIn(["just", "e2e", "run", "--platform", "mac", "--suite", "smoke"], plan)
-                self.assertFalse(any(command[:2] == ["just", "ios"] for command in plan))
-        self.assertEqual(self.components("apps/core/model/src/commonMain/proto/dieter/client/v1/client.proto"), {"kmp", "android", "macos"})
+                self.assertIn(["just", "ios", "build"], plan)
+                for device in ("iphone", "ipad"):
+                    self.assertIn(["just", "e2e", "run", "--platform", "ios", "--device", device, "--suite", "smoke"], plan)
+        self.assertEqual(self.components("apps/core/model/src/commonMain/proto/dieter/client/v1/client.proto"),
+                         {"kmp", "android", "macos", "ios"})
         # The Android device cases run for core code the app compiles, never for the core's own tests or Apple bridge.
         functional = ["just", "e2e", "run", "--suite", "functional", "--changed"]
         self.assertIn(functional, self.plan("apps/core/shared/src/commonMain/kotlin/com/dbpprt/dieter/core/CoreRuntime.kt"))
@@ -101,6 +105,11 @@ class CheckChangedTests(unittest.TestCase):
                 plan = self.plan(path)
                 self.assertIn(["just", "mac", "core-test"], plan)
                 self.assertNotIn(["just", "core", "test"], plan)
+                # Both Apple apps link the core through SharedCore.
+                self.assertIn(["just", "ios", "build"], plan)
+                self.assertEqual(self.components(path), {"macos", "ios"})
+        # The bridge's own tests run on the Mac only.
+        self.assertNotIn(["just", "ios", "build"], self.plan("apps/mac/Tests/SharedCoreTests/SharedAdapterTests.swift"))
         for path in ("api/proto/dieter/v1/dieter.proto", "scripts/isolated-gateway/main.go"):
             with self.subTest(path=path):
                 self.assertIn(["just", "core", "test"], self.plan(path))
@@ -131,7 +140,7 @@ class CheckChangedTests(unittest.TestCase):
 
     def test_ios_changes_run_phone_and_tablet_without_mac_ui(self):
         for path in ["apps/ios/DieterIOSApp/DieterIOSApp.swift", "apps/mac/Sources/DieterIOS/UI/Root.swift",
-                     "apps/mac/Tests/DieterIOSTests/IOSStoreTests.swift"]:
+                     "apps/mac/Tests/DieterIOSTests/IOSCoreAdapterTests.swift"]:
             unit = [["just", "mac", "test", "DieterIOSTests"]] if path.startswith("apps/mac/") else []
             self.assertEqual(self.plan(path), unit + [["just", "ios", "build"], ["just", "e2e", "run", "--platform", "ios", "--device", "iphone", "--suite", "smoke"], ["just", "e2e", "run", "--platform", "ios", "--device", "ipad", "--suite", "smoke"]])
             self.assertEqual(self.components(path), {"macos", "ios"} if unit else {"ios"})
@@ -139,8 +148,7 @@ class CheckChangedTests(unittest.TestCase):
     def test_shared_swift_dependencies_and_tests_validate_both_apple_clients(self):
         for path in ["apps/mac/Package.resolved", "apps/mac/Package.swift",
                      "apps/mac/Vendor/grpc-swift-nio-transport/Package.swift",
-                     "apps/mac/Tests/DieterCoreTests/ReplicaTests.swift",
-                     "apps/mac/Tests/DieterClientTests/ConnectionTests.swift"]:
+                     "apps/mac/Sources/DieterAPI/DieterVersions.swift"]:
             with self.subTest(path=path):
                 self.assertEqual(self.components(path), {"macos", "ios"})
                 self.assertIn(["just", "mac", "test"], self.plan(path))
@@ -149,13 +157,13 @@ class CheckChangedTests(unittest.TestCase):
     def test_capture_helpers_shared_with_swiftpm_select_capture_tests(self):
         for name in ["RemoteDesktopKeyMap.swift", "ScreenClipboardContent.swift"]:
             with self.subTest(name=name):
-                plan = self.plan("apps/mac/Sources/DieterCore/" + name)
+                plan = self.plan("apps/mac/Sources/DieterTransport/" + name)
                 self.assertIn(["just", "mac", "screens-native-test"], plan)
                 self.assertIn(["just", "mac", "screens-test"], plan)
                 self.assertIn(["just", "e2e", "run", "--suite", "screens"], plan)
 
-    def test_shared_swift_client_also_validates_ios(self):
-        plan = self.plan("apps/mac/Sources/DieterClient/DieterRPC.swift")
+    def test_shared_swift_transport_also_validates_ios(self):
+        plan = self.plan("apps/mac/Sources/DieterTransport/DaemonCertificatePinning.swift")
         self.assertIn(["just", "mac", "test"], plan)
         self.assertIn(["just", "e2e", "run", "--platform", "ios", "--device", "iphone", "--suite", "smoke"], plan)
         self.assertIn(["just", "e2e", "run", "--platform", "ios", "--device", "ipad", "--suite", "smoke"], plan)

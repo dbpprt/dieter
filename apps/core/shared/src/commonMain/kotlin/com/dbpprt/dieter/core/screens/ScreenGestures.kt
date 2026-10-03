@@ -221,6 +221,21 @@ class ScreenCanvas {
     fun contains(x: Double, y: Double): Boolean =
         x.isFinite() && y.isFinite() && x >= left && x <= left + remoteWidth * scale && y >= top && y <= top + remoteHeight * scale
 
+    /**
+     * The normalized desktop point under view point ([x], [y]), letterboxing,
+     * zoom, and pan included; null off the desktop, unless [clamp] pins the
+     * point to the nearest edge.
+     */
+    fun normalized(x: Double, y: Double, clamp: Boolean = false): Point? {
+        val width = remoteWidth * scale
+        val height = remoteHeight * scale
+        if (width <= 0 || height <= 0 || !x.isFinite() || !y.isFinite() || (!clamp && !contains(x, y))) return null
+        return Point(((x - left) / width).coerceIn(0.0, 1.0), ((y - top) / height).coerceIn(0.0, 1.0))
+    }
+
+    /** The view point showing normalized desktop point ([x], [y]), e.g. where the cursor is drawn. */
+    fun displayed(x: Double, y: Double): Point = Point(left + x * remoteWidth * scale, top + y * remoteHeight * scale)
+
     /** Sets zoom and pan directly, for animating between two views. */
     fun setView(zoom: Double, panX: Double, panY: Double) {
         if (!zoom.isFinite() || !panX.isFinite() || !panY.isFinite()) return

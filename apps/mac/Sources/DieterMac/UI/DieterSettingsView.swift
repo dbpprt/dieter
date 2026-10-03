@@ -808,8 +808,8 @@ struct ConnectionSettings: View {
     @Environment(DieterStore.self) private var store
     @State private var name = ""
     @State private var address = ""
-    @State private var pendingRevoke: DieterEndpoint?
-    @State private var pendingRename: DieterEndpoint?
+    @State private var pendingRevoke: MachineEndpoint?
+    @State private var pendingRename: MachineEndpoint?
     @State private var pendingCleanSync = false
 
     var body: some View {
@@ -909,7 +909,7 @@ struct ConnectionSettings: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(gateway.name).font(.system(size: 12, weight: .semibold))
-                            if gateway.credentialID == DieterEndpoint.defaults.first?.credentialID {
+                            if gateway.isPrimaryGateway {
                                 Text("PRIMARY").font(.system(size: 8, weight: .bold)).foregroundStyle(DieterTheme.eyes)
                                     .padding(.horizontal, 5).frame(height: 16).background(
                                         DieterTheme.eyes.opacity(0.1), in: Capsule())
@@ -981,15 +981,13 @@ struct ConnectionSettings: View {
                 TextField("Display name", text: $name)
                 TextField("https://dieter.example.com", text: $address)
                 Button("Save and discover") {
-                    if let gateway = DieterEndpoint.parse(address, name: name.isEmpty ? "Custom gateway" : name),
-                        gateway.secure
-                    {
+                    if let gateway = MachineEndpoint(address: address, name: name.isEmpty ? "Custom gateway" : name) {
                         Task { await store.saveEndpoint(gateway) }
                         name = ""; address = ""
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(DieterEndpoint.parse(address)?.secure != true)
+                .disabled(MachineEndpoint(address: address, name: "") == nil)
             }
             Text(
                 "Gateway sessions are stored in Dieter's private app data directory. Dieter prefers verified direct TLS to a discovered machine and otherwise uses the gateway's encrypted relay."
@@ -998,7 +996,7 @@ struct ConnectionSettings: View {
         }
     }
 
-    private func machineSummary(_ machine: DieterEndpoint) -> String {
+    private func machineSummary(_ machine: MachineEndpoint) -> String {
         store.machineStatusLine(machine)
     }
 }

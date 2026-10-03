@@ -1,7 +1,6 @@
 import DieterAPI
-import DieterClient
-import DieterCore
 import Foundation
+import SharedCore
 import Testing
 @preconcurrency import WebRTC
 @testable import DieterMac
@@ -55,9 +54,8 @@ private func envRecovery(_ name: String) -> [String]? {
     }
     try await hevcWait { FileManager.default.fileExists(atPath: ready.path) }
     let connection = try JSONDecoder().decode(HEVCFixture.self, from: Data(contentsOf: ready))
-    let rpc = try DieterRPC(endpoint: #require(DieterEndpoint.parse(connection.url)), accessToken: connection.token)
-    let rpcTask = Task { try await rpc.run() }
-    defer { rpcTask.cancel() }
+    let rpc = try SmokeFixtureClient(origin: connection.url, token: connection.token)
+    defer { rpc.shutdown() }
     let caps = try await rpc.remoteDesktopCapabilities()
     try #require(caps.codecModes.contains { $0.codec == "H265" })
     let frames = HEVCFrameCount()

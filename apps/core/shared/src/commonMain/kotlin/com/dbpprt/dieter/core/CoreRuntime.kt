@@ -266,6 +266,29 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
         connection.restart()
     }
 
+    /**
+     * Forgets the active gateway's session and everything this device kept
+     * for that account: undelivered changes, drafts, captures, navigation,
+     * terminal selections, and the cached workspace. Routes and streams stop
+     * and the session asks for sign-in again; the gateway stays listed.
+     */
+    suspend fun signOut() = onCore {
+        val gateway = accounts.state.value.active
+        credentials.remove(gateway)
+        // Detach the journals first, so nothing writes the namespace while it is removed.
+        outbox.bind(null)
+        navigationKv.bind(null)
+        drafts.bind(null)
+        captures.bind(null)
+        gatewayStorage = null
+        terminalPumps.cancelAll()
+        // The restart prepares the gateway afresh, rebinding everything to the empty namespace.
+        connection.forgetViews()
+        storageFor(gateway).clear()
+        workspace.clear()
+        connection.restart()
+    }
+
     suspend fun selectGateway(origin: String) = onCore { accounts.select(origin) }
 
     suspend fun setGateways(gateways: List<Gateway>, activeOrigin: String? = null) = onCore {
@@ -279,6 +302,12 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     }
 
     suspend fun setConnected(value: Boolean) = onCore { accounts.setDesiredConnected(value) }
+
+    /** Connects now: restarts the connection instead of waiting for its next retry, and undoes a disconnect. */
+    suspend fun reconnect() = onCore {
+        accounts.setDesiredConnected(true)
+        connection.restart()
+    }
 
     /** Queues a card or chat as [request] says; returns its optimistic row. [create] applies the creation rules first. */
     suspend fun createConversation(request: CreateConversationRequest, chat: Boolean, submissionId: String? = null): Card =

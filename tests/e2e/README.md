@@ -42,8 +42,10 @@ skipped, duplicate, failed or interrupted methods fail the run. No simulator
 runtime is installed automatically. Missing prerequisites produce unavailable
 results and a nonzero exit.
 
-Both layouts cover the remote-node, terminal, screen, connection-state and native
-Keychain tests. `ios.share-extension` declares `devices: [iphone]` because its
+Both layouts cover the remote-node, terminal, screen, connection-state, native
+Keychain, and shared-core adapter (`ios.adapters`) tests. The adapter tests live
+in `apps/mac/Tests/DieterIOSTests` and compile into the app-hosted
+`DieterIOSNativeTests` target. `ios.share-extension` declares `devices: [iphone]` because its
 Photos share-sheet journey is phone-specific; it is excluded from iPad plans,
 not counted as a passing skip. Explicitly requesting it on iPad is an error.
 The `manual` case `ios.https-auth` requires `DIETER_IOS_TEST_HTTPS_GATEWAY` and

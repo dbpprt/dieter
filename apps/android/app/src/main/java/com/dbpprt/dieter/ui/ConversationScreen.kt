@@ -84,6 +84,7 @@ import com.dbpprt.dieter.api.v1.QueuedMessage
 import com.dbpprt.dieter.core.composition.Attachments
 import com.dbpprt.dieter.core.conversation.TurnFailure
 import com.dbpprt.dieter.core.presentation.ConversationPresentation
+import com.dbpprt.dieter.core.presentation.Delivery
 import com.dbpprt.dieter.core.presentation.DeliveryState
 import com.dbpprt.dieter.core.presentation.TimelineItem
 import com.dbpprt.dieter.core.selection.AgentControls
@@ -904,13 +905,7 @@ internal fun ActivityBlock(item: TimelineItem.Activity, model: DieterViewModel, 
 @Composable
 internal fun MessageDeliveryReceipt(state: DeliveryState, modifier: Modifier = Modifier) {
     val tint = if (state == DeliveryState.FAILED) MaterialTheme.colorScheme.error else Color.White.copy(alpha = 0.72f)
-    val description = when (state) {
-        DeliveryState.LOCAL -> "Waiting to send"
-        DeliveryState.QUEUED -> "Queued"
-        DeliveryState.ACCEPTED -> "Accepted by daemon"
-        DeliveryState.SYNCED -> "Synced"
-        DeliveryState.FAILED -> "Send failed; retry or remove this message"
-    }
+    val description = Delivery.label(state)
     Box(modifier.width(14.dp).height(10.dp)) {
         when (state) {
             DeliveryState.LOCAL, DeliveryState.QUEUED -> Icon(Icons.Outlined.Schedule, description, tint = tint, modifier = Modifier.size(10.dp))

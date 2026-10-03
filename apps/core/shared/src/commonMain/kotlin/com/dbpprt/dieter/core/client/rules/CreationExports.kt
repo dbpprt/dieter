@@ -26,6 +26,12 @@ object CreationExports {
     /** What the mode does, e.g. "Create a new isolated Git worktree and branch for this conversation." */
     fun workspaceModeDetail(mode: String): String = WorkspaceMode.parse(mode).detail
 
+    /** The modes a picker offers, in order: "worktree", then "project". */
+    fun workspaceModes(): List<String> = WorkspaceMode.choices.map { it.wire }
+
+    /** How a picker offers the mode for a new conversation: "New worktree" or "Project directory". */
+    fun workspaceModeChoiceTitle(mode: String): String = WorkspaceMode.parse(mode).choiceTitle
+
     /** A created conversation opens: a chat, or a task created outside Todo, which starts at once. */
     fun opensAfterCreate(chat: Boolean, lane: String): Boolean = Creation.opensAfterCreate(chat, lane)
 

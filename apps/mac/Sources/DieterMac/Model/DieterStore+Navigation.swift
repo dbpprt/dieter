@@ -1,6 +1,5 @@
 import AppKit
 import DieterAPI
-import DieterCore
 import Foundation
 import OSLog
 import Observation
@@ -162,7 +161,7 @@ extension DieterStore {
         section = .screens
     }
 
-    func openTerminals(on machine: DieterEndpoint) async {
+    func openTerminals(on machine: MachineEndpoint) async {
         if let reason = unavailableReason(machine) {
             show(NSError(domain: "DieterMachine", code: 2, userInfo: [NSLocalizedDescriptionKey: reason]))
             return
@@ -230,7 +229,7 @@ extension DieterStore {
     }
 
     /// The machines the terminal overview lists, in the core's order.
-    var terminalOverviewMachines: [DieterEndpoint] {
+    var terminalOverviewMachines: [MachineEndpoint] {
         var values = endpoints.filter { $0.daemonID != nil || $0.id == endpoint.id }
         if !values.contains(where: { $0.id == endpoint.id }), endpoint.daemonID != nil {
             values.append(endpoint)

@@ -58,6 +58,7 @@ import com.dbpprt.dieter.core.files.FilesView
 import com.dbpprt.dieter.core.presentation.ActivitySummary
 import com.dbpprt.dieter.core.presentation.ConversationPresentation
 import com.dbpprt.dieter.core.presentation.ConversationPresenter
+import com.dbpprt.dieter.core.presentation.Delivery
 import com.dbpprt.dieter.core.presentation.DeliveryState
 import com.dbpprt.dieter.core.presentation.StepGroup
 import com.dbpprt.dieter.core.presentation.StepKind
@@ -232,17 +233,7 @@ internal fun projectWorkspacesSlice(view: ProjectWorkspacesView) = ProjectWorksp
 )
 
 internal fun screenSlice(view: ScreenView, displays: DisplayMatchView, preferences: ScreenPreferences, cursorUnchanged: Boolean) = ScreenSlice(
-    phase = when (view.phase) {
-        ScreenPhase.Idle -> "idle"
-        ScreenPhase.Loading -> "loading"
-        is ScreenPhase.PermissionRequired -> "permission_required"
-        is ScreenPhase.Unsupported -> "unsupported"
-        ScreenPhase.Connecting -> "connecting"
-        ScreenPhase.WaitingForHostApproval -> "waiting_for_host_approval"
-        ScreenPhase.Streaming -> "streaming"
-        is ScreenPhase.Reconnecting -> "reconnecting"
-        is ScreenPhase.Failed -> "failed"
-    },
+    phase = view.phase.wire,
     phase_label = view.phase.label,
     problem = view.phase.problem ?: (view.phase as? ScreenPhase.Reconnecting)?.reason.orEmpty(),
     active = view.phase.active, capabilities = view.capabilities, state = view.state,
@@ -391,7 +382,7 @@ internal fun conversationSlice(view: ConversationView, presented: ConversationPr
     earlier_count = view.messages.size - view.presented?.conversation?.messages.orEmpty().size,
     state = ConversationPresenter.state(presented).copy(agent = agent),
     timeline = presented.timeline.items.map { item ->
-        timelineItem(item, { messageDelivery(presented.delivery(it)) }, presented::unconfirmed)
+        timelineItem(item, presented::delivery, presented::unconfirmed)
     },
     unattached_plan_ids = presented.timeline.unattachedPlans.map { it.id },
 )
@@ -400,14 +391,17 @@ internal fun conversationSlice(view: ConversationView, presented: ConversationPr
  * A transcript row as the client contract carries it; a user message's
  * [delivery] and whether it is [unconfirmed] come by message ID.
  */
-internal fun timelineItem(item: TimelineItem, delivery: (String) -> MessageDelivery, unconfirmed: (String) -> Boolean): ClientTimelineItem = when (item) {
-    is TimelineItem.Message -> ClientTimelineItem(
-        id = item.id, message_ids = item.messageIds, user = item.user, groups = item.groups.map(::timelineStepGroup),
-        plan_ids = item.plans.map { it.id }, subagent_ids = item.subagents.map { it.id },
-        created_at_millis = item.createdAt?.toEpochMilliseconds() ?: 0, copyable = item.copyable,
-        delivery = if (item.user) delivery(item.message.id) else MessageDelivery.MESSAGE_DELIVERY_UNSPECIFIED,
-        unconfirmed = item.user && unconfirmed(item.message.id),
-    )
+internal fun timelineItem(item: TimelineItem, delivery: (String) -> DeliveryState, unconfirmed: (String) -> Boolean): ClientTimelineItem = when (item) {
+    is TimelineItem.Message -> {
+        val state = if (item.user) delivery(item.message.id) else null
+        ClientTimelineItem(
+            id = item.id, message_ids = item.messageIds, user = item.user, groups = item.groups.map(::timelineStepGroup),
+            plan_ids = item.plans.map { it.id }, subagent_ids = item.subagents.map { it.id },
+            created_at_millis = item.createdAt?.toEpochMilliseconds() ?: 0, copyable = item.copyable,
+            delivery = state?.let(::messageDelivery) ?: MessageDelivery.MESSAGE_DELIVERY_UNSPECIFIED,
+            unconfirmed = item.user && unconfirmed(item.message.id), delivery_label = state?.let(Delivery::label).orEmpty(),
+        )
+    }
     is TimelineItem.Activity -> {
         val summary = item.summary.english()
         ClientTimelineItem(
@@ -425,12 +419,14 @@ private fun timelineStepGroup(group: StepGroup): TimelineStepGroup = TimelineSte
 
 private fun timelineStep(step: TimelineStep): ClientTimelineStep {
     val tool = step.kind == StepKind.TOOL
+    val status = if (tool) Tools.status(step.part) else null
     return ClientTimelineStep(
         id = step.id, message_id = step.messageId, kind = timelineStepKind(step.kind), part_index = step.partIndex,
         // Only coalesced prose differs from its part's own text.
         text = if (step.text != step.part.text) step.text else "", routine = step.routine,
-        tool_status = if (tool) toolCallStatus(Tools.status(step.part)) else ToolCallStatus.TOOL_CALL_STATUS_UNSPECIFIED,
+        tool_status = if (status != null) toolCallStatus(status) else ToolCallStatus.TOOL_CALL_STATUS_UNSPECIFIED,
         tool_title = if (tool) Tools.displayName(step.part) else "",
+        tool_status_label = status?.let(Tools::statusText).orEmpty(), tool_attention = status != null && Tools.needsAttention(status),
     )
 }
 

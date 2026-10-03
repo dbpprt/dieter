@@ -589,13 +589,12 @@ removed dead code on both sides. These points differ from the plan above:
   `DieterEndpoint`, `DieterTaskSleep`, and `RemoteDesktopKeyMap`. It uses `DieterClient` only in the debug UI smoke
   fixtures (`Testing/SmokeFixturePlane.swift`).
 - **Still open.**
-  - iOS (`apps/ios`, `Sources/DieterIOS`) runs on `DieterCore`,
-    `DieterClient`, and `DieterAPI`, and does not link `DieterShared`. Its
-    cutover follows this plan: slice and `SharedRules` adapters, then deleting
-    `DieterCore` and `DieterClient` along with the Mac's `SmokeFixturePlane`.
-    `RemoteDesktopKeyMap.swift` and `ScreenClipboardContent.swift` stay,
-    because `native/macos-capture` compiles them by path. How the share
-    extension links the core (implementation plan §9) is undecided.
+  - ~~iOS cutover~~: done by the
+    [iOS cutover plan](ios-shared-core-integration-plan-2026-10-02.md), which
+    deleted `DieterCore`, `DieterClient`, and the Mac's `SmokeFixturePlane`;
+    `RemoteDesktopKeyMap.swift` and `ScreenClipboardContent.swift` moved to
+    `DieterTransport`. Decided: the share extension does not link the core
+    (its memory budget); the app validates its hand-off with `SharedRules`.
   - The core unit tests M4 lists as missing (project changes and the review
     merge-flow guards) are still missing; JVM end-to-end tests cover the main
     paths.

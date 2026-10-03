@@ -7,12 +7,12 @@ struct ConversationWorkspaceRoute: Equatable {
 }
 
 extension DieterStore {
-    func machine(for card: Dieter_V1_Card) -> DieterEndpoint? {
+    func machine(for card: Dieter_V1_Card) -> MachineEndpoint? {
         if card.ownerDaemonID.isEmpty { return endpoint }
         return endpoints.first { $0.daemonID == card.ownerDaemonID }
             ?? (endpoint.daemonID == card.ownerDaemonID
                 ? endpoint
-                : DieterEndpoint(
+                : MachineEndpoint(
                     name: card.ownerDaemonID, host: endpoint.host, port: endpoint.port, secure: endpoint.secure,
                     daemonID: card.ownerDaemonID, online: false))
     }

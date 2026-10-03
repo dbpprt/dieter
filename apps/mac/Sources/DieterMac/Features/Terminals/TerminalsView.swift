@@ -194,6 +194,9 @@ struct TerminalsView: View {
                     .frame(width: 6, height: 6)
                 Text(terminalStatusText(terminal))
                     .foregroundStyle(DieterTheme.subtle)
+                if !model.machineName.isEmpty {
+                    Text(model.machineName).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
+                }
                 Text(SharedRules.shared.compactPath(path: terminal.workingDirectory))
                     .foregroundStyle(DieterTheme.tertiary)
                     .lineLimit(1)
@@ -270,11 +273,11 @@ struct TerminalsView: View {
         return model.terminalStreamConnected ? DieterTheme.eyes : DieterTheme.amber
     }
 
+    /// "Connected", "Reconnecting", or "Exited 1", as the core words it.
     private func terminalStatusText(_ terminal: Dieter_V1_Terminal) -> String {
-        if terminal.status == "running" {
-            return model.terminalStreamConnected ? model.machineName : "Reconnecting"
-        }
-        return terminal.hasExitCode ? "Exited \(terminal.exitCode)" : "Exited"
+        SharedRules.shared.terminalStatus(
+            status: terminal.status, exitCode: terminal.exitCode, hasExitCode: terminal.hasExitCode,
+            streamConnected: model.terminalStreamConnected)
     }
 }
 
@@ -366,8 +369,8 @@ private struct NewTerminalSheet: View {
         destinationGroups.flatMap(\.destinations).first { $0.checkoutID == checkoutID }
     }
     private var selectedProject: Dieter_V1_Project? { selectedDestination?.project }
-    private var machines: [DieterEndpoint] { store.terminalOverviewMachines }
-    private var selectedMachine: DieterEndpoint? {
+    private var machines: [MachineEndpoint] { store.terminalOverviewMachines }
+    private var selectedMachine: MachineEndpoint? {
         if let selectedDestination {
             return machines.first { $0.id == selectedDestination.machineID }
         }

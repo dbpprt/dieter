@@ -1,419 +1,13 @@
 #if os(iOS)
     import DieterAPI
+    import DieterShared
     import Foundation
+    import SharedCore
     import SwiftUI
 
-    struct IOSProviderQuotaCompactView: View {
-        @Bindable var store: IOSStore
-        @State private var presented = false
-
-        private var groups: [Dieter_Gateway_V1_ProviderQuotaGroup] {
-            store.quotas.providerQuotaGroups.filter { !$0.accounts.isEmpty }
-        }
-
-        var body: some View {
-            Button {
-                presented = true
-            } label: {
-                if groups.isEmpty, store.quotas.providerQuotasLoading {
-                    ProgressView().controlSize(.mini)
-                } else if groups.isEmpty {
-                    Image(systemName: "chart.bar.xaxis")
-                        .foregroundStyle(.secondary)
-                } else {
-                    HStack(spacing: 7) {
-                        ForEach(groups, id: \.provider.rawValue) { group in
-                            IOSProviderQuotaCompactLabel(group: group)
-                        }
-                    }
-                }
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Provider quotas")
-            .accessibilityIdentifier("ios.provider-quotas")
-            .sheet(isPresented: $presented) {
-                IOSProviderQuotaDetailsView(store: store)
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
-            }
-        }
-    }
-
-    struct IOSProviderQuotaCompactLabel: View {
-        let group: Dieter_Gateway_V1_ProviderQuotaGroup
-
-        var body: some View {
-            let summary = group.summary
-            HStack(spacing: 4) {
-                Image(systemName: IOSProviderQuotaPresentation.symbol(group.provider))
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(IOSProviderQuotaPresentation.tint(group.provider))
-                if summary.hasRemainingPercent {
-                    Text("\(summary.remainingPercent)%")
-                        .font(.caption2.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(IOSProviderQuotaPresentation.tint(group.provider))
-                    ProgressView(value: Double(summary.remainingPercent), total: 100)
-                        .progressViewStyle(.linear)
-                        .tint(IOSProviderQuotaPresentation.tint(group.provider))
-                        .frame(width: 28)
-                } else {
-                    Text("—").font(.caption2)
-                }
-                if summary.totalAccountCount > 1 {
-                    Text(
-                        summary.excludedAccountCount > 0
-                            ? "\(summary.includedAccountCount)/\(summary.totalAccountCount)"
-                            : "\(summary.totalAccountCount)"
-                    )
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                }
-                if summary.unavailableAccountCount > 0 {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(.orange)
-                }
-            }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 5)
-        }
-    }
-
-    struct IOSConversationProviderQuotaView: View {
-        @Bindable var store: IOSStore
-        let card: Dieter_V1_Card
-        @State private var presented = false
-
-        private var selection: IOSProviderQuotaAccountSelection? {
-            IOSProviderQuotaSelection.account(for: card, in: store.quotas.providerQuotaGroups)
-        }
-
-        var body: some View {
-            if let selection {
-                Button {
-                    presented = true
-                } label: {
-                    IOSProviderQuotaAccountCompactLabel(
-                        provider: selection.provider,
-                        account: selection.account
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(
-                    "Quota for this conversation's \(IOSProviderQuotaPresentation.accountLabel(selection.account)) account"
-                )
-                .accessibilityIdentifier("ios.conversation.provider-account-quota")
-                .sheet(isPresented: $presented) {
-                    IOSProviderQuotaDetailsView(
-                        store: store,
-                        accountKey: selection.account.accountKey
-                    )
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
-                }
-            }
-        }
-    }
-
-    private struct IOSProviderQuotaAccountCompactLabel: View {
-        let provider: Dieter_Gateway_V1_ProviderQuotaProvider
-        let account: Dieter_Gateway_V1_ProviderQuotaSnapshot
-
-        private var remaining: UInt32? {
-            IOSProviderQuotaPresentation.remainingPercent(account)
-        }
-
-        var body: some View {
-            HStack(spacing: 5) {
-                Image(systemName: IOSProviderQuotaPresentation.symbol(provider))
-                    .font(.system(size: 10, weight: .semibold))
-                if let remaining {
-                    Text("\(remaining)%")
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                    ProgressView(value: Double(remaining), total: 100)
-                        .progressViewStyle(.linear)
-                        .frame(width: 28)
-                } else {
-                    Text("—").font(.caption2)
-                }
-                if account.availability != .available {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(.orange)
-                }
-            }
-            .foregroundStyle(IOSProviderQuotaPresentation.tint(provider))
-            .tint(IOSProviderQuotaPresentation.tint(provider))
-            .padding(.horizontal, 7)
-            .frame(height: 28)
-        }
-    }
-
-    struct IOSProviderQuotaDetailsView: View {
-        @Environment(\.dismiss) private var dismiss
-        @Bindable var store: IOSStore
-        var accountKey: String? = nil
-        @State private var resetConfirmationAccountKey: String?
-
-        private var groups: [Dieter_Gateway_V1_ProviderQuotaGroup] {
-            guard let accountKey else { return store.quotas.providerQuotaGroups }
-            return store.quotas.providerQuotaGroups.compactMap { group in
-                var filtered = group
-                filtered.accounts = group.accounts.filter { $0.accountKey == accountKey }
-                return filtered.accounts.isEmpty ? nil : filtered
-            }
-        }
-
-        var body: some View {
-            NavigationStack {
-                IOSProviderQuotaDetailsContent(
-                    groups: groups,
-                    showsProviderSummary: accountKey == nil,
-                    loading: store.quotas.providerQuotasLoading,
-                    error: store.quotas.providerQuotaError,
-                    mutatingAccounts: store.quotas.providerQuotaMutatingAccounts,
-                    refresh: { Task { await store.loadProviderQuotas(requestRefresh: true) } },
-                    setInclusion: { provider, accountKey, included in
-                        Task {
-                            await store.setProviderQuotaSummaryInclusion(
-                                provider: provider, accountKey: accountKey, included: included)
-                        }
-                    },
-                    useReset: { resetConfirmationAccountKey = $0 }
-                )
-                .navigationTitle(accountKey == nil ? "Provider quotas" : "Conversation quota")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") { dismiss() }
-                            .accessibilityIdentifier("ios.provider-quotas.done")
-                    }
-                }
-            }
-            .accessibilityIdentifier("ios.provider-quotas.details")
-            .task {
-                if store.quotas.providerQuotaGroups.isEmpty { await store.loadProviderQuotas() }
-            }
-            .confirmationDialog(
-                "Use one OpenAI reset credit?",
-                isPresented: Binding(
-                    get: { resetConfirmationAccountKey != nil },
-                    set: { if !$0 { resetConfirmationAccountKey = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                Button("Use reset credit", role: .destructive) {
-                    guard let accountKey = resetConfirmationAccountKey else { return }
-                    resetConfirmationAccountKey = nil
-                    Task { await store.consumeProviderQuotaReset(accountKey: accountKey) }
-                }
-                Button("Cancel", role: .cancel) { resetConfirmationAccountKey = nil }
-            } message: {
-                Text("This consumes one credit and resets the eligible quota windows for this exact account.")
-            }
-        }
-    }
-
-    private struct IOSProviderQuotaDetailsContent: View {
-        let groups: [Dieter_Gateway_V1_ProviderQuotaGroup]
-        let showsProviderSummary: Bool
-        let loading: Bool
-        let error: String?
-        let mutatingAccounts: Set<String>
-        let refresh: () -> Void
-        let setInclusion: (Dieter_Gateway_V1_ProviderQuotaProvider, String, Bool) -> Void
-        let useReset: (String) -> Void
-
-        var body: some View {
-            List {
-                Section {
-                    Text(
-                        showsProviderSummary
-                            ? "The header summarizes included accounts. Every account and quota window stays separate here."
-                            : "Usage for the exact provider account assigned to this conversation."
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    if let error, !error.isEmpty {
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                    }
-                }
-
-                if groups.isEmpty {
-                    ContentUnavailableView(
-                        "No provider accounts",
-                        systemImage: "gauge.with.dots.needle.0percent",
-                        description: Text("Sign in to a supported provider on an online Dieter machine."))
-                } else {
-                    ForEach(groups, id: \.provider.rawValue) { group in
-                        providerSection(group)
-                    }
-                }
-            }
-            .refreshable { refresh() }
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Refresh", systemImage: "arrow.clockwise", action: refresh)
-                        .disabled(loading)
-                }
-            }
-            .overlay {
-                if loading, groups.isEmpty { ProgressView("Loading quotas…") }
-            }
-        }
-
-        private func providerSection(_ group: Dieter_Gateway_V1_ProviderQuotaGroup) -> some View {
-            Section {
-                if showsProviderSummary, group.hasSummary, group.summary.hasRemainingPercent {
-                    VStack(alignment: .leading, spacing: 7) {
-                        HStack {
-                            Text("Included-account summary")
-                            Spacer()
-                            Text("\(group.summary.remainingPercent)% remaining")
-                                .monospacedDigit()
-                                .foregroundStyle(IOSProviderQuotaPresentation.tint(group.provider))
-                        }
-                        .font(.subheadline.weight(.semibold))
-                        ProgressView(value: Double(group.summary.remainingPercent), total: 100)
-                            .tint(IOSProviderQuotaPresentation.tint(group.provider))
-                        if group.summary.excludedAccountCount > 0 {
-                            Text(
-                                "\(group.summary.includedAccountCount) included · \(group.summary.excludedAccountCount) excluded"
-                            )
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                ForEach(group.accounts, id: \.accountKey) { account in
-                    accountView(account, provider: group.provider)
-                }
-            } header: {
-                HStack {
-                    Label(
-                        IOSProviderQuotaPresentation.name(group.provider),
-                        systemImage: IOSProviderQuotaPresentation.symbol(group.provider))
-                    Spacer()
-                    Text("\(group.accounts.count) account\(group.accounts.count == 1 ? "" : "s")")
-                }
-                .foregroundStyle(IOSProviderQuotaPresentation.tint(group.provider))
-            }
-        }
-
-        private func accountView(
-            _ account: Dieter_Gateway_V1_ProviderQuotaSnapshot,
-            provider: Dieter_Gateway_V1_ProviderQuotaProvider
-        ) -> some View {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(account.plan.isEmpty ? "Account" : account.plan.capitalized)
-                            .font(.headline)
-                        if !account.displayEmail.isEmpty {
-                            Text(account.displayEmail)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                        } else {
-                            Text("••\(account.accountKey.suffix(6))")
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer()
-                    Text(IOSProviderQuotaPresentation.availability(account.availability))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(account.availability == .available ? Color.secondary : Color.orange)
-                }
-
-                ForEach(account.windows, id: \.id) { window in
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack {
-                            Text(
-                                window.label.isEmpty
-                                    ? IOSProviderQuotaPresentation.windowName(window.kind) : window.label)
-                            Spacer()
-                            if window.hasRemainingPercent {
-                                Text("\(window.remainingPercent)%")
-                                    .monospacedDigit()
-                                    .foregroundStyle(IOSProviderQuotaPresentation.tint(provider))
-                            } else {
-                                Text("Not reported").foregroundStyle(.secondary)
-                            }
-                        }
-                        .font(.subheadline)
-                        if window.hasRemainingPercent {
-                            ProgressView(value: Double(window.remainingPercent), total: 100)
-                                .tint(IOSProviderQuotaPresentation.tint(provider))
-                        }
-                        if !window.resetsAt.isEmpty {
-                            Text(IOSProviderQuotaPresentation.resetText(window.resetsAt))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                if account.hasCredits {
-                    quotaMetadata(
-                        "Credits",
-                        account.credits.unlimited
-                            ? "Unlimited" : (account.credits.balance.isEmpty ? "Available" : account.credits.balance))
-                }
-                if account.hasSpendAllowance {
-                    quotaMetadata(
-                        "Spend",
-                        [account.spendAllowance.used, account.spendAllowance.limit]
-                            .filter { !$0.isEmpty }.joined(separator: " / "))
-                }
-                if account.hasResetCredits {
-                    quotaMetadata("Reset credits", "\(account.resetCredits.availableCount) available")
-                }
-
-                Toggle(
-                    "Include in header summary",
-                    isOn: Binding(
-                        get: { !account.hasIncludedInSummary || account.includedInSummary },
-                        set: { setInclusion(provider, account.accountKey, $0) }
-                    )
-                )
-                .disabled(mutatingAccounts.contains(account.accountKey))
-                .accessibilityIdentifier("ios.provider-quotas.include.\(account.accountKey)")
-
-                if provider == .openaiCodex, account.hasResetCredits,
-                    account.resetCredits.availableCount > 0
-                {
-                    Button("Use reset credit…", systemImage: "arrow.counterclockwise") {
-                        useReset(account.accountKey)
-                    }
-                    .disabled(mutatingAccounts.contains(account.accountKey))
-                    .accessibilityIdentifier("ios.provider-quotas.reset.\(account.accountKey)")
-                }
-            }
-            .padding(.vertical, 4)
-        }
-
-        private func quotaMetadata(_ label: String, _ value: String) -> some View {
-            LabeledContent(label, value: value.isEmpty ? "Reported" : value)
-                .font(.subheadline)
-        }
-    }
-
+    /// Provider symbols and tints; the wording and severity come from the core.
     @MainActor
-    private enum IOSProviderQuotaPresentation {
-        static let openAI = Color(red: 37 / 255, green: 136 / 255, blue: 245 / 255)
-
-        static func name(_ provider: Dieter_Gateway_V1_ProviderQuotaProvider) -> String {
-            switch provider {
-            case .openaiCodex: "OpenAI"
-            case .anthropicClaude: "Claude"
-            default: "Provider"
-            }
-        }
-
+    enum IOSProviderQuotaPresentation {
         static func symbol(_ provider: Dieter_Gateway_V1_ProviderQuotaProvider) -> String {
             switch provider {
             case .openaiCodex: "sparkles"
@@ -422,60 +16,326 @@
             }
         }
 
-        static func tint(_ provider: Dieter_Gateway_V1_ProviderQuotaProvider) -> Color {
-            provider == .openaiCodex ? openAI : .orange
-        }
-
-        static func remainingPercent(
-            _ account: Dieter_Gateway_V1_ProviderQuotaSnapshot
-        ) -> UInt32? {
-            account.windows.compactMap { $0.hasRemainingPercent ? $0.remainingPercent : nil }.min()
-        }
-
-        static func accountLabel(_ account: Dieter_Gateway_V1_ProviderQuotaSnapshot) -> String {
-            if !account.displayEmail.isEmpty {
-                let local = account.displayEmail.split(separator: "@", maxSplits: 1).first.map(String.init) ?? ""
-                if !local.isEmpty { return local }
-            }
-            if !account.plan.isEmpty { return account.plan.capitalized }
-            return "••\(account.accountKey.suffix(4))"
-        }
-
-        static func availability(_ value: Dieter_Gateway_V1_ProviderQuotaAvailability) -> String {
-            switch value {
-            case .available: "Available"
-            case .signedOut: "Signed out"
-            case .unsupported: "Unsupported"
-            case .temporarilyUnavailable: "Unavailable"
-            case .permissionDenied: "Permission denied"
-            default: "Unknown"
+        /// A low or critical severity wins over the provider's brand color.
+        static func tint(_ provider: Dieter_Gateway_V1_ProviderQuotaProvider, _ severity: ClientQuotaSeverity) -> Color
+        {
+            switch severity {
+            case .critical: return .red
+            case .low: return .orange
+            default:
+                switch provider {
+                case .openaiCodex: return Color(red: 37 / 255, green: 136 / 255, blue: 245 / 255)
+                case .anthropicClaude: return .orange
+                default: return .green
+                }
             }
         }
+    }
 
-        static func windowName(_ kind: Dieter_Gateway_V1_ProviderQuotaWindowKind) -> String {
-            switch kind {
-            case .fiveHour: "5 hour"
-            case .weekly: "Weekly"
-            case .monthly: "Monthly"
-            case .model: "Model"
-            default: "Quota"
+    /// The provider account a conversation runs on, as a compact bar in its
+    /// toolbar; tapping it shows that account's quota.
+    struct IOSConversationProviderQuotaView: View {
+        @Environment(IOSAppModel.self) private var app
+        let accountKey: String
+        @State private var presented = false
+
+        private var match: (provider: Dieter_Gateway_V1_ProviderQuotaProvider, account: ClientQuotaAccountRow)? {
+            guard !accountKey.isEmpty else { return nil }
+            for group in app.quotas.providerQuotaRows {
+                if let account = group.accounts.first(where: { $0.accountKey == accountKey }) {
+                    return (group.provider, account)
+                }
+            }
+            return nil
+        }
+
+        var body: some View {
+            if let match {
+                Button {
+                    presented = true
+                } label: {
+                    IOSProviderQuotaAccountPill(provider: match.provider, account: match.account)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(match.account.summaryLine)
+                .accessibilityHint("Shows this account's quota")
+                .accessibilityIdentifier("ios.conversation.provider-account-quota")
+                .sheet(isPresented: $presented) {
+                    IOSProviderQuotaDetailsView(quotas: app.quotas, accountKey: accountKey)
+                        .presentationDetents([.medium, .large])
+                        .presentationDragIndicator(.visible)
+                }
+            }
+        }
+    }
+
+    /// One account's lowest remaining allowance, with a warning when it is
+    /// unavailable or stale.
+    struct IOSProviderQuotaAccountPill: View {
+        let provider: Dieter_Gateway_V1_ProviderQuotaProvider
+        let account: ClientQuotaAccountRow
+
+        var body: some View {
+            let tint = IOSProviderQuotaPresentation.tint(provider, account.severity)
+            let warning = SharedRules.shared.quotaWarning(
+                unavailable: account.unavailable, freshUntilMillis: account.freshUntilMillis,
+                nowMillis: Date.now.epochMillis)
+            HStack(spacing: 5) {
+                Image(systemName: IOSProviderQuotaPresentation.symbol(provider))
+                    .font(.system(size: 10, weight: .semibold))
+                if account.remaining >= 0 {
+                    Text("\(account.remaining)%")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                    ProgressView(value: Double(account.remaining), total: 100)
+                        .progressViewStyle(.linear)
+                        .frame(width: 28)
+                } else {
+                    Text("—").font(.caption2)
+                }
+                if !warning.isEmpty {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.orange)
+                        .accessibilityLabel(warning)
+                }
+            }
+            .foregroundStyle(tint)
+            .tint(tint)
+            .padding(.horizontal, 7)
+            .frame(height: 28)
+        }
+    }
+
+    /// Every provider account and its quota windows, or only the account
+    /// `accountKey` names, with the summary and reset controls.
+    struct IOSProviderQuotaDetailsView: View {
+        @Environment(\.dismiss) private var dismiss
+        let quotas: CoreProviderQuotas
+        var accountKey: String?
+        @State private var resetConfirmationAccountKey: String?
+
+        private var groups: [ClientQuotaGroupRow] {
+            guard let accountKey else { return quotas.providerQuotaRows }
+            return quotas.providerQuotaRows.compactMap { group in
+                var filtered = group
+                filtered.accounts = group.accounts.filter { $0.accountKey == accountKey }
+                return filtered.accounts.isEmpty ? nil : filtered
             }
         }
 
-        static func resetText(_ value: String) -> String {
-            guard let date = ISO8601DateFormatter().date(from: value) else { return value }
-            return "Resets " + date.formatted(.relative(presentation: .named))
+        var body: some View {
+            NavigationStack {
+                TimelineView(.periodic(from: .now, by: 30)) { clock in
+                    list(now: clock.date.epochMillis)
+                }
+                .navigationTitle(accountKey == nil ? "Provider quotas" : "Conversation quota")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { dismiss() }
+                            .accessibilityIdentifier("ios.provider-quotas.done")
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        if quotas.providerQuotasLoading {
+                            ProgressView()
+                        } else {
+                            Button("Refresh", systemImage: "arrow.clockwise") {
+                                Task { await quotas.load(requestRefresh: true) }
+                            }
+                            .accessibilityIdentifier("ios.provider-quotas.refresh")
+                        }
+                    }
+                }
+            }
+            .accessibilityIdentifier("ios.provider-quotas.details")
+            .task {
+                if quotas.providerQuotaRows.isEmpty { await quotas.load() }
+            }
+            .confirmationDialog(
+                "Use one OpenAI reset credit?",
+                isPresented: Binding(
+                    get: { resetConfirmationAccountKey != nil },
+                    set: { if !$0 { resetConfirmationAccountKey = nil } }),
+                titleVisibility: .visible
+            ) {
+                Button("Use reset credit", role: .destructive) {
+                    guard let accountKey = resetConfirmationAccountKey else { return }
+                    resetConfirmationAccountKey = nil
+                    Task { await quotas.consumeReset(accountKey: accountKey) }
+                }
+                Button("Cancel", role: .cancel) { resetConfirmationAccountKey = nil }
+            } message: {
+                Text("This consumes one credit and resets the eligible quota windows for this exact account.")
+            }
+        }
+
+        private func list(now: Int64) -> some View {
+            List {
+                Section {
+                    Text(
+                        accountKey == nil
+                            ? "Every account and quota window stays separate here. The summary counts included accounts."
+                            : "Usage for the exact provider account assigned to this conversation."
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    if let error = quotas.providerQuotaError, !error.isEmpty {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                            .accessibilityIdentifier("ios.provider-quotas.error")
+                    }
+                }
+                if groups.isEmpty {
+                    if quotas.providerQuotasLoading {
+                        ProgressView("Loading quotas…").frame(maxWidth: .infinity, minHeight: 120)
+                    } else {
+                        ContentUnavailableView(
+                            "No provider accounts", systemImage: "gauge.with.dots.needle.0percent",
+                            description: Text("Sign in to a supported provider on an online Dieter machine."))
+                    }
+                } else {
+                    ForEach(groups, id: \.provider.rawValue) { group in
+                        Section {
+                            ForEach(group.accounts, id: \.accountKey) { account in
+                                accountView(account, provider: group.provider, now: now)
+                            }
+                        } header: {
+                            HStack {
+                                Label(
+                                    group.providerName, systemImage: IOSProviderQuotaPresentation.symbol(group.provider)
+                                )
+                                Spacer()
+                                Text(group.summary)
+                            }
+                        }
+                    }
+                }
+            }
+            .refreshable { await quotas.load(requestRefresh: true) }
+        }
+
+        private func accountView(
+            _ account: ClientQuotaAccountRow, provider: Dieter_Gateway_V1_ProviderQuotaProvider, now: Int64
+        ) -> some View {
+            let warning = SharedRules.shared.quotaWarning(
+                unavailable: account.unavailable, freshUntilMillis: account.freshUntilMillis, nowMillis: now)
+            let mutating = quotas.providerQuotaMutatingAccounts.contains(account.accountKey)
+            return VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(account.identity)
+                            .font(.headline)
+                            .lineLimit(1)
+                            .textSelection(.enabled)
+                        Text(account.subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if !warning.isEmpty {
+                        Text(warning)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.orange)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+
+                if account.windows.isEmpty, !account.status.isEmpty {
+                    Text(account.status).font(.subheadline).foregroundStyle(.secondary)
+                }
+                ForEach(account.windows, id: \.id) { window in
+                    windowView(window, provider: provider, now: now)
+                }
+                ForEach(Array(account.details.enumerated()), id: \.offset) { _, detail in
+                    LabeledContent(detail.label, value: detail.text).font(.subheadline)
+                }
+                if !account.machines.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Available on").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        ForEach(account.machines, id: \.daemonID) { machine in
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(machine.online ? Color.green : Color.secondary)
+                                    .frame(width: 6, height: 6)
+                                Text(machine.name).lineLimit(1)
+                                Spacer()
+                                Text(machine.state).foregroundStyle(.secondary)
+                            }
+                            .font(.caption)
+                            .accessibilityElement(children: .combine)
+                        }
+                    }
+                }
+
+                Toggle(
+                    "Include in summary",
+                    isOn: Binding(
+                        get: { account.included },
+                        set: { included in
+                            Task {
+                                await quotas.setInclusion(
+                                    provider: provider, accountKey: account.accountKey, included: included)
+                            }
+                        })
+                )
+                .disabled(mutating)
+                .accessibilityIdentifier("ios.provider-quotas.include.\(account.accountKey)")
+
+                if account.canReset {
+                    Button("Use reset credit…", systemImage: "arrow.counterclockwise") {
+                        resetConfirmationAccountKey = account.accountKey
+                    }
+                    .disabled(mutating)
+                    .accessibilityIdentifier("ios.provider-quotas.reset.\(account.accountKey)")
+                }
+                if account.refreshing {
+                    Text("Refreshing…").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+
+        private func windowView(
+            _ window: ClientQuotaWindowRow, provider: Dieter_Gateway_V1_ProviderQuotaProvider, now: Int64
+        ) -> some View {
+            let tint = IOSProviderQuotaPresentation.tint(provider, window.severity)
+            return VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text(window.name)
+                    Spacer()
+                    if window.remaining >= 0 {
+                        Text("\(window.remaining)%").monospacedDigit().foregroundStyle(tint)
+                    } else {
+                        Text("Not reported").foregroundStyle(.secondary)
+                    }
+                }
+                .font(.subheadline)
+                if window.remaining >= 0 {
+                    ProgressView(value: Double(window.remaining), total: 100).tint(tint)
+                }
+                if !window.resetsAt.isEmpty {
+                    Text(SharedRules.shared.quotaResetText(resetsAt: window.resetsAt, nowMillis: now, fine: false))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
         }
     }
 
     #if DEBUG
+        /// The quota sheet over fixture accounts, for UI tests and screenshots
+        /// (`DIETER_IOS_QUOTA_PREVIEW`; `details` opens the sheet at launch).
         struct IOSProviderQuotaPreviewScreen: View {
-            let showDetails: Bool
+            @State private var quotas: CoreProviderQuotas
             @State private var detailsPresented: Bool
-            private let groups = IOSProviderQuotaPreviewFixture.groups
 
             init(showDetails: Bool) {
-                self.showDetails = showDetails
+                let quotas = CoreProviderQuotas(core: ScriptedCoreClient())
+                quotas.install(groups: IOSProviderQuotaPreviewFixture.groups)
+                _quotas = State(initialValue: quotas)
                 _detailsPresented = State(initialValue: showDetails)
             }
 
@@ -489,7 +349,7 @@
                             Text("Add multi-account provider quotas")
                                 .font(.title2.bold())
                             Text(
-                                "The header shows the conservative summary across included OpenAI accounts. Tap it for account details and controls."
+                                "The toolbar shows the conversation's account. Tap it for account details and controls."
                             )
                             .foregroundStyle(.secondary)
                             Spacer(minLength: 360)
@@ -501,46 +361,28 @@
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
-                            Button {
-                                detailsPresented = true
-                            } label: {
-                                IOSProviderQuotaCompactLabel(group: groups[0])
+                            if let group = quotas.providerQuotaRows.first, let account = group.accounts.first {
+                                Button {
+                                    detailsPresented = true
+                                } label: {
+                                    IOSProviderQuotaAccountPill(provider: group.provider, account: account)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("ios.provider-quotas")
                             }
-                            .buttonStyle(.plain)
-                        }
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Task actions", systemImage: "ellipsis.circle") {}
-                                .labelStyle(.iconOnly)
                         }
                     }
                     .sheet(isPresented: $detailsPresented) {
-                        NavigationStack {
-                            IOSProviderQuotaDetailsContent(
-                                groups: groups,
-                                showsProviderSummary: true,
-                                loading: false,
-                                error: nil,
-                                mutatingAccounts: [],
-                                refresh: {},
-                                setInclusion: { _, _, _ in },
-                                useReset: { _ in }
-                            )
-                            .navigationTitle("Provider quotas")
-                            .navigationBarTitleDisplayMode(.inline)
-                            .toolbar {
-                                ToolbarItem(placement: .cancellationAction) {
-                                    Button("Done") { detailsPresented = false }
-                                }
-                            }
-                        }
-                        .presentationDetents([.large])
-                        .presentationDragIndicator(.visible)
+                        IOSProviderQuotaDetailsView(quotas: quotas)
+                            .presentationDetents([.large])
+                            .presentationDragIndicator(.visible)
                     }
                 }
                 .tint(.blue)
             }
         }
 
+        /// OpenAI accounts the core's quota rows describe: one low, one excluded, one signed out.
         private enum IOSProviderQuotaPreviewFixture {
             static var groups: [Dieter_Gateway_V1_ProviderQuotaGroup] { [openAIGroup] }
 
@@ -549,28 +391,21 @@
             }
 
             private static func window(
-                id: String,
-                label: String,
-                kind: Dieter_Gateway_V1_ProviderQuotaWindowKind,
-                remaining: UInt32,
+                id: String, label: String, kind: Dieter_Gateway_V1_ProviderQuotaWindowKind, remaining: UInt32,
                 resetsInHours: TimeInterval
             ) -> Dieter_Gateway_V1_ProviderQuotaWindow {
-                var value = Dieter_Gateway_V1_ProviderQuotaWindow()
-                value.id = id
-                value.label = label
-                value.kind = kind
-                value.usedPercent = 100 - remaining
-                value.remainingPercent = remaining
-                value.resetsAt = date(hoursFromNow: resetsInHours)
-                return value
+                .with {
+                    $0.id = id
+                    $0.label = label
+                    $0.kind = kind
+                    $0.usedPercent = 100 - remaining
+                    $0.remainingPercent = remaining
+                    $0.resetsAt = date(hoursFromNow: resetsInHours)
+                }
             }
 
             private static func account(
-                key: String,
-                email: String,
-                plan: String,
-                fiveHourRemaining: UInt32,
-                weeklyRemaining: UInt32
+                key: String, email: String, plan: String, fiveHourRemaining: UInt32, weeklyRemaining: UInt32
             ) -> Dieter_Gateway_V1_ProviderQuotaSnapshot {
                 var value = Dieter_Gateway_V1_ProviderQuotaSnapshot()
                 value.provider = .openaiCodex
@@ -582,11 +417,11 @@
                 value.availability = .available
                 value.windows = [
                     window(
-                        id: "\(key)-five-hour", label: "5 hour", kind: .fiveHour,
-                        remaining: fiveHourRemaining, resetsInHours: 2.3),
+                        id: "\(key)-five-hour", label: "5 hour", kind: .fiveHour, remaining: fiveHourRemaining,
+                        resetsInHours: 2.3),
                     window(
-                        id: "\(key)-weekly", label: "Weekly", kind: .weekly,
-                        remaining: weeklyRemaining, resetsInHours: 72),
+                        id: "\(key)-weekly", label: "Weekly", kind: .weekly, remaining: weeklyRemaining,
+                        resetsInHours: 72),
                 ]
                 value.nextResetAt = value.windows[0].resetsAt
                 value.nextResetWindowID = value.windows[0].id
@@ -601,24 +436,22 @@
 
             private static var openAIGroup: Dieter_Gateway_V1_ProviderQuotaGroup {
                 var plus = account(
-                    key: "acct_8d9c1a2b3c4d", email: "michael@example.com", plan: "plus",
-                    fiveHourRemaining: 18, weeklyRemaining: 64)
-                var credits = Dieter_Gateway_V1_ProviderCreditBalance()
-                credits.hasCredits_p = true
-                credits.balance = "$120.00"
-                plus.credits = credits
-                var resetCredits = Dieter_Gateway_V1_ProviderResetCredits()
-                resetCredits.availableCount = 2
-                plus.resetCredits = resetCredits
+                    key: "acct_preview_plus", email: "michael@example.com", plan: "plus", fiveHourRemaining: 18,
+                    weeklyRemaining: 64)
+                plus.credits = .with {
+                    $0.hasCredits_p = true
+                    $0.balance = "$120.00"
+                }
+                plus.resetCredits = .with { $0.availableCount = 2 }
 
                 var team = account(
-                    key: "acct_1f2e3d4c5b6a", email: "team@example.com", plan: "team",
-                    fiveHourRemaining: 72, weeklyRemaining: 91)
+                    key: "acct_preview_team", email: "team@example.com", plan: "team", fiveHourRemaining: 72,
+                    weeklyRemaining: 91)
                 team.includedInSummary = false
 
                 var signedOut = Dieter_Gateway_V1_ProviderQuotaSnapshot()
                 signedOut.provider = .openaiCodex
-                signedOut.accountKey = "acct_ffeeddccbbaa"
+                signedOut.accountKey = "acct_preview_archive"
                 signedOut.displayEmail = "archive@example.com"
                 signedOut.accountKind = .subscription
                 signedOut.plan = "free"
@@ -626,24 +459,23 @@
                 signedOut.statusCode = "signed_out"
                 signedOut.includedInSummary = true
 
-                var summary = Dieter_Gateway_V1_ProviderQuotaSummary()
-                summary.totalAccountCount = 3
-                summary.numericAccountCount = 2
-                summary.unavailableAccountCount = 1
-                summary.remainingPercent = 18
-                summary.summaryAccountKey = plus.accountKey
-                summary.summaryWindowID = plus.windows[0].id
-                summary.summaryWindowKind = .fiveHour
-                summary.summaryWindowLabel = "5 hour"
-                summary.resetsAt = plus.windows[0].resetsAt
-                summary.freshness = .fresh
-                summary.includedAccountCount = 2
-                summary.excludedAccountCount = 1
-
                 var group = Dieter_Gateway_V1_ProviderQuotaGroup()
                 group.provider = .openaiCodex
                 group.accounts = [plus, team, signedOut]
-                group.summary = summary
+                group.summary = .with {
+                    $0.totalAccountCount = 3
+                    $0.numericAccountCount = 2
+                    $0.unavailableAccountCount = 1
+                    $0.remainingPercent = 18
+                    $0.summaryAccountKey = plus.accountKey
+                    $0.summaryWindowID = plus.windows[0].id
+                    $0.summaryWindowKind = .fiveHour
+                    $0.summaryWindowLabel = "5 hour"
+                    $0.resetsAt = plus.windows[0].resetsAt
+                    $0.freshness = .fresh
+                    $0.includedAccountCount = 2
+                    $0.excludedAccountCount = 1
+                }
                 return group
             }
         }

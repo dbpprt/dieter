@@ -45,10 +45,10 @@
     @MainActor
     enum MachineUISmokeRunner {
         static func isOwnedFixture(
-            machine: DieterEndpoint, expectedDaemonID: String?, fixtureEndpoint: String?
+            machine: MachineEndpoint, expectedDaemonID: String?, fixtureEndpoint: String?
         ) -> Bool {
             guard let expectedDaemonID, !expectedDaemonID.isEmpty,
-                let fixtureEndpoint, let gateway = DieterEndpoint.parse(fixtureEndpoint),
+                let fixtureEndpoint, let gateway = MachineEndpoint(address: fixtureEndpoint, name: "Fixture"),
                 !gateway.secure, gateway.host == "127.0.0.1" || gateway.host == "::1"
             else { return false }
             return machine.daemonID == expectedDaemonID && machine.credentialID == gateway.credentialID
@@ -64,7 +64,8 @@
                         store.workspaceIsLive && store.machines.contains(where: \.online)
                     })
             else {
-                writeReport(["connection": "failed: no live enrolled machine (\(store.phase.label))"], to: output)
+                writeReport(
+                    ["connection": "failed: no live enrolled machine (\(store.session.phaseLabel))"], to: output)
                 return
             }
             guard let machine = store.machines.first(where: \.online) else {
@@ -73,7 +74,7 @@
             }
 
             let sectionBeforeOpening = store.section
-            await store.fleet.openMachine(machine)
+            await store.fleet.openMachine(machine.id)
             guard
                 await waitUntil(
                     timeout: 15,

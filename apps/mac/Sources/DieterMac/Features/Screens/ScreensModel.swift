@@ -1,5 +1,4 @@
 import AppKit
-import DieterCore
 import Foundation
 import Observation
 import SharedCore

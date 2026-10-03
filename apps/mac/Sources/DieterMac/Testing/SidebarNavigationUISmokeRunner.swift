@@ -2,7 +2,6 @@
     import AppKit
     import Foundation
     import DieterAPI
-    import DieterClient
 
     /// A direct native-app smoke driver for sidebar and chat-project persistence.
     ///
@@ -438,7 +437,7 @@
             let names = ["adops-monorepo", "Beta", "Gamma"]
             // The core sends machines by name; presence never moves a row.
             let machines = [
-                DieterEndpoint(
+                MachineEndpoint(
                     name: "alpha",
                     host: "127.0.0.1",
                     port: 4243,
@@ -446,7 +445,7 @@
                     online: false,
                     releaseVersion: "smoke"
                 ),
-                DieterEndpoint(
+                MachineEndpoint(
                     name: "Beta",
                     host: "127.0.0.1",
                     port: 4244,
@@ -454,7 +453,7 @@
                     online: true,
                     releaseVersion: "smoke"
                 ),
-                DieterEndpoint(
+                MachineEndpoint(
                     name: longMachineName,
                     host: "127.0.0.1",
                     port: 4242,

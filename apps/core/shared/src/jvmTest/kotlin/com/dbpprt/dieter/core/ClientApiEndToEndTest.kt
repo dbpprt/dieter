@@ -1,8 +1,8 @@
 package com.dbpprt.dieter.core
 
 import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.CreateConversationRequest
 import com.dbpprt.dieter.api.v1.HarnessSelection
-import com.dbpprt.dieter.api.v1.MessagePart
 import com.dbpprt.dieter.api.v1.ScheduleDraft
 import com.dbpprt.dieter.client.v1.AdoptSession
 import com.dbpprt.dieter.client.v1.AgentChoice
@@ -67,6 +67,9 @@ import com.dbpprt.dieter.client.v1.SetLaneDescending
 import com.dbpprt.dieter.client.v1.SetProjectExpanded
 import com.dbpprt.dieter.client.v1.SetProjectOrder
 import com.dbpprt.dieter.client.v1.SetShowReasoning
+import com.dbpprt.dieter.client.v1.Reconnect
+import com.dbpprt.dieter.client.v1.SetConnected
+import com.dbpprt.dieter.client.v1.SignOut
 import com.dbpprt.dieter.client.v1.Slice
 import com.dbpprt.dieter.client.v1.Step
 import com.dbpprt.dieter.client.v1.TerminalId
@@ -85,12 +88,15 @@ import com.dbpprt.dieter.client.v1.WorkspaceSlice
 import com.dbpprt.dieter.core.client.ClientApi
 import com.dbpprt.dieter.core.client.ClientFailure
 import com.dbpprt.dieter.core.client.ClientSubscription
+import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.core.navigation.NavigationLayout
 import com.dbpprt.dieter.core.outbox.OutboxPolicy
 import com.dbpprt.dieter.core.testing.EndToEnd
 import com.dbpprt.dieter.core.testing.IsolatedGateway
+import com.dbpprt.dieter.core.testing.MemorySecureStore
 import com.dbpprt.dieter.core.testing.SliceFolds
 import com.dbpprt.dieter.core.testing.await
+import com.dbpprt.dieter.core.testing.jvmTestPlatform
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -171,6 +177,75 @@ class ClientApiEndToEndTest : EndToEnd() {
         assertEquals(mirror.workspace.value, fresh.await { it != null }, "folded deltas equal a fresh snapshot")
         snapshot.close()
         subscriptions.forEach { it.close() }
+    }
+
+    @Test
+    fun signingOutForgetsTheAccountAndSigningInAgainWorks() = e2e {
+        val fixture = fixture()
+        val secrets = MemorySecureStore()
+        val runtime = runtime(fixture, jvmTestPlatform(secureStore = secrets), token = null)
+        val api = ClientApi(runtime)
+        val mirror = Mirror()
+        val subscriptions = listOf(Slice.SLICE_SESSION, Slice.SLICE_WORKSPACE).map { slice ->
+            api.observe(slice, "") { update -> mirror.accept(Update.ADAPTER.decode(update.encode())) }
+        }
+        val adopt = Command(adopt_session = AdoptSession(gateway_url = fixture.url, session_token = fixture.token, name = "Isolated"))
+        api.dispatch(adopt)
+        mirror.session.await(30.seconds, describe = { "connected: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_CONNECTED }
+        mirror.workspace.await(describe = { "project" }) { slice -> slice?.projects?.any { it.id == fixture.projectId } == true }
+        assertEquals(listOf(fixture.token), secrets.values.values.toList())
+
+        // A change queued while the machine is away is this account's, and is dropped with it.
+        fixture.daemonOffline()
+        runtime.connection.state.await(describe = { "offline: ${runtime.connection.state.value}" }) { it.phase == ConnectionPhase.NO_MACHINE }
+        runtime.createConversation(
+            CreateConversationRequest(project_id = fixture.projectId, board_id = fixture.boardId, lane = "todo", title = "Never delivered", prompt = "p", defer_start = true, workspace_mode = "project"),
+            chat = false,
+        )
+        assertEquals(1, runtime.outbox.view.value.entries.size)
+
+        api.dispatch(Command(sign_out = SignOut()))
+        val signedOut = mirror.session.await(describe = { "signed out: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED }!!
+        assertTrue(signedOut.machines.isEmpty())
+        assertTrue(secrets.values.isEmpty(), "the session token is forgotten")
+        assertTrue(runtime.outbox.view.value.entries.isEmpty(), "the account's outbox is cleared")
+        mirror.workspace.await(describe = { "workspace cleared" }) { slice -> slice?.cards?.none { it.title == "Never delivered" } == true && slice.projects.isEmpty() }
+        assertTrue(runtime.drafts.state.value.isEmpty())
+
+        fixture.daemonOnline()
+        api.dispatch(adopt)
+        mirror.session.await(30.seconds, describe = { "connected again: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_CONNECTED }
+        mirror.workspace.await(30.seconds, describe = { "project again" }) { slice -> slice?.projects?.any { it.id == fixture.projectId } == true }
+        assertEquals(listOf(fixture.token), secrets.values.values.toList())
+        assertTrue(runtime.outbox.view.value.entries.isEmpty())
+        assertTrue(mirror.workspace.value!!.cards.none { it.title == "Never delivered" }, "a signed-out account's change is never sent")
+        subscriptions.forEach { it.close() }
+    }
+
+    @Test
+    fun reconnectingConnectsNowEvenAfterTheUserDisconnected() = e2e {
+        val fixture = fixture()
+        val runtime = runtime(fixture, token = null)
+        val api = ClientApi(runtime)
+        val mirror = Mirror()
+        val subscription = api.observe(Slice.SLICE_SESSION, "") { update -> mirror.accept(Update.ADAPTER.decode(update.encode())) }
+        api.dispatch(Command(adopt_session = AdoptSession(gateway_url = fixture.url, session_token = fixture.token, name = "Isolated")))
+        mirror.session.await(30.seconds, describe = { "connected: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_CONNECTED }
+
+        // A machine that returns is reached at once rather than at the next retry.
+        fixture.daemonOffline()
+        mirror.session.await(30.seconds, describe = { "offline: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_NO_MACHINE }
+        fixture.daemonOnline()
+        api.dispatch(Command(reconnect = Reconnect()))
+        mirror.session.await(30.seconds, describe = { "back: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_CONNECTED && it.workspace_live }
+
+        // Reconnecting also undoes a disconnect the person chose.
+        api.dispatch(Command(set_connected = SetConnected(connected = false)))
+        mirror.session.await(30.seconds, describe = { "disconnected: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_DISCONNECTED }
+        api.dispatch(Command(reconnect = Reconnect()))
+        mirror.session.await(30.seconds, describe = { "reconnected: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_CONNECTED && it.workspace_live }
+        assertTrue(mirror.session.value!!.gateways.single { it.active }.connect, "the gateway is wanted connected again")
+        subscription.close()
     }
 
     /** The contract test's isolated session. Each part below is its own method, so no method grows too large for the JVM. */
@@ -504,10 +579,12 @@ class ClientApiEndToEndTest : EndToEnd() {
         assertEquals(fixture.projectId, mirror.conversation.value!!.project?.id)
         assertTrue((mirror.conversation.value!!.page?.total ?: 0) >= mirror.conversation.value!!.messages.size)
         assertEquals("", step("retry", Command(retry_failed_turn = RetryFailedTurn(card_id = cardId))).message_queued!!.message_id)
-        step("send", Command(send_message = SendMessage(card_id = cardId, parts = listOf(MessagePart(type = "text", text = "second")))))
+        // The composer's text is trimmed into the first part by the core.
+        step("send", Command(send_message = SendMessage(card_id = cardId, text = "  second\n")))
         mirror.conversation.await(60.seconds, describe = { "second reply" }) {
             replies() >= 2 && it?.conversation?.status !in setOf("running", "starting") && it?.state?.working == false
         }
+        assertEquals("second", mirror.conversation.value!!.messages.last { it.role == "user" }.parts.first().text)
         assertTrue(mirror.conversation.value!!.refreshed_at_millis > 0)
         // The transcript's rows travel beside the messages as keyed deltas, one row per user message.
         val folded = mirror.conversation.value!!

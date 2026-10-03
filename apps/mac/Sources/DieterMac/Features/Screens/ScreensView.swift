@@ -1,10 +1,11 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 
 struct ScreensView: View {
     @Bindable var model: ScreensModel
-    let machines: [DieterEndpoint]
+    let machines: [MachineEndpoint]
     let initialMachineID: String
     /// Each machine as the core presents it, by machine ID.
     var entries: [String: ClientMachineEntry] = [:]
@@ -13,7 +14,7 @@ struct ScreensView: View {
 
     private var selectedSession: ScreenShareSession? { model.selectedSession }
 
-    private var selectedMachine: DieterEndpoint? {
+    private var selectedMachine: MachineEndpoint? {
         selectedSession.flatMap { session in machines.first { $0.id == session.machineID } }
     }
 
@@ -236,10 +237,10 @@ struct ScreensView: View {
                 detail: "Dieter is checking capture permission and negotiating an authenticated route.",
                 symbol: "ellipsis"
             ) { ProgressView().controlSize(.small) }
-        case .permissionRequired(let reason), .unsupported(let reason):
+        case .permissionRequired, .unsupported:
             emptyState(
                 title: session.controller.phaseLabel,
-                detail: reason.isEmpty ? "Screen sharing is unavailable on this machine." : reason,
+                detail: controller.phase.waitingMessage(hostReady: false, hostReason: hostReason(session)),
                 symbol: "lock.shield"
             ) {
                 if case .permissionRequired = session.controller.phase {
@@ -251,9 +252,10 @@ struct ScreensView: View {
                     }
                 }
             }
-        case .failed(let message):
+        case .failed:
             emptyState(
-                title: "Couldn’t connect", detail: message,
+                title: "Couldn’t connect",
+                detail: controller.phase.waitingMessage(hostReady: true, hostReason: ""),
                 symbol: "exclamationmark.triangle"
             ) { EmptyView() }
         case .idle:
@@ -263,6 +265,11 @@ struct ScreensView: View {
                 symbol: selectedMachine?.online == false ? "wifi.slash" : "display"
             ) { EmptyView() }
         }
+    }
+
+    /// Why the session's machine cannot share its screen, when it says.
+    private func hostReason(_ session: ScreenShareSession) -> String {
+        machines.first(where: { $0.id == session.machineID })?.remoteDesktopReason ?? ""
     }
 
     private func idleDetail(_ session: ScreenShareSession) -> String {
@@ -385,14 +392,14 @@ private struct ScreenShareTab: View {
 private struct NewScreenShareSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var model: ScreensModel
-    let machines: [DieterEndpoint]
+    let machines: [MachineEndpoint]
     let initialMachineID: String
     let entries: [String: ClientMachineEntry]
     @State private var machineID = ""
 
-    private var selectedMachine: DieterEndpoint? { machines.first { $0.id == machineID } }
+    private var selectedMachine: MachineEndpoint? { machines.first { $0.id == machineID } }
 
-    private func canShare(_ machine: DieterEndpoint) -> Bool { entries[machine.id]?.canShareScreen == true }
+    private func canShare(_ machine: MachineEndpoint) -> Bool { entries[machine.id]?.canShareScreen == true }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -443,7 +450,7 @@ private struct NewScreenShareSheet: View {
         }
     }
 
-    private func machineLabel(_ machine: DieterEndpoint) -> String {
+    private func machineLabel(_ machine: MachineEndpoint) -> String {
         guard let entry = entries[machine.id], !(entry.canShareScreen && machine.remoteDesktopReady) else {
             return machine.name
         }
@@ -453,9 +460,14 @@ private struct NewScreenShareSheet: View {
 
 struct ScreenShareOptions: View {
     let controller: RemoteDesktopController
+
+    /// The core's quality and codec choices, in menu order.
+    private static let options: ClientScreenStreamOptions =
+        (try? ClientScreenStreamOptions(serializedBytes: SharedRules.shared.screenStreamOptions())) ?? .init()
+
     @ViewBuilder var body: some View {
         if controller.canTransferControl {
-            Button(controller.sessionState.controlActive ? "Release Control" : "Take Control") {
+            Button(SharedRules.shared.screenControlAction(controlActive: controller.sessionState.controlActive)) {
                 controller.transferControl(take: !controller.sessionState.controlActive)
             }
             .disabled(controller.controlTransferPending)
@@ -472,12 +484,12 @@ struct ScreenShareOptions: View {
             Divider()
             if !controller.keyboardCaptureStatus.isEmpty { Text(controller.keyboardCaptureStatus) }
             if !controller.displayMatchingStatus.isEmpty { Text(controller.displayMatchingStatus) }
-            Button("Automatic quality") { controller.configure(quality: .auto) }
-            Button("Prefer sharp text") { controller.configure(quality: .detail) }
-            Button("Prefer responsive motion") { controller.configure(quality: .motion) }
+            ForEach(Self.options.qualities, id: \.quality) { choice in
+                Button(choice.label) { controller.configure(quality: choice.quality) }
+            }
             Menu("Frame rate") {
                 ForEach(controller.frameRates, id: \.self) { rate in
-                    Button("Up to \(rate) fps") { controller.configure(maxFPS: rate) }
+                    Button(SharedRules.shared.screenFrameRate(fps: rate)) { controller.configure(maxFPS: rate) }
                 }
             }
             Divider()
@@ -500,9 +512,9 @@ struct ScreenShareOptions: View {
                 if !controller.clipboardError.isEmpty { Text(controller.clipboardError) }
             }
             Menu("Video codec") {
-                Button("Automatic (HEVC when supported)") { controller.selectCodec(.auto) }
-                Button("H.264 compatibility") { controller.selectCodec(.h264) }
-                Button("HEVC — up to 1080p60") { controller.selectCodec(.hevc) }
+                ForEach(Self.options.codecs, id: \.codec) { choice in
+                    Button(choice.label) { controller.selectCodec(choice.codec) }
+                }
             }
             if !controller.sessionState.codec.isEmpty { Text("Codec: \(controller.sessionState.codec)") }
             if !controller.codecFallbackReason.isEmpty { Text(controller.codecFallbackReason) }

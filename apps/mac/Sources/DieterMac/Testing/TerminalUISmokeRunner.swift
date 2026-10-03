@@ -22,7 +22,7 @@
             let output = outputDirectory()
             try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
             let phase = argument(after: "--terminal-ui-smoke") ?? "create"
-            progress("\(phase) runner started; connection phase is \(store.phase.label)", in: output)
+            progress("\(phase) runner started; connection phase is \(store.session.phaseLabel)", in: output)
 
             guard await waitUntil(timeout: 45, condition: { store.phase.isConnected }) else {
                 writeReport(
