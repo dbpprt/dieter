@@ -27,14 +27,15 @@ Python 3, and **just 1.58+**. Native and website toolchains are separate:
 
 ```sh
 just doctor
-just harness install
+bundle install
+npm --prefix internal/harness/runtime ci
+just pipeline config_init
 just build
 ```
 
-Go binaries land in `bin/`. Published releases already contain their native
+Build lanes print fresh evidence paths and `artifacts.json` product manifests. Published releases already contain their native
 capture helpers; source screen-host development needs the relevant platform
-helper dependencies. A deliberately headless source install can omit the helper:
-`just install "$HOME/.local" "" false`.
+helper dependencies. Local build lanes never replace an operator service.
 
 ## Repository map
 
@@ -48,7 +49,8 @@ helper dependencies. A deliberately headless source install can omit the helper:
 | `landingpage` | Public website and maintained user guides |
 | `docs` | Technical references, screenshot sources, historical investigations |
 | `deploy/gateway` | Signed gateway deployment tooling |
-| `just`, `scripts` | Reproducible build, test, and release entry points |
+| `fastlane`, `internal/pipeline`, `tools/fixtures` | Shared pipelines, typed contracts and isolated test services |
+| `just`, `scripts` | Thin command facade and generated-code/distribution tools |
 
 ## Run checks for your change
 
@@ -71,14 +73,16 @@ Explicit full validation remains available:
 
 ```sh
 just check
-just mac test
-just android test
-just e2e run --platform ios --device iphone --suite smoke
-just e2e run --platform ios --device ipad --suite smoke
+just pipeline mac test_unit
+just pipeline android test_unit
+just pipeline ios e2e profile:ios-iphone suite:smoke
+just pipeline ios e2e profile:ios-ipad suite:smoke
 ```
 
-Use `just mac`, `just android`, `just daemon`, `just gateway`, `just harness`,
-`just site`, or `just release` to discover component commands.
+Use `just pipeline lanes` to discover component operations. Configure ignored
+`fastlane/local.json` from its tracked template for emulator or exact physical
+device targets. The same lanes run locally and in CI. Main releases are dev
+prereleases; stable promotion and production gateway admission are separate.
 
 ## Preserve running services
 

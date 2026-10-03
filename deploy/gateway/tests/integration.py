@@ -77,7 +77,7 @@ def main():
             arch = run("docker", "info", "--format", "{{.Architecture}}").decode().strip()
             goarch = {"aarch64": "arm64", "arm64": "arm64", "x86_64": "amd64", "amd64": "amd64"}[arch]
             env = dict(os.environ, CGO_ENABLED="0", GOOS="linux", GOARCH=goarch)
-            for target, binary in (("./scripts/gateway-turn-probe", "probe"),):
+            for target, binary in (("./tools/fixtures/turn-probe", "probe"),):
                 subprocess.run(["go", "build", "-trimpath", "-o", str(temp / binary), target], cwd=ROOT, env=env, check=True, timeout=300)
             run("docker", "build", "--progress=plain", "-f", ROOT / "Dockerfile.gateway",
                 "--build-arg", "RELEASE_VERSION=" + release_version,

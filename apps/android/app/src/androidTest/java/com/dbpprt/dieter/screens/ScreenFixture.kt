@@ -23,7 +23,7 @@ import okhttp3.TrailersSource
 import org.json.JSONObject
 
 /**
- * The disposable native screen service `just e2e run --suite screens` starts
+ * The disposable native screen service `just pipeline android e2e --suite screens` starts
  * on the host and reverses to the device's loopback. Routes to it are plain
  * HTTP/2 with the fixture's token, counted, and optionally made to fail.
  */

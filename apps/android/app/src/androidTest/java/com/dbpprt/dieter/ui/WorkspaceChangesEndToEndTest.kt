@@ -3,6 +3,10 @@ package com.dbpprt.dieter.ui
 import android.Manifest
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.isDisplayed
+import androidx.compose.ui.test.isEnabled
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -179,7 +183,13 @@ class WorkspaceChangesEndToEndTest {
                 composeRule.onAllNodesWithText("Workspace removed").fetchSemanticsNodes().isNotEmpty()
             }
             capture("workspace-merged-e2e.png")
-            val merged = requireNotNull(daemon { it.GetCard().execute(GetCardRequest(card_id = fixture.id)) }.card)
+            // Cleanup publishes the removed workspace before the final board
+            // mutation. Wait for that last step of the core's merge flow.
+            var merged = requireNotNull(daemon { it.GetCard().execute(GetCardRequest(card_id = fixture.id)) }.card)
+            composeRule.waitUntil(30_000) {
+                merged = requireNotNull(daemon { it.GetCard().execute(GetCardRequest(card_id = fixture.id)) }.card)
+                merged.lane == "done"
+            }
             assertTrue("Card should move to Done after merge, was ${merged.lane}", merged.lane == "done")
 
             // Project-directory changes live under Files > Changes and are
@@ -228,7 +238,13 @@ class WorkspaceChangesEndToEndTest {
                     .state.value.projectChanges.operation
                 operation?.kind == GitOperationKinds.UPDATE && operation.status == "succeeded"
             }
+            composeRule.waitForIdle()
+            composeRule.waitUntil(15_000) {
+                composeRule.onAllNodes(isEnabled() and hasTestTag("project-changes-actions")).fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithTag("project-changes-actions").assertIsEnabled()
             composeRule.onNodeWithTag("project-changes-actions").performClick()
+            composeRule.waitUntil(10_000) { composeRule.onNodeWithTag("project-changes-validate").isDisplayed() }
             composeRule.onNodeWithTag("project-changes-validate").assertIsDisplayed().performClick()
             composeRule.waitUntil(120_000) {
                 val operation = androidx.lifecycle.ViewModelProvider(composeRule.activity)[DieterViewModel::class.java]

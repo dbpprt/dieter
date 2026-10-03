@@ -69,10 +69,10 @@ func TestBrandPackIsWiredIntoReleaseSurfaces(t *testing.T) {
 		"0xFF62B6CB, 0xFFBCEAF1, 0xFFF5FBFD, 0xFF081116",
 		"val DEFAULT = MONOCHROME",
 	)
-	assertContains(t, filepath.Join(root, "apps/mac/scripts/build.sh"),
-		`scripts/mac_bundle.py`,
+	assertContains(t, filepath.Join(root, "fastlane/lib/dieter/platforms/mac.rb"),
+		`fastlane.lib.dieter.native.mac_bundle`,
 	)
-	assertContains(t, filepath.Join(root, "scripts/mac_bundle.py"),
+	assertContains(t, filepath.Join(root, "fastlane/lib/dieter/native/mac_bundle.py"),
 		`resources / "DieterMonochrome.icns"`,
 		`resources / "PaletteIcons/monochrome.png"`,
 		`resources / "DieterMonochromeFavicon.png"`,

@@ -124,7 +124,7 @@ Under `shared/src/commonMain/kotlin/com/dbpprt/dieter/core/`:
      converts and calls one export. Swift calls
      `SharedRules.shared.<name>(...)`, often per rendered row, so keep exports
      cheap.
-3. After a schema change, run `just mac proto-generate`. Avoid field names
+3. After a schema change, run `just pipeline mac local action:proto_generate`. Avoid field names
    that Wire escapes (`value`, `data`, and `file` become `value_`, `data_`,
    and `file_`).
 4. Delete the app's copy and its tests.
@@ -161,9 +161,9 @@ Status key:
 | W5.8 Search | `search` | `DomainRulesTest` | done, façade (`SearchCommand`) |
 | W5.9 Executions | `executions` | `DomainRulesTest`, `ClientApiProcessesEndToEndTest` | done, façade (processes) |
 | W6 Screens | `screens` (trust, session controller, recovery, input, gestures, mouse buttons, clipboard, frame gating, receiver feedback), `platform/ControlFrames.kt` | `ScreenPoliciesTest`, `ScreenFramesTest`, `MouseButtonsTest`, `ControlFramesTest`, `ScreenSessionTest` (scripted daemon and engine), `ClientApiScreenEndToEndTest` | done, façade (screen) |
-| D7 UI contract | `client` (`ClientApi`, per-scope surfaces, domain command handlers, slice mappers, keyed deltas), `apple` | `KeyedTest`, the `client/*SliceTest`s, the `ClientApi*EndToEndTest`s, `just mac core-test` | done |
+| D7 UI contract | `client` (`ClientApi`, per-scope surfaces, domain command handlers, slice mappers, keyed deltas), `apple` | `KeyedTest`, the `client/*SliceTest`s, the `ClientApi*EndToEndTest`s, `just pipeline check component:mac operation:core_test` | done |
 | Rules for Swift | `client/rules` (`*Exports`), `apple/SharedRules.kt` | the `*ExportsTest`s, `SharedCoreTests` (Swift) | done, façade (`SharedRules`) |
-| F5 App integration | Android `sharedcore/` (`SharedCore`, `ConnectionPolicy`); Apple `SharedCore`, `DieterTransport`, and slice adapters (`DieterMac`, `DieterIOS`) | Android unit tests and instrumentation catalog (`tests/e2e`); `just mac test`, `just mac core-test`, `just mac screens-test`; `just ios build` and the iOS cases (`ios.adapters`, `ios.credentials`, `RemoteNodeUITests`) | Android, macOS, and iOS on the core. |
+| F5 App integration | Android `sharedcore/` (`SharedCore`, `ConnectionPolicy`); Apple `SharedCore`, `DieterTransport`, and slice adapters (`DieterMac`, `DieterIOS`) | Android unit tests and instrumentation catalog (`tests/e2e`); `just pipeline mac test_unit`, `just pipeline check component:mac operation:core_test`, `just pipeline check component:mac operation:screens_test`; `just pipeline ios build` and the iOS cases (`ios.adapters`, `ios.credentials`, `RemoteNodeUITests`) | Android, macOS, and iOS on the core. |
 | W7 Consolidation | — | — | Android: legacy logic, protobuf-lite, grpc-java, and rule duplicates deleted. macOS and iOS: the legacy feature plane, the legacy importer, the Swift rule copies, and the `DieterCore` and `DieterClient` modules deleted. |
 
 **On the Apple façade:** every feature, as `client.proto` commands and
@@ -197,8 +197,8 @@ output reaches Swift through the terminals slice.
   store, so sign-in survives. Files earlier Android versions left behind
   are not cleaned up; reinstalling removes them.
 - **Harnesses retired.** The Apple adapter harness became the Mac's
-  `SharedCore` target and `SharedCoreTests` (`just mac core-test`). The
-  Android harness was deleted: `just core test` runs the same OkHttp
+  `SharedCore` target and `SharedCoreTests` (`just pipeline check component:mac operation:core_test`). The
+  Android harness was deleted: `just pipeline core_test` runs the same OkHttp
   transport on the JVM, and the app's instrumentation
   (`SharedCoreIntegrationTest`) covers the Android bindings.
 - **Screen routes** use the machine's shared data plane. Tokens renew per
@@ -227,26 +227,26 @@ output reaches Swift through the terminals slice.
 ## Build and test
 
 You need Android Studio's JBR, the Android SDK (platform 37.1), Go, Node (for
-the mock harness, installed with `just harness install`), and, on macOS,
+the mock harness, installed with `npm --prefix internal/harness/runtime ci`), and, on macOS,
 Xcode. The first Kotlin/Native build downloads about 1.6 GB into `~/.konan`.
 
 ```sh
-just core test          # JVM unit and end-to-end tests against isolated gateways and daemons, over the OkHttp transport Android shares
-just core native-test   # common tests natively on macOS, plus the DieterShared XCFramework
-just core apple-test    # native tests, then `just mac core-test`: DieterShared driven from the Mac bridge
-just core check         # everything this host supports
+just pipeline core_test          # JVM unit and end-to-end tests against isolated gateways and daemons, over the OkHttp transport Android shares
+just pipeline core_apple_test   # common tests natively on macOS, plus the DieterShared XCFramework
+just pipeline core_apple_test    # native tests, then `just pipeline check component:mac operation:core_test`: DieterShared driven from the Mac bridge
+just pipeline ci action:check component:core         # everything this host supports
 ```
 
-`just core test` passes extra arguments to Gradle, for example
-`just core test --tests '*ExportsTest'`.
+The lanes own Gradle options and isolated fixture setup. Use `filter:NAME` on
+unit lanes when narrowing validation; see [pipeline commands](../../fastlane/README.md).
 
 After changing the client schema (`model/src/commonMain/proto/dieter/client/v1`),
-regenerate the Mac package's Swift types with `just mac proto-generate`; it
+regenerate the Mac package's Swift types with `just pipeline mac local action:proto_generate`; it
 copies the schema into `apps/mac/Sources/DieterAPI/client` first.
 
 On an iOS simulator:
 `./gradlew :shared:iosSimulatorArm64Test -Pdieter.simulator=<disposable simulator UDID>`.
 
 Every end-to-end test starts its own gateway and daemon from
-`scripts/isolated-gateway`, with a temporary `DIETER_HOME` and random loopback
+`tools/fixtures/gateway`, with a temporary `DIETER_HOME` and random loopback
 ports. They never touch an operator's daemon.

@@ -26,7 +26,7 @@ val isolatedGateway = layout.buildDirectory.file("fixture/isolated-gateway")
 val buildIsolatedGateway by tasks.registering(Exec::class) {
     workingDir = rootProject.file("../..")
     val go = providers.gradleProperty("dieter.go").orElse("go").get()
-    commandLine(go, "build", "-o", isolatedGateway.get().asFile.absolutePath, "./scripts/isolated-gateway")
+    commandLine(go, "build", "-o", isolatedGateway.get().asFile.absolutePath, "./tools/fixtures/gateway")
     outputs.file(isolatedGateway)
     outputs.upToDateWhen { false } // Go's build cache decides what to rebuild.
 }

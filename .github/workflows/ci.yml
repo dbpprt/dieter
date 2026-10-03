@@ -1,20 +1,16 @@
 name: CI
-
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
   schedule:
-    - cron: "17 4 * * 1"
-
+    - cron: '17 4 * * 1'
 permissions:
   contents: read
-
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   changes:
     name: Detect affected components
@@ -26,286 +22,177 @@ jobs:
       android: ${{ steps.select.outputs.android }}
       kmp: ${{ steps.select.outputs.kmp }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: extractions/setup-just@v3
+      - uses: ./.github/actions/pipeline-setup
         with:
-          just-version: "1.58.0"
-      - name: Select affected components
+          component: report
+      - name: Select affected components through the shared planner
         id: select
         env:
           CI_CHANGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: just check-changed --ci
-
-  core:
-    name: Go and harness runtime
+  core_checks:
+    name: Validate Go and harness runtime
     needs: changes
     if: needs.changes.outputs.core == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: internal/harness/runtime/package-lock.json
-      - name: Set up protoc
-        id: setup_protoc
-        continue-on-error: true
-        uses: arduino/setup-protoc@v3
-        with:
-          version: "35.1"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Retry protoc setup after a transient download failure
-        if: steps.setup_protoc.outcome == 'failure'
-        uses: arduino/setup-protoc@v3
-        with:
-          version: "35.1"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: extractions/setup-just@v3
-        with:
-          just-version: "1.58.0"
-      - name: Install Linux screen helper build and runtime dependencies
-        run: just daemon linux-ci-dependencies
-      - name: Install harness runtime
-        run: just harness install
-      - name: Run portable checks
-        run: just check
-      - name: Test release signing and packaging
-        run: just release test
-      - name: Check gateway vulnerabilities
-        run: just gateway vulncheck
-      - name: Check daemon vulnerabilities
-        run: just daemon vulncheck
-      - name: Check bundled Markdown renderer
-        run: just mac markdown-check
-
-  kmp:
-    name: Shared Kotlin core
-    needs: changes
-    if: needs.changes.outputs.kmp == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: gradle/actions/setup-gradle@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: internal/harness/runtime/package-lock.json
-      - uses: extractions/setup-just@v3
-        with:
-          just-version: "1.58.0"
-      - name: Install isolated fixture runtime
-        run: just harness install
-      - name: Test the core against isolated gateways and daemons
-        run: just core test
-
-  kmp-apple:
-    name: Shared Kotlin core on Apple
-    needs: changes
-    if: needs.changes.outputs.kmp == 'true'
-    runs-on: macos-26
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: extractions/setup-just@v3
-        with:
-          just-version: "1.58.0"
-      - name: Select Xcode 26.5
-        run: just release select-xcode
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: gradle/actions/setup-gradle@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: internal/harness/runtime/package-lock.json
-      - name: Install isolated fixture runtime
-        run: just harness install
-      - name: Test natively and drive DieterShared from the Mac bridge
-        run: just core apple-test
-
-  macos:
-    name: macOS client
-    needs: changes
-    if: needs.changes.outputs.macos == 'true'
-    runs-on: macos-26
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: extractions/setup-just@v3
-        with:
-          just-version: "1.58.0"
-      - name: Select Xcode 26.5
-        run: just release select-xcode
-      - name: Configure visible native desktop
-        run: just mac ci-desktop
-      - name: Verify native installer packaging
-        run: just release test
-      - name: Restore Swift build caches
-        uses: actions/cache@v4
-        with:
-          path: |
-            apps/mac/.build/dieter-local
-            apps/mac/.build/dieter-tests
-          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.5-dieter-mac-check-v3-${{ hashFiles('apps/mac/Package.swift', 'apps/mac/Package.resolved', 'apps/mac/Vendor/**/Package.swift') }}
-      # The Mac app links the shared Kotlin core (DieterShared.xcframework).
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: gradle/actions/setup-gradle@v4
-      - name: Restore the shared core framework
-        uses: actions/cache@v4
-        with:
-          path: apps/mac/Frameworks
-          key: ${{ runner.os }}-${{ runner.arch }}-dieter-shared-v1-${{ hashFiles('apps/core/**', 'apps/mac/scripts/shared-framework.sh') }}
-      - name: Check macOS client
-        run: just mac check
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: internal/harness/runtime/package-lock.json
-      - name: Install isolated smoke fixture runtime
-        run: just harness install
-      - name: Drive the shared core from the Mac bridge
-        run: just mac core-test
-      - name: Native core gate
-        if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
-        run: just e2e run --platform mac --case mac.core
-      - name: Native navigation gate
-        if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
-        run: just e2e run --platform mac --case mac.board
-      - name: Complete native qualification
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        run: just e2e run --platform mac --suite smoke
-      - name: Retain native reports and screenshots
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: mac-native-evidence
-          path: |
-            tmp/e2e-*/
-          if-no-files-found: ignore
-          retention-days: 14
-
-  ios_quick:
-    name: iOS quick checks
-    needs: changes
-    if: needs.changes.outputs.ios == 'true'
-    runs-on: macos-26
-    timeout-minutes: 50
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: extractions/setup-just@v3
-        with:
-          just-version: "1.58.0"
-      - name: Select Xcode 26.5
-        run: just release select-xcode
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: gradle/actions/setup-gradle@v4
-      # The iOS app links the shared core's iOS slices; the Mac job's
-      # framework cache may hold only the macOS slice.
-      - name: Restore the shared core framework with iOS slices
-        uses: actions/cache@v4
-        with:
-          path: apps/mac/Frameworks
-          key: ${{ runner.os }}-${{ runner.arch }}-dieter-shared-ios-v1-${{ hashFiles('apps/core/**', 'apps/mac/scripts/shared-framework.sh') }}
-      - name: Restore iOS build cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            apps/ios/.build/DerivedData
-            apps/mac/.build/dieter-tests
-          key: ${{ runner.os }}-${{ runner.arch }}-xcode-26.5-ios-quick-v1-${{ hashFiles('apps/mac/Package.swift', 'apps/mac/Package.resolved', 'apps/ios/**/Package.resolved', 'apps/mac/Vendor/**/Package.swift') }}
-      # The macOS-portable iOS tests (share inbox, attachments, architecture).
-      # The UIKit adapter tests compile into DieterIOSNativeTests below.
-      - name: Run portable iOS tests
-        run: just mac test DieterIOSTests
-      - name: Compile iPhone and iPad test bundles
-        run: just ios build
-
-  ios:
-    name: iPhone and iPad client
-    needs: [changes, ios_quick]
+    uses: ./.github/workflows/component-check.yml
+    with:
+      component: portable
+      runner: ubuntu-latest
+  core:
+    name: Go and harness runtime
+    needs: [changes, core_checks]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: extractions/setup-just@v3
+      - uses: ./.github/actions/pipeline-setup
         with:
-          just-version: "1.58.0"
-      - name: Require iOS quick checks
+          component: report
+      - name: Require selected component qualification
         env:
-          NATIVE_CHECK_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.ios != 'true' || needs.ios_quick.result == 'success') && 'success' || 'failure' }}
-        run: just e2e ci-result
-
-  android:
-    name: Android client
+          PIPELINE_CHECK_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.core != 'true' || needs.core_checks.result == 'success') && 'success' || 'failure' }}
+        run: just pipeline ci action:result component:portable
+  kmp_checks:
+    name: Validate Shared Kotlin core
     needs: changes
-    if: needs.changes.outputs.android == 'true'
+    if: needs.changes.outputs.kmp == 'true'
+    uses: ./.github/workflows/component-check.yml
+    with:
+      component: core
+      runner: ubuntu-latest
+  kmp:
+    name: Shared Kotlin core
+    needs: [changes, kmp_checks]
+    if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: actions/setup-java@v4
+      - uses: ./.github/actions/pipeline-setup
         with:
-          distribution: temurin
-          java-version: "21"
-          cache: gradle
-      - uses: android-actions/setup-android@v4
+          component: report
+      - name: Require selected component qualification
+        env:
+          PIPELINE_CHECK_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.kmp != 'true' || needs.kmp_checks.result == 'success') && 'success' || 'failure' }}
+        run: just pipeline ci action:result component:portable
+  kmp-apple_checks:
+    name: Validate Shared Kotlin core on Apple
+    needs: changes
+    if: needs.changes.outputs.kmp == 'true'
+    uses: ./.github/workflows/component-check.yml
+    with:
+      component: core-apple
+      runner: macos-26
+  kmp-apple:
+    name: Shared Kotlin core on Apple
+    needs: [changes, kmp-apple_checks]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          # Dieter installs its exact SDK packages in the next step. The
-          # action's default still includes the retired `tools` package.
-          packages: ""
-      - uses: extractions/setup-just@v3
+          persist-credentials: false
+      - uses: ./.github/actions/pipeline-setup
         with:
-          just-version: "1.58.0"
-      - name: Install Android SDK packages
-        run: just android install-sdk
-      - name: Check Android client
-        run: just android check
+          component: report
+      - name: Require selected component qualification
+        env:
+          PIPELINE_CHECK_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.kmp != 'true' || needs.kmp-apple_checks.result == 'success') && 'success' || 'failure' }}
+        run: just pipeline ci action:result component:portable
+  macos_checks:
+    name: Validate macOS client
+    needs: changes
+    if: needs.changes.outputs.macos == 'true'
+    uses: ./.github/workflows/component-check.yml
+    with:
+      component: mac
+      runner: macos-26
+      native_cases: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && 'mac.core,mac.board' || '' }}
+      native_suite: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'functional' || '' }}
+  macos:
+    name: macOS client
+    needs: [changes, macos_checks]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/pipeline-setup
+        with:
+          component: report
+      - name: Require selected component qualification
+        env:
+          PIPELINE_CHECK_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.macos != 'true' || needs.macos_checks.result == 'success') && 'success' || 'failure' }}
+        run: just pipeline ci action:result component:portable
+  ios_quick_checks:
+    name: Validate iOS quick checks
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    uses: ./.github/workflows/component-check.yml
+    with:
+      component: ios
+      runner: macos-26
+  ios_quick:
+    name: iOS quick checks
+    needs: [changes, ios_quick_checks]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/pipeline-setup
+        with:
+          component: report
+      - name: Require selected component qualification
+        env:
+          PIPELINE_CHECK_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.ios != 'true' || needs.ios_quick_checks.result == 'success') && 'success' || 'failure' }}
+        run: just pipeline ci action:result component:portable
+  android_checks:
+    name: Validate Android client
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    uses: ./.github/workflows/component-check.yml
+    with:
+      component: android
+      runner: ubuntu-latest
+  android:
+    name: Android client
+    needs: [changes, android_checks]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/pipeline-setup
+        with:
+          component: report
+      - name: Require selected component qualification
+        env:
+          PIPELINE_CHECK_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.android != 'true' || needs.android_checks.result == 'success') && 'success' || 'failure' }}
+        run: just pipeline ci action:result component:portable
+  ios:
+    name: iPhone and iPad client
+    needs: [changes, ios_quick_checks]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/pipeline-setup
+        with:
+          component: report
+      - name: Require both-layout build and portable iOS assertions
+        env:
+          PIPELINE_CHECK_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.ios != 'true' || needs.ios_quick_checks.result == 'success') && 'success' || 'failure' }}
+        run: just pipeline ci action:result component:portable

@@ -127,7 +127,9 @@ class ScreenCodecEndToEndTest {
                 // Failure preserves the selected preference; a new explicit
                 // connection with H.264 must recover without replacing credentials.
                 choose("H.264 compatibility")
-                compose.onNodeWithTag("screen-connect").performClick()
+                // Updating the codec starts the shared core reconnect itself.
+                // Assert its authenticated video below; a transient Connect button
+                // can disappear before a separately dispatched tap.
             }
             waitVideo("H264")
             val capture = captureScreenFixture()

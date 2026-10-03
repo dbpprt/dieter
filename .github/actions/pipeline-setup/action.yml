@@ -1,0 +1,57 @@
+name: Dieter pipeline setup
+description: Pinned tools shared by checks, candidate builds, and distribution
+inputs:
+  component:
+    description: portable, core, android, mac, ios, daemon, gateway, or distribution
+    default: portable
+  fixture:
+    description: Install the pinned local mock harness dependencies
+    default: 'false'
+  native:
+    description: Prepare pinned native CI runtime when required
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      with:
+        go-version-file: go.mod
+        cache: true
+    - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8
+      with:
+        ruby-version: .ruby-version
+        bundler: '2.6.9'
+        bundler-cache: true
+        bundle-path: tmp/bundle
+    - uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+      with:
+        just-version: '1.58.0'
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      if: inputs.component == 'portable' || inputs.fixture == 'true'
+      with:
+        node-version: '22'
+        cache: npm
+        cache-dependency-path: internal/harness/runtime/package-lock.json
+    - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+      if: inputs.component == 'android' || (inputs.component == 'core' || inputs.component == 'core-apple') || inputs.component == 'mac' || inputs.component == 'ios'
+      with:
+        distribution: temurin
+        java-version: '21'
+    - uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d
+      if: inputs.component == 'android' || (inputs.component == 'core' || inputs.component == 'core-apple') || inputs.component == 'mac' || inputs.component == 'ios'
+    - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
+      if: inputs.component == 'android' && runner.os == 'Linux'
+      with:
+        packages: ''
+    - uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b
+      if: inputs.component == 'portable'
+      with:
+        version: '35.1'
+        repo-token: ${{ github.token }}
+    - name: Prepare component environment
+      shell: bash
+      env:
+        PIPELINE_COMPONENT: ${{ inputs.component }}
+        PIPELINE_FIXTURE: ${{ inputs.fixture }}
+        PIPELINE_NATIVE: ${{ inputs.native }}
+      run: just pipeline ci action:setup component:"$PIPELINE_COMPONENT" fixture:"$PIPELINE_FIXTURE" native:"$PIPELINE_NATIVE"

@@ -22,10 +22,15 @@ pull request is a reviewable alternative. Report vulnerabilities through
 ```sh
 git clone https://github.com/dbpprt/dieter.git
 cd dieter
+bundle install
+just pipeline config_init
 just doctor
-just harness install
+npm --prefix internal/harness/runtime ci
 just build
 ```
+
+Pipelines need Ruby from `.ruby-version` and Bundler 2.6.9.
+See [the pipeline guide](fastlane/README.md) for local profiles and release policy.
 
 Go work uses Go 1.26.8+, Node.js 22.19+, npm, Python 3, Git, and just 1.58+.
 Install only the native toolchain relevant to your change:

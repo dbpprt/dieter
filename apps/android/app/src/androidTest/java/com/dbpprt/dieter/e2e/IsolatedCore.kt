@@ -43,7 +43,7 @@ object IsolatedCore {
      * Skips the calling test when the runner started no isolated gateway.
      */
     fun connect(container: DieterContainer, timeout: Duration = 30.seconds): WorkspaceView = runBlocking {
-        assumeTrue("Needs the isolated gateway that `just e2e run` starts", !arguments.getString("isolatedGatewayToken").isNullOrBlank())
+        assumeTrue("Needs the isolated gateway that `just pipeline android e2e` starts", !arguments.getString("isolatedGatewayToken").isNullOrBlank())
         container.core.adoptSession(gateway, token)
         container.policy.setForeground(true)
         withTimeout(timeout) {

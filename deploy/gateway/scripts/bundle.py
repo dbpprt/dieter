@@ -18,7 +18,7 @@ ARCHIVE = "dieter-gateway-deploy.tar.gz"
 MANIFEST = "gateway-manifest.json"
 SIGNATURE = "gateway-manifest.sigstore.json"
 REGISTRY = "ghcr.io/dbpprt/dieter-gateway-deploy"
-IDENTITIES = (IDENTITY, "https://github.com/dbpprt/dieter/.github/workflows/release.yml@refs/heads/main")
+IDENTITIES = (IDENTITY, "https://github.com/dbpprt/dieter/.github/workflows/gateway-image.yml@refs/heads/main")
 
 
 def publish_retry(argv, **options):
@@ -159,7 +159,7 @@ def publish():
         name = f"gateway-turn-probe-{system}-{arch}"
         path = out / name
         run(["env", "CGO_ENABLED=0", "GOOS=" + system, "GOARCH=" + arch, "go", "build", "-trimpath",
-             "-ldflags=-s -w", "-o", path, "./scripts/gateway-turn-probe"], timeout=300)
+             "-ldflags=-s -w", "-o", path, "./tools/fixtures/turn-probe"], timeout=300)
         probes[name] = path
     pack(out, revision, version, image, built_at, probes)
     publish_retry(["cosign", "sign", "--yes", "-a", "sourceRevision=" + revision, image], timeout=300, capture=False)

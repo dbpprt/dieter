@@ -2,65 +2,85 @@
 
 A native SwiftUI remote client for iOS 18 or later. Like the Android and Mac apps, it is a presentation-only client of the [shared Kotlin core](../core/README.md), which owns the session, routing, sync, the outbox, and every rule; the app observes the core's slices and sends its commands through the `SharedCore` target. The daemon continues to own tasks, transcripts, and files; the iOS app never starts a local daemon.
 
-## Open and build
+## Build and test
 
-Open `apps/ios/DieterIOS.xcodeproj` in Xcode and select the **DieterIOS** scheme. The app supports iPhone and iPad. Simulator builds are signed ad hoc and need no developer account, so native Keychain access is exercised during testing. To install on a physical device, select your development team for the DieterIOSApp target and use your device as the destination. For command-line automatic signing, explicitly supply the `DIETER_IOS_TEAM_ID` Xcode build setting (for example, `DIETER_IOS_TEAM_ID=YOUR_TEAM_ID`). No team or signing identity is discovered automatically by Dieter's setup scripts.
-
-From the repository root:
+Open `DieterIOS.xcodeproj` in Xcode with the **DieterIOS** scheme for development.
+From the repository root, use [the shared Fastlane pipeline](../../fastlane/README.md):
 
 ```sh
-just ios doctor
-just ios build
-just ios build-device
-just ios signing-config
-just e2e run --platform ios --device iphone --suite smoke
-just e2e run --platform ios --device ipad --suite smoke
+bundle install
+just pipeline config_init
+just pipeline doctor
+just pipeline ios build
+just pipeline ios test_unit
+just pipeline ios e2e profile:ios-iphone suite:functional
+just pipeline ios e2e profile:ios-ipad suite:functional
 ```
 
-`build` and `build-device` first assemble the shared core's `DieterShared.xcframework` with its iOS slices (`apps/mac/scripts/shared-framework.sh debug|release all`), which needs a Java runtime; Android Studio's bundled JBR is used when `JAVA_HOME` is unset. Simulator builds are arm64 only. `build-device` compiles the device architecture without signing; installation on a device still requires Xcode signing. Build products stay under `apps/ios/.build/`; shared-runner reports and screenshots are in `tmp/e2e-<run>/`.
-Source builds embed `just release pseudo-version` as their gateway compatibility identity, including builds launched directly from the shared Xcode scheme. Versioned archives embed the requested marketing release instead. This identity is independent of the Apple build number.
+The pipeline builds the Kotlin shared framework using Android Studio's JBR when
+JAVA_HOME is absent, then builds the app and its test bundles with Xcode.
+Simulator builds use ad-hoc signing so tests exercise real Keychain access.
+Shared framework slices and SwiftPM caches are canonical and protected by the
+Apple build lease. Xcode products live in `.build/`; evidence is printed under
+`tmp/app-pipelines/UUID`. Source builds embed the source-derived compatibility
+SemVer; release archives embed the single reserved SemVer used by every component.
 
-Pull-request CI intentionally stays fast: it runs the portable `DieterIOSTests`
-suite on the Mac host (share inbox, attachments, and architecture checks) and
-compiles the app plus its iPhone/iPad test bundles without booting a
-simulator. Run both smoke commands above locally when adding or changing an iOS
-feature; they remain the layout and end-to-end qualification for the two device
-classes.
+Each simulator run creates and journals its own exact simulator, retains fresh
+fixture/client state per case, qualifies exact XCTest methods from xcresult,
+and deletes only that simulator. Missing, skipped, duplicate, failed,
+interrupted, unavailable and cleanup failures fail required runs. iPhone's Share
+extension journey is excluded from the iPad catalog by layout eligibility.
 
-The SwiftUI screens and their models live in `apps/mac/Sources/DieterIOS/` so they can use the package-scoped `SharedCore`, `DieterTransport`, and `DieterAPI` modules and the `DieterShared` framework. `IOSAppModel` hosts the core and observes the app-wide slices; each feature view owns its own model and slice scope, closed when the view goes away. The small Xcode app wraps the package's public root view and embeds its shared DieterIOS framework. The Mac executable is not linked into the iOS app. The share extension does not link the core, to stay within its memory budget; it stages files in the App Group, and the app validates them with the core's attachment rules when it takes them.
+For physical tests, explicitly configure `ios-device` in ignored
+`fastlane/local.json`: exact UDID, existing Apple Development identity and
+app/Share/runner provisioning profiles, separate `.e2e` bundle/app-group identities,
+and a reachable authenticated TLS fixture route. The `DieterIOSE2E` scheme builds
+those development-signed products. The pipeline refuses unowned installed fixture
+apps and journals/cleans up only its fixture packages. No Apple resources or
+operator credentials are replaced. Physical Share testing needs owned media
+setup and remains unavailable until that prerequisite can be supplied.
 
-App icons are generated from `apps/ios/Artwork/AppIcon.svg`, adapted from Dieter's
-existing brand SVG with an opaque square background. iOS applies the icon shape.
+```sh
+just pipeline ios prepare_tests profile:ios-device cases:ios.remote-node
+just pipeline ios e2e profile:ios-device cases:ios.remote-node
+```
+
+The SwiftUI client lives in `apps/mac/Sources/DieterIOS`. Each feature observes
+its core slice and closes its scope when leaving. The Xcode host embeds the
+DieterIOS framework; it does not link the Mac executable. The Share extension
+stages validated files in the App Group without linking the core. Icons come
+from `Artwork/AppIcon.svg` with an opaque background.
+
+Pull-request CI runs portable iOS policy tests and compiles the app/test bundles.
+Every main release additionally runs both complete iPhone and iPad functional
+catalogs before candidate preparation.
 
 ## Signing and TestFlight
 
-The iOS client extends the repository's [Apple signing setup](../../docs/apple-release-signing.md#configure-ios-signing-and-testflight). Use `just release configure-apple-signing --platform ios` with explicit paths to dedicated Apple Distribution, provisioning profile, and App Store Connect team API credentials. Add `--check` for local validation without uploading secrets. `--platform all` configures both Mac and iOS credentials; the default remains `macos`.
+See [Apple credential setup](../../docs/apple-release-signing.md) and
+[release policy](../../fastlane/README.md#ci-and-release-policy).
+Dedicated Apple Distribution credentials, separate app/Share App Store profiles,
+and a team App Store Connect API key are required for distribution. The default
+identities are `com.dbpprt.dieter.ios`, `.share`, and
+`group.com.dbpprt.dieter.ios`; both profiles must include that App Group.
 
-Create the App Store Connect app record for `com.dbpprt.dieter.ios` first, or supply a matching custom bundle ID during setup. Screenshot sharing also requires the `group.com.dbpprt.dieter.ios` App Group, the `com.dbpprt.dieter.ios.share` extension App ID, and an App Store provisioning profile for both the app and extension with that App Group enabled. Pass the extension profile with `--ios-share-provisioning-profile`. iOS uses its own signing credentials and does not use the Mac Developer ID certificates or notarization service.
+Main builds one immutable signed IPA and retains it on the **dev** GitHub
+prerelease. Publication delivers those exact bytes to internal TestFlight groups
+and records upload, Apple processing and verified group membership. Reruns
+reconcile existing delivery without rebuilding or blindly reuploading. The Apple
+build number encodes the reserved native counter; it is independent of the
+canonical marketing SemVer and never derives from workflow attempts.
 
-The manual `ios-testflight.yml` workflow accepts a marketing `version` (default `0.1.0`) and `upload` (default `false`). It derives the build number from `run_number.run_attempt` and retains signed archive/IPA artifacts when building without upload:
-
-```sh
-gh workflow run ios-testflight.yml --repo dbpprt/dieter --ref BRANCH \
-  -f version=0.1.0 -f upload=false
-```
-
-The workflow is manually dispatched from the default branch. Retry the latest
-workflow run or dispatch a fresh run. Rerunning an older run can produce a build number below a
-newer uploaded build, which Apple may reject.
-
-The release helper limits build components to four digits for the run number and
-two for the attempt. It fails before signing if a workflow exceeds those bounds.
-
-Dispatch with `-f upload=true` to upload a new build. Pull requests and `main` pushes do not trigger an iOS upload. The local archive check and CI recipes are:
+The release-event workflow also handles an explicitly published retained release.
+Resume an existing delivery with:
 
 ```sh
-just ios archive-unsigned 0.1.0 1.1
-just --yes ios testflight 0.1.0 1.1
-just --yes ios testflight 0.1.0 1.1 --upload
+gh workflow run ios-testflight.yml --ref main -f tag=v0.4.413
 ```
 
-`archive-unsigned` needs no credentials and checks the device archive; it does not produce an installable distribution. `testflight` is CI-only; it signs and exports, and uploads only with `--upload`. These commands do not configure tester groups. Apple processing, export-compliance information, TestFlight group assignment, and any external beta review happen separately after upload. Simulator tests and unsigned archive checks do not establish that Apple has accepted a distribution build.
+Stable promotion is a separate protected operation on the retained qualified
+release. It requires live valid/unexpired TestFlight delivery. External beta
+review and App Store submission are not part of internal distribution.
 
 ## Connect to remote machines
 
@@ -105,7 +125,7 @@ The shared E2E runner creates its own simulator, temporary gateway, enrolled dae
 
 Fixtures include an incompatible node so exact application-contract filtering can be verified. The rules themselves are tested in the core. The app's tests are:
 
-- `DieterIOSTests` (`just mac test DieterIOSTests`, on the Mac host): share inbox hand-off and validation, attachment reading, and an architecture check that the app reaches gateways only through `SharedCore` and that the share extension does not link the core.
+- `DieterIOSTests` (`just pipeline mac test_unit DieterIOSTests`, on the Mac host): share inbox hand-off and validation, attachment reading, and an architecture check that the app reaches gateways only through `SharedCore` and that the share extension does not link the core.
 - `IOSCoreAdapterTests` (in `apps/mac/Tests/DieterIOSTests`, compiled into the app-hosted `DieterIOSNativeTests` target; case `ios.adapters`): the app's adapters against a scripted core — launch configuration, test-session adoption, foreground, sign-out and reconnect commands, delta folds and stale targets, and per-view scopes.
 - `IOSCredentialNativeTests` (`ios.credentials`): device-only Keychain persistence through the core's secure store.
 - `RemoteNodeUITests`: the isolated journeys.
@@ -114,7 +134,7 @@ An optional, read-only check verifies that an HTTPS gateway returns its explicit
 
 ```sh
 DIETER_IOS_TEST_HTTPS_GATEWAY=https://your-gateway.example \
-  just e2e run --platform ios --case ios.https-auth
+  just pipeline ios e2e cases:ios.https-auth
 ```
 
 This probe never signs in or changes gateway data. The default isolated suite excludes this manual case because external network access and a reachable gateway are environment dependencies. Its results are reported separately from the isolated journey.
@@ -123,4 +143,4 @@ The [native test catalog](../../tests/e2e/README.md) includes every existing iOS
 XCTest method, including application-hosted Keychain assertions. iPhone and iPad
 plans select exact methods; the phone-only Photos share journey is declared in
 the catalog. Skipped or missing required tests fail qualification. An installed
-Simulator runtime is required; `just ios build` alone does not run these tests.
+Simulator runtime is required; `just pipeline ios build` alone does not run these tests.

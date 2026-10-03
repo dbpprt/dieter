@@ -22,7 +22,7 @@ release number is not known, pin a prerelease floor such as `0.4.309-dev.0`.
 The eventual `0.4.309` release and every later compatible release sort above
 that floor without causing future releases to raise it automatically.
 
-Source builds can use `just release pseudo-version`, which derives a valid
+Source build lanes derive a valid
 SemVer such as `0.4.309-dev.439+de14862b` from the latest release line, Git
 history, and source revision. Published artifacts replace that identity with
 the release workflow's single numeric version. Apple build numbers and Android

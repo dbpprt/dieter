@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "toolchains": {
+    "java_home": null,
+    "android_sdk": null,
+    "developer_dir": null,
+    "swift_jobs": 2
+  },
+  "defaults": {
+    "android_profile": "android-emulator",
+    "ios_profile": "ios-iphone",
+    "mac_profile": "mac-desktop",
+    "suite": "smoke",
+    "daemon_profile": "daemon-local",
+    "gateway_profile": "gateway-local"
+  },
+  "profiles": {
+    "android-emulator": {
+      "platform": "android",
+      "kind": "emulator",
+      "enabled": true,
+      "serial": "emulator-5554",
+      "avd": "Pixel_9_API_37_1",
+      "lifecycle": "manage-if-started",
+      "visible": true,
+      "renderer": "host"
+    },
+    "android-device": {
+      "platform": "android",
+      "kind": "device",
+      "enabled": false,
+      "serial": null,
+      "lifecycle": "borrow"
+    },
+    "ios-iphone": {
+      "platform": "ios",
+      "kind": "simulator",
+      "enabled": true,
+      "layout": "iphone",
+      "device_type": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+      "runtime": null,
+      "lifecycle": "disposable"
+    },
+    "ios-ipad": {
+      "platform": "ios",
+      "kind": "simulator",
+      "enabled": true,
+      "layout": "ipad",
+      "device_type": "com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M3",
+      "runtime": null,
+      "lifecycle": "disposable"
+    },
+    "ios-device": {
+      "platform": "ios",
+      "kind": "device",
+      "enabled": false,
+      "layout": "iphone",
+      "udid": null,
+      "lifecycle": "borrow",
+      "signing": "ios-development",
+      "fixture_route": "ios-local-network"
+    },
+    "mac-desktop": {
+      "platform": "mac",
+      "kind": "desktop",
+      "enabled": true,
+      "lifecycle": "exclusive-test-app"
+    },
+    "daemon-local": {
+      "component": "daemon",
+      "kind": "host",
+      "enabled": true,
+      "target_os": "native",
+      "architecture": "native"
+    },
+    "gateway-local": {
+      "component": "gateway",
+      "kind": "host",
+      "enabled": true,
+      "target_os": "native",
+      "architecture": "native"
+    }
+  },
+  "signing": {
+    "android-release": {
+      "keystore_file": null,
+      "keystore_password_env": "DIETER_ANDROID_KEYSTORE_PASSWORD",
+      "key_alias_env": "DIETER_ANDROID_KEY_ALIAS",
+      "key_password_env": "DIETER_ANDROID_KEY_PASSWORD"
+    },
+    "ios-development": {
+      "team_id": null,
+      "app_bundle_id": "com.dbpprt.dieter.ios.e2e",
+      "share_bundle_id": "com.dbpprt.dieter.ios.e2e.share",
+      "app_group_id": "group.com.dbpprt.dieter.ios.e2e",
+      "provisioning_mode": "existing-local"
+    },
+    "ios-distribution": {
+      "certificate_file": null,
+      "certificate_password_env": "IOS_DISTRIBUTION_CERTIFICATE_PASSWORD",
+      "app_profile_file": null,
+      "share_profile_file": null,
+      "api_key_file": null,
+      "api_key_id_env": "IOS_APP_STORE_CONNECT_KEY_ID",
+      "api_issuer_id_env": "IOS_APP_STORE_CONNECT_ISSUER_ID"
+    },
+    "mac-release": {
+      "certificate_file": null,
+      "certificate_password_env": "CERTIFICATE_PASSWORD",
+      "notary_key_file": null,
+      "notary_key_id_env": "NOTARY_KEY_ID",
+      "notary_issuer_id_env": "NOTARY_ISSUER_ID"
+    }
+  },
+  "fixture_routes": {
+    "ios-local-network": {
+      "kind": "authenticated-tls-proxy",
+      "enabled": false,
+      "host_address": null,
+      "certificate_file": null,
+      "private_key_file": null
+    }
+  }
+}

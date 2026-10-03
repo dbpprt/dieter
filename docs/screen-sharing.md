@@ -235,11 +235,11 @@ default; explicitly configured inactivity limits remain honored.
 Native screen regression checks:
 
 ```sh
-just mac screens-native-test
-just mac screens-test
-DIETER_TEST_SCREEN_QUALITY_SOAK_SECONDS=180 just mac screens-test
-DIETER_TEST_SCREEN_CAPTURE_REAL=1 just mac screens-test
-DIETER_SCREEN_TEST_SOURCE=screen just e2e run --suite screens
+just pipeline check component:mac operation:screens_native_test
+just pipeline check component:mac operation:screens_test
+DIETER_TEST_SCREEN_QUALITY_SOAK_SECONDS=180 just pipeline check component:mac operation:screens_test
+DIETER_TEST_SCREEN_CAPTURE_REAL=1 just pipeline check component:mac operation:screens_test
+DIETER_SCREEN_TEST_SOURCE=screen just pipeline android e2e suite:screens
 ```
 
 The first three use generated pixels and dry-run input; the 180-second run includes
@@ -300,7 +300,7 @@ restores the slower adaptation path. On the Mac viewer,
 of the UI thread and pause when idle. These are process-environment diagnostics,
 not session RPC options. Restart only a disposable test process to compare them.
 
-`DIETER_TEST_SCREEN_LATENCY_MATRIX=1 just mac screens-test` runs H.264/HEVC,
+`DIETER_TEST_SCREEN_LATENCY_MATRIX=1 just pipeline check component:mac operation:screens_test` runs H.264/HEVC,
 immediate/display-link, and fast adaptation off/on against an isolated native
 fixture. Add `DIETER_TEST_SCREEN_CAPTURE_REAL=1` to measure owned-application
 input to actual display presentation; that run requires native capture/input
@@ -338,9 +338,9 @@ for a parity group. Protection adds redundancy and cannot repair every loss burs
 
 For disposable-process A/B tests, `DIETER_SCREEN_LTR=0` disables reference recovery
 and `DIETER_SCREEN_FEC=0` disables FEC negotiation. Do not restart an operator daemon
-for these comparisons. `DIETER_TEST_SCREEN_RECOVERY=1 just mac screens-test`
+for these comparisons. `DIETER_TEST_SCREEN_RECOVERY=1 just pipeline check component:mac operation:screens_test`
 runs the native H.264/HEVC recovery matrix. Android coverage uses
-`just e2e run --case screens.screen-recovery-end-to-end-test`.
+`just pipeline android e2e cases:screens.screen-recovery-end-to-end-test`.
 Both use authenticated disposable fixtures and targeted packet loss, without
 altering saved credentials or system network configuration.
 
@@ -366,7 +366,7 @@ video. Letterboxing, toolbar areas, and other windows keep the normal Mac cursor
 the viewer is focused again. Window and application focus changes release held
 keys and buttons.
 
-`DIETER_TEST_SCREEN_UNDOCK=1 just mac screens-test` runs the authenticated,
+`DIETER_TEST_SCREEN_UNDOCK=1 just pipeline check component:mac operation:screens_test` runs the authenticated,
 isolated native full-screen journey, verifies session continuity and input,
 and records docked/full-screen input-to-Metal timing and screenshots. It never
 replaces or restarts the operator daemon.
@@ -405,12 +405,12 @@ four pinned JNI binaries and uses real dequeued output buffers.
 Run repeatable physical/local qualification with:
 
 ```sh
-python3 scripts/qualify_screens.py --manifest docs/screenshare-qualification-local.json \
-  --output /tmp/dieter-screen-qualification-UNIQUE --serial EXACT_PHYSICAL_SERIAL
+just pipeline screens_qualify manifest:docs/screenshare-qualification-local.json \
+  output:tmp/screen-qualification-UNIQUE profile:android-device
 ```
 
 The runner records source identity, exact settings, hardware, results and bounded
-evidence. `--baseline /path/to/results.json` compares matching latency/cadence
+evidence. `baseline:/path/to/results.json` compares matching latency/cadence
 cases. Missing mandatory cases fail; an external-device or optical case is
 reported unavailable. The physical Android fixture uses its own app ID and never
 replaces the operator app. See [decoder adapter contract](../apps/android/webrtc-adapter.md)

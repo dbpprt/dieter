@@ -1,0 +1,59 @@
+name: Release coordination
+on:
+  workflow_call:
+    inputs:
+      channel:
+        type: string
+        default: dev
+      identity_artifact:
+        required: true
+        type: string
+    outputs:
+      tag:
+        value: ${{ jobs.publish.outputs.tag }}
+        description: Exact retained release tag
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    outputs:
+      tag: ${{ steps.publish.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/pipeline-setup
+        with:
+          component: distribution
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ inputs.identity_artifact }}
+          path: tmp/release-identity
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Assemble and sign exact retained candidates
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: just pipeline release action:assemble identity:tmp/release-identity/identity.json
+      - name: Publish the selected development visibility
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PIPELINE_CHANNEL: ${{ inputs.channel }}
+        run: just pipeline release action:publish identity:tmp/release-identity/identity.json channel:"$PIPELINE_CHANNEL"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: release-coordination-evidence-${{ github.run_attempt }}
+          path: tmp/app-pipelines/
+          retention-days: 14
+          if-no-files-found: error

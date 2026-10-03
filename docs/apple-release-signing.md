@@ -6,9 +6,10 @@ daemon installer uses Developer ID Installer. Both deliverables are submitted to
 Apple's notary service; a submission must report `Accepted` before release work
 continues. The app and installer carry stapled notarization tickets.
 
-The separate, manually dispatched iOS workflow uses Apple Distribution signing
-and an App Store Connect provisioning profile to produce an iPhone/iPad archive
-and IPA. Uploading that build for TestFlight is optional. iOS does not use the Mac
+The iOS candidate uses Apple Distribution signing and explicit app/Share
+provisioning profiles to produce an iPhone/iPad archive and IPA. Main publishes
+a dev release and distributes that exact retained IPA to internal TestFlight
+testers. Manual draft assembly retains the candidate for review. iOS does not use the Mac
 Developer ID certificates or notarization service.
 
 ## Credentials dedicated to Dieter
@@ -44,7 +45,7 @@ The authenticated GitHub CLI account needs permission to manage Actions secrets
 in `dbpprt/dieter`. Supply the dedicated files explicitly:
 
 ```sh
-just release configure-apple-signing \
+python3 -m fastlane.lib.dieter.native.apple_credentials \
   --repo dbpprt/dieter \
   --platform macos \
   --application-p12 /private/path/dieter-application.p12 \
@@ -114,7 +115,7 @@ Keychain identities, or create Apple account resources. Keep the originals and
 password files outside the repository.
 
 ```sh
-just release configure-apple-signing \
+python3 -m fastlane.lib.dieter.native.apple_credentials \
   --repo dbpprt/dieter \
   --platform ios \
   --ios-distribution-p12 /private/path/dieter-ios-distribution.p12 \
@@ -150,89 +151,69 @@ The iOS setup uploads these repository secrets:
 Apple describes [creating an App Store Connect provisioning profile](https://developer.apple.com/help/account/provisioning-profiles/create-an-app-store-provisioning-profile/)
 and [creating team API keys](https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api/).
 
-## Build and upload iOS
+## Build and distribute iOS
 
-The `ios-testflight.yml` workflow runs only by manual dispatch. It has a
-`version` input (default `0.1.0`) and an `upload` input (default `false`). The
-workflow assigns a distinct build number using `run_number.run_attempt`, including
-when rerunning a workflow. It does not upload on pull requests or pushes to
-`main`, and it is independent of the automatic Mac release workflow.
+Every main push runs the shared component checks, reserves one canonical numeric
+SemVer and native counter, and prepares nine immutable candidates. The iOS
+candidate uses Fastlane `build_app` to archive/export with explicit profiles and
+a private temporary keychain. Both profiles must match the bundle IDs, team,
+distribution certificate and shared App Group. Apple builds use the valid
+three-component encoding of the reserved counter described in
+[the pipeline guide](../fastlane/README.md).
 
-GitHub enables manual dispatch after the workflow exists on the default branch,
-so this workflow becomes available when the PR is merged. Retry the latest run
-or dispatch a fresh run: an older run's retry can have a lower build number than
-a newer uploaded build, which Apple may reject.
-The release helper uses conservative four/two-digit bounds for the run and
-attempt components and fails before signing if either exceeds them.
-
-First run a build without uploading:
-
-```sh
-gh workflow run ios-testflight.yml --repo dbpprt/dieter --ref BRANCH \
-  -f version=0.1.0 -f upload=false
-```
-
-This produces signed archive and IPA workflow artifacts for inspection. When
-ready to upload a new build to App Store Connect, dispatch with `-f upload=true`.
-The workflow uses `xcodebuild -exportArchive` with the `app-store-connect` method
-and explicit signing credentials. Both provisioning-profile secrets are required,
-and the release helper validates their bundle IDs, team, distribution certificate,
-and shared App Group entitlement before touching the keychain. It requires a
-supported Xcode version for App Store Connect uploads; current iOS uploads require
-builds made with Xcode 26 or later.
-
-The underlying recipes are:
+Release assembly signs all candidate hashes and publishes a **dev** GitHub
+prerelease. Distribution downloads the retained `Dieter-iOS.ipa`, verifies its
+hash/version/build, reconciles upload and Apple processing, and verifies actual
+internal TestFlight group membership. An accepted or uncertain upload is never
+blindly reuploaded. Existing internal testers receive the new build; external
+Beta App Review and invitations remain separate account administration.
 
 ```sh
-just ios signing-config
-just ios archive-unsigned 0.1.0 1.1
-just --yes ios testflight 0.1.0 1.1
-just --yes ios testflight 0.1.0 1.1 --upload
+# Reconcile distribution of an existing pipeline release; never rebuild its IPA.
+gh workflow run ios-testflight.yml --repo dbpprt/dieter --ref main -f tag=v0.4.413
+# Retain a main candidate as a draft rather than publishing/distributing it.
+gh workflow run release.yml --repo dbpprt/dieter --ref main -f channel=draft
 ```
 
-`archive-unsigned` is a local device-architecture archive check and needs no Apple
-credentials. It cannot be installed or uploaded as a signed distribution.
-`testflight` is CI-only and uses the configured iOS secrets; without `--upload`,
-it only archives and exports. Temporary decoded signing credentials are removed
-when the recipe exits. Simulator tests and unsigned builds do not verify actual
-App Store Connect acceptance or TestFlight distribution.
+The release event and manual TestFlight workflow use the same idempotent
+adapter. Main calls it explicitly because releases created with `GITHUB_TOKEN`
+do not trigger another Actions workflow. Simulator tests verify UI behavior;
+store processing and group delivery have their own recorded receipts.
 
-After upload, Apple must process the build. Complete any export-compliance and
-beta test information in App Store Connect, then assign the processed build to a
-TestFlight group and invite testers. External testing may require Beta App
-Review. Upload success alone does not make a build available to testers. See
-[Apple's upload requirements](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds/)
-and [TestFlight workflow](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview/).
+For local compilation and isolated UI qualification:
+
+```sh
+just pipeline ios build
+just pipeline ios e2e profile:ios-iphone suite:functional
+just pipeline ios e2e profile:ios-ipad suite:functional
+```
+
+Physical iOS requires exact UDID, existing isolated development identities,
+profiles and a reachable authenticated TLS fixture route in ignored
+`fastlane/local.json`. Distribution credentials never replace development
+signing. The credential validator remains independently callable for explicit
+setup/checks; it is not a build or upload launcher.
 
 ## Release and verify Mac
 
-The `Release` GitHub Actions workflow runs after pushes to `main` and supports
-manual dispatch. By default it builds and publishes the complete release,
-including Android and Homebrew artifacts. To verify the Mac app, daemon, and
-installer on a branch without publishing or changing Homebrew, clear **Publish**
-in the Run workflow form, or run:
+Main creates dev releases with signed/notarized app, daemon archive and installer.
+Fastlane owns keychain setup, signature verification, notary submission,
+stapling and Gatekeeper assessment. Required signing credentials fail closed;
+main never advances Latest, Homebrew, stable updaters or production services.
+
+`release-promote.yml` promotes a verified retained candidate through the protected
+`stable-release` environment. It checks live TestFlight delivery, updates the tap,
+signs the promotion receipt and advances Latest without rebuilding. Configure
+environment reviewers and main-branch restrictions before using promotion.
+
+Temporary decoded credentials and provisioning profiles are private and restored
+or removed at cleanup. Signing leases protect the host keychain/profile search
+paths. Regression checks use disposable/generated material:
 
 ```sh
-gh workflow run release.yml --repo dbpprt/dieter --ref BRANCH -f publish=false
+just pipeline check component:portable operation:contracts
+just pipeline check component:portable operation:support_tests
 ```
-
-This mode uploads signed and notarized Mac build artifacts to the workflow run;
-it skips public release creation, retention changes, and Homebrew updates.
-
-The Mac recipes are:
-
-- `just --yes mac sign-notarize-release`: sign the framework and app with hardened
-  runtime and timestamps, notarize, staple, validate, and assess with Gatekeeper.
-- `just --yes daemon sign-notarize-macos`: sign and notarize the daemon and capture
-  helper used by the existing Homebrew `.tar.gz`.
-- `just daemon installer-macos`: build the daemon `.pkg` from staged binaries and
-  `RELEASE_VERSION` without installing it.
-- `just --yes daemon sign-notarize-installer-macos`: sign the installer, notarize,
-  staple, validate, and assess with Gatekeeper.
-
-Signing recipes run only in CI. Temporary decoded credentials are private to the
-runner and removed when the recipe exits. `just release test` uses generated or
-mock credentials and never touches an installed app or daemon.
 
 ## Daemon installer behavior
 

@@ -136,7 +136,7 @@ curl --fail --location --silent --show-error "${release_base}/SHA256SUMS" --outp
 curl --fail --location --silent --show-error "${release_base}/SHA256SUMS.sigstore.json" --output "$signature_bundle"
 cosign verify-blob \
     --bundle "$signature_bundle" \
-    --certificate-identity "https://github.com/dbpprt/dieter/.github/workflows/release.yml@refs/heads/main" \
+    --certificate-identity-regexp '^https://github[.]com/dbpprt/dieter/[.]github/workflows/(release|release-coordinate)[.]yml@refs/heads/main$' \
     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
     "$checksums" >/dev/null
 expected_checksum="$(awk -v file="${asset}.tar.gz" '$2 == file || $2 == "*" file { print $1; found++ } END { if (found != 1) exit 1 }' "$checksums")" || {

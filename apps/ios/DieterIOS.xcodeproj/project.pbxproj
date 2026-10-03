@@ -178,7 +178,8 @@
 				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited)";
 				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/Dieter.app/Dieter";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
-				"PRODUCT_BUNDLE_IDENTIFIER" = "com.dbpprt.dieter.ios.native-tests";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(DIETER_IOS_BUNDLE_ID).native-tests";
+				"DIETER_IOS_BUNDLE_ID" = "com.dbpprt.dieter.ios";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
 				"BUNDLE_LOADER" = "$(TEST_HOST)";
 				"PRODUCT_NAME" = "$(TARGET_NAME)";
@@ -213,8 +214,15 @@
 				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG $(inherited)";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
-				"PRODUCT_BUNDLE_IDENTIFIER" = "com.dbpprt.dieter.ios.uitests";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(DIETER_IOS_BUNDLE_ID).uitests";
+				"DIETER_IOS_BUNDLE_ID" = "com.dbpprt.dieter.ios";
 				"TEST_TARGET_NAME" = "DieterIOSApp";
+				"DIETER_IOS_SIGN_STYLE" = "Automatic";
+				"DIETER_IOS_SIGN_IDENTITY" = "Apple Development";
+				"CODE_SIGN_STYLE" = "$(DIETER_IOS_SIGN_STYLE)";
+				"CODE_SIGN_IDENTITY" = "$(DIETER_IOS_SIGN_IDENTITY)";
+				"DEVELOPMENT_TEAM" = "$(DIETER_IOS_TEAM_ID)";
+				"PROVISIONING_PROFILE_SPECIFIER" = "$(DIETER_IOS_TEST_PROFILE_SPECIFIER)";
 				"ENABLE_TESTABILITY" = "YES";
 				"PRODUCT_NAME" = "$(TARGET_NAME)";
 			};
@@ -320,8 +328,15 @@
 				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited)";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
-				"PRODUCT_BUNDLE_IDENTIFIER" = "com.dbpprt.dieter.ios.uitests";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(DIETER_IOS_BUNDLE_ID).uitests";
+				"DIETER_IOS_BUNDLE_ID" = "com.dbpprt.dieter.ios";
 				"TEST_TARGET_NAME" = "DieterIOSApp";
+				"DIETER_IOS_SIGN_STYLE" = "Automatic";
+				"DIETER_IOS_SIGN_IDENTITY" = "Apple Development";
+				"CODE_SIGN_STYLE" = "$(DIETER_IOS_SIGN_STYLE)";
+				"CODE_SIGN_IDENTITY" = "$(DIETER_IOS_SIGN_IDENTITY)";
+				"DEVELOPMENT_TEAM" = "$(DIETER_IOS_TEAM_ID)";
+				"PROVISIONING_PROFILE_SPECIFIER" = "$(DIETER_IOS_TEST_PROFILE_SPECIFIER)";
 				"PRODUCT_NAME" = "$(TARGET_NAME)";
 			};
 		};
@@ -334,7 +349,8 @@
 				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG $(inherited)";
 				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/Dieter.app/Dieter";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
-				"PRODUCT_BUNDLE_IDENTIFIER" = "com.dbpprt.dieter.ios.native-tests";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(DIETER_IOS_BUNDLE_ID).native-tests";
+				"DIETER_IOS_BUNDLE_ID" = "com.dbpprt.dieter.ios";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
 				"ENABLE_TESTABILITY" = "YES";
 				"BUNDLE_LOADER" = "$(TEST_HOST)";
@@ -518,12 +534,12 @@
 			alwaysOutOfDate = "1";
 			buildActionMask = "2147483647";
 			files = (  );
-			inputPaths = ( "$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)", "$(SRCROOT)/../../scripts/source_release_version.sh" );
+			inputPaths = ( "$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)", "$(SRCROOT)/../../fastlane/lib/dieter/native/source_version.sh" );
 			name = "Embed Dieter release version";
 			outputPaths = (  );
 			runOnlyForDeploymentPostprocessing = "0";
 			shellPath = "/bin/bash";
-			shellScript = "set -euo pipefail\nrelease_version=\"${DIETER_RELEASE_VERSION:-}\"\nif [[ -z \"$release_version\" ]]; then\n    release_version=\"$(\"$SRCROOT/../../scripts/source_release_version.sh\")\"\nfi\n/usr/libexec/PlistBuddy -c \"Set :DieterReleaseVersion $release_version\" \"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\n";
+			shellScript = "set -euo pipefail\nrelease_version=\"${DIETER_RELEASE_VERSION:-}\"\nif [[ -z \"$release_version\" ]]; then\n    release_version=\"$(\"$SRCROOT/../../fastlane/lib/dieter/native/source_version.sh\")\"\nfi\n/usr/libexec/PlistBuddy -c \"Set :DieterReleaseVersion $release_version\" \"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\n";
 			showEnvVarsInLog = "0";
 		};
 		"A1000000000000000000000E" = {

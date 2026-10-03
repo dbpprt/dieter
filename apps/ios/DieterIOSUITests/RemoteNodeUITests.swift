@@ -315,10 +315,8 @@ final class RemoteNodeUITests: XCTestCase {
     }
 
     private func verifyConnectionRecovery(_ app: XCUIApplication, triggerPath: String) throws {
-        let trigger = URL(fileURLWithPath: triggerPath)
-        try? FileManager.default.removeItem(at: trigger)
-        try Data().write(to: trigger, options: .atomic)
-        defer { try? FileManager.default.removeItem(at: trigger) }
+        try setFixtureOffline(true, triggerPath: triggerPath)
+        defer { try? setFixtureOffline(false, triggerPath: triggerPath) }
 
         let banner = element(app, "ios.connection.banner")
         XCTAssertTrue(
@@ -335,7 +333,7 @@ final class RemoteNodeUITests: XCTestCase {
         let requestAlert = app.alerts["Couldn’t complete the request"]
         if requestAlert.exists { requestAlert.buttons["OK"].tap() }
 
-        try FileManager.default.removeItem(at: trigger)
+        try setFixtureOffline(false, triggerPath: triggerPath)
         // Only a settled (not working) notice offers Retry; otherwise the core
         // reconnects on its own backoff.
         let retry = banner.buttons["Retry"]
@@ -345,6 +343,33 @@ final class RemoteNodeUITests: XCTestCase {
         XCTAssertEqual(
             XCTWaiter.wait(for: [recovered], timeout: 60), .completed,
             "Restoring the isolated daemon must reconnect the conversation.\n\(app.debugDescription)")
+    }
+
+    private func setFixtureOffline(_ offline: Bool, triggerPath: String) throws {
+        if let endpoint = URL(string: triggerPath), endpoint.scheme == "https" {
+            let token = try XCTUnwrap(ProcessInfo.processInfo.environment["DIETER_IOS_TEST_CONTROL_TOKEN"])
+            var request = URLRequest(url: endpoint)
+            request.httpMethod = offline ? "POST" : "DELETE"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.timeoutInterval = 15
+            let completion = expectation(description: "Authenticated fixture presence control")
+            let task = URLSession.shared.dataTask(with: request) { _, response, error in
+                XCTAssertNil(error, "Device must trust and reach the configured fixture TLS route")
+                XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 204)
+                completion.fulfill()
+            }
+            task.resume()
+            let result = XCTWaiter.wait(for: [completion], timeout: 20)
+            task.cancel()
+            XCTAssertEqual(result, .completed)
+        } else {
+            let trigger = URL(fileURLWithPath: triggerPath)
+            if offline {
+                try Data().write(to: trigger, options: .atomic)
+            } else if FileManager.default.fileExists(atPath: trigger.path) {
+                try FileManager.default.removeItem(at: trigger)
+            }
+        }
     }
 
     private func waitForBoard(

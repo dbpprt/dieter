@@ -28,15 +28,15 @@ physical codec passes latency and lifecycle qualification; fixtures opt in expli
 H.264 platform fallback and HEVC hardware admission
 retain the existing behavior.
 
-Reproduce with `just android test`, then run the fixture using
-`just e2e run --suite screens --serial SERIAL`. For codec journeys select
-`--case screens.screen-codec-end-to-end-test`. The app ID is
+Reproduce with `just pipeline android test_unit`, then run the fixture using
+`just pipeline android e2e suite:screens profile:android-device`. For codec journeys select
+`cases:screens.screen-codec-end-to-end-test`. The app ID is
 `com.dbpprt.dieter.e2e`, separate from the operator app. Screen journeys need a
-macOS capture host. Mac companion execution is disabled.
+macOS capture host. Mac companion measurements use the separate screen qualification composition.
 Use `DIETER_SCREEN_TEST_LOW_LATENCY=0` for the baseline and
 `DIETER_SCREEN_TEST_SURFACE=1` for the SurfaceView/EGL experiment.
 
-`just e2e run --suite sdk --serial SERIAL` runs codec/ownership/icon checks
+`just pipeline android e2e suite:sdk profile:android-device` runs codec/ownership/icon checks
 without a daemon or capture-host fixture. The physical qualification command
 still requires an explicit physical serial and validates exact method results.
 

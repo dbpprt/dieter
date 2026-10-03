@@ -21,10 +21,10 @@ only Dieter AVD; do not create another API-level-specific AVD for routine tests.
 Launch it with its checked, working graphics configuration and saved snapshot:
 
 ```sh
-just android emulator-start
+just pipeline android local action:emulator_check
 ```
 
-The recipe selects `-gpu host` to prevent automatic memory-based software fallback.
+The pipeline selects `-gpu host` to prevent automatic memory-based software fallback.
 Do not add `-gpu swiftshader*`, `-no-snapshot-load`, `-no-snapshot`,
 or cold-boot flags. Those overrides bypass the AVD's working graphics and
 snapshot configuration and can leave Android system services unresponsive. If
@@ -36,7 +36,7 @@ daemons before a snapshot repair and make enough host memory available for the
 emulator's host GLES renderer:
 
 ```sh
-just android gradle-stop
+./apps/android/gradlew --stop
 vm_stat
 ```
 
@@ -66,12 +66,11 @@ the `SurfaceFlinger` dump only to prove guest renderer responsiveness. A launch
 whose selected emulator GLES mode is `swangle` remains unhealthy.
 
 Never stop or snapshot the emulator while ADB is offline, boot animation is
-running, or Android has no focused window. The launcher uses
-`-no-snapshot-save`; the stop recipe returns to the launcher, stops the Dieter
-and Chrome processes used by this workflow, explicitly saves `default_boot`,
-checks its required artifacts and save log, and only then closes the emulator.
+running, or Android has no focused window. Normal snapshot saving must stay enabled. The owning Fastlane run returns to
+the launcher, explicitly saves `default_boot`, checks its required artifacts and
+save log, and only then closes its emulator. Borrowed devices remain running.
 Stopping an incomplete fallback boot can still replace a missing snapshot with
-a corrupt one. The start and stop recipes wake and dismiss the keyguard before
+a corrupt one. The admission and cleanup stages wake and dismiss the keyguard before
 requiring the real launcher; a wallpaper-only or black health image is not an
 acceptable focused state. Before a deliberate shutdown require all of the
 following:
@@ -106,7 +105,7 @@ bad snapshot has been quarantined, the launcher identifies the missing
 `default_boot` and this one recovery launch intentionally boots from preserved
 userdata. Let it reach every health condition above; do not interrupt the
 fallback boot. Once Android is responsive and screenshots plus accessibility
-work, shut it down gracefully with `just android emulator-stop` and wait for
+work, shut it down gracefully with `the owning Fastlane run's graceful cleanup` and wait for
 snapshot saving and the emulator process to finish.
 
 Relaunch with the same standard command. A repaired AVD is not accepted until
@@ -122,7 +121,7 @@ repeatedly loading or overwriting broken graphics state.
 1. Reuse the enrolled running daemon for authorized manual product checks.
    For integration tests, use isolated real daemons with disposable identity and
    `DIETER_HOME`; never restart or replace the operator service. Screen tests use
-   `just e2e run --suite screens` and the owned native input target.
+   `just pipeline android e2e suite:screens` and the owned native input target.
 2. Confirm the emulator serial with `adb devices -l`. The usual serial is
    `emulator-5554`; pass `-s <serial>` to every command when multiple devices
    are attached.
@@ -134,8 +133,8 @@ repeatedly loading or overwriting broken graphics state.
 4. Build, install, and launch the current app:
 
    ```sh
-   just android install
-   just android launch
+   just pipeline android local action:install
+   just pipeline android local action:launch
    ```
 
    Keep `ANDROID_SERIAL=emulator-5554` on every Gradle install or
@@ -182,17 +181,17 @@ unit and isolated end-to-end tests, and on macOS its native tests, because the
 Mac app links the same core:
 
 ```sh
-just core test
-just core native-test
+just pipeline core_test
+just pipeline core_apple_test
 ```
 
 Then run the Android unit suite, lint, and debug build before installing the
 final APK:
 
 ```sh
-just android test
-just android lint
-just android build
+just pipeline android test_unit
+just pipeline ci action:check component:android
+just pipeline android build
 ```
 
 Run the affected device cases against disposable daemon/gateway fixtures through
@@ -201,8 +200,8 @@ change. Changes to the Android connection adapters (`sharedcore/`, the
 background service) also need the separate sync suite:
 
 ```sh
-just e2e run --suite functional --changed
-just e2e run --suite sync
+just pipeline android e2e suite:functional changed:true
+just pipeline android e2e suite:sync
 ```
 
 After reinstalling, repeat the original interaction in the visible emulator,
@@ -212,7 +211,7 @@ are intentional design references.
 
 ## Shared native test framework
 
-Use `just e2e` and `tests/e2e/cases/android/*.yaml` for device tests. Read
+Use `just pipeline android e2e` and `tests/e2e/cases/android/*.yaml` for device tests. Read
 `tests/e2e/README.md`. The runner owns only `.e2e`/`.e2e.performance` test packages,
 per-device leases, fixtures, reverse mappings, builds, and result collection.
 Do not add bespoke orchestration scripts. `functional`, `sync`, `screens`, and

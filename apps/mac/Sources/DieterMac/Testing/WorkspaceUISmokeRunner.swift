@@ -374,16 +374,20 @@
             // Wait for native geometry, then deliver one real click and verify it.
             let scratchReady = await NativeUIAccessibility.waitForInteractiveTarget(
                 "project-changes.unstaged.project-scratch.txt", in: window)
-            let scratchClicked = scratchReady && NativeUIAccessibility.click(
-                "project-changes.unstaged.project-scratch.txt", in: window)
+            let scratchClicked =
+                scratchReady
+                && NativeUIAccessibility.click(
+                    "project-changes.unstaged.project-scratch.txt", in: window)
             let scratchVisible = await NativeUIAccessibility.wait {
                 scratchClicked && model.diff?.path == "project-scratch.txt"
                     && NativeUIAccessibility.containsText("temporary project note", in: window)
             }
             let readmeReady = await NativeUIAccessibility.waitForInteractiveTarget(
                 "project-changes.unstaged.README.md", in: window)
-            let readmeClicked = readmeReady && NativeUIAccessibility.click(
-                "project-changes.unstaged.README.md", in: window)
+            let readmeClicked =
+                readmeReady
+                && NativeUIAccessibility.click(
+                    "project-changes.unstaged.README.md", in: window)
             let readmeVisible = await NativeUIAccessibility.wait {
                 readmeClicked && model.diff?.path == "README.md"
                     && NativeUIAccessibility.containsText("Project checkout local edit", in: window)

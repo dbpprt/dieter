@@ -25,7 +25,7 @@ over. The ten images total about 1.6 MiB.
 
 ## Mac capture environment
 
-- Canonical `apps/mac/build/Dieter.app`, built with `just mac build` and the
+- Canonical `apps/mac/build/Dieter.app`, built with `just pipeline mac build` and the
   canonical SwiftPM cache. Dark appearance, **Electric Blue** design,
   transparency off. **The conversation workspace side panel is disabled in
   every Mac capture.** Files is the independent main project surface.
@@ -71,7 +71,7 @@ live viewer, not a complete remote-input or clipboard test.
 
 - Visible `Pixel_9_API_37_1` emulator, `emulator-5554`, host GPU, native Compose UI
   in dark appearance. Activity and Machines integration fixtures supplied
-  disposable account and project state through `scripts/isolated-gateway`.
+  disposable account and project state through `tools/fixtures/gateway`.
 - Android retains the fixture's **Isolated E2E** names. The deliberately
   incompatible host demonstrates rejection of a mismatched application
   contract; it is not a connected second project host.
@@ -83,9 +83,9 @@ live viewer, not a complete remote-input or clipboard test.
 Read the repository's Mac and Android operation skills before capturing. Preserve
 the operator's daemon, client state, credentials, and attached physical devices.
 
-1. Run `just mac status` and `just android emulator-status`. Reuse healthy owned
+1. Run `just pipeline mac local action:status` and `just pipeline android local action:status`. Reuse healthy owned
    processes; do not launch a second Mac app beside an operator's app.
-2. Build with `just mac build`. Use the isolated fixture and launch arguments
+2. Build with `just pipeline mac build`. Use the isolated fixture and launch arguments
    documented in `apps/mac/Tools/DieterMacSmokeDriver/main.swift` for a disposable
    account, preferences suite, and client state root. Seed projects, cards, files,
    and processes through the Dieter CLI, never by editing its store. Attach each
@@ -94,10 +94,9 @@ the operator's daemon, client state, credentials, and attached physical devices.
    **Settings → Experimental → Show the workspace side panel**. Use the main
    Files, Terminals, and Screens surfaces. For screen capture, isolate the visual
    target and disclose any development-only source adaptation as above.
-4. For Android, use `just e2e run --case machines.telemetry` and the isolated
-   `activity.navigation` YAML case (`just e2e run --case activity.navigation`). Keep `ANDROID_SERIAL=emulator-5554` on connected
-   tasks. Capture the observed Compose root at the relevant test checkpoints, or
-   use `just android screenshot PATH` for a full-device capture.
+4. For Android, use `just pipeline android e2e cases:machines.telemetry` and the isolated
+   `activity.navigation` YAML case (`just pipeline android e2e cases:activity.navigation`). Select the exact configured profile on connected tasks. Capture the observed Compose root at the relevant test checkpoints, or
+   use `just pipeline android local action:screenshot output:PATH` for a full-device capture.
 5. Navigate the real native UI. Capture the verified Mac window with
    `screencapture -x -o -l WINDOW_ID PATH`. Inspect both the accessibility hierarchy
    and PNG, including native text, materials, clipped controls, and tables.
@@ -111,7 +110,6 @@ the operator's daemon, client state, credentials, and attached physical devices.
    and an accurate caption. Update this provenance table and run `just site check`.
    Regenerate `og-image.png` with `swift landingpage/tools/render_social.swift`.
    Review desktop and phone layouts.
-8. Disconnect owned screen sessions and quit the owned Mac app with `just mac quit`.
-   Explicitly stop registered fixtures and preview targets; close an owned emulator
-   with `just android emulator-stop`. Verify no owned Mac app remains. Never
+8. Disconnect owned screen sessions and quit the owned Mac app with `just pipeline mac local action:quit`.
+   Explicitly stop registered fixtures and preview targets; let the shared pipeline save and close its owned emulator. Verify no owned Mac app remains. Never
    terminate the operator's daemon to clean up screenshots.

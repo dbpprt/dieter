@@ -77,7 +77,7 @@ builds is an acceptance criterion, not something unit tests can establish.
 Run the signed acceptance harness in a disposable logged-in macOS account/VM:
 
 ```
-python3 scripts/homebrew_runtime_acceptance.py \
+python3 -m fastlane.lib.dieter.native.homebrew_runtime_acceptance \
   --release-a /absolute/path/to/signed-release-a \
   --release-b /absolute/path/to/signed-release-b \
   --evidence /absolute/path/to/new-evidence-directory
@@ -92,8 +92,7 @@ input permission to pass without another grant. It retains JSON/signature
 evidence and unloads only its own LaunchAgent. It never changes an operator's
 Homebrew formula, live daemon, or TCC database. The OS grant remains a user action.
 
-The native screen media/input integration suites remain `just mac
-screens-native-test` and `just mac screens-test`; they complement the signed
+The native screen media/input integration suites remain `just pipeline check component:mac operation:screens_native_test` and `just pipeline check component:mac operation:screens_test`; they complement the signed
 permission test and do not substitute for it.
 
 ## Uninstall

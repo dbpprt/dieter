@@ -8,8 +8,8 @@ projects, conversations, provider credentials and harness execution stay on daem
 
 ## Get a verified release
 
-Release assembly calls the gateway publisher directly with the same commit and
-version. The publisher runs Go vulnerability checks, deployment tests and real
+Main release candidates build the gateway with the same reserved commit and
+version as daemon and apps. Main publishes a dev release without activating it. The publisher runs Go vulnerability checks, deployment tests and real
 UDP/TCP/TLS TURN payload tests before publishing. It signs the manifest and image
 using GitHub OIDC and includes BuildKit provenance and an SBOM. The verifier
 accepts only the exact main-branch distribution/release workflow identities.
@@ -17,15 +17,23 @@ accepts only the exact main-branch distribution/release workflow identities.
 Use the release's `gateway-release.lock.json`:
 
 ```sh
-just gateway bundle fetch gateway-release.lock.json /tmp/gateway-release
-just gateway bundle verify /tmp/gateway-release
+python3 deploy/gateway/scripts/bundle.py fetch gateway-release.lock.json /tmp/gateway-release
+python3 deploy/gateway/scripts/bundle.py verify /tmp/gateway-release
 ```
 
 The lock pins `ghcr.io/dbpprt/dieter-gateway-deploy@sha256:…`. Permanent
-`digest-…` tags preserve both artifacts and images independently of the two-release
-GitHub cleanup policy. These tags have no automated deletion policy; deployments
+`digest-…` tags preserve both artifacts and images independently of the bounded dev-release
+retention policy. These tags have no automated deletion policy; deployments
 also archive runnable image bytes in encrypted off-host backups. Retain active,
 previous and recovery releases for at least 90 days.
+
+The protected `gateway-deploy.yml` workflow prepares an exact promoted stable
+release. It verifies the signed release and stable-promotion receipt, checks
+retained bundle/image digests, pins retention, and writes a deployment plan.
+Admit those verified bytes through the existing restricted host controller;
+readiness, backup and rollback remain required. No main job activates production.
+Gateway render/fetch/controller tools remain independently supported operational
+commands; Fastlane owns build, qualification and release composition.
 
 ## Render configuration
 
@@ -53,7 +61,7 @@ newer is required for `env_file.format: raw`; the bootstrap tool lock pins the
 validated Compose version.
 
 ```sh
-just gateway render --settings settings.json --secrets /protected/secrets.json \
+python3 deploy/gateway/scripts/render.py --settings settings.json --secrets /protected/secrets.json \
   --compatibility-policy compatibility-policy.json \
   --image ghcr.io/dbpprt/dieter-gateway@sha256:IMAGE_DIGEST \
   --release rollout-ID --output /protected/rendered
@@ -231,10 +239,9 @@ fixture is not a measured bare-host provisioning or production RTO guarantee.
 ## Validation
 
 ```sh
-just gateway deployment-test
-just gateway deployment-integration
-just gateway test
-just gateway vulncheck
+just pipeline check component:gateway operation:deployment_test
+just pipeline check component:gateway operation:deployment_integration
+just pipeline ci action:check component:gateway
 ```
 
 The integration test builds the actual gateway image, creates named disposable
@@ -244,7 +251,7 @@ It uses no operator daemon, OAuth session, data directory or container. Test
 fixtures are copied into Docker volumes so a remote Docker engine needs no host
 filesystem sharing.
 
-`just gateway turn-test` takes a bounded JSON request on stdin and prints only
+`go run ./tools/fixtures/turn-probe` takes a bounded JSON request on stdin and prints only
 probe results. It verifies the allocated public relay IP and bidirectional random
 payloads between two allocations; credentials never appear in arguments or logs.
 Set `singleAllocation: true` for readiness in an active quota bucket: a normal UDP

@@ -1,181 +1,82 @@
 # Dieter for Android
 
-Native Kotlin/Jetpack Compose client for Android 8+ (API 26+), targeting Android
-37.1. Phones and expanded windows use adaptive navigation and master-detail
-layouts. Start with the [product tour](../../landingpage/content/docs/tour.md)
-for user-facing workflows; this page covers development and verification.
+The Compose app is a presentation-only client of [the shared Kotlin core](../core/README.md).
+The core owns sessions, authenticated routing, synchronization, commands and rules.
+Android adapters provide Keystore credentials, WebRTC/MediaCodec, the Termux
+terminal renderer, background service, notifications, widgets and the sideload updater.
+Put domain behavior in the core and view mechanics here.
 
-## Install and connect
+## Development
 
-Users can install [Dieter-Android.apk](https://github.com/dbpprt/dieter/releases/latest/download/Dieter-Android.apk)
-and sign in to their HTTPS gateway. The account must be allowed by its operator.
-The default endpoint is `https://gateway.getdieter.com`; custom gateways are supported.
-The app discovers compatible enrolled machines and routes work to the conversation
-or checkout owner. Shared projects appear once across machines.
-
-Gateway sessions use a device-bound Android Keystore key. The app does not retain
-GitHub access tokens or provider credentials. Routes prefer verified direct TLS,
-then supported WebRTC, with authenticated gateway relay fallback. Ordinary use
-needs no ADB reverse mapping or raw daemon address.
-
-## Build
-
-Android Studio's bundled JBR and the SDK are selected by the Android Just module:
+Use [Fastlane pipelines](../../fastlane/README.md) from the repository root.
+Install Ruby from `.ruby-version`, Bundler 2.6.9, Android Studio, the Android SDK
+(platform 37.1/build-tools 37.0.0), Go and Node for isolated fixtures.
+The adapter discovers Android Studio's JBR when JAVA_HOME is absent or removed.
 
 ```sh
-just android doctor
-just android build
+bundle install
+npm --prefix internal/harness/runtime ci
+just pipeline config_init
+just pipeline doctor
+just pipeline android test_unit
+just pipeline android build
+just pipeline ci action:check component:android
 ```
 
-If necessary, set `JAVA_HOME` to
-`/Applications/Android Studio.app/Contents/jbr/Contents/Home`. Open `apps/android`
-in Android Studio for interactive development. Client logic (connection, sync,
-outbox, conversations, captures, schedules, terminals, screens) and the
-presentation rules behind the UI (what a row, notice, or control says and
-allows) live in the shared Kotlin core under [`apps/core`](../core/README.md),
-which also generates the Wire messages and gRPC clients from the authoritative
-schema and provides the OkHttp transport. The app keeps the Compose UI and
-Android adapters: the transport's TLS providers, Keystore credentials,
-WebRTC/MediaCodec screen media, notifications, widgets, the sideload updater,
-and the background service. Add new rules to the core with core tests, not to
-the app. Do not commit generated build outputs.
+The complete component check runs JVM tests, debug build/lint and compilation of
+isolated E2E and non-debuggable performance variants. Compilation is distinct from
+executing device tests. Debug output is `app/build/outputs/apk/debug/app-debug.apk`;
+build/evidence manifests are printed under `tmp/app-pipelines/UUID`.
 
-## Visible emulator
+## Emulator and physical devices
+
+The default profile selects visible `Pixel_9_API_37_1` at `emulator-5554`, normal
+`default_boot` snapshots and host GLES. Tests borrow a healthy existing emulator or
+manage one they launch. An owned run validates boot, renderer, unlocked launcher,
+XML and PNG, then saves a healthy snapshot and gracefully closes its own process.
+No wipe, cold-boot, software-renderer, headless or no-snapshot shortcuts are allowed.
+Read [agent lifecycle instructions](agents.md) before diagnosis or repair.
 
 ```sh
-just android emulator-status
-just android emulator-start
-just android install
-just android launch
+just pipeline android local action:status
+just pipeline android local action:emulator_check
+just pipeline android e2e profile:android-emulator suite:smoke
+just pipeline android e2e suite:functional
+just pipeline android e2e suite:sync
+just pipeline android e2e suite:sdk
+just pipeline android e2e suite:performance
+just pipeline android e2e suite:screens
 ```
 
-The standard target is **Pixel_9_API_37_1**, serial **emulator-5554**. Preserve that
-serial on every ADB and Gradle command that can choose a device; do not let an
-attached physical phone become the implicit test target.
-
-The launcher reuses a healthy visible AVD, checks resolved AVD storage, requires
-10 GiB free, and verifies host rendering, boot, focus, UI hierarchy, and a valid
-screenshot. Its memory estimate is advisory; the actual renderer check decides
-health. Do not wipe app data, remove caches, or improvise cold-boot/software-GPU
-flags. For a diagnosed lifecycle problem, read [agents.md](agents.md).
-
-Installation and connected tests retain app data and credentials. Do not use
-`adb uninstall` to fix an installation failure.
-
-## Native workflows
-
-**Inbox** (Activity) is the default destination, followed by **Projects**
-(boards), **Chats**, and **Tools**. Inbox combines recent card/chat activity,
-project filters, a timeline, Needs you, Running, and account quota windows.
-Back from a conversation preserves its Inbox filter and scroll position.
-
-Tools opens Machines, Terminal, Files, Schedules, Screens, and Settings. Project
-and checkout choices route operations to the owning daemon. Terminals render
-ANSI/VT output with the bundled Apache-2.0 Termux modules; the local-process JNI
-bridge is excluded because the phone does not start a local shell.
-
-Android Sharesheet content and the Inbox **New task** button open a project chooser
-and the shared New Task editor. A project with several active boards requires a
-board choice; the editor identifies the checkout that will own the task. Board
-Quick Task uses the same draft, attachment controls and submission path as More
-Options. Switching views keeps text, attachments and agent settings.
-
-Task capture supports shared text/URLs and readable images or files: up to four
-attachments, 5 MiB each and 6 MiB combined. Photos use the Android picker; Files
-uses the document picker, with no broad storage permission. Images have a preview;
-other files show name/type/size. Failed imports can be retried, replaced or removed.
-Unsent task drafts and copied bytes are atomically stored in the app's private,
-non-backed-up storage, separately from the source URI. Importing blocks submission.
-Closing the editor keeps the draft; explicit discard removes it. Up to 20 drafts
-are retained, and saved drafts are accessible from the project chooser.
-
-Validated offline tasks use the durable creation outbox. Missing destination/model
-information requires reconnection while preserving the draft. Upload uses the
-existing authenticated creation request; the owning daemon persists attachments
-under DIETER_HOME. The gateway does not store file content. An admitted request
-retains its command identity and payload across retries and process recreation.
-Local draft copies are released after durable outbox admission; delivery errors
-remain visible in the existing outbox UI.
-
-Conversations retain per-conversation drafts and attachments. Editing a queued
-message atomically removes it from the host queue and restores its full payload
-and selection to that composer. Reasoning traces are hidden by default and can
-be enabled in chat display settings.
-
-Screens uses MediaCodec and a shared EGL canvas, with H.264 by default and optional
-negotiated HEVC. One finger moves the remote pointer, two fingers zoom/pan locally,
-and three fingers scroll remotely. Clipboard sharing is opt-in for the controlling
-viewer. See the [Screens guide](../../landingpage/content/docs/screens.md).
-
-## Background activity and updates
-
-- **Live:** keeps the stream and a partial wake lock for prompt updates.
-- **Smart:** stays live during work and makes best-effort idle checks, subject to Doze.
-- **App only:** observes while the app is open.
-
-Live and Smart use a `remoteMessaging` foreground service and connection
-notification. Running-chat notifications are separate; result alerts use their
-own channel. Board Review notifications are off by default and configurable per
-board. Closing observation never cancels a host agent.
-
-The app checks the latest public release for updates, verifies the published APK
-SHA-256 digest, then asks Android to install it. The user confirms each install;
-no silent update is attempted. Manual check: **App Settings → Updates**.
-
-Eight designs include default Native Monochrome. Appearance changes affect the
-UI, terminal, widgets, notification accents, and launcher icon. `just android
-sync-brand` regenerates the themed-icon mark, the notification and widget mark,
-and the Sora font from `assets/brand`; the per-design launcher icons are
-committed resources.
-
-## Verify safely
+Set the exact ADB serial and enable `android-device` in ignored
+`fastlane/local.json`, then pass `profile:android-device` explicitly. A physical
+phone is never auto-selected, rebooted or wiped. Tests use `com.dbpprt.dieter.e2e`
+and fresh private app/daemon/gateway state; the operator's Dieter app is preserved.
+Device/build leases prevent concurrent installation/reset of the same target.
+Screens need a macOS capture host; performance needs the separate emulator APK.
 
 ```sh
-just check-changed --dry-run
-just check-changed
-just core test      # the shared core's rules, sync, and OkHttp transport, against isolated fixtures
-just android test
-just android check  # unit tests, lint, debug APK and both E2E/performance app/test APKs; no device
+just pipeline android e2e profile:android-device suite:functional
+just pipeline android local action:install profile:android-device
+just pipeline android local action:launch profile:android-device
+just pipeline android local action:screenshot profile:android-device
+just pipeline android local action:ui_dump profile:android-device
+just pipeline android local action:app_stop profile:android-device
 ```
 
-For a healthy selected emulator, use the shared YAML/native runner:
+Local install/launch operations use the development app and retain its data.
+Screenshot and hierarchy evidence go to the printed fresh directory. Native test
+methods and [YAML journeys](../../tests/e2e/README.md) remain authoritative; skipped,
+missing, duplicate, unavailable and failed assertions or cleanup fail qualification.
 
-```sh
-just e2e lint
-just e2e run --suite smoke
-just e2e run --suite functional
-just e2e run --case machines.telemetry
-just e2e run --suite sync
-just e2e run --suite performance
-just e2e run --suite screens  # requires a macOS capture host
-```
+## Distribution
 
-See [the test catalog guide](../../tests/e2e/README.md) for case authoring,
-change selection, artifacts, and iOS preparation. Android runs in the separate
-`com.dbpprt.dieter.e2e` package with disposable authenticated fixtures. Every
-case starts with clean test app data. APKs are built once and reused by hash;
-YAML-only edits need no recompilation.
+Main prepares a signed APK using an explicitly supplied Android keystore and
+Gradle signing configuration. Fastlane manages keystore restoration, build,
+package verification and retention; Android's signing tools verify the result.
+The same reserved SemVer is used by all Dieter components and the integer build
+counter is the Android versionCode. Main publishes **dev** prereleases without
+advancing stable updater/Latest channels. Stable promotion reuses retained bytes.
 
-Performance is a separate suite using the non-debuggable
-`com.dbpprt.dieter.e2e.performance` app. It retains native frame limits and idle-CPU
-measurements and never installs over the operator app. Add `dieterPerformanceFrames: "true"` under the performance case's `arguments` for diagnostic frame traces;
-keep those runs separate from clean measurements.
-
-
-Diagnostic frame traces are bounded to 4,096 samples and retain the frame limits.
-The catalog excludes configured-account tests; they require a separately
-reviewed manual operation. All standard gates use disposable fixtures and mock
-agents. Real-screen input targets only the owned capture-host window.
-See [WebRTC adapter details](webrtc-adapter.md).
-
-Capture and inspect both semantic and visual evidence:
-
-```sh
-just android ui-dump apps/android/build/evidence/ui.xml
-just android screenshot apps/android/build/evidence/screen.png
-```
-
-If you launched the AVD, finish with `just android emulator-stop`. It returns to
-the launcher, saves and validates the normal snapshot, and closes gracefully.
-Use `just android app-stop` when only your app session should stop. Never terminate
-somebody else's emulator or daemon to make a test pass.
+Release keys belong in protected external files or CI secrets. Never commit the
+keystore or plaintext passwords; local JSON holds only file/environment references.

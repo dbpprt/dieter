@@ -1,0 +1,125 @@
+# frozen_string_literal: true
+
+ENV["FASTLANE_SKIP_UPDATE_CHECK"] = "true"
+ENV["FASTLANE_OPT_OUT_USAGE"] = "true"
+ENV["FASTLANE_HIDE_CHANGELOG"] = "true"
+ENV["FASTLANE_SKIP_DOCS"] = "true"
+
+opt_out_usage
+
+require_relative "lib/dieter/runtime"
+require_relative "lib/dieter/ci"
+require_relative "lib/dieter/checks"
+require_relative "lib/dieter/operations"
+require_relative "lib/dieter/screens"
+
+desc "Qualify specialized screen measurements; manifest:PATH profile:PHYSICAL_PROFILE baseline:PATH cases:IDS output:PATH"
+lane :screens_qualify do |options|
+  Dieter::Screens.invoke(options)
+end
+
+desc "Run validated native qualification on an explicit CI runner/profile"
+lane :native_ci do |options|
+  Dieter::Runtime.native_ci(options)
+end
+
+desc "Inspect or run typed affected checks; dry_run:true base:REF ci:true"
+lane :checks do |options|
+  Dieter::Checks.invoke(options)
+end
+
+desc "Run one declared support check; component:NAME operation:NAME"
+lane :check do |options|
+  values = options.transform_keys(&:to_s)
+  Dieter::Checks.execute(values)
+end
+
+desc "Reusable CI setup and component checks; action:setup|check component:NAME fixture:true|false"
+lane :ci do |options|
+  Dieter::CI.invoke(options)
+end
+
+desc "Inspect configured targets/toolchains without launching devices or installing tools"
+lane :doctor do
+  Dieter::Runtime.doctor
+end
+
+desc "Create an ignored local configuration; select runtime:IDENTIFIER when several runtimes exist"
+lane :config_init do |options|
+  Dieter::Runtime.configure(options)
+end
+
+desc "Validate/list/plan the native catalog; action:lint|list|plan platform:android|ios|mac suite:NAME cases:IDS"
+lane :catalog do |options|
+  Dieter::Runtime.catalog(options)
+end
+
+desc "Run shared Kotlin core JVM unit and isolated transport tests"
+lane :core_test do |options|
+  Dieter::Runtime.invoke("test_unit", "core", options)
+end
+
+desc "Run Kotlin Apple tests and Swift-to-core isolated integration tests"
+lane :core_apple_test do |options|
+  Dieter::Runtime.core_apple(options)
+end
+
+desc "Build shared Apple framework slices using the canonical cache; configuration:debug|release platforms:macos|ios-simulator|all"
+lane :framework do |options|
+  Dieter::Operations.invoke("core", options.merge(action: "framework"))
+end
+
+desc "Build/test daemon or gateway through the shared component pipeline; component:daemon|gateway operation:build|test_unit|verify"
+lane :component do |options|
+  values = options.dup
+  component = values.delete(:component)
+  operation = values.delete(:operation)
+  Dieter::Runtime.invoke(operation, component, values, actions: self)
+end
+
+desc "Prepare one immutable release candidate; component:NAME identity:PATH profile:NAME output:PATH"
+lane :candidate do |options|
+  values = options.dup
+  component = values.delete(:component)
+  Dieter::Runtime.candidate(component, values, actions: self)
+end
+
+desc "Coordinate fixed release identities and exact artifact distribution; action:reserve|assemble|publish|distribute|verify|promote|pin|gateway_prepare tag:TAG or identity:PATH"
+lane :release do |options|
+  Dieter::Runtime.release(options, actions: self)
+end
+
+%i[android ios mac].each do |component|
+  platform component do
+    unless component == :ios
+      desc(component == :mac ? "Local Mac tools; action:status|run|quit|verify|format|format_check|proto_generate|proto_check" : "Local Android tools; action:status|emulator_check|install|launch|app_stop|ui_dump|screenshot|logs profile:NAME")
+      lane :local do |options|
+        Dieter::Operations.invoke(component.to_s, options)
+      end
+    end
+    desc "Run #{component} unit checks; optional filter:NAME (iOS is portable policy tests)"
+    lane :test_unit do |options|
+      Dieter::Runtime.invoke("test_unit", component.to_s, options, actions: self)
+    end
+
+    desc "Build #{component}; configuration:debug|release; output:PATH must be fresh"
+    lane :build do |options|
+      Dieter::Runtime.invoke("build", component.to_s, options, actions: self)
+    end
+
+    desc "Execute isolated native cases; profile:NAME suite:smoke|functional|sync|sdk|screens|performance cases:IDS changed:true base:REF output:PATH"
+    lane :e2e do |options|
+      Dieter::Runtime.invoke("e2e", component.to_s, options, actions: self)
+    end
+
+    desc "Build native test products without executing cases; profile:NAME suite:NAME"
+    lane :prepare_tests do |options|
+      Dieter::Runtime.invoke("prepare_tests", component.to_s, options, actions: self)
+    end
+
+    desc "Verify existing artifact:MANIFEST without rebuilding"
+    lane :verify do |options|
+      Dieter::Runtime.invoke("verify", component.to_s, options, actions: self)
+    end
+  end
+end

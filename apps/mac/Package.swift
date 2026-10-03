@@ -55,7 +55,7 @@ let package = Package(
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
             ]),
         // The shared Kotlin core (apps/core), assembled into Frameworks/ by
-        // scripts/shared-framework.sh; `just mac build|test` and `just ios build`
+        // fastlane/lib/dieter/platforms/framework.rb; Mac and iOS build/test lanes
         // refresh it when the core changes.
         .binaryTarget(name: "DieterShared", path: "Frameworks/DieterShared.xcframework"),
         // The apps' side of the shared core: the native transport and platform

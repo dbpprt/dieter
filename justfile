@@ -1,109 +1,70 @@
 set default-list
 set shell := ["bash", "-euo", "pipefail", "-c"]
+export FASTLANE_OPT_OUT_USAGE := "true"
+export FASTLANE_SKIP_UPDATE_CHECK := "true"
+export LANG := "en_US.UTF-8"
 
-mod mac 'just/mac.just'
-mod ios 'just/ios.just'
-mod android 'just/android.just'
-mod core 'just/core.just'
-mod e2e 'just/e2e.just'
-mod daemon 'just/daemon.just'
-mod gateway 'just/gateway.just'
-mod harness 'just/harness.just'
 mod site 'just/site.just'
-mod release 'just/release.just'
 
-# List the repository commands.
+# One shared pipeline for local work, CI, candidates and release distribution.
+[positional-arguments]
+pipeline *args:
+    bundle exec fastlane "$@"
+
+# App alias uses exactly the same implementation.
+[positional-arguments]
+app *args:
+    bundle exec fastlane "$@"
+
+# List facade commands; use just pipeline lanes for component operations.
 default:
     @just --list
 
-# Verify the platform-neutral tools needed for repository development.
 doctor:
-    command -v just
-    command -v go
-    just daemon doctor
-    just gateway doctor
-    just harness doctor
+    just pipeline doctor
 
-# Verify every native and platform-neutral development tool.
-doctor-all: doctor
-    just mac doctor
-    just ios doctor
-    just android doctor
+# Include uncommitted changes; --base REF includes branch changes.
+[positional-arguments]
+check-changed *args:
+    bundle exec ruby -r ./fastlane/lib/dieter/checks -e 'Dieter::Checks.cli(ARGV)' -- "$@"
 
-# Generate Go clients and synchronize native schema inputs.
+# Complete platform-neutral validation.
+check:
+    just pipeline ci action:check component:portable
+
+# Complete unit/build validation of every component on a Mac development host.
+check-all: check
+    just pipeline ci action:check component:core
+    just pipeline ci action:check component:core-apple
+    just pipeline ci action:check component:mac
+    just pipeline ci action:check component:ios
+    just pipeline ci action:check component:android
+
+# Regenerate authoritative Go and copied schemas, then checked-in Swift clients.
 proto-core:
     ./scripts/generate-proto.sh
 
-# Generate every checked-in protobuf client.
 proto: proto-core
-    just mac proto-generate
+    just pipeline mac local action:proto_generate
 
-# Build both Go binaries.
 build:
-    just daemon build
-    just gateway build
+    just pipeline component component:daemon operation:build
+    just pipeline component component:gateway operation:build
 
-# Run the Go test suite.
 test:
-    go test ./...
+    just pipeline check component:portable operation:go_test packages:./...
 
-# Run the Go test suite with the race detector.
-test-race:
-    go test -race ./...
-
-# Run Go static analysis.
 vet:
-    go vet ./...
+    just pipeline check component:portable operation:go_vet packages:./...
 
-# Run the complete platform-neutral repository validation.
-check: justfile-check workflow-check proto-core test-race vet build
-    just e2e check
-    just harness test
-    just daemon linux-capture-test
-
-# Run the platform-neutral checks and both native client test suites.
-check-all: check
-    just mac check
-    just android check
-
-# Run local checks for changed code; accepts --dry-run and --base REF.
-[positional-arguments]
-check-changed *args:
-    python3 scripts/check_changed.py "$@"
-
-# Verify every Just module is formatted and parseable.
 justfile-check:
-    just --fmt --check
-    just --justfile just/mac.just --fmt --check
-    just --justfile just/ios.just --fmt --check
-    just --justfile just/android.just --fmt --check
-    just --justfile just/core.just --fmt --check
-    just --justfile just/e2e.just --fmt --check
-    just --justfile just/daemon.just --fmt --check
-    just --justfile just/gateway.just --fmt --check
-    just --justfile just/harness.just --fmt --check
-    just --justfile just/site.just --fmt --check
-    just --justfile just/release.just --fmt --check
+    just pipeline check component:portable operation:justfile_check
 
-# Verify that workflow shell execution is centralized through Just.
 workflow-check:
-    just release workflow-check
+    just pipeline check component:portable operation:workflow_check
 
-# Install the local pre-commit hooks.
 hooks:
-    command -v pre-commit >/dev/null || { echo "pre-commit is required; install it with: brew install pre-commit" >&2; exit 1; }
     pre-commit install --install-hooks
 
-# Run every pre-commit hook against the repository.
 pre-commit:
-    command -v pre-commit >/dev/null || { echo "pre-commit is required; install it with: brew install pre-commit" >&2; exit 1; }
     pre-commit run --all-files
-
-# Install the Dieter CLI/helper pair. Set capture=false for a headless host.
-install prefix="/usr/local" destdir="" capture="true":
-    just daemon install "{{ prefix }}" "{{ destdir }}" "{{ capture }}"
-
-# Remove only repository-level generated binaries.
-[confirm]
-clean:
-    rm -f bin/dieter bin/dieter-gateway dieter dieter-gateway coverage.out

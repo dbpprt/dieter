@@ -29,6 +29,12 @@ __pycache__/
 
 # Local scratch output
 /tmp/
+/.bundle/
+/fastlane/local.json
+/fastlane/.private/
+/fastlane/report.xml
+/fastlane/Preview.html
+/dist/
 # SwiftPM output when a package command runs from the repository root
 /.build/
 /.codex-tmp/
