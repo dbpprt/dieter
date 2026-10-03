@@ -43,7 +43,6 @@ enum class DieterPalette(
         val DEFAULT = MONOCHROME
 
         fun resolve(value: String?): DieterPalette {
-            if (value == "acid-terminal" || value == "ACID_TERMINAL") return MONOCHROME
             return entries.firstOrNull { it.slug == value || it.name == value } ?: DEFAULT
         }
     }

@@ -130,15 +130,7 @@ class AppPreferences(
         private const val KEY_PROJECTS_PANE_LEADING_FRACTION = "projects_pane_leading_fraction"
         private const val KEY_BOARD_PANE_LEADING_FRACTION = "board_pane_leading_fraction"
 
-        private val KEYS = setOf(
-            KEY_PALETTE, KEY_CHATS_PANE_LEADING_FRACTION, KEY_ACTIVITY_PANE_LEADING_FRACTION,
-            KEY_PROJECTS_PANE_LEADING_FRACTION, KEY_BOARD_PANE_LEADING_FRACTION,
-        )
-
         internal fun preferences(context: Context) = context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-
-        /** Whether [key] is one this class reads. */
-        internal fun keeps(key: String): Boolean = key in KEYS
 
         fun selectedPalette(context: Context): DieterPalette = DieterPalette.resolve(
             preferences(context).getString(KEY_PALETTE, DieterPalette.DEFAULT.slug),

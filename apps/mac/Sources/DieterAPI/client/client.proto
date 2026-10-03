@@ -56,8 +56,10 @@ message Command {
     RenameMachine rename_machine = 40;
     RevokeMachine revoke_machine = 41;
     EnsureMetadata ensure_metadata = 42;
-    SetGateways set_gateways = 43;
+    UseGateway use_gateway = 43;
+    RemoveGateway remove_gateway = 80;
     Resync resync = 44;
+    // UI fixtures only: projects and folders that exist on one device.
     SetProjectOrder set_project_order = 45;
     SetProjectExpanded set_project_expanded = 48;
     SetChatSectionCollapsed set_chat_section_collapsed = 49;
@@ -286,16 +288,16 @@ message EnsureMetadata {
   bool refresh = 2;
 }
 
-// Replaces the gateway list; plaintext is only allowed on loopback.
-message SetGateways {
-  repeated GatewayConfig gateways = 1;
-  string active_origin = 2;
-}
-
-message GatewayConfig {
+// Makes the gateway at `url` active, adding it when it is new; a non-empty
+// `name` renames it. Plaintext is only allowed on loopback.
+message UseGateway {
   string url = 1;
   string name = 2;
 }
+
+// Removes a configured gateway; the last one cannot be removed. Removing the
+// active gateway activates the first remaining one.
+message RemoveGateway { string origin = 1; }
 
 // Drops the cached workspace and synchronizes from scratch.
 message Resync {}
@@ -327,6 +329,7 @@ message SetLaneDescending {
 // Replaces a scope's folders: names, order, expansion, and members. An item
 // belongs to one folder; the first listing wins. Only the differences are
 // recorded, so concurrent edits elsewhere survive.
+// Replaces a scope's folders: names, order, expansion, and members.
 message SetFolders {
   FolderScope scope = 1;
   repeated NavigationFolder folders = 2;
@@ -574,6 +577,14 @@ message AgentPickerItem {
 }
 
 // Agent pickers as the core resolves them.
+enum AgentOptionKind {
+  AGENT_OPTION_KIND_TEXT = 0;
+  // A switch: its value is "true" or "false".
+  AGENT_OPTION_KIND_TOGGLE = 1;
+  // A picker over the option's choices.
+  AGENT_OPTION_KIND_CHOICE = 2;
+}
+
 message AgentControlsState {
   // What a send or creation uses: the choice with its gaps filled from the
   // conversation's agent and its options validated against the catalog.
@@ -600,6 +611,20 @@ message AgentControlsState {
   map<string, string> option_values = 12;
   // Option ID → it may change now.
   map<string, bool> option_enabled = 13;
+  // The effort picker's entries: "Default" (the provider's own) first, then
+  // `efforts`.
+  repeated dieter.v1.EffortOption effort_choices = 14;
+  // The effort picker's selected entry: the chosen effort, else "default".
+  string effort_value = 15;
+  // The provider's fast mode is on.
+  bool fast_mode = 16;
+  // Option ID → how its field edits it. Choice names fall back to values.
+  map<string, AgentOptionKind> option_kinds = 17;
+  // Toggle option ID → it is on.
+  map<string, bool> option_on = 18;
+  // The provider's fast-mode toggle, which pickers show apart; empty when it
+  // has none.
+  string fast_option_id = 19;
 }
 
 // ---------------------------------------------------------------------------
@@ -793,6 +818,37 @@ message GitOperationFormSpec {
   repeated Input inputs = 6;
   // The strategies to choose from, the default first; `caption` is empty.
   repeated MergeStrategyOption strategies = 7;
+  GitFormCopy copy = 8;
+  // A caution below the inputs; absent when there is none.
+  GitFormNotice notice = 9;
+}
+
+// How a Git operation form words its inputs, in sentence case.
+message GitFormCopy {
+  string subject = 1;
+  string subject_placeholder = 2;
+  string body = 3;
+  string body_placeholder = 4;
+  string stage_all = 5;
+  string fetch = 6;
+  string validate = 7;
+  string strategy = 8;
+  string draft = 9;
+  string push = 10;
+  string force_with_lease = 11;
+  string expected_remote_sha = 12;
+  string expected_remote_sha_placeholder = 13;
+  // Under the expected remote head.
+  string expected_remote_sha_help = 14;
+  string target_card_id = 15;
+  string target_card_id_placeholder = 16;
+}
+
+// A caution below a Git operation form's inputs.
+message GitFormNotice {
+  string title = 1;
+  string detail = 2;
+  WorkspaceTone tone = 3;
 }
 
 message ReviewMerge {
@@ -1251,6 +1307,9 @@ message SessionSlice {
   bool workspace_live = 15;
   // This device shows reasoning traces in transcripts (SetShowReasoning).
   bool show_reasoning = 17;
+  // How the phase reads: connected succeeds, connecting or signing in is a
+  // warning, a blocked connection is danger.
+  Tone tone = 18;
 }
 
 // The connection notice above cached synchronized views.
@@ -1296,8 +1355,6 @@ message MachineEntry {
   string minimum_release_version = 11;
   bool remote_desktop_ready = 13;
   string remote_desktop_reason = 14;
-  // The gateway's CompatibilityStatus name, e.g. "COMPATIBILITY_STATUS_UPDATE_REQUIRED".
-  string compatibility = 15;
   // The open data plane is a loopback route: the machine is this device, so
   // its paths can be opened locally.
   bool local = 17;
@@ -1320,6 +1377,13 @@ message MachineEntry {
   // A screen share can start: online while the gateway connection is live,
   // and current. `screen_status` says whether the host is ready.
   bool can_share_screen = 23;
+  // "Online" or "Offline".
+  string presence = 24;
+  // The machine's name, else its ID.
+  string display_name = 25;
+  // Available succeeds, a compatible machine that cannot take work warns,
+  // an outdated one is danger.
+  Tone tone = 26;
 }
 
 message WorkspaceSlice {
@@ -1740,7 +1804,6 @@ message SubagentDetail {
 message TurnFailure {
   string summary = 1;
   string log = 2;
-  string failed_message_id = 3;
   // The failed request can be sent again.
   bool retryable = 4;
 }
@@ -1897,6 +1960,16 @@ enum BoardLaneKind {
 }
 
 // A runtime's colour family.
+// How a status reads, for its color.
+enum Tone {
+  TONE_NEUTRAL = 0;
+  // Working on it: connecting, running.
+  TONE_ACTIVE = 1;
+  TONE_SUCCESS = 2;
+  TONE_WARNING = 3;
+  TONE_DANGER = 4;
+}
+
 enum RuntimeTone {
   RUNTIME_TONE_IDLE = 0;
   // A turn is starting, running, or stopping.
@@ -1948,6 +2021,8 @@ message BoardCardFlags {
 
 // The navigation layout with this device's pending edits applied.
 message NavigationSlice {
+  // The saved layout, as `sidebar_projects` and `chat_list` rules lay out
+  // projects and chats a UI fixture installed on one device.
   repeated string project_order = 1;
   repeated string pinned_projects = 2;
   repeated string pinned_chat_order = 3;
@@ -2054,6 +2129,9 @@ message ChatProjectSection {
   bool show_all = 6;
   // Its chats show: not collapsed, or while searching.
   bool show_chats = 7;
+  // The button below the chats: "Show 3 more", or "Show fewer" while
+  // showing all; empty when none are hidden.
+  string toggle_label = 8;
 }
 
 // Creation choices remembered on this device.
@@ -2193,8 +2271,6 @@ message ContentLinkFailure {
   Kind kind = 1;
   // Ready to show, e.g. "This file is outside the conversation's workspace."
   string message = 2;
-  // The unsupported scheme as written, e.g. "mailto".
-  string scheme = 3;
 }
 
 // Web links in prose, in order and never overlapping (SharedRules.detectLinks).
@@ -2221,6 +2297,23 @@ message TerminalsSlice {
   // Output this observer has not seen yet, per terminal; never in command
   // results.
   repeated TerminalOutput output = 8;
+  // The surface's status line: "Syncing persistent sessions…", what
+  // terminals are while there are none, else "2 persistent sessions · live".
+  string status = 9;
+  // Every terminal as tabs and lists show it, in `terminals` order.
+  repeated TerminalRow rows = 10;
+}
+
+message TerminalRow {
+  string id = 1;
+  bool running = 2;
+  // "Connected", "Reconnecting", "Exited 1", or "Exited".
+  string status = 3;
+  Tone tone = 4;
+  // Keys and text reach the shell: running with its output streaming.
+  bool accepts_input = 5;
+  // What closing it does, for its confirmation.
+  string close_message = 6;
 }
 
 message TerminalOutput {
@@ -2242,6 +2335,9 @@ message TerminalOverviewSlice {
   bool no_machines = 5;
   // The selected entry's machine.
   TerminalsSlice terminals = 6;
+  // "2 persistent sessions across 1 machine", or what terminals are while
+  // there are none.
+  string status = 7;
 }
 
 message OverviewTerminal {
@@ -2250,6 +2346,8 @@ message OverviewTerminal {
   string daemon_id = 2;
   string machine_name = 3;
   dieter.v1.Terminal terminal = 4;
+  // How tabs show it; output streams only for the selected machine's terminals.
+  TerminalRow row = 5;
 }
 
 // The shown project's schedules.
@@ -2963,6 +3061,64 @@ message ConflictRecord { dieter.v1.PeerRecord record = 1; }
 
 message Projects { repeated dieter.v1.Project projects = 1; }
 
+// A machine as a new chat's destination picker names it.
+message ChatDestinationMachine {
+  string daemon_id = 1;
+  // The client's own ID for the machine.
+  string id = 2;
+  string name = 3;
+  bool online = 4;
+  string version = 5;
+}
+
+message ChatDestinationInput {
+  repeated dieter.v1.Project projects = 1;
+  repeated ChatDestinationMachine machines = 2;
+}
+
+// Where a new chat can run: every attached checkout, grouped by the machine
+// holding it; online machines first, then by name.
+message ChatDestinationGroups {
+  repeated ChatDestinationGroup groups = 1;
+}
+
+message ChatDestinationGroup {
+  // The machine's client ID, else "unavailable:<daemon>" when no machine
+  // reports the checkout's daemon.
+  string machine_id = 1;
+  string machine_name = 2;
+  bool machine_online = 3;
+  string machine_version = 4;
+  // "Studio · Online".
+  string title = 5;
+  // By project name, then checkout path.
+  repeated ChatDestination destinations = 6;
+}
+
+message ChatDestination {
+  string project_id = 1;
+  string checkout_id = 2;
+  string machine_id = 3;
+  // "app · Studio".
+  string title = 4;
+  // "Online · ~/src/app".
+  string detail = 5;
+  // The project's name, told apart from the machine's other checkouts of it
+  // by the checkout's name or folder.
+  string option_title = 6;
+}
+
+message Checkouts { repeated dieter.v1.Checkout checkouts = 1; }
+
+// Each candidate's hostnames, for routing a captured browser page.
+message HostnameSets {
+  repeated HostnameSet sets = 1;
+}
+
+message HostnameSet {
+  repeated string hostnames = 1;
+}
+
 // ---------------------------------------------------------------------------
 // Machines: the selected machine's live telemetry (every 2 s while shown),
 // and power and update operations.
@@ -3165,11 +3321,55 @@ message QuotaWindowRow {
 message QuotaDetail {
   string label = 1;
   string text = 2;
+  // A balance or spend, which views that keep money off screen leave out.
+  bool monetary = 3;
 }
 
 // ---------------------------------------------------------------------------
 // Labels: the palette every client offers when it creates or edits a label.
 // Any six-digit hex color is valid; the palette only suggests.
+
+// The choices project and board forms offer, and what a new project or
+// board starts with, as every client words them.
+message AdminOptions {
+  repeated AdminChoice workflows = 1;
+  repeated AdminChoice publish_modes = 2;
+  repeated AdminChoice archive_policies = 3;
+  string default_board_name = 4;
+  string default_workflow = 5;
+  string default_base_remote = 6;
+  string default_base_branch = 7;
+  string default_publish_mode = 8;
+  string default_archive_policy = 9;
+  // What a new validation command's form starts with.
+  ValidationDraft new_validation = 10;
+}
+
+message AdminChoice {
+  // The value a request carries, e.g. "review" or "after_7_days".
+  string id = 1;
+  // "With review", "After 7 days".
+  string title = 2;
+  // What the choice does, when the form explains it.
+  string detail = 3;
+  // A workflow's lanes: "Todo → Running → Review → Done".
+  string lanes = 4;
+}
+
+// A validation command as its form edits it: arguments and environment one
+// per line, the timeout as typed.
+message ValidationDraft {
+  string name = 1;
+  string executable = 2;
+  string arguments = 3;
+  string working_directory = 4;
+  string environment = 5;
+  string timeout_seconds = 6;
+}
+
+message ValidationDrafts {
+  repeated ValidationDraft drafts = 1;
+}
 
 message LabelPalette {
   repeated LabelSwatch swatches = 1;
@@ -3396,6 +3596,27 @@ message ScreenSlice {
   // The network round trip: "12 ms RTT", "<1 ms RTT", or "— ms RTT" without
   // a measurement or outside streaming.
   string latency_label = 34;
+  // "Connected · Control" or "Connected · View only" while streaming, else
+  // the phase label.
+  string status_line = 35;
+  // The line above the canvas: "1920 × 1080 · H264 · 60 fps · Direct media"
+  // while streaming, leaving out what is unknown.
+  string metadata = 36;
+  // "Direct media", "Relayed media", or empty until the media path is known.
+  string media_route = 37;
+  // The connection details, one "Name · value" line each.
+  repeated string details = 38;
+  bool streaming = 39;
+  // The machine cannot share its screen: permission or support is missing.
+  bool blocked = 40;
+  bool failed = 41;
+  // How the phase reads: streaming succeeds, a session on its way is a
+  // warning, a failure is danger.
+  Tone tone = 42;
+  // "Control" or "View only".
+  string control_label = 43;
+  // "2 viewers · Pixel controls" while others watch too; empty otherwise.
+  string viewers_label = 44;
 }
 
 // The native media engine across the Apple bridge, encoded.

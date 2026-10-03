@@ -54,8 +54,7 @@ object MachineFormats {
     /** "Mac16,1 · M4 Max  ·  macOS 26.1  ·  up 1h 1m", leaving out what is blank. */
     fun subtitle(hardwareModel: String, processor: String, osName: String, osVersion: String, uptimeSeconds: Long): String {
         val hardware = listOf(hardwareModel, processor).filter(String::isNotBlank).joinToString(" · ")
-        val os = listOf(osName, osVersion).filter(String::isNotBlank).joinToString(" ")
-        return listOf(hardware, os, "up ${uptime(uptimeSeconds)}").filter(String::isNotBlank).joinToString("  ·  ")
+        return listOf(hardware, operatingSystem(osName, osVersion), "up ${uptime(uptimeSeconds)}").filter(String::isNotBlank).joinToString("  ·  ")
     }
 
     fun gpuVendor(vendor: GPUVendor): String? = when (vendor) {
@@ -123,11 +122,24 @@ object MachineFormats {
     fun daemonVersion(buildVersion: String, releaseVersion: String, revision: String): String = version(buildVersion.ifBlank { releaseVersion }, revision)
 
     /** Why [row]'s information is missing: the read's [error], else that an online machine sent none, else the row's detail. */
-    fun informationUnavailable(row: MachineRow, error: String?): String = error ?: if (row.online) "Machine information is unavailable." else row.detail
+    fun informationUnavailable(row: MachineRow, error: String?): String = informationUnavailable(row.online, row.detail, error)
+
+    /** Why a machine's information is missing: the read's [error], else that an [online] machine sent none, else its [detail]. */
+    fun informationUnavailable(online: Boolean, detail: String, error: String?): String =
+        error?.takeIf(String::isNotBlank) ?: if (online) "Machine information is unavailable." else detail
+
+    /** "64.0 GB total · 12.0 GB cached · 1.0 GB swap". */
+    fun memory(totalBytes: Long, cachedBytes: Long, swapBytes: Long): String = "${bytes(totalBytes)} total · ${bytes(cachedBytes)} cached · ${bytes(swapBytes)} swap"
+
+    /** "macOS 26.1", leaving out what is blank. */
+    fun operatingSystem(osName: String, osVersion: String): String = listOf(osName, osVersion).filter(String::isNotBlank).joinToString(" ")
+
+    /** A Dieter process that runs an agent, as opposed to a tool or terminal. */
+    fun isAgentProcess(kind: String): Boolean = kind == "agent"
 
     /** "Last seen just now", "Last seen 8m ago", "… 3h ago", "… 2d ago"; "Last seen unknown" when [lastSeenAt] does not parse. */
     fun lastSeen(lastSeenAt: String, now: Instant): String {
         val at = Timestamps.parse(lastSeenAt) ?: return "Last seen unknown"
-        return "Last seen " + (Ages.span(now - at)?.let { "${it.compact} ago" } ?: "just now")
+        return "Last seen " + Ages.ago(at, now)
     }
 }

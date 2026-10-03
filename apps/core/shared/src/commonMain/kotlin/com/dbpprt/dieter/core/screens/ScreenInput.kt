@@ -85,9 +85,10 @@ internal class ScreenInput(
         }
     }
 
+    /** [clicks] counts up to a triple click; the host ignores more. */
     fun button(button: RemoteDesktopPointerButton.Button, down: Boolean, clicks: Int, x: Double, y: Double, modifiers: Int) {
         val (display, control) = generations() ?: return
-        sendReliable(encoder?.button(button, down, clicks, x, y, modifiers, display, control))
+        sendReliable(encoder?.button(button, down, clicks.coerceIn(0, 3), x, y, modifiers, display, control))
     }
 
     fun scroll(dx: Double, dy: Double, phase: Int, momentum: Int, modifiers: Int, precise: Boolean) {

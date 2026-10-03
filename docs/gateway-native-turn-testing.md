@@ -58,24 +58,14 @@ DIETER_TEST_TURN_CONFIG=/absolute/private/turn.json \
 DIETER_TEST_FORCE_TURN=1 just mac screens-test
 ```
 
-For API coverage, start `scripts/isolated-gateway` with
-`DIETER_TEST_CONTROL_WEBRTC=1` and `DIETER_TEST_TURN_CONFIG`, using a fresh
-`--home` and `--addr 127.0.0.1:0`. Capture its environment output into a private
-file. Then run:
+No native test drives the API route through TURN: the Swift connection
+manager that `controlWebRTCRoutesNativeRPCAndReportsSelectedMode` exercised
+was removed when the Mac and iOS apps moved onto the shared core. API routing
+through WebRTC and TURN is covered by `go test -race ./internal/controlrtc`
+and the CLI route tests (see [WebRTC control transport](webrtc-control-transport.md)).
 
-```sh
-DIETER_CONTROL_FIXTURE=/absolute/private/fixture.env \
-DIETER_TEST_FORCE_TURN=1 \
-just mac test controlWebRTCRoutesNativeRPCAndReportsSelectedMode
-```
-
-This test drives the shared `DieterTransport` WebRTC bridge through the iOS
-client's connection manager (`DieterClient`); the Mac app reaches the same
-bridge through the shared core.
-
-The policy exists only in debug builds. The API test requires `WebRTC · TURN`
-before and after reconnect; the screen test requires `Relayed media` while
-checking decoded frames and input/session behavior. Stop the exact fixture
+The policy exists only in debug builds. The screen test requires `Relayed
+media` while checking decoded frames and input/session behavior. Stop the exact fixture
 process afterward. A skipped opt-in test does not count as a pass.
 
 ## Android

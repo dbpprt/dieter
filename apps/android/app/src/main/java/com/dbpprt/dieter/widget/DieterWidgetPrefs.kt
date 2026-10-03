@@ -7,13 +7,8 @@ import android.content.SharedPreferences
 object DieterWidgetPrefs {
     private const val PREFERENCES = "dieter_widget"
 
-    private val keyPrefixes = listOf("style_", "max_items_", "sections_")
-
     internal fun preferences(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-
-    /** Whether [key] is one of a widget's options. */
-    internal fun keeps(key: String): Boolean = keyPrefixes.any(key::startsWith)
 
     fun config(context: Context, appWidgetId: Int): WidgetConfig {
         val preferences = preferences(context)

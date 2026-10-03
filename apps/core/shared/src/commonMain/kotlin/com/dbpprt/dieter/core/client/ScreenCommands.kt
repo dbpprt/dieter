@@ -13,7 +13,7 @@ internal suspend fun ScreenSurface.execute(command: ScreenCommand, routes: (daem
     command.control?.let { session.transferControl(it.on) }
     command.clipboard?.let { session.performClipboard(it.operation) }
     command.clipboard_enabled?.let { session.setClipboardEnabled(it.on) }
-    command.connect?.let { session.connect(routes(it.daemon_id)) }
+    command.connect?.let { session.connect(it.daemon_id, routes(it.daemon_id)) }
     command.disconnect?.let { session.disconnect() }
     command.viewport?.let { session.viewport(it.width_points, it.height_points, it.scale) }
     command.preferences?.let { wanted ->

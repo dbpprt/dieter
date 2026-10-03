@@ -132,11 +132,12 @@ private func actionName(_ action: ClientScreenCommand.OneOf_Action?) -> String {
         $0.screen = .with {
             $0.phase = "failed"
             $0.problem = "The enrolled machine identity changed."
+            $0.failed = true
         }
     }
     #expect(controller.phase == .failed("The enrolled machine identity changed."))
     #expect(controller.errorMessage == "The enrolled machine identity changed.")
-    #expect(controller.mediaRouteLabel == "Negotiating media")
+    #expect(controller.session.mediaRoute.isEmpty)
 }
 
 @Test @MainActor func screenInputMapsAppKitEventsToCoreCommands() async throws {
@@ -171,6 +172,16 @@ private func actionName(_ action: ClientScreenCommand.OneOf_Action?) -> String {
     controller.sendText("héllo")
     controller.releaseAllInput()
     controller.transferControl(take: false)
+    // The core runs one transfer at a time and reports it in flight.
+    core.emit(.screen, scope: controller.scope) {
+        $0.screen = .with {
+            $0.phase = "streaming"
+            $0.controlActive = true
+            $0.canTransferControl = true
+            $0.clipboardEnabled = true
+            $0.controlTransferring = true
+        }
+    }
     #expect(controller.controlTransferPending)
     controller.transferControl(take: true)
     controller.performClipboard("copy")
@@ -196,7 +207,8 @@ private func actionName(_ action: ClientScreenCommand.OneOf_Action?) -> String {
         return
     }
     #expect(pointer.x == 0.25 && pointer.y == 0.75)
-    #expect(button.button == .left && button.down && button.clicks == 3 && button.modifiers == 9)
+    // The core clamps clicks (to 3) and the frame rate (to the host's); the Mac passes them on.
+    #expect(button.button == .left && button.down && button.clicks == 5 && button.modifiers == 9)
     #expect(scroll.dx == 1.5 && scroll.dy == -4.25 && scroll.precise && scroll.phase == 1 && scroll.momentum == 3)
     #expect(scroll.modifiers == 4)
     #expect(key.hid == 4 && key.down && key.repeat && key.modifiers == 18, "the A key is HID usage 4")
@@ -205,7 +217,7 @@ private func actionName(_ action: ClientScreenCommand.OneOf_Action?) -> String {
     #expect(clipboard.operation == "copy")
     #expect(match.width == 1512 && match.height == 982 && match.scale == 2 && match.refresh == 120)
     #expect(stop.width == 0 && stop.height == 0, "an empty target stops matching")
-    #expect(preferences.quality == .motion && preferences.maxFps == 60, "the frame rate stays within the host's")
+    #expect(preferences.quality == .motion && preferences.maxFps == 500)
     #expect(activity >= 8)
 }
 
@@ -217,8 +229,10 @@ private func actionName(_ action: ClientScreenCommand.OneOf_Action?) -> String {
         monitorsInactivity: false)
     session.configureInactivityTimeout(enabled: true, minutes: 1)
     session.connect()
-    controller.phase = .streaming
-    controller.active = true
+    controller.showFixture {
+        $0.phase = "streaming"
+        $0.active = true
+    }
     func count(_ name: String) -> Int {
         screenCommands(core).filter { actionName($0.action) == name }.count
     }
@@ -231,8 +245,8 @@ private func actionName(_ action: ClientScreenCommand.OneOf_Action?) -> String {
     #expect(!controller.systemSleeping)
     #expect(count("sleep") == 1 && count("resume") == 1)
 
+    // The core reports the session idle once it has disconnected.
     session.disconnect()
-    #expect(controller.phase == .idle)
     NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
     await controller.settle()
     #expect(count("resume") == 1, "a closed tab does not reopen on wake")

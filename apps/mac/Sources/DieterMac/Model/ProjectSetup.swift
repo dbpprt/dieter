@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterShared
 import Foundation
 
 enum ProjectSetupMode: String, CaseIterable, Identifiable, Sendable {
@@ -35,16 +36,16 @@ struct ProjectSetupDraft: Equatable, Sendable {
     var name = ""
     var summary = ""
     var prompt = ""
-    var boardName = "Main"
-    var workflow = "review"
-    var baseRemote = "origin"
-    var baseBranch = "main"
+    var boardName = AdminChoices.options.defaultBoardName
+    var workflow = AdminChoices.options.defaultWorkflow
+    var baseRemote = AdminChoices.options.defaultBaseRemote
+    var baseBranch = AdminChoices.options.defaultBaseBranch
     var validationCommands: [Dieter_V1_ValidationCommand] = []
 
     var canSubmit: Bool {
-        !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !boardName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !baseBranch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        SharedRules.shared.canCreateProject(
+            path: path, baseBranch: baseBranch,
+            drafts: ValidationCommandDraft.encoded(validationCommands.map(ValidationCommandDraft.init)))
     }
 
     func request() -> Dieter_V1_CreateProjectRequest {

@@ -1,6 +1,7 @@
 #if os(iOS)
     import AuthenticationServices
     import Foundation
+    import SharedCore
     import UIKit
 
     /// The native sign-in sheet. The shared core builds the gateway's authorize
@@ -8,9 +9,6 @@
     /// only shows the page and hands back the callback URL.
     @MainActor
     final class IOSAuthentication: NSObject, ASWebAuthenticationPresentationContextProviding {
-        /// The redirect scheme the gateway sends the callback to.
-        static let callbackScheme = "dieter-mac"
-
         private var session: ASWebAuthenticationSession?
         private var continuation: CheckedContinuation<URL?, Error>?
         private weak var anchor: UIWindow?
@@ -24,7 +22,9 @@
             return try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL?, Error>) in
                     self.continuation = continuation
-                    let session = ASWebAuthenticationSession(url: url, callbackURLScheme: Self.callbackScheme) {
+                    let session = ASWebAuthenticationSession(
+                        url: url, callbackURLScheme: CoreHostPlatform.nativeOAuthScheme
+                    ) {
                         [weak self] callback, error in
                         Task { @MainActor in self?.finish(callback: callback, error: error) }
                     }

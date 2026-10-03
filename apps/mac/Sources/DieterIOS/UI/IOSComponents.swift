@@ -1,4 +1,5 @@
 #if os(iOS)
+    import DieterAPI
     import SwiftUI
     import Textual
 
@@ -153,5 +154,17 @@
         /// A workspace-relative file to open once the folder is listed.
         var openPath = ""
         var id: String { machineID + ":" + checkoutID + ":" + cardID + ":" + openPath }
+    }
+
+    extension ClientTone {
+        /// The color a core status tone reads as.
+        var color: Color {
+            switch self {
+            case .success: .green
+            case .active, .warning: .orange
+            case .danger: .red
+            default: .secondary
+            }
+        }
     }
 #endif

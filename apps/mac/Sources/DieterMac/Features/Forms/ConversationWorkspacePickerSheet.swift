@@ -80,7 +80,7 @@ struct ConversationWorkspacePickerSheet: View {
                         .accessibilityIdentifier("workspace.base-remote")
                         .smokeTarget("workspace.base-remote")
                     Picker("Publishing", selection: $draftRemotePublishMode) {
-                        ForEach(RemotePublishMode.allCases) { mode in Text(mode.title).tag(mode.rawValue) }
+                        ForEach(AdminChoices.options.publishModes, id: \.id) { mode in Text(mode.title).tag(mode.id) }
                     }
                     .pickerStyle(.menu)
                     .accessibilityIdentifier("workspace.publishing")
@@ -88,8 +88,10 @@ struct ConversationWorkspacePickerSheet: View {
                 } header: {
                     Text("Remote")
                 } footer: {
-                    Text(RemotePublishMode(rawValue: draftRemotePublishMode)?.detail ?? "")
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        AdminChoices.choice(draftRemotePublishMode, in: AdminChoices.options.publishModes)?.detail ?? ""
+                    )
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .formStyle(.grouped)

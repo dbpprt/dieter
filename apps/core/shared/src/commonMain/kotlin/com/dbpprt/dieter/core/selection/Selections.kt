@@ -109,6 +109,9 @@ object Selections {
     /** A toggle option's [value] is on. */
     fun isOn(value: String): Boolean = value.equals("true", ignoreCase = true)
 
+    /** The value a toggle option takes when switched [on] or off. */
+    fun toggleValue(on: Boolean): String = if (on) "true" else "false"
+
     /** A choice's name, else its value. */
     fun choiceName(choice: ProviderOptionChoice): String = choice.name.ifBlank { choice.value_ }
 

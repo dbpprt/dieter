@@ -69,7 +69,7 @@ extension DieterStore {
     }
 
     func isChatUnread(_ card: Dieter_V1_Card) -> Bool {
-        card.responseSeq > card.seenResponseSeq
+        SharedRules.shared.isUnread(card: card.rulesData)
     }
 
     func isPendingCard(_ id: String) -> Bool { pendingCardIDs.contains(id) }
@@ -96,7 +96,7 @@ extension DieterStore {
 
     func replica(forProjectID projectID: String) -> MachineEndpoint? {
         // This selects a replica for shared metadata, never an execution owner.
-        if endpoint.online, phase.isConnected { return endpoint }
+        if machineIsAvailable(endpoint), phase.isConnected { return endpoint }
         return endpoints.first { $0.daemonID != nil && machineIsAvailable($0) }
     }
 
@@ -159,13 +159,5 @@ extension DieterStore {
         return navigationBoards.values.lazy.compactMap { boards in
             boards.first(where: { $0.id == id })
         }.first
-    }
-}
-
-extension ClientMachineEntry {
-    /// The core's detail, followed by when the machine was last seen where that matters.
-    func statusLine(now: Date = Date()) -> String {
-        guard showLastSeen else { return detail }
-        return detail + " · " + SharedRules.shared.machineLastSeen(lastSeenAt: lastSeenAt, nowMillis: now.epochMillis)
     }
 }

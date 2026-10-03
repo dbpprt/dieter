@@ -15,6 +15,15 @@ object ActivityExports {
     fun conversationTitle(title: String, scope: String, boardId: String): String =
         Activity.title(Card(title = title, scope = scope, board_id = boardId))
 
+    /** The timeline windows the range menu offers, in hours. */
+    fun timelineHours(): List<Int> = Activity.TIMELINE_HOURS
+
+    /** "Last 6h". */
+    fun timelineRangeTitle(hours: Int): String = Activity.rangeTitle(hours)
+
+    /** "No activity in the last 6h". */
+    fun timelineEmpty(hours: Int): String = Activity.emptyTimeline(hours)
+
     /**
      * A row's bar on the timeline of the last [hours] before [nowMillis]:
      * from [startMillis] (or a point at its end) to [atMillis], or to now

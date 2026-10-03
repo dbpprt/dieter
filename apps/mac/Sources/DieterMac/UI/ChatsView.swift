@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -32,7 +33,8 @@ struct ChatsView: View {
                     HStack(spacing: 8) {
                         PaneTitleBlock(
                             title: showArchived ? "Archived chats" : "Chats",
-                            subtitle: "\(list.visibleIds.count) conversation\(list.visibleIds.count == 1 ? "" : "s")",
+                            subtitle: SharedRules.shared.count(
+                                count: Int32(clamping: list.visibleIds.count), noun: "conversation", plural: ""),
                             prominent: true
                         )
                         Button {

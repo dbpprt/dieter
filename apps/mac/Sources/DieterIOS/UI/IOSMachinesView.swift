@@ -34,7 +34,7 @@
                                 }
                                 .buttonStyle(.borderless)
                                 .accessibilityLabel("Machine state")
-                                .accessibilityHint(machine.name.isEmpty ? machine.id : machine.name)
+                                .accessibilityHint(machine.displayName)
                                 .accessibilityIdentifier("ios.machines.state.\(machine.id)")
                             }
                         }
@@ -77,12 +77,12 @@
                         .foregroundStyle(machine.available ? Color.accentColor : .secondary)
                         .frame(width: 32)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(machine.name.isEmpty ? machine.id : machine.name)
+                        Text(machine.displayName)
                             .font(.headline)
                             .foregroundStyle(.primary)
                         HStack(spacing: 6) {
                             Circle()
-                                .fill(machine.available ? Color.green : machine.compatible ? Color.orange : Color.red)
+                                .fill(machine.tone.color)
                                 .frame(width: 7, height: 7)
                             Text(status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                         }

@@ -161,15 +161,12 @@
             guard let images = pasteboard.images, !images.isEmpty else {
                 throw IOSAttachmentError.invalidPaste
             }
-            return try images.enumerated().map { index, image in
+            // Pasted images have no file name; the core names them.
+            return try images.map { image in
                 guard let data = image.pngData(), !data.isEmpty else {
                     throw IOSAttachmentError.invalidPaste
                 }
-                let suffix = images.count == 1 ? "" : " \(index + 1)"
-                return IOSAttachmentPayload(
-                    data: data,
-                    filename: "Pasted Screenshot\(suffix).png",
-                    mediaType: "image/png")
+                return IOSAttachmentPayload(data: data, filename: "", mediaType: "image/png")
             }
         }
     }

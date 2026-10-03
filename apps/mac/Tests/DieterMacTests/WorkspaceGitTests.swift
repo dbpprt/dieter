@@ -10,7 +10,7 @@ import Testing
         branch: "  feature/mac-git  ",
         baseBranch: "  release  ",
         baseRemote: "  private  ",
-        remotePublishMode: RemotePublishMode.pullRequest.rawValue
+        remotePublishMode: "pull_request"
     ).apply(to: &intent)
 
     #expect(intent.workspaceMode == "worktree")
@@ -27,7 +27,7 @@ import Testing
     draft.arguments = "test\n-race\n./..."
     draft.workingDirectory = "server"
     draft.environment = "GOFLAGS=-count=1\nCI=true"
-    draft.timeoutSeconds = 900
+    draft.timeoutSeconds = "900"
 
     let value = draft.value
     #expect(value.arguments == ["test", "-race", "./..."])

@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterShared
 import SwiftUI
 
 enum DieterSettingsSection: String, CaseIterable, Identifiable, Hashable {
@@ -669,7 +670,7 @@ struct GeneralSettings: View {
                     if store.screensModel.inactivityTimeoutEnabled {
                         Divider().overlay(DieterTheme.border)
                         Stepper(
-                            "Disconnect after \(store.screensModel.inactivityTimeoutMinutes) \(store.screensModel.inactivityTimeoutMinutes == 1 ? "minute" : "minutes")",
+                            "Disconnect after \(SharedRules.shared.count(count: Int32(clamping: store.screensModel.inactivityTimeoutMinutes), noun: "minute", plural: ""))",
                             value: Binding(
                                 get: { store.screensModel.inactivityTimeoutMinutes },
                                 set: { store.screensModel.inactivityTimeoutMinutes = $0 }

@@ -8,7 +8,6 @@ enum SidebarSizing {
     static let minimumWidth: CGFloat = 210
     static let defaultWidth = DieterMetrics.sidebarExpandedWidth
     static let maximumWidth: CGFloat = 300
-    static let dividerWidth: CGFloat = 7
 
     static func clamped(_ width: CGFloat) -> CGFloat {
         min(max(width, minimumWidth), maximumWidth)
@@ -831,7 +830,7 @@ private struct SidebarProjectRow: View {
     }
 
     private var accessibilityLabel: String {
-        "\(project.name), \(project.checkouts.filter { !$0.detached }.count) checkouts"
+        "\(project.name), \(SharedRules.shared.count(count: Int32(project.checkoutChoices.count), noun: "checkout", plural: ""))"
     }
 
     var body: some View {
@@ -985,7 +984,7 @@ struct ProjectMachineBadge: View {
                 badge(showName: true)
             }
         }
-        .help("Hosted on \(machine.name) · \(online ? "Online" : "Offline")")
+        .help("Hosted on \(machine.name) · \(SharedRules.shared.machinePresence(online: online))")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Hosted on \(machine.name), \(online ? "online" : "offline")")
     }
@@ -1270,8 +1269,10 @@ private struct ProjectQuickNav: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(project.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                     if let machine = store.replica(forProjectID: project.id) {
-                        Text("\(machine.name) · \(projectMachineOnline == true ? "Online" : "Offline")")
-                            .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
+                        Text(
+                            "\(machine.name) · \(SharedRules.shared.machinePresence(online: projectMachineOnline == true))"
+                        )
+                        .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
                     }
                 }
                 Spacer(minLength: 8)

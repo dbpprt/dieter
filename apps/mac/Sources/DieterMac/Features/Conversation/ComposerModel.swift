@@ -3,60 +3,6 @@ import Foundation
 import Observation
 import SharedCore
 
-/// A conversation keeps its own draft across navigation. Async intake and send
-/// completions retain this object rather than resolving the selected
-/// conversation. The agent a send uses is the core's composer choice.
-@MainActor @Observable
-final class ConversationDraft {
-    var text = "" {
-        didSet {
-            guard text != oldValue else { return }
-            revision &+= 1
-            onTextChange?(text)
-        }
-    }
-    var attachments: [Dieter_V1_MessagePart] = [] { didSet { if attachments != oldValue { revision &+= 1 } } }
-    var sending = false
-    private(set) var pendingQueueMessageIDs: Set<String> = []
-    private(set) var revision: UInt64 = 0
-    private(set) var intakeGeneration: UInt64 = 0
-    private var onTextChange: ((String) -> Void)?
-
-    init(text: String = "", onTextChange: ((String) -> Void)? = nil) {
-        self.text = text
-        self.onTextChange = onTextChange
-    }
-
-    func observeTextChanges(_ callback: ((String) -> Void)?) {
-        onTextChange = callback
-    }
-
-    /// Retain this draft across the dequeue request: changing conversations
-    /// must not discard the message once the daemon has removed it.
-    func removeQueuedMessage(
-        _ message: Dieter_V1_QueuedMessage,
-        edit: Bool,
-        remove: @MainActor (String) async throws -> Dieter_V1_QueuedMessage
-    ) async throws -> Bool {
-        guard !message.id.isEmpty, pendingQueueMessageIDs.isEmpty, !sending else { return false }
-        pendingQueueMessageIDs.insert(message.id)
-        defer { pendingQueueMessageIDs.remove(message.id) }
-        let removed = try await remove(message.id)
-        if edit {
-            let restored = ConversationQueuePresentation.editableDraft(for: removed)
-            text = [restored.text, text].filter { !$0.isEmpty }.joined(separator: "\n\n")
-            attachments = restored.attachments + attachments
-        }
-        return true
-    }
-
-    func acceptSend(revision: UInt64) {
-        intakeGeneration &+= 1
-        guard self.revision == revision else { return }
-        text = ""; attachments = []
-    }
-}
-
 @MainActor @Observable
 final class ComposerModel {
     private(set) var draft = ConversationDraft()

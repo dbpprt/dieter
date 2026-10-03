@@ -344,7 +344,8 @@ struct DieterIslandView: View {
                 .smokeTarget("island.capture-task")
                 if activity.subagentCount > 0 {
                     Label(
-                        "\(activity.subagentCount) subagent\(activity.subagentCount == 1 ? "" : "s")",
+                        SharedRules.shared.count(
+                            count: Int32(clamping: activity.subagentCount), noun: "subagent", plural: ""),
                         systemImage: "person.2.fill"
                     )
                     .font(.system(size: 9.5, weight: .semibold))

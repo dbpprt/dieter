@@ -16,9 +16,6 @@ class AttachmentsTest {
         assertEquals("PNG · 1.2 MB", Attachments.details(MessagePart(type = "file", filename = "shot.png", media_type = "image/png", data_ = bytes(1_258_291))))
         assertEquals("SVG · 512 B", Attachments.details(MessagePart(type = "file", media_type = "image/svg+xml", data_ = bytes(512))), "an unnamed file uses its media type")
         assertEquals("PDF", Attachments.details(MessagePart(type = "file", filename = "brief.pdf")), "an empty file shows no size")
-        assertEquals("PNG image", Attachments.kind(MessagePart(filename = "shot.png", media_type = "image/png")))
-        assertEquals("Image", Attachments.kind(MessagePart(media_type = "image/png")))
-        assertEquals("File", Attachments.kind(MessagePart(media_type = Attachments.OCTET_STREAM)))
     }
 
     @Test

@@ -66,177 +66,114 @@ struct RemoteDesktopCursorState: Equatable {
     var y = 0.5
 }
 
-/// One screen view over the shared core's screen session. The core owns
-/// signaling, trust, the lease, recovery, codec fallback, input sequencing,
-/// clipboard sync, and display matching; this adapter turns AppKit input into
-/// screen commands and folds the screen slice into what the views read. Video
-/// renders natively: `CoreScreenMedia` decodes into `renderer`.
+/// One screen view over the shared core's screen session (`session`), which
+/// owns the slice, the command queue, and every word the view shows. This
+/// adapter maps AppKit input to screen commands, turns the host cursor into an
+/// `NSCursor`, and follows system sleep. Video renders natively:
+/// `CoreScreenMedia` decodes into `renderer`.
 @MainActor
 @Observable
 final class RemoteDesktopController {
-    var phase: RemoteDesktopPhase = .idle
-    /// The phase as status lines show it, from the core: "Not connected", "Live", …
-    private(set) var phaseLabel = "Not connected"
-    /// The session is open or on its way: Disconnect, not Connect (fixtures set it).
-    var active = false
-    var capabilities = Dieter_V1_RemoteDesktopCapabilities()
-    var routeLabel = ""
+    let session: ScreenSessionModel
     var machineName = ""
-    var errorMessage: String?
-    var sessionState = Dieter_V1_RemoteDesktopSessionState()
-    var mediaRouteLabel = "Negotiating media"
-    var remoteCursor: NSCursor = .arrow
-    var remoteCursorState = RemoteDesktopCursorState()
-    var clipboardError = ""
-    private(set) var clipboardEnabled = true
-    private(set) var clipboardBusy = false
-    private(set) var clipboardOperations = 0
+    private(set) var remoteCursor: NSCursor = .arrow
     /// The input view holds keyboard focus in an active window; the core only
     /// sends input, and syncs the clipboard, while it does.
     var inputFocused = false {
         didSet {
             guard inputFocused != oldValue else { return }
-            let on = inputFocused
-            send { $0.focused = .with { $0.on = on } }
+            session.setFocused(inputFocused)
         }
     }
     var textInputMode = false
-    private(set) var quality: Dieter_V1_RemoteDesktopQuality = .auto
+    /// What the session asks for at the next connect, until the core reports its own.
     var preferredMaxFPS: Int32 = 60
     var codecPreference: Dieter_V1_RemoteDesktopCodecPreference = .h264
-    private(set) var codecFallbackReason = ""
-    /// The frame rates the host offers, from the core.
-    private(set) var frameRates: [Int32] = []
-    /// This client controls the host and may send input now; folded from the
-    /// slice (fixtures set it directly).
-    var controlActive = false { didSet { if oldValue != controlActive { onCursorChange() } } }
-    private(set) var canTransferControl = false
-    private(set) var controlTransferPending = false
-    private(set) var controlTransferError = ""
-    /// Why this client cannot take control of a live session; empty when it can.
-    private(set) var controlUnavailableReason = ""
-    /// Copy and paste can run now: control, a shared clipboard, nothing in flight.
-    private(set) var clipboardActionsEnabled = false
-    /// The round trip as the status bar shows it, e.g. "12 ms RTT".
-    private(set) var latencyLabel = ""
     var keyboardCaptureStatus = ""
-    private(set) var displayMatchingStatus = ""
     @ObservationIgnored var onCursorChange: @MainActor () -> Void = {}
     @ObservationIgnored var onUserActivity: @MainActor () -> Void = {}
     @ObservationIgnored var onSystemSleep: (() -> Void)?
     private(set) var systemSleeping = false
 
-    let renderer = RemoteDesktopMetalView(frame: .zero)
-    @ObservationIgnored private let core: CoreClient?
-    @ObservationIgnored private let media: CoreScreenMedia?
-    @ObservationIgnored let scope = "screen-\(UUID().uuidString)"
-    @ObservationIgnored private var subscription: SliceSubscription?
-    /// The latest command sent without waiting; later ones wait for it, so
-    /// input reaches the core in the order AppKit delivered it.
-    @ObservationIgnored private var queued: Task<Void, Never>?
-    @ObservationIgnored private var viewport: CGSize?
-    @ObservationIgnored private var displayID = ""
+    let renderer: RemoteDesktopMetalView
+    @ObservationIgnored private var cursorImage = Data()
     @ObservationIgnored private var wakeObserver: NSObjectProtocol?
     @ObservationIgnored private var sleepObserver: NSObjectProtocol?
 
     init(core: CoreClient? = nil, media: CoreScreenMedia? = nil) {
-        self.core = core
-        self.media = media
+        let renderer = RemoteDesktopMetalView(frame: .zero)
+        self.renderer = renderer
+        session = ScreenSessionModel(core: core, media: media, renderer: renderer, scopePrefix: "screen")
+        session.onFold = { [weak self] _ in self?.folded() }
     }
+
+    var scope: String { session.scope }
+    var phase: RemoteDesktopPhase { RemoteDesktopPhase(core: session.phase, problem: session.problem) }
+    var phaseLabel: String { session.phaseLabel }
+    var active: Bool { session.active }
+    var capabilities: Dieter_V1_RemoteDesktopCapabilities { session.capabilities }
+    var sessionState: Dieter_V1_RemoteDesktopSessionState { session.sessionState }
+    var routeLabel: String { session.routeLabel }
+    /// Why the session failed, while it has.
+    var errorMessage: String? { session.failed ? session.problem : nil }
+    var remoteCursorState: RemoteDesktopCursorState {
+        RemoteDesktopCursorState(visible: session.cursor.visible, x: session.cursor.x, y: session.cursor.y)
+    }
+    var controlActive: Bool { session.controlActive }
+    var canTransferControl: Bool { session.canTransferControl }
+    var controlTransferPending: Bool { session.controlTransferring }
+    var controlTransferError: String { session.controlError }
+    var controlUnavailableReason: String { session.controlUnavailableReason }
+    var codecFallbackReason: String { session.codecFallbackReason }
+    var clipboardEnabled: Bool { session.clipboardEnabled }
+    var clipboardError: String { session.clipboardError }
+    var clipboardBusy: Bool { session.clipboardBusy }
+    var clipboardOperations: Int { session.clipboardOperations }
+    var clipboardActionsEnabled: Bool { session.clipboardActionsEnabled }
+    var latencyLabel: String { session.latencyLabel }
+    var frameRates: [Int32] { session.frameRates }
+    var quality: Dieter_V1_RemoteDesktopQuality { session.preferences.quality }
+    var displayMatchingStatus: String { session.displayStatus }
+    var currentDisplayID: String { session.preferences.displayID }
 
     /// Opens a session with `daemonID`; an earlier one closes first.
     func connect(daemonID: String, machineName: String) {
         self.machineName = machineName
-        errorMessage = nil
-        observe()
         installPowerObservers()
-        sendPreferences()
-        if let viewport { sendViewport(viewport) }
-        send { $0.connect = .with { $0.daemonID = daemonID } }
+        var preferences = session.preferences
+        preferences.codec = codecPreference
+        preferences.maxFps = preferredMaxFPS
+        preferences.clipboard = true
+        session.connect(daemonID: daemonID, preferences: preferences)
     }
 
     func disconnect() {
         removePowerObservers()
         systemSleeping = false
-        if case .failed = phase {} else { phase = .idle }
-        active = false
-        controlActive = false
-        mediaRouteLabel = "Negotiating media"
-        send { $0.disconnect = ClientStep() }
+        session.disconnect()
     }
 
     /// Closes the session and stops observing it; the view is done.
     func close() {
-        disconnect()
-        subscription?.close()
-        subscription = nil
-        media?.detach(scope: scope)
+        removePowerObservers()
+        session.close()
     }
 
-    private func observe() {
-        guard subscription == nil, let core else { return }
-        media?.attach(scope: scope, renderer: renderer) { [weak self] route in self?.mediaRouteLabel = route }
-        subscription = SliceSubscription(client: core, slice: .screen, scope: scope) { [weak self] update in
-            guard let self else { return }
-            switch update.value {
-            case .screen(let slice): self.fold(slice)
-            case .failure(let failure):
-                self.phase = .failed(failure.message); self.active = false; self.errorMessage = failure.message
-            default: break
-            }
-        }
-    }
-
-    func fold(_ slice: ClientScreenSlice) {
-        let next = RemoteDesktopPhase(core: slice.phase, problem: slice.problem)
-        if phase != next { phase = next }
-        if phaseLabel != slice.phaseLabel { phaseLabel = slice.phaseLabel }
-        if active != slice.active { active = slice.active }
-        if frameRates != slice.frameRates { frameRates = slice.frameRates }
-        if controlUnavailableReason != slice.controlUnavailableReason {
-            controlUnavailableReason = slice.controlUnavailableReason
-        }
-        if clipboardActionsEnabled != slice.clipboardActionsEnabled {
-            clipboardActionsEnabled = slice.clipboardActionsEnabled
-        }
-        if latencyLabel != slice.latencyLabel { latencyLabel = slice.latencyLabel }
-        let error: String? = if case .failed(let message) = next { message } else { nil }
-        if errorMessage != error { errorMessage = error }
-        let capabilities = slice.hasCapabilities ? slice.capabilities : .init()
-        if self.capabilities != capabilities { self.capabilities = capabilities }
-        let state = slice.hasState ? slice.state : .init()
-        if sessionState != state { sessionState = state }
-        if routeLabel != slice.routeLabel { routeLabel = slice.routeLabel }
-        if !slice.active, mediaRouteLabel != "Negotiating media" { mediaRouteLabel = "Negotiating media" }
-        if controlActive != slice.controlActive { controlActive = slice.controlActive }
-        if canTransferControl != slice.canTransferControl { canTransferControl = slice.canTransferControl }
-        if controlTransferPending != slice.controlTransferring { controlTransferPending = slice.controlTransferring }
-        if controlTransferError != slice.controlError { controlTransferError = slice.controlError }
-        if codecFallbackReason != slice.codecFallbackReason { codecFallbackReason = slice.codecFallbackReason }
-        if clipboardEnabled != slice.clipboardEnabled { clipboardEnabled = slice.clipboardEnabled }
-        if clipboardError != slice.clipboardError { clipboardError = slice.clipboardError }
-        if clipboardBusy != slice.clipboardBusy { clipboardBusy = slice.clipboardBusy }
-        if clipboardOperations != Int(slice.clipboardOperations) {
-            clipboardOperations = Int(slice.clipboardOperations)
-        }
-        let preferences = slice.preferences
+    private func folded() {
+        let preferences = session.preferences
         if codecPreference != preferences.codec { codecPreference = preferences.codec }
         if preferences.maxFps > 0, preferredMaxFPS != preferences.maxFps { preferredMaxFPS = preferences.maxFps }
-        if quality != preferences.quality { quality = preferences.quality }
-        displayID = preferences.displayID
-        if displayMatchingStatus != slice.displayStatus { displayMatchingStatus = slice.displayStatus }
-        if !slice.cursorImageUnchanged { remoteCursor = Self.cursor(slice) }
-        let cursor = RemoteDesktopCursorState(visible: slice.cursorVisible, x: slice.cursorX, y: slice.cursorY)
-        if remoteCursorState != cursor { remoteCursorState = cursor }
+        if cursorImage != session.cursorImage {
+            cursorImage = session.cursorImage
+            remoteCursor = Self.cursor(image: cursorImage, state: session.cursor)
+        }
         onCursorChange()
     }
 
-    private static func cursor(_ slice: ClientScreenSlice) -> NSCursor {
-        guard !slice.cursorImage.isEmpty, let image = NSImage(data: slice.cursorImage) else { return .arrow }
-        if slice.cursorWidth > 0, slice.cursorHeight > 0 {
-            image.size = NSSize(width: slice.cursorWidth, height: slice.cursorHeight)
-        }
-        return NSCursor(image: image, hotSpot: NSPoint(x: slice.cursorHotspotX, y: slice.cursorHotspotY))
+    private static func cursor(image data: Data, state: ScreenCursorState) -> NSCursor {
+        guard !data.isEmpty, let image = NSImage(data: data) else { return .arrow }
+        if state.width > 0, state.height > 0 { image.size = NSSize(width: state.width, height: state.height) }
+        return NSCursor(image: image, hotSpot: NSPoint(x: state.hotspotX, y: state.hotspotY))
     }
 
     // MARK: Input
@@ -244,7 +181,7 @@ final class RemoteDesktopController {
     func sendPointerMove(x: CGFloat, y: CGFloat) {
         onUserActivity()
         guard controlActive else { return }
-        send {
+        session.send {
             $0.pointer = .with {
                 $0.x = Double(x); $0.y = Double(y)
             }
@@ -256,11 +193,11 @@ final class RemoteDesktopController {
         clickCount: Int, x: CGFloat, y: CGFloat, modifiers: NSEvent.ModifierFlags
     ) {
         onUserActivity()
-        send {
+        session.send {
             $0.button = .with {
                 $0.button = button
                 $0.down = down
-                $0.clicks = Int32(max(0, min(3, clickCount)))
+                $0.clicks = Int32(clamping: clickCount)
                 $0.x = Double(x)
                 $0.y = Double(y)
                 $0.modifiers = Self.modifiers(modifiers)
@@ -273,7 +210,7 @@ final class RemoteDesktopController {
         momentumPhase: NSEvent.Phase = []
     ) {
         onUserActivity()
-        send {
+        session.send {
             $0.scroll = .with {
                 $0.dx = Double(deltaX)
                 $0.dy = Double(deltaY)
@@ -288,7 +225,7 @@ final class RemoteDesktopController {
     func sendKey(code: UInt16, down: Bool, repeat isRepeat: Bool, modifiers: NSEvent.ModifierFlags) {
         onUserActivity()
         guard let physicalKey = RemoteDesktopKeyMap.macToHID[code] else { return }
-        send {
+        session.send {
             $0.key = .with {
                 $0.hid = Int32(physicalKey)
                 $0.down = down
@@ -301,110 +238,69 @@ final class RemoteDesktopController {
     func sendText(_ text: String) {
         guard !text.isEmpty else { return }
         onUserActivity()
-        send { $0.text = .with { $0.text = text } }
+        session.send { $0.text = .with { $0.text = text } }
     }
 
     func releaseAllInput() {
         guard controlActive else { return }
-        send { $0.releaseInput = ClientStep() }
+        session.releaseInput()
     }
 
     // MARK: Session
 
-    func transferControl(take: Bool) {
-        guard canTransferControl, !controlTransferPending else { return }
-        controlTransferPending = true
-        controlTransferError = ""
-        send { $0.control = .with { $0.on = take } }
-    }
+    func transferControl(take: Bool) { session.transferControl(take: take) }
 
     func selectCodec(_ value: Dieter_V1_RemoteDesktopCodecPreference) {
         codecPreference = value
         onUserActivity()
-        sendPreferences()
+        session.setPreferences { $0.codec = value }
     }
 
-    func setViewport(_ size: CGSize, scale: CGFloat) {
-        guard size.width > 0, size.height > 0, scale > 0 else { return }
-        let points = CGSize(width: size.width, height: size.height)
-        guard viewport != points else { return }
-        viewport = points
-        sendViewport(points, scale: scale)
-    }
+    func setViewport(_ size: CGSize, scale: CGFloat) { session.setViewport(size, scale: scale) }
 
+    /// Changes the display, quality, or frame rate (one of `frameRates`), or asks for a fresh frame.
     func configure(
         displayID: String? = nil, quality: Dieter_V1_RemoteDesktopQuality? = nil, maxFPS: Int32? = nil,
         refresh: Bool = false
     ) {
         onUserActivity()
-        if let displayID { self.displayID = displayID }
-        if let quality { self.quality = quality }
-        if let maxFPS {
-            preferredMaxFPS = max(1, min(120, min(maxFPS, capabilities.maxFps > 0 ? capabilities.maxFps : 60)))
+        if let maxFPS { preferredMaxFPS = maxFPS }
+        if displayID != nil || quality != nil || maxFPS != nil {
+            session.setPreferences {
+                if let displayID { $0.displayID = displayID }
+                if let quality { $0.quality = quality }
+                if let maxFPS { $0.maxFps = maxFPS }
+            }
         }
-        if displayID != nil || quality != nil || maxFPS != nil { sendPreferences() }
-        if refresh { send { $0.refresh = ClientStep() } }
+        if refresh { session.refresh() }
     }
 
-    func setClipboardEnabled(_ on: Bool) {
-        clipboardEnabled = on
-        send { $0.clipboardEnabled = .with { $0.on = on } }
-    }
+    func setClipboardEnabled(_ on: Bool) { session.setClipboardEnabled(on) }
 
     /// "copy", "cut", or "paste" on the host.
     func performClipboard(_ operation: String) {
         guard clipboardEnabled else { return }
         onUserActivity()
-        send { $0.clipboard = .with { $0.operation = operation } }
+        session.performClipboard(operation)
     }
 
     /// Matches the host display to this screen while controlling it; nil stops.
     func setDisplayMatchingTarget(_ target: RemoteDesktopDisplayTarget?) {
-        send {
-            $0.matchDisplay = .with {
-                if let target {
-                    $0.width = Double(target.width)
-                    $0.height = Double(target.height)
-                    $0.scale = target.scale
-                    $0.refresh = target.refresh
-                }
-            }
-        }
+        guard let target else { return session.stopMatchingDisplay() }
+        session.matchDisplay(
+            width: Double(target.width), height: Double(target.height), scale: target.scale, refresh: target.refresh)
     }
 
     func prepareForSleep() {
         systemSleeping = true
-        send { $0.sleep = ClientStep() }
+        session.setAsleep(true)
         onSystemSleep?()
     }
 
     func resumeAfterWake() {
         systemSleeping = false
         onUserActivity()
-        send { $0.resume = ClientStep() }
-    }
-
-    private func sendPreferences() {
-        let codec = codecPreference, fps = preferredMaxFPS, quality = quality, display = displayID
-        send {
-            $0.preferences = .with {
-                $0.codec = codec
-                $0.maxFps = fps
-                $0.quality = quality
-                $0.displayID = display
-                $0.clipboard = true
-            }
-        }
-    }
-
-    private func sendViewport(_ size: CGSize, scale: CGFloat = 1) {
-        send {
-            $0.viewport = .with {
-                $0.widthPoints = Double(size.width)
-                $0.heightPoints = Double(size.height)
-                $0.scale = Double(scale)
-            }
-        }
+        session.setAsleep(false)
     }
 
     private func installPowerObservers() {
@@ -428,24 +324,9 @@ final class RemoteDesktopController {
         sleepObserver = nil
     }
 
-    /// Sends a screen command after those sent before, without waiting. The
-    /// core has no screen for this view until it is observed.
-    private func send(_ build: @escaping (inout ClientScreenCommand) -> Void) {
-        guard let core, subscription != nil else { return }
-        var screen = ClientScreenCommand()
-        screen.scope = scope
-        build(&screen)
-        let command = ClientCommand.with { $0.screen = screen }
-        let previous = queued
-        queued = Task {
-            await previous?.value
-            _ = try? await core.dispatch(command)
-        }
-    }
-
     /// Waits for every command sent so far (tests and teardown).
     func settle() async {
-        await queued?.value
+        await session.settle()
     }
 
     private static func modifiers(_ flags: NSEvent.ModifierFlags) -> Int32 {
@@ -486,3 +367,15 @@ enum RemoteDesktopScrollPhases {
         return 0
     }
 }
+
+#if DEBUG
+    extension RemoteDesktopController {
+        /// Folds `change` into the session's last slice, as the core would
+        /// report it; fixtures and tests have no peer to change it.
+        func showFixture(_ change: (inout ClientScreenSlice) -> Void) {
+            var slice = session.lastSlice
+            change(&slice)
+            session.fold(slice)
+        }
+    }
+#endif

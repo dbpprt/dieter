@@ -77,24 +77,19 @@ actor AttachmentLoader {
             for image in images {
                 let type = UTType(image.typeIdentifier)
                 let normalized = try Self.normalizedImage(data: image.data, type: type)
-                let baseName = image.suggestedName?.trimmingCharacters(in: .whitespacesAndNewlines)
-                let fallbackName = "Pasted Image \(parts.count + 1)"
-                let resolvedName = baseName.flatMap { $0.isEmpty ? nil : $0 } ?? fallbackName
-                let filename = Self.filename(resolvedName, for: normalized.type)
-                parts.append(Self.part(data: normalized.data, filename: filename, contentType: normalized.type))
+                // A pasted image without a name is named by the core.
+                parts.append(
+                    Self.part(data: normalized.data, filename: image.suggestedName ?? "", contentType: normalized.type))
             }
             return try Self.validate([], appendingTo: parts)
         }
     }
 
+    /// The part the core sends a read file as, named and typed by its rules.
     private static func part(data: Data, filename: String, contentType: UTType?) -> Dieter_V1_MessagePart {
-        var part = Dieter_V1_MessagePart()
-        part.type = contentType?.conforms(to: .image) == true ? "image" : "file"
-        part.mediaType = SharedRules.shared.attachmentMediaType(
-            declared: contentType?.preferredMIMEType ?? "", filename: filename)
-        part.filename = filename
-        part.data = data
-        return part
+        Dieter_V1_MessagePart(
+            rules: SharedRules.shared.attachmentPart(
+                filename: filename, declaredMediaType: contentType?.preferredMIMEType ?? "", bytes: data))
     }
 
     private static func normalizedImage(data: Data, type: UTType?) throws -> (data: Data, type: UTType) {
@@ -122,12 +117,5 @@ actor AttachmentLoader {
             throw DieterAttachmentError.invalidImage
         }
         return (output as Data, .png)
-    }
-
-    private static func filename(_ value: String, for type: UTType) -> String {
-        let path = value as NSString
-        if !path.pathExtension.isEmpty { return value }
-        guard let suffix = type.preferredFilenameExtension else { return value }
-        return "\(value).\(suffix)"
     }
 }

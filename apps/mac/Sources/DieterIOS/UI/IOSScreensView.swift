@@ -59,7 +59,7 @@
                         .frame(width: 48, height: 48)
                         .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(machine.name.isEmpty ? machine.id : machine.name)
+                        Text(machine.displayName)
                             .font(.headline)
                             .foregroundStyle(.primary)
                         HStack(spacing: 6) {
@@ -230,15 +230,8 @@
                 Form {
                     if let controller {
                         Section("Machine") {
-                            LabeledContent("Machine", value: machineName)
-                            LabeledContent("Status", value: controller.phaseLabel)
-                            if !controller.routeLabel.isEmpty {
-                                LabeledContent("Signaling", value: controller.routeLabel)
-                            }
-                            if !controller.mediaRouteLabel.isEmpty {
-                                LabeledContent("Video", value: controller.mediaRouteLabel)
-                            }
-                            LabeledContent("Latency", value: controller.latencyLabel)
+                            Text(machineName).font(.headline)
+                            ForEach(controller.session.details, id: \.self) { Text($0) }
                             if !controller.codecFallbackReason.isEmpty {
                                 Text(controller.codecFallbackReason).foregroundStyle(.secondary)
                             }
@@ -587,20 +580,17 @@
 
         var body: some View {
             HStack(spacing: 7) {
-                Circle().fill(color).frame(width: 7, height: 7)
+                Circle().fill(controller.session.tone.color).frame(width: 7, height: 7)
                 Text(controller.phaseLabel)
                 if !controller.routeLabel.isEmpty { Text("· \(controller.routeLabel)") }
-                if !controller.mediaRouteLabel.isEmpty { Text("· \(controller.mediaRouteLabel)") }
                 Spacer(minLength: 8)
                 if controller.streaming {
-                    let state = controller.sessionState
-                    if state.width > 0 { Text("\(state.width)×\(state.height)") }
-                    if state.fps > 0 { Text("\(state.fps) fps") }
-                    if state.connectedClients > 1 { Text("\(state.connectedClients) viewers") }
+                    Text(controller.session.metadata)
+                    if !controller.session.viewersLabel.isEmpty { Text(controller.session.viewersLabel) }
                     Text(controller.latencyLabel)
                 }
                 Label(
-                    controller.controlActive ? "Control" : "View only",
+                    controller.session.controlLabel,
                     systemImage: controller.controlActive ? "cursorarrow.motionlines" : "eye")
             }
             .lineLimit(1)
@@ -612,11 +602,6 @@
             .accessibilityElement(children: .combine)
         }
 
-        private var color: Color {
-            if controller.streaming { return .green }
-            if controller.active { return .orange }
-            return controller.failed ? .red : .secondary
-        }
     }
 
     #if DEBUG

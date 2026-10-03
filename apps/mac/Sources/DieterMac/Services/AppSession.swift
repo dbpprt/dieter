@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import Foundation
 import Observation
 import OSLog
@@ -178,8 +179,9 @@ final class AppSession {
         didSet { if labelFilter != oldValue { refreshBoardProjection() } }
     }
     /// The core's view of the selected board, and what it was last told to show.
-    @ObservationIgnored var boardView = ClientBoardViewSlice()
-    @ObservationIgnored var boardViewTarget = ClientBoardViewTarget()
+    /// The core's view of the board the Mac shows.
+    @ObservationIgnored let boardViewModel = BoardViewModel(scope: "mac-board")
+    var boardView: ClientBoardViewSlice { boardViewModel.slice }
     /// What the board shows for each shown card and offers on it.
     var boardCardFlags: [String: ClientBoardCardFlags] = [:]
     /// Board ID → its cards in a review lane or with a working agent.
@@ -213,7 +215,7 @@ final class AppSession {
 
     /// Why `machine` cannot take work now, as the core words it; nil when it can.
     func unavailableReason(_ machine: MachineEndpoint) -> String? {
-        guard let entry = machineEntry(machine) else { return "\(machine.name) is unavailable." }
+        guard let entry = machineEntry(machine) else { return SharedRules.shared.unenrolledMachineMessage() }
         return entry.available ? nil : entry.unavailableMessage
     }
 

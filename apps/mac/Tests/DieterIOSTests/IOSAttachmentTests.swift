@@ -111,28 +111,6 @@ struct IOSAttachmentTests {
         }
     }
 
-    @Test func shareURLAcceptsOnlyCanonicalInboxIdentifiers() throws {
-        let id = UUID()
-        let valid = try #require(URL(string: "dieter-mac://share?id=\(id.uuidString)"))
-        #expect(IOSShareInbox.shareID(from: valid) == id.uuidString.lowercased())
-        #expect(IOSShareInbox.request(from: valid)?.destination == .newTask)
-        for destination in [
-            IOSShareInbox.Destination.newTask, .task, .chat,
-        ] {
-            let routed = try #require(
-                URL(string: "dieter-mac://share?id=\(id.uuidString)&destination=\(destination.rawValue)"))
-            #expect(
-                IOSShareInbox.request(from: routed)
-                    == IOSShareInbox.Request(id: id.uuidString.lowercased(), destination: destination))
-        }
-        #expect(IOSShareInbox.shareID(from: URL(string: "https://share?id=\(id)")!) == nil)
-        #expect(IOSShareInbox.shareID(from: URL(string: "dieter-mac://share?id=../escape")!) == nil)
-        #expect(
-            IOSShareInbox.request(
-                from: URL(string: "dieter-mac://share?id=\(id)&destination=unknown")!) == nil)
-        #expect(IOSShareInbox.shareID(from: URL(string: "dieter-mac://oauth/callback?id=\(id)")!) == nil)
-    }
-
     @Test func sharedAttachmentsRespectAnExistingComposerDraft() throws {
         var existing = Dieter_V1_MessagePart()
         existing.type = "file"
@@ -193,9 +171,9 @@ struct IOSAttachmentTests {
             try Data("{\"items\":[]}".utf8).write(to: directory.appendingPathComponent("manifest.json"))
         }
 
-        try IOSShareInbox.recordPendingRequest(first, in: container)
+        try recordPendingRequest(first, in: container)
         #expect(IOSShareInbox.pendingRequest(from: container) == first)
-        try IOSShareInbox.recordPendingRequest(second, in: container)
+        try recordPendingRequest(second, in: container)
         IOSShareInbox.clearPendingRequest(first, from: container)
         #expect(IOSShareInbox.pendingRequest(from: container) == second)
         IOSShareInbox.clearPendingRequest(second, from: container)
@@ -265,5 +243,13 @@ struct IOSAttachmentTests {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    /// Writes the hand-off the share extension leaves for the app.
+    private func recordPendingRequest(_ request: IOSShareInbox.Request, in container: URL) throws {
+        let inbox = container.appendingPathComponent("ShareInbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        try JSONEncoder().encode(["id": request.id, "destination": request.destination.rawValue])
+            .write(to: inbox.appendingPathComponent("pending-request.json"), options: .atomic)
     }
 }

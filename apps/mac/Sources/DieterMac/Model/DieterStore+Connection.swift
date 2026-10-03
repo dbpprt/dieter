@@ -46,7 +46,7 @@ extension DieterStore {
     }
 
     func completeAuthentication(url: URL) {
-        guard url.scheme == "dieter-mac", url.host == "oauth" else { return }
+        guard CoreHostPlatform.isNativeOAuthCallback(url) else { return }
         Task { [weak self] in
             guard let self else { return }
             await self.startCore()
@@ -75,44 +75,23 @@ extension DieterStore {
     }
 
     func saveEndpoint(_ endpoint: MachineEndpoint) async {
-        var gateways = gatewayOrigins
-        if let index = gateways.firstIndex(where: {
-            $0.credentialID == endpoint.credentialID || $0.name == endpoint.name
-        }) {
-            gateways[index] = endpoint
-        } else {
-            gateways.append(endpoint)
-        }
-        guard await setGateways(gateways, active: endpoint) else { return }
+        guard await useGateway(endpoint) else { return }
         await connect()
     }
 
+    /// Removes a configured gateway; the core keeps at least one.
     func deleteEndpoint(_ endpoint: MachineEndpoint) {
-        guard endpoint.daemonID == nil, gatewayOrigins.count > 1 else { return }
-        let remaining = gatewayOrigins.filter { $0.credentialID != endpoint.credentialID }
-        Task { await setGateways(remaining, active: nil) }
+        guard endpoint.daemonID == nil else { return }
+        Task { await perform { $0.removeGateway = .with { $0.origin = endpoint.credentialID } } }
     }
 
-    /// Makes `gateway` active, adding it to the configured gateways.
-    private func useGateway(_ gateway: MachineEndpoint) async {
-        if gatewayOrigins.contains(where: { $0.credentialID == gateway.credentialID }) {
-            await perform { $0.selectGateway = .with { $0.origin = gateway.credentialID } }
-        } else {
-            await setGateways(gatewayOrigins + [gateway], active: gateway)
-        }
-    }
-
+    /// Makes `gateway` active, adding it to the configured gateways when it is new.
     @discardableResult
-    private func setGateways(_ gateways: [MachineEndpoint], active: MachineEndpoint?) async -> Bool {
+    private func useGateway(_ gateway: MachineEndpoint) async -> Bool {
         await perform {
-            $0.setGateways = .with { command in
-                command.gateways = gateways.map { gateway in
-                    .with {
-                        $0.url = gateway.address
-                        $0.name = gateway.name
-                    }
-                }
-                command.activeOrigin = active?.credentialID ?? ""
+            $0.useGateway = .with {
+                $0.url = gateway.address
+                $0.name = gateway.name
             }
         } != nil
     }

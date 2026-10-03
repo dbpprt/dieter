@@ -153,7 +153,7 @@
                 if quotas.providerQuotaRows.isEmpty { await quotas.load() }
             }
             .confirmationDialog(
-                "Use one OpenAI reset credit?",
+                SharedRules.shared.quotaResetTitle(),
                 isPresented: Binding(
                     get: { resetConfirmationAccountKey != nil },
                     set: { if !$0 { resetConfirmationAccountKey = nil } }),
@@ -166,7 +166,7 @@
                 }
                 Button("Cancel", role: .cancel) { resetConfirmationAccountKey = nil }
             } message: {
-                Text("This consumes one credit and resets the eligible quota windows for this exact account.")
+                Text(SharedRules.shared.quotaResetMessage())
             }
         }
 
@@ -325,159 +325,4 @@
         }
     }
 
-    #if DEBUG
-        /// The quota sheet over fixture accounts, for UI tests and screenshots
-        /// (`DIETER_IOS_QUOTA_PREVIEW`; `details` opens the sheet at launch).
-        struct IOSProviderQuotaPreviewScreen: View {
-            @State private var quotas: CoreProviderQuotas
-            @State private var detailsPresented: Bool
-
-            init(showDetails: Bool) {
-                let quotas = CoreProviderQuotas(core: ScriptedCoreClient())
-                quotas.install(groups: IOSProviderQuotaPreviewFixture.groups)
-                _quotas = State(initialValue: quotas)
-                _detailsPresented = State(initialValue: showDetails)
-            }
-
-            var body: some View {
-                NavigationStack {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 22) {
-                            Label("Running", systemImage: "circle.fill")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.green)
-                            Text("Add multi-account provider quotas")
-                                .font(.title2.bold())
-                            Text(
-                                "The toolbar shows the conversation's account. Tap it for account details and controls."
-                            )
-                            .foregroundStyle(.secondary)
-                            Spacer(minLength: 360)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(20)
-                    }
-                    .navigationTitle("Quota-aware conversation")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            if let group = quotas.providerQuotaRows.first, let account = group.accounts.first {
-                                Button {
-                                    detailsPresented = true
-                                } label: {
-                                    IOSProviderQuotaAccountPill(provider: group.provider, account: account)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityIdentifier("ios.provider-quotas")
-                            }
-                        }
-                    }
-                    .sheet(isPresented: $detailsPresented) {
-                        IOSProviderQuotaDetailsView(quotas: quotas)
-                            .presentationDetents([.large])
-                            .presentationDragIndicator(.visible)
-                    }
-                }
-                .tint(.blue)
-            }
-        }
-
-        /// OpenAI accounts the core's quota rows describe: one low, one excluded, one signed out.
-        private enum IOSProviderQuotaPreviewFixture {
-            static var groups: [Dieter_Gateway_V1_ProviderQuotaGroup] { [openAIGroup] }
-
-            private static func date(hoursFromNow: TimeInterval) -> String {
-                ISO8601DateFormatter().string(from: Date().addingTimeInterval(hoursFromNow * 3_600))
-            }
-
-            private static func window(
-                id: String, label: String, kind: Dieter_Gateway_V1_ProviderQuotaWindowKind, remaining: UInt32,
-                resetsInHours: TimeInterval
-            ) -> Dieter_Gateway_V1_ProviderQuotaWindow {
-                .with {
-                    $0.id = id
-                    $0.label = label
-                    $0.kind = kind
-                    $0.usedPercent = 100 - remaining
-                    $0.remainingPercent = remaining
-                    $0.resetsAt = date(hoursFromNow: resetsInHours)
-                }
-            }
-
-            private static func account(
-                key: String, email: String, plan: String, fiveHourRemaining: UInt32, weeklyRemaining: UInt32
-            ) -> Dieter_Gateway_V1_ProviderQuotaSnapshot {
-                var value = Dieter_Gateway_V1_ProviderQuotaSnapshot()
-                value.provider = .openaiCodex
-                value.accountKey = key
-                value.displayEmail = email
-                value.includedInSummary = true
-                value.accountKind = .subscription
-                value.plan = plan
-                value.availability = .available
-                value.windows = [
-                    window(
-                        id: "\(key)-five-hour", label: "5 hour", kind: .fiveHour, remaining: fiveHourRemaining,
-                        resetsInHours: 2.3),
-                    window(
-                        id: "\(key)-weekly", label: "Weekly", kind: .weekly, remaining: weeklyRemaining,
-                        resetsInHours: 72),
-                ]
-                value.nextResetAt = value.windows[0].resetsAt
-                value.nextResetWindowID = value.windows[0].id
-                value.ordinaryUsageAllowed = true
-                value.refreshedAt = date(hoursFromNow: -0.01)
-                value.freshUntil = date(hoursFromNow: 0.02)
-                value.refreshState = .idle
-                value.onlineSourceCount = 1
-                value.statusCode = "available"
-                return value
-            }
-
-            private static var openAIGroup: Dieter_Gateway_V1_ProviderQuotaGroup {
-                var plus = account(
-                    key: "acct_preview_plus", email: "michael@example.com", plan: "plus", fiveHourRemaining: 18,
-                    weeklyRemaining: 64)
-                plus.credits = .with {
-                    $0.hasCredits_p = true
-                    $0.balance = "$120.00"
-                }
-                plus.resetCredits = .with { $0.availableCount = 2 }
-
-                var team = account(
-                    key: "acct_preview_team", email: "team@example.com", plan: "team", fiveHourRemaining: 72,
-                    weeklyRemaining: 91)
-                team.includedInSummary = false
-
-                var signedOut = Dieter_Gateway_V1_ProviderQuotaSnapshot()
-                signedOut.provider = .openaiCodex
-                signedOut.accountKey = "acct_preview_archive"
-                signedOut.displayEmail = "archive@example.com"
-                signedOut.accountKind = .subscription
-                signedOut.plan = "free"
-                signedOut.availability = .signedOut
-                signedOut.statusCode = "signed_out"
-                signedOut.includedInSummary = true
-
-                var group = Dieter_Gateway_V1_ProviderQuotaGroup()
-                group.provider = .openaiCodex
-                group.accounts = [plus, team, signedOut]
-                group.summary = .with {
-                    $0.totalAccountCount = 3
-                    $0.numericAccountCount = 2
-                    $0.unavailableAccountCount = 1
-                    $0.remainingPercent = 18
-                    $0.summaryAccountKey = plus.accountKey
-                    $0.summaryWindowID = plus.windows[0].id
-                    $0.summaryWindowKind = .fiveHour
-                    $0.summaryWindowLabel = "5 hour"
-                    $0.resetsAt = plus.windows[0].resetsAt
-                    $0.freshness = .fresh
-                    $0.includedAccountCount = 2
-                    $0.excludedAccountCount = 1
-                }
-                return group
-            }
-        }
-    #endif
 #endif

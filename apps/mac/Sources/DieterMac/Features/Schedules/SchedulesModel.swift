@@ -161,14 +161,6 @@ final class SchedulesModel {
         await run { command in command.select = .with { $0.scheduleID = id } }
     }
 
-    func loadScheduleRuns(for scheduleID: String, appending: Bool = false) async {
-        if appending, scheduleID == selectedScheduleID {
-            await loadMoreScheduleRuns()
-        } else {
-            await run { command in command.select = .with { $0.scheduleID = scheduleID } }
-        }
-    }
-
     func loadMoreScheduleRuns() async {
         guard selectedScheduleID != nil, !scheduleRunsLoading, !scheduleRunsLoadingMore,
             !scheduleRunsNextPageToken.isEmpty

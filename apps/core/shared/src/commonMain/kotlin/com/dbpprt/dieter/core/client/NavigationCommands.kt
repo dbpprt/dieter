@@ -9,6 +9,7 @@ import com.dbpprt.dieter.client.v1.FolderScope as ClientFolderScope
 import com.dbpprt.dieter.client.v1.NavigationCommand
 import com.dbpprt.dieter.client.v1.Result
 import com.dbpprt.dieter.core.CoreRuntime
+import com.dbpprt.dieter.core.navigation.ChatLists
 import com.dbpprt.dieter.core.navigation.ChatsSurface
 import com.dbpprt.dieter.core.navigation.ChatsView
 import com.dbpprt.dieter.core.navigation.FolderScope
@@ -33,6 +34,7 @@ internal fun chatsSlice(view: ChatsView) = ChatsSlice(
         ChatProjectSection(
             project_id = project.projectId, chat_ids = project.chatIds, total = project.total, hidden = project.hidden,
             collapsed = project.collapsed, show_all = project.showAll, show_chats = project.showChats,
+            toggle_label = ChatLists.toggleLabel(project.hidden, project.showAll),
         )
     },
     other_ids = view.list.other,

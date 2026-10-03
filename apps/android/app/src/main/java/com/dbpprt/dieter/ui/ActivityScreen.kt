@@ -2,8 +2,8 @@
 
 package com.dbpprt.dieter.ui
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -12,12 +12,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material3.*
@@ -32,28 +32,29 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaProvider
-import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaSnapshot
+import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.client.v1.QuotaAccountRow
+import com.dbpprt.dieter.client.v1.QuotaSeverity
 import com.dbpprt.dieter.core.activity.Activity
 import com.dbpprt.dieter.core.activity.ActivityItem
 import com.dbpprt.dieter.core.activity.ActivitySection
 import com.dbpprt.dieter.core.navigation.Destination
+import com.dbpprt.dieter.core.navigation.FolderScope
 import com.dbpprt.dieter.core.presentation.Counts
-import com.dbpprt.dieter.core.quotas.QuotaLevel
+import com.dbpprt.dieter.core.quotas.QuotaRows
 import com.dbpprt.dieter.core.quotas.Quotas
 import com.dbpprt.dieter.ui.theme.*
-import com.dbpprt.dieter.api.v1.Card
-import com.dbpprt.dieter.core.navigation.FolderScope
+import java.time.Instant
 import kotlin.time.toKotlinInstant
 import kotlinx.coroutines.delay
-import java.time.Instant
 
 @Composable
 internal fun ActivityScreen(state: DieterUiState, model: DieterViewModel, expanded: Boolean, contentPadding: PaddingValues) {
@@ -123,7 +124,8 @@ internal fun ActivityScreen(state: DieterUiState, model: DieterViewModel, expand
         MoveToNavigationFolderDialog(id, FolderScope.CHATS, state.chatFolders,
             model, onDismiss = { folderChatId = null })
     }
-    val group = state.providerQuotaGroups.firstOrNull { group -> group.accounts.any { it.account_key == accountKey } }
+    val quotaRows = remember(state.providerQuotaGroups) { QuotaRows.of(state.providerQuotaGroups) }
+    val group = quotaRows.firstOrNull { group -> group.accounts.any { it.account_key == accountKey } }
     val account = group?.accounts?.firstOrNull { it.account_key == accountKey }
     if (account != null) {
         ModalBottomSheet(onDismissRequest = { accountKey = null }, containerColor = DieterSurface) {
@@ -143,7 +145,7 @@ internal fun ActivityFeed(
     modifier: Modifier = Modifier,
     onOpen: (Card) -> Unit,
     onConnections: () -> Unit,
-    onAccount: (ProviderQuotaSnapshot) -> Unit,
+    onAccount: (QuotaAccountRow) -> Unit,
     onRefreshAccounts: () -> Unit,
     clock: Instant? = null,
     tablet: Boolean = false,
@@ -175,7 +177,9 @@ internal fun ActivityFeed(
     val sections = remember(filtered) { Activity.sections(filtered) }
     val running = sections.getValue(ActivitySection.RUNNING)
     val intervals = remember(filtered, timelineNow, hours) { Activity.timeline(filtered, timelineNow.toKotlinInstant(), hours) }
-    val accounts = state.providerQuotaGroups.flatMap { group -> group.accounts.map { group.provider to it } }
+    val accounts = remember(state.providerQuotaGroups) {
+        QuotaRows.of(state.providerQuotaGroups).flatMap { group -> group.accounts.map { group.provider to it } }
+    }
     Box(modifier, contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             Modifier.widthIn(max = if (timelineOnly) 1800.dp else 900.dp).fillMaxSize().testTag("activity-feed"),
@@ -328,17 +332,17 @@ private fun ActivityTimelinePanel(
                     style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace)
                 Text("  $runningCount running", color = DieterMuted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                 Box {
-                    TextButton(onClick = { rangeMenu = true }, modifier = Modifier.testTag("activity-range")) { Text("Last ${hours}h ▾") }
+                    TextButton(onClick = { rangeMenu = true }, modifier = Modifier.testTag("activity-range")) { Text("${Activity.rangeTitle(hours)} ▾") }
                     DropdownMenu(expanded = rangeMenu, onDismissRequest = { rangeMenu = false }) {
-                        listOf(1, 6, 24).forEach { value ->
-                            DropdownMenuItem(text = { Text("Last ${value}h") }, onClick = { onHours(value); rangeMenu = false },
+                        Activity.TIMELINE_HOURS.forEach { value ->
+                            DropdownMenuItem(text = { Text(Activity.rangeTitle(value)) }, onClick = { onHours(value); rangeMenu = false },
                                 modifier = Modifier.testTag("activity-range-$value").semantics { selected = value == hours })
                         }
                     }
                 }
             }
             if (intervals.isEmpty()) {
-                Text("No activity in the last ${hours}h", color = DieterMuted, modifier = Modifier.padding(vertical = 12.dp))
+                Text(Activity.emptyTimeline(hours), color = DieterMuted, modifier = Modifier.padding(vertical = 12.dp))
             } else {
                 // The compact chart is one generous touch target; expanded rows expose every
                 // conversation by name to touch, keyboard and accessibility users.
@@ -409,25 +413,26 @@ private fun ActivitySectionHeading(title: String, modifier: Modifier = Modifier)
 }
 
 @Composable
-private fun ActivityAccountRow(provider: ProviderQuotaProvider, account: ProviderQuotaSnapshot, now: Instant, onClick: () -> Unit) {
-    val warning = Quotas.warning(account, now.toKotlinInstant())
+private fun ActivityAccountRow(provider: ProviderQuotaProvider, account: QuotaAccountRow, now: Instant, onClick: () -> Unit) {
+    val freshUntil = account.fresh_until_millis.takeIf { it > 0 }?.let { kotlin.time.Instant.fromEpochMilliseconds(it) }
+    val warning = Quotas.warning(account.unavailable, freshUntil, now.toKotlinInstant())
     Surface(onClick = onClick, shape = RoundedCornerShape(16.dp), color = DieterSurface,
         modifier = Modifier.fillMaxWidth().testTag("activity-account-${account.account_key}")) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(Quotas.productName(provider), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Text(Quotas.identity(account),
+            Text(account.identity,
                 color = DieterMuted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             warning?.let { Text(it, color = DieterAmber, style = MaterialTheme.typography.labelSmall) }
             account.windows.forEach { window ->
-                val remaining = (window.remaining_percent ?: 0).coerceIn(0, 100)
-                Text("${Quotas.windowName(window)} · ${if (window.remaining_percent != null) "$remaining% remaining" else "Not reported"}",
+                val remaining = window.remaining
+                Text("${window.name} · ${if (remaining >= 0) "$remaining% remaining" else "Not reported"}",
                     style = MaterialTheme.typography.labelMedium)
-                if (window.remaining_percent != null) LinearProgressIndicator(progress = { remaining / 100f },
-                    color = if (Quotas.level(remaining) == QuotaLevel.CRITICAL) DieterCoral else quotaTint(provider, remaining),
+                if (remaining >= 0) LinearProgressIndicator(progress = { remaining / 100f },
+                    color = if (window.severity == QuotaSeverity.QUOTA_SEVERITY_CRITICAL) DieterCoral else quotaTint(provider, window.severity),
                     trackColor = DieterOutline, modifier = Modifier.fillMaxWidth().height(5.dp))
                 if (window.resets_at.isNotBlank()) Text(Quotas.resetText(window.resets_at, now.toKotlinInstant(), fine = false), color = DieterMuted, style = MaterialTheme.typography.labelSmall)
             }
-            if (account.windows.isEmpty()) Text(Quotas.status(account), color = DieterMuted, style = MaterialTheme.typography.bodySmall)
+            if (account.windows.isEmpty()) Text(account.status, color = DieterMuted, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

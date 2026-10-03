@@ -310,7 +310,7 @@ class RemoteTerminalView(
             }
 
             override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
-                repeat(beforeLength.coerceAtMost(64)) { onInput(byteArrayOf(0x7f)) }
+                repeat(beforeLength.coerceAtMost(64)) { onInput(TerminalKeys.sequence(TerminalKey.TERMINAL_KEY_BACKSPACE)) }
                 if (beforeLength > 0) revealCursorAndRestartBlink()
                 return true
             }

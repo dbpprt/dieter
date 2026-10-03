@@ -140,7 +140,7 @@ import Testing
                 || controller.renderer.lastPixelFormat == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)
     }
     if environment["DIETER_TEST_FORCE_TURN"] == "1" {
-        try await screenWait("relayed media route", timeout: 3) { controller.mediaRouteLabel == "Relayed media" }
+        try await screenWait("relayed media route", timeout: 3) { controller.session.mediaRoute == "Relayed media" }
     }
 
     let hostClipboard = NSPasteboard(name: .init(try #require(fixture.clipboardName)))
@@ -478,7 +478,7 @@ import Testing
         #expect(capture.terminationStatus == 0)
     }
     print(
-        "Latency stages: capture→send \(controller.sessionState.captureToSendMs) ms, paced send \(controller.sessionState.sendMs) ms, jitter buffer \(controller.sessionState.jitterBufferMs) ms, render \(controller.sessionState.renderMs) ms. Cursor embedded=\(controller.sessionState.embeddedCursor); displayed \(controller.sessionState.width)x\(controller.sessionState.height), \(controller.sessionState.receiverFps) fps, encode \(controller.sessionState.encodeMs) ms, RTT \(controller.sessionState.rttMs) ms, \(controller.mediaRouteLabel)"
+        "Latency stages: capture→send \(controller.sessionState.captureToSendMs) ms, paced send \(controller.sessionState.sendMs) ms, jitter buffer \(controller.sessionState.jitterBufferMs) ms, render \(controller.sessionState.renderMs) ms. Cursor embedded=\(controller.sessionState.embeddedCursor); displayed \(controller.sessionState.width)x\(controller.sessionState.height), \(controller.sessionState.receiverFps) fps, encode \(controller.sessionState.encodeMs) ms, RTT \(controller.sessionState.rttMs) ms, \(controller.session.mediaRoute)"
     )
     if !real {
         #expect(routes.openings == 1, "A healthy peer must survive missing unary lease renewals")
@@ -858,8 +858,13 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
     // SwiftPM does not run NSApplication's event loop. Supply the focused
     // window here; ScreenShareUISmoke validates real application/key activation.
     surface.windowIsActive = { [weak detached] in $0 != nil && $0 === detached }
-    controller.remoteCursorState = RemoteDesktopCursorState(visible: true, x: 0.1, y: 0.1)
-    controller.remoteCursor = .crosshair
+    controller.showFixture {
+        $0.cursorVisible = true
+        $0.cursorX = 0.1
+        $0.cursorY = 0.1
+        $0.cursorImage = NSCursor.crosshair.image.tiffRepresentation ?? Data()
+        $0.cursorImageUnchanged = false
+    }
     let center = CGPoint(x: surface.bounds.midX, y: surface.bounds.midY)
     let move = try #require(
         NSEvent.mouseEvent(
@@ -883,13 +888,17 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
     try await screenWait("view-only cursor", timeout: 4) {
         !controller.controlActive && !controller.controlTransferPending
     }
-    controller.remoteCursorState = RemoteDesktopCursorState(visible: true, x: 0.1, y: 0.1)
+    controller.showFixture {
+        $0.cursorVisible = true
+        $0.cursorX = 0.1
+        $0.cursorY = 0.1
+    }
     surface.refreshCursor(at: center)
     #expect(surface.cursorPresentation == .remote && surface.hostCursorVisible)
-    controller.sessionState.embeddedCursor = true
+    controller.showFixture { $0.state.embeddedCursor = true }
     surface.refreshCursor(at: center)
     #expect(surface.cursorPresentation == .embedded && !surface.hostCursorVisible)
-    controller.sessionState.embeddedCursor = false
+    controller.showFixture { $0.state.embeddedCursor = false }
     controller.transferControl(take: true)
     try await screenWait("control restored", timeout: 4) { controller.controlActive }
     let release = try #require(

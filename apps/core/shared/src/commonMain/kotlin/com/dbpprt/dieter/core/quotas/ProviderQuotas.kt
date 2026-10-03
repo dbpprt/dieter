@@ -251,20 +251,17 @@ object Quotas {
     /** The warning for numbers that may be out of date. */
     const val STALE = "Last reported · refresh pending"
 
-    /** A warning above the windows: unavailable accounts, else stale numbers; null when current. */
-    fun warning(account: ProviderQuotaSnapshot, now: Instant): String? =
-        warning(if (available(account)) "" else availability(account.availability), Timestamps.parse(account.fresh_until), now)
+    /** The confirmation before an account's reset credit is used (only OpenAI accounts have them). */
+    const val RESET_TITLE = "Use one OpenAI reset credit?"
+    const val RESET_MESSAGE = "This consumes one credit and resets the eligible quota windows for this exact account."
 
+    /** A warning above the windows: unavailable accounts, else stale numbers; null when current. */
     /** [unavailable] (the availability of an unavailable account, else empty) first, then [STALE]; null when current. */
     fun warning(unavailable: String, freshUntil: Instant?, now: Instant): String? = when {
         unavailable.isNotEmpty() -> unavailable
         stale(freshUntil, now) -> STALE
         else -> null
     }
-
-    /** Label and value rows of an account's details; balances only where money may be shown. */
-    fun details(account: ProviderQuotaSnapshot, monetary: Boolean): List<Pair<String, String>> =
-        detailLines(account).filter { monetary || !it.monetary }.map { it.label to it.text }
 
     /** Every detail row of an account, each marked when it shows money. */
     fun detailLines(account: ProviderQuotaSnapshot): List<QuotaDetailLine> = buildList {

@@ -1,6 +1,7 @@
 import DieterAPI
 import DieterShared
 import Foundation
+import SharedCore
 import UniformTypeIdentifiers
 #if os(iOS)
     import PhotosUI
@@ -67,21 +68,9 @@ actor IOSAttachmentLoader {
         return parts
     }
 
-    /// How many more files fit beside `existing`: none once another would
-    /// break a limit. Pickers offer at most this many.
+    /// How many more files may join `existing`; pickers offer at most this many.
     nonisolated static func remainingSlots(after existing: [Dieter_V1_MessagePart]) -> Int {
-        let names = existing.map(\.filename)
-        let sizes = existing.map { Int64($0.data.count) }
-        var slots = 0
-        while slots < 64,
-            SharedRules.shared.attachmentLimitError(
-                names: names + Array(repeating: "", count: slots + 1),
-                sizes: (sizes + Array(repeating: 1, count: slots + 1)).map { KotlinLong(value: $0) }
-            ).isEmpty
-        {
-            slots += 1
-        }
-        return slots
+        Int(SharedRules.shared.attachmentSlots(count: Int32(clamping: existing.count)))
     }
 
     /// The limits, as shown next to attachment pickers.
@@ -146,30 +135,23 @@ actor IOSAttachmentLoader {
                 sizes: existing.map { Int64($0.data.count) } + photoItems.map { _ in 1 })
             var payloads: [IOSAttachmentPayload] = []
             payloads.reserveCapacity(photoItems.count)
-            for (index, item) in photoItems.enumerated() {
+            for item in photoItems {
                 guard let data = try await item.loadTransferable(type: Data.self), !data.isEmpty else {
                     throw IOSAttachmentError.invalidPaste
                 }
                 let type = item.supportedContentTypes.first(where: { $0.conforms(to: .image) })
-                let suffix = type?.preferredFilenameExtension ?? "png"
-                let number = photoItems.count == 1 ? "" : " \(index + 1)"
+                // Photos have no file name; the core names them.
                 payloads.append(
-                    IOSAttachmentPayload(
-                        data: data, filename: "Photo\(number).\(suffix)", mediaType: type?.preferredMIMEType ?? ""))
+                    IOSAttachmentPayload(data: data, filename: "", mediaType: type?.preferredMIMEType ?? ""))
             }
             return try parts(payloads: payloads, appendingTo: existing)
         }
     #endif
 
-    /// A file part named and typed by the core's rules.
+    /// The part the core sends a read file as, named and typed by its rules.
     private static func part(data: Data, filename: String, declaredType: String) -> Dieter_V1_MessagePart {
-        let mediaType = SharedRules.shared.attachmentMediaType(declared: declaredType, filename: filename)
-        var part = Dieter_V1_MessagePart()
-        part.type = "file"
-        part.mediaType = mediaType
-        part.filename = SharedRules.shared.attachmentFilename(raw: filename, mediaType: mediaType)
-        part.data = data
-        return part
+        Dieter_V1_MessagePart(
+            rules: SharedRules.shared.attachmentPart(filename: filename, declaredMediaType: declaredType, bytes: data))
     }
 }
 
@@ -202,26 +184,6 @@ enum IOSShareInbox {
 
     private static let pendingRequestName = "pending-request.json"
 
-    static func request(from url: URL) -> Request? {
-        guard url.scheme?.lowercased() == "dieter-mac", url.host?.lowercased() == "share",
-            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
-            let value = query.first(where: { $0.name == "id" })?.value,
-            let id = UUID(uuidString: value)
-        else { return nil }
-        let destination: Destination
-        if let value = query.first(where: { $0.name == "destination" })?.value {
-            guard let parsed = Destination(rawValue: value) else { return nil }
-            destination = parsed
-        } else {
-            destination = .newTask
-        }
-        return Request(id: id.uuidString.lowercased(), destination: destination)
-    }
-
-    static func shareID(from url: URL) -> String? {
-        request(from: url)?.id
-    }
-
     static func pendingRequest() -> Request? {
         guard
             let group = Bundle.main.object(forInfoDictionaryKey: "DieterAppGroupIdentifier") as? String,
@@ -244,16 +206,6 @@ enum IOSShareInbox {
             .appendingPathComponent("manifest.json", isDirectory: false)
         guard FileManager.default.fileExists(atPath: manifest.path) else { return nil }
         return Request(id: canonicalID, destination: destination)
-    }
-
-    static func recordPendingRequest(_ request: Request, in container: URL) throws {
-        guard let id = UUID(uuidString: request.id) else { throw IOSAttachmentError.invalidShare }
-        let inbox = container.appendingPathComponent("ShareInbox", isDirectory: true)
-        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
-        let canonicalID = id.uuidString.lowercased()
-        try JSONEncoder().encode(
-            PendingRequest(id: canonicalID, destination: request.destination.rawValue)
-        ).write(to: inbox.appendingPathComponent(pendingRequestName), options: .atomic)
     }
 
     static func clearPendingRequest(_ request: Request) {

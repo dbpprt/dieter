@@ -122,11 +122,10 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
             views.setViewVisibility(R.id.widget_app_icon, if (compact) View.GONE else View.VISIBLE)
             views.setBoolean(R.id.widget_summary, "setSingleLine", !compact)
             views.setInt(R.id.widget_summary, "setMaxLines", if (compact) 2 else 1)
-            views.setTextViewText(R.id.widget_status, when {
-                refreshing.get() -> "Refreshing…"
-                failedRefreshGateway == state.gateway && failedRefreshAt > state.lastSyncAtMs -> "Couldn’t refresh"
-                else -> WidgetModel.status(widgetTime(state.lastSyncAtMs), state.connected)
-            })
+            views.setTextViewText(R.id.widget_status, WidgetModel.status(
+                WidgetModel.status(widgetTime(state.lastSyncAtMs), state.connected), refreshing.get(),
+                refreshFailed = failedRefreshGateway == state.gateway && failedRefreshAt > state.lastSyncAtMs,
+            ))
             views.setTextViewText(R.id.widget_empty_title, WidgetModel.emptyTitle(state.lastSyncAtMs > 0, state.connected))
             views.setTextViewText(R.id.widget_empty_body, WidgetModel.EMPTY_BODY)
             views.setBoolean(R.id.widget_refresh, "setEnabled", !refreshing.get())

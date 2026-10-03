@@ -6,6 +6,7 @@ import com.dbpprt.dieter.api.v1.Harness
 import com.dbpprt.dieter.api.v1.HarnessModel
 import com.dbpprt.dieter.api.v1.HarnessSelection
 import com.dbpprt.dieter.api.v1.ProviderOption
+import com.dbpprt.dieter.core.composition.Creation
 
 /**
  * The agent pickers of a composer or a new-conversation editor: what is
@@ -38,6 +39,15 @@ data class AgentControls(
 
     /** The effort picker's entries: "Default" (the provider's own, [Selections.DEFAULT_EFFORT]) first, then [efforts]. */
     val effortChoices: List<EffortOption> get() = listOf(EffortOption(id = Selections.DEFAULT_EFFORT, name = "Default")) + efforts
+
+    /** The effort picker's selected entry: the chosen effort, else [Selections.DEFAULT_EFFORT]. */
+    val effortValue: String get() = selection.effort.ifEmpty { Selections.DEFAULT_EFFORT }
+
+    /** The provider's fast-mode toggle, when the selected model has one. */
+    val fastOptionId: String? get() = options.firstOrNull { it.id == Creation.FAST_MODE }?.id
+
+    /** The provider's fast mode option applies and is on. */
+    val fastMode: Boolean get() = fastOptionId != null && Selections.isOn(optionValues[Creation.FAST_MODE].orEmpty())
 
     /** "Default" for the explicit default, else the effort's name, else the model's default effort. */
     val effortLabel: String

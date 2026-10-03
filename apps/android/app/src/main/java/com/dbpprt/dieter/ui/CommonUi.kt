@@ -2,6 +2,7 @@
 
 package com.dbpprt.dieter.ui
 
+import com.dbpprt.dieter.client.v1.Tone
 import com.dbpprt.dieter.core.presentation.Ages
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -361,3 +362,12 @@ internal fun CardLabelsDialog(state: DieterUiState, onDismiss: () -> Unit, onSav
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
+
+/** The color a core status [Tone] reads as. */
+internal val Tone.color: Color
+    @Composable get() = when (this) {
+        Tone.TONE_SUCCESS -> MaterialTheme.colorScheme.primary
+        Tone.TONE_ACTIVE, Tone.TONE_WARNING -> MaterialTheme.colorScheme.tertiary
+        Tone.TONE_DANGER -> MaterialTheme.colorScheme.error
+        Tone.TONE_NEUTRAL -> MaterialTheme.colorScheme.outline
+    }

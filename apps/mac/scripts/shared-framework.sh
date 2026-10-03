@@ -28,11 +28,11 @@ all) TARGETS="MacosArm64 IosArm64 IosSimulatorArm64" ;;
 *) echo "usage: $0 [debug|release] [macos|all]" >&2; exit 2 ;;
 esac
 
-# Every tracked or unignored core file except the retired Swift harness.
+# Every tracked or unignored core file.
 inputs_digest() {
     (
         cd "$REPO_ROOT"
-        git ls-files -co --exclude-standard -- apps/core | grep -v '^apps/core/harness/' | sort | while IFS= read -r file; do
+        git ls-files -co --exclude-standard -- apps/core | sort | while IFS= read -r file; do
             [ -f "$file" ] && shasum -a 256 "$file"
         done
         shasum -a 256 apps/mac/scripts/shared-framework.sh

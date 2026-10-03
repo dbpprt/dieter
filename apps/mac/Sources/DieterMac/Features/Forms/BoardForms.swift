@@ -8,10 +8,10 @@ struct NewBoardSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var description = ""
-    @State private var workflow = BoardWorkflow.review.rawValue
-    @State private var doneArchivePolicy = DoneArchivePolicy.never.rawValue
+    @State private var workflow = AdminChoices.options.defaultWorkflow
+    @State private var doneArchivePolicy = AdminChoices.options.defaultArchivePolicy
     @State private var baseRemote = ""
-    @State private var remotePublishMode = RemotePublishMode.manual.rawValue
+    @State private var remotePublishMode = AdminChoices.options.defaultPublishMode
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -22,19 +22,19 @@ struct NewBoardSheet: View {
             TextField("Board name", text: $name)
             TextField("Description", text: $description)
             Picker("Workflow", selection: $workflow) {
-                ForEach(BoardWorkflow.allCases) { option in Text(option.title).tag(option.rawValue) }
+                ForEach(AdminChoices.options.workflows, id: \.id) { option in Text(option.title).tag(option.id) }
             }
             .pickerStyle(.segmented)
-            Text(BoardWorkflow(rawValue: workflow)?.laneDescription ?? "")
+            Text(AdminChoices.choice(workflow, in: AdminChoices.options.workflows)?.lanes ?? "")
                 .font(.caption).foregroundStyle(.secondary)
             Picker("Archive Done conversations", selection: $doneArchivePolicy) {
-                ForEach(DoneArchivePolicy.allCases) { option in Text(option.title).tag(option.rawValue) }
+                ForEach(AdminChoices.options.archivePolicies, id: \.id) { option in Text(option.title).tag(option.id) }
             }
             TextField("Default Git remote", text: $baseRemote)
             Picker("Remote publishing", selection: $remotePublishMode) {
-                ForEach(RemotePublishMode.allCases) { mode in Text(mode.title).tag(mode.rawValue) }
+                ForEach(AdminChoices.options.publishModes, id: \.id) { mode in Text(mode.title).tag(mode.id) }
             }
-            Text(RemotePublishMode(rawValue: remotePublishMode)?.detail ?? "")
+            Text(AdminChoices.choice(remotePublishMode, in: AdminChoices.options.publishModes)?.detail ?? "")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()

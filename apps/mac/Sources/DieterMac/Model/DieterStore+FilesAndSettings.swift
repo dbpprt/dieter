@@ -35,7 +35,8 @@ extension DieterStore {
     /// Files can change while their machine is online.
     var filesAreLive: Bool {
         let machine = filesModel.target.endpointID
-        return selectedProjectIsLive || (phase.isConnected && endpoints.contains { $0.id == machine && $0.online })
+        return selectedProjectIsLive
+            || (phase.isConnected && endpoints.contains { $0.id == machine && machineIsAvailable($0) })
     }
 
     @discardableResult func loadFiles(path: String? = nil) async -> Bool {

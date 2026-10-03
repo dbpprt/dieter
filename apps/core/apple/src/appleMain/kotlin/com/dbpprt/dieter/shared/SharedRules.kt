@@ -4,10 +4,16 @@ import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.HarnessCatalog
 import com.dbpprt.dieter.api.v1.HarnessSelection
+import com.dbpprt.dieter.api.v1.MessagePart
+import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.api.v1.QueuedMessage
+import com.dbpprt.dieter.api.v1.RemoteDesktopSessionBinding
+import com.dbpprt.dieter.api.v1.StartRemoteDesktopRequest
 import com.dbpprt.dieter.api.v1.Subagent
 import com.dbpprt.dieter.api.v1.TaskPlan
+import com.dbpprt.dieter.api.v1.ValidationCommand
 import com.dbpprt.dieter.client.v1.ActivityTimelineBar
+import com.dbpprt.dieter.client.v1.AdminOptions
 import com.dbpprt.dieter.client.v1.AgentChoice
 import com.dbpprt.dieter.client.v1.AgentControlsState
 import com.dbpprt.dieter.client.v1.BoardCardFlags
@@ -15,11 +21,16 @@ import com.dbpprt.dieter.client.v1.BoardViewSlice
 import com.dbpprt.dieter.client.v1.BoardViewTarget
 import com.dbpprt.dieter.client.v1.Cards
 import com.dbpprt.dieter.client.v1.ChangedFileLabel
+import com.dbpprt.dieter.client.v1.ChatDestination
+import com.dbpprt.dieter.client.v1.ChatDestinationGroups
+import com.dbpprt.dieter.client.v1.ChatDestinationInput
 import com.dbpprt.dieter.client.v1.ChatsSlice
+import com.dbpprt.dieter.client.v1.Checkouts
 import com.dbpprt.dieter.client.v1.ContentLinkResolution
 import com.dbpprt.dieter.client.v1.DetectedLinks
 import com.dbpprt.dieter.client.v1.GitOperationForm
 import com.dbpprt.dieter.client.v1.GitOperationFormSpec
+import com.dbpprt.dieter.client.v1.HostnameSets
 import com.dbpprt.dieter.client.v1.LabelPalette
 import com.dbpprt.dieter.client.v1.MachineOperationCopy
 import com.dbpprt.dieter.client.v1.NavigationSlice
@@ -36,8 +47,11 @@ import com.dbpprt.dieter.client.v1.SyntaxHighlights
 import com.dbpprt.dieter.client.v1.TaskPlanSummary
 import com.dbpprt.dieter.client.v1.TimelineMessages
 import com.dbpprt.dieter.client.v1.TimelineRows
+import com.dbpprt.dieter.client.v1.ValidationDraft
+import com.dbpprt.dieter.client.v1.ValidationDrafts
 import com.dbpprt.dieter.client.v1.WorkspaceBadgeView
 import com.dbpprt.dieter.core.client.rules.ActivityExports
+import com.dbpprt.dieter.core.client.rules.AdminExports
 import com.dbpprt.dieter.core.client.rules.BoardExports
 import com.dbpprt.dieter.core.client.rules.ConversationExports
 import com.dbpprt.dieter.core.client.rules.CreationExports
@@ -52,6 +66,10 @@ import com.dbpprt.dieter.core.client.rules.ScheduleExports
 import com.dbpprt.dieter.core.client.rules.ScreenExports
 import com.dbpprt.dieter.core.client.rules.TerminalExports
 import com.dbpprt.dieter.core.client.rules.WorkspaceExports
+import com.dbpprt.dieter.core.platform.SignatureVerifier
+import com.dbpprt.dieter.core.screens.ScreenTrust
+import com.dbpprt.dieter.core.screens.ScreenTrustException
+import kotlin.time.Instant
 import platform.Foundation.NSData
 
 /**
@@ -64,6 +82,9 @@ object SharedRules {
     // --- Formatting ---------------------------------------------------------------
 
     fun bytes(count: Long): String = FormatExports.bytes(count)
+
+    /** "1 board", "3 boards": [noun] when [count] is 1, else [plural], or [noun] plus "s" when [plural] is empty. */
+    fun count(count: Int, noun: String, plural: String): String = FormatExports.count(count, noun, plural)
 
     fun compactAge(sinceMillis: Long, nowMillis: Long): String = FormatExports.compactAge(sinceMillis, nowMillis)
 
@@ -97,6 +118,13 @@ object SharedRules {
 
     fun attachmentLimits(): String = FormatExports.attachmentLimits()
 
+    /** The encoded `dieter.v1.MessagePart` a file the platform has read is sent as; empty [declaredMediaType] guesses from [filename]. */
+    fun attachmentPart(filename: String, declaredMediaType: String, bytes: NSData): NSData =
+        MessagePart.ADAPTER.encode(FormatExports.attachmentPart(filename, declaredMediaType, bytes.toByteArray())).toNSData()
+
+    /** How many more files may join [count] attached ones. */
+    fun attachmentSlots(count: Int): Int = FormatExports.attachmentSlots(count)
+
     // --- Labels -------------------------------------------------------------------
 
     /** An encoded `LabelPalette`. */
@@ -111,6 +139,10 @@ object SharedRules {
     fun quotaResetText(resetsAt: String, nowMillis: Long, fine: Boolean): String = QuotaExports.resetText(resetsAt, nowMillis, fine)
 
     fun quotaWarning(unavailable: String, freshUntilMillis: Long, nowMillis: Long): String = QuotaExports.warning(unavailable, freshUntilMillis, nowMillis)
+
+    fun quotaResetTitle(): String = QuotaExports.resetTitle()
+
+    fun quotaResetMessage(): String = QuotaExports.resetMessage()
 
     /** [groups] is an encoded `QuotaGroupList`; returns an encoded `QuotaGroupRows`. */
     fun quotaRows(groups: NSData): NSData = QuotaGroupRows.ADAPTER.encode(QuotaExports.rows(QuotaGroupList.ADAPTER.decode(groups.toByteArray()))).toNSData()
@@ -128,6 +160,8 @@ object SharedRules {
     /** A `FileRenderer` value. */
     fun fileRenderer(path: String, mimeType: String, binary: Boolean): Int = FileExports.renderer(path, mimeType, binary).value
 
+    fun fileEditable(path: String, mimeType: String, binary: Boolean): Boolean = FileExports.editable(path, mimeType, binary)
+
     /** A `FileIconKind` value. */
     fun fileIconKind(name: String, directory: Boolean): Int = FileExports.iconKind(name, directory).value
 
@@ -144,6 +178,33 @@ object SharedRules {
 
     /** "Take Control", or "Release Control" while [controlActive]. */
     fun screenControlAction(controlActive: Boolean): String = ScreenExports.controlAction(controlActive)
+
+    fun screenCodecUnavailable(): String = ScreenExports.codecUnavailable()
+
+    /**
+     * Why a screen session's daemon-signed [binding] (an encoded
+     * `RemoteDesktopSessionBinding`) does not belong to [request] (an encoded
+     * `StartRemoteDesktopRequest`), the host's [answerSdp], and the enrolled
+     * machine's [certificatePem]; "" when it does. [signatures] checks the
+     * Ed25519 signature.
+     */
+    fun screenBindingProblem(
+        binding: NSData, sessionId: String, request: NSData, answerSdp: String, certificatePem: String, nowMillis: Long,
+        signatures: NativeSignatures,
+    ): String = try {
+        ScreenTrust.verify(
+            RemoteDesktopSessionBinding.ADAPTER.decode(binding.toByteArray()), sessionId,
+            StartRemoteDesktopRequest.ADAPTER.decode(request.toByteArray()), answerSdp, certificatePem,
+            Instant.fromEpochMilliseconds(nowMillis),
+            object : SignatureVerifier {
+                override fun verifyEd25519(publicKey: ByteArray, message: ByteArray, signature: ByteArray) =
+                    signatures.verifyEd25519(publicKey.toNSData(), message.toNSData(), signature.toNSData())
+            },
+        )
+        ""
+    } catch (failure: ScreenTrustException) {
+        failure.message.orEmpty()
+    }
 
     /**
      * What a screen view says while not streaming; [phase] and [problem] are
@@ -188,8 +249,6 @@ object SharedRules {
     /** Whether an image link may name a workspace file; the files surface's `open` resolves it. */
     fun isWorkspaceImage(destination: String): Boolean = LinkExports.isWorkspaceImage(destination)
 
-    /** The workspace-relative path of an image link, "" when none; empty [workspaceRoot] resolves only relative links. */
-    fun workspaceImagePath(destination: String, workspaceRoot: String): String = LinkExports.workspaceImagePath(destination, workspaceRoot)
 
     // --- Schedules ----------------------------------------------------------------
 
@@ -221,8 +280,10 @@ object SharedRules {
 
     // --- Machines -----------------------------------------------------------------
 
-    /** A gateway address's origin as `SetGateways` accepts it; empty when invalid or remote plaintext. */
+    /** A gateway address's origin as `UseGateway` accepts it; empty when invalid or remote plaintext. */
     fun gatewayOrigin(address: String): String = MachineExports.gatewayOrigin(address)
+
+    fun defaultGatewayName(): String = MachineExports.defaultGatewayName()
 
     fun defaultGatewayOrigin(): String = MachineExports.defaultGatewayOrigin()
 
@@ -239,7 +300,28 @@ object SharedRules {
     fun machineSubtitle(hardwareModel: String, processor: String, osName: String, osVersion: String, uptimeSeconds: Long): String =
         MachineExports.subtitle(hardwareModel, processor, osName, osVersion, uptimeSeconds)
 
-    fun machineCount(count: Int, noun: String, plural: String): String = MachineExports.count(count, noun, plural)
+    fun machinePresence(online: Boolean): String = MachineExports.presence(online)
+
+    /** Why a machine the account no longer lists cannot be used. */
+    fun unenrolledMachineMessage(): String = MachineExports.unenrolledMessage()
+
+    fun machineMemory(totalBytes: Long, cachedBytes: Long, swapBytes: Long): String = MachineExports.memory(totalBytes, cachedBytes, swapBytes)
+
+    fun operatingSystem(osName: String, osVersion: String): String = MachineExports.operatingSystem(osName, osVersion)
+
+    fun gpuName(name: String): String = MachineExports.gpuName(name)
+
+    /** [vendor] is a `GPUVendor` value. */
+    fun gpuDetail(vendor: Int, id: String, driverVersion: String): String = MachineExports.gpuDetail(vendor, id, driverVersion)
+
+    fun gpuUtilization(percent: Double, reported: Boolean): String = MachineExports.gpuUtilization(percent, reported)
+
+    fun gpuUnavailable(reason: String): String = MachineExports.gpuUnavailable(reason)
+
+    /** Why a machine's information is missing; [error] is the read's, empty for none. */
+    fun machineInformationUnavailable(online: Boolean, detail: String, error: String): String = MachineExports.informationUnavailable(online, detail, error)
+
+    fun isAgentProcess(kind: String): Boolean = MachineExports.isAgentProcess(kind)
 
     fun machineActiveAgents(agents: Int): String = MachineExports.activeAgents(agents)
 
@@ -287,6 +369,9 @@ object SharedRules {
     fun restoredDraft(message: NSData, currentText: String): NSData =
         QueuedMessage.ADAPTER.encode(ConversationExports.restoredDraft(QueuedMessage.ADAPTER.decode(message.toByteArray()), currentText)).toNSData()
 
+    /** [message] is an encoded `dieter.v1.QueuedMessage`; its text, else "2 attachments". */
+    fun queuedSummary(message: NSData): String = ConversationExports.queuedSummary(QueuedMessage.ADAPTER.decode(message.toByteArray()))
+
     /** [plan] is an encoded `dieter.v1.TaskPlan`; returns an encoded `TaskPlanSummary`. */
     fun taskPlanSummary(plan: NSData): NSData = TaskPlanSummary.ADAPTER.encode(ConversationExports.taskPlan(TaskPlan.ADAPTER.decode(plan.toByteArray()))).toNSData()
 
@@ -310,12 +395,22 @@ object SharedRules {
     fun gitOperationForm(kind: String, cardTitle: String, cardPrompt: String, pullRequestHeadSha: String, baseBranch: String): NSData =
         GitOperationFormSpec.ADAPTER.encode(WorkspaceExports.gitOperationForm(kind, cardTitle, cardPrompt, pullRequestHeadSha, baseBranch)).toNSData()
 
+    /** [form] is an encoded `GitOperationForm`, [input] a `GitOperationFormSpec.Input` value. */
+    fun gitOperationShows(form: NSData, input: Int): Boolean = WorkspaceExports.gitOperationShows(
+        GitOperationForm.ADAPTER.decode(form.toByteArray()), GitOperationFormSpec.Input.fromValue(input) ?: GitOperationFormSpec.Input.INPUT_SUBJECT,
+    )
+
     /** [form] is an encoded `GitOperationForm`. */
     fun gitOperationReady(form: NSData): Boolean = WorkspaceExports.gitOperationReady(GitOperationForm.ADAPTER.decode(form.toByteArray()))
+
+    fun shortSha(shortSha: String, sha: String): String = WorkspaceExports.shortSha(shortSha, sha)
 
     // --- Board --------------------------------------------------------------------
 
     fun isChat(scope: String, boardId: String): Boolean = BoardExports.isChat(scope, boardId)
+
+    /** [card] is an encoded `dieter.v1.Card`; its machine produced a reply the user has not seen. */
+    fun isUnread(card: NSData): Boolean = BoardExports.isUnread(Card.ADAPTER.decode(card.toByteArray()))
 
     /** A `RuntimeTone` value. */
     fun runtimeTone(runtime: String): Int = BoardExports.runtimeTone(runtime).value
@@ -347,6 +442,12 @@ object SharedRules {
     /** A conversation's title, or "Untitled chat" / "Untitled card" when blank. */
     fun conversationTitle(title: String, scope: String, boardId: String): String = ActivityExports.conversationTitle(title, scope, boardId)
 
+    fun timelineHours(): List<Int> = ActivityExports.timelineHours()
+
+    fun timelineRangeTitle(hours: Int): String = ActivityExports.timelineRangeTitle(hours)
+
+    fun timelineEmpty(hours: Int): String = ActivityExports.timelineEmpty(hours)
+
     /** An encoded `ActivityTimelineBar`. */
     fun timelineBar(startMillis: Long, atMillis: Long, running: Boolean, nowMillis: Long, hours: Int): NSData =
         ActivityTimelineBar.ADAPTER.encode(ActivityExports.timelineBar(startMillis, atMillis, running, nowMillis, hours)).toNSData()
@@ -369,7 +470,57 @@ object SharedRules {
         ),
     ).toNSData()
 
+    // --- Administration -----------------------------------------------------------
+
+    /** An encoded `AdminOptions`: workflows, publish modes, and archive policies with each form's defaults. */
+    fun adminOptions(): NSData = AdminOptions.ADAPTER.encode(AdminExports.options()).toNSData()
+
+    /** [command] is an encoded `dieter.v1.ValidationCommand`; returns the encoded `ValidationDraft` its form edits. */
+    fun validationDraft(command: NSData): NSData =
+        ValidationDraft.ADAPTER.encode(AdminExports.validationDraft(ValidationCommand.ADAPTER.decode(command.toByteArray()))).toNSData()
+
+    /** [draft] is an encoded `ValidationDraft`; returns the encoded `dieter.v1.ValidationCommand` it saves as. */
+    fun validationCommand(draft: NSData): NSData =
+        ValidationCommand.ADAPTER.encode(AdminExports.validationCommand(ValidationDraft.ADAPTER.decode(draft.toByteArray()))).toNSData()
+
+    /** [drafts] is an encoded `ValidationDrafts`; "" when they can save. */
+    fun validationProblem(drafts: NSData): String = AdminExports.validationProblem(ValidationDrafts.ADAPTER.decode(drafts.toByteArray()).drafts)
+
+    /** [drafts] is an encoded `ValidationDrafts`. */
+    fun canCreateProject(path: String, baseBranch: String, drafts: NSData): Boolean =
+        AdminExports.canCreateProject(path, baseBranch, ValidationDrafts.ADAPTER.decode(drafts.toByteArray()).drafts)
+
+    /** [drafts] is an encoded `ValidationDrafts`. */
+    fun canSaveProject(name: String, baseBranch: String, drafts: NSData): Boolean =
+        AdminExports.canSaveProject(name, baseBranch, ValidationDrafts.ADAPTER.decode(drafts.toByteArray()).drafts)
+
     // --- Creation -----------------------------------------------------------------
+
+    /** [input] is an encoded `ChatDestinationInput`; returns encoded `ChatDestinationGroups`. */
+    fun chatDestinations(input: NSData): NSData =
+        ChatDestinationGroups.ADAPTER.encode(CreationExports.chatDestinations(ChatDestinationInput.ADAPTER.decode(input.toByteArray()))).toNSData()
+
+    /** [groups] is encoded `ChatDestinationGroups`; returns the encoded `ChatDestination` to show first, empty when none. */
+    fun preferredChatDestination(groups: NSData, machineId: String, projectId: String, checkoutId: String): NSData = ChatDestination.ADAPTER.encode(
+        CreationExports.preferredChatDestination(ChatDestinationGroups.ADAPTER.decode(groups.toByteArray()), machineId, projectId, checkoutId),
+    ).toNSData()
+
+    /** [value] trimmed when it is an http(s) page a capture may record, else "". */
+    fun capturePage(value: String): String = CreationExports.capturePage(value)
+
+    /** The page's "host" or "host:port" as hostnames store it, else "". */
+    fun captureHostname(value: String): String = CreationExports.captureHostname(value)
+
+    /** [candidates] is an encoded `HostnameSets`; the indices of those that route the page at [url]. */
+    fun captureMatches(url: String, candidates: NSData): List<Int> =
+        CreationExports.captureMatches(url, HostnameSets.ADAPTER.decode(candidates.toByteArray()))
+
+    /** [project] is an encoded `dieter.v1.Project`; returns the encoded `Checkouts` a destination picker offers. */
+    fun checkoutChoices(project: NSData): NSData =
+        Checkouts.ADAPTER.encode(CreationExports.checkoutChoices(Project.ADAPTER.decode(project.toByteArray()))).toNSData()
+
+    /** A checkout as destination pickers name it: its name, else "Project checkout", ending " · Offline" while its machine is offline. */
+    fun checkoutTitle(name: String, machineOnline: Boolean): String = CreationExports.checkoutTitle(name, machineOnline)
 
     fun workspaceModeTitle(mode: String): String = CreationExports.workspaceModeTitle(mode)
 
@@ -384,6 +535,9 @@ object SharedRules {
     fun workspaceModeChoiceTitle(mode: String): String = CreationExports.workspaceModeChoiceTitle(mode)
 
     fun opensAfterCreate(chat: Boolean, lane: String): Boolean = CreationExports.opensAfterCreate(chat, lane)
+
+    /** The value a toggle provider option takes when switched [on] or off. */
+    fun toggleOptionValue(on: Boolean): String = CreationExports.toggleOptionValue(on)
 
     /**
      * [selection] is an encoded `dieter.v1.HarnessSelection`, [catalog] an

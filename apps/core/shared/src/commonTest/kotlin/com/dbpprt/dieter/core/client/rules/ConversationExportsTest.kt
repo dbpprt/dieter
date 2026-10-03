@@ -77,6 +77,14 @@ class ConversationExportsTest {
     }
 
     @Test
+    fun aQueuedRowShowsItsTextElseItsAttachments() {
+        val image = MessagePart(type = "file", media_type = "image/png", filename = "shot.png")
+        assertEquals("Check this", ConversationExports.queuedSummary(QueuedMessage(id = "q1", parts = listOf(MessagePart(type = "text", text = " Check this "), image))))
+        assertEquals("1 attachment", ConversationExports.queuedSummary(QueuedMessage(id = "q2", parts = listOf(image))))
+        assertEquals("2 attachments", ConversationExports.queuedSummary(QueuedMessage(id = "q3", parts = listOf(image, image))))
+    }
+
+    @Test
     fun copyTextJoinsARowsProse() {
         val messages = TimelineMessages(
             messages = listOf(

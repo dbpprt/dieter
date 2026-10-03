@@ -66,11 +66,6 @@
                 // Another account's selection and sheets never carry over.
                 if !signedIn { navigation = IOSWorkspaceNavigation() }
             }
-            .onOpenURL { url in
-                guard let request = IOSShareInbox.request(from: url) else { return }
-                pendingShare = request
-                presentPendingShare()
-            }
             .onChange(of: shareReady) { _, ready in
                 if ready { presentPendingShare() }
             }
@@ -151,8 +146,6 @@
                             .navigationBarTitleDisplayMode(.inline)
                     }
                     .tint(.blue)
-                case .quotas(let details):
-                    IOSProviderQuotaPreviewScreen(showDetails: details)
                 case .screen:
                     IOSScreenFixtureView()
                 }

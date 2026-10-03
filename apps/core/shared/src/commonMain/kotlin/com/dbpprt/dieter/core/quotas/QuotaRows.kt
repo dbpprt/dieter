@@ -44,7 +44,7 @@ object QuotaRows {
             unavailable = if (available) "" else Quotas.availability(account.availability),
             status = Quotas.status(account),
             windows = account.windows.map(::window),
-            details = Quotas.detailLines(account).map { QuotaDetail(label = it.label, text = it.text) },
+            details = Quotas.detailLines(account).map { QuotaDetail(label = it.label, text = it.text, monetary = it.monetary) },
             can_reset = Quotas.canReset(provider, account),
             included = Quotas.included(account),
             fresh_until_millis = Timestamps.parse(account.fresh_until)?.toEpochMilliseconds() ?: 0L,

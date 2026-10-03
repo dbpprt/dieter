@@ -30,6 +30,9 @@ import com.dbpprt.dieter.core.client.runtimeTone as clientRuntimeTone
  * and the board view laid out from given cards.
  */
 object BoardExports {
+    /** The machine produced a reply the user has not seen. */
+    fun isUnread(card: Card): Boolean = Runtimes.isUnread(card)
+
     /** An unfiled chat; a chat filed on a board ([boardId] not empty) is a card. */
     fun isChat(scope: String, boardId: String): Boolean = Cards.isChat(Card(scope = scope, board_id = boardId))
 

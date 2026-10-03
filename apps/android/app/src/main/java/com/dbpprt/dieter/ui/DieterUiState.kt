@@ -13,7 +13,6 @@ import com.dbpprt.dieter.api.v1.PeerRecord
 import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.api.v1.Schedule
 import com.dbpprt.dieter.api.v1.Terminal
-import com.dbpprt.dieter.api.v1.UiMessage
 import com.dbpprt.dieter.core.activity.ActivityItem
 import com.dbpprt.dieter.core.admin.BackgroundMode
 import com.dbpprt.dieter.core.admin.MachineSnapshot
@@ -208,7 +207,4 @@ data class DieterUiState(
     val terminalLoading: Boolean get() = terminalWorkspace.loading
     val terminalStreamConnected: Boolean get() = terminalWorkspace.streamConnected
     val selectedTerminal: Terminal? get() = terminalWorkspace.selected
-    /** Loaded history and the live window, as the core merges them. */
-    val conversationMessages: List<UiMessage>
-        get() = conversationView?.messages ?: conversation?.conversation?.messages.orEmpty()
 }

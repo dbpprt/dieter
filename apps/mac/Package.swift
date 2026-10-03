@@ -30,7 +30,8 @@ let package = Package(
         .target(
             name: "DieterIOS",
             dependencies: [
-                "SharedCore", "DieterShared", "DieterTransport", "DieterAPI",
+                "SharedCore", "DieterShared", "DieterAPI",
+                // Message initializers from encoded rule results extend SwiftProtobuf's `Message`.
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
                 .product(name: "Textual", package: "textual"),
@@ -40,8 +41,7 @@ let package = Package(
         .testTarget(
             name: "DieterIOSTests",
             dependencies: [
-                "DieterIOS", "SharedCore", "DieterShared", "DieterAPI",
-                .product(name: "GRPCCore", package: "grpc-swift-2"),
+                "DieterIOS", "SharedCore", "DieterAPI",
             ]),
         // The native transport pieces both clients share: the WebRTC control
         // channel, daemon certificate pinning, and gRPC resolver targets, and

@@ -41,10 +41,7 @@ class SignIn(
         storage.write(
             PENDING,
             PendingSignIn.ADAPTER.encode(
-                PendingSignIn(
-                    gateway_origin = gateway.origin, gateway = gateway.record(), verifier = verifier,
-                    redirect_uri = redirectUri, created_at_millis = clock.now().toEpochMilliseconds(),
-                ),
+                PendingSignIn(gateway = gateway.record(), verifier = verifier, created_at_millis = clock.now().toEpochMilliseconds()),
             ),
         )
         return "${gateway.httpBase}/auth/github/start?native_redirect_uri=${Urls.encode(redirectUri)}" +

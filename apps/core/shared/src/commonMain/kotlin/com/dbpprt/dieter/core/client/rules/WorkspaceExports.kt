@@ -5,11 +5,14 @@ import com.dbpprt.dieter.api.v1.PullRequestSummary
 import com.dbpprt.dieter.api.v1.WorkspaceSummary
 import com.dbpprt.dieter.client.v1.ChangedFileLabel
 import com.dbpprt.dieter.client.v1.GitOperationForm as ClientGitOperationForm
+import com.dbpprt.dieter.client.v1.GitFormCopy
+import com.dbpprt.dieter.client.v1.GitFormNotice
 import com.dbpprt.dieter.client.v1.GitOperationFormSpec
 import com.dbpprt.dieter.client.v1.MergeStrategyOption
 import com.dbpprt.dieter.client.v1.WorkspaceBadgeView
 import com.dbpprt.dieter.client.v1.WorkspaceTone
 import com.dbpprt.dieter.core.workspace.ChangedFiles
+import com.dbpprt.dieter.core.workspace.Commits
 import com.dbpprt.dieter.core.workspace.GitFormField
 import com.dbpprt.dieter.core.workspace.GitOperationForm
 import com.dbpprt.dieter.core.workspace.GitOperations
@@ -65,7 +68,21 @@ object WorkspaceExports {
             },
             inputs = GitOperations.fields(kind).map(::input),
             strategies = GitOperations.strategies(kind).map { (strategy, title) -> MergeStrategyOption(strategy = strategy, title = title) },
+            copy = GitOperations.copy(kind).let {
+                GitFormCopy(
+                    subject = it.subject, subject_placeholder = it.subjectPlaceholder, body = it.body, body_placeholder = it.bodyPlaceholder,
+                    stage_all = it.stageAll, fetch = it.fetch, validate = it.validate, strategy = it.strategy, draft = it.draft, push = it.push,
+                    force_with_lease = it.forceWithLease, expected_remote_sha = it.expectedRemoteSha,
+                    expected_remote_sha_placeholder = it.expectedRemoteShaPlaceholder, expected_remote_sha_help = it.expectedRemoteShaHelp,
+                    target_card_id = it.targetCardId, target_card_id_placeholder = it.targetCardIdPlaceholder,
+                )
+            },
+            notice = GitOperations.notice(kind)?.let { GitFormNotice(title = it.title, detail = it.detail, tone = tone(it.tone)) },
         )
+
+    /** Whether [form] shows [input] with its current values. */
+    fun gitOperationShows(form: ClientGitOperationForm, input: GitOperationFormSpec.Input): Boolean =
+        GitFormField.entries.firstOrNull { input(it) == input }?.let(core(form)::shows) ?: true
 
     /** Whether [form] can start: a commit and a pull request need a subject, adopting a conversation, a forced push the remote head. */
     fun gitOperationReady(form: ClientGitOperationForm): Boolean = core(form).ready
@@ -105,4 +122,7 @@ object WorkspaceExports {
         GitFormField.EXPECTED_REMOTE_SHA -> GitOperationFormSpec.Input.INPUT_EXPECTED_REMOTE_SHA
         GitFormField.TARGET_CARD_ID -> GitOperationFormSpec.Input.INPUT_TARGET_CARD_ID
     }
+
+    /** A commit's abbreviated hash, at most seven characters. */
+    fun shortSha(shortSha: String, sha: String): String = Commits.shortSha(shortSha, sha)
 }

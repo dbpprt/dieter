@@ -1,12 +1,9 @@
 import AppKit
 import DieterAPI
 import Foundation
-import OSLog
 import Observation
 import UniformTypeIdentifiers
 import UserNotifications
-
-let syncPerformanceLog = OSLog(subsystem: "com.dbpprt.dieter.mac", category: "SyncPerformance")
 
 enum AppSection: String, CaseIterable, Identifiable, Sendable {
     case inbox = "Inbox"

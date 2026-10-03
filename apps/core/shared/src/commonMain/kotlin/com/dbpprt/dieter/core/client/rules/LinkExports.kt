@@ -26,7 +26,7 @@ object LinkExports {
             is ContentLink.Web -> ContentLinkResolution(web_url = link.url)
         }
     } catch (failure: LinkException) {
-        ContentLinkResolution(failure = ContentLinkFailure(kind = kind(failure.error), message = ContentLinks.message(failure.error, failure.scheme), scheme = failure.scheme))
+        ContentLinkResolution(failure = ContentLinkFailure(kind = kind(failure.error), message = ContentLinks.message(failure.error, failure.scheme)))
     }
 
     /** The web links in prose [text], in order, with UTF-16 ranges. */
@@ -39,13 +39,6 @@ object LinkExports {
      * files surface resolves it against the card's workspace.
      */
     fun isWorkspaceImage(destination: String): Boolean = WorkspaceImages.isWorkspaceImage(destination)
-
-    /**
-     * The workspace-relative path of an image [destination], "" when it is not
-     * an image inside [workspaceRoot] (empty for none: only relative links resolve).
-     */
-    fun workspaceImagePath(destination: String, workspaceRoot: String): String =
-        WorkspaceImages.path(destination, workspaceRoot.ifEmpty { null }).orEmpty()
 
     /** Whether the workspace browser hands an http(s) [url] to the system browser under the user's [rules]. */
     fun externalBrowserRuleMatches(url: String, rules: List<String>): Boolean = BrowserRules.matches(url, rules)

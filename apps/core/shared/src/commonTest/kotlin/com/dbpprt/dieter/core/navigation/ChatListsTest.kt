@@ -143,4 +143,11 @@ class ChatListsTest {
         val folderSearch = ChatLists.present(many + filed, projects, NavigationLayout(saved), "filed").folders.single()
         assertTrue(!folderSearch.expanded && folderSearch.showChats, "a search opens a collapsed folder")
     }
+
+    @Test
+    fun theShowMoreButtonNamesWhatItReveals() {
+        assertEquals("", ChatLists.toggleLabel(hidden = 0, showAll = false))
+        assertEquals("Show 3 more", ChatLists.toggleLabel(hidden = 3, showAll = false))
+        assertEquals("Show fewer", ChatLists.toggleLabel(hidden = 3, showAll = true))
+    }
 }

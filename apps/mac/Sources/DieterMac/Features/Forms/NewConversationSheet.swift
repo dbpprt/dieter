@@ -133,7 +133,11 @@ struct NewConversationSheet: View {
                         LabeledContent("Labels") {
                             DieterFlowLayout(horizontalSpacing: 8, verticalSpacing: 8) {
                                 ForEach(labels, id: \.id) { label in
-                                    Toggle(isOn: labelSelection(label.id)) {
+                                    Toggle(
+                                        isOn: Binding(
+                                            get: { form.intent.labelIds.contains(label.id) },
+                                            set: { form.setLabel(label.id, selected: $0) })
+                                    ) {
                                         HStack(spacing: 5) {
                                             Circle().fill(Color(hex: label.color) ?? .accentColor)
                                                 .frame(width: 6, height: 6)
@@ -258,15 +262,6 @@ struct NewConversationSheet: View {
                     }
                 }
             }
-    }
-
-    private func labelSelection(_ id: String) -> Binding<Bool> {
-        Binding(
-            get: { form.intent.labelIds.contains(id) },
-            set: { selected in
-                form.intent.labelIds.removeAll { $0 == id }
-                if selected { form.intent.labelIds = (form.intent.labelIds + [id]).sorted() }
-            })
     }
 
     private func initializeDraft() {

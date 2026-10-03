@@ -119,7 +119,7 @@ struct ChatProjectGroup: View {
                                         pageIndex = 0
                                         toggleExpanded()
                                     } label: {
-                                        Label("Show fewer", systemImage: "chevron.up")
+                                        Label(section.toggleLabel, systemImage: "chevron.up")
                                             .font(.system(size: 10.5, weight: .medium))
                                             .foregroundStyle(DieterTheme.subtle)
                                             .padding(.leading, 24).padding(.vertical, 5)
@@ -131,7 +131,7 @@ struct ChatProjectGroup: View {
                                 Button(action: toggleExpanded) {
                                     HStack(spacing: 5) {
                                         Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold))
-                                        Text("Show \(section.hidden) more")
+                                        Text(section.toggleLabel)
                                     }
                                     .font(.system(size: 10.5, weight: .medium)).foregroundStyle(DieterTheme.subtle)
                                     .padding(.leading, 27).padding(.vertical, 6)

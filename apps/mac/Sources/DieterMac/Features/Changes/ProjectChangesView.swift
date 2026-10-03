@@ -236,7 +236,10 @@ struct ProjectChangesView: View {
                     Text(
                         model.pendingKind == "commit"
                             ? "Committing…"
-                            : count == 0 ? "Commit staged changes" : "Commit \(count) \(count == 1 ? "file" : "files")")
+                            : count == 0
+                                ? "Commit staged changes"
+                                : "Commit \(SharedRules.shared.count(count: Int32(clamping: count), noun: "file", plural: ""))"
+                    )
                 }.frame(maxWidth: .infinity)
             }
             .buttonStyle(ChangesActionButtonStyle(prominent: true))

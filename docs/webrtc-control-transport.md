@@ -86,10 +86,11 @@ integrity. CLI route tests cover direct TLS, WebRTC, and relay fallback.
 
 For native integration, `DIETER_TEST_CONTROL_WEBRTC=1` enables the bridge on the
 primary daemon of `scripts/isolated-gateway`. It advertises no direct TLS route,
-forcing compatible clients through WebRTC. The shared Swift test
-(`controlWebRTCRoutesNativeRPCAndReportsSelectedMode`) reads the fixture's
-`DIETER_ISOLATED_*` output from `DIETER_CONTROL_FIXTURE`. Android has no
-instrumentation test for this route. No operator service is changed.
+forcing compatible clients through WebRTC. No native test currently drives this
+route: the Swift test that did (`controlWebRTCRoutesNativeRPCAndReportsSelectedMode`)
+was removed with the Swift connection manager when the apps moved onto the
+shared core, and Android has no instrumentation test for it. No operator
+service is changed.
 
 ## Validation on 2026-09-19
 

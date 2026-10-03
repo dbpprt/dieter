@@ -726,14 +726,6 @@ private func terminalKeyEvent(
     #expect(clamped.upperBound == 3)
 }
 
-@Test func boardCreationOptionsMatchTheServerContract() {
-    #expect(BoardWorkflow.allCases.map(\.rawValue) == ["review", "direct"])
-    #expect(
-        DoneArchivePolicy.allCases.map(\.rawValue) == [
-            "never", "immediately", "after_1_day", "after_7_days", "after_30_days", "after_90_days",
-        ])
-}
-
 @Test func settingsAreFirstClassNestedNavigationDestinations() {
     #expect(AppSection.allCases.contains(.settings))
     #expect(
@@ -850,7 +842,6 @@ private func terminalKeyEvent(
 
     let groups = ProjectDestinationCatalog.groups(
         projects: [officeProject, homeProject],
-        projectReplicaEndpointIDs: [homeProject.id: home.id, officeProject.id: office.id],
         endpoints: [office, home],
         fallbackEndpoint: gateway
     )
@@ -875,7 +866,6 @@ private func terminalKeyEvent(
 
     let groups = ProjectDestinationCatalog.groups(
         projects: [project],
-        projectReplicaEndpointIDs: [:],
         endpoints: [machine],
         fallbackEndpoint: machine
     )
@@ -905,7 +895,6 @@ private func terminalKeyEvent(
 
     let groups = ProjectDestinationCatalog.groups(
         projects: [project],
-        projectReplicaEndpointIDs: [:],
         endpoints: [remote, current],
         fallbackEndpoint: current
     )
@@ -1046,30 +1035,6 @@ private func terminalKeyEvent(
     #expect(LabelColorPalette.hex(for: SwiftUI.Color(red: 1, green: 0.5, blue: 0)) == "#ff8000")
 }
 
-@Test func queuedMessageEditingRestoresTextAndAttachments() {
-    var text = Dieter_V1_MessagePart(); text.type = "text"; text.text = "Move me back to the composer"
-    var attachment = Dieter_V1_MessagePart(); attachment.type = "file"; attachment.filename = "context.txt"
-    var queued = Dieter_V1_QueuedMessage()
-    queued.id = "queued-edit"
-    queued.text = "fallback"
-    queued.parts = [text, attachment]
-
-    let draft = ConversationQueuePresentation.editableDraft(for: queued)
-
-    #expect(draft.text == "Move me back to the composer")
-    #expect(draft.attachments.map(\.filename) == ["context.txt"])
-}
-
-@Test func legacyQueuedMessageEditingFallsBackToStoredText() {
-    var queued = Dieter_V1_QueuedMessage()
-    queued.text = "Legacy queued text"
-
-    let draft = ConversationQueuePresentation.editableDraft(for: queued)
-
-    #expect(draft.text == "Legacy queued text")
-    #expect(draft.attachments.isEmpty)
-}
-
 @Test @MainActor func macAttachmentSelectionPreservesBytesAndEnforcesTheSharedLimit() async throws {
     let root = FileManager.default.temporaryDirectory.appending(path: "dieter-mac-attachments-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -1107,9 +1072,9 @@ private func terminalKeyEvent(
     let parts = try await store.attachmentParts([provider])
 
     #expect(parts.count == 1)
-    #expect(parts[0].type == "image")
+    #expect(parts[0].type == "file")
     #expect(parts[0].mediaType == "image/png")
-    #expect(parts[0].filename == "Pasted Image 1.png")
+    #expect(parts[0].filename == "attached-image", "an unnamed paste is named by the core")
     #expect(parts[0].data == png)
 }
 
@@ -1126,7 +1091,7 @@ private func terminalKeyEvent(
     let parts = try await store.attachmentParts([provider])
 
     #expect(parts[0].mediaType == "image/png")
-    #expect(parts[0].filename == "Pasted Image 1.png")
+    #expect(parts[0].filename == "attached-image", "an unnamed paste is named by the core")
     #expect(NSImage(data: parts[0].data) != nil)
 }
 
@@ -1145,9 +1110,9 @@ private func terminalKeyEvent(
     let parts = try await store.attachmentParts(input)
 
     #expect(parts.count == 1)
-    #expect(parts[0].type == "image")
+    #expect(parts[0].type == "file")
     #expect(parts[0].mediaType == "image/png")
-    #expect(parts[0].filename == "Pasted Image 1.png")
+    #expect(parts[0].filename == "attached-image", "an unnamed paste is named by the core")
     #expect(parts[0].data == png)
 }
 

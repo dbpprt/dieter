@@ -46,7 +46,7 @@ struct FilesView: View {
                             PaneTitleBlock(
                                 title: "Files",
                                 subtitle:
-                                    "\(model.files.count) item\(model.files.count == 1 ? "" : "s") · \(model.fileScopeCardID == nil ? model.projectName : "Conversation workspace")",
+                                    "\(SharedRules.shared.count(count: Int32(clamping: model.files.count), noun: "item", plural: "")) · \(model.fileScopeCardID == nil ? model.projectName : "Conversation workspace")",
                                 symbol: "folder",
                                 prominent: true
                             )

@@ -4,43 +4,27 @@ import SharedCore
 import Testing
 @testable import DieterMac
 
-@Test @MainActor func readReceiptRequiresLoadedReplyAndCurrentSelection() async {
+/// The core marks a reply read once it is loaded and shown at the latest
+/// position (`ConversationSession.markReadIfVisible`); the Mac only reports
+/// which conversation is on screen.
+@Test @MainActor func seenRepliesAreReportedForTheObservedSelectionOnly() async {
     let core = ScriptedCoreClient()
     let model = ConversationModel()
     model.core = core
-    model.selectedChatID = "chat"
-    var snapshot = Dieter_V1_ConversationSnapshot()
-    snapshot.detail.card.id = "chat"
-    snapshot.detail.card.scope = "chat"
-    snapshot.detail.card.responseSeq = 40
-    snapshot.detail.card.responseMessageID = "reply"
-    model.conversation = snapshot
-    func receipts() -> [String] {
-        core.commands.compactMap { if case .markCardRead(let read) = $0.command { read.cardID } else { nil } }
+    func visible() -> [String] {
+        core.commands.compactMap {
+            if case .setVisibleConversation(let visible) = $0.command { visible.cardID } else { nil }
+        }
     }
+    model.selectedChatID = "chat"
     await model.markResponseSeen()
-    #expect(receipts().isEmpty)
-    snapshot.conversation.messages = [fixtureMessage("reply", role: "assistant")]
-    // Directory metadata can announce completion before the final transcript frame arrives.
-    snapshot.conversation.lastSeq = 39
-    model.conversation = snapshot
-    await model.markResponseSeen()
-    #expect(receipts().isEmpty)
-    snapshot.conversation.lastSeq = 40
-    model.conversation = snapshot
-    model.browsingEarlierHistory = true
-    await model.markResponseSeen()
-    #expect(receipts().isEmpty)
-    model.browsingEarlierHistory = false
+    #expect(visible().isEmpty, "a conversation that is not observed yet is not reported")
+    model.observe("chat")
     model.selectedChatID = "other"
     await model.markResponseSeen()
-    #expect(receipts().isEmpty)
+    #expect(visible().isEmpty, "another selection is not reported")
     model.selectedChatID = "chat"
     await model.markResponseSeen()
-    #expect(receipts() == ["chat"])
-    // The core confirms through the card; a seen reply is not sent again.
-    snapshot.detail.card.seenResponseSeq = 40
-    model.conversation = snapshot
-    await model.markResponseSeen()
-    #expect(receipts() == ["chat"])
+    #expect(visible() == ["chat"])
+    model.observe(nil)
 }

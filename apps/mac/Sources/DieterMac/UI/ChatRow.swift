@@ -76,7 +76,7 @@ struct ChatRowContent: View, Equatable {
                             if WorkspaceBadge.of(card).shown { WorkspaceSummaryBadge(card: card, compact: true) }
                             if !card.activeSubagents.isEmpty {
                                 Text(
-                                    "· \(card.activeSubagents.count) subagent\(card.activeSubagents.count == 1 ? "" : "s")"
+                                    "· \(SharedRules.shared.count(count: Int32(clamping: card.activeSubagents.count), noun: "subagent", plural: ""))"
                                 ).foregroundStyle(DieterTheme.subtle)
                             }
                         }

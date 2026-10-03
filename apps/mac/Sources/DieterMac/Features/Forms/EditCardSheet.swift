@@ -37,7 +37,7 @@ struct EditCardSheet: View {
                 baseBranch: card.workspaceBaseBranch,
                 baseRemote: card.workspaceBaseRemote,
                 remotePublishMode: card.remotePublishMode.isEmpty
-                    ? RemotePublishMode.manual.rawValue : card.remotePublishMode
+                    ? AdminChoices.options.defaultPublishMode : card.remotePublishMode
             ))
     }
 
@@ -51,7 +51,7 @@ struct EditCardSheet: View {
                     branch: card.workspaceBranch, baseBranch: card.workspaceBaseBranch,
                     baseRemote: card.workspaceBaseRemote,
                     remotePublishMode: card.remotePublishMode.isEmpty
-                        ? RemotePublishMode.manual.rawValue : card.remotePublishMode)
+                        ? AdminChoices.options.defaultPublishMode : card.remotePublishMode)
     }
 
     /// Why the form cannot save yet, as the core checks the card when saving
@@ -161,7 +161,8 @@ struct EditCardSheet: View {
                             .foregroundStyle(DieterTheme.text)
                             .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 6))
                         Picker("Publishing", selection: $workspaceDraft.remotePublishMode) {
-                            ForEach(RemotePublishMode.allCases) { mode in Text(mode.title).tag(mode.rawValue) }
+                            ForEach(AdminChoices.options.publishModes, id: \.id) { mode in Text(mode.title).tag(mode.id)
+                            }
                         }
                         .foregroundStyle(DieterTheme.text)
                         Text(workspaceDraft.mode.detail).font(.caption).foregroundStyle(DieterTheme.tertiary)

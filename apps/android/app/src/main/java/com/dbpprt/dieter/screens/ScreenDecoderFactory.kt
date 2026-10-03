@@ -1,5 +1,6 @@
 package com.dbpprt.dieter.screens
 
+import com.dbpprt.dieter.core.screens.ScreenCodecs
 import org.webrtc.*
 import android.media.MediaCodecInfo
 import android.os.Build
@@ -23,13 +24,13 @@ internal class ScreenDecoderFactory(
     private val platform = PlatformSoftwareVideoDecoderFactory(context)
     private val hevcHardware = DieterLowLatencyDecoderFactory(context, { supportsHEVC(it) }, lowLatency, listener, directSurface, outputDecoded)
     override fun getSupportedCodecs(): Array<VideoCodecInfo> =
-        ((if (enableHEVC) hevcHardware.supportedCodecs.filter { it.name.equals("H265", true) }.map {
-            VideoCodecInfo("H265", mapOf("profile-id" to "1", "tier-flag" to "0", "level-id" to "153", "tx-mode" to "SRST"), emptyList())
+        ((if (enableHEVC) hevcHardware.supportedCodecs.filter { it.name.equals(ScreenCodecs.H265, true) }.map {
+            VideoCodecInfo(ScreenCodecs.H265, mapOf("profile-id" to "1", "tier-flag" to "0", "level-id" to "153", "tx-mode" to "SRST"), emptyList())
         } else emptyList()) + (hardware.supportedCodecs.toList() + platform.supportedCodecs.toList())
             .filter { it.name.equals("H264", true) }).distinctBy { it.name to it.params }.toTypedArray()
 
     override fun createDecoder(info: VideoCodecInfo): VideoDecoder? {
-        val hevc = info.name.equals("H265", true)
+        val hevc = info.name.equals(ScreenCodecs.H265, true)
         if (!info.name.equals("H264", true) && !(enableHEVC && hevc)) return null
         val decoder = if (hevc) hevcHardware.createDecoder(info) else hardware.createDecoder(info) ?: platform.createDecoder(info)?.also {
             configured(ScreenDecoderStatus(it.implementationName, false, false, false, "platform software fallback"))

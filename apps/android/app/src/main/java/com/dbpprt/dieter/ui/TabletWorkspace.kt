@@ -455,7 +455,7 @@ internal fun TabletActivityTimeline(
     Column(Modifier.fillMaxWidth().testTag("tablet-activity-timeline"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Latest activity per conversation", style = MaterialTheme.typography.titleMedium)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(1, 6, 24).forEach { value ->
+            Activity.TIMELINE_HOURS.forEach { value ->
                 FilterChip(selected = hours == value, onClick = { onHours(value) }, label = { Text("${value}h") }, modifier = Modifier.testTag("tablet-range-$value"))
             }
         }
@@ -489,7 +489,7 @@ internal fun TabletActivityTimeline(
                 }
             }
         }
-        if (intervals.isEmpty()) Text("No activity in the last ${hours}h", color = DieterMuted, modifier = Modifier.padding(20.dp))
+        if (intervals.isEmpty()) Text(Activity.emptyTimeline(hours), color = DieterMuted, modifier = Modifier.padding(20.dp))
         if (intervals.size > visibleCount) TextButton(onClick = { visibleCount += 40 }) { Text("Show more conversations") }
         Text("Bars show recorded durations; short marks are events without a recorded duration.", style = MaterialTheme.typography.labelSmall, color = DieterMuted)
     }

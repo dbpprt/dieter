@@ -11,6 +11,8 @@ import Observation
     package var terminalOverviewLoading = false
     package var terminalOverviewError: String?
     package var terminalOverviewPreferredMachineID: String?
+    /// "2 persistent sessions across 1 machine", as the core words it.
+    package private(set) var terminalOverviewStatus = ""
 
     private let terminalsModel: TerminalsModel
     private let core: CoreClient
@@ -126,7 +128,7 @@ import Observation
     private func fold(_ slice: ClientTerminalOverviewSlice) {
         let entries = slice.entries.map {
             TerminalOverviewEntry(
-                machineID: endpointID($0.daemonID), machineName: $0.machineName, terminal: $0.terminal)
+                machineID: endpointID($0.daemonID), machineName: $0.machineName, terminal: $0.terminal, row: $0.row)
         }
         if terminalOverviewEntries != entries { terminalOverviewEntries = entries }
         let selected = slice.entries.first { $0.id == slice.selectedID }.map {
@@ -134,6 +136,7 @@ import Observation
         }
         if selectedTerminalOverviewID != selected { selectedTerminalOverviewID = selected }
         if terminalOverviewLoading != slice.loading { terminalOverviewLoading = slice.loading }
+        if terminalOverviewStatus != slice.status { terminalOverviewStatus = slice.status }
         let error =
             slice.noMachines
             ? "No compatible Dieter machines are online."

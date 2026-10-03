@@ -79,7 +79,8 @@ struct SubagentTimelineGroup: View {
             } label: {
                 HStack(spacing: 7) {
                     Image(systemName: "person.2.fill").font(.system(size: 10)).foregroundStyle(DieterTheme.shell)
-                    Text("\(agents.count) subagent\(agents.count == 1 ? "" : "s")").font(.caption.weight(.semibold))
+                    Text(SharedRules.shared.count(count: Int32(clamping: agents.count), noun: "subagent", plural: ""))
+                        .font(.caption.weight(.semibold))
                     Spacer();
                     Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 8)).foregroundStyle(
                         DieterTheme.tertiary)
@@ -152,7 +153,8 @@ struct SubagentsView: View {
         ScrollView {
             LazyVStack(spacing: 11) {
                 HStack {
-                    Text("\(agents.count) subagent\(agents.count == 1 ? "" : "s")").font(.headline)
+                    Text(SharedRules.shared.count(count: Int32(clamping: agents.count), noun: "subagent", plural: ""))
+                        .font(.headline)
                     if running > 0 {
                         Text("• \(running) running").font(.caption.weight(.semibold)).foregroundStyle(
                             DieterTheme.primary)

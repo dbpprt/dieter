@@ -1,4 +1,5 @@
 import AppKit
+import DieterShared
 import Foundation
 import Observation
 import SharedCore
@@ -103,8 +104,8 @@ final class ScreenShareSession: Identifiable {
         guard let timeoutMinutes, keepsConnectionOpen, !controller.systemSleeping,
             now.timeIntervalSince(lastActivityAt) >= TimeInterval(timeoutMinutes * 60)
         else { return false }
-        let unit = timeoutMinutes == 1 ? "minute" : "minutes"
-        inactivityMessage = "Disconnected after " + String(timeoutMinutes) + " " + unit + " of inactivity."
+        let duration = SharedRules.shared.count(count: Int32(timeoutMinutes), noun: "minute", plural: "")
+        inactivityMessage = "Disconnected after \(duration) of inactivity."
         controller.disconnect()
         cancelInactivityMonitor()
         return true

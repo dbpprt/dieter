@@ -19,9 +19,9 @@ import com.dbpprt.dieter.client.v1.Slice
 import com.dbpprt.dieter.client.v1.Update
 import com.dbpprt.dieter.client.v1.WorkspaceSlice
 import com.dbpprt.dieter.core.CoreRuntime
-import com.dbpprt.dieter.core.composition.Attachments
 import com.dbpprt.dieter.core.board.BoardOperations
 import com.dbpprt.dieter.core.board.DropAnchors
+import com.dbpprt.dieter.core.composition.Attachments
 import com.dbpprt.dieter.core.composition.DraftKey
 import com.dbpprt.dieter.core.conversation.ConversationSession
 import com.dbpprt.dieter.core.files.FileConflictException
@@ -218,10 +218,8 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         command.rename_machine?.let { runtime.renameMachine(it.daemon_id, it.name); return done }
         command.revoke_machine?.let { runtime.revokeMachine(it.daemon_id); return done }
         command.ensure_metadata?.let { runtime.metadata.ensure(it.daemon_id, it.refresh); return done }
-        command.set_gateways?.let { set ->
-            runtime.setGateways(set.gateways.map { gateway(it.url, it.name) }, set.active_origin.ifEmpty { null })
-            return done
-        }
+        command.use_gateway?.let { runtime.useGateway(Gateway.parse(it.url, it.name.trim()) ?: invalid("That is not a valid gateway address.")); return done }
+        command.remove_gateway?.let { runtime.removeGateway(it.origin); return done }
         command.resync?.let { runtime.resync(); return done }
         // Surfaces a view owns; scoped commands need the view's observation first.
         command.files?.let { return (surfaces.files[it.scope] ?: invalid("Open the files surface first.")).execute(it) }

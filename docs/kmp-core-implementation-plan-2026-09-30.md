@@ -62,7 +62,7 @@ bridge), then iOS (the thinnest client, which gains the most), then macOS
 - it is switched on in all three apps;
 - the legacy code is deleted.
 
-**Status (2026-10-02):**
+**Status (2026-10-03):**
 - F through W6 and the D7 contract are implemented and tested. The legacy
   importers were built and then deleted unused: neither app imports state
   from its versions before the core.
@@ -75,8 +75,12 @@ bridge), then iOS (the thinnest client, which gains the most), then macOS
   plane and Swift rule copies are deleted; views read slices and call
   `SharedRules`. The Apple adapter harness became the Mac's `SharedCore`
   target, and the core's Android harness was deleted.
-- iOS still runs on the Swift `DieterCore` and `DieterClient` modules; its
-  W7 waits for its cutover.
+- iOS is fully migrated through the
+  [iOS cutover plan](ios-shared-core-integration-plan-2026-10-02.md); the
+  Swift `DieterCore` and `DieterClient` modules are deleted. A follow-up
+  audit moved the last duplicated rules (quota rows on Android, Git
+  operation copy, gateway commands, chat and timeline wording, file
+  editability, screen-binding checks in Mac tests) into the core.
 - The parity matrix and the deviations from this plan are in
   [`apps/core/README.md`](../apps/core/README.md).
 
@@ -473,9 +477,9 @@ iOS has not started.
 vectors, shadow mode, switches, or rollback: each app switched over in place,
 before either had users. The importers in 5.3 were built for the macOS and
 iOS formats and deleted unused; no Android importer shipped. The Mac keeps its
-gateway session file as the core's secure store, so sign-in survives, and
-Android deletes the earlier versions' unused files on start
-(`data/UnusedStorage.kt`).
+gateway session file as the core's secure store, so sign-in survives.
+Android briefly deleted the earlier versions' unused files on start; that
+cleanup was removed again (2026-10-03), since there were no installs to clean.
 
 **5.1 Per domain, per platform:**
 1. Build and test in the core; conformance vectors pass against legacy.

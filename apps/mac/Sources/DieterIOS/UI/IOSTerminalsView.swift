@@ -66,12 +66,12 @@
                             (machine.available ? Color.orange : Color.secondary).opacity(0.12),
                             in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(machine.name.isEmpty ? machine.id : machine.name)
+                        Text(machine.displayName)
                             .font(.headline)
                             .foregroundStyle(.primary)
                         HStack(spacing: 6) {
                             Circle()
-                                .fill(machine.available ? Color.green : Color.orange)
+                                .fill(machine.tone.color)
                                 .frame(width: 7, height: 7)
                             Text(app.machineStatus(machine, now: now)).lineLimit(2)
                         }
@@ -238,10 +238,7 @@
                 }
                 Button("Cancel", role: .cancel) { closeCandidate = nil }
             } message: {
-                Text(
-                    closeCandidate?.status == "running"
-                        ? "This explicitly ends the daemon-owned shell. Leaving this screen does not."
-                        : "This removes the finished session and its scrollback.")
+                Text(closeCandidate.map { model.row($0).closeMessage } ?? "")
             }
             .alert(
                 "Terminal",
@@ -266,8 +263,9 @@
                 ProgressView("Loading persistent terminals…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let terminal = model.selectedTerminal {
-                let running = terminal.status == "running"
-                let acceptsInput = running && model.terminalStreamConnected
+                let row = model.row(terminal)
+                let running = row.running
+                let acceptsInput = row.acceptsInput
                 VStack(spacing: 0) {
                     IOSTerminalSurface(
                         terminalID: terminal.id,
@@ -298,9 +296,9 @@
 
                     HStack(spacing: 7) {
                         Circle()
-                            .fill(statusColor(terminal))
+                            .fill(model.row(terminal).tone.color)
                             .frame(width: 7, height: 7)
-                        Text(status(terminal))
+                        Text(model.row(terminal).status)
                             .accessibilityIdentifier("ios.terminals.status")
                         Spacer(minLength: 8)
                         Text("\(terminal.columns)×\(terminal.rows)")
@@ -346,12 +344,13 @@
                             model.selectTerminal(terminal.id)
                         } label: {
                             HStack(spacing: 7) {
+                                let row = model.row(terminal)
                                 Circle()
-                                    .fill(terminal.status == "running" ? Color.green : Color.secondary)
+                                    .fill(row.running ? Color.green : Color.secondary)
                                     .frame(width: 6, height: 6)
                                 Text(terminal.name).lineLimit(1)
-                                if terminal.status != "running" {
-                                    Text(status(terminal)).foregroundStyle(.secondary)
+                                if !row.running {
+                                    Text(row.status).foregroundStyle(.secondary)
                                 }
                             }
                             .font(.caption.weight(selected ? .semibold : .regular))
@@ -369,17 +368,6 @@
             }
             .background(.bar)
             .accessibilityIdentifier("ios.terminals.view")
-        }
-
-        private func status(_ terminal: Dieter_V1_Terminal) -> String {
-            SharedRules.shared.terminalStatus(
-                status: terminal.status, exitCode: terminal.exitCode, hasExitCode: terminal.hasExitCode,
-                streamConnected: model.terminalStreamConnected)
-        }
-
-        private func statusColor(_ terminal: Dieter_V1_Terminal) -> SwiftUI.Color {
-            if terminal.status != "running" { return terminal.hasExitCode && terminal.exitCode == 0 ? .gray : .red }
-            return model.terminalStreamConnected ? .green : .orange
         }
 
         // MARK: - Input

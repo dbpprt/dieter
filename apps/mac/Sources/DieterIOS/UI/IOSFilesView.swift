@@ -365,8 +365,7 @@
         }
 
         private func editable(_ document: Dieter_V1_FileDocument) -> Bool {
-            let renderer = renderer(document)
-            return !document.binary && (renderer == .text || renderer == .markdown)
+            SharedRules.shared.fileEditable(path: document.name, mimeType: document.mimeType, binary: document.binary)
         }
 
         @ViewBuilder
@@ -637,8 +636,6 @@
 
         @MainActor
         final class Coordinator: NSObject, UITextViewDelegate {
-            /// The most characters the core lexes; longer documents stay plain.
-            static let highlightLimit = 200_000
             static let font = UIFont.monospacedSystemFont(ofSize: 14, weight: .regular)
             static let boldFont = UIFont.monospacedSystemFont(ofSize: 14, weight: .semibold)
             static var baseAttributes: [NSAttributedString.Key: Any] {
@@ -687,10 +684,10 @@
                 }
             }
 
-            /// The core's (start, length, kind) triples for `text`.
+            /// The core's (start, length, kind) triples for `text`; it lexes
+            /// only the start of a long document.
             private static func spans(_ text: String, path: String) -> [Int32] {
-                guard (text as NSString).length <= highlightLimit else { return [] }
-                return ClientSyntaxHighlights(
+                ClientSyntaxHighlights(
                     rules: SharedRules.shared.syntaxHighlights(text: text, path: path, offset: 0)
                 ).spans
             }

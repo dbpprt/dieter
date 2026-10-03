@@ -371,13 +371,13 @@ class ScreenEndToEndTest {
             val measuredEndpoint = if (host.media.directSurfacePresentation) RemoteDesktopRenderMeasurement.REMOTE_DESKTOP_RENDER_MEASUREMENT_ANDROID_FRAME_RENDERED
                 else RemoteDesktopRenderMeasurement.REMOTE_DESKTOP_RENDER_MEASUREMENT_EGL_SUBMITTED
             compose.waitUntil(5_000) { state().render_measurement == measuredEndpoint && host.stats.value.decodedFrames > 0 }
-            if (arguments.getString("forceTURN") == "1") assertEquals("Relayed media", host.stats.value.route)
+            if (arguments.getString("forceTURN") == "1") assertEquals("Relayed media", view().mediaRoute)
             val decoder = host.media.decoderStatus
             Evidence.text("screen-e2e-stats.json", JSONObject(mapOf(
                 "schemaVersion" to 1, "sessionId" to view().sessionId, "nativeFramesDecoded" to host.stats.value.decodedFrames,
                 "width" to state().width, "height" to state().height,
                 "fps" to host.stats.value.fps, "inputAck" to state().last_input_ordinal,
-                "mediaRoute" to host.stats.value.route,
+                "mediaRoute" to view().mediaRoute,
                 "encodeMs" to state().encode_ms, "captureToSendMs" to state().capture_to_send_ms,
                 "jitterBufferMs" to state().jitter_buffer_ms,
                 "renderMs" to state().render_ms,

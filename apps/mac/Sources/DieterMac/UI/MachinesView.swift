@@ -136,7 +136,7 @@ struct MachinePopover: View {
                     HStack(spacing: 5) {
                         Circle().fill(machine.online ? DieterTheme.eyes : DieterTheme.tertiary).frame(
                             width: 6, height: 6)
-                        Text(machine.online ? "Online" : "Offline")
+                        Text(SharedRules.shared.machinePresence(online: machine.online))
                     }
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(machine.online ? DieterTheme.eyes : DieterTheme.tertiary)
@@ -163,7 +163,7 @@ struct MachinePopover: View {
                 Image(systemName: "arrow.clockwise")
             }
             .buttonStyle(.plain)
-            .disabled(!machine.online || store.fleet.machineInformationLoading)
+            .disabled(!store.machineIsAvailable(machine) || store.fleet.machineInformationLoading)
             .help("Refresh machine information")
             .accessibilityIdentifier("machine.refresh")
 
@@ -281,7 +281,7 @@ struct MachinePopover: View {
                     Spacer()
                     if !information.gpu.devices.isEmpty {
                         Text(
-                            SharedRules.shared.machineCount(
+                            SharedRules.shared.count(
                                 count: Int32(information.gpu.devices.count), noun: "device", plural: "devices")
                         )
                         .font(.system(size: 10.5, weight: .medium, design: .monospaced))
@@ -289,14 +289,12 @@ struct MachinePopover: View {
                     }
                 }
                 if information.gpu.devices.isEmpty {
-                    Text(
-                        information.gpu.unavailableReason.isEmpty
-                            ? "No supported GPU telemetry is available." : information.gpu.unavailableReason
-                    )
-                    .font(DieterFont.body).foregroundStyle(DieterTheme.subtle)
-                    .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        DieterTheme.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    Text(SharedRules.shared.gpuUnavailable(reason: information.gpu.unavailableReason))
+                        .font(DieterFont.body).foregroundStyle(DieterTheme.subtle)
+                        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            DieterTheme.surface.opacity(0.45),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 } else {
                     ForEach(information.gpu.devices, id: \.id) { device in
                         gpuPanel(device, history: store.fleet.machineGPUHistory[machineID]?[device.id] ?? [])
@@ -310,22 +308,19 @@ struct MachinePopover: View {
         MachineMetricPanel {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(device.name.isEmpty ? "GPU" : device.name)
+                    Text(SharedRules.shared.gpuName(name: device.name))
                         .font(.system(size: 14, weight: .bold))
                     Text(
-                        [
-                            SharedRules.shared.gpuVendor(vendor: Int32(device.vendor.rawValue)), device.id,
-                            device.driverVersion.isEmpty ? "" : "driver \(device.driverVersion)",
-                        ]
-                        .filter { !$0.isEmpty }.joined(separator: "  ·  ")
+                        SharedRules.shared.gpuDetail(
+                            vendor: Int32(device.vendor.rawValue), id: device.id, driverVersion: device.driverVersion)
                     )
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(DieterTheme.tertiary).lineLimit(1)
                 }
                 Spacer()
                 Text(
-                    device.hasUtilizationPercent
-                        ? SharedRules.shared.machinePercentage(value: device.utilizationPercent) : "—"
+                    SharedRules.shared.gpuUtilization(
+                        percent: device.utilizationPercent, reported: device.hasUtilizationPercent)
                 )
                 .font(.system(size: 23, weight: .bold, design: .monospaced))
                 .foregroundStyle(device.hasUtilizationPercent ? DieterTheme.shell : DieterTheme.tertiary)
@@ -345,7 +340,7 @@ struct MachinePopover: View {
                 }
                 if device.hasProcessCount {
                     Label(
-                        SharedRules.shared.machineCount(
+                        SharedRules.shared.count(
                             count: Int32(device.processCount), noun: "process", plural: "processes"),
                         systemImage: "gearshape.2")
                 }
@@ -469,9 +464,12 @@ struct MachinePopover: View {
                     ? "exclamationmark.triangle" : "desktopcomputer.trianglebadge.exclamationmark"
             )
             .font(.system(size: 24)).foregroundStyle(machine.online ? DieterTheme.amber : DieterTheme.tertiary)
-            Text(store.fleet.machineInformationError ?? "Machine information is unavailable.")
-                .font(DieterFont.body).foregroundStyle(DieterTheme.subtle)
-                .multilineTextAlignment(.center)
+            Text(
+                SharedRules.shared.machineInformationUnavailable(
+                    online: true, detail: "", error: store.fleet.machineInformationError ?? "")
+            )
+            .font(DieterFont.body).foregroundStyle(DieterTheme.subtle)
+            .multilineTextAlignment(.center)
             if machine.online {
                 Button("Try again") { Task { await store.fleet.refreshSelectedMachineInformation() } }
                     .buttonStyle(.bordered).controlSize(.small)
@@ -541,11 +539,13 @@ private struct MachineMemoryBar: View {
 private struct MachineProcessRow: View {
     let process: Dieter_V1_MachineProcess
 
+    private var agent: Bool { SharedRules.shared.isAgentProcess(kind: process.kind) }
+
     var body: some View {
         HStack(spacing: 11) {
-            Image(systemName: process.kind == "agent" ? "arrow.triangle.2.circlepath" : "terminal")
+            Image(systemName: agent ? "arrow.triangle.2.circlepath" : "terminal")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(process.kind == "agent" ? DieterTheme.shell : DieterTheme.tertiary)
+                .foregroundStyle(agent ? DieterTheme.shell : DieterTheme.tertiary)
                 .frame(width: 22)
             VStack(alignment: .leading, spacing: 3) {
                 Text(process.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
@@ -555,9 +555,9 @@ private struct MachineProcessRow: View {
             }
             Spacer()
             Text(SharedRules.shared.machinePercentage(value: process.cpuUsagePercent))
-                .foregroundStyle(process.kind == "agent" ? DieterTheme.shell : DieterTheme.subtle)
+                .foregroundStyle(agent ? DieterTheme.shell : DieterTheme.subtle)
             Text(machineBytes(process.memoryBytes))
-                .foregroundStyle(process.kind == "agent" ? DieterTheme.eyes : DieterTheme.subtle)
+                .foregroundStyle(agent ? DieterTheme.eyes : DieterTheme.subtle)
                 .frame(minWidth: 58, alignment: .trailing)
             if process.gpuUsage.contains(where: \.hasMemoryBytes) {
                 Text(

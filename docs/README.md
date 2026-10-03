@@ -42,8 +42,9 @@ These are dated engineering records, not the current installation manual or a
 list of promised features. Their observations, benchmarks, and validation limits
 are retained. Paths are stable so existing issue and PR links continue to work.
 
+- [iOS cutover to the shared core](ios-shared-core-integration-plan-2026-10-02.md) — the iOS app as a presentation-only client of the core, with what was built differently (complete).
 - [macOS cutover to the shared core](mac-shared-core-cutover-plan-2026-10-01.md) — staged move of the Mac app onto the core, with what was built differently (complete).
-- [KMP core implementation plan](kmp-core-implementation-plan-2026-09-30.md) — work packages, cutover, test gates, and sequencing for moving all client logic into the shared core (complete for Android and macOS).
+- [KMP core implementation plan](kmp-core-implementation-plan-2026-09-30.md) — work packages, cutover, test gates, and sequencing for moving all client logic into the shared core (complete for Android, macOS, and iOS).
 - [Kotlin Multiplatform shared client core](kmp-shared-core-plan-2026-09-29.md) — deep dive, native-extension boundaries, feasibility results, and migration phases.
 - [Product assessment](product-assessment-2026-09-28.md) — commercial product review, prioritized gaps, Now/Next/Later roadmap, and research questions.
 - [Code structure, native clients, helpers, and build audit](code-structure-audit-2026-09-26.md)

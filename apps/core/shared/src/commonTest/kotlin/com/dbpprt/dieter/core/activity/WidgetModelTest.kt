@@ -90,6 +90,9 @@ class WidgetModelTest {
         assertEquals("Updated Sep 26, 10:00", WidgetModel.status("Sep 26, 10:00", connected = true))
         assertEquals("Not synced yet", WidgetModel.status(null, connected = false))
         assertEquals("Syncing…", WidgetModel.status(null, connected = true))
+        assertEquals("Refreshing…", WidgetModel.status("Updated", refreshing = true, refreshFailed = true), "a running refresh wins")
+        assertEquals("Couldn’t refresh", WidgetModel.status("Updated", refreshing = false, refreshFailed = true))
+        assertEquals("Updated", WidgetModel.status("Updated", refreshing = false, refreshFailed = false))
         assertEquals("Open Dieter to connect", WidgetModel.emptyTitle(synced = false, connected = false))
         assertEquals("All quiet here", WidgetModel.emptyTitle(synced = true, connected = false))
     }

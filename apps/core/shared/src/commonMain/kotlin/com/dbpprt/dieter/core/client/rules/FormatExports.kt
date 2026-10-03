@@ -1,15 +1,18 @@
 package com.dbpprt.dieter.core.client.rules
 
 import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.MessagePart
 import com.dbpprt.dieter.core.activity.Activity
 import com.dbpprt.dieter.core.board.CardAges
 import com.dbpprt.dieter.core.composition.Attachments
 import com.dbpprt.dieter.core.presentation.Ages
 import com.dbpprt.dieter.core.presentation.ByteSizes
+import com.dbpprt.dieter.core.presentation.Counts
 import com.dbpprt.dieter.core.presentation.DisplayPaths
 import com.dbpprt.dieter.core.presentation.TokenCounts
 import com.dbpprt.dieter.core.runtime.Timestamps
 import kotlin.time.Instant
+import okio.ByteString.Companion.toByteString
 
 /**
  * Wording for counts, sizes, times, paths, and attachments, with primitive
@@ -20,6 +23,9 @@ import kotlin.time.Instant
  * safe on any thread; the Apple façade's `SharedRules` forwards to them.
  */
 object FormatExports {
+    /** "1 board", "3 boards", "2 processes": [noun] when [count] is 1, else [plural], or [noun] plus "s" when [plural] is empty. */
+    fun count(count: Int, noun: String, plural: String): String = Counts.of(count, noun, plural.ifEmpty { "${noun}s" })
+
     /** "512 B", "1.5 KB", "240 MB": binary units, independent of the locale. */
     fun bytes(count: Long): String = ByteSizes.format(count)
 
@@ -84,6 +90,12 @@ object FormatExports {
 
     /** "Up to 4 attachments · 5 MB each · 6 MB total". */
     fun attachmentLimits(): String = Attachments.LIMITS
+
+    /** The part a file the platform has read is sent as: its name and media type normalized. */
+    fun attachmentPart(filename: String, declaredMediaType: String, bytes: ByteArray): MessagePart = Attachments.part(filename, declaredMediaType, bytes.toByteString())
+
+    /** How many more files may join [count] attached ones. */
+    fun attachmentSlots(count: Int): Int = Attachments.remainingSlots(count)
 
     internal fun instant(millis: Long): Instant? = if (millis == 0L) null else Instant.fromEpochMilliseconds(millis)
 }

@@ -68,11 +68,6 @@ class TimelineTest {
         assertEquals(ToolStatus.FAILED, Tools.status(failed))
         assertEquals(ToolStatus.NEEDS_APPROVAL, Tools.status(approval))
         assertIs<TimelineItem.Activity>(TimelineBuilder.build(listOf(assistant(tool("before"), failed))).items.single(), "a failed tool still folds into activity")
-        assertTrue(Parts.isRoutineActivity(failed))
-        assertFalse(Parts.isRoutineActivity(approval))
-        assertTrue(Parts.isRoutineActivity(part("reasoning", "x")))
-        assertFalse(Parts.isRoutineActivity(MessagePart(type = "reasoning", text = "x", state = "error")))
-        assertFalse(Parts.isRoutineActivity(text("x")))
     }
 
     @Test

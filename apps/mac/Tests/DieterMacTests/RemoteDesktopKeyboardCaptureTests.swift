@@ -6,19 +6,19 @@ import Testing
     @Test func captureRequiresFullscreenFocusedControlAndStopsOnReleaseOrLostControl() throws {
         let fixture = KeyboardCaptureFixture()
         defer { fixture.close() }
-        fixture.controller.controlActive = true
+        fixture.controller.showFixture { $0.controlActive = true }
         fixture.surface.resumeInput()
         #expect(!fixture.tap.active)
         fixture.surface.fullScreenActive = true
         #expect(fixture.tap.active)
-        fixture.controller.controlActive = false
+        fixture.controller.showFixture { $0.controlActive = false }
         #expect(!fixture.tap.active)
-        fixture.controller.controlActive = true
+        fixture.controller.showFixture { $0.controlActive = true }
         #expect(fixture.tap.active)
         fixture.surface.releaseFocus()
         #expect(!fixture.tap.active)
         fixture.surface.resumeInput()
-        fixture.controller.controlActive = true
+        fixture.controller.showFixture { $0.controlActive = true }
         #expect(fixture.tap.active)
         fixture.surface.captureKeyboard = false
         #expect(!fixture.tap.active)
@@ -33,13 +33,13 @@ import Testing
         fixture.surface.onToggleFullScreen = { fullscreenToggles += 1 }
         fixture.controller.onUserActivity = { remoteActivity += 1 }
         fixture.surface.fullScreenActive = true
-        fixture.controller.controlActive = true
+        fixture.controller.showFixture { $0.controlActive = true }
         fixture.surface.resumeInput()
         let fullscreen = try key(3, [.command, .control])
         #expect(fixture.tap.receive?(fullscreen) == true)
         #expect(fullscreenToggles == 0)
         #expect(remoteActivity == 1)
-        fixture.controller.controlActive = true
+        fixture.controller.showFixture { $0.controlActive = true }
         fixture.surface.resumeInput()
         let escape = try key(53, [.command, .shift])
         #expect(fixture.tap.receive?(escape) == true)
@@ -53,14 +53,14 @@ import Testing
         let fixture = KeyboardCaptureFixture()
         defer { fixture.close() }
         fixture.surface.fullScreenActive = true
-        fixture.controller.controlActive = true
+        fixture.controller.showFixture { $0.controlActive = true }
         fixture.surface.resumeInput()
         fixture.tap.interrupted?()
         #expect(!fixture.tap.active)
         #expect(!fixture.controller.inputFocused)
         fixture.tap.allowed = false
         fixture.window.makeFirstResponder(fixture.surface)
-        fixture.controller.controlActive = true
+        fixture.controller.showFixture { $0.controlActive = true }
         fixture.surface.resumeInput()
         #expect(!fixture.tap.active)
         #expect(fixture.controller.keyboardCaptureStatus.contains("Accessibility"))

@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterShared
 import SwiftUI
 
 struct ProjectCheckoutMenu: View {
@@ -19,14 +20,12 @@ struct ProjectCheckoutMenu: View {
         let machine =
             store.endpoints.first { $0.daemonID == checkout.daemonID }
             ?? (store.endpoint.daemonID == checkout.daemonID ? store.endpoint : nil)
-        let machineName = machine?.name ?? checkout.daemonID
-        let checkoutName = checkout.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return checkoutName.isEmpty ? machineName : "\(machineName) · \(checkoutName)"
+        return "\(machine?.name ?? checkout.daemonID) · \(checkout.title())"
     }
 
     var body: some View {
         Menu {
-            ForEach(store.projectDirectory[projectID]?.checkouts.filter { !$0.detached } ?? [], id: \.id) { checkout in
+            ForEach(store.projectDirectory[projectID]?.checkoutChoices ?? [], id: \.id) { checkout in
                 let machine =
                     store.endpoints.first { $0.daemonID == checkout.daemonID }
                     ?? (store.endpoint.daemonID == checkout.daemonID ? store.endpoint : nil)
@@ -34,13 +33,13 @@ struct ProjectCheckoutMenu: View {
                     Task { await store.selectCheckout(checkout) }
                 } label: {
                     Label(
-                        "\(machine?.name ?? checkout.daemonID) · \(checkout.name)",
+                        "\(machine?.name ?? checkout.daemonID) · \(checkout.title(machineOnline: machine?.online == true))",
                         systemImage: store.checkout(forProjectID: projectID)?.id == checkout.id
                             ? "checkmark" : "desktopcomputer")
                 }
-                .disabled(machine?.online != true)
+                .disabled(!(machine.map(store.machineIsAvailable) ?? false))
                 .accessibilityLabel(
-                    "\(checkout.name) on \(machine?.name ?? checkout.daemonID), \(machine?.online == true ? "online" : "offline")"
+                    "\(checkout.title()) on \(machine?.name ?? checkout.daemonID), \(SharedRules.shared.machinePresence(online: machine?.online == true))"
                 )
             }
         } label: {

@@ -60,13 +60,13 @@ class QuotaRowsTest {
         assertEquals(
             listOf(
                 QuotaDetail(label = "Account", text = "••2b3c4d"),
-                QuotaDetail(label = "Credits", text = "$12.00"),
-                QuotaDetail(label = "Spend", text = "$3 / $20"),
+                QuotaDetail(label = "Credits", text = "$12.00", monetary = true),
+                QuotaDetail(label = "Spend", text = "$3 / $20", monetary = true),
                 QuotaDetail(label = "Reset credits", text = "2 available"),
             ),
             row.details,
         )
-        assertEquals(listOf("Account", "Reset credits"), Quotas.detailLines(account).filter { !it.monetary }.map { it.label }, "views without money drop monetary rows")
+        assertEquals(listOf("Account", "Reset credits"), row.details.filter { !it.monetary }.map { it.label }, "views without money drop monetary rows")
     }
 
     @Test

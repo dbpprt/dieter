@@ -164,6 +164,9 @@ class NativeScreenMediaEvents internal constructor(private val events: ScreenMed
     fun channelMessage(label: String, bytes: NSData) = events.channelMessage(label, bytes.toByteArray())
     fun decoded(rtpTimestamp: Long) = events.decoded(rtpTimestamp.toUInt())
     fun presented(rtpTimestamp: Long) = events.presented(rtpTimestamp.toUInt())
+
+    /** The selected candidate pair runs through a TURN relay ([relayed]) or directly. */
+    fun mediaPath(relayed: Boolean) = events.mediaPath(relayed)
     fun hevcUnavailable(reason: String) = events.hevcUnavailable(reason)
     fun failure(message: String) = events.failure(message)
 }

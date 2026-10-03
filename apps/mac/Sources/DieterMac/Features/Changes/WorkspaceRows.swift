@@ -101,7 +101,7 @@ struct WorkspaceCommitRow: View {
     var body: some View {
         Button(action: action) {
             HStack(alignment: .firstTextBaseline, spacing: 9) {
-                Text(String(commit.shortSha.prefix(7)))
+                Text(SharedRules.shared.shortSha(shortSha: commit.shortSha, sha: commit.sha))
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(DieterTheme.shell)
                 VStack(alignment: .leading, spacing: 2) {

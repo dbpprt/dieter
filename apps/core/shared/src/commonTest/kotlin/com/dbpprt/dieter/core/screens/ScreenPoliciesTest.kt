@@ -158,10 +158,19 @@ class ScreenPoliciesTest {
         assertEquals("Release Control", streaming.controlAction)
         assertEquals("Take Control", streaming.copy(controlActive = false).controlAction)
 
-        assertEquals("1920 × 1080 · H264 · 60 fps · Direct media", streaming.metadata(59.6, "Direct media"))
-        assertEquals("60 fps", streaming.copy(state = null).metadata(59.6, ""))
-        assertEquals("1920 × 1080 · H264 · 0 fps", streaming.metadata(Double.NaN, ""))
-        assertEquals("Your view stays in place while connecting", ScreenView(phase = ScreenPhase.Connecting).metadata(60.0, "Direct media"))
+        val measured = streaming.copy(mediaFps = 59.6, mediaRelayed = false, machineId = "d1")
+        assertEquals("Control", measured.controlLabel)
+        assertEquals("View only", measured.copy(controlActive = false).controlLabel)
+        assertEquals("", measured.viewersLabel, "alone, nobody else watches")
+        assertEquals("2 viewers", measured.copy(state = session.copy(connected_clients = 2, control_active = true)).viewersLabel)
+        assertEquals("3 viewers · Pixel controls", measured.copy(state = session.copy(connected_clients = 3, control_active = false)).viewersLabel)
+        assertEquals("Direct media", measured.mediaRoute)
+        assertEquals("Relayed media", measured.copy(mediaRelayed = true).mediaRoute)
+        assertEquals("", measured.copy(mediaRelayed = null).mediaRoute, "unknown until the engine reports its path")
+        assertEquals("1920 × 1080 · H264 · 60 fps · Direct media", measured.metadata)
+        assertEquals("60 fps", measured.copy(state = null, mediaRelayed = null).metadata)
+        assertEquals("1920 × 1080 · H264 · 0 fps", measured.copy(mediaFps = Double.NaN, mediaRelayed = null).metadata)
+        assertEquals("Your view stays in place while connecting", ScreenView(phase = ScreenPhase.Connecting, mediaRelayed = false).metadata)
 
         // The session's own problem wins, then the host's, then the phase; core labels already end in "…".
         assertEquals("Capture denied", ScreenView(phase = ScreenPhase.Failed("Capture denied")).waitingMessage(hostReady = false, hostReason = "No login session"))
@@ -170,17 +179,20 @@ class ScreenPoliciesTest {
         assertEquals("Connecting…", ScreenView(phase = ScreenPhase.Connecting).waitingMessage(hostReady = true, hostReason = "ignored"))
 
         assertEquals(
-            ScreenDetails(
-                status = "Status · Live", video = "Video · Direct media", signaling = "Signaling · WebRTC · Direct", machine = "Machine · d1",
-                session = listOf("Display · 1920 × 1080 · H264", "60 fps · 1 viewer", "Controller · Pixel"),
+            listOf(
+                "Status · Live", "Video · Direct media", "— ms RTT", "Signaling · WebRTC · Direct", "Machine · d1",
+                "Display · 1920 × 1080 · H264", "60 fps · 1 viewer", "Controller · Pixel",
             ),
-            streaming.details("d1", 60.2, "Direct media"),
+            measured.copy(mediaFps = 60.2).details,
         )
-        val waiting = ScreenView(phase = ScreenPhase.Connecting).details("d1", 0.0, "")
-        assertEquals("Video · Negotiating", waiting.video)
-        assertEquals("Signaling · Negotiating", waiting.signaling)
-        assertEquals(emptyList(), waiting.session)
-        assertEquals(listOf("Display · 1920 × 1080 · H264", "60 fps · 2 viewers"), streaming.copy(state = session.copy(connected_clients = 2, controller_name = "")).details("d1", 60.0, "").session)
+        assertEquals(
+            listOf("Status · Connecting…", "Video · Negotiating", "— ms RTT", "Signaling · Negotiating", "Machine · d1"),
+            ScreenView(phase = ScreenPhase.Connecting, machineId = "d1").details,
+        )
+        assertEquals(
+            listOf("Display · 1920 × 1080 · H264", "60 fps · 2 viewers"),
+            measured.copy(mediaFps = 60.0, state = session.copy(connected_clients = 2, controller_name = "")).details.drop(5),
+        )
     }
 
     @Test

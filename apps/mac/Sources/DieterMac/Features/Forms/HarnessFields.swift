@@ -22,31 +22,15 @@ struct AgentPickerFields: View {
         if !controls.efforts.isEmpty {
             Picker(
                 "Reasoning effort",
-                selection: Binding(
-                    get: { controls.selection.effort.isEmpty ? "default" : controls.selection.effort },
-                    set: { choose(.effort($0)) })
+                selection: Binding(get: { controls.effortValue }, set: { choose(.effort($0)) })
             ) {
-                Text("Default").tag("default")
-                ForEach(controls.efforts, id: \.id) { Text($0.name).tag($0.id) }
+                ForEach(controls.effortChoices, id: \.id) { Text($0.name).tag($0.id) }
             }
             .disabled(!controls.effortEnabled)
         }
         ForEach(controls.options, id: \Dieter_V1_ProviderOption.id) { option in
-            ProviderOptionField(
-                option: option,
-                values: Binding(
-                    get: { controls.optionValues },
-                    set: { values in
-                        guard let value = values[option.id], value != controls.optionValues[option.id] else { return }
-                        choose(
-                            .option(
-                                .with {
-                                    $0.id = option.id
-                                    $0.optionValue = value
-                                }))
-                    })
-            )
-            .disabled(controls.optionEnabled[option.id] == false)
+            ProviderOptionField(option: option, controls: controls, choose: choose)
+                .disabled(controls.optionEnabled[option.id] == false)
         }
     }
 }
@@ -77,47 +61,75 @@ struct AgentControlFields: View {
     }
 }
 
+/// One provider option, edited as the core says it is edited: a switch, a
+/// choice, or text. Each change is a choice the caller applies.
 struct ProviderOptionField: View {
     let option: Dieter_V1_ProviderOption
-    @Binding var values: [String: String]
+    let controls: ClientAgentControlsState
+    let choose: (ClientAgentChoice.OneOf_Choice) -> Void
 
     private var value: Binding<String> {
-        Binding(get: { values[option.id, default: option.defaultValue] }, set: { values[option.id] = $0 })
+        Binding(
+            get: { controls.optionValues[option.id] ?? option.defaultValue },
+            set: { next in ProviderOptionChoices.set(option, to: next, controls: controls, choose: choose) })
     }
 
-    private var booleanValue: Binding<Bool> {
-        Binding(get: { value.wrappedValue.lowercased() == "true" }, set: { value.wrappedValue = $0 ? "true" : "false" })
+    private var on: Binding<Bool> {
+        Binding(
+            get: { controls.optionOn[option.id] ?? false },
+            set: { value.wrappedValue = SharedRules.shared.toggleOptionValue(on: $0) })
     }
 
     @ViewBuilder var body: some View {
-        if ["boolean", "bool"].contains(option.type.lowercased()) {
-            Toggle(option.name, isOn: booleanValue).quickHelp(option.name)
-        } else if ["enum", "select"].contains(option.type.lowercased()) {
+        switch controls.optionKinds[option.id] ?? .text {
+        case .toggle:
+            Toggle(option.name, isOn: on).quickHelp(option.name)
+        case .choice:
             Picker(option.name, selection: value) {
                 ForEach(option.choices, id: \Dieter_V1_ProviderOptionChoice.value) { choice in
-                    Text(choice.name.isEmpty ? choice.value : choice.name).tag(choice.value)
+                    Text(choice.name).tag(choice.value)
                 }
             }.quickHelp(option.name)
-        } else {
+        default:
             TextField(option.name, text: value).quickHelp(option.name)
         }
     }
 }
 
+enum ProviderOptionChoices {
+    /// Chooses `value` for `option` unless it already has it.
+    static func set(
+        _ option: Dieter_V1_ProviderOption, to value: String, controls: ClientAgentControlsState,
+        choose: (ClientAgentChoice.OneOf_Choice) -> Void
+    ) {
+        guard value != (controls.optionValues[option.id] ?? option.defaultValue) else { return }
+        choose(
+            .option(
+                .with {
+                    $0.id = option.id
+                    $0.optionValue = value
+                }))
+    }
+}
+
 struct ProviderOptionChip: View {
     let option: Dieter_V1_ProviderOption
-    @Binding var values: [String: String]
+    let controls: ClientAgentControlsState
+    let choose: (ClientAgentChoice.OneOf_Choice) -> Void
     let isEnabled: Bool
 
-    private var currentValue: String { values[option.id, default: option.defaultValue] }
+    private var currentValue: String { controls.optionValues[option.id] ?? option.defaultValue }
+    private var fast: Bool { option.id == controls.fastOptionID }
 
     @ViewBuilder var body: some View {
-        if ["boolean", "bool"].contains(option.type.lowercased()) {
-            let enabled = currentValue.lowercased() == "true"
+        switch controls.optionKinds[option.id] ?? .text {
+        case .toggle:
+            let enabled = controls.optionOn[option.id] ?? false
             Button {
-                values[option.id] = enabled ? "false" : "true"
+                ProviderOptionChoices.set(
+                    option, to: SharedRules.shared.toggleOptionValue(on: !enabled), controls: controls, choose: choose)
             } label: {
-                if option.id == "fast_mode" {
+                if fast {
                     Image(systemName: enabled ? "bolt.fill" : "bolt")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(enabled ? Color.yellow : DieterTheme.subtle)
@@ -132,14 +144,14 @@ struct ProviderOptionChip: View {
                 }
             }
             .buttonStyle(.plain).disabled(!isEnabled)
-            .accessibilityLabel(option.id == "fast_mode" ? "Fast mode" : option.name)
+            .accessibilityLabel(option.name)
             .accessibilityValue(enabled ? "On" : "Off")
-            .quickHelp(option.id == "fast_mode" ? "Fast mode" : option.name)
-        } else if ["enum", "select"].contains(option.type.lowercased()) {
+            .quickHelp(option.name)
+        case .choice:
             Menu {
                 ForEach(option.choices, id: \Dieter_V1_ProviderOptionChoice.value) { choice in
-                    Button(choice.name.isEmpty ? choice.value : choice.name) {
-                        values[option.id] = choice.value
+                    Button(choice.name) {
+                        ProviderOptionChoices.set(option, to: choice.value, controls: controls, choose: choose)
                     }
                 }
             } label: {
@@ -147,9 +159,14 @@ struct ProviderOptionChip: View {
                     title: option.choices.first(where: { $0.value == currentValue })?.name ?? option.name,
                     symbol: "slider.horizontal.3")
             }.menuStyle(.borderlessButton).fixedSize().disabled(!isEnabled).quickHelp(option.name)
-        } else {
-            TextField(option.name, text: Binding(get: { currentValue }, set: { values[option.id] = $0 }))
-                .textFieldStyle(.roundedBorder).frame(width: 130).disabled(!isEnabled).quickHelp(option.name)
+        default:
+            TextField(
+                option.name,
+                text: Binding(
+                    get: { currentValue },
+                    set: { ProviderOptionChoices.set(option, to: $0, controls: controls, choose: choose) })
+            )
+            .textFieldStyle(.roundedBorder).frame(width: 130).disabled(!isEnabled).quickHelp(option.name)
         }
     }
 }

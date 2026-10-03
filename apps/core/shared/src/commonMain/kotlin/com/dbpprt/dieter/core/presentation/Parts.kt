@@ -18,6 +18,11 @@ object Parts {
     /** The tool's name: explicit, else the part type after `tool-`. */
     fun toolName(part: MessagePart): String = part.tool_name.ifEmpty { part.type.takeIf { it.startsWith("tool-") }?.removePrefix("tool-").orEmpty() }
 
+    fun isText(part: MessagePart): Boolean = part.type == "text"
+
+    /** A file, attachment, or image the user or agent attached. */
+    fun isAttachment(part: MessagePart): Boolean = part.type == "file" || part.type == "attachment" || part.type == "image"
+
     fun isReasoning(part: MessagePart): Boolean = part.type.lowercase().let { it == "reasoning" || it == "thinking" }
 
     private val attentionStates = setOf("error", "failed", "failure", "denied", "rejected", "cancelled", "canceled")
@@ -35,13 +40,6 @@ object Parts {
     fun isApprovalTool(part: MessagePart): Boolean {
         val text = (part.state + " " + part.type).lowercase()
         return attentionWords.any { it in text } || "denied" in text || "rejected" in text
-    }
-
-    /** Tool calls (even failed ones) and quiet reasoning are routine activity; approvals are not. */
-    fun isRoutineActivity(part: MessagePart): Boolean = when {
-        isToolCall(part) -> !isApprovalTool(part)
-        isReasoning(part) -> !needsAttention(part)
-        else -> false
     }
 
     fun isFailure(part: MessagePart): Boolean = TurnFailure.isFailurePart(part)

@@ -41,7 +41,7 @@ struct ConversationWorkspaceDraft: Equatable, Sendable {
     var branch = ""
     var baseBranch = ""
     var baseRemote = ""
-    var remotePublishMode = RemotePublishMode.manual.rawValue
+    var remotePublishMode = AdminChoices.options.defaultPublishMode
 
     /// The workspace as chosen; the core uses the overrides in worktree mode only.
     func apply(to intent: inout ClientCreationIntent) {
@@ -53,64 +53,50 @@ struct ConversationWorkspaceDraft: Equatable, Sendable {
     }
 }
 
-enum RemotePublishMode: String, CaseIterable, Identifiable, Sendable {
-    case manual
-    case pullRequest = "pull_request"
-    case pushBase = "push_base"
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .manual: "Manual"
-        case .pullRequest: "Pull request"
-        case .pushBase: "Push base branch"
-        }
-    }
-
-    var detail: String {
-        switch self {
-        case .manual: "Choose local merge, branch push, or pull request when publishing."
-        case .pullRequest: "Publish the conversation branch through a pull request."
-        case .pushBase: "Push the validated integration result directly to the base branch."
-        }
-    }
-}
-
+/// A validation command as its form edits it; the core parses and checks it.
 struct ValidationCommandDraft: Identifiable, Equatable, Sendable {
     var id = UUID()
-    var name = ""
-    var executable = ""
-    var arguments = ""
-    var workingDirectory = ""
-    var environment = ""
-    var timeoutSeconds: Int32 = 600
+    var draft = AdminChoices.options.newValidation
 
     init() {}
 
     init(_ value: Dieter_V1_ValidationCommand) {
-        name = value.name
-        executable = value.executable
-        arguments = value.arguments.joined(separator: "\n")
-        workingDirectory = value.workingDirectory
-        environment = value.environment.keys.sorted().map { "\($0)=\(value.environment[$0] ?? "")" }
-            .joined(
-                separator: "\n")
-        timeoutSeconds = value.timeoutSeconds
+        draft = ClientValidationDraft(rules: SharedRules.shared.validationDraft(command: value.rulesData))
     }
 
+    var name: String {
+        get { draft.name }
+        set { draft.name = newValue }
+    }
+    var executable: String {
+        get { draft.executable }
+        set { draft.executable = newValue }
+    }
+    var arguments: String {
+        get { draft.arguments }
+        set { draft.arguments = newValue }
+    }
+    var workingDirectory: String {
+        get { draft.workingDirectory }
+        set { draft.workingDirectory = newValue }
+    }
+    var environment: String {
+        get { draft.environment }
+        set { draft.environment = newValue }
+    }
+    var timeoutSeconds: String {
+        get { draft.timeoutSeconds }
+        set { draft.timeoutSeconds = newValue }
+    }
+
+    /// The command this draft saves as.
     var value: Dieter_V1_ValidationCommand {
-        var result = Dieter_V1_ValidationCommand()
-        result.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        result.executable = executable.trimmingCharacters(in: .whitespacesAndNewlines)
-        result.arguments = arguments.components(separatedBy: .newlines).filter { !$0.isEmpty }
-        result.workingDirectory = workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-        result.timeoutSeconds = timeoutSeconds
-        for line in environment.components(separatedBy: .newlines) {
-            let parts = line.split(separator: "=", maxSplits: 1).map(String.init)
-            if parts.count == 2, !parts[0].isEmpty { result.environment[parts[0]] = parts[1] }
-        }
-        return result
+        Dieter_V1_ValidationCommand(rules: SharedRules.shared.validationCommand(draft: draft.rulesData))
+    }
+
+    /// `drafts` as the core checks them.
+    static func encoded(_ drafts: [ValidationCommandDraft]) -> Data {
+        ClientValidationDrafts.with { $0.drafts = drafts.map(\.draft) }.rulesData
     }
 }
 

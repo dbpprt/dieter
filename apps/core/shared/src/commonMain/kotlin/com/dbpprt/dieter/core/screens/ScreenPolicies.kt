@@ -107,6 +107,9 @@ object ScreenCodecs {
     const val H265 = "H265"
     const val FLEXFEC = "flexfec-03"
 
+    /** Why a session cannot start when the device decodes none of the codecs it may receive. */
+    const val UNAVAILABLE = "Selected codec unavailable. HEVC requires hardware decoding and an updated host at up to 1080p60."
+
     fun effective(preference: RemoteDesktopCodecPreference, hevcFailed: Boolean): RemoteDesktopCodecPreference =
         if (hevcFailed && preference == RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_AUTO) RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_H264 else preference
 

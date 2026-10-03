@@ -348,14 +348,7 @@ struct MenuBarContent: View {
         return status.isEmpty ? "\(store.endpoint.host):\(store.endpoint.port)" : status
     }
 
-    private var phaseColor: Color {
-        switch store.phase {
-        case .connected: DieterTheme.eyes
-        case .connecting, .authenticationRequired: DieterTheme.amber
-        case .failed, .incompatible: DieterTheme.coral
-        case .disconnected: DieterTheme.subtle
-        }
-    }
+    private var phaseColor: Color { store.session.tone.color }
 
     @ViewBuilder private var endpointRows: some View {
         let rows = store.machines.isEmpty ? store.gateways : store.machines
@@ -404,11 +397,14 @@ struct MenuBarContent: View {
         HStack(spacing: 8) {
             MenuBarChip(text: boardCountLabel, color: DieterTheme.subtle)
             if reviewCount > 0 {
-                MenuBarChip(text: "\(reviewCount) review\(reviewCount == 1 ? "" : "s")", color: DieterTheme.amber)
+                MenuBarChip(
+                    text: SharedRules.shared.count(count: Int32(clamping: reviewCount), noun: "review", plural: ""),
+                    color: DieterTheme.amber)
             }
             if subagentCount > 0 {
                 MenuBarChip(
-                    text: "\(subagentCount) subagent\(subagentCount == 1 ? "" : "s")", color: DieterTheme.shellDeep,
+                    text: SharedRules.shared.count(count: Int32(clamping: subagentCount), noun: "subagent", plural: ""),
+                    color: DieterTheme.shellDeep,
                     showDot: true)
             }
             Spacer(minLength: 0)
@@ -437,7 +433,7 @@ struct MenuBarContent: View {
 
     private var boardCountLabel: String {
         let count = store.state.boards.count
-        return "\(count) board\(count == 1 ? "" : "s")"
+        return SharedRules.shared.count(count: Int32(clamping: count), noun: "board", plural: "")
     }
 
     private var reviewCount: Int { Int(store.activity.summary.review) }

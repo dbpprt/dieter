@@ -9,6 +9,8 @@ import com.dbpprt.dieter.api.v1.Terminal
 import com.dbpprt.dieter.api.v1.TerminalFrame
 import com.dbpprt.dieter.api.v1.TerminalRef
 import com.dbpprt.dieter.api.v1.WatchTerminalRequest
+import com.dbpprt.dieter.client.v1.TerminalRow
+import com.dbpprt.dieter.client.v1.Tone
 import com.dbpprt.dieter.core.presentation.Counts
 import com.dbpprt.dieter.core.presentation.DisplayPaths
 import com.dbpprt.dieter.core.runtime.Backoff
@@ -108,6 +110,13 @@ data class TerminalsView(
             else -> "${Counts.of(count, "persistent session")} · ${if (streamConnected) "live" else "reconnecting"}"
         }
 
+        /** The overview's status line: syncing while [loading], what terminals are while there are none, else "2 persistent sessions across 1 machine". */
+        fun overviewStatus(loading: Boolean, count: Int, machines: Int): String = when {
+            loading && count == 0 -> "Syncing persistent sessions…"
+            count == 0 -> "Daemon-owned · survive app disconnects"
+            else -> "${Counts.of(count, "persistent session")} across ${Counts.of(machines, "machine")}"
+        }
+
         /**
          * One terminal's status: "Connected" or "Reconnecting" while it runs,
          * by whether its output streams; otherwise "Exited", with the
@@ -118,6 +127,24 @@ data class TerminalsView(
             exitCode != null -> "Exited $exitCode"
             else -> "Exited"
         }
+
+        /** A running, streaming terminal succeeds, a running one waiting for its stream warns, a failed exit is danger, a clean one neutral. */
+        fun tone(terminal: Terminal, streamConnected: Boolean): Tone = when {
+            terminal.running -> if (streamConnected) Tone.TONE_SUCCESS else Tone.TONE_WARNING
+            terminal.exit_code?.let { it != 0 } == true -> Tone.TONE_DANGER
+            else -> Tone.TONE_NEUTRAL
+        }
+
+        /** What closing [terminal] does, for its confirmation. */
+        fun closeMessage(terminal: Terminal): String =
+            if (terminal.running) "This explicitly ends the daemon-owned shell. Leaving this screen does not." else "This removes the finished session and its scrollback."
+
+        /** How every client shows [terminal] beside the others. */
+        fun row(terminal: Terminal, streamConnected: Boolean) = TerminalRow(
+            id = terminal.id, running = terminal.running,
+            status = terminalStatus(terminal.status, terminal.exit_code, streamConnected), tone = tone(terminal, streamConnected),
+            accepts_input = terminal.running && streamConnected, close_message = closeMessage(terminal),
+        )
     }
 }
 

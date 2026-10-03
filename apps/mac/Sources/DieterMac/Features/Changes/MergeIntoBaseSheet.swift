@@ -15,7 +15,6 @@ struct MergeIntoBaseSheet: View {
     @State private var strategy = "squash"
     @State private var validate = true
     @State private var removeWorkspace = true
-    @State private var startingUpdate = false
 
     private var workspace: Dieter_V1_Workspace? { model.conversationWorkspace }
     private var changes: Dieter_V1_Changeset? { model.conversationChangeset }
@@ -76,7 +75,7 @@ struct MergeIntoBaseSheet: View {
                     HStack(spacing: 6) {
                         WorkspaceDeltaLabel(additions: changes.additions, deletions: changes.deletions)
                         Text(
-                            "· \(changes.files.count) files · \(changes.commits.count) commit\(changes.commits.count == 1 ? "" : "s")"
+                            "· \(SharedRules.shared.count(count: Int32(clamping: changes.files.count), noun: "file", plural: "")) · \(SharedRules.shared.count(count: Int32(clamping: changes.commits.count), noun: "commit", plural: ""))"
                         )
                         .font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(
                             DieterTheme.tertiary)
@@ -255,8 +254,11 @@ struct MergeIntoBaseSheet: View {
                         .truncationMode(.middle)
                     Spacer()
                     if conflict.hunkCount > 0 {
-                        Text("\(conflict.hunkCount) conflicting hunk\(conflict.hunkCount == 1 ? "" : "s")")
-                            .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
+                        Text(
+                            SharedRules.shared.count(
+                                count: Int32(clamping: conflict.hunkCount), noun: "conflicting hunk", plural: "")
+                        )
+                        .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                     }
                     if let card {
                         Button("Open in editor") {

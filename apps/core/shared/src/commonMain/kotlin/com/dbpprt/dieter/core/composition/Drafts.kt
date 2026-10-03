@@ -3,6 +3,7 @@ package com.dbpprt.dieter.core.composition
 import com.dbpprt.dieter.api.v1.HarnessSelection
 import com.dbpprt.dieter.api.v1.MessagePart
 import com.dbpprt.dieter.api.v1.QueuedMessage
+import com.dbpprt.dieter.core.presentation.Counts
 import com.dbpprt.dieter.core.runtime.CoreLogger
 import com.dbpprt.dieter.core.state.DraftText
 import com.dbpprt.dieter.core.state.DraftTexts
@@ -47,6 +48,9 @@ data class RestoredMessage(val text: String, val attachments: List<MessagePart>,
 
     /** The composer's text with this message's ahead of [current], a blank line apart. */
     fun textBefore(current: String): String = listOf(text, current).filter { it.isNotBlank() }.joinToString("\n\n")
+
+    /** What a queued message's row shows: its text, else how many attachments it carries. */
+    val summary: String get() = text.ifEmpty { Counts.of(attachments.size, "attachment") }
 }
 
 /** [next] as a change of [current]: a text or attachment change advances the revision past both. */

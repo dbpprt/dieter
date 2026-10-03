@@ -5,6 +5,7 @@ import com.dbpprt.dieter.client.v1.ContentLinkFailure
 import com.dbpprt.dieter.client.v1.ContentLinkResolution
 import com.dbpprt.dieter.client.v1.DetectedLink
 import com.dbpprt.dieter.client.v1.DetectedLinks
+import com.dbpprt.dieter.core.presentation.WorkspaceImages
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -26,7 +27,7 @@ class LinkExportsTest {
         assertEquals(web, resolve(web, workspaceRoot = "").web_url)
 
         val scheme = resolve("mailto:user@example.com").failure
-        assertEquals(ContentLinkFailure(kind = ContentLinkFailure.Kind.KIND_UNSUPPORTED_SCHEME, message = "Links using mailto: cannot be opened in this pane.", scheme = "mailto"), scheme)
+        assertEquals(ContentLinkFailure(kind = ContentLinkFailure.Kind.KIND_UNSUPPORTED_SCHEME, message = "Links using mailto: cannot be opened in this pane."), scheme)
         for ((url, kind, message) in listOf(
             Triple("../secret.txt", ContentLinkFailure.Kind.KIND_OUTSIDE_WORKSPACE, "This file is outside the conversation's workspace."),
             Triple("file://other-host/plan.md", ContentLinkFailure.Kind.KIND_UNSUPPORTED_FILE_HOST, "This file link points to a different machine."),
@@ -107,10 +108,10 @@ class LinkExportsTest {
         assertTrue(LinkExports.isWorkspaceImage("<shots/a%20b.PNG>"))
         assertFalse(LinkExports.isWorkspaceImage("https://example.com/result.png"))
         assertFalse(LinkExports.isWorkspaceImage("notes/plan.md"))
-        assertEquals("docs/result.png", LinkExports.workspaceImagePath("file:///remote/worktrees/task/docs/result.png", root))
-        assertEquals("shots/a b.PNG", LinkExports.workspaceImagePath("<shots/a%20b.PNG>", ""))
-        assertEquals("", LinkExports.workspaceImagePath("/remote/worktrees/task/docs/result.png", ""), "an absolute link needs the workspace root")
-        assertEquals("", LinkExports.workspaceImagePath("file:///remote/elsewhere/result.png", root))
-        assertEquals("", LinkExports.workspaceImagePath("../secret.png", root))
+        assertEquals("docs/result.png", WorkspaceImages.path("file:///remote/worktrees/task/docs/result.png", root).orEmpty())
+        assertEquals("shots/a b.PNG", WorkspaceImages.path("<shots/a%20b.PNG>", null).orEmpty())
+        assertEquals("", WorkspaceImages.path("/remote/worktrees/task/docs/result.png", null).orEmpty(), "an absolute link needs the workspace root")
+        assertEquals("", WorkspaceImages.path("file:///remote/elsewhere/result.png", root).orEmpty())
+        assertEquals("", WorkspaceImages.path("../secret.png", root).orEmpty())
     }
 }

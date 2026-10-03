@@ -27,11 +27,13 @@ extension AppSession {
     /// Shows `cards` on `board` as the core's board view lays them out. The
     /// board must be selected.
     func showBoardFixture(_ board: Dieter_V1_Board, cards: [Dieter_V1_Card]) {
-        foldBoardView(
+        bindBoardView()
+        boardViewModel.fold(
             ClientBoardViewSlice(
                 rules: SharedRules.shared.boardView(
                     board: board.rulesData, cards: ClientCards.with { $0.cards = cards }.rulesData,
                     target: ClientBoardViewTarget.with { $0.boardID = board.id }.rulesData)))
+        refreshBoardProjection()
     }
 }
 
@@ -90,5 +92,17 @@ extension ConversationModel {
         resetConversationHistory()
         conversationHistoryTotal = Int(snapshot.page.total)
         conversationHistoryHasMore = snapshot.page.hasMore_p
+    }
+}
+
+extension ClientScreenSlice {
+    /// A screen slice in `phase` as the core reports it, for views and models under test.
+    static func phase(_ phase: String, active: Bool = true) -> ClientScreenSlice {
+        .with {
+            $0.phase = phase
+            $0.active = active
+            $0.streaming = phase == "streaming"
+            $0.failed = phase == "failed"
+        }
     }
 }

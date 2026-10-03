@@ -148,7 +148,7 @@ struct ScreensView: View {
             content(session)
             Divider().overlay(DieterTheme.border)
             HStack(spacing: 8) {
-                Circle().fill(statusColor(controller.phase)).frame(width: 6, height: 6)
+                Circle().fill(controller.session.tone.color).frame(width: 6, height: 6)
                 Text(controller.phaseLabel)
                 if !controller.routeLabel.isEmpty {
                     Text("·")
@@ -156,7 +156,7 @@ struct ScreensView: View {
                 }
                 Spacer()
                 Label(
-                    controller.controlActive ? "Control active" : "View only",
+                    controller.session.controlLabel,
                     systemImage: controller.controlActive ? "cursorarrow.motionlines" : "eye"
                 )
                 if controller.controlActive {
@@ -167,11 +167,8 @@ struct ScreensView: View {
                     Text(controller.controlUnavailableReason)
                 }
                 Text("·")
-                if controller.sessionState.connectedClients > 1 {
-                    Text("\(controller.sessionState.connectedClients) viewers")
-                    if !controller.sessionState.controlActive, !controller.sessionState.controllerName.isEmpty {
-                        Text("\(controller.sessionState.controllerName) controls")
-                    }
+                if !controller.session.viewersLabel.isEmpty {
+                    Text(controller.session.viewersLabel)
                 }
                 if !controller.controlTransferError.isEmpty {
                     Text(controller.controlTransferError).foregroundStyle(.orange)
@@ -180,11 +177,8 @@ struct ScreensView: View {
                     Text("Clipboard: \(controller.clipboardError)").foregroundStyle(.orange).lineLimit(1)
                         .help(controller.clipboardError)
                 }
-                Text(controller.mediaRouteLabel)
-                if controller.sessionState.width > 0 {
-                    Text(
-                        "· \(controller.sessionState.width)×\(controller.sessionState.height) · \(controller.sessionState.fps) fps"
-                    )
+                if controller.session.streaming {
+                    Text(controller.session.metadata)
                 }
                 Text("·")
                 Text(controller.latencyLabel)
@@ -272,31 +266,20 @@ struct ScreensView: View {
         machines.first(where: { $0.id == session.machineID })?.remoteDesktopReason ?? ""
     }
 
+    /// What an idle session says, as the core words it for the machine's readiness to share.
     private func idleDetail(_ session: ScreenShareSession) -> String {
-        guard let machine = machines.first(where: { $0.id == session.machineID }) else {
-            return "This machine is no longer enrolled."
-        }
-        if !machine.online { return entries[machine.id]?.statusLine() ?? "" }
-        return machine.remoteDesktopReason.isEmpty
-            ? "Connect for an authenticated remote session with \(machine.name)."
-            : machine.remoteDesktopReason
+        let entry = entries[session.machineID]
+        if let entry, !entry.unavailableMessage.isEmpty { return entry.unavailableMessage }
+        return session.controller.phase.waitingMessage(
+            hostReady: entry?.remoteDesktopReady ?? false, hostReason: entry?.remoteDesktopReason ?? "")
     }
 
     private var overviewSubtitle: String {
         let count = model.sessions.count
-        let machineCount = Set(model.sessions.map(\.machineID)).count
         guard count > 0 else { return "Machine-scoped remote desktop sessions" }
+        let machines = Set(model.sessions.map(\.machineID)).count
         return
-            "\(count) open \(count == 1 ? "share" : "shares") across \(machineCount) \(machineCount == 1 ? "machine" : "machines")"
-    }
-
-    private func statusColor(_ phase: RemoteDesktopPhase) -> Color {
-        switch phase {
-        case .streaming: DieterTheme.eyes
-        case .loading, .connecting, .waitingForHostApproval, .reconnecting: DieterTheme.amber
-        case .failed: DieterTheme.coral
-        default: DieterTheme.tertiary
-        }
+            "\(SharedRules.shared.count(count: Int32(count), noun: "open share", plural: "")) across \(SharedRules.shared.count(count: Int32(machines), noun: "machine", plural: ""))"
     }
 
     private func emptyState<Accessory: View>(

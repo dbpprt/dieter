@@ -268,7 +268,7 @@ struct ProviderQuotaDetailsView: View {
             if store.quotas.providerQuotaRows.isEmpty { await store.loadProviderQuotas() }
         }
         .confirmationDialog(
-            "Use one OpenAI reset credit?",
+            SharedRules.shared.quotaResetTitle(),
             isPresented: Binding(
                 get: { resetConfirmationAccountKey != nil },
                 set: { if !$0 { resetConfirmationAccountKey = nil } }
@@ -281,7 +281,7 @@ struct ProviderQuotaDetailsView: View {
             }
             Button("Cancel", role: .cancel) { resetConfirmationAccountKey = nil }
         } message: {
-            Text("This consumes one credit and resets the eligible quota windows for this exact account.")
+            Text(SharedRules.shared.quotaResetMessage())
         }
     }
 

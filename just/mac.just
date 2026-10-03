@@ -16,8 +16,10 @@ test_scratch := app_root / ".build/dieter-tests"
 default:
     @just --justfile just/mac.just --list
 
-# Verify the macOS build and lifecycle tools.
+# Verify the macOS build and lifecycle tools, and the Java runtime that builds the shared core.
 doctor:
+    #!/usr/bin/env bash
+    set -euo pipefail
     test "$(uname -s)" = Darwin
     command -v swift
     command -v python3
@@ -29,6 +31,9 @@ doctor:
     test -x /usr/sbin/screencapture
     swift --version
     xcode-select -p
+    # shared-framework.sh falls back to Android Studio's bundled JBR.
+    java_home="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/Home}"
+    "$java_home/bin/java" -version
 
 # Show every Dieter app and active Swift build process without changing them.
 status:

@@ -78,7 +78,7 @@ class AdminRulesTest {
         assertEquals(AdminRoute.Attached, AdminRoute.shared(null))
         assertEquals("After 7 days", Administration.archivePolicyTitle("after_7_days"))
         assertEquals("Never", Administration.archivePolicyTitle("never"))
-        assertEquals(listOf("Manual", "Pull request", "Push base"), Administration.PUBLISH_MODES.map(Administration::publishModeTitle))
+        assertEquals(listOf("Manual", "Pull request", "Push base branch"), Administration.PUBLISH_MODES.map(Administration::publishModeTitle))
     }
 
     @Test

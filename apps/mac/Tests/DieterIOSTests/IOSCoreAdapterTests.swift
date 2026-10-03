@@ -89,8 +89,6 @@
                 XCTAssertEqual(signedOut.signedOutTestSession?.token, "test-token")
 
                 let previews: [(String, String, IOSLaunchConfiguration.Preview)] = [
-                    ("DIETER_IOS_QUOTA_PREVIEW", "details", .quotas(details: true)),
-                    ("DIETER_IOS_QUOTA_PREVIEW", "1", .quotas(details: false)),
                     ("DIETER_IOS_SCREEN_FIXTURE", "fixture", .screen("fixture")),
                     ("DIETER_IOS_CONNECTION_PREVIEW", "1", .connecting),
                 ]
@@ -252,7 +250,7 @@
 
         func testABoardViewBindsAfterItsFirstSnapshotAndDropsStaleTargets() async throws {
             let core = ScriptedCoreClient()
-            let board = IOSBoardViewModel(scope: "ios-board-test")
+            let board = BoardViewModel(scope: "ios-board-test")
             board.attach(core)
             XCTAssertTrue(core.isObserved(.boardView, scope: "ios-board-test"))
             board.bind(boardID: "b1")
@@ -281,7 +279,7 @@
             XCTAssertEqual(board.slice.total, 3)
 
             board.bind(boardID: "b1")
-            board.move(cardID: "c1", toLane: "review")
+            board.drop(cardID: "c1", laneID: "review")
             try await eventually("the drop") { sent().count == 2 }
             XCTAssertEqual(sent().last?.drop.cardID, "c1")
             XCTAssertEqual(sent().last?.drop.laneID, "review")
@@ -291,7 +289,7 @@
 
         func testABoardViewBindsAgainAfterALostUpdate() async throws {
             let core = ScriptedCoreClient()
-            let board = IOSBoardViewModel(scope: "ios-board-test")
+            let board = BoardViewModel(scope: "ios-board-test")
             board.attach(core)
             board.bind(boardID: "b1")
             func binds() -> [String] {
@@ -314,8 +312,8 @@
 
         func testEveryBoardViewOwnsItsScope() {
             let core = ScriptedCoreClient()
-            let first = IOSBoardViewModel()
-            let second = IOSBoardViewModel()
+            let first = BoardViewModel(scope: "ios-board-first")
+            let second = BoardViewModel(scope: "ios-board-second")
             XCTAssertNotEqual(first.scope, second.scope)
             first.attach(core)
             second.attach(core)
@@ -349,7 +347,7 @@
                 }
             }
             XCTAssertEqual(model.slice?.messages.map(\.id), ["m1", "m2"])
-            XCTAssertNotNil(model.messagesByKey["m2"])
+            XCTAssertNotNil(model.messages.byKey["m2"])
             XCTAssertEqual(model.daemonID, "d1")
             // A lost update drops the conversation until the next snapshot.
             core.emit(.conversation, scope: "c1", skipSequence: true) {
@@ -457,16 +455,16 @@
             let core = ScriptedCoreClient()
             let controller = IOSScreenController(core: core, media: nil)
             controller.connect(daemonID: "d1")
-            XCTAssertTrue(core.isObserved(.screen, scope: controller.scope))
+            XCTAssertTrue(core.isObserved(.screen, scope: controller.session.scope))
             await controller.settle()
             func sent() -> [ClientScreenCommand] {
                 commands(core) { if case .screen(let command) = $0 { command } else { nil } }
             }
             guard case .connect(let connect) = sent().first?.action else { return XCTFail("\(sent())") }
             XCTAssertEqual(connect.daemonID, "d1")
-            XCTAssertEqual(sent().first?.scope, controller.scope)
+            XCTAssertEqual(sent().first?.scope, controller.session.scope)
 
-            core.emit(.screen, scope: controller.scope) {
+            core.emit(.screen, scope: controller.session.scope) {
                 $0.screen = .with {
                     $0.phase = "streaming"
                     $0.phaseLabel = "Live"
@@ -477,7 +475,7 @@
             XCTAssertEqual(controller.phaseLabel, "Live")
 
             controller.close()
-            XCTAssertFalse(core.isObserved(.screen, scope: controller.scope))
+            XCTAssertFalse(core.isObserved(.screen, scope: controller.session.scope))
             await controller.settle()
             guard case .disconnect = sent().last?.action else { return XCTFail("\(sent())") }
             // A closed view sends nothing more.

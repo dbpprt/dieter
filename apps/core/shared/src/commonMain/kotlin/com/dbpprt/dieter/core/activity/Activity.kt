@@ -178,6 +178,15 @@ object Activity {
 
     data class TimelineBar(val item: ActivityItem, val from: Double, val to: Double, val point: Boolean)
 
+    /** The timeline windows the range menu offers, in hours. */
+    val TIMELINE_HOURS: List<Int> = listOf(1, 6, 24)
+
+    /** A timeline window's menu title: "Last 6h". */
+    fun rangeTitle(hours: Int): String = "Last ${hours}h"
+
+    /** The empty timeline: "No activity in the last 6h". */
+    fun emptyTimeline(hours: Int): String = "No activity in the last ${hours}h"
+
     /** A row's place in a timeline window, as fractions of it; [point] when only its end is known. */
     data class TimelineSpan(val from: Double, val to: Double, val point: Boolean)
 
@@ -230,6 +239,13 @@ data class WidgetModel(val rows: List<Row>, val summary: String, val compact: Bo
             time == null -> if (connected) "Syncing…" else "Not synced yet"
             connected -> "Updated $time"
             else -> "Offline · updated $time"
+        }
+
+        /** A widget's status line: "Refreshing…" while one runs, "Couldn’t refresh" after one failed since the last update, else [status]. */
+        fun status(status: String, refreshing: Boolean, refreshFailed: Boolean): String = when {
+            refreshing -> "Refreshing…"
+            refreshFailed -> "Couldn’t refresh"
+            else -> status
         }
 
         fun build(items: List<ActivityItem>, now: Instant, maxItems: Int = 12, showSections: Boolean = true, style: Style = Style.AUTO, widthDp: Int = 0, heightDp: Int = 0): WidgetModel {

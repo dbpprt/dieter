@@ -9,7 +9,7 @@ struct ArchivePolicySheet: View {
     @State private var boardName = ""
     @State private var policy = "never"
     @State private var baseRemote = ""
-    @State private var remotePublishMode = RemotePublishMode.manual.rawValue
+    @State private var remotePublishMode = AdminChoices.options.defaultPublishMode
     @State private var browserURLs = ""
     @State private var initialized = false
     @State private var saving = false
@@ -47,14 +47,20 @@ struct ArchivePolicySheet: View {
                         Section("New conversations") {
                             TextField("Default Git remote", text: $baseRemote)
                             Picker("Remote publishing", selection: $remotePublishMode) {
-                                ForEach(RemotePublishMode.allCases) { mode in Text(mode.title).tag(mode.rawValue) }
+                                ForEach(AdminChoices.options.publishModes, id: \.id) { mode in
+                                    Text(mode.title).tag(mode.id)
+                                }
                             }
-                            Text(RemotePublishMode(rawValue: remotePublishMode)?.detail ?? "")
-                                .font(.caption).foregroundStyle(.secondary)
+                            Text(
+                                AdminChoices.choice(remotePublishMode, in: AdminChoices.options.publishModes)?.detail
+                                    ?? ""
+                            )
+                            .font(.caption).foregroundStyle(.secondary)
                         }
                         Section("Completed cards") {
                             Picker("Archive done cards", selection: $policy) {
-                                ForEach(DoneArchivePolicy.allCases) { option in Text(option.title).tag(option.rawValue)
+                                ForEach(AdminChoices.options.archivePolicies, id: \.id) { option in
+                                    Text(option.title).tag(option.id)
                                 }
                             }
                         }
@@ -111,7 +117,7 @@ struct ArchivePolicySheet: View {
             baseRemote = boardRemote.isEmpty ? (store.selectedProject?.baseRemote ?? "") : boardRemote
             remotePublishMode =
                 store.selectedBoard?.remotePublishMode.isEmpty == false
-                ? store.selectedBoard!.remotePublishMode : RemotePublishMode.manual.rawValue
+                ? store.selectedBoard!.remotePublishMode : AdminChoices.options.defaultPublishMode
         }
         .interactiveDismissDisabled(saving)
     }
@@ -140,36 +146,5 @@ struct ArchivePolicySheet: View {
             return
         }
         await store.setArchivePolicy(policy)
-    }
-}
-enum BoardWorkflow: String, CaseIterable, Identifiable {
-    case review
-    case direct
-
-    var id: String { rawValue }
-    var title: String { self == .review ? "With review" : "Direct to done" }
-    var laneDescription: String {
-        self == .review ? "Todo → Running → Review → Done" : "Todo → Running → Done"
-    }
-}
-
-enum DoneArchivePolicy: String, CaseIterable, Identifiable {
-    case never
-    case immediately
-    case afterOneDay = "after_1_day"
-    case afterSevenDays = "after_7_days"
-    case afterThirtyDays = "after_30_days"
-    case afterNinetyDays = "after_90_days"
-
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .never: "Never"
-        case .immediately: "Immediately"
-        case .afterOneDay: "After 1 day"
-        case .afterSevenDays: "After 7 days"
-        case .afterThirtyDays: "After 30 days"
-        case .afterNinetyDays: "After 90 days"
-        }
     }
 }

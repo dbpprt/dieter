@@ -104,7 +104,6 @@ class ConversationSliceTest {
         val user = UiMessage(id = "u", role = "user", parts = listOf(MessagePart(type = "text", text = "go")))
         val view = view(Conversation(status = "failed", messages = listOf(user, earlier, user.copy(id = "u2"), failed)))
         val slice = conversationSlice(view, ConversationPresenter.present(view, OutboxView(), null))
-        assertEquals("a", slice.turn_failure?.failed_message_id)
         assertEquals("codex exited 1", slice.turn_failure?.summary)
         assertEquals(listOf("message:u", "message:b", "message:u2"), slice.timeline.map { it.id }, "the banner's message leaves its diagnostic to the banner")
         assertEquals(TimelineStepKind.TIMELINE_STEP_KIND_ATTENTION, slice.timeline[1].groups.single().steps.single().kind, "an earlier failure stays readable")

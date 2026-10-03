@@ -88,7 +88,7 @@ just ios build
 just android test
 ```
 
-Use `gofmt` on Go files. Keep both native clients accessible and adaptive.
+Use `gofmt` on Go files. Keep every native client accessible and adaptive.
 
 ## Daemon CLI feature parity
 

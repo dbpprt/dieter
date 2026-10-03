@@ -158,12 +158,14 @@ struct NewProjectSheet: View {
                             VStack(alignment: .leading, spacing: 7) {
                                 projectLabel("Workflow")
                                 Menu {
-                                    ForEach(BoardWorkflow.allCases) { option in
-                                        Button(option.title) { draft.workflow = option.rawValue }
+                                    ForEach(AdminChoices.options.workflows, id: \.id) { option in
+                                        Button(option.title) { draft.workflow = option.id }
                                     }
                                 } label: {
                                     HStack {
-                                        Text(BoardWorkflow(rawValue: draft.workflow)?.title ?? "With review")
+                                        Text(
+                                            AdminChoices.choice(draft.workflow, in: AdminChoices.options.workflows)?
+                                                .title ?? draft.workflow)
                                         Spacer()
                                         Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
                                             .foregroundStyle(DieterTheme.tertiary)
@@ -177,7 +179,7 @@ struct NewProjectSheet: View {
                                 .accessibilityIdentifier("new-project.workflow")
                             }
                         }
-                        Text(BoardWorkflow(rawValue: draft.workflow)?.laneDescription ?? "")
+                        Text(AdminChoices.choice(draft.workflow, in: AdminChoices.options.workflows)?.lanes ?? "")
                             .font(.caption2).foregroundStyle(DieterTheme.tertiary)
 
                         DisclosureGroup(isExpanded: $workspaceSettingsExpanded) {

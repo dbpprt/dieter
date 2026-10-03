@@ -545,7 +545,7 @@
                         popover.contentView?.layoutSubtreeIfNeeded()
                         popover.displayIfNeeded()
                         guard store.quickTaskForm.attachments.count == 1,
-                            store.quickTaskForm.attachments[0].type == "image",
+                            store.quickTaskForm.attachments[0].type == "file",
                             store.quickTaskForm.attachments[0].mediaType == "image/png",
                             let preview = NativeUIAccessibility.find("quick-task.attachments", in: popover),
                             preview.recordedWindow === popover, let frame = preview.recordedFrame
@@ -638,13 +638,17 @@
             let retainedScreen = ScreenShareSession(
                 id: "screen-smoke", machineID: store.endpoint.id,
                 machineName: store.endpoint.name, monitorsInactivity: false)
-            retainedScreen.controller.phase = .streaming
-            retainedScreen.controller.active = true
+            retainedScreen.controller.showFixture {
+                $0.phase = "streaming"
+                $0.active = true
+            }
             let otherScreen = ScreenShareSession(
                 id: "screen-smoke-other", machineID: "screen-smoke-other-machine",
                 machineName: "Other machine", monitorsInactivity: false)
-            otherScreen.controller.phase = .streaming
-            otherScreen.controller.active = true
+            otherScreen.controller.showFixture {
+                $0.phase = "streaming"
+                $0.active = true
+            }
             store.screensModel.sessions = [retainedScreen, otherScreen]
             store.screensModel.selectedSessionID = retainedScreen.id
             store.openScreens()
@@ -680,7 +684,8 @@
                 store.screensModel.selectedSessionID == retainedScreen.id
                     && retainedScreen.controller.renderer.window === window
                     && store.screensModel.connectedCount == 1
-                    && otherScreen.controller.phase == .idle
+                    // The core reports the closed session idle; the fixture has no core, so it is gone instead.
+                    && !store.screensModel.sessions.contains { $0.id == otherScreen.id }
             }
             results["01a-screen-tab-close"] =
                 closedScreen && restoredScreen

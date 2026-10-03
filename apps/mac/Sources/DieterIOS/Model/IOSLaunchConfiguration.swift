@@ -34,8 +34,6 @@
         enum Preview: Equatable {
             /// The connecting banner over an empty workspace.
             case connecting
-            /// Provider quotas with fixture accounts; `details` opens the sheet.
-            case quotas(details: Bool)
             /// The native WebRTC screen fixture (an encoded descriptor).
             case screen(String)
         }
@@ -60,9 +58,7 @@
             /// Maps the UI tests' `DIETER_IOS_*` launch environment.
             static func debug(environment: [String: String], device: String, support: URL) -> IOSLaunchConfiguration {
                 var preview: Preview?
-                if let mode = environment["DIETER_IOS_QUOTA_PREVIEW"] {
-                    preview = .quotas(details: mode == "details")
-                } else if let fixture = environment["DIETER_IOS_SCREEN_FIXTURE"] {
+                if let fixture = environment["DIETER_IOS_SCREEN_FIXTURE"] {
                     preview = .screen(fixture)
                 } else if environment["DIETER_IOS_CONNECTION_PREVIEW"] == "1" {
                     preview = .connecting

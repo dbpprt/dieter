@@ -1,5 +1,6 @@
 #if DIETER_UI_SMOKE
     import AppKit
+    import DieterAPI
 
     @MainActor enum ScreenShareUISmoke {
         static func run(store: DieterStore, session: ScreenShareSession, window: NSWindow, output: URL) async
@@ -22,7 +23,7 @@
                     "01a-screen-undock": "failed: expand button did not move the live surface into native full screen"
                 ]
             }
-            defer { session.controller.controlActive = false; store.screensModel.dock(session.id) }
+            defer { session.controller.showFixture { $0.controlActive = false }; store.screensModel.dock(session.id) }
             results["01a-screen-undock"] =
                 session.controller.renderer === renderer && renderer.superview === surface
                     && surface.window === detached
@@ -53,11 +54,14 @@
             detached.makeFirstResponder(nil)
             // This fixture deliberately has no peer. Test real AppKit activation
             // and cursor presentation without sending input to an unowned host.
-            session.controller.remoteCursorState.visible = true
-            session.controller.remoteCursorState.x = 0.1
-            session.controller.remoteCursorState.y = 0.1
-            session.controller.remoteCursor = .crosshair
-            session.controller.controlActive = true
+            session.controller.showFixture {
+                $0.cursorVisible = true
+                $0.cursorX = 0.1
+                $0.cursorY = 0.1
+                $0.cursorImage = NSCursor.crosshair.image.tiffRepresentation ?? Data()
+                $0.cursorImageUnchanged = false
+                $0.controlActive = true
+            }
             let center = CGPoint(x: surface.bounds.midX, y: surface.bounds.midY)
             let began = ProcessInfo.processInfo.systemUptime
             surface.refreshCursor(at: center)
@@ -72,17 +76,17 @@
             results["01a-screen-cursor-leave"] =
                 surface.cursorPresentation == .remote && surface.hostCursorVisible
                 ? "passed" : "failed: leaving the video did not restore the host-position cursor"
-            session.controller.controlActive = false
+            session.controller.showFixture { $0.controlActive = false }
             surface.refreshCursor(at: center)
             results["01a-screen-view-only-cursor"] =
                 surface.cursorPresentation == .remote && surface.hostCursorVisible
                 ? "passed" : "failed: view-only mode did not show exactly the host cursor"
-            session.controller.sessionState.embeddedCursor = true
+            session.controller.showFixture { $0.state.embeddedCursor = true }
             surface.refreshCursor(at: center)
             results["01a-screen-embedded-cursor"] =
                 surface.cursorPresentation == .embedded && !surface.hostCursorVisible
                 ? "passed" : "failed: embedded cursor also displayed an overlay"
-            session.controller.sessionState.embeddedCursor = false
+            session.controller.showFixture { $0.state.embeddedCursor = false }
             capture(detached, to: output.appending(path: "01a-screen-fullscreen.png"))
 
             detached.makeFirstResponder(surface)

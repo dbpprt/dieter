@@ -3,21 +3,6 @@ import DieterAPI
 import SwiftUI
 import UniformTypeIdentifiers
 
-enum ConversationQueuePresentation {
-    struct EditableDraft {
-        let text: String
-        let attachments: [Dieter_V1_MessagePart]
-    }
-
-    static func editableDraft(for message: Dieter_V1_QueuedMessage) -> EditableDraft {
-        let textParts = message.parts.filter { $0.type == "text" }.map(\.text)
-        let text = textParts.isEmpty ? message.text : textParts.joined()
-        return EditableDraft(
-            text: text.trimmingCharacters(in: .whitespacesAndNewlines),
-            attachments: message.parts.filter { $0.type != "text" }
-        )
-    }
-}
 struct ConversationAgentWorkingIndicator: View {
     let label: String
     let startedAt: Date?

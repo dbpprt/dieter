@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import Foundation
 import SharedCore
 
@@ -83,11 +84,9 @@ extension AppSession {
                 self.boardState = value
                 if !self.coreFoldsHeld { self.foldBoard(value) }
             },
-            SliceSubscription(client: core, slice: .boardView, scope: Self.boardViewScope) { [weak self] update in
-                guard let self, case .boardView(let value) = update.value else { return }
-                self.foldBoardView(value)
-            },
         ]
+        boardViewModel.onChange = { [weak self] in self?.refreshBoardProjection() }
+        boardViewModel.attach(core)
     }
 
     /// Applies the slices that arrived while folds were held.
@@ -112,7 +111,7 @@ extension AppSession {
         }
         let gateway = Self.gatewayEndpoint(slice)
         let origins = slice.gateways.compactMap { entry in
-            MachineEndpoint(origin: entry.origin, name: entry.name.isEmpty ? "Dieter Gateway" : entry.name)
+            MachineEndpoint(origin: entry.origin, name: entry.name)
         }
         if gatewayOrigins != origins { gatewayOrigins = origins.isEmpty ? [gateway] : origins }
         let machines = slice.machines.map { Self.machineEndpoint($0, gateway: gateway) }
@@ -153,9 +152,9 @@ extension AppSession {
     }
 
     nonisolated static func gatewayEndpoint(_ slice: ClientSessionSlice) -> MachineEndpoint {
-        let name = slice.gateways.first { $0.origin == slice.gatewayOrigin }?.name ?? ""
-        return MachineEndpoint(origin: slice.gatewayOrigin, name: name.isEmpty ? "Dieter Gateway" : name)
-            ?? MachineEndpoint.defaultGateway
+        let name =
+            slice.gateways.first { $0.origin == slice.gatewayOrigin }?.name ?? SharedRules.shared.defaultGatewayName()
+        return MachineEndpoint(origin: slice.gatewayOrigin, name: name) ?? MachineEndpoint.defaultGateway
     }
 
     nonisolated static func machineEndpoint(_ entry: ClientMachineEntry, gateway: MachineEndpoint) -> MachineEndpoint {
@@ -179,11 +178,10 @@ extension AppSession {
             return hasLoadedWorkspace || slice.error.isEmpty ? .connecting : .failed(slice.error)
         case .syncing, .connected: return .connected(version: attached?.releaseVersion ?? "")
         case .noMachine:
-            return .failed(slice.error.isEmpty ? "No enrolled Dieter machines are online." : slice.error)
+            return .failed(slice.error.isEmpty ? slice.phaseLabel : slice.error)
         case .authRequired: return .authenticationRequired
         case .updateRequired:
-            let found = attached?.minimumReleaseVersion ?? ""
-            return .incompatible(found: found.isEmpty ? slice.error : found)
+            return .incompatible(slice.error.isEmpty ? slice.phaseLabel : slice.error)
         case .UNRECOGNIZED: return .disconnected
         }
     }
@@ -216,9 +214,7 @@ extension AppSession {
         let failed = Set(slice.failedIds)
         if failedOutboxIDs != failed { failedOutboxIDs = failed }
         if machineOutboxes != slice.machines { machineOutboxes = slice.machines }
-        if !slice.storageError.isEmpty, errorMessage == nil {
-            errorMessage = "Could not save pending changes: \(slice.storageError)"
-        }
+        if !slice.storageError.isEmpty, errorMessage == nil { errorMessage = slice.storageError }
         refreshPendingCards()
         followResolutions(slice.resolutions)
     }
@@ -264,53 +260,23 @@ extension AppSession {
 
     // MARK: - Board view
 
-    /// The scope of the core's view of the selected board.
-    static let boardViewScope = "mac-board"
-
     /// Points the core's board view at the selected board and filters.
     func bindBoardView() {
-        let target = ClientBoardViewTarget.with {
-            $0.boardID = selectedBoardID
-            $0.machineID = machineFilter
-            $0.labelID = labelFilter
-            $0.state = stateFilter
-            $0.query = query
-        }
-        guard target != boardViewTarget else { return }
-        boardViewTarget = target
-        guard !target.boardID.isEmpty else { return }
-        let core = core
-        Task {
-            _ = try? await core.dispatch(
-                .with {
-                    $0.boardView = .with {
-                        $0.scope = Self.boardViewScope
-                        $0.bind = target
-                    }
-                })
-        }
-    }
-
-    /// The core's view of the board the Mac shows; a view of another board is stale.
-    func foldBoardView(_ slice: ClientBoardViewSlice) {
-        guard slice.target.boardID == boardViewTarget.boardID else { return }
-        boardView = slice
-        refreshBoardProjection()
+        boardViewModel.bind(
+            .with {
+                $0.boardID = selectedBoardID
+                $0.machineID = machineFilter
+                $0.labelID = labelFilter
+                $0.state = stateFilter
+                $0.query = query
+            })
     }
 
     /// Drops `cardID` into `laneID` above `beforeCardID` ("" for the lane's
     /// end), as the board view shows the lane.
     func drop(cardID: String, laneID: String, beforeCardID: String = "") async {
-        await perform {
-            $0.boardView = .with {
-                $0.scope = Self.boardViewScope
-                $0.drop = .with {
-                    $0.cardID = cardID
-                    $0.laneID = laneID
-                    $0.beforeCardID = beforeCardID
-                }
-            }
-        }
+        boardViewModel.drop(cardID: cardID, laneID: laneID, beforeCardID: beforeCardID)
+        await boardViewModel.settle()
     }
 
     /// Retries a failed or waiting outbox operation now.
@@ -389,7 +355,7 @@ extension WorkspaceReplica {
         var cards: [String: [Dieter_V1_Card]] = [:]
         var chats: [Dieter_V1_Card] = []
         for card in slice.cards {
-            if card.scope == "chat", card.boardID.isEmpty {
+            if SharedRules.shared.isChat(scope: card.scope, boardId: card.boardID) {
                 chats.append(card)
             } else {
                 cards[card.projectID, default: []].append(card)
@@ -400,6 +366,8 @@ extension WorkspaceReplica {
         let retired = Dictionary(slice.retiredBoards.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         if retiredBoards != retired { retiredBoards = retired }
         if projectDirectory != directory { projectDirectory = directory }
+        let order = slice.projects.map(\.id)
+        if projectOrder != order { projectOrder = order }
         if projectReplicaEndpointIDs != replicaEndpointIDs { projectReplicaEndpointIDs = replicaEndpointIDs }
         if navigationBoards != boards { navigationBoards = boards }
         if navigationCards != cards { navigationCards = cards }

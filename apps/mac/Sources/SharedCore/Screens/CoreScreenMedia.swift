@@ -60,12 +60,9 @@ package final class CoreScreenMedia: NSObject, NativeScreenMedia, Sendable {
         self.rendererUnavailable = rendererUnavailable
     }
 
-    /// Renders the engines the core creates for `scope` into `renderer`, and
-    /// reports the media path (direct or relayed) as statistics arrive.
-    @MainActor package func attach(
-        scope: String, renderer: any ScreenRenderer, mediaRoute: @escaping @MainActor (String) -> Void
-    ) {
-        let surface = CoreScreenSurface(renderer: renderer, mediaRoute: mediaRoute)
+    /// Renders the engines the core creates for `scope` into `renderer`.
+    @MainActor package func attach(scope: String, renderer: any ScreenRenderer) {
+        let surface = CoreScreenSurface(renderer: renderer)
         renderer.onFramePresented = { [weak surface] frame in surface?.presented(frame) }
         renderer.onFailure = { [weak surface] message in surface?.failed(message) }
         surfaces.withLock { $0[scope] = surface }
@@ -116,13 +113,11 @@ package final class CoreScreenMedia: NSObject, NativeScreenMedia, Sendable {
 package final class CoreScreenSurface: @unchecked Sendable {
     /// Only touched on the main actor, except its presentation counters and frame gate.
     nonisolated(unsafe) let renderer: any ScreenRenderer
-    private let mediaRoute: @MainActor (String) -> Void
     private let lock = NSLock()
     private weak var current: CoreScreenMediaEngine?
 
-    @MainActor init(renderer: any ScreenRenderer, mediaRoute: @escaping @MainActor (String) -> Void) {
+    @MainActor init(renderer: any ScreenRenderer) {
         self.renderer = renderer
-        self.mediaRoute = mediaRoute
     }
 
     /// Clears the previous attempt's picture and returns a decode path for a
@@ -158,10 +153,6 @@ package final class CoreScreenSurface: @unchecked Sendable {
     @MainActor func presented(_ frame: RTCVideoFrame) { lock.withLock { current }?.presented(frame) }
 
     @MainActor func failed(_ message: String) { lock.withLock { current }?.rendererFailed(message) }
-
-    func publish(route: String) {
-        Task { @MainActor [mediaRoute] in mediaRoute(route) }
-    }
 }
 
 /// One attempt's peer connection. Core calls arrive on its dispatcher and
@@ -258,8 +249,7 @@ package final class CoreScreenMediaEngine: NSObject, NativeScreenMediaEngine, @u
             return rank.map { ($0, capability) }
         }.sorted { $0.0 < $1.0 }.map(\.1)
         guard !chosen.isEmpty else {
-            throw Self.failure(
-                "Selected codec unavailable. HEVC requires hardware decoding and an updated host at up to 1080p60.")
+            throw Self.failure(SharedRules.shared.screenCodecUnavailable())
         }
         try video.setCodecPreferences(chosen, error: ())
         if config.enableReferenceDependencies { _ = try remoteDesktopEnableReferenceDependencies(video) }
@@ -338,7 +328,7 @@ package final class CoreScreenMediaEngine: NSObject, NativeScreenMediaEngine, @u
             }
             if let local = pair["localCandidateId"] as? String, let remote = pair["remoteCandidateId"] as? String {
                 let types = [local, remote].compactMap { report.statistics[$0]?.values["candidateType"] as? String }
-                surface.publish(route: types.contains("relay") ? "Relayed media" : "Direct media")
+                events.value.mediaPath(relayed: types.contains("relay"))
             }
             let rendered = surface.presentationCounters
             completion.value.completed(

@@ -45,6 +45,9 @@ sealed interface AppUpdateState {
     data class Failed(val message: String, val release: AppRelease? = null) : AppUpdateState
 }
 
+/** What the update download is and how the installer opens it. */
+private const val APK_MIME_TYPE = "application/vnd.android.package-archive"
+
 class AppUpdateManager(context: Context) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -174,7 +177,7 @@ class AppUpdateManager(context: Context) {
                 apk,
             )
             val installIntent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
+                setDataAndType(uri, APK_MIME_TYPE)
                 clipData = ClipData.newRawUri("Dieter update", uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -358,7 +361,6 @@ private class GitHubReleaseClient {
     private companion object {
         const val LATEST_RELEASE_URL = "https://api.github.com/repos/dbpprt/dieter/releases/latest"
         const val APK_ASSET_NAME = "Dieter-Android.apk"
-        const val APK_MIME_TYPE = "application/vnd.android.package-archive"
         const val SHA256_PREFIX = "sha256:"
         const val GITHUB_API_VERSION = "2026-03-10"
         const val API_TIMEOUT_MS = 15_000

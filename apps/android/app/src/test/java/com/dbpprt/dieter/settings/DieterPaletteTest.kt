@@ -20,11 +20,9 @@ class DieterPaletteTest {
     }
 
     @Test
-    fun resolvesPersistedValuesMigratesAcidAndUsesMonochromeByDefault() {
+    fun resolvesPersistedValuesAndUsesMonochromeByDefault() {
         assertEquals(DieterPalette.MONOCHROME, DieterPalette.resolve(null))
         assertEquals(DieterPalette.MONOCHROME, DieterPalette.resolve("unknown"))
-        assertEquals(DieterPalette.MONOCHROME, DieterPalette.resolve("acid-terminal"))
-        assertEquals(DieterPalette.MONOCHROME, DieterPalette.resolve("ACID_TERMINAL"))
         DieterPalette.entries.forEach { palette ->
             assertEquals(palette, DieterPalette.resolve(palette.slug))
             assertEquals(palette, DieterPalette.resolve(palette.name))

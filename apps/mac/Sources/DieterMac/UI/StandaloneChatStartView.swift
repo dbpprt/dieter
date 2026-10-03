@@ -252,7 +252,7 @@ struct StandaloneChatStartView: View {
                             selectDestination(item, picked: true)
                         } label: {
                             Label(
-                                projectOptionTitle(item),
+                                item.optionTitle,
                                 systemImage: item.checkoutID == checkoutID ? "checkmark" : "folder"
                             )
                         }
@@ -303,15 +303,6 @@ struct StandaloneChatStartView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
-    }
-
-    private func projectOptionTitle(_ item: ProjectDestination) -> String {
-        let duplicates = machineDestinations.filter { $0.project.id == item.project.id }
-        guard duplicates.count > 1 else { return item.project.name }
-        let checkoutName = item.checkout?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !checkoutName.isEmpty { return "\(item.project.name) · \(checkoutName)" }
-        let path = item.checkout?.path ?? ""
-        return path.isEmpty ? item.project.name : "\(item.project.name) · \((path as NSString).lastPathComponent)"
     }
 
     private func chooseDestination(preferredProjectID: String? = nil) {

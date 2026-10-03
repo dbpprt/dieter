@@ -46,7 +46,10 @@ object GitOperations {
     fun cancelable(operation: GitOperation?): Boolean = isActive(operation) && operation?.status != WAITING
 
     /** The operation strip shows an operation while it is active and after it failed. */
-    fun visible(operation: GitOperation?): Boolean = isActive(operation) || operation?.status == "failed"
+    fun visible(operation: GitOperation?): Boolean = isActive(operation) || failed(operation)
+
+    /** A failed operation opens its output. */
+    fun failed(operation: GitOperation?): Boolean = operation?.status == "failed"
 
     fun statusLabel(operation: GitOperation): String = operation.status.replace('_', ' ').replaceFirstChar { it.uppercase() }
 
@@ -79,6 +82,51 @@ object GitOperations {
         GitOperationKinds.CONTINUE_CONFLICT -> listOf(GitFormField.VALIDATE)
         GitOperationKinds.ADOPT -> listOf(GitFormField.TARGET_CARD_ID)
         else -> emptyList()
+    }
+
+    /** How a form for [kind] words its inputs. */
+    fun copy(kind: String): GitFormCopy = GitFormCopy(
+        subject = when (kind) {
+            GitOperationKinds.CREATE_PR -> "Pull request title"
+            GitOperationKinds.MERGE_LOCAL -> "Squash commit subject"
+            else -> "Commit subject"
+        },
+        subjectPlaceholder = when (kind) {
+            GitOperationKinds.CREATE_PR -> "Summarize the proposed change"
+            GitOperationKinds.MERGE_LOCAL -> "Summarize the integrated work"
+            else -> "Summarize the change"
+        },
+        bodyPlaceholder = if (kind == GitOperationKinds.CREATE_PR) "Explain what changed and how it was verified" else "Optional commit body",
+        validate = when (kind) {
+            GitOperationKinds.UPDATE -> "Run project validation after rebasing"
+            GitOperationKinds.MERGE_LOCAL -> "Validate the isolated integration result"
+            GitOperationKinds.CONTINUE_CONFLICT -> "Run validation after continuing"
+            else -> "Run validation"
+        },
+    )
+
+    /** The caution a form for [kind] shows below its inputs, or null. */
+    fun notice(kind: String): GitFormNotice? = when (kind) {
+        GitOperationKinds.DISCARD -> GitFormNotice(
+            "Recovery is created first",
+            "Dieter keeps recovery artifacts (branch bundle, patches, untracked archive) on the Dieter machine before removing this workspace. " +
+                "Its uncommitted changes and managed branch will no longer remain in active use.",
+            StatusTone.DANGER,
+        )
+        GitOperationKinds.CLEANUP -> GitFormNotice(
+            "Clean, integrated work only", "Cleanup stops if the branch still has changes or has not been integrated.", StatusTone.SUCCESS,
+        )
+        GitOperationKinds.MERGE_PR -> GitFormNotice(
+            "Head revision is protected",
+            "The provider verifies that the pull request head still matches this workspace before merging.",
+            StatusTone.SUCCESS,
+        )
+        GitOperationKinds.CONTINUE_CONFLICT -> GitFormNotice(
+            "Confirm conflicts are resolved",
+            "Continue only after every conflict marker has been resolved and the files have been saved.",
+            StatusTone.WARNING,
+        )
+        else -> null
     }
 
     /** The merge strategies a form for [kind] offers, as (wire value, title); the first is the default. */
@@ -127,6 +175,29 @@ enum class OperationStart { IMMEDIATE, CONFIRM, FORM }
 /** An input of a Git operation form. */
 enum class GitFormField { SUBJECT, BODY, STAGE_ALL, FETCH, VALIDATE, STRATEGY, DRAFT, PUSH, FORCE_WITH_LEASE, EXPECTED_REMOTE_SHA, TARGET_CARD_ID }
 
+/** An operation form's labels, in sentence case, with placeholders and help. */
+data class GitFormCopy(
+    val subject: String,
+    val subjectPlaceholder: String,
+    val body: String = "Description",
+    val bodyPlaceholder: String,
+    val stageAll: String = "Stage all changes",
+    val fetch: String = "Fetch the configured base remote",
+    val validate: String,
+    val strategy: String = "Merge strategy",
+    val draft: String = "Create as draft",
+    val push: String = "Push branch before creating",
+    val forceWithLease: String = "Force with lease",
+    val expectedRemoteSha: String = "Expected remote head",
+    val expectedRemoteShaPlaceholder: String = "Commit SHA",
+    val expectedRemoteShaHelp: String = "The push is rejected if the remote branch no longer matches this exact revision.",
+    val targetCardId: String = "Destination conversation ID",
+    val targetCardIdPlaceholder: String = "c_…",
+)
+
+/** A caution below an operation form's inputs. */
+data class GitFormNotice(val title: String, val detail: String, val tone: StatusTone)
+
 /**
  * What an operation form collects before starting [kind]; [GitOperations.fields]
  * says which inputs a kind shows. [subject] is a commit's subject, a local
@@ -156,6 +227,13 @@ data class GitOperationForm(
      * subject, adopting needs a conversation, and a forced push needs the
      * remote head it expects.
      */
+    /** Whether [field] shows: a local merge's subject only for a squash, the expected remote head only for a forced push. */
+    fun shows(field: GitFormField): Boolean = when (field) {
+        GitFormField.SUBJECT -> kind != GitOperationKinds.MERGE_LOCAL || strategy == "squash"
+        GitFormField.EXPECTED_REMOTE_SHA -> forceWithLease
+        else -> true
+    }
+
     val ready: Boolean get() = when (kind) {
         GitOperationKinds.COMMIT, GitOperationKinds.CREATE_PR -> subject.isNotBlank()
         GitOperationKinds.ADOPT -> targetCardId.isNotBlank()
@@ -537,6 +615,11 @@ object ReviewComments {
 }
 
 /** Durable Git operation kinds accepted by StartGitOperation. */
+object Commits {
+    /** A commit's abbreviated hash: the daemon's short form, else the full hash, at most seven characters. */
+    fun shortSha(shortSha: String, sha: String): String = shortSha.ifBlank { sha }.take(7)
+}
+
 object GitOperationKinds {
     const val STAGE = "stage"
     const val UNSTAGE = "unstage"

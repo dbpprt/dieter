@@ -23,7 +23,7 @@ struct ProjectContextSheet: View {
                     validationCommands: $draft.validationCommands, workspacesPresented: $workspacesPresented)
                 Section("Checkouts & machines") {
                     ProjectCheckoutMenu(projectID: store.selectedProjectID)
-                    ForEach(store.selectedProject?.checkouts.filter { !$0.detached } ?? [], id: \.id) { checkout in
+                    ForEach(store.selectedProject?.checkoutChoices ?? [], id: \.id) { checkout in
                         HStack {
                             VStack(alignment: .leading) {
                                 Text(
@@ -132,7 +132,7 @@ struct ProjectContextFields: View {
                     TextField("Name", text: $name)
                     TextField("Short summary", text: $summary)
                     if let project = store.selectedProject {
-                        ForEach(project.checkouts.filter { !$0.detached }, id: \.id) { checkout in
+                        ForEach(project.checkoutChoices, id: \.id) { checkout in
                             LabeledContent(
                                 checkout.name,
                                 value: store.endpoints.first(where: { $0.daemonID == checkout.daemonID })?.name
@@ -169,7 +169,7 @@ struct ProjectContextFields: View {
                                 TextField(
                                     "Environment — KEY=VALUE per line", text: $command.environment, axis: .vertical
                                 ).lineLimit(2...5)
-                                TextField("Timeout in seconds", value: $command.timeoutSeconds, format: .number)
+                                TextField("Timeout in seconds", text: $command.timeoutSeconds)
                                 Button("Remove command", role: .destructive) {
                                     validationCommands.removeAll { $0.id == command.id }
                                 }
@@ -192,8 +192,8 @@ struct ProjectSettingsDraft: Equatable {
     var name = ""
     var summary = ""
     var prompt = ""
-    var baseRemote = "origin"
-    var baseBranch = "main"
+    var baseRemote = AdminChoices.options.defaultBaseRemote
+    var baseBranch = AdminChoices.options.defaultBaseBranch
     var validationCommands: [ValidationCommandDraft] = []
 
     init() {}
@@ -201,15 +201,14 @@ struct ProjectSettingsDraft: Equatable {
         name = project.name
         summary = project.summary
         prompt = project.prompt
-        baseRemote = project.baseRemote.isEmpty ? "origin" : project.baseRemote
-        baseBranch = project.baseBranch.isEmpty ? "main" : project.baseBranch
+        baseRemote = project.baseRemote.isEmpty ? AdminChoices.options.defaultBaseRemote : project.baseRemote
+        baseBranch = project.baseBranch.isEmpty ? AdminChoices.options.defaultBaseBranch : project.baseBranch
         validationCommands = project.validationCommands.map(ValidationCommandDraft.init)
     }
 
     var isValid: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !baseBranch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !validationCommands.contains { $0.executable.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        SharedRules.shared.canSaveProject(
+            name: name, baseBranch: baseBranch, drafts: ValidationCommandDraft.encoded(validationCommands))
     }
 }
 

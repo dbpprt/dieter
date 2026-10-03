@@ -86,6 +86,9 @@ object ConversationExports {
         return QueuedMessage(id = message.id, text = restored.textBefore(currentText), parts = restored.attachments, selection = restored.selection)
     }
 
+    /** What a queued [message]'s row shows: its text, else how many attachments it carries. */
+    fun queuedSummary(message: QueuedMessage): String = RestoredMessage.from(message).summary
+
     /** Whether a machine has accepted [conversationId]; false for the local ID of a creation still in the outbox. */
     fun isServerBacked(conversationId: String): Boolean = OutboxPolicy.isServerBacked(conversationId)
 }

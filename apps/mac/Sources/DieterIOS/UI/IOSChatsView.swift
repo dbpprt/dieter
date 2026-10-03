@@ -52,7 +52,7 @@
                                         if let chat = app.card(id) ?? archivedByID[id] { row(chat, now: clock.date) }
                                     }
                                     if section.hidden > 0 {
-                                        Button(section.showAll ? "Show fewer" : "Show \(section.hidden) more") {
+                                        Button(section.toggleLabel) {
                                             Task {
                                                 await app.perform {
                                                     $0.setChatsShowAll = .with {

@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterShared
 import Foundation
 
 struct ConversationWorkspaceRoute: Equatable {
@@ -36,10 +37,8 @@ extension DieterStore {
     /// this: the core opens it on its machine either way. Never connects a
     /// session that is offline.
     func ensureConversationConnection(_ card: Dieter_V1_Card, reportOffline: Bool = true) async -> Bool {
-        guard let target = machine(for: card), target.online else {
-            if reportOffline {
-                errorMessage = "This conversation’s machine is offline. Shared board edits remain available."
-            }
+        guard let target = machine(for: card), machineIsAvailable(target) else {
+            if reportOffline, let target = machine(for: card) { errorMessage = unavailableReason(target) }
             return false
         }
         guard phase.isConnected else { return false }
@@ -49,7 +48,7 @@ extension DieterStore {
     }
 
     func attachCheckout(projectID: String, path: String, name: String, machineID: String) async -> Bool {
-        guard let target = endpoints.first(where: { $0.id == machineID }), target.online,
+        guard let target = endpoints.first(where: { $0.id == machineID }), machineIsAvailable(target),
             let daemonID = target.daemonID
         else { return false }
         do {
@@ -96,7 +95,7 @@ extension DieterStore {
     /// on this Mac, else the core's choice (`CreationSlice.checkouts`); nil
     /// when the user must choose.
     func checkout(forProjectID id: String) -> Dieter_V1_Checkout? {
-        let values = projectDirectory[id]?.checkouts.filter { !$0.detached } ?? []
+        let values = projectDirectory[id]?.checkoutChoices ?? []
         guard let chosen = creationCheckoutIDs[id] ?? creationMemory.checkouts[id] else { return nil }
         return values.first { $0.id == chosen }
     }
@@ -119,8 +118,12 @@ extension DieterStore {
             errorMessage = "Choose a machine and checkout for this project."
             return false
         }
-        guard let target = endpoints.first(where: { $0.daemonID == checkout.daemonID }), target.online else {
-            errorMessage = "The selected checkout’s machine is offline."
+        guard let target = endpoints.first(where: { $0.daemonID == checkout.daemonID }) else {
+            errorMessage = SharedRules.shared.unenrolledMachineMessage()
+            return false
+        }
+        if let reason = unavailableReason(target) {
+            errorMessage = reason
             return false
         }
         if target.id != endpoint.id || !phase.isConnected { await connect(to: target) }

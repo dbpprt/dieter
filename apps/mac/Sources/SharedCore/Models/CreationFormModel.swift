@@ -16,6 +16,32 @@ package final class CreationFormModel {
     /// A preview has arrived; until then nothing can be created.
     package private(set) var previewed = false
     package let chat: Bool
+    /// The user typed, labeled, or attached something a dismissal would lose.
+    package var edited: Bool {
+        !intent.title.isEmpty || !intent.prompt.isEmpty || !intent.labelIds.isEmpty || !attachments.isEmpty
+    }
+
+    /// Moves the form to project `id`; the board, checkout, and labels were the previous project's.
+    package func chooseProject(_ id: String) {
+        intent.projectID = id
+        intent.boardID = ""
+        intent.checkoutID = ""
+        intent.labelIds = []
+    }
+
+    /// Moves the form to board `id`; labels belong to a board.
+    package func chooseBoard(_ id: String) {
+        intent.boardID = id
+        intent.labelIds = []
+    }
+
+    /// Chooses or drops label `id`; the chosen IDs stay sorted.
+    package func setLabel(_ id: String, selected: Bool) {
+        var ids = intent.labelIds.filter { $0 != id }
+        if selected { ids.append(id) }
+        intent.labelIds = ids.sorted()
+    }
+
     /// Reusing it never creates a second conversation, so a retry after a
     /// failure is safe.
     @ObservationIgnored package private(set) var submissionID = UUID().uuidString

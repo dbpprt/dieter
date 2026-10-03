@@ -30,10 +30,8 @@ import Testing
         id: "second", machineID: "machine-b", machineName: "Beta", monitorsInactivity: false)
     model.sessions = [first, second]
     model.selectedSessionID = first.id
-    first.controller.phase = .streaming
-    first.controller.active = true
-    second.controller.phase = .streaming
-    second.controller.active = true
+    first.controller.session.fold(.phase("streaming"))
+    second.controller.session.fold(.phase("streaming"))
 
     #expect(model.connectedCount == 2)
     model.selectSession(second.id)
@@ -53,8 +51,7 @@ import Testing
 @Test @MainActor func inactiveScreenShareDisconnectsAtConfiguredDeadline() {
     let session = ScreenShareSession(
         machineID: "machine", machineName: "Machine", monitorsInactivity: false)
-    session.controller.phase = .streaming
-    session.controller.active = true
+    session.controller.session.fold(.phase("streaming"))
     session.configureInactivityTimeout(enabled: true, minutes: 2)
     let activity = Date(timeIntervalSinceReferenceDate: 100)
     session.recordActivity(at: activity)
@@ -62,15 +59,13 @@ import Testing
     #expect(!session.disconnectIfInactive(at: activity.addingTimeInterval(119)))
     #expect(session.controller.phase == .streaming)
     #expect(session.disconnectIfInactive(at: activity.addingTimeInterval(120)))
-    #expect(session.controller.phase == .idle)
     #expect(session.inactivityMessage == "Disconnected after 2 minutes of inactivity.")
 }
 
 @Test @MainActor func disabledScreenShareTimeoutNeverDisconnects() {
     let session = ScreenShareSession(
         machineID: "machine", machineName: "Machine", monitorsInactivity: false)
-    session.controller.phase = .streaming
-    session.controller.active = true
+    session.controller.session.fold(.phase("streaming"))
     session.configureInactivityTimeout(enabled: false, minutes: 1)
     let activity = Date(timeIntervalSinceReferenceDate: 100)
     session.recordActivity(at: activity)
@@ -81,8 +76,7 @@ import Testing
 
 @Test @MainActor func sleepingScreenDoesNotExpireItsInactivityTimerBeforeWake() {
     let session = ScreenShareSession(machineID: "sleep-test", machineName: "Fixture", monitorsInactivity: false)
-    session.controller.phase = .streaming
-    session.controller.active = true
+    session.controller.session.fold(.phase("streaming"))
     session.configureInactivityTimeout(enabled: true, minutes: 1)
     session.controller.prepareForSleep()
     #expect(!session.disconnectIfInactive(at: Date().addingTimeInterval(3600)))

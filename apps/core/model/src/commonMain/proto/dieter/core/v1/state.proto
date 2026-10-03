@@ -26,10 +26,8 @@ message AccountsState {
 }
 
 message PendingSignIn {
-  string gateway_origin = 1;
   GatewayRecord gateway = 2;
   string verifier = 3;
-  string redirect_uri = 4;
   int64 created_at_millis = 5;
 }
 
@@ -74,8 +72,6 @@ message CreationPreferences {
   string effort = 3;
   string workspace_mode = 4;
   map<string, string> provider_options = 5;
-  reserved 8;
-  reserved "notification_boards";
   // Project ID → board last used for a quick task there.
   map<string, string> boards = 6;
   string project_id = 7;

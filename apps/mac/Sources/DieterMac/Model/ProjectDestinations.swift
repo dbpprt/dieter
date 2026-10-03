@@ -2,151 +2,113 @@ import DieterAPI
 import DieterShared
 import Foundation
 
+/// A checkout a new chat can run in, as the core lays out the destinations.
 struct ProjectDestination: Identifiable, Equatable {
     let project: Dieter_V1_Project
-    let machineID: String
+    let destination: ClientChatDestination
+    /// The machine the checkout is on, as its group names it.
     let machineName: String
     let machineOnline: Bool
-    let machineVersion: String
-    var checkoutID: String = ""
 
     var id: String { checkoutID.isEmpty ? project.id : checkoutID }
+    var machineID: String { destination.machineID }
+    var checkoutID: String { destination.checkoutID }
     var checkout: Dieter_V1_Checkout? { project.checkouts.first { $0.id == checkoutID } }
-    var title: String { "\(project.name) · \(machineName)" }
-    var machineStatus: String { machineOnline ? "Online" : "Offline" }
-
-    var detail: String {
-        let path = SharedRules.shared.compactPath(path: checkout?.path ?? "")
-        return path.isEmpty ? machineStatus : "\(machineStatus) · \(path)"
-    }
+    /// "app · Studio".
+    var title: String { destination.title }
+    /// "Online · ~/src/app".
+    var detail: String { destination.detail }
+    /// The project's name, told apart from the machine's other checkouts of it.
+    var optionTitle: String { destination.optionTitle }
 }
 
+/// A machine and the checkouts on it a new chat can run in.
 struct ProjectDestinationGroup: Identifiable, Equatable {
-    let machineID: String
-    let machineName: String
-    let machineOnline: Bool
-    let machineVersion: String
+    let group: ClientChatDestinationGroup
     let destinations: [ProjectDestination]
 
     var id: String { machineID }
-    var title: String { "\(machineName) · \(machineOnline ? "Online" : "Offline")" }
+    var machineID: String { group.machineID }
+    var machineName: String { group.machineName }
+    var machineOnline: Bool { group.machineOnline }
+    var machineVersion: String { group.machineVersion }
+    /// "Studio · Online".
+    var title: String { group.title }
 }
 
 enum ProjectDestinationCatalog {
+    /// `projects`' attached checkouts on the known machines, grouped and ordered by the core.
     static func groups(
-        projects: [Dieter_V1_Project],
-        projectReplicaEndpointIDs: [String: String],
-        endpoints: [MachineEndpoint],
-        fallbackEndpoint: MachineEndpoint
+        projects: [Dieter_V1_Project], endpoints: [MachineEndpoint], fallbackEndpoint: MachineEndpoint
     ) -> [ProjectDestinationGroup] {
-        let fallbackMachine = fallbackEndpoint.daemonID == nil ? nil : fallbackEndpoint
-        let destinations = projects.flatMap { project -> [ProjectDestination] in
-            project.checkouts.filter { !$0.detached }.map { checkout in
-                let machine =
-                    endpoints.first { $0.daemonID == checkout.daemonID }
-                    ?? (fallbackMachine?.daemonID == checkout.daemonID ? fallbackMachine : nil)
-                return ProjectDestination(
-                    project: project, machineID: machine?.id ?? "unavailable:\(checkout.daemonID)",
-                    machineName: machine?.name ?? checkout.daemonID, machineOnline: machine?.online ?? false,
-                    machineVersion: machine?.releaseVersion ?? "", checkoutID: checkout.id)
+        let machines = (endpoints + [fallbackEndpoint]).compactMap { endpoint -> ClientChatDestinationMachine? in
+            guard let daemonID = endpoint.daemonID else { return nil }
+            return .with {
+                $0.daemonID = daemonID
+                $0.id = endpoint.id
+                $0.name = endpoint.name
+                $0.online = endpoint.online
+                $0.version = endpoint.releaseVersion
             }
         }
-        let grouped = Dictionary(grouping: destinations, by: \ProjectDestination.machineID)
-        return grouped.compactMap { machineID, values in
-            guard let first = values.first else { return nil }
-            return ProjectDestinationGroup(
-                machineID: machineID,
-                machineName: first.machineName,
-                machineOnline: first.machineOnline,
-                machineVersion: first.machineVersion,
-                destinations: values.sorted(by: destinationOrder)
-            )
-        }.sorted(by: groupOrder)
+        var unique: [String: ClientChatDestinationMachine] = [:]
+        for machine in machines where unique[machine.daemonID] == nil { unique[machine.daemonID] = machine }
+        let input = ClientChatDestinationInput.with {
+            $0.projects = projects
+            $0.machines = machines.filter { unique[$0.daemonID] == $0 && !$0.daemonID.isEmpty }
+        }
+        let byID = Dictionary(projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return ClientChatDestinationGroups(rules: SharedRules.shared.chatDestinations(input: input.rulesData)).groups
+            .map {
+                group in
+                ProjectDestinationGroup(
+                    group: group,
+                    destinations: group.destinations.compactMap { destination in
+                        byID[destination.projectID].map {
+                            ProjectDestination(
+                                project: $0, destination: destination, machineName: group.machineName,
+                                machineOnline: group.machineOnline)
+                        }
+                    })
+            }
     }
 
-    static func destination(
-        projectID: String,
-        in groups: [ProjectDestinationGroup]
-    ) -> ProjectDestination? {
+    static func destination(projectID: String, in groups: [ProjectDestinationGroup]) -> ProjectDestination? {
         groups.lazy.flatMap(\.destinations).first { $0.project.id == projectID }
     }
 
     static func destination(
-        machineID: String,
-        projectID: String,
-        checkoutID: String,
-        in groups: [ProjectDestinationGroup]
+        machineID: String, projectID: String, checkoutID: String, in groups: [ProjectDestinationGroup]
     ) -> ProjectDestination? {
         guard let group = groups.first(where: { $0.machineID == machineID }) else { return nil }
         if !checkoutID.isEmpty,
-            let exact = group.destinations.first(where: {
-                $0.project.id == projectID && $0.checkoutID == checkoutID
-            })
+            let exact = group.destinations.first(where: { $0.project.id == projectID && $0.checkoutID == checkoutID })
         {
             return exact
         }
         return group.destinations.first { $0.project.id == projectID }
     }
 
+    /// The destination to show first, as the core picks it.
     static func preferredDestination(
-        preferredMachineID: String,
-        preferredProjectID: String,
-        preferredCheckoutID: String = "",
+        preferredMachineID: String, preferredProjectID: String, preferredCheckoutID: String = "",
         in groups: [ProjectDestinationGroup]
     ) -> ProjectDestination? {
-        let destinations = groups.flatMap(\.destinations)
-        if !preferredCheckoutID.isEmpty,
-            let exact = destinations.first(where: {
-                $0.checkoutID == preferredCheckoutID
-                    && (preferredProjectID.isEmpty || $0.project.id == preferredProjectID)
-            })
-        {
-            return exact
+        let encoded = ClientChatDestinationGroups.with { $0.groups = groups.map(\.group) }
+        let chosen = ClientChatDestination(
+            rules: SharedRules.shared.preferredChatDestination(
+                groups: encoded.rulesData, machineId: preferredMachineID, projectId: preferredProjectID,
+                checkoutId: preferredCheckoutID))
+        guard !chosen.projectID.isEmpty else { return nil }
+        return groups.lazy.flatMap(\.destinations).first {
+            $0.machineID == chosen.machineID && $0.project.id == chosen.projectID && $0.checkoutID == chosen.checkoutID
         }
-        if let preferredMachine = groups.first(where: { $0.machineID == preferredMachineID }) {
-            if !preferredProjectID.isEmpty,
-                let project = preferredMachine.destinations.first(where: {
-                    $0.project.id == preferredProjectID
-                })
-            {
-                return project
-            }
-            if let first = preferredMachine.destinations.first { return first }
-        }
-        if !preferredProjectID.isEmpty,
-            let project = destinations.first(where: { $0.project.id == preferredProjectID })
-        {
-            return project
-        }
-        return destinations.first
-    }
-
-    private static func destinationOrder(_ lhs: ProjectDestination, _ rhs: ProjectDestination) -> Bool {
-        let nameOrder = lhs.project.name.localizedCaseInsensitiveCompare(rhs.project.name)
-        if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
-        let pathOrder = (lhs.checkout?.path ?? lhs.checkoutID).localizedCaseInsensitiveCompare(
-            rhs.checkout?.path ?? rhs.checkoutID)
-        if pathOrder != .orderedSame { return pathOrder == .orderedAscending }
-        return lhs.project.id < rhs.project.id
-    }
-
-    private static func groupOrder(_ lhs: ProjectDestinationGroup, _ rhs: ProjectDestinationGroup) -> Bool {
-        if lhs.machineOnline != rhs.machineOnline { return lhs.machineOnline && !rhs.machineOnline }
-        let nameOrder = lhs.machineName.localizedCaseInsensitiveCompare(rhs.machineName)
-        if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
-        return lhs.machineID < rhs.machineID
     }
 }
 
 extension DieterStore {
-    func projectDestinationGroups(
-        projects candidates: [Dieter_V1_Project]? = nil
-    ) -> [ProjectDestinationGroup] {
+    func projectDestinationGroups(projects candidates: [Dieter_V1_Project]? = nil) -> [ProjectDestinationGroup] {
         ProjectDestinationCatalog.groups(
-            projects: candidates ?? projects.filter { !$0.archived },
-            projectReplicaEndpointIDs: projectReplicaEndpointIDs,
-            endpoints: endpoints,
-            fallbackEndpoint: endpoint
-        )
+            projects: candidates ?? projects.filter { !$0.archived }, endpoints: endpoints, fallbackEndpoint: endpoint)
     }
 }

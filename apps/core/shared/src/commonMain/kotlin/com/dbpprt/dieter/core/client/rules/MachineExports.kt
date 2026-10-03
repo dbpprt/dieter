@@ -1,5 +1,7 @@
 package com.dbpprt.dieter.core.client.rules
 
+import com.dbpprt.dieter.api.v1.GPUDevice
+import com.dbpprt.dieter.api.v1.GPUTelemetry
 import com.dbpprt.dieter.api.v1.GPUVendor
 import com.dbpprt.dieter.api.v1.MachineOperationAction
 import com.dbpprt.dieter.client.v1.MachineOperationCopy
@@ -7,6 +9,7 @@ import com.dbpprt.dieter.core.admin.MachineOperations
 import com.dbpprt.dieter.core.connection.Availability
 import com.dbpprt.dieter.core.identity.Gateway
 import com.dbpprt.dieter.core.machines.MachineFormats
+import com.dbpprt.dieter.core.machines.MachineRows
 import kotlin.time.Instant
 
 /**
@@ -35,15 +38,42 @@ object MachineExports {
     /** "38%", rounded half up. */
     fun percentage(value: Double): String = MachineFormats.percentage(value)
 
+    /** "Online" or "Offline". */
+    fun presence(online: Boolean): String = MachineRows.presence(online)
+
+    /** Why a machine the account no longer lists cannot be used. */
+    fun unenrolledMessage(): String = MachineRows.UNENROLLED
+
+    /** "64.0 GB total · 12.0 GB cached · 1.0 GB swap". */
+    fun memory(totalBytes: Long, cachedBytes: Long, swapBytes: Long): String = MachineFormats.memory(totalBytes, cachedBytes, swapBytes)
+
+    /** "macOS 26.1", leaving out what is blank. */
+    fun operatingSystem(osName: String, osVersion: String): String = MachineFormats.operatingSystem(osName, osVersion)
+
+    /** "AMD · gpu-0 · driver 24.1", leaving out what is unknown; [vendor] is a `GPUVendor` value. */
+    fun gpuDetail(vendor: Int, id: String, driverVersion: String): String =
+        MachineFormats.gpuDetail(GPUDevice(vendor = GPUVendor.fromValue(vendor) ?: GPUVendor.GPU_VENDOR_UNSPECIFIED, id = id, driver_version = driverVersion))
+
+    /** The device's name, else "GPU". */
+    fun gpuName(name: String): String = MachineFormats.gpuName(GPUDevice(name = name))
+
+    /** "21%", or "—" when the device reports no utilization. */
+    fun gpuUtilization(percent: Double, reported: Boolean): String = MachineFormats.gpuUtilization(GPUDevice(utilization_percent = percent.takeIf { reported }))
+
+    /** Why a machine reports no GPU devices: its own [reason], else that none is supported. */
+    fun gpuUnavailable(reason: String): String = MachineFormats.gpuUnavailable(GPUTelemetry(unavailable_reason = reason))
+
+    /** Why a machine's information is missing: the read's [error] (empty for none), else that an [online] machine sent none, else its [detail]. */
+    fun informationUnavailable(online: Boolean, detail: String, error: String): String = MachineFormats.informationUnavailable(online, detail, error)
+
+    fun isAgentProcess(kind: String): Boolean = MachineFormats.isAgentProcess(kind)
+
     /** "12 cores · load 1.2 / 0.8 / 0.5". */
     fun load(cores: Int, load1: Double, load5: Double, load15: Double): String = MachineFormats.load(cores, load1, load5, load15)
 
     /** "Mac16,1 · M4 Max  ·  macOS 26.1  ·  up 1h 1m", leaving out what is blank. */
     fun subtitle(hardwareModel: String, processor: String, osName: String, osVersion: String, uptimeSeconds: Long): String =
         MachineFormats.subtitle(hardwareModel, processor, osName, osVersion, uptimeSeconds)
-
-    /** "1 device", "2 devices", "3 processes": [noun] when [count] is 1, else [plural]. */
-    fun count(count: Int, noun: String, plural: String): String = MachineFormats.count(count, noun, plural)
 
     /** "2 agents active". */
     fun activeAgents(agents: Int): String = MachineFormats.activeAgents(agents)
@@ -80,11 +110,14 @@ object MachineExports {
     // --- Gateways ---
 
     /**
-     * The origin (`https://host:port`) of a gateway [address] as `SetGateways`
+     * The origin (`https://host:port`) of a gateway [address] as `UseGateway`
      * accepts it: `host`, `host:port`, or a URL; plaintext only on loopback.
      * Empty when the address does not parse or is not permitted.
      */
     fun gatewayOrigin(address: String): String = Gateway.parse(address)?.takeIf { it.permitted }?.origin ?: ""
+
+    /** The hosted gateway's name, for a gateway the core has not named yet. */
+    fun defaultGatewayName(): String = Gateway.DEFAULT.name
 
     /** The built-in gateway's origin, which gateway lists mark as primary. */
     fun defaultGatewayOrigin(): String = Gateway.DEFAULT.origin

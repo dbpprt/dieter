@@ -1,6 +1,8 @@
 # Go build and test output
 /dieter
 /dieter-gateway
+# `go build ./tools/e2e` run from the repository root
+/e2e
 /bin/
 /coverage.out
 *.test
@@ -27,6 +29,8 @@ __pycache__/
 
 # Local scratch output
 /tmp/
+# SwiftPM output when a package command runs from the repository root
+/.build/
 /.codex-tmp/
 /newsos.zip
 

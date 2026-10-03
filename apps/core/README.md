@@ -194,8 +194,8 @@ output reaches Swift through the terminals slice.
 - **No legacy import.** Neither app imports state from its versions before
   the core; there were no users yet. The macOS and iOS importer was built and
   then deleted unused. The Mac's gateway session file is the core's secure
-  store, so sign-in survives. Android deletes the earlier versions' unused
-  files on start (`data/UnusedStorage.kt`).
+  store, so sign-in survives. Files earlier Android versions left behind
+  are not cleaned up; reinstalling removes them.
 - **Harnesses retired.** The Apple adapter harness became the Mac's
   `SharedCore` target and `SharedCoreTests` (`just mac core-test`). The
   Android harness was deleted: `just core test` runs the same OkHttp

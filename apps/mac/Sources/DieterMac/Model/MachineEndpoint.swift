@@ -25,7 +25,7 @@ struct MachineEndpoint: Equatable, Hashable, Identifiable, Sendable {
     /// The gateway this machine is reached through.
     var gatewayEndpoint: MachineEndpoint {
         guard daemonID != nil else { return self }
-        return MachineEndpoint(name: "Dieter Gateway", host: host, port: port, secure: secure)
+        return MachineEndpoint(name: SharedRules.shared.defaultGatewayName(), host: host, port: port, secure: secure)
     }
 
     init(
@@ -67,8 +67,9 @@ struct MachineEndpoint: Equatable, Hashable, Identifiable, Sendable {
 
     /// The built-in gateway, before the core reports the configured ones.
     static var defaultGateway: MachineEndpoint {
-        MachineEndpoint(origin: SharedRules.shared.defaultGatewayOrigin(), name: "Dieter Gateway")
-            ?? MachineEndpoint(name: "Dieter Gateway", host: "gateway.getdieter.com", port: 443, secure: true)
+        let origin = SharedRules.shared.defaultGatewayOrigin()
+        return MachineEndpoint(origin: origin, name: SharedRules.shared.defaultGatewayName())
+            ?? MachineEndpoint(name: SharedRules.shared.defaultGatewayName(), host: origin, port: 443, secure: true)
     }
 
     /// Whether this is the built-in gateway, which lists mark as primary.
@@ -82,7 +83,8 @@ enum ConnectionPhase: Equatable, Sendable {
     case connecting
     case connected(version: String)
     case authenticationRequired
-    case incompatible(found: String)
+    /// The core's reason this client or the machine must update.
+    case incompatible(String)
     case failed(String)
 
     var isConnected: Bool {

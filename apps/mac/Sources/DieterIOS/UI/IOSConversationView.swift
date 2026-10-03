@@ -1188,9 +1188,7 @@
         }
 
         /// Fast mode shows as a bolt; the option is the provider's.
-        static func fastMode(_ agent: ClientAgentControlsState) -> Bool {
-            agent.options.contains { $0.id == "fast_mode" } && agent.optionValues["fast_mode"] == "true"
-        }
+        static func fastMode(_ agent: ClientAgentControlsState) -> Bool { agent.fastMode }
     }
 
     /// The pickers of the core's `AgentControlsState`; each pick is a choice
@@ -1216,14 +1214,8 @@
             .accessibilityIdentifier("\(identifierPrefix).model")
             .accessibilityValue(controls.modelLabel)
             if !controls.efforts.isEmpty {
-                Picker(
-                    "Reasoning",
-                    selection: Binding(
-                        get: { controls.selection.effort.isEmpty ? "default" : controls.selection.effort },
-                        set: { choose(.effort($0)) })
-                ) {
-                    Text("Default").tag("default")
-                    ForEach(controls.efforts, id: \.id) { Text($0.name).tag($0.id) }
+                Picker("Reasoning", selection: Binding(get: { controls.effortValue }, set: { choose(.effort($0)) })) {
+                    ForEach(controls.effortChoices, id: \.id) { Text($0.name).tag($0.id) }
                 }
                 .disabled(!controls.effortEnabled)
                 .accessibilityIdentifier("\(identifierPrefix).effort")
@@ -1249,20 +1241,18 @@
                                 $0.optionValue = next
                             }))
                 })
-            switch option.type.lowercased() {
-            case "boolean", "bool":
+            switch controls.optionKinds[option.id] ?? .text {
+            case .toggle:
                 Toggle(
                     isOn: Binding(
-                        get: { value.wrappedValue.lowercased() == "true" },
-                        set: { value.wrappedValue = $0 ? "true" : "false" })
+                        get: { controls.optionOn[option.id] ?? false },
+                        set: { value.wrappedValue = SharedRules.shared.toggleOptionValue(on: $0) })
                 ) {
-                    Label(option.name, systemImage: option.id == "fast_mode" ? "bolt.fill" : "switch.2")
+                    Label(option.name, systemImage: option.id == controls.fastOptionID ? "bolt.fill" : "switch.2")
                 }
-            case "enum", "select":
+            case .choice:
                 Picker(option.name, selection: value) {
-                    ForEach(option.choices, id: \.value) { choice in
-                        Text(choice.name.isEmpty ? choice.value : choice.name).tag(choice.value)
-                    }
+                    ForEach(option.choices, id: \.value) { choice in Text(choice.name).tag(choice.value) }
                 }
             default:
                 TextField(option.name, text: value)

@@ -20,8 +20,8 @@ struct TerminalsView: View {
                 HStack(spacing: 12) {
                     PaneTitleBlock(
                         title: "Terminals",
-                        subtitle:
-                            "\(visibleEntries.count) persistent \(visibleEntries.count == 1 ? "session" : "sessions")\(model.terminalScopeCardID == nil ? " across \(store.terminalOverviewMachines.count) machines" : " · Conversation workspace")",
+                        subtitle: model.terminalScopeCardID == nil
+                            ? store.terminalOverview.terminalOverviewStatus : model.terminalStatus,
                         prominent: true
                     )
                     Spacer()
@@ -90,9 +90,7 @@ struct TerminalsView: View {
             Button("Cancel", role: .cancel) { closeCandidate = nil }
         } message: {
             Text(
-                closeCandidate?.terminal.status == "running"
-                    ? "This explicitly ends the daemon-owned shell and its running command. Closing the Mac app does not."
-                    : "This removes the finished session and its scrollback.")
+                closeCandidate.map { $0.row.closeMessage } ?? "")
         }
         .alert("Rename terminal", isPresented: $renamePresented) {
             TextField("Name", text: $renameValue)
@@ -118,7 +116,8 @@ struct TerminalsView: View {
     private var visibleEntries: [TerminalOverviewEntry] {
         if model.terminalScopeCardID == nil { return store.terminalOverview.terminalOverviewEntries }
         return model.terminals.map {
-            TerminalOverviewEntry(machineID: model.target.endpointID, machineName: model.machineName, terminal: $0)
+            TerminalOverviewEntry(
+                machineID: model.target.endpointID, machineName: model.machineName, terminal: $0, row: model.row($0))
         }
     }
 
@@ -136,6 +135,7 @@ struct TerminalsView: View {
                 ForEach(visibleEntries) { entry in
                     TerminalTab(
                         terminal: entry.terminal,
+                        row: entry.row,
                         machineID: entry.machineID,
                         machineName: entry.machineName,
                         selected: entry.id == selectedEntryID,
@@ -178,7 +178,7 @@ struct TerminalsView: View {
                 initialColumns: Int(terminal.columns),
                 initialRows: Int(terminal.rows),
                 screen: model.terminalScreens[terminal.id] ?? TerminalScreenState(),
-                acceptsInput: terminal.status == "running" && model.terminalStreamConnected,
+                acceptsInput: model.row(terminal).acceptsInput,
                 send: { model.sendTerminalInput(id: terminal.id, data: $0) },
                 resize: { columns, rows in
                     Task { await model.resizeTerminal(id: terminal.id, columns: columns, rows: rows) }
@@ -190,9 +190,9 @@ struct TerminalsView: View {
             Divider().overlay(DieterTheme.border)
             HStack(spacing: 8) {
                 Circle()
-                    .fill(terminalStatusColor(terminal))
+                    .fill(model.row(terminal).tone.color)
                     .frame(width: 6, height: 6)
-                Text(terminalStatusText(terminal))
+                Text(model.row(terminal).status)
                     .foregroundStyle(DieterTheme.subtle)
                 if !model.machineName.isEmpty {
                     Text(model.machineName).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
@@ -265,24 +265,11 @@ struct TerminalsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(32)
     }
-
-    private func terminalStatusColor(_ terminal: Dieter_V1_Terminal) -> SwiftUI.Color {
-        if terminal.status != "running" {
-            return terminal.hasExitCode && terminal.exitCode == 0 ? DieterTheme.tertiary : DieterTheme.coral
-        }
-        return model.terminalStreamConnected ? DieterTheme.eyes : DieterTheme.amber
-    }
-
-    /// "Connected", "Reconnecting", or "Exited 1", as the core words it.
-    private func terminalStatusText(_ terminal: Dieter_V1_Terminal) -> String {
-        SharedRules.shared.terminalStatus(
-            status: terminal.status, exitCode: terminal.exitCode, hasExitCode: terminal.hasExitCode,
-            streamConnected: model.terminalStreamConnected)
-    }
 }
 
 private struct TerminalTab: View {
     let terminal: Dieter_V1_Terminal
+    let row: ClientTerminalRow
     let machineID: String
     let machineName: String
     let selected: Bool
@@ -295,7 +282,7 @@ private struct TerminalTab: View {
             Button(action: select) {
                 HStack(spacing: 7) {
                     Circle()
-                        .fill(terminal.status == "running" ? DieterTheme.eyes : DieterTheme.tertiary)
+                        .fill(row.running ? DieterTheme.eyes : DieterTheme.tertiary)
                         .frame(width: 5, height: 5)
                     Text(terminal.name)
                         .font(.system(size: 11, weight: selected ? .semibold : .medium))
@@ -309,8 +296,8 @@ private struct TerminalTab: View {
                         .overlay(Capsule().stroke(DieterTheme.border))
                         .accessibilityIdentifier("terminal.node.\(machineID)")
                         .smokeTarget("terminal.node.\(machineID).\(terminal.id)")
-                    if terminal.status != "running" {
-                        Text("exited")
+                    if !row.running {
+                        Text(row.status)
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(DieterTheme.tertiary)
                     }
@@ -378,7 +365,10 @@ private struct NewTerminalSheet: View {
     }
     private var machineHome: Bool { projectID.isEmpty }
     private var destinationDetail: String {
-        if machineHome { return selectedMachine.map { "\($0.online ? "Online" : "Offline") · Home directory" } ?? "" }
+        if machineHome {
+            return selectedMachine.map { "\(SharedRules.shared.machinePresence(online: $0.online)) · Home directory" }
+                ?? ""
+        }
         return selectedDestination.map { "\($0.machineName) · \($0.detail)" } ?? ""
     }
     private var canCreate: Bool {
@@ -458,7 +448,8 @@ private struct NewTerminalSheet: View {
                             .foregroundStyle(DieterTheme.shell)
                         Picker("Machine", selection: $machineID) {
                             ForEach(machines, id: \.id) { machine in
-                                Text("\(machine.name) · \(machine.online ? "Online" : "Offline")").tag(machine.id)
+                                Text("\(machine.name) · \(SharedRules.shared.machinePresence(online: machine.online))")
+                                    .tag(machine.id)
                             }
                         }
                         .labelsHidden()

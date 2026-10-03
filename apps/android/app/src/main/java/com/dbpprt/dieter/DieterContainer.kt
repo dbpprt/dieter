@@ -5,7 +5,6 @@ import android.content.Intent
 import android.net.Uri
 import com.dbpprt.dieter.connection.AndroidNotifications
 import com.dbpprt.dieter.core.CoreRuntime
-import com.dbpprt.dieter.data.UnusedStorage
 import com.dbpprt.dieter.settings.AppPreferences
 import com.dbpprt.dieter.sharedcore.ConnectionPolicy
 import com.dbpprt.dieter.sharedcore.SharedCore
@@ -46,7 +45,6 @@ class DieterContainer(context: Context) : AppHost {
     init {
         notifications.bind(core, appPreferences)
         core.start()
-        widgetScope.launch(Dispatchers.IO) { UnusedStorage.clear(appContext) }
         // Conflate while rendering instead of debouncing an active stream:
         // continuous changes must never starve the home-screen update.
         widgetScope.launch {

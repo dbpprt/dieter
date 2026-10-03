@@ -86,6 +86,7 @@ import com.dbpprt.dieter.core.conversation.TurnFailure
 import com.dbpprt.dieter.core.presentation.ConversationPresentation
 import com.dbpprt.dieter.core.presentation.Delivery
 import com.dbpprt.dieter.core.presentation.DeliveryState
+import com.dbpprt.dieter.core.presentation.Parts
 import com.dbpprt.dieter.core.presentation.TimelineItem
 import com.dbpprt.dieter.core.selection.AgentControls
 import com.dbpprt.dieter.ui.theme.DieterAbyss
@@ -670,10 +671,10 @@ internal fun QueuedMessageBlock(
                 Column(Modifier.padding(end = 9.dp)) {
                     parts.forEach { part ->
                         when {
-                            part.type == "text" && part.text.isNotBlank() -> SelectionContainer {
+                            Parts.isText(part) && part.text.isNotBlank() -> SelectionContainer {
                                 MessageMarkdown(part.text, compact = true)
                             }
-                            part.type == "file" -> AttachmentPart(part)
+                            Parts.isAttachment(part) -> AttachmentPart(part)
                             part.text.isNotBlank() -> MessageMarkdown(part.text, compact = true)
                         }
                     }

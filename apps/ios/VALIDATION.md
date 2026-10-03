@@ -1,5 +1,11 @@
 # iOS remote client validation
 
+> **Historical engineering record.** This describes the iOS client before it
+> moved onto the shared core, when it had its own Swift connection manager.
+> For the current architecture and its validation, see the
+> [iOS cutover plan](../../docs/ios-shared-core-integration-plan-2026-10-02.md#5-as-built)
+> and the [iOS README](README.md).
+
 13 September 2026. Developed in the separate `codex/ios-remote-client` worktree;
 updated with `main` at `28352cd`, including the dedicated Apple release signing
 setup.

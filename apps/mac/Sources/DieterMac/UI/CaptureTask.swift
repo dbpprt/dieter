@@ -1,62 +1,24 @@
 import AppKit
 import ApplicationServices
 import DieterAPI
+import DieterShared
 import SwiftUI
 
 struct CaptureBrowserContext: Sendable {
     let url: String
     let browser: Bool
 
+    /// `value` trimmed when it is an http(s) page a capture may record.
     static func validatedURL(_ value: String?) -> String? {
-        guard let value, let url = URL(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
-            ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil,
-            url.port.map({ (1...65535).contains($0) }) ?? true
-        else { return nil }
-        return url.absoluteString
+        guard let value else { return nil }
+        let page = SharedRules.shared.capturePage(value: value)
+        return page.isEmpty ? nil : page
     }
 
+    /// The page's "host" or "host:port" as hostnames store it.
     static func hostname(_ value: String) -> String? {
-        guard let value = validatedURL(value), let url = URL(string: value), let host = normalizedHost(url) else {
-            return nil
-        }
-        return url.port.map { address(host: host, port: $0) } ?? host
-    }
-
-    private static func normalizedHost(_ url: URL) -> String? {
-        guard let host = url.host else { return nil }
-        var normalized = host.lowercased()
-        if normalized.hasSuffix(".") { normalized.removeLast() }
-        if normalized.hasPrefix("["), normalized.hasSuffix("]") {
-            normalized = String(normalized.dropFirst().dropLast())
-        }
-        // The daemon canonicalizes IP literals before storing them. Compare the
-        // same representation, including IPv4-mapped IPv6 addresses.
-        var ipv6 = in6_addr()
-        guard inet_pton(AF_INET6, normalized, &ipv6) == 1 else { return normalized }
-        let bytes = withUnsafeBytes(of: ipv6) { Array($0) }
-        if bytes.prefix(12).elementsEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255]) {
-            return bytes.suffix(4).map(String.init).joined(separator: ".")
-        }
-        // Use hexadecimal groups for non-mapped addresses, matching Go's
-        // net.IP.String even when Darwin would print a dotted IPv4 suffix.
-        let words = stride(from: 0, to: 16, by: 2).map { Int(bytes[$0]) << 8 | Int(bytes[$0 + 1]) }
-        var longest = 0..<0
-        var start = 0
-        while start < words.count {
-            guard words[start] == 0 else { start += 1; continue }
-            var end = start + 1
-            while end < words.count && words[end] == 0 { end += 1 }
-            if end - start > longest.count { longest = start..<end }
-            start = end
-        }
-        let groups = words.map { String($0, radix: 16) }
-        guard longest.count >= 2 else { return groups.joined(separator: ":") }
-        return groups[..<longest.lowerBound].joined(separator: ":") + "::"
-            + groups[longest.upperBound...].joined(separator: ":")
-    }
-
-    private static func address(host: String, port: Int) -> String {
-        "\(host.contains(":") ? "[\(host)]" : host):\(port)"
+        let host = SharedRules.shared.captureHostname(value: value)
+        return host.isEmpty ? nil : host
     }
 
     func matchingProjects(_ projects: [Dieter_V1_Project]) -> [Dieter_V1_Project] {
@@ -67,15 +29,15 @@ struct CaptureBrowserContext: Sendable {
         matches(boards, hostnames: \.hostnames)
     }
 
+    /// The candidates whose hostnames route this page, as the core matches them.
     private func matches<T>(_ candidates: [T], hostnames: KeyPath<T, [String]>) -> [T] {
-        guard let value = Self.validatedURL(url), let page = URL(string: value), let host = Self.normalizedHost(page)
-        else { return [] }
-        // A port-specific mapping overrides a legacy host-wide mapping. URLs
-        // with an omitted default port still identify the same HTTP endpoint.
-        let port = page.port ?? (page.scheme?.lowercased() == "https" ? 443 : 80)
-        let address = Self.address(host: host, port: port)
-        let exact = candidates.filter { $0[keyPath: hostnames].contains(address) }
-        return exact.isEmpty ? candidates.filter { $0[keyPath: hostnames].contains(host) } : exact
+        let sets = ClientHostnameSets.with {
+            $0.sets = candidates.map { candidate in .with { $0.hostnames = candidate[keyPath: hostnames] } }
+        }
+        return SharedRules.shared.captureMatches(url: url, candidates: sets.rulesData).compactMap { index in
+            let position = Int(truncating: index)
+            return candidates.indices.contains(position) ? candidates[position] : nil
+        }
     }
 
     static func read(bundleID: String?, pid: pid_t?) async -> Self {

@@ -40,15 +40,11 @@
         private var boardID: String { form.intent.boardID.isEmpty ? resolved.boardID : form.intent.boardID }
         private var board: Dieter_V1_Board? { app.board(boardID) }
         private var checkouts: [Dieter_V1_Checkout] {
-            app.project(projectID)?.checkouts.filter { !$0.detached } ?? []
+            app.project(projectID)?.checkoutChoices ?? []
         }
         private var labels: [Dieter_V1_Label] { chat ? [] : board?.labels ?? [] }
         private var submitting: Bool { submittingLane != nil }
         private var canSubmit: Bool { !submitting && form.previewed && preview.problem.isEmpty }
-        private var edited: Bool {
-            !form.intent.title.isEmpty || !form.intent.prompt.isEmpty || !form.intent.labelIds.isEmpty
-                || !form.attachments.isEmpty
-        }
 
         var body: some View {
             NavigationStack {
@@ -79,7 +75,7 @@
                 }
                 .safeAreaInset(edge: .bottom) { submissionBar }
             }
-            .interactiveDismissDisabled(submitting || edited)
+            .interactiveDismissDisabled(submitting || form.edited)
             .task { prepare() }
             .task(id: PreviewKey(prepared: prepared, intent: form.intent, attachments: form.attachments.count)) {
                 guard prepared else { return }
@@ -189,10 +185,7 @@
                         get: { projectID },
                         set: { id in
                             focusedField = nil
-                            form.intent.projectID = id
-                            form.intent.boardID = ""
-                            form.intent.checkoutID = ""
-                            form.intent.labelIds = []
+                            form.chooseProject(id)
                         })
                 ) {
                     if projectID.isEmpty { Text("Choose a project").tag("") }
@@ -206,8 +199,7 @@
                             get: { boardID },
                             set: { id in
                                 focusedField = nil
-                                form.intent.boardID = id
-                                form.intent.labelIds = []
+                                form.chooseBoard(id)
                             })
                     ) {
                         if boardID.isEmpty { Text("Choose a board").tag("") }
@@ -227,9 +219,9 @@
                 ) {
                     if resolved.checkoutID.isEmpty { Text("Choose a checkout").tag("") }
                     ForEach(checkouts, id: \.id) { checkout in
+                        let machine = app.machine(checkout.daemonID)
                         Text(
-                            [app.machine(checkout.daemonID)?.name ?? checkout.daemonID, checkout.name]
-                                .filter { !$0.isEmpty }.joined(separator: " · ")
+                            "\(machine?.displayName ?? checkout.daemonID) · \(checkout.title(machineOnline: machine?.online ?? false))"
                         )
                         .tag(checkout.id)
                     }
@@ -263,7 +255,11 @@
             if !labels.isEmpty {
                 Section("Labels") {
                     ForEach(labels, id: \.id) { label in
-                        Toggle(isOn: labelSelection(label.id)) {
+                        Toggle(
+                            isOn: Binding(
+                                get: { form.intent.labelIds.contains(label.id) },
+                                set: { form.setLabel(label.id, selected: $0) })
+                        ) {
                             Label(label.name, systemImage: "tag.fill")
                         }
                         .accessibilityIdentifier("ios.create.label.\(label.id)")
@@ -386,15 +382,6 @@
         }
 
         // MARK: - Choices
-
-        private func labelSelection(_ id: String) -> Binding<Bool> {
-            Binding(
-                get: { form.intent.labelIds.contains(id) },
-                set: { selected in
-                    form.intent.labelIds.removeAll { $0 == id }
-                    if selected { form.intent.labelIds = (form.intent.labelIds + [id]).sorted() }
-                })
-        }
 
         /// New conversations in the project run on the picked checkout; the core remembers it.
         private func pickCheckout(_ id: String) {

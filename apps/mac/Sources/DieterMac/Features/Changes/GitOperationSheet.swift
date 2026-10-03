@@ -65,105 +65,64 @@ struct GitOperationSheet: View {
     private var ready: Bool { SharedRules.shared.gitOperationReady(form: form.rulesData) }
 
     @ViewBuilder private func field(_ input: ClientGitOperationFormSpec.Input) -> some View {
-        switch input {
-        case .subject:
-            // A local merge takes a subject only for its squash commit.
-            if kind != .mergeLocal || form.strategy == "squash" {
-                WorkspaceSheetField(label: subjectLabel, placeholder: subjectPlaceholder, text: $form.subject)
-            }
-        case .body:
-            WorkspaceSheetField(
-                label: "DESCRIPTION",
-                placeholder: kind == .createPullRequest
-                    ? "Explain what changed and how it was verified" : "Optional commit body",
-                text: $form.body, multiline: true)
-        case .strategy:
-            WorkspaceSheetPickerLabel("MERGE STRATEGY")
-            Picker("Merge strategy", selection: $form.strategy) {
-                ForEach(spec.strategies, id: \.strategy) { Text($0.title).tag($0.strategy) }
-            }
-            .labelsHidden().pickerStyle(.segmented)
-        case .stageAll:
-            WorkspaceSheetOptions { Toggle("Stage all changes", isOn: $form.stageAll) }
-        case .fetch:
-            WorkspaceSheetOptions { Toggle("Fetch the configured base remote", isOn: $form.fetch) }
-        case .validate:
-            WorkspaceSheetOptions { Toggle(validateTitle, isOn: $form.validate) }
-        case .push:
-            WorkspaceSheetOptions { Toggle("Push branch before creating", isOn: $form.push) }
-        case .draft:
-            WorkspaceSheetOptions { Toggle("Create as draft", isOn: $form.draft) }
-        case .forceWithLease:
-            WorkspaceSheetOptions { Toggle("Force with lease", isOn: $form.forceWithLease) }
-        case .expectedRemoteSha:
-            if form.forceWithLease {
+        let copy = spec.copy
+        if SharedRules.shared.gitOperationShows(form: form.rulesData, input: Int32(input.rawValue)) {
+            switch input {
+            case .subject:
                 WorkspaceSheetField(
-                    label: "EXPECTED REMOTE HEAD", placeholder: "Commit SHA", text: $form.expectedRemoteSha)
-                Text("The push is rejected if the remote branch no longer matches this exact revision.")
+                    label: copy.subject.uppercased(), placeholder: copy.subjectPlaceholder, text: $form.subject)
+            case .body:
+                WorkspaceSheetField(
+                    label: copy.body.uppercased(), placeholder: copy.bodyPlaceholder, text: $form.body,
+                    multiline: true)
+            case .strategy:
+                WorkspaceSheetPickerLabel(copy.strategy.uppercased())
+                Picker(copy.strategy, selection: $form.strategy) {
+                    ForEach(spec.strategies, id: \.strategy) { Text($0.title).tag($0.strategy) }
+                }
+                .labelsHidden().pickerStyle(.segmented)
+            case .stageAll:
+                WorkspaceSheetOptions { Toggle(copy.stageAll, isOn: $form.stageAll) }
+            case .fetch:
+                WorkspaceSheetOptions { Toggle(copy.fetch, isOn: $form.fetch) }
+            case .validate:
+                WorkspaceSheetOptions { Toggle(copy.validate, isOn: $form.validate) }
+            case .push:
+                WorkspaceSheetOptions { Toggle(copy.push, isOn: $form.push) }
+            case .draft:
+                WorkspaceSheetOptions { Toggle(copy.draft, isOn: $form.draft) }
+            case .forceWithLease:
+                WorkspaceSheetOptions { Toggle(copy.forceWithLease, isOn: $form.forceWithLease) }
+            case .expectedRemoteSha:
+                WorkspaceSheetField(
+                    label: copy.expectedRemoteSha.uppercased(), placeholder: copy.expectedRemoteShaPlaceholder,
+                    text: $form.expectedRemoteSha)
+                Text(copy.expectedRemoteShaHelp)
                     .font(DieterFont.meta).foregroundStyle(DieterTheme.tertiary).fixedSize(
                         horizontal: false, vertical: true)
+            case .targetCardID:
+                WorkspaceSheetField(
+                    label: copy.targetCardID.uppercased(), placeholder: copy.targetCardIDPlaceholder,
+                    text: $form.targetCardID)
+            default:
+                EmptyView()
             }
-        case .targetCardID:
-            WorkspaceSheetField(label: "DESTINATION CARD ID", placeholder: "c_…", text: $form.targetCardID)
-        default:
-            EmptyView()
-        }
-    }
-
-    private var subjectLabel: String {
-        switch kind {
-        case .createPullRequest: "PULL REQUEST TITLE"
-        case .mergeLocal: "SQUASH COMMIT SUBJECT"
-        default: "COMMIT SUBJECT"
-        }
-    }
-
-    private var subjectPlaceholder: String {
-        switch kind {
-        case .createPullRequest: "Summarize the proposed change"
-        case .mergeLocal: "Summarize the integrated work"
-        default: "Summarize the change"
-        }
-    }
-
-    private var validateTitle: String {
-        switch kind {
-        case .update: "Run project validation after rebasing"
-        case .mergeLocal: "Validate the isolated integration result"
-        case .continueConflict: "Run validation after continuing"
-        default: "Run validation"
         }
     }
 
     @ViewBuilder private var notice: some View {
-        switch kind {
-        case .discard:
+        if spec.hasNotice {
             WorkspaceSheetNotice(
-                title: "Recovery is created first",
-                detail:
-                    "Dieter saves recovery artifacts before removing this workspace. Its uncommitted changes and managed branch will no longer remain in active use.",
-                symbol: "archivebox.fill",
-                tint: DieterTheme.coral
-            )
-        case .cleanup:
-            WorkspaceSheetNotice(
-                title: "Clean, integrated work only",
-                detail: "Cleanup stops if the branch still has changes or has not been integrated.",
-                symbol: "checkmark.shield.fill",
-                tint: DieterTheme.diffAddition
-            )
-        case .mergePullRequest:
-            WorkspaceSheetNotice(
-                title: "Head revision is protected",
-                detail: "The provider verifies that the pull request head still matches this workspace before merging.",
-                symbol: "lock.shield.fill", tint: DieterTheme.diffAddition)
-        case .continueConflict:
-            WorkspaceSheetNotice(
-                title: "Confirm conflicts are resolved",
-                detail: "Continue only after every conflict marker has been resolved and the files have been saved.",
-                symbol: "exclamationmark.triangle.fill", tint: DieterTheme.amber)
-        default:
-            EmptyView()
+                title: spec.notice.title, detail: spec.notice.detail, symbol: noticeSymbol,
+                tint: WorkspaceToneStyle.color(spec.notice.tone))
+        }
+    }
+
+    private var noticeSymbol: String {
+        switch spec.notice.tone {
+        case .danger: "archivebox.fill"
+        case .warning: "exclamationmark.triangle.fill"
+        default: "checkmark.shield.fill"
         }
     }
 

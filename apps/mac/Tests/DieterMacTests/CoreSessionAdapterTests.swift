@@ -144,12 +144,12 @@ struct CoreSessionAdapterTests {
                     .with {
                         $0.id = "d_mac"; $0.name = "Mac"; $0.online = true; $0.route = "Local"
                         $0.releaseVersion = "0.4.340"
-                        $0.compatibility = "COMPATIBILITY_STATUS_COMPATIBLE"
+                        $0.compatible = true
                         $0.detail = "Local · 3 ms"; $0.available = true
                     },
                     .with {
                         $0.id = "d_old"; $0.name = "Old"; $0.online = true; $0.route = "Relay"
-                        $0.compatibility = "COMPATIBILITY_STATUS_UPDATE_REQUIRED"
+                        $0.compatible = false
                         $0.detail = "Update required · Dieter 0.4.1 (requires 0.4.300)"
                         $0.unavailableMessage = "Dieter 0.4.1 needs an update to 0.4.300."
                     },

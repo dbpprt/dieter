@@ -57,6 +57,26 @@ class AccountStore(private val storage: CoreStorage) {
         save(current.copy(gateways = gateways, active = active))
     }
 
+    /** Makes [gateway] active, adding it when its origin is new ("Custom" when unnamed) and renaming it to a non-blank name otherwise. */
+    fun use(gateway: Gateway) {
+        if (!gateway.permitted) throw CoreException(FailureKind.PERMANENT, "Remote gateways must use HTTPS (${gateway.host}).")
+        val current = mutableState.value
+        val existing = current.gateways.firstOrNull { it.origin == gateway.origin }
+        val active = existing?.let { if (gateway.name.isBlank()) it else it.copy(name = gateway.name) } ?: gateway.copy(name = gateway.name.ifBlank { "Custom" })
+        val gateways = if (existing == null) current.gateways + active else current.gateways.map { if (it.origin == active.origin) active else it }
+        if (gateways != current.gateways || active != current.active) save(current.copy(gateways = gateways, active = active))
+    }
+
+    /** Removes the gateway at [origin]; the last one stays. The first remaining one becomes active in place of a removed active one. */
+    fun remove(origin: String) {
+        val current = mutableState.value
+        if (current.gateways.none { it.origin == origin }) return
+        if (current.gateways.size == 1) throw CoreException(FailureKind.PERMANENT, "At least one Dieter gateway is required.")
+        val gateways = current.gateways.filter { it.origin != origin }
+        val active = current.active.takeIf { it.origin != origin } ?: gateways.first()
+        save(current.copy(gateways = gateways, active = active, preferredMachine = current.preferredMachine - origin, desiredConnected = current.desiredConnected - origin))
+    }
+
     fun select(origin: String) {
         val current = mutableState.value
         val gateway = current.gateways.firstOrNull { it.origin == origin } ?: return

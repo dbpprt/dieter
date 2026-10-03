@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import Foundation
 import SharedCore
 import OSLog
@@ -183,15 +184,9 @@ extension DieterStore {
             let machine = machines.first(where: { $0.id == machineID })
                 ?? (endpoint.id == machineID ? endpoint : nil), let daemonID = machine.daemonID
         else {
-            throw NSError(
-                domain: "DieterMachine", code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Select an enrolled machine."])
+            throw CoreFailure(kind: .permanent, message: SharedRules.shared.unenrolledMachineMessage())
         }
-        guard machine.online else {
-            throw NSError(
-                domain: "DieterMachine", code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "\(machine.name) is offline."])
-        }
+        if let reason = unavailableReason(machine) { throw CoreFailure(kind: .transient, message: reason) }
         return try await administer {
             $0.directories = .with {
                 $0.daemonID = daemonID
@@ -210,18 +205,15 @@ extension DieterStore {
                 let selected = machines.first(where: { $0.id == machineID })
                     ?? (endpoint.id == machineID ? endpoint : nil)
             else {
-                throw NSError(
-                    domain: "DieterMachine", code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "The selected machine is no longer enrolled."])
+                throw CoreFailure(kind: .permanent, message: SharedRules.shared.unenrolledMachineMessage())
             }
             target = selected
         } else {
             target = endpoint
         }
-        guard target.online, let daemonID = target.daemonID else {
-            throw NSError(
-                domain: "DieterMachine", code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "\(target.name) is offline."])
+        if let reason = unavailableReason(target) { throw CoreFailure(kind: .transient, message: reason) }
+        guard let daemonID = target.daemonID else {
+            throw CoreFailure(kind: .permanent, message: SharedRules.shared.unenrolledMachineMessage())
         }
         // The core keeps one operation per intent, so a retry never creates twice.
         let request = draft.request()
@@ -326,7 +318,7 @@ extension DieterStore {
         description: String = "",
         doneArchivePolicy: String,
         baseRemote: String = "",
-        remotePublishMode: String = RemotePublishMode.manual.rawValue
+        remotePublishMode: String = AdminChoices.options.defaultPublishMode
     ) async throws -> Dieter_V1_Board? {
         try await administer {
             $0.createBoard = .with {

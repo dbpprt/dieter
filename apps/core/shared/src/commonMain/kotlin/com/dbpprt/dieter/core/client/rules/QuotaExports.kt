@@ -30,4 +30,9 @@ object QuotaExports {
      */
     fun warning(unavailable: String, freshUntilMillis: Long, nowMillis: Long): String =
         Quotas.warning(unavailable, FormatExports.instant(freshUntilMillis), Instant.fromEpochMilliseconds(nowMillis)).orEmpty()
+
+    /** The confirmation before a reset credit is used: "Use one OpenAI reset credit?". */
+    fun resetTitle(): String = Quotas.RESET_TITLE
+
+    fun resetMessage(): String = Quotas.RESET_MESSAGE
 }

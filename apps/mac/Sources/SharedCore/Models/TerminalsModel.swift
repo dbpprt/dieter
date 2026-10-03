@@ -7,11 +7,16 @@ package struct TerminalOverviewEntry: Identifiable, Equatable, Sendable {
     package let machineID: String
     package let machineName: String
     package var terminal: Dieter_V1_Terminal
+    /// How the core presents the terminal in tabs.
+    package var row: ClientTerminalRow
 
-    package init(machineID: String, machineName: String, terminal: Dieter_V1_Terminal) {
+    package init(
+        machineID: String, machineName: String, terminal: Dieter_V1_Terminal, row: ClientTerminalRow = .init()
+    ) {
         self.machineID = machineID
         self.machineName = machineName
         self.terminal = terminal
+        self.row = row
     }
 
     package var id: String { Self.id(machineID: machineID, terminalID: terminal.id) }
@@ -45,6 +50,10 @@ package final class TerminalsModel {
     package var terminalStreamConnected = false
     package var terminalError: String?
     package var errorMessage: String?
+    /// Every terminal as the core presents it beside the others, by ID.
+    package private(set) var terminalRows: [String: ClientTerminalRow] = [:]
+    /// The surface's status line, as the core words it.
+    package private(set) var terminalStatus = ""
     package var createTerminalPresented = false
     @ObservationIgnored package var terminalOutputAccumulator = TerminalOutputAccumulator()
     @ObservationIgnored package var onCreated: @MainActor () -> Void = {}
@@ -68,6 +77,11 @@ package final class TerminalsModel {
     }
 
     package var selectedTerminal: Dieter_V1_Terminal? { terminals.first { $0.id == selectedTerminalID } }
+
+    /// How the core presents `terminal`: its status, tone, and whether it takes input.
+    package func row(_ terminal: Dieter_V1_Terminal) -> ClientTerminalRow {
+        terminalRows[terminal.id] ?? ClientTerminalRow()
+    }
 
     /// Shows `target`'s terminals through a surface of this model's own: the
     /// conversation's when it names one, else the project's or the machine's.
@@ -142,6 +156,9 @@ package final class TerminalsModel {
         let error = slice.error.isEmpty ? nil : slice.error
         if terminalError != error { terminalError = error }
         if terminalStreamConnected != slice.streamConnected { terminalStreamConnected = slice.streamConnected }
+        let rows = Dictionary(slice.rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        if terminalRows != rows { terminalRows = rows }
+        if terminalStatus != slice.status { terminalStatus = slice.status }
         let live = Set(slice.terminals.map(\.id))
         if terminalScreens.keys.contains(where: { !live.contains($0) }) {
             terminalScreens = terminalScreens.filter { live.contains($0.key) }

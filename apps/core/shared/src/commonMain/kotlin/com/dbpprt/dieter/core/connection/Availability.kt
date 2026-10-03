@@ -1,5 +1,6 @@
 package com.dbpprt.dieter.core.connection
 
+import com.dbpprt.dieter.client.v1.Tone
 import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.core.presentation.Ages
 import kotlin.time.Duration
@@ -92,13 +93,13 @@ object Availability {
     /** "Updated just now", "Updated 5m ago", or "Waiting for first update". */
     fun updated(lastAppliedAt: Instant?, now: Instant): String {
         lastAppliedAt ?: return "Waiting for first update"
-        return "Updated " + ago(lastAppliedAt, now)
+        return "Updated " + Ages.ago(lastAppliedAt, now)
     }
 
     /** "Last connected just now", "Last connected 5m ago", or "Last connected unknown". */
     fun lastConnected(at: Instant?, now: Instant): String {
         at ?: return "Last connected unknown"
-        return "Last connected " + ago(at, now)
+        return "Last connected " + Ages.ago(at, now)
     }
 
     /**
@@ -113,7 +114,13 @@ object Availability {
     fun workspaceLive(phase: ConnectionPhase, feedLive: Boolean, projectionPending: Boolean): Boolean =
         phase == ConnectionPhase.CONNECTED && feedLive && !projectionPending
 
-    private fun ago(at: Instant, now: Instant): String = Ages.span(now - at)?.let { "${it.compact} ago" } ?: "just now"
+    /** How [phase] reads, for its color: connected succeeds, a connection on its way or a sign-in warns, a blocked one is danger. */
+    fun tone(phase: ConnectionPhase): Tone = when (phase) {
+        ConnectionPhase.CONNECTED, ConnectionPhase.SYNCING -> Tone.TONE_SUCCESS
+        ConnectionPhase.CONNECTING, ConnectionPhase.RECONNECTING, ConnectionPhase.AUTH_REQUIRED -> Tone.TONE_WARNING
+        ConnectionPhase.UPDATE_REQUIRED, ConnectionPhase.NO_MACHINE -> Tone.TONE_DANGER
+        ConnectionPhase.DISCONNECTED -> Tone.TONE_NEUTRAL
+    }
 
     /** A short connection status, e.g. for a header chip. */
     fun label(phase: ConnectionPhase): String = when (phase) {

@@ -1,4 +1,5 @@
 import DieterAPI
+import DieterShared
 import Foundation
 import SharedCore
 import Testing
@@ -266,12 +267,13 @@ private final class HEVCFrameCount: @unchecked Sendable {
         default: break
         }
         if !applied, let binding, let answer {
-            try RemoteDesktopSessionTrust.verify(
-                binding: binding, sessionID: sessionID, clientNonce: request.clientNonce,
-                offerSDP: request.offer.sdp, answerSDP: answer, daemonCertificatePEM: certificate)
-            try #require(
-                !binding.controlGranted && binding.displayID == request.displayID
-                    && binding.inputProtocolVersion == DieterRemoteDesktopProtocol.number)
+            // The fixture daemon's answer must pass the core's own binding check.
+            let problem = SharedRules.shared.screenBindingProblem(
+                binding: binding.rulesData, sessionId: sessionID, request: request.rulesData, answerSdp: answer,
+                certificatePem: String(decoding: certificate, as: UTF8.self), nowMillis: Date().epochMillis,
+                signatures: CoreCryptoKitSignatures())
+            try #require(problem.isEmpty, Comment(rawValue: problem))
+            try #require(!binding.controlGranted)
             var initial = Dieter_V1_RemoteDesktopReceiverFeedback();
             initial.protocolVersion = DieterRemoteDesktopProtocol.number;
             initial.inputEpoch = binding.inputEpoch

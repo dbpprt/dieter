@@ -42,6 +42,9 @@ interface ScreenMediaEvents {
     fun channelMessage(label: String, bytes: ByteArray)
     fun decoded(rtpTimestamp: UInt)
     fun presented(rtpTimestamp: UInt)
+
+    /** The selected candidate pair runs through a TURN relay ([relayed]) or directly. */
+    fun mediaPath(relayed: Boolean)
     fun hevcUnavailable(reason: String)
     fun failure(message: String)
 }

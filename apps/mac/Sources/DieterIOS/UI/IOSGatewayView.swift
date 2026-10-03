@@ -77,12 +77,12 @@
                             .autocorrectionDisabled()
                             .accessibilityIdentifier("ios.auth.token-field")
                         Button("Connect with token") {
-                            let value = token.trimmingCharacters(in: .whitespacesAndNewlines)
+                            // The core trims the token and rejects a blank one.
                             Task {
-                                if await adopt(gatewayAddress: address, token: value) { token = "" }
+                                if await adopt(gatewayAddress: address, token: token) { token = "" }
                             }
                         }
-                        .disabled(busy || origin.isEmpty || token.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(busy || origin.isEmpty || token.allSatisfy(\.isWhitespace))
                         .accessibilityIdentifier("ios.auth.connect-token")
                     }
                     .accessibilityIdentifier("ios.auth.token-options")

@@ -300,8 +300,7 @@ struct AgentComposerMenus: View {
                 title: controls.effortLabel, symbol: "sparkles", help: "Reasoning", compact: compact,
                 maximumWidth: 80
             ) {
-                Button("Default") { choose(.effort("default")) }
-                ForEach(controls.efforts, id: \.id) { effort in
+                ForEach(controls.effortChoices, id: \.id) { effort in
                     Button(effort.name) { choose(.effort(effort.id)) }
                 }
             }
@@ -311,24 +310,7 @@ struct AgentComposerMenus: View {
             .disabled(!controls.effortEnabled)
         }
         ComposerProviderOptions(
-            options: controls.options,
-            values: Binding(
-                get: { controls.optionValues },
-                set: { values in
-                    for option in controls.options {
-                        guard let value = values[option.id], value != controls.optionValues[option.id] else {
-                            continue
-                        }
-                        choose(
-                            .option(
-                                .with {
-                                    $0.id = option.id
-                                    $0.optionValue = value
-                                }))
-                    }
-                }),
-            enabled: { controls.optionEnabled[$0.id] ?? false },
-            identity: identity, identifierPrefix: identifierPrefix
+            controls: controls, choose: choose, identity: identity, identifierPrefix: identifierPrefix
         )
         .smokeTarget("\(identifierPrefix).provider-options")
         .fixedSize()
@@ -337,20 +319,20 @@ struct AgentComposerMenus: View {
 
 /// Fast remains directly accessible; other provider fields share one popover.
 struct ComposerProviderOptions: View {
-    let options: [Dieter_V1_ProviderOption]
-    @Binding var values: [String: String]
-    /// Whether an option may change now.
-    var enabled: (Dieter_V1_ProviderOption) -> Bool = { _ in true }
+    let controls: ClientAgentControlsState
+    let choose: (ClientAgentChoice.OneOf_Choice) -> Void
     let identity: String
     let identifierPrefix: String
     @State private var presented = false
 
-    private var additionalOptions: [Dieter_V1_ProviderOption] { options.filter { $0.id != "fast_mode" } }
+    private var options: [Dieter_V1_ProviderOption] { controls.options }
+    private var additionalOptions: [Dieter_V1_ProviderOption] { options.filter { $0.id != controls.fastOptionID } }
+    private func enabled(_ option: Dieter_V1_ProviderOption) -> Bool { controls.optionEnabled[option.id] ?? false }
 
     var body: some View {
         HStack(spacing: 4) {
-            if let fast = options.first(where: { $0.id == "fast_mode" }) {
-                ProviderOptionChip(option: fast, values: $values, isEnabled: enabled(fast))
+            if let fast = options.first(where: { $0.id == controls.fastOptionID }) {
+                ProviderOptionChip(option: fast, controls: controls, choose: choose, isEnabled: enabled(fast))
                     .smokeTarget("\(identifierPrefix).fast-mode")
             }
             if !additionalOptions.isEmpty {
@@ -369,7 +351,7 @@ struct ComposerProviderOptions: View {
                 .popover(isPresented: $presented) {
                     Form {
                         ForEach(additionalOptions, id: \.id) { option in
-                            ProviderOptionField(option: option, values: $values)
+                            ProviderOptionField(option: option, controls: controls, choose: choose)
                                 .disabled(!enabled(option))
                                 .smokeTarget("\(identifierPrefix).other-option.\(option.id)")
                         }

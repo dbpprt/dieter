@@ -155,7 +155,6 @@ final class ConversationContentModel {
     var sourceURL: URL? { selectedTab?.sourceURL }
     var rootPath: String { selectedTab?.rootPath ?? "" }
     var navigationID: UUID { selectedTab?.navigationID ?? selectedTabID ?? UUID() }
-    var browserAllowsLoopback: Bool { selectedTab?.browser.allowsLoopback ?? false }
     var addablePanelKinds: [ConversationPanelKind] {
         addablePanelKinds(for: conversationID)
     }

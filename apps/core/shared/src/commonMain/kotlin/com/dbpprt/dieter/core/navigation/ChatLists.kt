@@ -141,4 +141,11 @@ object ChatLists {
     /** Chats hidden behind "Show more", when a preview applies. */
     fun hidden(projectChats: List<Card>, query: String): Int =
         if (query.isNotBlank()) 0 else (projectChats.size - NavigationLayout.PROJECT_CHAT_PREVIEW).coerceAtLeast(0)
+
+    /** "Show 3 more", or "Show fewer" while [showAll]; empty when nothing is [hidden]. */
+    fun toggleLabel(hidden: Int, showAll: Boolean): String = when {
+        hidden <= 0 -> ""
+        showAll -> "Show fewer"
+        else -> "Show $hidden more"
+    }
 }

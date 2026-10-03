@@ -304,7 +304,7 @@ internal fun ChatsList(state: DieterUiState, model: DieterViewModel, modifier: M
                                             modifier = Modifier.fillMaxWidth().testTag("project-chat-more-${project.id}"),
                                         ) {
                                             Text(
-                                                if (group.showAll) "Show less" else "Show ${group.hidden} more",
+                                                ChatLists.toggleLabel(group.hidden, group.showAll),
                                                 color = DieterShell,
                                                 fontWeight = FontWeight.SemiBold,
                                             )

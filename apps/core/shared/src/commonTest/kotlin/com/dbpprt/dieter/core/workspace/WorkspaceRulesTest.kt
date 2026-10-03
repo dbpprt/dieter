@@ -250,4 +250,30 @@ class WorkspaceRulesTest {
         assertEquals("notes.txt" to ChangeSection.UNSTAGED, ProjectChangesRules.follow(changes, "notes.txt", ChangeSection.UNSTAGED), "a half that still exists stays")
         assertNull(ProjectChangesRules.follow(changes, "gone.txt", ChangeSection.UNSTAGED), "a file that left the changes clears the selection")
     }
+
+    @Test
+    fun operationFormsWordTheirInputsAndShowTheRelevantOnes() {
+        assertEquals("Pull request title", GitOperations.copy(GitOperationKinds.CREATE_PR).subject)
+        assertEquals("Squash commit subject", GitOperations.copy(GitOperationKinds.MERGE_LOCAL).subject)
+        assertEquals("Run project validation after rebasing", GitOperations.copy(GitOperationKinds.UPDATE).validate)
+        assertEquals(StatusTone.DANGER, GitOperations.notice(GitOperationKinds.DISCARD)?.tone)
+        assertEquals(StatusTone.WARNING, GitOperations.notice(GitOperationKinds.CONTINUE_CONFLICT)?.tone)
+        assertNull(GitOperations.notice(GitOperationKinds.COMMIT))
+
+        val merge = GitOperationForm(kind = GitOperationKinds.MERGE_LOCAL)
+        assertTrue(merge.shows(GitFormField.SUBJECT), "a squash takes a subject")
+        assertFalse(merge.copy(strategy = "fast_forward").shows(GitFormField.SUBJECT))
+        assertTrue(GitOperationForm(kind = GitOperationKinds.COMMIT, strategy = "fast_forward").shows(GitFormField.SUBJECT))
+        val push = GitOperationForm(kind = GitOperationKinds.PUSH)
+        assertFalse(push.shows(GitFormField.EXPECTED_REMOTE_SHA))
+        assertTrue(push.copy(forceWithLease = true).shows(GitFormField.EXPECTED_REMOTE_SHA))
+    }
+
+    @Test
+    fun commitsAbbreviateTheirHash() {
+        assertEquals("abc1234", Commits.shortSha("abc1234", "abc1234def"))
+        assertEquals("abc1234", Commits.shortSha("", "abc1234def"), "the full hash when the daemon sent no short form")
+        assertTrue(GitOperations.failed(GitOperation(status = "failed")))
+        assertFalse(GitOperations.failed(GitOperation(status = "running")))
+    }
 }

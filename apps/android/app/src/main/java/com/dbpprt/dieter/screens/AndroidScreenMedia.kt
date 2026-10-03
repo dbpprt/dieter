@@ -11,6 +11,7 @@ import com.dbpprt.dieter.core.screens.PeerState
 import com.dbpprt.dieter.core.screens.ReceiverSample
 import com.dbpprt.dieter.core.screens.ReceiverStatistics
 import com.dbpprt.dieter.core.screens.RtpCodec
+import com.dbpprt.dieter.core.screens.ScreenCodecs
 import com.dbpprt.dieter.core.screens.ScreenFrameGate
 import com.dbpprt.dieter.core.screens.ScreenMediaCapabilities
 import com.dbpprt.dieter.core.screens.ScreenMediaConfig
@@ -41,7 +42,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /** What the Screens footer shows about the media path. */
-data class ScreenMediaStats(val fps: Double = 0.0, val route: String = "", val decodedFrames: Long = 0)
+data class ScreenMediaStats(val fps: Double = 0.0, val decodedFrames: Long = 0)
 
 /**
  * The Android WebRTC stack for screen sharing: one peer connection per
@@ -168,7 +169,7 @@ class AndroidScreenMedia(context: Context) : ScreenMediaEngineFactory, AutoClose
 
         init {
             decoderStatus = null
-            val hevc = config.codecs.any { it.name.equals("H265", true) }
+            val hevc = config.codecs.any { it.name.equals(ScreenCodecs.H265, true) }
             val decoders = ScreenDecoderFactory(
                 egl.eglBaseContext, enableHEVC = hevc, lowLatency = lowLatencyDecoding,
                 directSurface = { if (directSurfacePresentation) decoderSurface else null },
@@ -214,7 +215,7 @@ class AndroidScreenMedia(context: Context) : ScreenMediaEngineFactory, AutoClose
                 }
                 if (rank < 0) null else rank to capability
             }.sortedBy { it.first }.map { it.second }
-            require(chosen.isNotEmpty()) { "Selected codec unavailable. HEVC requires hardware decoding and an updated host at up to 1080p60." }
+            require(chosen.isNotEmpty()) { ScreenCodecs.UNAVAILABLE }
             video.setCodecPreferences(chosen)
         }
 
@@ -294,7 +295,8 @@ class AndroidScreenMedia(context: Context) : ScreenMediaEngineFactory, AutoClose
                 stats.statsMap[pair[key]]?.members?.get("candidateType") == "relay"
             }
             if (!closed) {
-                mutableStats.value = ScreenMediaStats(fps, if (pair.isEmpty()) "" else if (relayed) "Relayed media" else "Direct media", sample.framesDecoded.toLong())
+                mutableStats.value = ScreenMediaStats(fps, sample.framesDecoded.toLong())
+                if (pair.isNotEmpty()) events.mediaPath(relayed)
             }
             if (statistics.presentationMissing(sample) && decoderSurface?.isOpen == true) {
                 // Older/vendor codecs may omit frame-render callbacks. Retire this

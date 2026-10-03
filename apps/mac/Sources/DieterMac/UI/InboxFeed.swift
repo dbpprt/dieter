@@ -144,19 +144,20 @@ struct InboxFeed: View {
                     .foregroundStyle(live ? DieterTheme.eyes : DieterTheme.amber)
                 Spacer(minLength: 3)
                 Menu {
-                    ForEach([1, 6, 24], id: \.self) { value in
-                        Button("Last \(value)h") { hours = value }
+                    ForEach(SharedRules.shared.timelineHours().map(\.intValue), id: \.self) { value in
+                        Button(SharedRules.shared.timelineRangeTitle(hours: Int32(value))) { hours = value }
                             .accessibilityIdentifier("inbox.range.\(value)")
                     }
                 } label: {
-                    Text("Last \(hours)h").font(DieterFont.meta).foregroundStyle(DieterTheme.subtle)
+                    Text(SharedRules.shared.timelineRangeTitle(hours: Int32(hours))).font(DieterFont.meta)
+                        .foregroundStyle(DieterTheme.subtle)
                 }
                 .menuStyle(.borderlessButton).fixedSize()
                 .accessibilityLabel("Timeline range")
                 .accessibilityIdentifier("inbox.range").smokeTarget("inbox.range")
             }
             if intervals.isEmpty {
-                Text("No activity in the last \(hours)h")
+                Text(SharedRules.shared.timelineEmpty(hours: Int32(hours)))
                     .font(DieterFont.meta).foregroundStyle(DieterTheme.subtle)
                     .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
             } else {

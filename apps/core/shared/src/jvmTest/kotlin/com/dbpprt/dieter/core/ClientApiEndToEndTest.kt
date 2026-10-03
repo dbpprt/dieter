@@ -34,7 +34,6 @@ import com.dbpprt.dieter.client.v1.FilesTarget
 import com.dbpprt.dieter.client.v1.FilesText
 import com.dbpprt.dieter.client.v1.FolderScope
 import com.dbpprt.dieter.client.v1.ForkCard
-import com.dbpprt.dieter.client.v1.GatewayConfig
 import com.dbpprt.dieter.client.v1.ListArchivedCards
 import com.dbpprt.dieter.client.v1.ListDrafts
 import com.dbpprt.dieter.client.v1.MachineEntry
@@ -46,7 +45,9 @@ import com.dbpprt.dieter.client.v1.NavigationCommand
 import com.dbpprt.dieter.client.v1.NavigationFolder
 import com.dbpprt.dieter.client.v1.NavigationSlice
 import com.dbpprt.dieter.client.v1.PinProject
+import com.dbpprt.dieter.client.v1.Reconnect
 import com.dbpprt.dieter.client.v1.RememberCreation
+import com.dbpprt.dieter.client.v1.RemoveGateway
 import com.dbpprt.dieter.client.v1.RenameCard
 import com.dbpprt.dieter.client.v1.Resync
 import com.dbpprt.dieter.client.v1.RetryFailedTurn
@@ -60,15 +61,13 @@ import com.dbpprt.dieter.client.v1.SchedulesCommand
 import com.dbpprt.dieter.client.v1.SchedulesSlice
 import com.dbpprt.dieter.client.v1.SendMessage
 import com.dbpprt.dieter.client.v1.SessionSlice
+import com.dbpprt.dieter.client.v1.SetConnected
 import com.dbpprt.dieter.client.v1.SetDraftText
 import com.dbpprt.dieter.client.v1.SetFolders
-import com.dbpprt.dieter.client.v1.SetGateways
 import com.dbpprt.dieter.client.v1.SetLaneDescending
 import com.dbpprt.dieter.client.v1.SetProjectExpanded
 import com.dbpprt.dieter.client.v1.SetProjectOrder
 import com.dbpprt.dieter.client.v1.SetShowReasoning
-import com.dbpprt.dieter.client.v1.Reconnect
-import com.dbpprt.dieter.client.v1.SetConnected
 import com.dbpprt.dieter.client.v1.SignOut
 import com.dbpprt.dieter.client.v1.Slice
 import com.dbpprt.dieter.client.v1.Step
@@ -84,6 +83,7 @@ import com.dbpprt.dieter.client.v1.TerminalsSlice
 import com.dbpprt.dieter.client.v1.Toggle
 import com.dbpprt.dieter.client.v1.Update
 import com.dbpprt.dieter.client.v1.UpdateCardDraft
+import com.dbpprt.dieter.client.v1.UseGateway
 import com.dbpprt.dieter.client.v1.WorkspaceSlice
 import com.dbpprt.dieter.core.client.ClientApi
 import com.dbpprt.dieter.core.client.ClientFailure
@@ -291,7 +291,7 @@ class ClientApiEndToEndTest : EndToEnd() {
             it?.phase == SessionSlice.Phase.PHASE_CONNECTED && it.workspace_live
         }!!
         val machine = session.machines.single { it.id == fixture.daemonId }
-        assertEquals("COMPATIBILITY_STATUS_COMPATIBLE", machine.compatibility)
+        assertTrue(machine.compatible)
         assertTrue(machine.last_seen_at.isNotEmpty() || machine.online)
         assertEquals(machine.route == "Local", machine.local, "a loopback plane marks the machine as this device: ${machine.route}")
         assertTrue(session.feed!!.last_applied_at_millis > 0)
@@ -315,17 +315,11 @@ class ClientApiEndToEndTest : EndToEnd() {
     }
 
     private suspend fun Contract.editGateways(session: SessionSlice) {
-        // Gateways are edited as a list; the active one stays connected.
-        api.dispatch(
-            Command(
-                set_gateways = SetGateways(
-                    gateways = listOf(GatewayConfig(fixture.url, "Isolated"), GatewayConfig("http://127.0.0.1:9", "Spare")),
-                    active_origin = session.gateway_origin,
-                ),
-            ),
-        )
-        mirror.session.await(describe = { "two gateways" }) { it?.gateways?.size == 2 }
-        assertFailsWith<ClientFailure> { api.dispatch(Command(set_gateways = SetGateways(gateways = listOf(GatewayConfig("http://example.com", "Remote plaintext"))))) }
+        // Using the active gateway again renames it; the last one cannot be removed.
+        api.dispatch(Command(use_gateway = UseGateway(url = session.gateway_origin, name = "Isolated")))
+        mirror.session.await(describe = { "renamed gateway" }) { it?.gateways?.singleOrNull { gateway -> gateway.active }?.name == "Isolated" }
+        assertFailsWith<ClientFailure> { api.dispatch(Command(remove_gateway = RemoveGateway(origin = session.gateway_origin))) }
+        assertFailsWith<ClientFailure> { api.dispatch(Command(use_gateway = UseGateway(url = "http://example.com", name = "Remote plaintext"))) }
     }
 
     private suspend fun Contract.editNavigation() {

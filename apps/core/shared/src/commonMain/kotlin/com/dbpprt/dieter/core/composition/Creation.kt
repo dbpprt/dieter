@@ -191,12 +191,15 @@ object Creation {
     fun startLane(board: Board?, selected: String?): String =
         startLanes(board).firstOrNull { it.id.equals(selected, ignoreCase = true) }?.id ?: defaultLane(board)
 
+    /** The checkouts a destination picker offers: every attached one, in the project's order. */
+    fun choices(project: Project): List<Checkout> = project.checkouts.filterNot { it.detached }
+
     /**
      * The checkout to run on: the chosen one when it still exists and is
      * attached, else the only one. Several checkouts need an explicit choice.
      */
     fun checkout(project: Project, selectedId: String?): Checkout? {
-        val candidates = project.checkouts.filterNot { it.detached }
+        val candidates = choices(project)
         return candidates.firstOrNull { it.id == selectedId } ?: candidates.singleOrNull()
     }
 
@@ -207,7 +210,7 @@ object Creation {
      * several; then the user chooses.
      */
     fun preferredCheckout(project: Project, selectedId: String?, attachedDaemonId: String?, replicaDaemonId: String?): Checkout? {
-        val candidates = project.checkouts.filterNot { it.detached }
+        val candidates = choices(project)
         return candidates.firstOrNull { it.id == selectedId }
             ?: candidates.firstOrNull { !attachedDaemonId.isNullOrEmpty() && it.daemon_id == attachedDaemonId }
             ?: candidates.singleOrNull()
@@ -410,7 +413,7 @@ object CaptureDestinations {
      * first, marked offline or unavailable. A replica is not a checkout.
      */
     fun checkoutSummary(project: Project, label: (String) -> String, online: (String) -> Boolean?): String =
-        project.checkouts.filterNot { it.detached }.map { it.daemon_id }.distinct()
+        Creation.choices(project).map { it.daemon_id }.distinct()
             .sortedWith(compareByDescending<String> { online(it) == true }.thenBy { label(it).lowercase() })
             .joinToString(" · ") { daemonId ->
                 label(daemonId) + when (online(daemonId)) {

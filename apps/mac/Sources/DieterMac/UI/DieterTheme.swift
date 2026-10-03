@@ -455,7 +455,6 @@ enum DieterMetrics {
     static let browserWidth: CGFloat = 320
     static let browserMaximumWidth: CGFloat = 340
     static let sidebarExpandedWidth: CGFloat = 234
-    static let sidebarCollapsedWidth: CGFloat = 60
     static let navigationRowHeight: CGFloat = 32
     static let controlRadius: CGFloat = 5
     static let cardRadius: CGFloat = 7
@@ -825,4 +824,16 @@ func toneColor(_ tone: ClientRuntimeTone) -> Color {
 @MainActor
 func runtimeColor(_ runtime: String) -> Color {
     toneColor(ClientRuntimeTone(rawValue: Int(SharedRules.shared.runtimeTone(runtime: runtime))) ?? .idle)
+}
+
+extension ClientTone {
+    /// The color a core status tone reads as.
+    @MainActor var color: Color {
+        switch self {
+        case .success: DieterTheme.eyes
+        case .active, .warning: DieterTheme.amber
+        case .danger: DieterTheme.coral
+        default: DieterTheme.tertiary
+        }
+    }
 }

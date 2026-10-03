@@ -201,8 +201,10 @@ struct WorkspaceChangesView: View {
                 if roomy, let changes {
                     HStack(spacing: 6) {
                         WorkspaceDeltaLabel(additions: changes.additions, deletions: changes.deletions)
-                        Text("· \(changes.files.count) local file\(changes.files.count == 1 ? "" : "s")")
-                            .font(.system(size: 10, weight: .medium)).foregroundStyle(DieterTheme.tertiary)
+                        Text(
+                            "· \(SharedRules.shared.count(count: Int32(clamping: changes.files.count), noun: "local file", plural: ""))"
+                        )
+                        .font(.system(size: 10, weight: .medium)).foregroundStyle(DieterTheme.tertiary)
                     }
                     .lineLimit(1)
                 }

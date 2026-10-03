@@ -16,25 +16,15 @@
         let cardID: String
         /// The slice as last folded; nil until the first snapshot.
         private(set) var slice: ClientConversationSlice?
-        /// Every loaded message by its timeline key: its ID, else "position:<index>".
-        private(set) var messagesByKey: [String: Dieter_V1_UiMessage] = [:]
+        /// Every loaded message by its timeline key.
+        private(set) var messages = ConversationMessages()
         /// The observation failed to open, e.g. an unknown card.
         private(set) var failure: String?
-        /// Unsent text, saved by the core per conversation.
-        var draftText = "" {
-            didSet {
-                guard draftText != oldValue else { return }
-                draftRevision &+= 1
-                if let target = draftTarget { drafts?.update(draftText, for: target) }
-            }
-        }
-        /// Attachments for the next message; they live as long as this screen.
-        var draftAttachments: [Dieter_V1_MessagePart] = [] {
-            didSet { if draftAttachments != oldValue { draftRevision &+= 1 } }
-        }
-        private(set) var sending = false
-        /// A queued message is being removed or pulled back into the draft.
-        private(set) var queueActionID: String?
+        /// The composer: unsent text, saved by the core per conversation, and
+        /// attachments that live as long as this screen.
+        let draft = ConversationDraft()
+        /// A queued message is being steered into the running turn.
+        private(set) var steeringID: String?
         private(set) var retryingFailure = false
 
         @ObservationIgnored private let core: CoreClient
@@ -42,7 +32,6 @@
         @ObservationIgnored private let show: @MainActor (any Error) -> Void
         @ObservationIgnored private var subscription: SliceSubscription?
         @ObservationIgnored private var updates: UInt64 = 0
-        @ObservationIgnored private var draftRevision: UInt64 = 0
         @ObservationIgnored private var draftTarget: WorkspaceTarget?
 
         init(
@@ -90,13 +79,7 @@
 
         private func present(_ next: ClientConversationSlice) {
             updates &+= 1
-            if slice?.messages != next.messages {
-                var keyed: [String: Dieter_V1_UiMessage] = [:]
-                for (index, message) in next.messages.enumerated() {
-                    keyed[message.id.isEmpty ? "position:\(index)" : message.id] = message
-                }
-                messagesByKey = keyed
-            }
+            if slice?.messages != next.messages { messages = ConversationMessages(next.messages) }
             if slice != next { slice = next }
             bindDraft(daemonID: next.daemonID)
         }
@@ -107,13 +90,11 @@
             let target = WorkspaceTarget(
                 endpointID: IOSAppModel.endpointID(daemonID: daemonID), projectID: "", conversationID: cardID)
             draftTarget = target
-            if draftText.isEmpty, draftRevision == 0, let saved = drafts?.text(for: target), !saved.isEmpty {
-                draftText = saved
-                draftRevision = 0
-            } else if !draftText.isEmpty {
-                // Typed before the conversation's machine was known.
-                drafts?.update(draftText, for: target)
-            }
+            draft.adopt(saved: drafts?.text(for: target) ?? "")
+            // Text typed before the conversation's machine was known is saved now.
+            if !draft.text.isEmpty { drafts?.update(draft.text, for: target) }
+            let drafts = drafts
+            draft.observeTextChanges { drafts?.update($0, for: target) }
         }
 
         // MARK: - Reading
@@ -139,50 +120,35 @@
             guard let error = slice?.error, !error.isEmpty else { return nil }
             return error
         }
-        /// Whether the composer holds something to send.
-        var hasDraft: Bool {
-            !draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !draftAttachments.isEmpty
+        var draftText: String {
+            get { draft.text }
+            set { draft.text = newValue }
         }
+        var draftAttachments: [Dieter_V1_MessagePart] {
+            get { draft.attachments }
+            set { draft.attachments = newValue }
+        }
+        var sending: Bool { draft.sending }
+        /// A queued message is being removed, pulled back into the draft, or steered.
+        var queueActionID: String? { draft.pendingQueueMessageIDs.first ?? steeringID }
+        /// Whether the composer holds something to send.
+        var hasDraft: Bool { draft.hasContent }
         var turnStartedAt: Date? { Date(epochMillis: state.turnStartedAtMillis) }
 
         /// The message a timeline step renders, by the step's key.
-        func message(for step: ClientTimelineStep) -> Dieter_V1_UiMessage? {
-            if !step.messageID.isEmpty, let message = messagesByKey[step.messageID] { return message }
-            let key = step.id.components(separatedBy: ":part:").first ?? ""
-            return messagesByKey[key]
-        }
+        func message(for step: ClientTimelineStep) -> Dieter_V1_UiMessage? { messages.message(for: step) }
 
         /// The part a timeline step renders: its message's part, with coalesced prose as its text.
-        func part(for step: ClientTimelineStep) -> Dieter_V1_MessagePart? {
-            guard let message = message(for: step), message.parts.indices.contains(Int(step.partIndex)) else {
-                return nil
-            }
-            var part = message.parts[Int(step.partIndex)]
-            if !step.text.isEmpty { part.text = step.text }
-            return part
-        }
+        func part(for step: ClientTimelineStep) -> Dieter_V1_MessagePart? { messages.part(for: step) }
 
         /// What a row's "copy message" action copies, as the core words it.
-        func copyText(_ row: ClientTimelineItem) -> String {
-            let messages = ClientTimelineMessages.with { value in
-                value.messages = row.messageIds.compactMap { messagesByKey[$0] }
-            }
-            return SharedRules.shared.doCopyText(messages: messages.rulesData)
-        }
+        func copyText(_ row: ClientTimelineItem) -> String { messages.copyText(row) }
 
         /// The task plans a row shows, at their latest revision.
-        func taskPlans(ids: [String]) -> [Dieter_V1_TaskPlan] {
-            guard !ids.isEmpty else { return [] }
-            let plans = slice?.conversation.taskPlans ?? []
-            return ids.compactMap { id in plans.filter { $0.id == id }.max { $0.revision < $1.revision } }
-        }
+        func taskPlans(ids: [String]) -> [Dieter_V1_TaskPlan] { slice?.conversation.taskPlans(ids: ids) ?? [] }
 
         /// The delegated agents a row shows, in the row's order.
-        func subagents(ids: [String]) -> [Dieter_V1_Subagent] {
-            guard !ids.isEmpty else { return [] }
-            let agents = slice?.conversation.subagents ?? []
-            return ids.compactMap { id in agents.first { $0.id == id } }
-        }
+        func subagents(ids: [String]) -> [Dieter_V1_Subagent] { slice?.conversation.subagents(ids: ids) ?? [] }
 
         // MARK: - History
 
@@ -194,13 +160,9 @@
             let before = updates
             let count = slice?.messages.count ?? 0
             do {
-                let result = try await core.dispatch { $0.loadEarlierMessages = .with { $0.cardID = cardID } }
-                guard result.pageLoaded.loaded else { return false }
-                let deadline = ContinuousClock.now + .seconds(2)
-                while updates == before || (slice?.messages.count ?? 0) == count, ContinuousClock.now < deadline {
-                    try await DieterTaskSleep.milliseconds(16)
-                }
-                return true
+                let command = ClientCommand.with { $0.loadEarlierMessages = .with { $0.cardID = cardID } }
+                return try await ConversationPaging.load(
+                    command, core: core, arrived: { updates != before && (slice?.messages.count ?? 0) != count })
             } catch {
                 show(error)
                 return false
@@ -225,24 +187,17 @@
         /// queued messages, with the composer's agent choice. The draft
         /// clears unless it changed while sending.
         func send() async {
-            guard hasDraft, !sending else { return }
-            sending = true
-            defer { sending = false }
-            let revision = draftRevision
-            let text = draftText
-            let attachments = draftAttachments
             do {
                 // The core sends the trimmed text ahead of the attachments.
-                try await core.dispatch {
-                    $0.sendMessage = .with {
-                        $0.cardID = cardID
-                        $0.text = text
-                        $0.parts = attachments
+                try await draft.send { text, attachments in
+                    try await self.core.dispatch {
+                        $0.sendMessage = .with {
+                            $0.cardID = self.cardID
+                            $0.text = text
+                            $0.parts = attachments
+                        }
                     }
                 }
-                guard draftRevision == revision else { return }
-                draftText = ""
-                draftAttachments = []
             } catch {
                 show(error)
             }
@@ -252,24 +207,17 @@
         /// back ahead of the draft, as the core restores them.
         @discardableResult
         func removeQueued(_ message: Dieter_V1_QueuedMessage, edit: Bool) async -> Bool {
-            guard queueActionID == nil, !sending, !message.id.isEmpty else { return false }
-            queueActionID = message.id
-            defer { queueActionID = nil }
+            guard steeringID == nil else { return false }
             do {
-                let removed = try await core.dispatch {
-                    $0.removeQueuedMessage = .with {
-                        $0.cardID = cardID
-                        $0.messageID = message.id
-                        $0.edit = edit
-                    }
-                }.queuedMessage
-                if edit {
-                    let restored = Dieter_V1_QueuedMessage(
-                        rules: SharedRules.shared.restoredDraft(message: removed.rulesData, currentText: draftText))
-                    draftText = restored.text
-                    draftAttachments = restored.parts + draftAttachments
+                return try await draft.removeQueuedMessage(message, edit: edit) { messageID in
+                    try await self.core.dispatch {
+                        $0.removeQueuedMessage = .with {
+                            $0.cardID = self.cardID
+                            $0.messageID = messageID
+                            $0.edit = edit
+                        }
+                    }.queuedMessage
                 }
-                return true
             } catch {
                 show(error)
                 return false
@@ -280,8 +228,8 @@
         /// checks it is the one that may (`state.steerable_id`).
         func steer(_ messageID: String) async {
             guard queueActionID == nil, !messageID.isEmpty else { return }
-            queueActionID = messageID
-            defer { queueActionID = nil }
+            steeringID = messageID
+            defer { steeringID = nil }
             await perform {
                 $0.steerConversation = .with {
                     $0.cardID = cardID

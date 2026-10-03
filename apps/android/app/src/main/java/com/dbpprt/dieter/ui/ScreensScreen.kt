@@ -70,7 +70,6 @@ internal fun ScreenWorkspace(
     onLeave: () -> Unit = host::close,
 ) {
     val screen by host.view.collectAsStateWithLifecycle()
-    val stats by host.stats.collectAsStateWithLifecycle()
     val lifecycle = LocalLifecycleOwner.current
     val activity = LocalContext.current.screenActivity()
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
@@ -142,7 +141,7 @@ internal fun ScreenWorkspace(
                         Text(machine?.label ?: selectedName, style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Box(Modifier.size(7.dp).background(if (streaming) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary, CircleShape))
+                            Box(Modifier.size(7.dp).background(screen.tone.color, CircleShape))
                             Text(screen.statusLine,
                                 style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.testTag("screen-status"))
@@ -155,7 +154,7 @@ internal fun ScreenWorkspace(
                     }
                 }
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(screen.metadata(stats.fps, stats.route),
+                    Text(screen.metadata,
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).testTag("screen-metadata"))
                     Box {
@@ -219,14 +218,8 @@ internal fun ScreenWorkspace(
                 Text("Connection details", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                 TextButton(onClick = { information = false }) { Text("Done") }
             }
-            val details = screen.details(selectedDaemon.orEmpty(), stats.fps, stats.route)
             Text(machine?.label ?: selectedName, style = MaterialTheme.typography.titleMedium)
-            Text(details.status)
-            Text(details.video)
-            Text(screen.latencyLabel)
-            Text(details.signaling)
-            Text(details.machine, style = MaterialTheme.typography.bodySmall)
-            details.session.forEach { Text(it) }
+            screen.details.forEach { Text(it) }
             machine?.releaseLabel?.takeIf { it.isNotBlank() }?.let { Text(it) }
             screen.codecFallbackReason?.let { Text(it) }
             if (screen.canTransferControl) TextButton(enabled = !screen.controlTransferring, onClick = { host.transferControl(!controlling) }, modifier = Modifier.testTag("screens.control")) {

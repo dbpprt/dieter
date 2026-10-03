@@ -37,6 +37,7 @@ class ScreenCanvasRenderingTest {
                 override fun channelMessage(label: String, bytes: ByteArray) = Unit
                 override fun decoded(rtpTimestamp: UInt) = Unit
                 override fun presented(rtpTimestamp: UInt) = Unit
+                override fun mediaPath(relayed: Boolean) = Unit
                 override fun hevcUnavailable(reason: String) = Unit
                 override fun failure(message: String) = Unit
             }) as AndroidScreenMedia.Engine

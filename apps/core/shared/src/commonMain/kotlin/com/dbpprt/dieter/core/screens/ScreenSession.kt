@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.math.roundToLong
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -110,13 +111,13 @@ class ScreenSession(
 
     // --- Lifecycle --------------------------------------------------------------------
 
-    /** Starts a new session through [routes]; an earlier session is closed first. */
-    fun connect(routes: ScreenRouteFactory) {
+    /** Starts a new session with [machineId] through [routes]; an earlier session is closed first. */
+    fun connect(machineId: String = "", routes: ScreenRouteFactory) {
         disconnect()
         factory = routes
         hevcFailed = false
         certificatePin = null
-        mutableView.update { it.copy(codecFallbackReason = null) }
+        mutableView.update { it.copy(codecFallbackReason = null, machineId = machineId) }
         beginAttempt()
     }
 
@@ -194,7 +195,7 @@ class ScreenSession(
                 val fps = ScreenCapabilities.maxFps(preferences.maxFps, caps, config.fpsCeiling)
                 val canHevc = ScreenCodecs.canHevc(caps, preferences.width, preferences.height, fps, media.hevcDecoder)
                 val codecs = ScreenCodecs.receiveCodecs(media.receiveCodecs, RtpCodec::name, RtpCodec::profile, effective, canHevc)
-                if (codecs.isEmpty()) return@launch fail("Selected codec unavailable. HEVC requires hardware decoding and an updated host at up to 1080p60.")
+                if (codecs.isEmpty()) return@launch fail(ScreenCodecs.UNAVAILABLE)
                 val channels = buildList {
                     add(ScreenChannelSpec(ScreenChannels.POINTER, ordered = false, maxRetransmits = 0))
                     add(ScreenChannelSpec(ScreenChannels.INPUT, ordered = true))
@@ -332,7 +333,11 @@ class ScreenSession(
             while (attemptToken == token) {
                 delay(ScreenFeedback.INTERVAL)
                 val current = engine ?: continue
-                current.statistics()?.let { feedback?.update(it, now()) }
+                current.statistics()?.let { sample ->
+                    feedback?.update(sample, now())
+                    val fps = sample.frames_per_second.roundToLong().toDouble()
+                    if (fps != view.value.mediaFps) mutableView.update { it.copy(mediaFps = fps) }
+                }
                 feedback?.input(focused && view.value.controlActive, now())
                 if (peerConnected && presentedGeneration == 0L && view.value.phase !is ScreenPhase.WaitingForHostApproval) {
                     peerSinceTicks++
@@ -508,7 +513,7 @@ class ScreenSession(
         answer = null
         remoteApplied = false
         sessionId = ""
-        mutableView.update { it.copy(sessionId = "") }
+        mutableView.update { it.copy(sessionId = "", mediaFps = 0.0, mediaRelayed = null) }
         signaling.reset()
         remoteCandidates.clear()
         peerConnected = false
@@ -581,6 +586,10 @@ class ScreenSession(
         override fun presented(rtpTimestamp: UInt) = onCore {
             lastPresented = rtpTimestamp
             markPresented(rtpTimestamp)
+        }
+
+        override fun mediaPath(relayed: Boolean) = onCore {
+            if (view.value.mediaRelayed != relayed) mutableView.update { it.copy(mediaRelayed = relayed) }
         }
 
         override fun hevcUnavailable(reason: String) = onCore { hevcFallback() }

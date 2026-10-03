@@ -12,20 +12,21 @@ import android.view.View
 import android.widget.RemoteViews
 import com.dbpprt.dieter.MainActivity
 import com.dbpprt.dieter.R
+import com.dbpprt.dieter.core.activity.WidgetModel
 import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.core.quotas.QuotaLevel
 import com.dbpprt.dieter.core.quotas.UsageWidget
 import com.dbpprt.dieter.core.quotas.UsageWidgetAccount
 import com.dbpprt.dieter.core.quotas.UsageWidgetModel
 import com.dbpprt.dieter.settings.AppPreferences
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withTimeout
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
-import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 /**
  * Home-screen usage widget for every Dieter account: a small 2×2 headline
@@ -169,11 +170,10 @@ open class DieterUsageWidgetProvider : AppWidgetProvider() {
             views.setTextColor(R.id.widget_usage_empty_body, mutedColor)
             views.setTextViewText(R.id.widget_usage_empty_title, model.emptyTitle)
             views.setTextViewText(R.id.widget_usage_empty_body, model.emptyBody)
-            views.setTextViewText(R.id.widget_usage_status, when {
-                refreshing.get() -> "Refreshing…"
-                failedRefreshAt > 0 && failedRefreshAt > WidgetUsagePrefs.fetchedAt(context) -> "Couldn’t refresh"
-                else -> model.statusText
-            })
+            views.setTextViewText(R.id.widget_usage_status, WidgetModel.status(
+                model.statusText, refreshing.get(),
+                refreshFailed = failedRefreshAt > 0 && failedRefreshAt > WidgetUsagePrefs.fetchedAt(context),
+            ))
             views.setTextColor(R.id.widget_usage_status, mutedColor)
             views.setBoolean(R.id.widget_usage_refresh, "setEnabled", !refreshing.get())
             views.setContentDescription(R.id.widget_usage_header, context.getString(R.string.widget_usage_open_accounts))

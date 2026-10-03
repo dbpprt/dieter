@@ -27,6 +27,7 @@ doctor:
 # Verify every native and platform-neutral development tool.
 doctor-all: doctor
     just mac doctor
+    just ios doctor
     just android doctor
 
 # Generate Go clients and synchronize native schema inputs.

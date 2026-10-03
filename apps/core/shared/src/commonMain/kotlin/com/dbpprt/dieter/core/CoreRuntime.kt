@@ -240,7 +240,7 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
      */
     suspend fun adoptSession(gateway: Gateway, token: String) = onCore {
         require(token.isNotBlank()) { "The session token is empty." }
-        credentials.save(gateway, token)
+        credentials.save(gateway, token.trim())
         activate(gateway)
     }
 
@@ -294,6 +294,12 @@ class CoreRuntime(val platform: Platform, val config: RuntimeConfig) {
     suspend fun setGateways(gateways: List<Gateway>, activeOrigin: String? = null) = onCore {
         accounts.setGateways(gateways, activeOrigin)
     }
+
+    /** Makes [gateway] active, adding it when it is new. */
+    suspend fun useGateway(gateway: Gateway) = onCore { accounts.use(gateway) }
+
+    /** Removes the gateway at [origin]; the last one stays. */
+    suspend fun removeGateway(origin: String) = onCore { accounts.remove(origin) }
 
     /** Attaches the feed to [daemonId]; the rest of the account stays visible through the poller. */
     suspend fun attachMachine(daemonId: String) = onCore {

@@ -182,7 +182,6 @@ class CheckChangedTests(unittest.TestCase):
             "Features/Files/FilesView.swift": ("core", "workspace"),
             "Features/Changes/WorkspaceChangesView.swift": ("workspace",),
             "Features/Terminals/TerminalInputForwarder.swift": ("terminal",),
-            "Model/SidebarProjectNavigationPreferences.swift": ("core", "sidebar"),
             "UI/MachinesView.swift": ("core", "machine", "sidebar"),
             "UI/InboxView.swift": ("inbox",),
             "UI/InboxFeed.swift": ("inbox",),

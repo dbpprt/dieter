@@ -200,11 +200,7 @@
 
         /// The machine's status line: the core's detail, followed by when it
         /// was last seen where that matters.
-        func machineStatus(_ machine: ClientMachineEntry, now: Date = Date()) -> String {
-            guard machine.showLastSeen else { return machine.detail }
-            return machine.detail + " · "
-                + SharedRules.shared.machineLastSeen(lastSeenAt: machine.lastSeenAt, nowMillis: now.epochMillis)
-        }
+        func machineStatus(_ machine: ClientMachineEntry, now: Date = Date()) -> String { machine.statusLine(now: now) }
 
         // MARK: - Sign-in and session
 
@@ -253,7 +249,7 @@
 
         // MARK: - Gateways
 
-        /// The origin `SetGateways` accepts for `address`; empty when invalid.
+        /// The origin `UseGateway` accepts for `address`; empty when invalid.
         func gatewayOrigin(_ address: String) -> String {
             SharedRules.shared.gatewayOrigin(address: address.trimmingCharacters(in: .whitespacesAndNewlines))
         }
@@ -267,31 +263,17 @@
         func useGateway(address: String, name: String = "") async -> Bool {
             let origin = gatewayOrigin(address)
             guard !origin.isEmpty else { return false }
-            if session.gateways.contains(where: { $0.origin == origin }) {
-                return await perform { $0.selectGateway = .with { $0.origin = origin } } != nil
-            }
-            let configs = session.gateways.map { entry in (entry.origin, entry.name) } + [(origin, name)]
-            return await setGateways(configs, active: origin)
-        }
-
-        func removeGateway(_ origin: String) async {
-            let remaining = session.gateways.filter { $0.origin != origin }.map { ($0.origin, $0.name) }
-            await setGateways(remaining, active: "")
-        }
-
-        @discardableResult
-        private func setGateways(_ gateways: [(url: String, name: String)], active: String) async -> Bool {
-            await perform {
-                $0.setGateways = .with { command in
-                    command.gateways = gateways.map { gateway in
-                        .with {
-                            $0.url = gateway.url
-                            $0.name = gateway.name
-                        }
-                    }
-                    command.activeOrigin = active
+            return await perform {
+                $0.useGateway = .with {
+                    $0.url = origin
+                    $0.name = name
                 }
             } != nil
+        }
+
+        /// Removes a configured gateway; the core keeps at least one.
+        func removeGateway(_ origin: String) async {
+            await perform { $0.removeGateway = .with { $0.origin = origin } }
         }
 
         // MARK: - Machines and cards

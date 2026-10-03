@@ -26,8 +26,8 @@ final class ConversationModel {
         didSet { if olderConversationMessages != oldValue { refreshConversationPresentationState() } }
     }
     var conversationMessages: [Dieter_V1_UiMessage] = []
-    /// Every loaded message by its timeline key: its ID, else "position:<index>".
-    private(set) var messagesByKey: [String: Dieter_V1_UiMessage] = [:]
+    /// Every loaded message by its timeline key.
+    private(set) var messages = ConversationMessages()
     /// The transcript's rows, as the core groups every loaded message.
     private(set) var timeline: [ClientTimelineItem] = [] {
         didSet { if timeline != oldValue, !presenting { conversationPresentationRevision &+= 1 } }
@@ -184,11 +184,7 @@ final class ConversationModel {
         let messagesChanged = conversationMessages != next
         if messagesChanged {
             conversationMessages = next
-            var keyed: [String: Dieter_V1_UiMessage] = [:]
-            for (index, message) in next.enumerated() {
-                keyed[message.id.isEmpty ? "position:\(index)" : message.id] = message
-            }
-            messagesByKey = keyed
+            messages = ConversationMessages(next)
         }
         #if DIETER_UI_SMOKE
             // A conversation a UI fixture installed has no core rows or state.
@@ -212,47 +208,25 @@ final class ConversationModel {
 
     /// The task plans a row shows, at their latest revision.
     func taskPlans(ids: [String]) -> [Dieter_V1_TaskPlan] {
-        guard !ids.isEmpty else { return [] }
-        let plans = conversation?.conversation.taskPlans ?? []
-        return ids.compactMap { id in plans.filter { $0.id == id }.max { $0.revision < $1.revision } }
+        conversation?.conversation.taskPlans(ids: ids) ?? []
     }
 
     /// The delegated agents a row shows, in the row's order.
     func subagents(ids: [String]) -> [Dieter_V1_Subagent] {
-        guard !ids.isEmpty else { return [] }
-        let agents = conversation?.conversation.subagents ?? []
-        return ids.compactMap { id in agents.first { $0.id == id } }
+        conversation?.conversation.subagents(ids: ids) ?? []
     }
 
     /// The message a timeline step renders, by the step's key.
-    func message(for step: ClientTimelineStep) -> Dieter_V1_UiMessage? {
-        if !step.messageID.isEmpty, let message = messagesByKey[step.messageID] { return message }
-        let key = step.id.components(separatedBy: ":part:").first ?? ""
-        return messagesByKey[key]
-    }
+    func message(for step: ClientTimelineStep) -> Dieter_V1_UiMessage? { messages.message(for: step) }
 
     /// The part a timeline step renders: its message's part, with coalesced prose as its text.
-    func part(for step: ClientTimelineStep) -> Dieter_V1_MessagePart? {
-        guard let message = message(for: step), message.parts.indices.contains(Int(step.partIndex)) else {
-            return nil
-        }
-        var part = message.parts[Int(step.partIndex)]
-        if !step.text.isEmpty { part.text = step.text }
-        return part
-    }
+    func part(for step: ClientTimelineStep) -> Dieter_V1_MessagePart? { messages.part(for: step) }
 
-    /// Marks the visible reply as read; the core sends the receipt.
+    /// The latest reply is in view: the core marks it read once it is loaded
+    /// and shown at the latest position.
     func markResponseSeen() async {
-        // Directory metadata can announce a reply before its transcript frame
-        // arrives; only a reply actually shown counts as seen.
-        guard let core, let card = conversation?.detail.card,
-            card.id == (selectedCardID ?? selectedChatID),
-            card.responseSeq > card.seenResponseSeq,
-            (conversation?.conversation.lastSeq ?? 0) >= card.responseSeq,
-            conversation?.conversation.messages.contains(where: { $0.id == card.responseMessageID }) == true,
-            !browsingEarlierHistory
-        else { return }
-        _ = try? await core.dispatch { $0.markCardRead = .with { $0.cardID = card.id } }
+        guard let core, let cardID = selectedCardID ?? selectedChatID, cardID == observedCardID else { return }
+        _ = try? await core.dispatch { $0.setVisibleConversation = .with { $0.cardID = cardID } }
     }
 
     @discardableResult
@@ -281,15 +255,9 @@ final class ConversationModel {
         let before = updates
         let count = conversationMessages.count
         do {
-            let result = try await core.dispatch(command)
-            guard result.pageLoaded.loaded, observedCardID == cardID else { return false }
-            let deadline = ContinuousClock.now + .seconds(2)
-            while observedCardID == cardID, updates == before || conversationMessages.count == count,
-                ContinuousClock.now < deadline
-            {
-                try await DieterTaskSleep.milliseconds(16)
-            }
-            return observedCardID == cardID
+            return try await ConversationPaging.load(
+                command, core: core, current: { observedCardID == cardID },
+                arrived: { updates != before && conversationMessages.count != count })
         } catch {
             guard observedCardID == cardID, !(error is CancellationError) else { return false }
             conversationError = (error as? CoreFailure)?.message ?? error.localizedDescription

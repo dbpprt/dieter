@@ -92,7 +92,7 @@
                                 chosenMachineID = candidate.id
                             } label: {
                                 Label(
-                                    candidate.name.isEmpty ? candidate.id : candidate.name,
+                                    candidate.displayName,
                                     systemImage: candidate.id == machineID ? "checkmark" : "desktopcomputer")
                                 Text(candidate.detail)
                             }
@@ -170,9 +170,9 @@
                         .frame(width: 52, height: 52)
                         .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(machine.name.isEmpty ? machine.id : machine.name).font(.title2.bold())
+                        Text(machine.displayName).font(.title2.bold())
                         HStack(spacing: 6) {
-                            Circle().fill(machine.available ? Color.green : Color.orange).frame(width: 7, height: 7)
+                            Circle().fill(machine.tone.color).frame(width: 7, height: 7)
                             Text(app.machineStatus(machine, now: clock.date))
                         }
                         .font(.subheadline.weight(.medium))
@@ -265,7 +265,10 @@
                 )
                 .tint(.purple)
                 Text(
-                    "\(bytes(information.memoryTotalBytes)) total · \(bytes(information.memoryCachedBytes)) cached · \(bytes(information.swapUsedBytes)) swap"
+                    SharedRules.shared.machineMemory(
+                        totalBytes: Int64(information.memoryTotalBytes),
+                        cachedBytes: Int64(information.memoryCachedBytes),
+                        swapBytes: Int64(information.swapUsedBytes))
                 )
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
@@ -279,7 +282,8 @@
                 Divider()
                 detailRow(
                     "Operating system",
-                    value: [information.osName, information.osVersion].filter { !$0.isEmpty }.joined(separator: " "))
+                    value: SharedRules.shared.operatingSystem(
+                        osName: information.osName, osVersion: information.osVersion))
                 Divider()
                 detailRow("Hardware", value: information.hardwareModel)
                 Divider()
@@ -313,15 +317,12 @@
                     "GPU", systemImage: "memorychip",
                     detail: information.gpu.devices.isEmpty
                         ? nil
-                        : SharedRules.shared.machineCount(
+                        : SharedRules.shared.count(
                             count: Int32(clamping: information.gpu.devices.count), noun: "device", plural: "devices")
                 ) {
                     if information.gpu.devices.isEmpty {
-                        Text(
-                            information.gpu.unavailableReason.isEmpty
-                                ? "No supported GPU telemetry is available." : information.gpu.unavailableReason
-                        )
-                        .foregroundStyle(.secondary)
+                        Text(SharedRules.shared.gpuUnavailable(reason: information.gpu.unavailableReason))
+                            .foregroundStyle(.secondary)
                     }
                     ForEach(Array(information.gpu.devices.enumerated()), id: \.element.id) { index, device in
                         if index > 0 { Divider() }
@@ -336,15 +337,15 @@
             VStack(alignment: .leading, spacing: 7) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(device.name.isEmpty ? "GPU" : device.name).font(.headline)
+                        Text(SharedRules.shared.gpuName(name: device.name)).font(.headline)
                         Text(SharedRules.shared.gpuVendor(vendor: Int32(device.vendor.rawValue)))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
                     Text(
-                        device.hasUtilizationPercent
-                            ? SharedRules.shared.machinePercentage(value: device.utilizationPercent) : "—"
+                        SharedRules.shared.gpuUtilization(
+                            percent: device.utilizationPercent, reported: device.hasUtilizationPercent)
                     )
                     .font(.headline.monospacedDigit())
                     .foregroundStyle(device.hasUtilizationPercent ? Color.blue : Color.secondary)
@@ -378,7 +379,7 @@
             if device.hasPowerWatts { values.append(SharedRules.shared.machinePower(watts: device.powerWatts)) }
             if device.hasProcessCount {
                 values.append(
-                    SharedRules.shared.machineCount(
+                    SharedRules.shared.count(
                         count: Int32(clamping: device.processCount), noun: "process", plural: "processes"))
             }
             return values
@@ -406,8 +407,9 @@
                     ForEach(Array(information.processes.enumerated()), id: \.offset) { index, process in
                         if index > 0 { Divider() }
                         HStack(spacing: 10) {
-                            Image(systemName: process.kind == "agent" ? "sparkles" : "terminal")
-                                .foregroundStyle(process.kind == "agent" ? .blue : .secondary)
+                            let agent = SharedRules.shared.isAgentProcess(kind: process.kind)
+                            Image(systemName: agent ? "sparkles" : "terminal")
+                                .foregroundStyle(agent ? .blue : .secondary)
                                 .frame(width: 24)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(process.name).font(.subheadline.weight(.semibold)).lineLimit(2)
@@ -441,8 +443,10 @@
                     systemImage: machine.available ? "exclamationmark.triangle" : "wifi.slash")
             } description: {
                 Text(
-                    fleet?.machineInformationError
-                        ?? (machine.unavailableMessage.isEmpty ? machine.detail : machine.unavailableMessage))
+                    SharedRules.shared.machineInformationUnavailable(
+                        online: machine.available,
+                        detail: machine.unavailableMessage.isEmpty ? machine.detail : machine.unavailableMessage,
+                        error: fleet?.machineInformationError ?? ""))
             } actions: {
                 if machine.available {
                     Button("Try again") { Task { await fleet?.refreshSelectedMachineInformation() } }

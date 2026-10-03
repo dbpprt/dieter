@@ -50,16 +50,17 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaGroup
 import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaProvider
-import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaSnapshot
-import com.dbpprt.dieter.api.gateway.v1.ProviderQuotaWindow
-import com.dbpprt.dieter.core.quotas.QuotaLevel
+import com.dbpprt.dieter.client.v1.QuotaAccountRow
+import com.dbpprt.dieter.client.v1.QuotaGroupRow
+import com.dbpprt.dieter.client.v1.QuotaSeverity
+import com.dbpprt.dieter.client.v1.QuotaWindowRow
+import com.dbpprt.dieter.core.quotas.QuotaRows
 import com.dbpprt.dieter.core.quotas.Quotas
 import com.dbpprt.dieter.ui.theme.DieterAmber
 import com.dbpprt.dieter.ui.theme.DieterMuted
-import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.ui.theme.DieterOpenAIQuota
+import com.dbpprt.dieter.ui.theme.DieterOutline
 import com.dbpprt.dieter.ui.theme.DieterRunning
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
@@ -73,6 +74,7 @@ internal fun ProviderQuotaDetails(
     onUseReset: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val rows = remember(state.providerQuotaGroups) { QuotaRows.of(state.providerQuotaGroups) }
     // One scroll surface uses the available height, with extra columns on tablets.
     // Scale the minimum column width along with text so accessibility stays readable.
     LazyVerticalGrid(
@@ -117,7 +119,7 @@ internal fun ProviderQuotaDetails(
                 }
             }
         }
-        state.providerQuotaGroups.forEach { group ->
+        rows.forEach { group ->
             item(key = "provider-${group.provider.value}", span = { GridItemSpan(maxLineSpan) }) {
                 ProviderQuotaGroupHeader(group)
             }
@@ -129,19 +131,18 @@ internal fun ProviderQuotaDetails(
 }
 
 @Composable
-private fun ProviderQuotaGroupHeader(group: ProviderQuotaGroup) {
+private fun ProviderQuotaGroupHeader(group: QuotaGroupRow) {
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(Quotas.productName(group.provider), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Text(Quotas.groupSummary(group), color = DieterMuted, style = MaterialTheme.typography.labelSmall)
+            Text(group.summary, color = DieterMuted, style = MaterialTheme.typography.labelSmall)
         }
-        group.summary?.remaining_percent?.let { percent ->
-            val remaining = percent.coerceIn(0, 100)
+        if (group.lowest_remaining >= 0) {
             Column(horizontalAlignment = Alignment.End, modifier = Modifier.semantics(mergeDescendants = true) {
                 contentDescription = "Lowest remaining allowance across included accounts"
             }) {
-                Text("$remaining% left", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text("${group.lowest_remaining}% left", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Text("Lowest allowance", color = DieterMuted, style = MaterialTheme.typography.labelSmall)
             }
         }
@@ -150,7 +151,7 @@ private fun ProviderQuotaGroupHeader(group: ProviderQuotaGroup) {
 
 @Composable
 internal fun ProviderQuotaAccountView(
-    account: ProviderQuotaSnapshot,
+    account: QuotaAccountRow,
     provider: ProviderQuotaProvider,
     state: DieterUiState,
     onSetSummaryInclusion: (ProviderQuotaProvider, String, Boolean) -> Unit,
@@ -159,8 +160,7 @@ internal fun ProviderQuotaAccountView(
 ) {
     var expanded by rememberSaveable(account.account_key) { mutableStateOf(false) }
     var resetConfirmation by remember(account.account_key) { mutableStateOf(false) }
-    val included = Quotas.included(account)
-    val identity = Quotas.identity(account)
+    val identity = account.identity
     Surface(
         modifier = Modifier.fillMaxWidth().testTag("provider-quotas-account-${account.account_key}"),
         shape = RoundedCornerShape(16.dp), color = DieterSurface,
@@ -175,7 +175,7 @@ internal fun ProviderQuotaAccountView(
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(identity, style = MaterialTheme.typography.labelLarge,
                             maxLines = if (expanded) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis)
-                        Text(Quotas.subtitle(account), color = DieterMuted, style = MaterialTheme.typography.labelSmall)
+                        Text(account.subtitle, color = DieterMuted, style = MaterialTheme.typography.labelSmall)
                     }
                     Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
                         contentDescription = if (expanded) "Hide account details" else "Show account details",
@@ -183,8 +183,8 @@ internal fun ProviderQuotaAccountView(
                 }
             }
             Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (!Quotas.available(account)) {
-                    Text(Quotas.availability(account.availability), color = DieterAmber, style = MaterialTheme.typography.labelMedium)
+                if (!account.available) {
+                    Text(account.unavailable, color = DieterAmber, style = MaterialTheme.typography.labelMedium)
                 }
                 if (account.windows.size > 0) {
                     BoxWithConstraints {
@@ -199,22 +199,22 @@ internal fun ProviderQuotaAccountView(
                         }
                     }
                 } else {
-                    Text(Quotas.status(account), color = DieterMuted, style = MaterialTheme.typography.bodySmall)
+                    Text(account.status, color = DieterMuted, style = MaterialTheme.typography.bodySmall)
                 }
                 if (expanded) {
                     HorizontalDivider(color = DieterOutline)
-                    Quotas.details(account, monetary = showMonetaryBalances).forEach { (label, value) -> ProviderQuotaMetadata(label, value) }
+                    account.details.filter { showMonetaryBalances || !it.monetary }.forEach { ProviderQuotaMetadata(it.label, it.text) }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("Include in summary", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                         Switch(
-                            checked = included,
+                            checked = account.included,
                             onCheckedChange = { onSetSummaryInclusion(provider, account.account_key, it) },
                             enabled = account.account_key !in state.providerQuotaMutatingAccounts,
                             modifier = Modifier.testTag("provider-quotas-include-${account.account_key}")
                                 .semantics { contentDescription = "Include $identity in usage summary" },
                         )
                     }
-                    if (Quotas.canReset(provider, account)) {
+                    if (account.can_reset) {
                         TextButton(
                             onClick = { resetConfirmation = true },
                             enabled = account.account_key !in state.providerQuotaMutatingAccounts,
@@ -228,8 +228,8 @@ internal fun ProviderQuotaAccountView(
     if (resetConfirmation) {
         AlertDialog(
             onDismissRequest = { resetConfirmation = false },
-            title = { Text("Use one OpenAI reset credit?") },
-            text = { Text("This consumes one credit and resets the eligible quota windows for $identity.") },
+            title = { Text(Quotas.RESET_TITLE) },
+            text = { Text(Quotas.RESET_MESSAGE) },
             confirmButton = {
                 TextButton(onClick = {
                     resetConfirmation = false
@@ -250,18 +250,17 @@ private fun ProviderQuotaMetadata(label: String, value: String) {
 }
 
 @Composable
-private fun ProviderQuotaWindowView(window: ProviderQuotaWindow, provider: ProviderQuotaProvider, modifier: Modifier) {
+private fun ProviderQuotaWindowView(window: QuotaWindowRow, provider: ProviderQuotaProvider, modifier: Modifier) {
     Column(modifier.semantics(mergeDescendants = true) {}, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(Quotas.windowName(window), color = DieterMuted, style = MaterialTheme.typography.labelMedium)
-        val percent = window.remaining_percent
-        if (percent != null) {
-            val remaining = percent.coerceIn(0, 100)
+        Text(window.name, color = DieterMuted, style = MaterialTheme.typography.labelMedium)
+        val remaining = window.remaining
+        if (remaining >= 0) {
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("$remaining%", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text("left", color = DieterMuted, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(bottom = 3.dp))
             }
             LinearProgressIndicator(progress = { remaining / 100f }, modifier = Modifier.fillMaxWidth().height(4.dp),
-                color = quotaTint(provider, remaining), trackColor = DieterSurfaceHigh, gapSize = 0.dp, drawStopIndicator = {})
+                color = quotaTint(provider, window.severity), trackColor = DieterSurfaceHigh, gapSize = 0.dp, drawStopIndicator = {})
         } else {
             Text("Not reported", color = DieterMuted, style = MaterialTheme.typography.bodySmall)
         }
@@ -272,9 +271,9 @@ private fun ProviderQuotaWindowView(window: ProviderQuotaWindow, provider: Provi
 }
 
 @Composable
-internal fun quotaTint(provider: ProviderQuotaProvider, remaining: Int): Color = when (Quotas.level(remaining)) {
-    QuotaLevel.CRITICAL -> MaterialTheme.colorScheme.error
-    QuotaLevel.LOW -> DieterAmber
+internal fun quotaTint(provider: ProviderQuotaProvider, severity: QuotaSeverity): Color = when (severity) {
+    QuotaSeverity.QUOTA_SEVERITY_CRITICAL -> MaterialTheme.colorScheme.error
+    QuotaSeverity.QUOTA_SEVERITY_LOW -> DieterAmber
     else -> when (provider) {
         ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_OPENAI_CODEX -> DieterOpenAIQuota
         ProviderQuotaProvider.PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE -> DieterAmber

@@ -13,7 +13,7 @@ struct ConversationTimelineItemView: View {
     @State private var isHovered = false
 
     private var footer: MessageFooterContent {
-        MessageFooterContent(row: row, messages: row.messageIds.compactMap { context.model.messagesByKey[$0] })
+        MessageFooterContent(row: row, messages: row.messageIds.compactMap { context.model.messages.byKey[$0] })
     }
 
     private var footerMessageID: String { row.messageIds.last ?? row.id }

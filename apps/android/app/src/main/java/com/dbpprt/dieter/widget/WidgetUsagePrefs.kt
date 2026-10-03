@@ -18,9 +18,6 @@ object WidgetUsagePrefs {
     internal fun preferences(context: Context) =
         context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
-    /** Whether [key] is part of the cache. */
-    internal fun keeps(key: String): Boolean = key == KEY_GROUPS || key == KEY_FETCHED_AT
-
     /** The cached groups; empty before any fetch or when the cache cannot be decoded. */
     fun cachedGroups(context: Context): List<ProviderQuotaGroup> {
         val encoded = preferences(context).getString(KEY_GROUPS, null) ?: return emptyList()

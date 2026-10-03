@@ -103,6 +103,49 @@ public nonisolated enum ClientCreationCatalogState: SwiftProtobuf.Enum, Swift.Ca
 
 }
 
+/// Agent pickers as the core resolves them.
+public nonisolated enum ClientAgentOptionKind: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case text // = 0
+
+  /// A switch: its value is "true" or "false".
+  case toggle // = 1
+
+  /// A picker over the option's choices.
+  case choice // = 2
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .text
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .text
+    case 1: self = .toggle
+    case 2: self = .choice
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .text: return 0
+    case .toggle: return 1
+    case .choice: return 2
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [ClientAgentOptionKind] = [
+    .text,
+    .toggle,
+    .choice,
+  ]
+
+}
+
 /// A key a terminal's accessory bar sends (SharedRules.terminalKey).
 public nonisolated enum ClientTerminalKey: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
@@ -650,6 +693,55 @@ public nonisolated enum ClientBoardLaneKind: SwiftProtobuf.Enum, Swift.CaseItera
 }
 
 /// A runtime's colour family.
+/// How a status reads, for its color.
+public nonisolated enum ClientTone: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case neutral // = 0
+
+  /// Working on it: connecting, running.
+  case active // = 1
+  case success // = 2
+  case warning // = 3
+  case danger // = 4
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .neutral
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .neutral
+    case 1: self = .active
+    case 2: self = .success
+    case 3: self = .warning
+    case 4: self = .danger
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .neutral: return 0
+    case .active: return 1
+    case .success: return 2
+    case .warning: return 3
+    case .danger: return 4
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [ClientTone] = [
+    .neutral,
+    .active,
+    .success,
+    .warning,
+    .danger,
+  ]
+
+}
+
 public nonisolated enum ClientRuntimeTone: SwiftProtobuf.Enum, Swift.CaseIterable {
   public typealias RawValue = Int
   case idle // = 0
@@ -1343,12 +1435,20 @@ public nonisolated struct ClientCommand: Sendable {
     set {command = .ensureMetadata(newValue)}
   }
 
-  public var setGateways: ClientSetGateways {
+  public var useGateway: ClientUseGateway {
     get {
-      if case .setGateways(let v)? = command {return v}
-      return ClientSetGateways()
+      if case .useGateway(let v)? = command {return v}
+      return ClientUseGateway()
     }
-    set {command = .setGateways(newValue)}
+    set {command = .useGateway(newValue)}
+  }
+
+  public var removeGateway: ClientRemoveGateway {
+    get {
+      if case .removeGateway(let v)? = command {return v}
+      return ClientRemoveGateway()
+    }
+    set {command = .removeGateway(newValue)}
   }
 
   public var resync: ClientResync {
@@ -1359,6 +1459,7 @@ public nonisolated struct ClientCommand: Sendable {
     set {command = .resync(newValue)}
   }
 
+  /// UI fixtures only: projects and folders that exist on one device.
   public var setProjectOrder: ClientSetProjectOrder {
     get {
       if case .setProjectOrder(let v)? = command {return v}
@@ -1648,8 +1749,10 @@ public nonisolated struct ClientCommand: Sendable {
     case renameMachine(ClientRenameMachine)
     case revokeMachine(ClientRevokeMachine)
     case ensureMetadata(ClientEnsureMetadata)
-    case setGateways(ClientSetGateways)
+    case useGateway(ClientUseGateway)
+    case removeGateway(ClientRemoveGateway)
     case resync(ClientResync)
+    /// UI fixtures only: projects and folders that exist on one device.
     case setProjectOrder(ClientSetProjectOrder)
     case setProjectExpanded(ClientSetProjectExpanded)
     case setChatSectionCollapsed(ClientSetChatSectionCollapsed)
@@ -2330,22 +2433,9 @@ public nonisolated struct ClientEnsureMetadata: Sendable {
   public init() {}
 }
 
-/// Replaces the gateway list; plaintext is only allowed on loopback.
-public nonisolated struct ClientSetGateways: Sendable {
-  // SwiftProtobuf.Message conformance is added in an extension below. See the
-  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
-  // methods supported on all messages.
-
-  public var gateways: [ClientGatewayConfig] = []
-
-  public var activeOrigin: String = String()
-
-  public var unknownFields = SwiftProtobuf.UnknownStorage()
-
-  public init() {}
-}
-
-public nonisolated struct ClientGatewayConfig: Sendable {
+/// Makes the gateway at `url` active, adding it when it is new; a non-empty
+/// `name` renames it. Plaintext is only allowed on loopback.
+public nonisolated struct ClientUseGateway: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -2353,6 +2443,20 @@ public nonisolated struct ClientGatewayConfig: Sendable {
   public var url: String = String()
 
   public var name: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// Removes a configured gateway; the last one cannot be removed. Removing the
+/// active gateway activates the first remaining one.
+public nonisolated struct ClientRemoveGateway: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var origin: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -2445,6 +2549,7 @@ public nonisolated struct ClientSetLaneDescending: Sendable {
 /// Replaces a scope's folders: names, order, expansion, and members. An item
 /// belongs to one folder; the first listing wins. Only the differences are
 /// recorded, so concurrent edits elsewhere survive.
+/// Replaces a scope's folders: names, order, expansion, and members.
 public nonisolated struct ClientSetFolders: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -2912,104 +3017,72 @@ public nonisolated struct ClientCreationPreviewCommand: Sendable {
 }
 
 /// A creation form as the core checks it.
-public nonisolated struct ClientCreationPreview: @unchecked Sendable {
+public nonisolated struct ClientCreationPreview: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
   /// Why it cannot be queued yet, e.g. "Choose a board."; empty when it can.
-  public var problem: String {
-    get {_storage._problem}
-    set {_uniqueStorage()._problem = newValue}
-  }
+  public var problem: String = String()
 
   /// The intent with the defaults applied (checkout, board, lane, agent,
   /// workspace mode); edit and send this one back.
   public var intent: ClientCreationIntent {
-    get {_storage._intent ?? ClientCreationIntent()}
-    set {_uniqueStorage()._intent = newValue}
+    get {_intent ?? ClientCreationIntent()}
+    set {_intent = newValue}
   }
   /// Returns true if `intent` has been explicitly set.
-  public var hasIntent: Bool {_storage._intent != nil}
+  public var hasIntent: Bool {self._intent != nil}
   /// Clears the value of `intent`. Subsequent reads from it will return its default value.
-  public mutating func clearIntent() {_uniqueStorage()._intent = nil}
+  public mutating func clearIntent() {self._intent = nil}
 
-  public var catalog: ClientCreationCatalogState {
-    get {_storage._catalog}
-    set {_uniqueStorage()._catalog = newValue}
-  }
+  public var catalog: ClientCreationCatalogState = .none
 
   /// "Loading agent models…", "Machine offline · choose an online
   /// destination", or the checkout's name.
-  public var destinationStatus: String {
-    get {_storage._destinationStatus}
-    set {_uniqueStorage()._destinationStatus = newValue}
-  }
+  public var destinationStatus: String = String()
 
   /// Shown under a task editor whose destination is offline; empty when online.
-  public var offlineHint: String {
-    get {_storage._offlineHint}
-    set {_uniqueStorage()._offlineHint = newValue}
-  }
+  public var offlineHint: String = String()
 
   /// The agent pickers for the destination machine's catalog.
   public var agent: ClientAgentControlsState {
-    get {_storage._agent ?? ClientAgentControlsState()}
-    set {_uniqueStorage()._agent = newValue}
+    get {_agent ?? ClientAgentControlsState()}
+    set {_agent = newValue}
   }
   /// Returns true if `agent` has been explicitly set.
-  public var hasAgent: Bool {_storage._agent != nil}
+  public var hasAgent: Bool {self._agent != nil}
   /// Clears the value of `agent`. Subsequent reads from it will return its default value.
-  public mutating func clearAgent() {_uniqueStorage()._agent = nil}
+  public mutating func clearAgent() {self._agent = nil}
 
   /// Lanes a new task may start in: Todo and Running.
-  public var startLanes: [Dieter_V1_Lane] {
-    get {_storage._startLanes}
-    set {_uniqueStorage()._startLanes = newValue}
-  }
+  public var startLanes: [Dieter_V1_Lane] = []
 
   /// The title the new card shows at once.
-  public var title: String {
-    get {_storage._title}
-    set {_uniqueStorage()._title = newValue}
-  }
+  public var title: String = String()
 
   /// A task saved to Todo waits there; Running and chats start at once.
-  public var defersStart: Bool {
-    get {_storage._defersStart}
-    set {_uniqueStorage()._defersStart = newValue}
-  }
+  public var defersStart: Bool = false
 
   /// Open the conversation after creating it: chats and started tasks.
-  public var opensAfterCreate: Bool {
-    get {_storage._opensAfterCreate}
-    set {_uniqueStorage()._opensAfterCreate = newValue}
-  }
+  public var opensAfterCreate: Bool = false
 
   /// "Todo · Worktree · Codex / Sol": where a task goes and who runs it.
-  public var summary: String {
-    get {_storage._summary}
-    set {_uniqueStorage()._summary = newValue}
-  }
+  public var summary: String = String()
 
   /// The machine that runs it: the checkout's.
-  public var daemonID: String {
-    get {_storage._daemonID}
-    set {_uniqueStorage()._daemonID = newValue}
-  }
+  public var daemonID: String = String()
 
   /// The workspace mode's description, e.g. "Create a new isolated Git
   /// worktree and branch for this conversation."
-  public var workspaceDetail: String {
-    get {_storage._workspaceDetail}
-    set {_uniqueStorage()._workspaceDetail = newValue}
-  }
+  public var workspaceDetail: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
-  fileprivate var _storage = _StorageClass.defaultInstance
+  fileprivate var _intent: ClientCreationIntent? = nil
+  fileprivate var _agent: ClientAgentControlsState? = nil
 }
 
 /// One choice in an agent picker.
@@ -3132,8 +3205,7 @@ public nonisolated struct ClientAgentPickerItem: Sendable {
   public init() {}
 }
 
-/// Agent pickers as the core resolves them.
-public nonisolated struct ClientAgentControlsState: Sendable {
+public nonisolated struct ClientAgentControlsState: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
@@ -3141,53 +3213,127 @@ public nonisolated struct ClientAgentControlsState: Sendable {
   /// What a send or creation uses: the choice with its gaps filled from the
   /// conversation's agent and its options validated against the catalog.
   public var selection: Dieter_V1_HarnessSelection {
-    get {_selection ?? Dieter_V1_HarnessSelection()}
-    set {_selection = newValue}
+    get {_storage._selection ?? Dieter_V1_HarnessSelection()}
+    set {_uniqueStorage()._selection = newValue}
   }
   /// Returns true if `selection` has been explicitly set.
-  public var hasSelection: Bool {self._selection != nil}
+  public var hasSelection: Bool {_storage._selection != nil}
   /// Clears the value of `selection`. Subsequent reads from it will return its default value.
-  public mutating func clearSelection() {self._selection = nil}
+  public mutating func clearSelection() {_uniqueStorage()._selection = nil}
 
   /// The machine's agents, for the provider picker.
-  public var providers: [ClientAgentPickerItem] = []
+  public var providers: [ClientAgentPickerItem] {
+    get {_storage._providers}
+    set {_uniqueStorage()._providers = newValue}
+  }
 
   /// The selected agent's models, for the model picker.
-  public var models: [ClientAgentPickerItem] = []
+  public var models: [ClientAgentPickerItem] {
+    get {_storage._models}
+    set {_uniqueStorage()._models = newValue}
+  }
 
-  public var providerEnabled: Bool = false
+  public var providerEnabled: Bool {
+    get {_storage._providerEnabled}
+    set {_uniqueStorage()._providerEnabled = newValue}
+  }
 
-  public var modelEnabled: Bool = false
+  public var modelEnabled: Bool {
+    get {_storage._modelEnabled}
+    set {_uniqueStorage()._modelEnabled = newValue}
+  }
 
-  public var effortEnabled: Bool = false
+  public var effortEnabled: Bool {
+    get {_storage._effortEnabled}
+    set {_uniqueStorage()._effortEnabled = newValue}
+  }
 
   /// Names, falling back to IDs: "Codex", "Sol"; "Agent" and "Default model"
   /// when nothing is chosen.
-  public var providerLabel: String = String()
+  public var providerLabel: String {
+    get {_storage._providerLabel}
+    set {_uniqueStorage()._providerLabel = newValue}
+  }
 
-  public var modelLabel: String = String()
+  public var modelLabel: String {
+    get {_storage._modelLabel}
+    set {_uniqueStorage()._modelLabel = newValue}
+  }
 
   /// The effort's name; "Default" for the provider's own default; the
   /// model's default effort while none is chosen.
-  public var effortLabel: String = String()
+  public var effortLabel: String {
+    get {_storage._effortLabel}
+    set {_uniqueStorage()._effortLabel = newValue}
+  }
 
   /// Efforts the selected model accepts, with names. Offer "default" too.
-  public var efforts: [Dieter_V1_EffortOption] = []
+  public var efforts: [Dieter_V1_EffortOption] {
+    get {_storage._efforts}
+    set {_uniqueStorage()._efforts = newValue}
+  }
 
   /// Options that apply to the selected model.
-  public var options: [Dieter_V1_ProviderOption] = []
+  public var options: [Dieter_V1_ProviderOption] {
+    get {_storage._options}
+    set {_uniqueStorage()._options = newValue}
+  }
 
   /// Option ID → its value (else its default).
-  public var optionValues: Dictionary<String,String> = [:]
+  public var optionValues: Dictionary<String,String> {
+    get {_storage._optionValues}
+    set {_uniqueStorage()._optionValues = newValue}
+  }
 
   /// Option ID → it may change now.
-  public var optionEnabled: Dictionary<String,Bool> = [:]
+  public var optionEnabled: Dictionary<String,Bool> {
+    get {_storage._optionEnabled}
+    set {_uniqueStorage()._optionEnabled = newValue}
+  }
+
+  /// The effort picker's entries: "Default" (the provider's own) first, then
+  /// `efforts`.
+  public var effortChoices: [Dieter_V1_EffortOption] {
+    get {_storage._effortChoices}
+    set {_uniqueStorage()._effortChoices = newValue}
+  }
+
+  /// The effort picker's selected entry: the chosen effort, else "default".
+  public var effortValue: String {
+    get {_storage._effortValue}
+    set {_uniqueStorage()._effortValue = newValue}
+  }
+
+  /// The provider's fast mode is on.
+  public var fastMode: Bool {
+    get {_storage._fastMode}
+    set {_uniqueStorage()._fastMode = newValue}
+  }
+
+  /// Option ID → how its field edits it. Choice names fall back to values.
+  public var optionKinds: Dictionary<String,ClientAgentOptionKind> {
+    get {_storage._optionKinds}
+    set {_uniqueStorage()._optionKinds = newValue}
+  }
+
+  /// Toggle option ID → it is on.
+  public var optionOn: Dictionary<String,Bool> {
+    get {_storage._optionOn}
+    set {_uniqueStorage()._optionOn = newValue}
+  }
+
+  /// The provider's fast-mode toggle, which pickers show apart; empty when it
+  /// has none.
+  public var fastOptionID: String {
+    get {_storage._fastOptionID}
+    set {_uniqueStorage()._fastOptionID = newValue}
+  }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
-  fileprivate var _selection: Dieter_V1_HarnessSelection? = nil
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 public nonisolated struct ClientFilesCommand: Sendable {
@@ -3734,6 +3880,25 @@ public nonisolated struct ClientGitOperationFormSpec: @unchecked Sendable {
     set {_uniqueStorage()._strategies = newValue}
   }
 
+  public var copy: ClientGitFormCopy {
+    get {_storage._copy ?? ClientGitFormCopy()}
+    set {_uniqueStorage()._copy = newValue}
+  }
+  /// Returns true if `copy` has been explicitly set.
+  public var hasCopy: Bool {_storage._copy != nil}
+  /// Clears the value of `copy`. Subsequent reads from it will return its default value.
+  public mutating func clearCopy() {_uniqueStorage()._copy = nil}
+
+  /// A caution below the inputs; absent when there is none.
+  public var notice: ClientGitFormNotice {
+    get {_storage._notice ?? ClientGitFormNotice()}
+    set {_uniqueStorage()._notice = newValue}
+  }
+  /// Returns true if `notice` has been explicitly set.
+  public var hasNotice: Bool {_storage._notice != nil}
+  /// Clears the value of `notice`. Subsequent reads from it will return its default value.
+  public mutating func clearNotice() {_uniqueStorage()._notice = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum Input: SwiftProtobuf.Enum, Swift.CaseIterable {
@@ -3853,6 +4018,67 @@ public nonisolated struct ClientGitOperationFormSpec: @unchecked Sendable {
   public init() {}
 
   fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+/// How a Git operation form words its inputs, in sentence case.
+public nonisolated struct ClientGitFormCopy: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var subject: String = String()
+
+  public var subjectPlaceholder: String = String()
+
+  public var body: String = String()
+
+  public var bodyPlaceholder: String = String()
+
+  public var stageAll: String = String()
+
+  public var fetch: String = String()
+
+  public var validate: String = String()
+
+  public var strategy: String = String()
+
+  public var draft: String = String()
+
+  public var push: String = String()
+
+  public var forceWithLease: String = String()
+
+  public var expectedRemoteSha: String = String()
+
+  public var expectedRemoteShaPlaceholder: String = String()
+
+  /// Under the expected remote head.
+  public var expectedRemoteShaHelp: String = String()
+
+  public var targetCardID: String = String()
+
+  public var targetCardIDPlaceholder: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// A caution below a Git operation form's inputs.
+public nonisolated struct ClientGitFormNotice: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var title: String = String()
+
+  public var detail: String = String()
+
+  public var tone: ClientWorkspaceTone = .neutral
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
 }
 
 public nonisolated struct ClientReviewMerge: Sendable {
@@ -5653,6 +5879,13 @@ public nonisolated struct ClientSessionSlice: @unchecked Sendable {
     set {_uniqueStorage()._showReasoning = newValue}
   }
 
+  /// How the phase reads: connected succeeds, connecting or signing in is a
+  /// warning, a blocked connection is danger.
+  public var tone: ClientTone {
+    get {_storage._tone}
+    set {_uniqueStorage()._tone = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum Phase: SwiftProtobuf.Enum, Swift.CaseIterable {
@@ -5849,12 +6082,6 @@ public nonisolated struct ClientMachineEntry: @unchecked Sendable {
     set {_uniqueStorage()._remoteDesktopReason = newValue}
   }
 
-  /// The gateway's CompatibilityStatus name, e.g. "COMPATIBILITY_STATUS_UPDATE_REQUIRED".
-  public var compatibility: String {
-    get {_storage._compatibility}
-    set {_uniqueStorage()._compatibility = newValue}
-  }
-
   /// The open data plane is a loopback route: the machine is this device, so
   /// its paths can be opened locally.
   public var local: Bool {
@@ -5903,6 +6130,25 @@ public nonisolated struct ClientMachineEntry: @unchecked Sendable {
   public var canShareScreen: Bool {
     get {_storage._canShareScreen}
     set {_uniqueStorage()._canShareScreen = newValue}
+  }
+
+  /// "Online" or "Offline".
+  public var presence: String {
+    get {_storage._presence}
+    set {_uniqueStorage()._presence = newValue}
+  }
+
+  /// The machine's name, else its ID.
+  public var displayName: String {
+    get {_storage._displayName}
+    set {_uniqueStorage()._displayName = newValue}
+  }
+
+  /// Available succeeds, a compatible machine that cannot take work warns,
+  /// an outdated one is danger.
+  public var tone: ClientTone {
+    get {_storage._tone}
+    set {_uniqueStorage()._tone = newValue}
   }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
@@ -6874,8 +7120,6 @@ public nonisolated struct ClientTurnFailure: Sendable {
 
   public var log: String = String()
 
-  public var failedMessageID: String = String()
-
   /// The failed request can be sent again.
   public var retryable: Bool = false
 
@@ -7377,6 +7621,8 @@ public nonisolated struct ClientNavigationSlice: Sendable {
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
+  /// The saved layout, as `sidebar_projects` and `chat_list` rules lay out
+  /// projects and chats a UI fixture installed on one device.
   public var projectOrder: [String] = []
 
   public var pinnedProjects: [String] = []
@@ -7601,6 +7847,10 @@ public nonisolated struct ClientChatProjectSection: Sendable {
 
   /// Its chats show: not collapsed, or while searching.
   public var showChats: Bool = false
+
+  /// The button below the chats: "Show 3 more", or "Show fewer" while
+  /// showing all; empty when none are hidden.
+  public var toggleLabel: String = String()
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -7873,9 +8123,6 @@ public nonisolated struct ClientContentLinkFailure: Sendable {
   /// Ready to show, e.g. "This file is outside the conversation's workspace."
   public var message: String = String()
 
-  /// The unsupported scheme as written, e.g. "mailto".
-  public var scheme: String = String()
-
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum Kind: SwiftProtobuf.Enum, Swift.CaseIterable {
@@ -7999,11 +8246,43 @@ public nonisolated struct ClientTerminalsSlice: Sendable {
   /// results.
   public var output: [ClientTerminalOutput] = []
 
+  /// The surface's status line: "Syncing persistent sessions…", what
+  /// terminals are while there are none, else "2 persistent sessions · live".
+  public var status: String = String()
+
+  /// Every terminal as tabs and lists show it, in `terminals` order.
+  public var rows: [ClientTerminalRow] = []
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _target: ClientTerminalTarget? = nil
+}
+
+public nonisolated struct ClientTerminalRow: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: String = String()
+
+  public var running: Bool = false
+
+  /// "Connected", "Reconnecting", "Exited 1", or "Exited".
+  public var status: String = String()
+
+  public var tone: ClientTone = .neutral
+
+  /// Keys and text reach the shell: running with its output streaming.
+  public var acceptsInput: Bool = false
+
+  /// What closing it does, for its confirmation.
+  public var closeMessage: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
 }
 
 public nonisolated struct ClientTerminalOutput: Sendable {
@@ -8025,38 +8304,60 @@ public nonisolated struct ClientTerminalOutput: Sendable {
 }
 
 /// Every terminal on every online, compatible machine.
-public nonisolated struct ClientTerminalOverviewSlice: Sendable {
+public nonisolated struct ClientTerminalOverviewSlice: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
   // methods supported on all messages.
 
-  public var entries: [ClientOverviewTerminal] = []
+  public var entries: [ClientOverviewTerminal] {
+    get {_storage._entries}
+    set {_uniqueStorage()._entries = newValue}
+  }
 
-  public var selectedID: String = String()
+  public var selectedID: String {
+    get {_storage._selectedID}
+    set {_uniqueStorage()._selectedID = newValue}
+  }
 
-  public var loading: Bool = false
+  public var loading: Bool {
+    get {_storage._loading}
+    set {_uniqueStorage()._loading = newValue}
+  }
 
   /// Machines that could not be listed, by machine name.
-  public var errors: Dictionary<String,String> = [:]
+  public var errors: Dictionary<String,String> {
+    get {_storage._errors}
+    set {_uniqueStorage()._errors = newValue}
+  }
 
   /// No compatible machine is online.
-  public var noMachines: Bool = false
+  public var noMachines: Bool {
+    get {_storage._noMachines}
+    set {_uniqueStorage()._noMachines = newValue}
+  }
 
   /// The selected entry's machine.
   public var terminals: ClientTerminalsSlice {
-    get {_terminals ?? ClientTerminalsSlice()}
-    set {_terminals = newValue}
+    get {_storage._terminals ?? ClientTerminalsSlice()}
+    set {_uniqueStorage()._terminals = newValue}
   }
   /// Returns true if `terminals` has been explicitly set.
-  public var hasTerminals: Bool {self._terminals != nil}
+  public var hasTerminals: Bool {_storage._terminals != nil}
   /// Clears the value of `terminals`. Subsequent reads from it will return its default value.
-  public mutating func clearTerminals() {self._terminals = nil}
+  public mutating func clearTerminals() {_uniqueStorage()._terminals = nil}
+
+  /// "2 persistent sessions across 1 machine", or what terminals are while
+  /// there are none.
+  public var status: String {
+    get {_storage._status}
+    set {_uniqueStorage()._status = newValue}
+  }
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
-  fileprivate var _terminals: ClientTerminalsSlice? = nil
+  fileprivate var _storage = _StorageClass.defaultInstance
 }
 
 public nonisolated struct ClientOverviewTerminal: @unchecked Sendable {
@@ -8088,6 +8389,16 @@ public nonisolated struct ClientOverviewTerminal: @unchecked Sendable {
   public var hasTerminal: Bool {_storage._terminal != nil}
   /// Clears the value of `terminal`. Subsequent reads from it will return its default value.
   public mutating func clearTerminal() {_uniqueStorage()._terminal = nil}
+
+  /// How tabs show it; output streams only for the selected machine's terminals.
+  public var row: ClientTerminalRow {
+    get {_storage._row ?? ClientTerminalRow()}
+    set {_uniqueStorage()._row = newValue}
+  }
+  /// Returns true if `row` has been explicitly set.
+  public var hasRow: Bool {_storage._row != nil}
+  /// Clears the value of `row`. Subsequent reads from it will return its default value.
+  public mutating func clearRow() {_uniqueStorage()._row = nil}
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -10342,6 +10653,145 @@ public nonisolated struct ClientProjects: Sendable {
   public init() {}
 }
 
+/// A machine as a new chat's destination picker names it.
+public nonisolated struct ClientChatDestinationMachine: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var daemonID: String = String()
+
+  /// The client's own ID for the machine.
+  public var id: String = String()
+
+  public var name: String = String()
+
+  public var online: Bool = false
+
+  public var version: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientChatDestinationInput: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var projects: [Dieter_V1_Project] = []
+
+  public var machines: [ClientChatDestinationMachine] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// Where a new chat can run: every attached checkout, grouped by the machine
+/// holding it; online machines first, then by name.
+public nonisolated struct ClientChatDestinationGroups: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var groups: [ClientChatDestinationGroup] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientChatDestinationGroup: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// The machine's client ID, else "unavailable:<daemon>" when no machine
+  /// reports the checkout's daemon.
+  public var machineID: String = String()
+
+  public var machineName: String = String()
+
+  public var machineOnline: Bool = false
+
+  public var machineVersion: String = String()
+
+  /// "Studio · Online".
+  public var title: String = String()
+
+  /// By project name, then checkout path.
+  public var destinations: [ClientChatDestination] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientChatDestination: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var projectID: String = String()
+
+  public var checkoutID: String = String()
+
+  public var machineID: String = String()
+
+  /// "app · Studio".
+  public var title: String = String()
+
+  /// "Online · ~/src/app".
+  public var detail: String = String()
+
+  /// The project's name, told apart from the machine's other checkouts of it
+  /// by the checkout's name or folder.
+  public var optionTitle: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientCheckouts: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var checkouts: [Dieter_V1_Checkout] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// Each candidate's hostnames, for routing a captured browser page.
+public nonisolated struct ClientHostnameSets: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var sets: [ClientHostnameSet] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientHostnameSet: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var hostnames: [String] = []
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 /// The machine telemetry surface (SLICE_TELEMETRY); there is one, whatever
 /// scope observes it.
 public nonisolated struct ClientTelemetryCommand: Sendable {
@@ -10850,6 +11300,109 @@ public nonisolated struct ClientQuotaDetail: Sendable {
   public var label: String = String()
 
   public var text: String = String()
+
+  /// A balance or spend, which views that keep money off screen leave out.
+  public var monetary: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// The choices project and board forms offer, and what a new project or
+/// board starts with, as every client words them.
+public nonisolated struct ClientAdminOptions: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var workflows: [ClientAdminChoice] = []
+
+  public var publishModes: [ClientAdminChoice] = []
+
+  public var archivePolicies: [ClientAdminChoice] = []
+
+  public var defaultBoardName: String = String()
+
+  public var defaultWorkflow: String = String()
+
+  public var defaultBaseRemote: String = String()
+
+  public var defaultBaseBranch: String = String()
+
+  public var defaultPublishMode: String = String()
+
+  public var defaultArchivePolicy: String = String()
+
+  /// What a new validation command's form starts with.
+  public var newValidation: ClientValidationDraft {
+    get {_newValidation ?? ClientValidationDraft()}
+    set {_newValidation = newValue}
+  }
+  /// Returns true if `newValidation` has been explicitly set.
+  public var hasNewValidation: Bool {self._newValidation != nil}
+  /// Clears the value of `newValidation`. Subsequent reads from it will return its default value.
+  public mutating func clearNewValidation() {self._newValidation = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _newValidation: ClientValidationDraft? = nil
+}
+
+public nonisolated struct ClientAdminChoice: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// The value a request carries, e.g. "review" or "after_7_days".
+  public var id: String = String()
+
+  /// "With review", "After 7 days".
+  public var title: String = String()
+
+  /// What the choice does, when the form explains it.
+  public var detail: String = String()
+
+  /// A workflow's lanes: "Todo → Running → Review → Done".
+  public var lanes: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// A validation command as its form edits it: arguments and environment one
+/// per line, the timeout as typed.
+public nonisolated struct ClientValidationDraft: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var name: String = String()
+
+  public var executable: String = String()
+
+  public var arguments: String = String()
+
+  public var workingDirectory: String = String()
+
+  public var environment: String = String()
+
+  public var timeoutSeconds: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientValidationDrafts: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var drafts: [ClientValidationDraft] = []
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -11605,6 +12158,67 @@ public nonisolated struct ClientScreenSlice: @unchecked Sendable {
     set {_uniqueStorage()._latencyLabel = newValue}
   }
 
+  /// "Connected · Control" or "Connected · View only" while streaming, else
+  /// the phase label.
+  public var statusLine: String {
+    get {_storage._statusLine}
+    set {_uniqueStorage()._statusLine = newValue}
+  }
+
+  /// The line above the canvas: "1920 × 1080 · H264 · 60 fps · Direct media"
+  /// while streaming, leaving out what is unknown.
+  public var metadata: String {
+    get {_storage._metadata}
+    set {_uniqueStorage()._metadata = newValue}
+  }
+
+  /// "Direct media", "Relayed media", or empty until the media path is known.
+  public var mediaRoute: String {
+    get {_storage._mediaRoute}
+    set {_uniqueStorage()._mediaRoute = newValue}
+  }
+
+  /// The connection details, one "Name · value" line each.
+  public var details: [String] {
+    get {_storage._details}
+    set {_uniqueStorage()._details = newValue}
+  }
+
+  public var streaming: Bool {
+    get {_storage._streaming}
+    set {_uniqueStorage()._streaming = newValue}
+  }
+
+  /// The machine cannot share its screen: permission or support is missing.
+  public var blocked: Bool {
+    get {_storage._blocked}
+    set {_uniqueStorage()._blocked = newValue}
+  }
+
+  public var failed: Bool {
+    get {_storage._failed}
+    set {_uniqueStorage()._failed = newValue}
+  }
+
+  /// How the phase reads: streaming succeeds, a session on its way is a
+  /// warning, a failure is danger.
+  public var tone: ClientTone {
+    get {_storage._tone}
+    set {_uniqueStorage()._tone = newValue}
+  }
+
+  /// "Control" or "View only".
+  public var controlLabel: String {
+    get {_storage._controlLabel}
+    set {_uniqueStorage()._controlLabel = newValue}
+  }
+
+  /// "2 viewers · Pixel controls" while others watch too; empty otherwise.
+  public var viewersLabel: String {
+    get {_storage._viewersLabel}
+    set {_uniqueStorage()._viewersLabel = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -11811,6 +12425,10 @@ nonisolated extension ClientCreationCatalogState: SwiftProtobuf._ProtoNameProvid
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0CREATION_CATALOG_STATE_NONE\0\u{1}CREATION_CATALOG_STATE_CACHED\0\u{1}CREATION_CATALOG_STATE_LIVE\0")
 }
 
+nonisolated extension ClientAgentOptionKind: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0AGENT_OPTION_KIND_TEXT\0\u{1}AGENT_OPTION_KIND_TOGGLE\0\u{1}AGENT_OPTION_KIND_CHOICE\0")
+}
+
 nonisolated extension ClientTerminalKey: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0TERMINAL_KEY_UNSPECIFIED\0\u{1}TERMINAL_KEY_ESCAPE\0\u{1}TERMINAL_KEY_TAB\0\u{1}TERMINAL_KEY_ENTER\0\u{1}TERMINAL_KEY_BACKSPACE\0\u{1}TERMINAL_KEY_UP\0\u{1}TERMINAL_KEY_DOWN\0\u{1}TERMINAL_KEY_RIGHT\0\u{1}TERMINAL_KEY_LEFT\0\u{1}TERMINAL_KEY_HOME\0\u{1}TERMINAL_KEY_END\0\u{1}TERMINAL_KEY_PAGE_UP\0\u{1}TERMINAL_KEY_PAGE_DOWN\0\u{1}TERMINAL_KEY_INSERT\0\u{1}TERMINAL_KEY_DELETE\0\u{1}TERMINAL_KEY_F1\0\u{1}TERMINAL_KEY_F2\0\u{1}TERMINAL_KEY_F3\0\u{1}TERMINAL_KEY_F4\0\u{1}TERMINAL_KEY_F5\0\u{1}TERMINAL_KEY_F6\0\u{1}TERMINAL_KEY_F7\0\u{1}TERMINAL_KEY_F8\0\u{1}TERMINAL_KEY_F9\0\u{1}TERMINAL_KEY_F10\0\u{1}TERMINAL_KEY_F11\0\u{1}TERMINAL_KEY_F12\0")
 }
@@ -11837,6 +12455,10 @@ nonisolated extension ClientBoardStateFilter: SwiftProtobuf._ProtoNameProviding 
 
 nonisolated extension ClientBoardLaneKind: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0BOARD_LANE_KIND_OTHER\0\u{1}BOARD_LANE_KIND_RUNNING\0\u{1}BOARD_LANE_KIND_REVIEW\0\u{1}BOARD_LANE_KIND_DONE\0")
+}
+
+nonisolated extension ClientTone: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0TONE_NEUTRAL\0\u{1}TONE_ACTIVE\0\u{1}TONE_SUCCESS\0\u{1}TONE_WARNING\0\u{1}TONE_DANGER\0")
 }
 
 nonisolated extension ClientRuntimeTone: SwiftProtobuf._ProtoNameProviding {
@@ -11869,7 +12491,7 @@ nonisolated extension ClientQuotaSeverity: SwiftProtobuf._ProtoNameProviding {
 
 nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Command"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}adopt_session\0\u{3}begin_sign_in\0\u{3}complete_sign_in\0\u{4}\u{2}select_gateway\0\u{3}attach_machine\0\u{3}set_connected\0\u{3}set_foreground\0\u{4}\u{2}create_conversation\0\u{3}send_message\0\u{3}start_card\0\u{3}move_card\0\u{3}finish_card\0\u{3}set_card_labels\0\u{3}set_card_pinned\0\u{3}rename_card\0\u{3}archive_card\0\u{3}cancel_card\0\u{3}mark_card_read\0\u{3}retry_pending\0\u{3}discard_pending\0\u{3}restore_card\0\u{3}add_card_label\0\u{3}update_card_draft\0\u{3}merge_card\0\u{3}fork_card\0\u{3}list_archived_cards\0\u{4}\u{2}load_earlier_messages\0\u{3}return_to_latest\0\u{3}refresh_conversation\0\u{3}set_visible_conversation\0\u{3}load_later_messages\0\u{3}retry_failed_turn\0\u{3}remove_queued_message\0\u{3}steer_conversation\0\u{3}load_tool_output\0\u{4}\u{2}rename_machine\0\u{3}revoke_machine\0\u{3}ensure_metadata\0\u{3}set_gateways\0\u{1}resync\0\u{3}set_project_order\0\u{4}\u{3}set_project_expanded\0\u{3}set_chat_section_collapsed\0\u{3}set_chats_show_all\0\u{3}set_lane_descending\0\u{3}set_folders\0\u{3}list_drafts\0\u{3}set_draft_text\0\u{3}remember_creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}admin\0\u{1}telemetry\0\u{1}quotas\0\u{1}processes\0\u{1}search\0\u{1}screen\0\u{4}\u{2}set_show_reasoning\0\u{3}board_view\0\u{2}\u{2}chats\0\u{1}navigation\0\u{3}creation_preview\0\u{3}choose_agent\0\u{3}sign_out\0\u{1}reconnect\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}adopt_session\0\u{3}begin_sign_in\0\u{3}complete_sign_in\0\u{4}\u{2}select_gateway\0\u{3}attach_machine\0\u{3}set_connected\0\u{3}set_foreground\0\u{4}\u{2}create_conversation\0\u{3}send_message\0\u{3}start_card\0\u{3}move_card\0\u{3}finish_card\0\u{3}set_card_labels\0\u{3}set_card_pinned\0\u{3}rename_card\0\u{3}archive_card\0\u{3}cancel_card\0\u{3}mark_card_read\0\u{3}retry_pending\0\u{3}discard_pending\0\u{3}restore_card\0\u{3}add_card_label\0\u{3}update_card_draft\0\u{3}merge_card\0\u{3}fork_card\0\u{3}list_archived_cards\0\u{4}\u{2}load_earlier_messages\0\u{3}return_to_latest\0\u{3}refresh_conversation\0\u{3}set_visible_conversation\0\u{3}load_later_messages\0\u{3}retry_failed_turn\0\u{3}remove_queued_message\0\u{3}steer_conversation\0\u{3}load_tool_output\0\u{4}\u{2}rename_machine\0\u{3}revoke_machine\0\u{3}ensure_metadata\0\u{3}use_gateway\0\u{1}resync\0\u{3}set_project_order\0\u{4}\u{3}set_project_expanded\0\u{3}set_chat_section_collapsed\0\u{3}set_chats_show_all\0\u{3}set_lane_descending\0\u{3}set_folders\0\u{3}list_drafts\0\u{3}set_draft_text\0\u{3}remember_creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}admin\0\u{1}telemetry\0\u{1}quotas\0\u{1}processes\0\u{1}search\0\u{1}screen\0\u{4}\u{2}set_show_reasoning\0\u{3}board_view\0\u{2}\u{2}chats\0\u{1}navigation\0\u{3}creation_preview\0\u{3}choose_agent\0\u{3}sign_out\0\u{1}reconnect\0\u{3}remove_gateway\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -12372,16 +12994,16 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
         }
       }()
       case 43: try {
-        var v: ClientSetGateways?
+        var v: ClientUseGateway?
         var hadOneofValue = false
         if let current = self.command {
           hadOneofValue = true
-          if case .setGateways(let m) = current {v = m}
+          if case .useGateway(let m) = current {v = m}
         }
         try decoder.decodeSingularMessageField(value: &v)
         if let v = v {
           if hadOneofValue {try decoder.handleConflictingOneOf()}
-          self.command = .setGateways(v)
+          self.command = .useGateway(v)
         }
       }()
       case 44: try {
@@ -12800,6 +13422,19 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
           self.command = .reconnect(v)
         }
       }()
+      case 80: try {
+        var v: ClientRemoveGateway?
+        var hadOneofValue = false
+        if let current = self.command {
+          hadOneofValue = true
+          if case .removeGateway(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.command = .removeGateway(v)
+        }
+      }()
       default: break
       }
     }
@@ -12963,8 +13598,8 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
       guard case .ensureMetadata(let v)? = self.command else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 42)
     }()
-    case .setGateways?: try {
-      guard case .setGateways(let v)? = self.command else { preconditionFailure() }
+    case .useGateway?: try {
+      guard case .useGateway(let v)? = self.command else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 43)
     }()
     case .resync?: try {
@@ -13094,6 +13729,10 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
     case .reconnect?: try {
       guard case .reconnect(let v)? = self.command else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 79)
+    }()
+    case .removeGateway?: try {
+      guard case .removeGateway(let v)? = self.command else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 80)
     }()
     case nil: break
     }
@@ -14531,43 +15170,8 @@ nonisolated extension ClientEnsureMetadata: SwiftProtobuf.Message, SwiftProtobuf
   }
 }
 
-nonisolated extension ClientSetGateways: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".SetGateways"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}gateways\0\u{3}active_origin\0")
-
-  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.gateways) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.activeOrigin) }()
-      default: break
-      }
-    }
-  }
-
-  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    if !self.gateways.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.gateways, fieldNumber: 1)
-    }
-    if !self.activeOrigin.isEmpty {
-      try visitor.visitSingularStringField(value: self.activeOrigin, fieldNumber: 2)
-    }
-    try unknownFields.traverse(visitor: &visitor)
-  }
-
-  public static func ==(lhs: ClientSetGateways, rhs: ClientSetGateways) -> Bool {
-    if lhs.gateways != rhs.gateways {return false}
-    if lhs.activeOrigin != rhs.activeOrigin {return false}
-    if lhs.unknownFields != rhs.unknownFields {return false}
-    return true
-  }
-}
-
-nonisolated extension ClientGatewayConfig: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
-  public static let protoMessageName: String = _protobuf_package + ".GatewayConfig"
+nonisolated extension ClientUseGateway: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".UseGateway"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}url\0\u{1}name\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
@@ -14593,9 +15197,39 @@ nonisolated extension ClientGatewayConfig: SwiftProtobuf.Message, SwiftProtobuf.
     try unknownFields.traverse(visitor: &visitor)
   }
 
-  public static func ==(lhs: ClientGatewayConfig, rhs: ClientGatewayConfig) -> Bool {
+  public static func ==(lhs: ClientUseGateway, rhs: ClientUseGateway) -> Bool {
     if lhs.url != rhs.url {return false}
     if lhs.name != rhs.name {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientRemoveGateway: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoveGateway"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}origin\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.origin) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.origin.isEmpty {
+      try visitor.visitSingularStringField(value: self.origin, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientRemoveGateway, rhs: ClientRemoveGateway) -> Bool {
+    if lhs.origin != rhs.origin {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -15691,151 +16325,91 @@ nonisolated extension ClientCreationPreview: SwiftProtobuf.Message, SwiftProtobu
   public static let protoMessageName: String = _protobuf_package + ".CreationPreview"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}problem\0\u{1}intent\0\u{1}catalog\0\u{3}destination_status\0\u{3}offline_hint\0\u{1}agent\0\u{3}start_lanes\0\u{2}\u{2}title\0\u{3}defers_start\0\u{3}opens_after_create\0\u{1}summary\0\u{3}daemon_id\0\u{3}workspace_detail\0")
 
-  fileprivate class _StorageClass {
-    var _problem: String = String()
-    var _intent: ClientCreationIntent? = nil
-    var _catalog: ClientCreationCatalogState = .none
-    var _destinationStatus: String = String()
-    var _offlineHint: String = String()
-    var _agent: ClientAgentControlsState? = nil
-    var _startLanes: [Dieter_V1_Lane] = []
-    var _title: String = String()
-    var _defersStart: Bool = false
-    var _opensAfterCreate: Bool = false
-    var _summary: String = String()
-    var _daemonID: String = String()
-    var _workspaceDetail: String = String()
-
-      // This property is used as the initial default value for new instances of the type.
-      // The type itself is protecting the reference to its storage via CoW semantics.
-      // This will force a copy to be made of this reference when the first mutation occurs;
-      // hence, it is safe to mark this as `nonisolated(unsafe)`.
-      static nonisolated(unsafe) let defaultInstance = _StorageClass()
-
-    private init() {}
-
-    init(copying source: _StorageClass) {
-      _problem = source._problem
-      _intent = source._intent
-      _catalog = source._catalog
-      _destinationStatus = source._destinationStatus
-      _offlineHint = source._offlineHint
-      _agent = source._agent
-      _startLanes = source._startLanes
-      _title = source._title
-      _defersStart = source._defersStart
-      _opensAfterCreate = source._opensAfterCreate
-      _summary = source._summary
-      _daemonID = source._daemonID
-      _workspaceDetail = source._workspaceDetail
-    }
-  }
-
-  fileprivate mutating func _uniqueStorage() -> _StorageClass {
-    if !isKnownUniquelyReferenced(&_storage) {
-      _storage = _StorageClass(copying: _storage)
-    }
-    return _storage
-  }
-
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    _ = _uniqueStorage()
-    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
-      while let fieldNumber = try decoder.nextFieldNumber() {
-        // The use of inline closures is to circumvent an issue where the compiler
-        // allocates stack space for every case branch when no optimizations are
-        // enabled. https://github.com/apple/swift-protobuf/issues/1034
-        switch fieldNumber {
-        case 1: try { try decoder.decodeSingularStringField(value: &_storage._problem) }()
-        case 2: try { try decoder.decodeSingularMessageField(value: &_storage._intent) }()
-        case 3: try { try decoder.decodeSingularEnumField(value: &_storage._catalog) }()
-        case 4: try { try decoder.decodeSingularStringField(value: &_storage._destinationStatus) }()
-        case 5: try { try decoder.decodeSingularStringField(value: &_storage._offlineHint) }()
-        case 6: try { try decoder.decodeSingularMessageField(value: &_storage._agent) }()
-        case 7: try { try decoder.decodeRepeatedMessageField(value: &_storage._startLanes) }()
-        case 9: try { try decoder.decodeSingularStringField(value: &_storage._title) }()
-        case 10: try { try decoder.decodeSingularBoolField(value: &_storage._defersStart) }()
-        case 11: try { try decoder.decodeSingularBoolField(value: &_storage._opensAfterCreate) }()
-        case 12: try { try decoder.decodeSingularStringField(value: &_storage._summary) }()
-        case 13: try { try decoder.decodeSingularStringField(value: &_storage._daemonID) }()
-        case 14: try { try decoder.decodeSingularStringField(value: &_storage._workspaceDetail) }()
-        default: break
-        }
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.problem) }()
+      case 2: try { try decoder.decodeSingularMessageField(value: &self._intent) }()
+      case 3: try { try decoder.decodeSingularEnumField(value: &self.catalog) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.destinationStatus) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.offlineHint) }()
+      case 6: try { try decoder.decodeSingularMessageField(value: &self._agent) }()
+      case 7: try { try decoder.decodeRepeatedMessageField(value: &self.startLanes) }()
+      case 9: try { try decoder.decodeSingularStringField(value: &self.title) }()
+      case 10: try { try decoder.decodeSingularBoolField(value: &self.defersStart) }()
+      case 11: try { try decoder.decodeSingularBoolField(value: &self.opensAfterCreate) }()
+      case 12: try { try decoder.decodeSingularStringField(value: &self.summary) }()
+      case 13: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
+      case 14: try { try decoder.decodeSingularStringField(value: &self.workspaceDetail) }()
+      default: break
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every if/case branch local when no optimizations
-      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-      // https://github.com/apple/swift-protobuf/issues/1182
-      if !_storage._problem.isEmpty {
-        try visitor.visitSingularStringField(value: _storage._problem, fieldNumber: 1)
-      }
-      try { if let v = _storage._intent {
-        try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
-      } }()
-      if _storage._catalog != .none {
-        try visitor.visitSingularEnumField(value: _storage._catalog, fieldNumber: 3)
-      }
-      if !_storage._destinationStatus.isEmpty {
-        try visitor.visitSingularStringField(value: _storage._destinationStatus, fieldNumber: 4)
-      }
-      if !_storage._offlineHint.isEmpty {
-        try visitor.visitSingularStringField(value: _storage._offlineHint, fieldNumber: 5)
-      }
-      try { if let v = _storage._agent {
-        try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
-      } }()
-      if !_storage._startLanes.isEmpty {
-        try visitor.visitRepeatedMessageField(value: _storage._startLanes, fieldNumber: 7)
-      }
-      if !_storage._title.isEmpty {
-        try visitor.visitSingularStringField(value: _storage._title, fieldNumber: 9)
-      }
-      if _storage._defersStart != false {
-        try visitor.visitSingularBoolField(value: _storage._defersStart, fieldNumber: 10)
-      }
-      if _storage._opensAfterCreate != false {
-        try visitor.visitSingularBoolField(value: _storage._opensAfterCreate, fieldNumber: 11)
-      }
-      if !_storage._summary.isEmpty {
-        try visitor.visitSingularStringField(value: _storage._summary, fieldNumber: 12)
-      }
-      if !_storage._daemonID.isEmpty {
-        try visitor.visitSingularStringField(value: _storage._daemonID, fieldNumber: 13)
-      }
-      if !_storage._workspaceDetail.isEmpty {
-        try visitor.visitSingularStringField(value: _storage._workspaceDetail, fieldNumber: 14)
-      }
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.problem.isEmpty {
+      try visitor.visitSingularStringField(value: self.problem, fieldNumber: 1)
+    }
+    try { if let v = self._intent {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    } }()
+    if self.catalog != .none {
+      try visitor.visitSingularEnumField(value: self.catalog, fieldNumber: 3)
+    }
+    if !self.destinationStatus.isEmpty {
+      try visitor.visitSingularStringField(value: self.destinationStatus, fieldNumber: 4)
+    }
+    if !self.offlineHint.isEmpty {
+      try visitor.visitSingularStringField(value: self.offlineHint, fieldNumber: 5)
+    }
+    try { if let v = self._agent {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+    } }()
+    if !self.startLanes.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.startLanes, fieldNumber: 7)
+    }
+    if !self.title.isEmpty {
+      try visitor.visitSingularStringField(value: self.title, fieldNumber: 9)
+    }
+    if self.defersStart != false {
+      try visitor.visitSingularBoolField(value: self.defersStart, fieldNumber: 10)
+    }
+    if self.opensAfterCreate != false {
+      try visitor.visitSingularBoolField(value: self.opensAfterCreate, fieldNumber: 11)
+    }
+    if !self.summary.isEmpty {
+      try visitor.visitSingularStringField(value: self.summary, fieldNumber: 12)
+    }
+    if !self.daemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.daemonID, fieldNumber: 13)
+    }
+    if !self.workspaceDetail.isEmpty {
+      try visitor.visitSingularStringField(value: self.workspaceDetail, fieldNumber: 14)
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: ClientCreationPreview, rhs: ClientCreationPreview) -> Bool {
-    if lhs._storage !== rhs._storage {
-      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
-        let _storage = _args.0
-        let rhs_storage = _args.1
-        if _storage._problem != rhs_storage._problem {return false}
-        if _storage._intent != rhs_storage._intent {return false}
-        if _storage._catalog != rhs_storage._catalog {return false}
-        if _storage._destinationStatus != rhs_storage._destinationStatus {return false}
-        if _storage._offlineHint != rhs_storage._offlineHint {return false}
-        if _storage._agent != rhs_storage._agent {return false}
-        if _storage._startLanes != rhs_storage._startLanes {return false}
-        if _storage._title != rhs_storage._title {return false}
-        if _storage._defersStart != rhs_storage._defersStart {return false}
-        if _storage._opensAfterCreate != rhs_storage._opensAfterCreate {return false}
-        if _storage._summary != rhs_storage._summary {return false}
-        if _storage._daemonID != rhs_storage._daemonID {return false}
-        if _storage._workspaceDetail != rhs_storage._workspaceDetail {return false}
-        return true
-      }
-      if !storagesAreEqual {return false}
-    }
+    if lhs.problem != rhs.problem {return false}
+    if lhs._intent != rhs._intent {return false}
+    if lhs.catalog != rhs.catalog {return false}
+    if lhs.destinationStatus != rhs.destinationStatus {return false}
+    if lhs.offlineHint != rhs.offlineHint {return false}
+    if lhs._agent != rhs._agent {return false}
+    if lhs.startLanes != rhs.startLanes {return false}
+    if lhs.title != rhs.title {return false}
+    if lhs.defersStart != rhs.defersStart {return false}
+    if lhs.opensAfterCreate != rhs.opensAfterCreate {return false}
+    if lhs.summary != rhs.summary {return false}
+    if lhs.daemonID != rhs.daemonID {return false}
+    if lhs.workspaceDetail != rhs.workspaceDetail {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -16038,93 +16612,195 @@ nonisolated extension ClientAgentPickerItem: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension ClientAgentControlsState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".AgentControlsState"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}selection\0\u{1}providers\0\u{1}models\0\u{3}provider_enabled\0\u{3}model_enabled\0\u{3}effort_enabled\0\u{3}provider_label\0\u{3}model_label\0\u{3}effort_label\0\u{1}efforts\0\u{1}options\0\u{3}option_values\0\u{3}option_enabled\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}selection\0\u{1}providers\0\u{1}models\0\u{3}provider_enabled\0\u{3}model_enabled\0\u{3}effort_enabled\0\u{3}provider_label\0\u{3}model_label\0\u{3}effort_label\0\u{1}efforts\0\u{1}options\0\u{3}option_values\0\u{3}option_enabled\0\u{3}effort_choices\0\u{3}effort_value\0\u{3}fast_mode\0\u{3}option_kinds\0\u{3}option_on\0\u{3}fast_option_id\0")
+
+  fileprivate class _StorageClass {
+    var _selection: Dieter_V1_HarnessSelection? = nil
+    var _providers: [ClientAgentPickerItem] = []
+    var _models: [ClientAgentPickerItem] = []
+    var _providerEnabled: Bool = false
+    var _modelEnabled: Bool = false
+    var _effortEnabled: Bool = false
+    var _providerLabel: String = String()
+    var _modelLabel: String = String()
+    var _effortLabel: String = String()
+    var _efforts: [Dieter_V1_EffortOption] = []
+    var _options: [Dieter_V1_ProviderOption] = []
+    var _optionValues: Dictionary<String,String> = [:]
+    var _optionEnabled: Dictionary<String,Bool> = [:]
+    var _effortChoices: [Dieter_V1_EffortOption] = []
+    var _effortValue: String = String()
+    var _fastMode: Bool = false
+    var _optionKinds: Dictionary<String,ClientAgentOptionKind> = [:]
+    var _optionOn: Dictionary<String,Bool> = [:]
+    var _fastOptionID: String = String()
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _selection = source._selection
+      _providers = source._providers
+      _models = source._models
+      _providerEnabled = source._providerEnabled
+      _modelEnabled = source._modelEnabled
+      _effortEnabled = source._effortEnabled
+      _providerLabel = source._providerLabel
+      _modelLabel = source._modelLabel
+      _effortLabel = source._effortLabel
+      _efforts = source._efforts
+      _options = source._options
+      _optionValues = source._optionValues
+      _optionEnabled = source._optionEnabled
+      _effortChoices = source._effortChoices
+      _effortValue = source._effortValue
+      _fastMode = source._fastMode
+      _optionKinds = source._optionKinds
+      _optionOn = source._optionOn
+      _fastOptionID = source._fastOptionID
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeSingularMessageField(value: &self._selection) }()
-      case 2: try { try decoder.decodeRepeatedMessageField(value: &self.providers) }()
-      case 3: try { try decoder.decodeRepeatedMessageField(value: &self.models) }()
-      case 4: try { try decoder.decodeSingularBoolField(value: &self.providerEnabled) }()
-      case 5: try { try decoder.decodeSingularBoolField(value: &self.modelEnabled) }()
-      case 6: try { try decoder.decodeSingularBoolField(value: &self.effortEnabled) }()
-      case 7: try { try decoder.decodeSingularStringField(value: &self.providerLabel) }()
-      case 8: try { try decoder.decodeSingularStringField(value: &self.modelLabel) }()
-      case 9: try { try decoder.decodeSingularStringField(value: &self.effortLabel) }()
-      case 10: try { try decoder.decodeRepeatedMessageField(value: &self.efforts) }()
-      case 11: try { try decoder.decodeRepeatedMessageField(value: &self.options) }()
-      case 12: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &self.optionValues) }()
-      case 13: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufBool>.self, value: &self.optionEnabled) }()
-      default: break
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularMessageField(value: &_storage._selection) }()
+        case 2: try { try decoder.decodeRepeatedMessageField(value: &_storage._providers) }()
+        case 3: try { try decoder.decodeRepeatedMessageField(value: &_storage._models) }()
+        case 4: try { try decoder.decodeSingularBoolField(value: &_storage._providerEnabled) }()
+        case 5: try { try decoder.decodeSingularBoolField(value: &_storage._modelEnabled) }()
+        case 6: try { try decoder.decodeSingularBoolField(value: &_storage._effortEnabled) }()
+        case 7: try { try decoder.decodeSingularStringField(value: &_storage._providerLabel) }()
+        case 8: try { try decoder.decodeSingularStringField(value: &_storage._modelLabel) }()
+        case 9: try { try decoder.decodeSingularStringField(value: &_storage._effortLabel) }()
+        case 10: try { try decoder.decodeRepeatedMessageField(value: &_storage._efforts) }()
+        case 11: try { try decoder.decodeRepeatedMessageField(value: &_storage._options) }()
+        case 12: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &_storage._optionValues) }()
+        case 13: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufBool>.self, value: &_storage._optionEnabled) }()
+        case 14: try { try decoder.decodeRepeatedMessageField(value: &_storage._effortChoices) }()
+        case 15: try { try decoder.decodeSingularStringField(value: &_storage._effortValue) }()
+        case 16: try { try decoder.decodeSingularBoolField(value: &_storage._fastMode) }()
+        case 17: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufEnumMap<SwiftProtobuf.ProtobufString,ClientAgentOptionKind>.self, value: &_storage._optionKinds) }()
+        case 18: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufBool>.self, value: &_storage._optionOn) }()
+        case 19: try { try decoder.decodeSingularStringField(value: &_storage._fastOptionID) }()
+        default: break
+        }
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    try { if let v = self._selection {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
-    } }()
-    if !self.providers.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.providers, fieldNumber: 2)
-    }
-    if !self.models.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.models, fieldNumber: 3)
-    }
-    if self.providerEnabled != false {
-      try visitor.visitSingularBoolField(value: self.providerEnabled, fieldNumber: 4)
-    }
-    if self.modelEnabled != false {
-      try visitor.visitSingularBoolField(value: self.modelEnabled, fieldNumber: 5)
-    }
-    if self.effortEnabled != false {
-      try visitor.visitSingularBoolField(value: self.effortEnabled, fieldNumber: 6)
-    }
-    if !self.providerLabel.isEmpty {
-      try visitor.visitSingularStringField(value: self.providerLabel, fieldNumber: 7)
-    }
-    if !self.modelLabel.isEmpty {
-      try visitor.visitSingularStringField(value: self.modelLabel, fieldNumber: 8)
-    }
-    if !self.effortLabel.isEmpty {
-      try visitor.visitSingularStringField(value: self.effortLabel, fieldNumber: 9)
-    }
-    if !self.efforts.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.efforts, fieldNumber: 10)
-    }
-    if !self.options.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.options, fieldNumber: 11)
-    }
-    if !self.optionValues.isEmpty {
-      try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: self.optionValues, fieldNumber: 12)
-    }
-    if !self.optionEnabled.isEmpty {
-      try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufBool>.self, value: self.optionEnabled, fieldNumber: 13)
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      try { if let v = _storage._selection {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+      } }()
+      if !_storage._providers.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._providers, fieldNumber: 2)
+      }
+      if !_storage._models.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._models, fieldNumber: 3)
+      }
+      if _storage._providerEnabled != false {
+        try visitor.visitSingularBoolField(value: _storage._providerEnabled, fieldNumber: 4)
+      }
+      if _storage._modelEnabled != false {
+        try visitor.visitSingularBoolField(value: _storage._modelEnabled, fieldNumber: 5)
+      }
+      if _storage._effortEnabled != false {
+        try visitor.visitSingularBoolField(value: _storage._effortEnabled, fieldNumber: 6)
+      }
+      if !_storage._providerLabel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._providerLabel, fieldNumber: 7)
+      }
+      if !_storage._modelLabel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._modelLabel, fieldNumber: 8)
+      }
+      if !_storage._effortLabel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._effortLabel, fieldNumber: 9)
+      }
+      if !_storage._efforts.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._efforts, fieldNumber: 10)
+      }
+      if !_storage._options.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._options, fieldNumber: 11)
+      }
+      if !_storage._optionValues.isEmpty {
+        try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: _storage._optionValues, fieldNumber: 12)
+      }
+      if !_storage._optionEnabled.isEmpty {
+        try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufBool>.self, value: _storage._optionEnabled, fieldNumber: 13)
+      }
+      if !_storage._effortChoices.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._effortChoices, fieldNumber: 14)
+      }
+      if !_storage._effortValue.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._effortValue, fieldNumber: 15)
+      }
+      if _storage._fastMode != false {
+        try visitor.visitSingularBoolField(value: _storage._fastMode, fieldNumber: 16)
+      }
+      if !_storage._optionKinds.isEmpty {
+        try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufEnumMap<SwiftProtobuf.ProtobufString,ClientAgentOptionKind>.self, value: _storage._optionKinds, fieldNumber: 17)
+      }
+      if !_storage._optionOn.isEmpty {
+        try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufBool>.self, value: _storage._optionOn, fieldNumber: 18)
+      }
+      if !_storage._fastOptionID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._fastOptionID, fieldNumber: 19)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: ClientAgentControlsState, rhs: ClientAgentControlsState) -> Bool {
-    if lhs._selection != rhs._selection {return false}
-    if lhs.providers != rhs.providers {return false}
-    if lhs.models != rhs.models {return false}
-    if lhs.providerEnabled != rhs.providerEnabled {return false}
-    if lhs.modelEnabled != rhs.modelEnabled {return false}
-    if lhs.effortEnabled != rhs.effortEnabled {return false}
-    if lhs.providerLabel != rhs.providerLabel {return false}
-    if lhs.modelLabel != rhs.modelLabel {return false}
-    if lhs.effortLabel != rhs.effortLabel {return false}
-    if lhs.efforts != rhs.efforts {return false}
-    if lhs.options != rhs.options {return false}
-    if lhs.optionValues != rhs.optionValues {return false}
-    if lhs.optionEnabled != rhs.optionEnabled {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._selection != rhs_storage._selection {return false}
+        if _storage._providers != rhs_storage._providers {return false}
+        if _storage._models != rhs_storage._models {return false}
+        if _storage._providerEnabled != rhs_storage._providerEnabled {return false}
+        if _storage._modelEnabled != rhs_storage._modelEnabled {return false}
+        if _storage._effortEnabled != rhs_storage._effortEnabled {return false}
+        if _storage._providerLabel != rhs_storage._providerLabel {return false}
+        if _storage._modelLabel != rhs_storage._modelLabel {return false}
+        if _storage._effortLabel != rhs_storage._effortLabel {return false}
+        if _storage._efforts != rhs_storage._efforts {return false}
+        if _storage._options != rhs_storage._options {return false}
+        if _storage._optionValues != rhs_storage._optionValues {return false}
+        if _storage._optionEnabled != rhs_storage._optionEnabled {return false}
+        if _storage._effortChoices != rhs_storage._effortChoices {return false}
+        if _storage._effortValue != rhs_storage._effortValue {return false}
+        if _storage._fastMode != rhs_storage._fastMode {return false}
+        if _storage._optionKinds != rhs_storage._optionKinds {return false}
+        if _storage._optionOn != rhs_storage._optionOn {return false}
+        if _storage._fastOptionID != rhs_storage._fastOptionID {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -17073,7 +17749,7 @@ nonisolated extension ClientGitOperationForm: SwiftProtobuf.Message, SwiftProtob
 
 nonisolated extension ClientGitOperationFormSpec: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".GitOperationFormSpec"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}initial\0\u{1}title\0\u{1}summary\0\u{1}destructive\0\u{1}start\0\u{1}inputs\0\u{1}strategies\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}initial\0\u{1}title\0\u{1}summary\0\u{1}destructive\0\u{1}start\0\u{1}inputs\0\u{1}strategies\0\u{1}copy\0\u{1}notice\0")
 
   fileprivate class _StorageClass {
     var _initial: ClientGitOperationForm? = nil
@@ -17083,6 +17759,8 @@ nonisolated extension ClientGitOperationFormSpec: SwiftProtobuf.Message, SwiftPr
     var _start: ClientGitOperationFormSpec.Start = .form
     var _inputs: [ClientGitOperationFormSpec.Input] = []
     var _strategies: [ClientMergeStrategyOption] = []
+    var _copy: ClientGitFormCopy? = nil
+    var _notice: ClientGitFormNotice? = nil
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -17100,6 +17778,8 @@ nonisolated extension ClientGitOperationFormSpec: SwiftProtobuf.Message, SwiftPr
       _start = source._start
       _inputs = source._inputs
       _strategies = source._strategies
+      _copy = source._copy
+      _notice = source._notice
     }
   }
 
@@ -17125,6 +17805,8 @@ nonisolated extension ClientGitOperationFormSpec: SwiftProtobuf.Message, SwiftPr
         case 5: try { try decoder.decodeSingularEnumField(value: &_storage._start) }()
         case 6: try { try decoder.decodeRepeatedEnumField(value: &_storage._inputs) }()
         case 7: try { try decoder.decodeRepeatedMessageField(value: &_storage._strategies) }()
+        case 8: try { try decoder.decodeSingularMessageField(value: &_storage._copy) }()
+        case 9: try { try decoder.decodeSingularMessageField(value: &_storage._notice) }()
         default: break
         }
       }
@@ -17158,6 +17840,12 @@ nonisolated extension ClientGitOperationFormSpec: SwiftProtobuf.Message, SwiftPr
       if !_storage._strategies.isEmpty {
         try visitor.visitRepeatedMessageField(value: _storage._strategies, fieldNumber: 7)
       }
+      try { if let v = _storage._copy {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 8)
+      } }()
+      try { if let v = _storage._notice {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -17174,6 +17862,8 @@ nonisolated extension ClientGitOperationFormSpec: SwiftProtobuf.Message, SwiftPr
         if _storage._start != rhs_storage._start {return false}
         if _storage._inputs != rhs_storage._inputs {return false}
         if _storage._strategies != rhs_storage._strategies {return false}
+        if _storage._copy != rhs_storage._copy {return false}
+        if _storage._notice != rhs_storage._notice {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -17189,6 +17879,151 @@ nonisolated extension ClientGitOperationFormSpec.Input: SwiftProtobuf._ProtoName
 
 nonisolated extension ClientGitOperationFormSpec.Start: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0START_FORM\0\u{1}START_IMMEDIATE\0\u{1}START_CONFIRM\0")
+}
+
+nonisolated extension ClientGitFormCopy: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".GitFormCopy"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}subject\0\u{3}subject_placeholder\0\u{1}body\0\u{3}body_placeholder\0\u{3}stage_all\0\u{1}fetch\0\u{1}validate\0\u{1}strategy\0\u{1}draft\0\u{1}push\0\u{3}force_with_lease\0\u{3}expected_remote_sha\0\u{3}expected_remote_sha_placeholder\0\u{3}expected_remote_sha_help\0\u{3}target_card_id\0\u{3}target_card_id_placeholder\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.subject) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.subjectPlaceholder) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.body) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.bodyPlaceholder) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.stageAll) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.fetch) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.validate) }()
+      case 8: try { try decoder.decodeSingularStringField(value: &self.strategy) }()
+      case 9: try { try decoder.decodeSingularStringField(value: &self.draft) }()
+      case 10: try { try decoder.decodeSingularStringField(value: &self.push) }()
+      case 11: try { try decoder.decodeSingularStringField(value: &self.forceWithLease) }()
+      case 12: try { try decoder.decodeSingularStringField(value: &self.expectedRemoteSha) }()
+      case 13: try { try decoder.decodeSingularStringField(value: &self.expectedRemoteShaPlaceholder) }()
+      case 14: try { try decoder.decodeSingularStringField(value: &self.expectedRemoteShaHelp) }()
+      case 15: try { try decoder.decodeSingularStringField(value: &self.targetCardID) }()
+      case 16: try { try decoder.decodeSingularStringField(value: &self.targetCardIDPlaceholder) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.subject.isEmpty {
+      try visitor.visitSingularStringField(value: self.subject, fieldNumber: 1)
+    }
+    if !self.subjectPlaceholder.isEmpty {
+      try visitor.visitSingularStringField(value: self.subjectPlaceholder, fieldNumber: 2)
+    }
+    if !self.body.isEmpty {
+      try visitor.visitSingularStringField(value: self.body, fieldNumber: 3)
+    }
+    if !self.bodyPlaceholder.isEmpty {
+      try visitor.visitSingularStringField(value: self.bodyPlaceholder, fieldNumber: 4)
+    }
+    if !self.stageAll.isEmpty {
+      try visitor.visitSingularStringField(value: self.stageAll, fieldNumber: 5)
+    }
+    if !self.fetch.isEmpty {
+      try visitor.visitSingularStringField(value: self.fetch, fieldNumber: 6)
+    }
+    if !self.validate.isEmpty {
+      try visitor.visitSingularStringField(value: self.validate, fieldNumber: 7)
+    }
+    if !self.strategy.isEmpty {
+      try visitor.visitSingularStringField(value: self.strategy, fieldNumber: 8)
+    }
+    if !self.draft.isEmpty {
+      try visitor.visitSingularStringField(value: self.draft, fieldNumber: 9)
+    }
+    if !self.push.isEmpty {
+      try visitor.visitSingularStringField(value: self.push, fieldNumber: 10)
+    }
+    if !self.forceWithLease.isEmpty {
+      try visitor.visitSingularStringField(value: self.forceWithLease, fieldNumber: 11)
+    }
+    if !self.expectedRemoteSha.isEmpty {
+      try visitor.visitSingularStringField(value: self.expectedRemoteSha, fieldNumber: 12)
+    }
+    if !self.expectedRemoteShaPlaceholder.isEmpty {
+      try visitor.visitSingularStringField(value: self.expectedRemoteShaPlaceholder, fieldNumber: 13)
+    }
+    if !self.expectedRemoteShaHelp.isEmpty {
+      try visitor.visitSingularStringField(value: self.expectedRemoteShaHelp, fieldNumber: 14)
+    }
+    if !self.targetCardID.isEmpty {
+      try visitor.visitSingularStringField(value: self.targetCardID, fieldNumber: 15)
+    }
+    if !self.targetCardIDPlaceholder.isEmpty {
+      try visitor.visitSingularStringField(value: self.targetCardIDPlaceholder, fieldNumber: 16)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientGitFormCopy, rhs: ClientGitFormCopy) -> Bool {
+    if lhs.subject != rhs.subject {return false}
+    if lhs.subjectPlaceholder != rhs.subjectPlaceholder {return false}
+    if lhs.body != rhs.body {return false}
+    if lhs.bodyPlaceholder != rhs.bodyPlaceholder {return false}
+    if lhs.stageAll != rhs.stageAll {return false}
+    if lhs.fetch != rhs.fetch {return false}
+    if lhs.validate != rhs.validate {return false}
+    if lhs.strategy != rhs.strategy {return false}
+    if lhs.draft != rhs.draft {return false}
+    if lhs.push != rhs.push {return false}
+    if lhs.forceWithLease != rhs.forceWithLease {return false}
+    if lhs.expectedRemoteSha != rhs.expectedRemoteSha {return false}
+    if lhs.expectedRemoteShaPlaceholder != rhs.expectedRemoteShaPlaceholder {return false}
+    if lhs.expectedRemoteShaHelp != rhs.expectedRemoteShaHelp {return false}
+    if lhs.targetCardID != rhs.targetCardID {return false}
+    if lhs.targetCardIDPlaceholder != rhs.targetCardIDPlaceholder {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientGitFormNotice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".GitFormNotice"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}title\0\u{1}detail\0\u{1}tone\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.title) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.detail) }()
+      case 3: try { try decoder.decodeSingularEnumField(value: &self.tone) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.title.isEmpty {
+      try visitor.visitSingularStringField(value: self.title, fieldNumber: 1)
+    }
+    if !self.detail.isEmpty {
+      try visitor.visitSingularStringField(value: self.detail, fieldNumber: 2)
+    }
+    if self.tone != .neutral {
+      try visitor.visitSingularEnumField(value: self.tone, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientGitFormNotice, rhs: ClientGitFormNotice) -> Bool {
+    if lhs.title != rhs.title {return false}
+    if lhs.detail != rhs.detail {return false}
+    if lhs.tone != rhs.tone {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
 }
 
 nonisolated extension ClientReviewMerge: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
@@ -20352,7 +21187,7 @@ nonisolated extension ClientUpdate: SwiftProtobuf.Message, SwiftProtobuf._Messag
 
 nonisolated extension ClientSessionSlice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".SessionSlice"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}phase\0\u{3}gateway_origin\0\u{1}gateways\0\u{4}\u{2}attached_machine_id\0\u{1}error\0\u{2}\u{2}machines\0\u{2}\u{2}feed\0\u{4}\u{2}gateway_build\0\u{1}notice\0\u{3}phase_label\0\u{3}workspace_live\0\u{4}\u{2}show_reasoning\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}phase\0\u{3}gateway_origin\0\u{1}gateways\0\u{4}\u{2}attached_machine_id\0\u{1}error\0\u{2}\u{2}machines\0\u{2}\u{2}feed\0\u{4}\u{2}gateway_build\0\u{1}notice\0\u{3}phase_label\0\u{3}workspace_live\0\u{4}\u{2}show_reasoning\0\u{1}tone\0")
 
   fileprivate class _StorageClass {
     var _phase: ClientSessionSlice.Phase = .disconnected
@@ -20367,6 +21202,7 @@ nonisolated extension ClientSessionSlice: SwiftProtobuf.Message, SwiftProtobuf._
     var _phaseLabel: String = String()
     var _workspaceLive: Bool = false
     var _showReasoning: Bool = false
+    var _tone: ClientTone = .neutral
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -20389,6 +21225,7 @@ nonisolated extension ClientSessionSlice: SwiftProtobuf.Message, SwiftProtobuf._
       _phaseLabel = source._phaseLabel
       _workspaceLive = source._workspaceLive
       _showReasoning = source._showReasoning
+      _tone = source._tone
     }
   }
 
@@ -20419,6 +21256,7 @@ nonisolated extension ClientSessionSlice: SwiftProtobuf.Message, SwiftProtobuf._
         case 14: try { try decoder.decodeSingularStringField(value: &_storage._phaseLabel) }()
         case 15: try { try decoder.decodeSingularBoolField(value: &_storage._workspaceLive) }()
         case 17: try { try decoder.decodeSingularBoolField(value: &_storage._showReasoning) }()
+        case 18: try { try decoder.decodeSingularEnumField(value: &_storage._tone) }()
         default: break
         }
       }
@@ -20467,6 +21305,9 @@ nonisolated extension ClientSessionSlice: SwiftProtobuf.Message, SwiftProtobuf._
       if _storage._showReasoning != false {
         try visitor.visitSingularBoolField(value: _storage._showReasoning, fieldNumber: 17)
       }
+      if _storage._tone != .neutral {
+        try visitor.visitSingularEnumField(value: _storage._tone, fieldNumber: 18)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -20488,6 +21329,7 @@ nonisolated extension ClientSessionSlice: SwiftProtobuf.Message, SwiftProtobuf._
         if _storage._phaseLabel != rhs_storage._phaseLabel {return false}
         if _storage._workspaceLive != rhs_storage._workspaceLive {return false}
         if _storage._showReasoning != rhs_storage._showReasoning {return false}
+        if _storage._tone != rhs_storage._tone {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -20663,7 +21505,7 @@ nonisolated extension ClientGatewayEntry: SwiftProtobuf.Message, SwiftProtobuf._
 
 nonisolated extension ClientMachineEntry: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MachineEntry"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}online\0\u{2}\u{2}route\0\u{2}\u{2}platform\0\u{3}release_version\0\u{1}compatible\0\u{3}last_seen_at\0\u{3}minimum_release_version\0\u{4}\u{2}remote_desktop_ready\0\u{3}remote_desktop_reason\0\u{1}compatibility\0\u{2}\u{2}local\0\u{1}detail\0\u{3}show_last_seen\0\u{1}available\0\u{3}unavailable_message\0\u{3}screen_status\0\u{3}can_share_screen\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}online\0\u{2}\u{2}route\0\u{2}\u{2}platform\0\u{3}release_version\0\u{1}compatible\0\u{3}last_seen_at\0\u{3}minimum_release_version\0\u{4}\u{2}remote_desktop_ready\0\u{3}remote_desktop_reason\0\u{2}\u{3}local\0\u{1}detail\0\u{3}show_last_seen\0\u{1}available\0\u{3}unavailable_message\0\u{3}screen_status\0\u{3}can_share_screen\0\u{1}presence\0\u{3}display_name\0\u{1}tone\0")
 
   fileprivate class _StorageClass {
     var _id: String = String()
@@ -20677,7 +21519,6 @@ nonisolated extension ClientMachineEntry: SwiftProtobuf.Message, SwiftProtobuf._
     var _minimumReleaseVersion: String = String()
     var _remoteDesktopReady: Bool = false
     var _remoteDesktopReason: String = String()
-    var _compatibility: String = String()
     var _local: Bool = false
     var _detail: String = String()
     var _showLastSeen: Bool = false
@@ -20685,6 +21526,9 @@ nonisolated extension ClientMachineEntry: SwiftProtobuf.Message, SwiftProtobuf._
     var _unavailableMessage: String = String()
     var _screenStatus: String = String()
     var _canShareScreen: Bool = false
+    var _presence: String = String()
+    var _displayName: String = String()
+    var _tone: ClientTone = .neutral
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -20706,7 +21550,6 @@ nonisolated extension ClientMachineEntry: SwiftProtobuf.Message, SwiftProtobuf._
       _minimumReleaseVersion = source._minimumReleaseVersion
       _remoteDesktopReady = source._remoteDesktopReady
       _remoteDesktopReason = source._remoteDesktopReason
-      _compatibility = source._compatibility
       _local = source._local
       _detail = source._detail
       _showLastSeen = source._showLastSeen
@@ -20714,6 +21557,9 @@ nonisolated extension ClientMachineEntry: SwiftProtobuf.Message, SwiftProtobuf._
       _unavailableMessage = source._unavailableMessage
       _screenStatus = source._screenStatus
       _canShareScreen = source._canShareScreen
+      _presence = source._presence
+      _displayName = source._displayName
+      _tone = source._tone
     }
   }
 
@@ -20743,7 +21589,6 @@ nonisolated extension ClientMachineEntry: SwiftProtobuf.Message, SwiftProtobuf._
         case 11: try { try decoder.decodeSingularStringField(value: &_storage._minimumReleaseVersion) }()
         case 13: try { try decoder.decodeSingularBoolField(value: &_storage._remoteDesktopReady) }()
         case 14: try { try decoder.decodeSingularStringField(value: &_storage._remoteDesktopReason) }()
-        case 15: try { try decoder.decodeSingularStringField(value: &_storage._compatibility) }()
         case 17: try { try decoder.decodeSingularBoolField(value: &_storage._local) }()
         case 18: try { try decoder.decodeSingularStringField(value: &_storage._detail) }()
         case 19: try { try decoder.decodeSingularBoolField(value: &_storage._showLastSeen) }()
@@ -20751,6 +21596,9 @@ nonisolated extension ClientMachineEntry: SwiftProtobuf.Message, SwiftProtobuf._
         case 21: try { try decoder.decodeSingularStringField(value: &_storage._unavailableMessage) }()
         case 22: try { try decoder.decodeSingularStringField(value: &_storage._screenStatus) }()
         case 23: try { try decoder.decodeSingularBoolField(value: &_storage._canShareScreen) }()
+        case 24: try { try decoder.decodeSingularStringField(value: &_storage._presence) }()
+        case 25: try { try decoder.decodeSingularStringField(value: &_storage._displayName) }()
+        case 26: try { try decoder.decodeSingularEnumField(value: &_storage._tone) }()
         default: break
         }
       }
@@ -20792,9 +21640,6 @@ nonisolated extension ClientMachineEntry: SwiftProtobuf.Message, SwiftProtobuf._
       if !_storage._remoteDesktopReason.isEmpty {
         try visitor.visitSingularStringField(value: _storage._remoteDesktopReason, fieldNumber: 14)
       }
-      if !_storage._compatibility.isEmpty {
-        try visitor.visitSingularStringField(value: _storage._compatibility, fieldNumber: 15)
-      }
       if _storage._local != false {
         try visitor.visitSingularBoolField(value: _storage._local, fieldNumber: 17)
       }
@@ -20816,6 +21661,15 @@ nonisolated extension ClientMachineEntry: SwiftProtobuf.Message, SwiftProtobuf._
       if _storage._canShareScreen != false {
         try visitor.visitSingularBoolField(value: _storage._canShareScreen, fieldNumber: 23)
       }
+      if !_storage._presence.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._presence, fieldNumber: 24)
+      }
+      if !_storage._displayName.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._displayName, fieldNumber: 25)
+      }
+      if _storage._tone != .neutral {
+        try visitor.visitSingularEnumField(value: _storage._tone, fieldNumber: 26)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -20836,7 +21690,6 @@ nonisolated extension ClientMachineEntry: SwiftProtobuf.Message, SwiftProtobuf._
         if _storage._minimumReleaseVersion != rhs_storage._minimumReleaseVersion {return false}
         if _storage._remoteDesktopReady != rhs_storage._remoteDesktopReady {return false}
         if _storage._remoteDesktopReason != rhs_storage._remoteDesktopReason {return false}
-        if _storage._compatibility != rhs_storage._compatibility {return false}
         if _storage._local != rhs_storage._local {return false}
         if _storage._detail != rhs_storage._detail {return false}
         if _storage._showLastSeen != rhs_storage._showLastSeen {return false}
@@ -20844,6 +21697,9 @@ nonisolated extension ClientMachineEntry: SwiftProtobuf.Message, SwiftProtobuf._
         if _storage._unavailableMessage != rhs_storage._unavailableMessage {return false}
         if _storage._screenStatus != rhs_storage._screenStatus {return false}
         if _storage._canShareScreen != rhs_storage._canShareScreen {return false}
+        if _storage._presence != rhs_storage._presence {return false}
+        if _storage._displayName != rhs_storage._displayName {return false}
+        if _storage._tone != rhs_storage._tone {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -22353,7 +23209,7 @@ nonisolated extension ClientSubagentDetail: SwiftProtobuf.Message, SwiftProtobuf
 
 nonisolated extension ClientTurnFailure: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".TurnFailure"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}summary\0\u{1}log\0\u{3}failed_message_id\0\u{1}retryable\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}summary\0\u{1}log\0\u{2}\u{2}retryable\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -22363,7 +23219,6 @@ nonisolated extension ClientTurnFailure: SwiftProtobuf.Message, SwiftProtobuf._M
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.summary) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.log) }()
-      case 3: try { try decoder.decodeSingularStringField(value: &self.failedMessageID) }()
       case 4: try { try decoder.decodeSingularBoolField(value: &self.retryable) }()
       default: break
       }
@@ -22377,9 +23232,6 @@ nonisolated extension ClientTurnFailure: SwiftProtobuf.Message, SwiftProtobuf._M
     if !self.log.isEmpty {
       try visitor.visitSingularStringField(value: self.log, fieldNumber: 2)
     }
-    if !self.failedMessageID.isEmpty {
-      try visitor.visitSingularStringField(value: self.failedMessageID, fieldNumber: 3)
-    }
     if self.retryable != false {
       try visitor.visitSingularBoolField(value: self.retryable, fieldNumber: 4)
     }
@@ -22389,7 +23241,6 @@ nonisolated extension ClientTurnFailure: SwiftProtobuf.Message, SwiftProtobuf._M
   public static func ==(lhs: ClientTurnFailure, rhs: ClientTurnFailure) -> Bool {
     if lhs.summary != rhs.summary {return false}
     if lhs.log != rhs.log {return false}
-    if lhs.failedMessageID != rhs.failedMessageID {return false}
     if lhs.retryable != rhs.retryable {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
@@ -23590,7 +24441,7 @@ nonisolated extension ClientChatFolderSection: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension ClientChatProjectSection: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ChatProjectSection"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}chat_ids\0\u{1}total\0\u{1}hidden\0\u{1}collapsed\0\u{3}show_all\0\u{3}show_chats\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}chat_ids\0\u{1}total\0\u{1}hidden\0\u{1}collapsed\0\u{3}show_all\0\u{3}show_chats\0\u{3}toggle_label\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -23605,6 +24456,7 @@ nonisolated extension ClientChatProjectSection: SwiftProtobuf.Message, SwiftProt
       case 5: try { try decoder.decodeSingularBoolField(value: &self.collapsed) }()
       case 6: try { try decoder.decodeSingularBoolField(value: &self.showAll) }()
       case 7: try { try decoder.decodeSingularBoolField(value: &self.showChats) }()
+      case 8: try { try decoder.decodeSingularStringField(value: &self.toggleLabel) }()
       default: break
       }
     }
@@ -23632,6 +24484,9 @@ nonisolated extension ClientChatProjectSection: SwiftProtobuf.Message, SwiftProt
     if self.showChats != false {
       try visitor.visitSingularBoolField(value: self.showChats, fieldNumber: 7)
     }
+    if !self.toggleLabel.isEmpty {
+      try visitor.visitSingularStringField(value: self.toggleLabel, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -23643,6 +24498,7 @@ nonisolated extension ClientChatProjectSection: SwiftProtobuf.Message, SwiftProt
     if lhs.collapsed != rhs.collapsed {return false}
     if lhs.showAll != rhs.showAll {return false}
     if lhs.showChats != rhs.showChats {return false}
+    if lhs.toggleLabel != rhs.toggleLabel {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -24113,7 +24969,7 @@ nonisolated extension ClientContentFileLink: SwiftProtobuf.Message, SwiftProtobu
 
 nonisolated extension ClientContentLinkFailure: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ContentLinkFailure"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{1}message\0\u{1}scheme\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{1}message\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -24123,7 +24979,6 @@ nonisolated extension ClientContentLinkFailure: SwiftProtobuf.Message, SwiftProt
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularEnumField(value: &self.kind) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.message) }()
-      case 3: try { try decoder.decodeSingularStringField(value: &self.scheme) }()
       default: break
       }
     }
@@ -24136,16 +24991,12 @@ nonisolated extension ClientContentLinkFailure: SwiftProtobuf.Message, SwiftProt
     if !self.message.isEmpty {
       try visitor.visitSingularStringField(value: self.message, fieldNumber: 2)
     }
-    if !self.scheme.isEmpty {
-      try visitor.visitSingularStringField(value: self.scheme, fieldNumber: 3)
-    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: ClientContentLinkFailure, rhs: ClientContentLinkFailure) -> Bool {
     if lhs.kind != rhs.kind {return false}
     if lhs.message != rhs.message {return false}
-    if lhs.scheme != rhs.scheme {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -24227,7 +25078,7 @@ nonisolated extension ClientDetectedLink: SwiftProtobuf.Message, SwiftProtobuf._
 
 nonisolated extension ClientTerminalsSlice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".TerminalsSlice"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}target\0\u{1}terminals\0\u{3}selected_id\0\u{1}loading\0\u{1}error\0\u{3}stream_connected\0\u{2}\u{2}output\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}target\0\u{1}terminals\0\u{3}selected_id\0\u{1}loading\0\u{1}error\0\u{3}stream_connected\0\u{2}\u{2}output\0\u{1}status\0\u{1}rows\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -24242,6 +25093,8 @@ nonisolated extension ClientTerminalsSlice: SwiftProtobuf.Message, SwiftProtobuf
       case 5: try { try decoder.decodeSingularStringField(value: &self.error) }()
       case 6: try { try decoder.decodeSingularBoolField(value: &self.streamConnected) }()
       case 8: try { try decoder.decodeRepeatedMessageField(value: &self.output) }()
+      case 9: try { try decoder.decodeSingularStringField(value: &self.status) }()
+      case 10: try { try decoder.decodeRepeatedMessageField(value: &self.rows) }()
       default: break
       }
     }
@@ -24273,6 +25126,12 @@ nonisolated extension ClientTerminalsSlice: SwiftProtobuf.Message, SwiftProtobuf
     if !self.output.isEmpty {
       try visitor.visitRepeatedMessageField(value: self.output, fieldNumber: 8)
     }
+    if !self.status.isEmpty {
+      try visitor.visitSingularStringField(value: self.status, fieldNumber: 9)
+    }
+    if !self.rows.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.rows, fieldNumber: 10)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -24284,6 +25143,63 @@ nonisolated extension ClientTerminalsSlice: SwiftProtobuf.Message, SwiftProtobuf
     if lhs.error != rhs.error {return false}
     if lhs.streamConnected != rhs.streamConnected {return false}
     if lhs.output != rhs.output {return false}
+    if lhs.status != rhs.status {return false}
+    if lhs.rows != rhs.rows {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientTerminalRow: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".TerminalRow"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}running\0\u{1}status\0\u{1}tone\0\u{3}accepts_input\0\u{3}close_message\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.running) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.status) }()
+      case 4: try { try decoder.decodeSingularEnumField(value: &self.tone) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.acceptsInput) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.closeMessage) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if self.running != false {
+      try visitor.visitSingularBoolField(value: self.running, fieldNumber: 2)
+    }
+    if !self.status.isEmpty {
+      try visitor.visitSingularStringField(value: self.status, fieldNumber: 3)
+    }
+    if self.tone != .neutral {
+      try visitor.visitSingularEnumField(value: self.tone, fieldNumber: 4)
+    }
+    if self.acceptsInput != false {
+      try visitor.visitSingularBoolField(value: self.acceptsInput, fieldNumber: 5)
+    }
+    if !self.closeMessage.isEmpty {
+      try visitor.visitSingularStringField(value: self.closeMessage, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientTerminalRow, rhs: ClientTerminalRow) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.running != rhs.running {return false}
+    if lhs.status != rhs.status {return false}
+    if lhs.tone != rhs.tone {return false}
+    if lhs.acceptsInput != rhs.acceptsInput {return false}
+    if lhs.closeMessage != rhs.closeMessage {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -24331,58 +25247,111 @@ nonisolated extension ClientTerminalOutput: SwiftProtobuf.Message, SwiftProtobuf
 
 nonisolated extension ClientTerminalOverviewSlice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".TerminalOverviewSlice"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}entries\0\u{3}selected_id\0\u{1}loading\0\u{1}errors\0\u{3}no_machines\0\u{1}terminals\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}entries\0\u{3}selected_id\0\u{1}loading\0\u{1}errors\0\u{3}no_machines\0\u{1}terminals\0\u{1}status\0")
+
+  fileprivate class _StorageClass {
+    var _entries: [ClientOverviewTerminal] = []
+    var _selectedID: String = String()
+    var _loading: Bool = false
+    var _errors: Dictionary<String,String> = [:]
+    var _noMachines: Bool = false
+    var _terminals: ClientTerminalsSlice? = nil
+    var _status: String = String()
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _entries = source._entries
+      _selectedID = source._selectedID
+      _loading = source._loading
+      _errors = source._errors
+      _noMachines = source._noMachines
+      _terminals = source._terminals
+      _status = source._status
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
-    while let fieldNumber = try decoder.nextFieldNumber() {
-      // The use of inline closures is to circumvent an issue where the compiler
-      // allocates stack space for every case branch when no optimizations are
-      // enabled. https://github.com/apple/swift-protobuf/issues/1034
-      switch fieldNumber {
-      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.entries) }()
-      case 2: try { try decoder.decodeSingularStringField(value: &self.selectedID) }()
-      case 3: try { try decoder.decodeSingularBoolField(value: &self.loading) }()
-      case 4: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &self.errors) }()
-      case 5: try { try decoder.decodeSingularBoolField(value: &self.noMachines) }()
-      case 6: try { try decoder.decodeSingularMessageField(value: &self._terminals) }()
-      default: break
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeRepeatedMessageField(value: &_storage._entries) }()
+        case 2: try { try decoder.decodeSingularStringField(value: &_storage._selectedID) }()
+        case 3: try { try decoder.decodeSingularBoolField(value: &_storage._loading) }()
+        case 4: try { try decoder.decodeMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: &_storage._errors) }()
+        case 5: try { try decoder.decodeSingularBoolField(value: &_storage._noMachines) }()
+        case 6: try { try decoder.decodeSingularMessageField(value: &_storage._terminals) }()
+        case 7: try { try decoder.decodeSingularStringField(value: &_storage._status) }()
+        default: break
+        }
       }
     }
   }
 
   public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
-    // The use of inline closures is to circumvent an issue where the compiler
-    // allocates stack space for every if/case branch local when no optimizations
-    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
-    // https://github.com/apple/swift-protobuf/issues/1182
-    if !self.entries.isEmpty {
-      try visitor.visitRepeatedMessageField(value: self.entries, fieldNumber: 1)
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if !_storage._entries.isEmpty {
+        try visitor.visitRepeatedMessageField(value: _storage._entries, fieldNumber: 1)
+      }
+      if !_storage._selectedID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._selectedID, fieldNumber: 2)
+      }
+      if _storage._loading != false {
+        try visitor.visitSingularBoolField(value: _storage._loading, fieldNumber: 3)
+      }
+      if !_storage._errors.isEmpty {
+        try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: _storage._errors, fieldNumber: 4)
+      }
+      if _storage._noMachines != false {
+        try visitor.visitSingularBoolField(value: _storage._noMachines, fieldNumber: 5)
+      }
+      try { if let v = _storage._terminals {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+      } }()
+      if !_storage._status.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._status, fieldNumber: 7)
+      }
     }
-    if !self.selectedID.isEmpty {
-      try visitor.visitSingularStringField(value: self.selectedID, fieldNumber: 2)
-    }
-    if self.loading != false {
-      try visitor.visitSingularBoolField(value: self.loading, fieldNumber: 3)
-    }
-    if !self.errors.isEmpty {
-      try visitor.visitMapField(fieldType: SwiftProtobuf._ProtobufMap<SwiftProtobuf.ProtobufString,SwiftProtobuf.ProtobufString>.self, value: self.errors, fieldNumber: 4)
-    }
-    if self.noMachines != false {
-      try visitor.visitSingularBoolField(value: self.noMachines, fieldNumber: 5)
-    }
-    try { if let v = self._terminals {
-      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
-    } }()
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: ClientTerminalOverviewSlice, rhs: ClientTerminalOverviewSlice) -> Bool {
-    if lhs.entries != rhs.entries {return false}
-    if lhs.selectedID != rhs.selectedID {return false}
-    if lhs.loading != rhs.loading {return false}
-    if lhs.errors != rhs.errors {return false}
-    if lhs.noMachines != rhs.noMachines {return false}
-    if lhs._terminals != rhs._terminals {return false}
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._entries != rhs_storage._entries {return false}
+        if _storage._selectedID != rhs_storage._selectedID {return false}
+        if _storage._loading != rhs_storage._loading {return false}
+        if _storage._errors != rhs_storage._errors {return false}
+        if _storage._noMachines != rhs_storage._noMachines {return false}
+        if _storage._terminals != rhs_storage._terminals {return false}
+        if _storage._status != rhs_storage._status {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -24390,13 +25359,14 @@ nonisolated extension ClientTerminalOverviewSlice: SwiftProtobuf.Message, SwiftP
 
 nonisolated extension ClientOverviewTerminal: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".OverviewTerminal"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}daemon_id\0\u{3}machine_name\0\u{1}terminal\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{3}daemon_id\0\u{3}machine_name\0\u{1}terminal\0\u{1}row\0")
 
   fileprivate class _StorageClass {
     var _id: String = String()
     var _daemonID: String = String()
     var _machineName: String = String()
     var _terminal: Dieter_V1_Terminal? = nil
+    var _row: ClientTerminalRow? = nil
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -24411,6 +25381,7 @@ nonisolated extension ClientOverviewTerminal: SwiftProtobuf.Message, SwiftProtob
       _daemonID = source._daemonID
       _machineName = source._machineName
       _terminal = source._terminal
+      _row = source._row
     }
   }
 
@@ -24433,6 +25404,7 @@ nonisolated extension ClientOverviewTerminal: SwiftProtobuf.Message, SwiftProtob
         case 2: try { try decoder.decodeSingularStringField(value: &_storage._daemonID) }()
         case 3: try { try decoder.decodeSingularStringField(value: &_storage._machineName) }()
         case 4: try { try decoder.decodeSingularMessageField(value: &_storage._terminal) }()
+        case 5: try { try decoder.decodeSingularMessageField(value: &_storage._row) }()
         default: break
         }
       }
@@ -24457,6 +25429,9 @@ nonisolated extension ClientOverviewTerminal: SwiftProtobuf.Message, SwiftProtob
       try { if let v = _storage._terminal {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
       } }()
+      try { if let v = _storage._row {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -24470,6 +25445,7 @@ nonisolated extension ClientOverviewTerminal: SwiftProtobuf.Message, SwiftProtob
         if _storage._daemonID != rhs_storage._daemonID {return false}
         if _storage._machineName != rhs_storage._machineName {return false}
         if _storage._terminal != rhs_storage._terminal {return false}
+        if _storage._row != rhs_storage._row {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -28229,6 +29205,321 @@ nonisolated extension ClientProjects: SwiftProtobuf.Message, SwiftProtobuf._Mess
   }
 }
 
+nonisolated extension ClientChatDestinationMachine: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ChatDestinationMachine"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{1}id\0\u{1}name\0\u{1}online\0\u{1}version\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.online) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.version) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.daemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.daemonID, fieldNumber: 1)
+    }
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 2)
+    }
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 3)
+    }
+    if self.online != false {
+      try visitor.visitSingularBoolField(value: self.online, fieldNumber: 4)
+    }
+    if !self.version.isEmpty {
+      try visitor.visitSingularStringField(value: self.version, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientChatDestinationMachine, rhs: ClientChatDestinationMachine) -> Bool {
+    if lhs.daemonID != rhs.daemonID {return false}
+    if lhs.id != rhs.id {return false}
+    if lhs.name != rhs.name {return false}
+    if lhs.online != rhs.online {return false}
+    if lhs.version != rhs.version {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientChatDestinationInput: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ChatDestinationInput"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}projects\0\u{1}machines\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.projects) }()
+      case 2: try { try decoder.decodeRepeatedMessageField(value: &self.machines) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.projects.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.projects, fieldNumber: 1)
+    }
+    if !self.machines.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.machines, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientChatDestinationInput, rhs: ClientChatDestinationInput) -> Bool {
+    if lhs.projects != rhs.projects {return false}
+    if lhs.machines != rhs.machines {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientChatDestinationGroups: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ChatDestinationGroups"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}groups\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.groups) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.groups.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.groups, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientChatDestinationGroups, rhs: ClientChatDestinationGroups) -> Bool {
+    if lhs.groups != rhs.groups {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientChatDestinationGroup: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ChatDestinationGroup"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}machine_id\0\u{3}machine_name\0\u{3}machine_online\0\u{3}machine_version\0\u{1}title\0\u{1}destinations\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.machineID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.machineName) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.machineOnline) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.machineVersion) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.title) }()
+      case 6: try { try decoder.decodeRepeatedMessageField(value: &self.destinations) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.machineID.isEmpty {
+      try visitor.visitSingularStringField(value: self.machineID, fieldNumber: 1)
+    }
+    if !self.machineName.isEmpty {
+      try visitor.visitSingularStringField(value: self.machineName, fieldNumber: 2)
+    }
+    if self.machineOnline != false {
+      try visitor.visitSingularBoolField(value: self.machineOnline, fieldNumber: 3)
+    }
+    if !self.machineVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.machineVersion, fieldNumber: 4)
+    }
+    if !self.title.isEmpty {
+      try visitor.visitSingularStringField(value: self.title, fieldNumber: 5)
+    }
+    if !self.destinations.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.destinations, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientChatDestinationGroup, rhs: ClientChatDestinationGroup) -> Bool {
+    if lhs.machineID != rhs.machineID {return false}
+    if lhs.machineName != rhs.machineName {return false}
+    if lhs.machineOnline != rhs.machineOnline {return false}
+    if lhs.machineVersion != rhs.machineVersion {return false}
+    if lhs.title != rhs.title {return false}
+    if lhs.destinations != rhs.destinations {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientChatDestination: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ChatDestination"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}project_id\0\u{3}checkout_id\0\u{3}machine_id\0\u{1}title\0\u{1}detail\0\u{3}option_title\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.projectID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.checkoutID) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.machineID) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.title) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.detail) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.optionTitle) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.projectID.isEmpty {
+      try visitor.visitSingularStringField(value: self.projectID, fieldNumber: 1)
+    }
+    if !self.checkoutID.isEmpty {
+      try visitor.visitSingularStringField(value: self.checkoutID, fieldNumber: 2)
+    }
+    if !self.machineID.isEmpty {
+      try visitor.visitSingularStringField(value: self.machineID, fieldNumber: 3)
+    }
+    if !self.title.isEmpty {
+      try visitor.visitSingularStringField(value: self.title, fieldNumber: 4)
+    }
+    if !self.detail.isEmpty {
+      try visitor.visitSingularStringField(value: self.detail, fieldNumber: 5)
+    }
+    if !self.optionTitle.isEmpty {
+      try visitor.visitSingularStringField(value: self.optionTitle, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientChatDestination, rhs: ClientChatDestination) -> Bool {
+    if lhs.projectID != rhs.projectID {return false}
+    if lhs.checkoutID != rhs.checkoutID {return false}
+    if lhs.machineID != rhs.machineID {return false}
+    if lhs.title != rhs.title {return false}
+    if lhs.detail != rhs.detail {return false}
+    if lhs.optionTitle != rhs.optionTitle {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientCheckouts: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".Checkouts"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}checkouts\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.checkouts) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.checkouts.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.checkouts, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientCheckouts, rhs: ClientCheckouts) -> Bool {
+    if lhs.checkouts != rhs.checkouts {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientHostnameSets: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".HostnameSets"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}sets\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.sets) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.sets.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.sets, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientHostnameSets, rhs: ClientHostnameSets) -> Bool {
+    if lhs.sets != rhs.sets {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientHostnameSet: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".HostnameSet"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}hostnames\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedStringField(value: &self.hostnames) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.hostnames.isEmpty {
+      try visitor.visitRepeatedStringField(value: self.hostnames, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientHostnameSet, rhs: ClientHostnameSet) -> Bool {
+    if lhs.hostnames != rhs.hostnames {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 nonisolated extension ClientTelemetryCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".TelemetryCommand"
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}select\0\u{2}\u{3}perform\0")
@@ -29199,7 +30490,7 @@ nonisolated extension ClientQuotaWindowRow: SwiftProtobuf.Message, SwiftProtobuf
 
 nonisolated extension ClientQuotaDetail: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".QuotaDetail"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}label\0\u{1}text\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}label\0\u{1}text\0\u{1}monetary\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -29209,6 +30500,7 @@ nonisolated extension ClientQuotaDetail: SwiftProtobuf.Message, SwiftProtobuf._M
       switch fieldNumber {
       case 1: try { try decoder.decodeSingularStringField(value: &self.label) }()
       case 2: try { try decoder.decodeSingularStringField(value: &self.text) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.monetary) }()
       default: break
       }
     }
@@ -29221,12 +30513,225 @@ nonisolated extension ClientQuotaDetail: SwiftProtobuf.Message, SwiftProtobuf._M
     if !self.text.isEmpty {
       try visitor.visitSingularStringField(value: self.text, fieldNumber: 2)
     }
+    if self.monetary != false {
+      try visitor.visitSingularBoolField(value: self.monetary, fieldNumber: 3)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
   public static func ==(lhs: ClientQuotaDetail, rhs: ClientQuotaDetail) -> Bool {
     if lhs.label != rhs.label {return false}
     if lhs.text != rhs.text {return false}
+    if lhs.monetary != rhs.monetary {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientAdminOptions: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".AdminOptions"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}workflows\0\u{3}publish_modes\0\u{3}archive_policies\0\u{3}default_board_name\0\u{3}default_workflow\0\u{3}default_base_remote\0\u{3}default_base_branch\0\u{3}default_publish_mode\0\u{3}default_archive_policy\0\u{3}new_validation\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.workflows) }()
+      case 2: try { try decoder.decodeRepeatedMessageField(value: &self.publishModes) }()
+      case 3: try { try decoder.decodeRepeatedMessageField(value: &self.archivePolicies) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.defaultBoardName) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.defaultWorkflow) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.defaultBaseRemote) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.defaultBaseBranch) }()
+      case 8: try { try decoder.decodeSingularStringField(value: &self.defaultPublishMode) }()
+      case 9: try { try decoder.decodeSingularStringField(value: &self.defaultArchivePolicy) }()
+      case 10: try { try decoder.decodeSingularMessageField(value: &self._newValidation) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    if !self.workflows.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.workflows, fieldNumber: 1)
+    }
+    if !self.publishModes.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.publishModes, fieldNumber: 2)
+    }
+    if !self.archivePolicies.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.archivePolicies, fieldNumber: 3)
+    }
+    if !self.defaultBoardName.isEmpty {
+      try visitor.visitSingularStringField(value: self.defaultBoardName, fieldNumber: 4)
+    }
+    if !self.defaultWorkflow.isEmpty {
+      try visitor.visitSingularStringField(value: self.defaultWorkflow, fieldNumber: 5)
+    }
+    if !self.defaultBaseRemote.isEmpty {
+      try visitor.visitSingularStringField(value: self.defaultBaseRemote, fieldNumber: 6)
+    }
+    if !self.defaultBaseBranch.isEmpty {
+      try visitor.visitSingularStringField(value: self.defaultBaseBranch, fieldNumber: 7)
+    }
+    if !self.defaultPublishMode.isEmpty {
+      try visitor.visitSingularStringField(value: self.defaultPublishMode, fieldNumber: 8)
+    }
+    if !self.defaultArchivePolicy.isEmpty {
+      try visitor.visitSingularStringField(value: self.defaultArchivePolicy, fieldNumber: 9)
+    }
+    try { if let v = self._newValidation {
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 10)
+    } }()
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientAdminOptions, rhs: ClientAdminOptions) -> Bool {
+    if lhs.workflows != rhs.workflows {return false}
+    if lhs.publishModes != rhs.publishModes {return false}
+    if lhs.archivePolicies != rhs.archivePolicies {return false}
+    if lhs.defaultBoardName != rhs.defaultBoardName {return false}
+    if lhs.defaultWorkflow != rhs.defaultWorkflow {return false}
+    if lhs.defaultBaseRemote != rhs.defaultBaseRemote {return false}
+    if lhs.defaultBaseBranch != rhs.defaultBaseBranch {return false}
+    if lhs.defaultPublishMode != rhs.defaultPublishMode {return false}
+    if lhs.defaultArchivePolicy != rhs.defaultArchivePolicy {return false}
+    if lhs._newValidation != rhs._newValidation {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientAdminChoice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".AdminChoice"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}title\0\u{1}detail\0\u{1}lanes\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.title) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.detail) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.lanes) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if !self.title.isEmpty {
+      try visitor.visitSingularStringField(value: self.title, fieldNumber: 2)
+    }
+    if !self.detail.isEmpty {
+      try visitor.visitSingularStringField(value: self.detail, fieldNumber: 3)
+    }
+    if !self.lanes.isEmpty {
+      try visitor.visitSingularStringField(value: self.lanes, fieldNumber: 4)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientAdminChoice, rhs: ClientAdminChoice) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.title != rhs.title {return false}
+    if lhs.detail != rhs.detail {return false}
+    if lhs.lanes != rhs.lanes {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientValidationDraft: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ValidationDraft"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}name\0\u{1}executable\0\u{1}arguments\0\u{3}working_directory\0\u{1}environment\0\u{3}timeout_seconds\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.name) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.executable) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.arguments) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.workingDirectory) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.environment) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.timeoutSeconds) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.name.isEmpty {
+      try visitor.visitSingularStringField(value: self.name, fieldNumber: 1)
+    }
+    if !self.executable.isEmpty {
+      try visitor.visitSingularStringField(value: self.executable, fieldNumber: 2)
+    }
+    if !self.arguments.isEmpty {
+      try visitor.visitSingularStringField(value: self.arguments, fieldNumber: 3)
+    }
+    if !self.workingDirectory.isEmpty {
+      try visitor.visitSingularStringField(value: self.workingDirectory, fieldNumber: 4)
+    }
+    if !self.environment.isEmpty {
+      try visitor.visitSingularStringField(value: self.environment, fieldNumber: 5)
+    }
+    if !self.timeoutSeconds.isEmpty {
+      try visitor.visitSingularStringField(value: self.timeoutSeconds, fieldNumber: 6)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientValidationDraft, rhs: ClientValidationDraft) -> Bool {
+    if lhs.name != rhs.name {return false}
+    if lhs.executable != rhs.executable {return false}
+    if lhs.arguments != rhs.arguments {return false}
+    if lhs.workingDirectory != rhs.workingDirectory {return false}
+    if lhs.environment != rhs.environment {return false}
+    if lhs.timeoutSeconds != rhs.timeoutSeconds {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientValidationDrafts: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ValidationDrafts"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}drafts\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeRepeatedMessageField(value: &self.drafts) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.drafts.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.drafts, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientValidationDrafts, rhs: ClientValidationDrafts) -> Bool {
+    if lhs.drafts != rhs.drafts {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -30422,7 +31927,7 @@ nonisolated extension ClientScreenDisplayTarget: SwiftProtobuf.Message, SwiftPro
 
 nonisolated extension ClientScreenSlice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ScreenSlice"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}phase\0\u{3}phase_label\0\u{1}problem\0\u{1}active\0\u{1}capabilities\0\u{1}state\0\u{4}\u{3}control_active\0\u{3}can_transfer_control\0\u{3}control_transferring\0\u{3}control_error\0\u{3}codec_fallback_reason\0\u{3}clipboard_enabled\0\u{3}clipboard_error\0\u{3}clipboard_busy\0\u{3}clipboard_operations\0\u{3}cursor_image\0\u{3}cursor_image_unchanged\0\u{3}cursor_x\0\u{3}cursor_y\0\u{3}cursor_visible\0\u{3}cursor_width\0\u{3}cursor_height\0\u{3}cursor_hotspot_x\0\u{3}cursor_hotspot_y\0\u{3}route_label\0\u{1}preferences\0\u{3}display_status\0\u{4}\u{2}frame_rates\0\u{3}control_unavailable_reason\0\u{3}clipboard_actions_enabled\0\u{3}latency_label\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}phase\0\u{3}phase_label\0\u{1}problem\0\u{1}active\0\u{1}capabilities\0\u{1}state\0\u{4}\u{3}control_active\0\u{3}can_transfer_control\0\u{3}control_transferring\0\u{3}control_error\0\u{3}codec_fallback_reason\0\u{3}clipboard_enabled\0\u{3}clipboard_error\0\u{3}clipboard_busy\0\u{3}clipboard_operations\0\u{3}cursor_image\0\u{3}cursor_image_unchanged\0\u{3}cursor_x\0\u{3}cursor_y\0\u{3}cursor_visible\0\u{3}cursor_width\0\u{3}cursor_height\0\u{3}cursor_hotspot_x\0\u{3}cursor_hotspot_y\0\u{3}route_label\0\u{1}preferences\0\u{3}display_status\0\u{4}\u{2}frame_rates\0\u{3}control_unavailable_reason\0\u{3}clipboard_actions_enabled\0\u{3}latency_label\0\u{3}status_line\0\u{1}metadata\0\u{3}media_route\0\u{1}details\0\u{1}streaming\0\u{1}blocked\0\u{1}failed\0\u{1}tone\0\u{3}control_label\0\u{3}viewers_label\0")
 
   fileprivate class _StorageClass {
     var _phase: String = String()
@@ -30456,6 +31961,16 @@ nonisolated extension ClientScreenSlice: SwiftProtobuf.Message, SwiftProtobuf._M
     var _controlUnavailableReason: String = String()
     var _clipboardActionsEnabled: Bool = false
     var _latencyLabel: String = String()
+    var _statusLine: String = String()
+    var _metadata: String = String()
+    var _mediaRoute: String = String()
+    var _details: [String] = []
+    var _streaming: Bool = false
+    var _blocked: Bool = false
+    var _failed: Bool = false
+    var _tone: ClientTone = .neutral
+    var _controlLabel: String = String()
+    var _viewersLabel: String = String()
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -30497,6 +32012,16 @@ nonisolated extension ClientScreenSlice: SwiftProtobuf.Message, SwiftProtobuf._M
       _controlUnavailableReason = source._controlUnavailableReason
       _clipboardActionsEnabled = source._clipboardActionsEnabled
       _latencyLabel = source._latencyLabel
+      _statusLine = source._statusLine
+      _metadata = source._metadata
+      _mediaRoute = source._mediaRoute
+      _details = source._details
+      _streaming = source._streaming
+      _blocked = source._blocked
+      _failed = source._failed
+      _tone = source._tone
+      _controlLabel = source._controlLabel
+      _viewersLabel = source._viewersLabel
     }
   }
 
@@ -30546,6 +32071,16 @@ nonisolated extension ClientScreenSlice: SwiftProtobuf.Message, SwiftProtobuf._M
         case 32: try { try decoder.decodeSingularStringField(value: &_storage._controlUnavailableReason) }()
         case 33: try { try decoder.decodeSingularBoolField(value: &_storage._clipboardActionsEnabled) }()
         case 34: try { try decoder.decodeSingularStringField(value: &_storage._latencyLabel) }()
+        case 35: try { try decoder.decodeSingularStringField(value: &_storage._statusLine) }()
+        case 36: try { try decoder.decodeSingularStringField(value: &_storage._metadata) }()
+        case 37: try { try decoder.decodeSingularStringField(value: &_storage._mediaRoute) }()
+        case 38: try { try decoder.decodeRepeatedStringField(value: &_storage._details) }()
+        case 39: try { try decoder.decodeSingularBoolField(value: &_storage._streaming) }()
+        case 40: try { try decoder.decodeSingularBoolField(value: &_storage._blocked) }()
+        case 41: try { try decoder.decodeSingularBoolField(value: &_storage._failed) }()
+        case 42: try { try decoder.decodeSingularEnumField(value: &_storage._tone) }()
+        case 43: try { try decoder.decodeSingularStringField(value: &_storage._controlLabel) }()
+        case 44: try { try decoder.decodeSingularStringField(value: &_storage._viewersLabel) }()
         default: break
         }
       }
@@ -30651,6 +32186,36 @@ nonisolated extension ClientScreenSlice: SwiftProtobuf.Message, SwiftProtobuf._M
       if !_storage._latencyLabel.isEmpty {
         try visitor.visitSingularStringField(value: _storage._latencyLabel, fieldNumber: 34)
       }
+      if !_storage._statusLine.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._statusLine, fieldNumber: 35)
+      }
+      if !_storage._metadata.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._metadata, fieldNumber: 36)
+      }
+      if !_storage._mediaRoute.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._mediaRoute, fieldNumber: 37)
+      }
+      if !_storage._details.isEmpty {
+        try visitor.visitRepeatedStringField(value: _storage._details, fieldNumber: 38)
+      }
+      if _storage._streaming != false {
+        try visitor.visitSingularBoolField(value: _storage._streaming, fieldNumber: 39)
+      }
+      if _storage._blocked != false {
+        try visitor.visitSingularBoolField(value: _storage._blocked, fieldNumber: 40)
+      }
+      if _storage._failed != false {
+        try visitor.visitSingularBoolField(value: _storage._failed, fieldNumber: 41)
+      }
+      if _storage._tone != .neutral {
+        try visitor.visitSingularEnumField(value: _storage._tone, fieldNumber: 42)
+      }
+      if !_storage._controlLabel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._controlLabel, fieldNumber: 43)
+      }
+      if !_storage._viewersLabel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._viewersLabel, fieldNumber: 44)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -30691,6 +32256,16 @@ nonisolated extension ClientScreenSlice: SwiftProtobuf.Message, SwiftProtobuf._M
         if _storage._controlUnavailableReason != rhs_storage._controlUnavailableReason {return false}
         if _storage._clipboardActionsEnabled != rhs_storage._clipboardActionsEnabled {return false}
         if _storage._latencyLabel != rhs_storage._latencyLabel {return false}
+        if _storage._statusLine != rhs_storage._statusLine {return false}
+        if _storage._metadata != rhs_storage._metadata {return false}
+        if _storage._mediaRoute != rhs_storage._mediaRoute {return false}
+        if _storage._details != rhs_storage._details {return false}
+        if _storage._streaming != rhs_storage._streaming {return false}
+        if _storage._blocked != rhs_storage._blocked {return false}
+        if _storage._failed != rhs_storage._failed {return false}
+        if _storage._tone != rhs_storage._tone {return false}
+        if _storage._controlLabel != rhs_storage._controlLabel {return false}
+        if _storage._viewersLabel != rhs_storage._viewersLabel {return false}
         return true
       }
       if !storagesAreEqual {return false}

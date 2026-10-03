@@ -1,5 +1,6 @@
 import AppKit
 import DieterAPI
+import DieterShared
 import SwiftUI
 
 enum ComposerHistoryDirection {
@@ -187,18 +188,12 @@ struct QueuedComposerMessage: View {
     let onSteer: () async -> Void
     @State private var action: Action?
 
-    private var draft: ConversationQueuePresentation.EditableDraft {
-        ConversationQueuePresentation.editableDraft(for: message)
+    /// The message as an edit would restore it: its text and its attachments.
+    private var restored: Dieter_V1_QueuedMessage {
+        Dieter_V1_QueuedMessage(rules: SharedRules.shared.restoredDraft(message: message.rulesData, currentText: ""))
     }
 
-    private var summary: String {
-        if !draft.text.isEmpty { return draft.text }
-        return draft.attachments.count == 1 ? "1 attachment" : "\(draft.attachments.count) attachments"
-    }
-
-    private var attachmentCount: Int {
-        draft.attachments.count
-    }
+    private var summary: String { SharedRules.shared.queuedSummary(message: message.rulesData) }
 
     var body: some View {
         HStack(spacing: 11) {
@@ -213,10 +208,13 @@ struct QueuedComposerMessage: View {
                     .foregroundStyle(DieterTheme.text)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                if attachmentCount > 0 && !draft.text.isEmpty {
-                    Label("\(attachmentCount) attachment\(attachmentCount == 1 ? "" : "s")", systemImage: "paperclip")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(DieterTheme.tertiary)
+                if !restored.parts.isEmpty, !restored.text.isEmpty {
+                    Label(
+                        SharedRules.shared.count(count: Int32(restored.parts.count), noun: "attachment", plural: ""),
+                        systemImage: "paperclip"
+                    )
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(DieterTheme.tertiary)
                 }
             }
 

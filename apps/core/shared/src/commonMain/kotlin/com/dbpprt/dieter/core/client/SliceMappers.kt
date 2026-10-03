@@ -252,6 +252,12 @@ internal fun screenSlice(view: ScreenView, displays: DisplayMatchView, preferenc
     display_status = displays.status,
     frame_rates = view.frameRates, control_unavailable_reason = view.controlUnavailableReason,
     clipboard_actions_enabled = view.clipboardActionsEnabled, latency_label = view.latencyLabel,
+    status_line = view.statusLine, metadata = view.metadata, media_route = view.mediaRoute, details = view.details,
+    streaming = view.phase == ScreenPhase.Streaming,
+    blocked = view.phase is ScreenPhase.PermissionRequired || view.phase is ScreenPhase.Unsupported,
+    failed = view.phase is ScreenPhase.Failed,
+    tone = view.tone,
+    control_label = view.controlLabel, viewers_label = view.viewersLabel,
 )
 
 internal fun processesSlice(view: ProcessesView) = ProcessesSlice(
@@ -321,12 +327,15 @@ internal fun terminalsSlice(view: TerminalsView, outputs: TerminalOutputs?) = Te
     terminals = view.terminals, selected_id = view.selectedId.orEmpty(), loading = view.loading,
     error = view.error.orEmpty(), stream_connected = view.streamConnected,
     output = outputs?.next(view).orEmpty(),
+    status = TerminalsView.status(view.loading, view.terminals.size, view.streamConnected),
+    rows = view.terminals.map { TerminalsView.row(it, view.streamConnected) },
 )
 
 internal fun overviewSlice(view: TerminalOverviewView, terminals: TerminalsSlice) = TerminalOverviewSlice(
-    entries = view.entries.map { OverviewTerminal(it.id, it.daemonId, it.machineName, it.terminal) },
+    entries = view.entries.map { OverviewTerminal(it.id, it.daemonId, it.machineName, it.terminal, TerminalsView.row(it.terminal, terminals.stream_connected)) },
     selected_id = view.selectedId.orEmpty(), loading = view.loading, errors = view.errors,
     no_machines = view.noMachines, terminals = terminals,
+    status = TerminalsView.overviewStatus(view.loading, view.entries.size, view.entries.map { it.daemonId }.distinct().size),
 )
 
 /**
@@ -376,7 +385,7 @@ internal fun conversationSlice(view: ConversationView, presented: ConversationPr
     refreshed_at_millis = view.refreshedAt?.toEpochMilliseconds() ?: 0,
     // The same failure whose diagnostics the timeline leaves to the banner.
     turn_failure = presented.turnFailure?.let {
-        ClientTurnFailure(it.summary, it.log, it.failedMessageId.orEmpty(), it.retryParts.isNotEmpty())
+        ClientTurnFailure(summary = it.summary, log = it.log, retryable = it.retryParts.isNotEmpty())
     },
     project = view.presented?.detail?.project, board = view.presented?.detail?.board, page = view.presented?.page,
     earlier_count = view.messages.size - view.presented?.conversation?.messages.orEmpty().size,

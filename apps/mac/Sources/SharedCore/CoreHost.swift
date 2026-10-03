@@ -54,8 +54,16 @@ package struct CoreHostPlatform: @unchecked Sendable {
         self.clipboard = clipboard
     }
 
+    /// The scheme both apps register for the gateway's native redirect.
+    package static let nativeOAuthScheme = "dieter-mac"
+
     /// The gateway's registered native redirect, shared by the Mac and iOS apps.
-    package static let nativeOAuthRedirectURI = "dieter-mac://oauth/callback"
+    package static let nativeOAuthRedirectURI = "\(nativeOAuthScheme)://oauth/callback"
+
+    /// Whether `url` is the gateway's sign-in callback.
+    package static func isNativeOAuthCallback(_ url: URL) -> Bool {
+        url.scheme?.lowercased() == nativeOAuthScheme && url.host?.lowercased() == "oauth"
+    }
 
     /// The Mac: sessions in a private file, loopback routes to its own daemon,
     /// full transcripts, and desktop-sized screens. `notificationsEnabled` is

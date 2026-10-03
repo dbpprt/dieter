@@ -325,7 +325,7 @@ internal fun FilePreview(
 ) {
     val document = state.fileDocument ?: return
     val renderer = FilePaths.renderer(document)
-    val editable = renderer == FilePaths.Renderer.TEXT || renderer == FilePaths.Renderer.MARKDOWN
+    val editable = FilePaths.editable(document)
     val syntaxTransformation = remember(document.path) {
         CodeSyntaxVisualTransformation(document.path, MaxEditableSyntaxHighlightCharacters)
     }

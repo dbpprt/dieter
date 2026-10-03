@@ -10,7 +10,7 @@
         @Environment(IOSAppModel.self) private var app
         @Environment(IOSWorkspaceNavigation.self) private var navigation
         let boardID: String
-        @State private var model = IOSBoardViewModel()
+        @State private var model = BoardViewModel(scope: "ios-board-\(UUID().uuidString.lowercased())")
         @State private var search = ""
         @State private var state: ClientBoardStateFilter = .all
 
@@ -112,7 +112,7 @@
             }
             Menu("Move to", systemImage: "arrow.right.square") {
                 ForEach(lanes, id: \.laneID) { lane in
-                    Button(lane.name) { model.move(cardID: card.id, toLane: lane.laneID) }
+                    Button(lane.name) { model.drop(cardID: card.id, laneID: lane.laneID) }
                 }
             }
         }

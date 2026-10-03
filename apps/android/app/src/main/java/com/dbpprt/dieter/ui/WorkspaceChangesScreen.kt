@@ -8,10 +8,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -88,24 +88,40 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.ChangeComment
+import com.dbpprt.dieter.api.v1.ChangedFile
+import com.dbpprt.dieter.api.v1.FileDiff
+import com.dbpprt.dieter.api.v1.WorkspaceCommit
+import com.dbpprt.dieter.core.composition.WorkspaceMode
 import com.dbpprt.dieter.core.outbox.OutboxPolicy
 import com.dbpprt.dieter.core.presentation.Ages
 import com.dbpprt.dieter.core.presentation.ByteSizes
 import com.dbpprt.dieter.core.presentation.Counts
 import com.dbpprt.dieter.core.runtime.Timestamps
 import com.dbpprt.dieter.core.workspace.ChangedFiles
+import com.dbpprt.dieter.core.workspace.Commits
 import com.dbpprt.dieter.core.workspace.DiffLayout
+import com.dbpprt.dieter.core.workspace.DiffLine
+import com.dbpprt.dieter.core.workspace.DiffLineKind
 import com.dbpprt.dieter.core.workspace.DiffPages
 import com.dbpprt.dieter.core.workspace.DiffRow
+import com.dbpprt.dieter.core.workspace.GitFormCopy
 import com.dbpprt.dieter.core.workspace.GitFormField
 import com.dbpprt.dieter.core.workspace.GitOperationForm
 import com.dbpprt.dieter.core.workspace.GitOperationKinds
+import com.dbpprt.dieter.core.workspace.GitOperations
 import com.dbpprt.dieter.core.workspace.MergeReadinessItem
+import com.dbpprt.dieter.core.workspace.MergeStep
+import com.dbpprt.dieter.core.workspace.MergeStrategy
 import com.dbpprt.dieter.core.workspace.OperationStart
 import com.dbpprt.dieter.core.workspace.PullRequestView
 import com.dbpprt.dieter.core.workspace.ReviewComments
 import com.dbpprt.dieter.core.workspace.ReviewPresentation
 import com.dbpprt.dieter.core.workspace.StatusTone
+import com.dbpprt.dieter.core.workspace.WorkspaceAvailability
+import com.dbpprt.dieter.core.workspace.WorkspaceReviewView
+import com.dbpprt.dieter.core.workspace.WorkspaceStatus
 import com.dbpprt.dieter.ui.theme.DieterAmber
 import com.dbpprt.dieter.ui.theme.DieterBackground
 import com.dbpprt.dieter.ui.theme.DieterCoral
@@ -117,20 +133,6 @@ import com.dbpprt.dieter.ui.theme.DieterShell
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import com.dbpprt.dieter.ui.theme.DieterText
-import com.dbpprt.dieter.core.composition.WorkspaceMode
-import com.dbpprt.dieter.core.workspace.DiffLine
-import com.dbpprt.dieter.core.workspace.DiffLineKind
-import com.dbpprt.dieter.core.workspace.GitOperations
-import com.dbpprt.dieter.core.workspace.MergeStep
-import com.dbpprt.dieter.core.workspace.MergeStrategy
-import com.dbpprt.dieter.core.workspace.WorkspaceAvailability
-import com.dbpprt.dieter.core.workspace.WorkspaceReviewView
-import com.dbpprt.dieter.core.workspace.WorkspaceStatus
-import com.dbpprt.dieter.api.v1.Card
-import com.dbpprt.dieter.api.v1.ChangeComment
-import com.dbpprt.dieter.api.v1.ChangedFile
-import com.dbpprt.dieter.api.v1.FileDiff
-import com.dbpprt.dieter.api.v1.WorkspaceCommit
 import kotlin.time.Clock
 import kotlinx.coroutines.delay
 
@@ -533,7 +535,7 @@ private fun WorkspaceSummaryCard(
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(
-                    if (workspace.mode == "worktree") Icons.Outlined.AccountTree else Icons.Outlined.Folder,
+                    if (WorkspaceMode.parse(workspace.mode) == WorkspaceMode.WORKTREE) Icons.Outlined.AccountTree else Icons.Outlined.Folder,
                     null,
                     tint = DieterShell,
                     modifier = Modifier.size(16.dp),
@@ -815,7 +817,7 @@ private fun WorkspaceCommitRow(commit: WorkspaceCommit, onClick: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
-                commit.short_sha.ifBlank { commit.sha.take(7) },
+                Commits.shortSha(commit.short_sha, commit.sha),
                 color = DieterShell,
                 fontSize = 11.sp,
                 fontFamily = MonoFont,
@@ -962,8 +964,8 @@ private fun WorkspaceErrorBanner(error: String, onRetry: () -> Unit, onDismiss: 
 @Composable
 private fun WorkspaceOperationCard(review: WorkspaceReviewView, cancelable: Boolean, onCancel: () -> Unit) {
     val operation = review.operation ?: return
-    var expanded by remember(operation.id) { mutableStateOf(operation.status == "failed") }
-    LaunchedEffect(operation.status) { if (operation.status == "failed") expanded = true }
+    var expanded by remember(operation.id) { mutableStateOf(GitOperations.failed(operation)) }
+    LaunchedEffect(operation.status) { if (GitOperations.failed(operation)) expanded = true }
     Surface(color = DieterSurfaceHigh) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1064,7 +1066,7 @@ private fun WorkspaceDiffPane(
                 )
                 Text(
                     when {
-                        commit != null -> "${commit.short_sha.ifBlank { commit.sha.take(7) }} · ${commit.author_name}"
+                        commit != null -> "${Commits.shortSha(commit.short_sha, commit.sha)} · ${commit.author_name}"
                         file != null -> ChangedFiles.title(file.status, file.conflicted, file.untracked) +
                             ChangedFiles.directory(review.selectedPath.orEmpty()).let { if (it.isEmpty()) "" else " · $it" }
                         else -> ""
@@ -1366,8 +1368,9 @@ private fun GitOperationParameterSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(GitOperations.title(kind), style = MaterialTheme.typography.titleMedium)
-            GitOperations.fields(kind).forEach { field ->
-                GitOperationField(field, form) { form = it }
+            val copy = remember(kind) { GitOperations.copy(kind) }
+            GitOperations.fields(kind).filter(form::shows).forEach { field ->
+                GitOperationField(field, form, copy) { form = it }
             }
             GitOperations.description(kind, baseBranch)?.let { description ->
                 Text(
@@ -1377,12 +1380,11 @@ private fun GitOperationParameterSheet(
                     fontWeight = if (GitOperations.destructive(kind)) FontWeight.Medium else FontWeight.Normal,
                 )
             }
-            if (kind == GitOperationKinds.DISCARD) {
-                Text(
-                    "Recovery artifacts (branch bundle, patches, untracked archive) are kept on the Dieter machine.",
-                    color = DieterMuted,
-                    fontSize = 11.sp,
-                )
+            GitOperations.notice(kind)?.let { notice ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(notice.title, color = notice.tone.color, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text(notice.detail, color = DieterMuted, fontSize = 11.sp)
+                }
             }
             Button(
                 onClick = { onStart(form) },
@@ -1402,50 +1404,55 @@ private fun GitOperationParameterSheet(
 
 /** One input of an operation form; [onChange] receives the edited form. */
 @Composable
-private fun GitOperationField(field: GitFormField, form: GitOperationForm, onChange: (GitOperationForm) -> Unit) {
+private fun GitOperationField(field: GitFormField, form: GitOperationForm, copy: GitFormCopy, onChange: (GitOperationForm) -> Unit) {
     when (field) {
         GitFormField.SUBJECT -> OutlinedTextField(
             value = form.subject,
             onValueChange = { onChange(form.copy(subject = it)) },
-            label = { Text(if (form.kind == GitOperationKinds.CREATE_PR) "Title" else "Commit message") },
+            label = { Text(copy.subject) },
+            placeholder = { Text(copy.subjectPlaceholder) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth().testTag("${form.kind}-subject"),
         )
         GitFormField.BODY -> OutlinedTextField(
             value = form.body,
             onValueChange = { onChange(form.copy(body = it)) },
-            label = { Text("Description (optional)") },
+            label = { Text(copy.body) },
+            placeholder = { Text(copy.bodyPlaceholder) },
             minLines = 2,
             modifier = Modifier.fillMaxWidth(),
         )
-        GitFormField.STAGE_ALL -> WorkspaceSheetToggle("Stage all changes", form.stageAll) { onChange(form.copy(stageAll = it)) }
-        GitFormField.FETCH -> WorkspaceSheetToggle("Fetch the base remote first", form.fetch) { onChange(form.copy(fetch = it)) }
-        GitFormField.VALIDATE -> WorkspaceSheetToggle("Run project validation", form.validate) { onChange(form.copy(validate = it)) }
+        GitFormField.STAGE_ALL -> WorkspaceSheetToggle(copy.stageAll, form.stageAll) { onChange(form.copy(stageAll = it)) }
+        GitFormField.FETCH -> WorkspaceSheetToggle(copy.fetch, form.fetch) { onChange(form.copy(fetch = it)) }
+        GitFormField.VALIDATE -> WorkspaceSheetToggle(copy.validate, form.validate) { onChange(form.copy(validate = it)) }
         GitFormField.STRATEGY -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Merge strategy", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Text(copy.strategy, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 GitOperations.strategies(form.kind).forEach { (value, label) ->
                     FilterChip(selected = form.strategy == value, onClick = { onChange(form.copy(strategy = value)) }, label = { Text(label) })
                 }
             }
         }
-        GitFormField.DRAFT -> WorkspaceSheetToggle("Open as draft", form.draft) { onChange(form.copy(draft = it)) }
-        GitFormField.PUSH -> WorkspaceSheetToggle("Push the branch first", form.push) { onChange(form.copy(push = it)) }
-        GitFormField.FORCE_WITH_LEASE -> WorkspaceSheetToggle("Force with lease", form.forceWithLease) { onChange(form.copy(forceWithLease = it)) }
-        GitFormField.EXPECTED_REMOTE_SHA -> if (form.forceWithLease) {
+        GitFormField.DRAFT -> WorkspaceSheetToggle(copy.draft, form.draft) { onChange(form.copy(draft = it)) }
+        GitFormField.PUSH -> WorkspaceSheetToggle(copy.push, form.push) { onChange(form.copy(push = it)) }
+        GitFormField.FORCE_WITH_LEASE -> WorkspaceSheetToggle(copy.forceWithLease, form.forceWithLease) { onChange(form.copy(forceWithLease = it)) }
+        GitFormField.EXPECTED_REMOTE_SHA -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             OutlinedTextField(
                 value = form.expectedRemoteSha,
                 onValueChange = { onChange(form.copy(expectedRemoteSha = it)) },
-                label = { Text("Expected remote head") },
+                label = { Text(copy.expectedRemoteSha) },
+                placeholder = { Text(copy.expectedRemoteShaPlaceholder) },
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = MonoFont),
                 modifier = Modifier.fillMaxWidth(),
             )
+            Text(copy.expectedRemoteShaHelp, color = DieterMuted, fontSize = 11.sp)
         }
         GitFormField.TARGET_CARD_ID -> OutlinedTextField(
             value = form.targetCardId,
             onValueChange = { onChange(form.copy(targetCardId = it)) },
-            label = { Text("Conversation ID") },
+            label = { Text(copy.targetCardId) },
+            placeholder = { Text(copy.targetCardIdPlaceholder) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )

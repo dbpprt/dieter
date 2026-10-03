@@ -50,6 +50,9 @@ object FileExports {
     /** How to show a file with this name or path, media type, and binary flag. */
     fun renderer(path: String, mimeType: String, binary: Boolean): FileRenderer = renderer(FilePaths.renderer(path, mimeType, binary))
 
+    /** Whether the editor may change the file: text and Markdown, never binaries, images, or PDFs. */
+    fun editable(path: String, mimeType: String, binary: Boolean): Boolean = FilePaths.editable(path, mimeType, binary)
+
     /** A listing row's icon kind for a file or folder [name]. */
     fun iconKind(name: String, directory: Boolean): FileIconKind = when (FilePaths.icon(name, directory)) {
         FilePaths.Icon.DIRECTORY -> FileIconKind.FILE_ICON_KIND_DIRECTORY

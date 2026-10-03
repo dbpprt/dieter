@@ -172,6 +172,12 @@ object FilePaths {
 
     fun renderer(document: FileDocument): Renderer = renderer(document.name, document.mime_type, document.binary)
 
+    /** Text and Markdown files open in the editor; images, PDFs, and other binaries are view-only. */
+    fun editable(document: FileDocument): Boolean = editable(document.name, document.mime_type, document.binary)
+
+    fun editable(path: String, mimeType: String, binary: Boolean): Boolean =
+        renderer(path, mimeType, binary).let { it == Renderer.TEXT || it == Renderer.MARKDOWN }
+
     /**
      * How a file is shown, from its name or path and media type: a PDF, then
      * an image, then any other binary file is unsupported, then Markdown,

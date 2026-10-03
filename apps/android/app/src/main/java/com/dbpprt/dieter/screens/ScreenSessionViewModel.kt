@@ -59,7 +59,7 @@ class ScreenHost internal constructor(
         core.scope.launch { session.block() }
     }
 
-    fun connect(daemonId: String) = onCore { connect(routes(daemonId)) }
+    fun connect(daemonId: String) = onCore { connect(daemonId, routes(daemonId)) }
     fun disconnect() = onCore { disconnect() }
     fun resume() = onCore { resume() }
     fun focus(focused: Boolean) = onCore { setFocused(focused) }

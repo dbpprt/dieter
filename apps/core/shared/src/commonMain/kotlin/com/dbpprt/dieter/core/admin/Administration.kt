@@ -433,8 +433,16 @@ class Administration(private val sessions: MachineSessions, private val store: W
         fun publishModeTitle(mode: String): String = when (mode) {
             "manual" -> "Manual"
             "pull_request" -> "Pull request"
-            "push_base" -> "Push base"
+            "push_base" -> "Push base branch"
             else -> mode
+        }
+
+        /** What a publish mode does with a conversation's finished branch. */
+        fun publishModeDetail(mode: String): String = when (mode) {
+            "manual" -> "Choose local merge, branch push, or pull request when publishing."
+            "pull_request" -> "Publish the conversation branch through a pull request."
+            "push_base" -> "Push the validated integration result directly to the base branch."
+            else -> ""
         }
 
         /** "With review" or "Direct to done"; an unknown workflow reads as itself. */

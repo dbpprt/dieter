@@ -2,6 +2,7 @@ package com.dbpprt.dieter.core.machines
 
 import com.dbpprt.dieter.api.gateway.v1.CompatibilityStatus
 import com.dbpprt.dieter.api.v1.MachineInformation
+import com.dbpprt.dieter.client.v1.Tone
 import com.dbpprt.dieter.core.admin.PeerSyncHealth
 import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.core.session.MachineRoute
@@ -115,8 +116,7 @@ object MachineRows {
             !machine.compatible -> machine.incompatibilityDescription.orEmpty()
             route != null -> route.kind.label
             machine.id == attached && online -> "Attached"
-            online -> "Online"
-            else -> "Offline"
+            else -> presence(online)
         },
         latencyMs = route?.latency?.inWholeMilliseconds,
         online = online,
@@ -184,12 +184,25 @@ object MachineRows {
         return "${enrolled.count { it.online }} of ${MachineFormats.count(enrolled.size, "machine")} online"
     }
 
+    /** Why a machine the account no longer lists cannot be used. */
+    const val UNENROLLED = "This machine is no longer enrolled."
+
+    /** "Online" or "Offline". */
+    fun presence(online: Boolean): String = if (online) "Online" else "Offline"
+
+    /** How a machine's row reads: available succeeds, a compatible machine that cannot take work warns, an outdated one is danger. */
+    fun tone(available: Boolean, compatible: Boolean): Tone = when {
+        available -> Tone.TONE_SUCCESS
+        compatible -> Tone.TONE_WARNING
+        else -> Tone.TONE_DANGER
+    }
+
     /** "2 online": the enrolled [rows] that are online as presented. */
     fun onlineLabel(rows: List<MachineRow>): String = "${rows.count { it.daemonId != null && it.online }} online"
 
     /** Why the machine [id] cannot be read or operated now: it left [rows], is offline, or is outdated; null when it can. */
     fun unavailableMessage(rows: List<MachineRow>, id: String): String? {
-        val row = rows.firstOrNull { it.id == id } ?: return "This machine is no longer enrolled."
+        val row = rows.firstOrNull { it.id == id } ?: return UNENROLLED
         return row.unavailableMessage
     }
 

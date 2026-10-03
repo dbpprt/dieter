@@ -5,6 +5,7 @@ import com.dbpprt.dieter.client.v1.ScreenQualityOption
 import com.dbpprt.dieter.client.v1.ScreenStreamOptions
 import com.dbpprt.dieter.client.v1.ScreenToolbarKey
 import com.dbpprt.dieter.client.v1.ScreenToolbarKeys
+import com.dbpprt.dieter.core.screens.ScreenCodecs
 import com.dbpprt.dieter.core.screens.ScreenKeyboard
 import com.dbpprt.dieter.core.screens.ScreenOptions
 import com.dbpprt.dieter.core.screens.ScreenPhase
@@ -32,6 +33,9 @@ object ScreenExports {
 
     /** The button that takes or releases control: "Take Control", or "Release Control" while [controlActive]. */
     fun controlAction(controlActive: Boolean): String = ScreenOptions.controlAction(controlActive)
+
+    /** Why a session cannot start when the device decodes none of the codecs it may receive. */
+    fun codecUnavailable(): String = ScreenCodecs.UNAVAILABLE
 
     /**
      * What a screen view says while not streaming, from the screen slice's

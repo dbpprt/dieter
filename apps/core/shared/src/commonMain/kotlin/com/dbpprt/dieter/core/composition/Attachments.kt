@@ -14,8 +14,10 @@ object Attachments {
     const val MAX_TOTAL_BYTES = 6L * 1024 * 1024
     const val OCTET_STREAM = "application/octet-stream"
 
+    private const val MIB = 1024L * 1024
+
     /** The limits, as shown next to attachment pickers. */
-    const val LIMITS = "Up to 4 attachments · 5 MB each · 6 MB total"
+    val LIMITS = "Up to $MAX_COUNT attachments · ${MAX_FILE_BYTES / MIB} MB each · ${MAX_TOTAL_BYTES / MIB} MB total"
 
     // What the platforms' type systems (UTType, MimeTypeMap) report for common
     // files, so a file without a declared type gets the same one everywhere.
@@ -67,11 +69,14 @@ object Attachments {
         return null
     }
 
-    const val TOO_MANY = "You can attach up to 4 images or files."
+    val TOO_MANY = "You can attach up to $MAX_COUNT images or files."
 
     /** Also what a platform says when it stops reading a file past [MAX_FILE_BYTES]. */
-    const val FILE_TOO_LARGE = "Each attachment must be at most 5 MB."
-    const val TOTAL_TOO_LARGE = "Attachments must total at most 6 MB."
+    val FILE_TOO_LARGE = "Each attachment must be at most ${MAX_FILE_BYTES / MIB} MB."
+    val TOTAL_TOO_LARGE = "Attachments must total at most ${MAX_TOTAL_BYTES / MIB} MB."
+
+    /** How many more files may join [count] attached ones. */
+    fun remainingSlots(count: Int): Int = (MAX_COUNT - count).coerceAtLeast(0)
 
     private fun empty(filename: String) = "${filename.ifEmpty { "The attachment" }} is empty."
 
@@ -120,15 +125,5 @@ object Attachments {
         val type = filename.substringAfterLast('.', "").ifBlank { null }?.uppercase()
             ?: mediaType.substringAfter('/', "file").substringBefore('+').uppercase()
         return if (bytes > 0) "$type · ${ByteSizes.format(bytes)}" else type
-    }
-
-    /** A short kind for display, e.g. "PDF" or "PNG image". */
-    fun kind(part: MessagePart): String {
-        val extension = part.filename.substringAfterLast('.', "").uppercase()
-        return when {
-            part.media_type.startsWith("image/") -> if (extension.isNotEmpty()) "$extension image" else "Image"
-            extension.isNotEmpty() -> extension
-            else -> "File"
-        }
     }
 }

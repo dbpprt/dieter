@@ -121,26 +121,19 @@ extension DieterStore {
     }
 
     func sendComposer() async {
-        let text = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !composerAttachments.isEmpty, let id = selectedCardID ?? selectedChatID
-        else { return }
-        let draft = composer.draft
-        guard !draft.sending else { return }
-        draft.sending = true
-        defer { draft.sending = false }
-        let draftRevision = draft.revision
-        let attachments = draft.attachments
+        guard let id = selectedCardID ?? selectedChatID else { return }
         do {
             // The core sends the trimmed text ahead of the attachments, with the
             // composer's agent choice, else the conversation's agent.
-            try await core.dispatch {
-                $0.sendMessage = .with { send in
-                    send.cardID = id
-                    send.text = text
-                    send.parts = attachments
+            try await composer.draft.send { text, attachments in
+                try await self.core.dispatch {
+                    $0.sendMessage = .with { send in
+                        send.cardID = id
+                        send.text = text
+                        send.parts = attachments
+                    }
                 }
             }
-            draft.acceptSend(revision: draftRevision)
         } catch {
             show(error)
         }
@@ -396,14 +389,6 @@ extension DieterStore {
                 continuation.resume(returning: nil)
             }
         }
-    }
-
-    static func filename(_ value: String, for contentType: UTType) -> String {
-        let url = URL(fileURLWithPath: value)
-        guard url.pathExtension.isEmpty, let suffix = contentType.preferredFilenameExtension else {
-            return value
-        }
-        return value + "." + suffix
     }
 
     /// Creates a conversation from a form's choices. The core applies the

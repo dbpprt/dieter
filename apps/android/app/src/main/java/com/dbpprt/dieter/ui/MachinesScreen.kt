@@ -1,9 +1,8 @@
 package com.dbpprt.dieter.ui
 
-import com.dbpprt.dieter.core.admin.MachineOperations
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -70,6 +69,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dbpprt.dieter.api.v1.GPUDevice
+import com.dbpprt.dieter.api.v1.MachineInformation
+import com.dbpprt.dieter.api.v1.MachineOperationAction
+import com.dbpprt.dieter.api.v1.MachineProcess
+import com.dbpprt.dieter.core.admin.MachineOperations
 import com.dbpprt.dieter.core.machines.FleetTotals
 import com.dbpprt.dieter.core.machines.MachineFormats
 import com.dbpprt.dieter.core.machines.MachineRow
@@ -86,10 +90,6 @@ import com.dbpprt.dieter.ui.theme.DieterShellTint
 import com.dbpprt.dieter.ui.theme.DieterSurface
 import com.dbpprt.dieter.ui.theme.DieterSurfaceHigh
 import com.dbpprt.dieter.ui.theme.DieterText
-import com.dbpprt.dieter.api.v1.GPUDevice
-import com.dbpprt.dieter.api.v1.MachineInformation
-import com.dbpprt.dieter.api.v1.MachineOperationAction
-import com.dbpprt.dieter.api.v1.MachineProcess
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -660,7 +660,7 @@ private fun OnlineBadge(online: Boolean) {
         ) {
             Box(Modifier.size(6.dp).clip(CircleShape).background(color))
             Text(
-                if (online) "Online" else "Offline",
+                MachineRows.presence(online),
                 color = color,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -882,10 +882,10 @@ private fun MachineProcessRow(process: MachineProcess) {
         modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
     ) {
         Icon(
-            if (process.kind == "agent") Icons.Outlined.Refresh else Icons.Outlined.Terminal,
+            if (MachineFormats.isAgentProcess(process.kind)) Icons.Outlined.Refresh else Icons.Outlined.Terminal,
             null,
             Modifier.size(18.dp),
-            tint = if (process.kind == "agent") DieterShell else DieterMuted,
+            tint = if (MachineFormats.isAgentProcess(process.kind)) DieterShell else DieterMuted,
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(process.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)

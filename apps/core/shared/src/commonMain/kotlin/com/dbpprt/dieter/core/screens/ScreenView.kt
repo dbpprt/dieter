@@ -2,6 +2,7 @@ package com.dbpprt.dieter.core.screens
 
 import com.dbpprt.dieter.api.v1.RemoteDesktopCapabilities
 import com.dbpprt.dieter.api.v1.RemoteDesktopSessionState
+import com.dbpprt.dieter.client.v1.Tone
 import com.dbpprt.dieter.core.presentation.Counts
 import kotlin.math.roundToLong
 import okio.ByteString
@@ -129,6 +130,12 @@ data class ScreenView(
     val controlTransferring: Boolean = false,
     /** Why the last take or release failed. */
     val controlError: String? = null,
+    /** The machine the session shares, as the connect named it. */
+    val machineId: String = "",
+    /** The frame rate this device measured over the last feedback interval. */
+    val mediaFps: Double = 0.0,
+    /** Whether the media path runs through a TURN relay; null until the engine knows. */
+    val mediaRelayed: Boolean? = null,
 ) {
     /** The frame-rate choices the host allows; 30 and 60 before it reports a maximum. */
     val frameRates: List<Int> get() = ScreenCapabilities.frameRates(capabilities ?: RemoteDesktopCapabilities())
@@ -151,22 +158,49 @@ data class ScreenView(
             }
         }
 
+    /** How the phase reads: streaming succeeds, a session on its way is a warning, a failure is danger. */
+    val tone: Tone
+        get() = when {
+            phase == ScreenPhase.Streaming -> Tone.TONE_SUCCESS
+            phase is ScreenPhase.Failed -> Tone.TONE_DANGER
+            phase.active -> Tone.TONE_WARNING
+            else -> Tone.TONE_NEUTRAL
+        }
+
+    /** "2 viewers · Pixel controls" while others watch too, naming who controls when it is not this client; empty otherwise. */
+    val viewersLabel: String
+        get() {
+            val session = state ?: return ""
+            if (session.connected_clients <= 1) return ""
+            val controller = session.controller_name.takeIf { it.isNotBlank() && !session.control_active }?.let { " · $it controls" }.orEmpty()
+            return Counts.of(session.connected_clients, "viewer") + controller
+        }
+
+    /** "Control" while this client controls the host, else "View only". */
+    val controlLabel: String get() = if (controlActive) "Control" else "View only"
+
     /** The status line under the machine's name: "Connected · Control" or "Connected · View only" while streaming, else the phase. */
     val statusLine: String
-        get() = if (phase == ScreenPhase.Streaming) "Connected · ${if (controlActive) "Control" else "View only"}" else phase.label
+        get() = if (phase == ScreenPhase.Streaming) "Connected · $controlLabel" else phase.label
 
     /** The button that takes or releases control. */
     val controlAction: String get() = ScreenOptions.controlAction(controlActive)
 
-    /**
-     * The line above the canvas while streaming, e.g. "1920 × 1080 · H264 · 60 fps · Direct media",
-     * leaving out what is unknown; [fps] and [mediaRoute] are the media engine's own measurements.
-     */
-    fun metadata(fps: Double, mediaRoute: String): String {
-        if (phase != ScreenPhase.Streaming) return "Your view stays in place while connecting"
-        val session = state
-        return listOf(session?.let { "${it.width} × ${it.height}" }.orEmpty(), session?.codec.orEmpty(), rate(fps), mediaRoute).filter { it.isNotBlank() }.joinToString(" · ")
-    }
+    /** The media path: "Direct media", "Relayed media", or empty until the engine knows. */
+    val mediaRoute: String
+        get() = when (mediaRelayed) {
+            null -> ""
+            true -> "Relayed media"
+            false -> "Direct media"
+        }
+
+    /** The line above the canvas while streaming, e.g. "1920 × 1080 · H264 · 60 fps · Direct media", leaving out what is unknown. */
+    val metadata: String
+        get() {
+            if (phase != ScreenPhase.Streaming) return "Your view stays in place while connecting"
+            val session = state
+            return listOf(session?.let { "${it.width} × ${it.height}" }.orEmpty(), session?.codec.orEmpty(), rate, mediaRoute).filter { it.isNotBlank() }.joinToString(" · ")
+        }
 
     /**
      * What the canvas says while not streaming: why no session can run, else
@@ -174,27 +208,29 @@ data class ScreenView(
      */
     fun waitingMessage(hostReady: Boolean, hostReason: String): String = phase.waitingMessage(hostReady, hostReason)
 
-    /** The connection details of a session with the machine [daemonId]; [fps] and [mediaRoute] are the media engine's own. */
-    fun details(daemonId: String, fps: Double, mediaRoute: String): ScreenDetails {
-        val session = state
-        return ScreenDetails(
-            status = "Status · ${phase.label}",
-            video = "Video · ${mediaRoute.ifBlank { "Negotiating" }}",
-            signaling = "Signaling · ${routeLabel.ifBlank { "Negotiating" }}",
-            machine = "Machine · $daemonId",
-            session = if (session == null) emptyList() else listOfNotNull(
+    /**
+     * The connection details, one line each: status, video, round trip,
+     * signaling, machine, then the display, rate and viewers, and controller
+     * once a session runs.
+     */
+    val details: List<String>
+        get() {
+            val session = state
+            return listOf(
+                "Status · ${phase.label}",
+                "Video · ${mediaRoute.ifBlank { "Negotiating" }}",
+                latencyLabel,
+                "Signaling · ${routeLabel.ifBlank { "Negotiating" }}",
+                "Machine · $machineId",
+            ) + if (session == null) emptyList() else listOfNotNull(
                 "Display · ${session.width} × ${session.height} · ${session.codec}",
-                "${rate(fps)} · ${Counts.of(session.connected_clients, "viewer")}",
+                "$rate · ${Counts.of(session.connected_clients, "viewer")}",
                 session.controller_name.takeIf { it.isNotBlank() }?.let { "Controller · $it" },
-            ),
-        )
-    }
+            )
+        }
 
-    private fun rate(fps: Double): String = "${if (fps.isFinite()) fps.roundToLong() else 0} fps"
+    private val rate: String get() = "${if (mediaFps.isFinite()) mediaFps.roundToLong() else 0} fps"
 }
-
-/** A screen session's connection details, one "Name · value" line each; [session] lists the display, rate and viewers, and controller once a session runs. */
-data class ScreenDetails(val status: String, val video: String, val signaling: String, val machine: String, val session: List<String>)
 
 data class ScreenConfig(
     val clientName: String,

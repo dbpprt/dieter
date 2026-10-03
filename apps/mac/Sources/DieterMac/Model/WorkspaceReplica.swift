@@ -43,14 +43,19 @@ final class WorkspaceReplica {
     private(set) var commandSearchRevision: UInt64 = 0
     @ObservationIgnored private var sortedProjectsCache: [Dieter_V1_Project]?
 
+    /// The core's order of the workspace's projects.
+    var projectOrder: [String] = [] { didSet { if projectOrder != oldValue { sortedProjectsCache = nil } } }
+
+    /// The projects in the core's order; any the core has not ordered yet follow by ID.
     var projects: [Dieter_V1_Project] {
         // Read the observable sources even when the derived value is cached.
-        let values = projectDirectory.isEmpty ? state.projects : Array(projectDirectory.values)
+        let directory = projectDirectory
+        let order = projectOrder
+        if directory.isEmpty { return state.projects }
         if let sortedProjectsCache { return sortedProjectsCache }
-        let sorted = values.sorted {
-            let order = $0.name.localizedCaseInsensitiveCompare($1.name)
-            return order == .orderedSame ? $0.id < $1.id : order == .orderedAscending
-        }
+        let ordered = order.compactMap { directory[$0] }
+        let listed = Set(order)
+        let sorted = ordered + directory.values.filter { !listed.contains($0.id) }.sorted { $0.id < $1.id }
         sortedProjectsCache = sorted
         return sorted
     }

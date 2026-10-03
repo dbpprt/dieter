@@ -5,6 +5,7 @@ import com.dbpprt.dieter.api.v1.HarnessSelection
 import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.client.v1.AgentChoice
 import com.dbpprt.dieter.client.v1.AgentControlsState
+import com.dbpprt.dieter.client.v1.AgentOptionKind
 import com.dbpprt.dieter.client.v1.AgentPickerItem
 import com.dbpprt.dieter.client.v1.CreationCatalogState
 import com.dbpprt.dieter.client.v1.CreationIntent
@@ -21,6 +22,7 @@ import com.dbpprt.dieter.core.composition.WorkspaceMode
 import com.dbpprt.dieter.core.conversation.ConversationView
 import com.dbpprt.dieter.core.metadata.MachineMetadata
 import com.dbpprt.dieter.core.selection.AgentControls
+import com.dbpprt.dieter.core.selection.ProviderOptionKind
 import com.dbpprt.dieter.core.selection.Selections
 import com.dbpprt.dieter.core.state.CreationPreferences
 import com.dbpprt.dieter.core.store.WorkspaceView
@@ -180,9 +182,20 @@ internal fun agentControlsState(controls: AgentControls): AgentControlsState = A
     model_label = controls.modelLabel,
     effort_label = controls.effortLabel,
     efforts = controls.efforts,
-    options = controls.options,
+    options = controls.options.map { option -> option.copy(choices = option.choices.map { it.copy(name = it.name.ifEmpty { it.value_ }) }) },
     option_values = controls.optionValues,
     option_enabled = controls.options.associate { it.id to controls.optionEnabled(it) },
+    effort_choices = controls.effortChoices,
+    effort_value = controls.effortValue,
+    fast_mode = controls.fastMode, fast_option_id = controls.fastOptionId.orEmpty(),
+    option_kinds = controls.options.associate {
+        it.id to when (Selections.optionKind(it)) {
+            ProviderOptionKind.TOGGLE -> AgentOptionKind.AGENT_OPTION_KIND_TOGGLE
+            ProviderOptionKind.CHOICE -> AgentOptionKind.AGENT_OPTION_KIND_CHOICE
+            ProviderOptionKind.TEXT -> AgentOptionKind.AGENT_OPTION_KIND_TEXT
+        }
+    },
+    option_on = controls.options.filter { Selections.optionKind(it) == ProviderOptionKind.TOGGLE }.associate { it.id to Selections.isOn(controls.optionValue(it)) },
 )
 
 /**

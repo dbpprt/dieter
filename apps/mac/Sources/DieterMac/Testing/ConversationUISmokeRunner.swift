@@ -359,7 +359,6 @@
             store.conversationModel.turnFailure = .with {
                 $0.summary = "codex exited 1 after 42s (context overflow)."
                 $0.log = diagnostic.text
-                $0.failedMessageID = assistant.id
                 $0.retryable = true
             }
             try? await DieterTaskSleep.seconds(1)
