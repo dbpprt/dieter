@@ -20,7 +20,12 @@ import (
 	"time"
 )
 
-const TeamID = "DS6N5L85E7"
+const TeamID = "FNGU8JFNPL"
+
+// Retain the former signer during the Developer ID rotation so an installed
+// service can activate the new team's pair and recover the previous release.
+// Both executables must belong to the same team; see docs/apple-release-signing.md.
+const previousTeamID = "DS6N5L85E7"
 const activationEnv = "DIETER_SERVICE_ACTIVATION"
 const lockEnv = "DIETER_SERVICE_LOCK_FD"
 
@@ -77,18 +82,44 @@ func (r Runtime) verify(ctx context.Context, dir string) error {
 }
 
 func VerifySignedPair(ctx context.Context, dir string) error {
+	return verifySignedPair(ctx, dir, verifySignedExecutable)
+}
+
+func verifySignedPair(ctx context.Context, dir string, check func(context.Context, string, string) error) error {
+	var failures []error
+	for _, team := range []string{TeamID, previousTeamID} {
+		if err := verifySignedPairForTeam(ctx, dir, team, check); err == nil {
+			return nil
+		} else {
+			failures = append(failures, err)
+		}
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	return errors.Join(failures...)
+}
+
+func verifySignedPairForTeam(ctx context.Context, dir, team string, check func(context.Context, string, string) error) error {
 	for _, name := range executables {
 		identifier := "com.dbpprt.dieter.daemon"
 		if name == "dieter-capture" {
 			identifier = "com.dbpprt.dieter.capture"
 		}
-		requirement := fmt.Sprintf(`identifier %q and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = %q`, identifier, TeamID)
-		checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		output, err := exec.CommandContext(checkCtx, "/usr/bin/codesign", "--verify", "--strict", "-R", "="+requirement, filepath.Join(dir, name)).CombinedOutput()
-		cancel()
-		if err != nil {
-			return fmt.Errorf("verify signed %s: %w: %s", name, err, strings.TrimSpace(string(output)))
+		requirement := fmt.Sprintf(`identifier %q and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = %q`, identifier, team)
+		if err := check(ctx, filepath.Join(dir, name), requirement); err != nil {
+			return fmt.Errorf("verify signed %s for team %s: %w", name, team, err)
 		}
+	}
+	return nil
+}
+
+func verifySignedExecutable(ctx context.Context, path, requirement string) error {
+	checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(checkCtx, "/usr/bin/codesign", "--verify", "--strict", "-R", "="+requirement, path).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }

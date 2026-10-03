@@ -30,6 +30,58 @@ func fixtureRuntime(t *testing.T) Runtime {
 	}}
 }
 
+func TestSignedPairTeamRotation(t *testing.T) {
+	for _, tc := range []struct {
+		name, daemonTeam, captureTeam string
+		accepted                      bool
+	}{
+		{"current", TeamID, TeamID, true},
+		{"previous", previousTeamID, previousTeamID, true},
+		{"mixed", TeamID, previousTeamID, false},
+		{"mixed reverse", previousTeamID, TeamID, false},
+		{"unrelated", "OTHERTEAM1", "OTHERTEAM1", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			check := func(_ context.Context, path, requirement string) error {
+				team, identifier := tc.daemonTeam, "com.dbpprt.dieter.daemon"
+				if filepath.Base(path) == "dieter-capture" {
+					team, identifier = tc.captureTeam, "com.dbpprt.dieter.capture"
+				}
+				for _, clause := range []string{
+					`identifier "` + identifier + `"`,
+					`anchor apple generic`,
+					`certificate 1[field.1.2.840.113635.100.6.2.6] exists`,
+					`certificate leaf[field.1.2.840.113635.100.6.1.13] exists`,
+				} {
+					if !strings.Contains(requirement, clause) {
+						t.Fatalf("missing signature constraint %q: %s", clause, requirement)
+					}
+				}
+				if !strings.Contains(requirement, `certificate leaf[subject.OU] = "`+team+`"`) {
+					return errors.New("team mismatch")
+				}
+				return nil
+			}
+			if err := verifySignedPair(context.Background(), t.TempDir(), check); (err == nil) != tc.accepted {
+				t.Fatalf("accepted = %v, want %v: %v", err == nil, tc.accepted, err)
+			}
+		})
+	}
+}
+
+func TestSignedPairRotationStopsAfterCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	calls := 0
+	err := verifySignedPair(ctx, t.TempDir(), func(ctx context.Context, _, _ string) error {
+		calls++
+		cancel()
+		return ctx.Err()
+	})
+	if !errors.Is(err, context.Canceled) || calls != 1 {
+		t.Fatalf("cancellation: calls = %d, error = %v", calls, err)
+	}
+}
+
 func fixturePair(t *testing.T, version string) string {
 	t.Helper()
 	dir := t.TempDir()

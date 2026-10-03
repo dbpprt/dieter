@@ -11,6 +11,44 @@ and an App Store Connect provisioning profile to produce an iPhone/iPad archive
 and IPA. Uploading that build for TestFlight is optional. iOS does not use the Mac
 Developer ID certificates or notarization service.
 
+## Rotate Mac signing to Dennis Bappert's team
+
+The target Mac signing team is Dennis Bappert (`FNGU8JFNPL`). Earlier releases
+used Michael Ermer's team (`DS6N5L85E7`). The daemon's fixed service runtime
+checks the signing team before activation, so uploading new GitHub secrets
+alone is insufficient for existing Homebrew services.
+
+1. Publish a bridge release containing the team-rotation verifier with the
+   existing Mac credentials. Update and activate that release on existing Mac
+   daemon installations before staging a release signed by the new team. An
+   older service executable rejects the new team's pending pair before it can
+   execute the candidate. This is an operator rollout step; credential setup
+   must never restart a running daemon.
+2. Create dedicated Developer ID Application and Installer certificates and a
+   notarization team API key under `FNGU8JFNPL`, then configure the seven Mac
+   secrets below. The Mac app and daemon use the same credentials and rotate
+   together. Keep iOS credentials separate.
+3. Dispatch `release.yml` with `publish=false` to verify the new signed Mac
+   artifacts, then publish a canonical release through the usual workflow.
+   Replacing repository secrets does not change already published artifacts.
+
+During the transition, the service verifier accepts a complete daemon/helper
+pair signed by either named team. It rejects mixed-team pairs, unrelated teams,
+unsigned code, and invalid signatures. The former signer remains trusted for
+bridge activation and rollback; remove that trust in a subsequent release
+after the fleet has migrated and no rollback needs the former signer. This
+transition does not preserve macOS privacy grants across developer teams;
+operators may need to grant Screen Recording and Accessibility again.
+
+The permission-retention acceptance script targets `FNGU8JFNPL`; both of its
+input releases must use that team. It tests updates within the new team, not
+privacy-grant retention across the rotation.
+
+The Linux gateway and Linux daemon use GitHub Actions OIDC/Sigstore signatures
+from `dbpprt/dieter`, including signed release checksums, gateway images and
+deployment manifests. They do not use Apple Developer ID certificates or
+notarization credentials. Updating Apple secrets does not rotate their signer.
+
 ## Credentials dedicated to Dieter
 
 Create fresh credentials for this repository rather than exporting a personal or
@@ -32,7 +70,7 @@ them to a single app or bundle identifier. These credentials are dedicated to
 Dieter by how they are stored and used. Repository owners and collaborators who
 can modify trusted release workflows can use them to sign code. This arrangement
 lets Dennis Bappert (`dbpprt`) run Dieter releases through GitHub without access to
-the Apple developer account. GitHub stores the secrets encrypted and does not
+the certificate provider's Apple developer account. GitHub stores the secrets encrypted and does not
 display their plaintext values in its settings.
 
 See Apple's [Developer ID certificate instructions](https://developer.apple.com/help/account/certificates/create-developer-id-certificates/)
