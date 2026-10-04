@@ -7,6 +7,7 @@ require_relative "apple_build"
 require_relative "../fixtures/gateway"
 require_relative "../fixtures/screen"
 require_relative "../fixtures/device_route"
+require_relative "../fixtures/ios_media"
 require_relative "../pipeline/contract"
 
 module Dieter
@@ -29,6 +30,7 @@ module Dieter
       raise PipelineError, "configuration must be debug or release" unless %w[debug release].include?(configuration)
       @context.lease("apple-build")
       physical = @target && @target["kind"] == "device"
+      @bundle_id = physical ? @signing.fetch("app_bundle_id") : @share_files ? "com.dbpprt.dieter.ios.e2e" : "com.dbpprt.dieter.ios"
       if physical
         @derived = File.join(@root, "apps/ios/.build/DerivedDataDevice")
         @products = File.join(@derived, "Build/Products")
@@ -36,11 +38,11 @@ module Dieter
       SharedFramework.new(@context).build(configuration: configuration, platforms: physical ? "all" : "ios-simulator")
       sdk = physical ? "iphoneos" : "iphonesimulator"
       Dir.glob(File.join(@products, "*#{sdk}*.xctestrun")).each { |path| File.unlink(path) }
-      argv = ["xcodebuild", *AppleBuild.jobs(@context, tool: :xcode), "-skipPackagePluginValidation", "-project", "apps/ios/DieterIOS.xcodeproj", "-scheme", physical ? "DieterIOSE2E" : "DieterIOS", "-configuration", configuration.capitalize, "-destination", physical ? "generic/platform=iOS" : "generic/platform=iOS Simulator", "-derivedDataPath", @derived, "build-for-testing", "ARCHS=arm64", "CODE_SIGNING_ALLOWED=YES", "ENABLE_TESTABILITY=YES", "DIETER_RELEASE_VERSION=#{@context.environment.fetch('DIETER_RELEASE_VERSION')}"]
+      argv = ["xcodebuild", *AppleBuild.jobs(@context, tool: :xcode), "-skipPackagePluginValidation", "-project", "apps/ios/DieterIOS.xcodeproj", "-scheme", physical || @share_files ? "DieterIOSE2E" : "DieterIOS", "-configuration", configuration.capitalize, "-destination", physical ? "generic/platform=iOS" : "generic/platform=iOS Simulator", "-derivedDataPath", @derived, "build-for-testing", "ARCHS=arm64", "CODE_SIGNING_ALLOWED=YES", "ENABLE_TESTABILITY=YES", "DIETER_RELEASE_VERSION=#{@context.environment.fetch('DIETER_RELEASE_VERSION')}"]
       argv += if physical
                 ["DIETER_IOS_BUNDLE_ID=#{@signing.fetch('app_bundle_id')}", "DIETER_IOS_APP_GROUP_ID=#{@signing.fetch('app_group_id')}", "DIETER_IOS_TEAM_ID=#{@signing.fetch('team_id')}", "DEVELOPMENT_TEAM=#{@signing.fetch('team_id')}", "DIETER_IOS_SIGN_STYLE=Manual", "DIETER_IOS_SIGN_IDENTITY=#{@profiles.fetch('certificate')}", "DIETER_IOS_PROFILE_SPECIFIER=#{@profiles.fetch('app')}", "DIETER_IOS_SHARE_PROFILE_SPECIFIER=#{@profiles.fetch('share')}", "DIETER_IOS_TEST_PROFILE_SPECIFIER=#{@profiles.fetch('runner')}"]
               else
-                ["CODE_SIGN_IDENTITY=-"]
+                ["CODE_SIGN_IDENTITY=-", "DIETER_IOS_BUNDLE_ID=#{@bundle_id}", "DIETER_IOS_APP_GROUP_ID=group.#{@bundle_id}"]
               end
       @context.command(argv, timeout: 2400, log: File.join(@context.output, "build.log"))
       candidates = Dir.glob(File.join(@products, "*#{sdk}*.xctestrun"))
@@ -50,9 +52,10 @@ module Dieter
       candidates.first
     end
 
-    def admit(target, _plan)
+    def admit(target, plan)
       raise Unavailable, "iOS tests require macOS/Xcode" unless RUBY_PLATFORM.include?("darwin")
       @target = target
+      @share_files = target.fetch("kind") == "device" || plan.any? { |test_case| test_case["id"] == "ios.share-owned-file" }
       if target.fetch("kind") == "device"
         @context.lease("ios-device", identity: target.fetch("udid"))
         @context.lease("apple-build")
@@ -141,9 +144,14 @@ module Dieter
           environment["DIETER_IOS_TEST_HTTPS_GATEWAY"] = endpoint
         end
         reset_owned_packages
-        if test_case["id"] == "ios.share-extension"
-          raise Unavailable, "Physical share-extension qualification requires its owned media fixture setup" if target["kind"] == "device"
-          @context.command(["xcrun", "simctl", "addmedia", @simulator, File.join(@root, "apps/android/design/reference/phone-board.png")], timeout: 30)
+        if %w[ios.share-extension ios.share-owned-file].include?(test_case["id"])
+          if target["kind"] == "device" || test_case["id"] == "ios.share-owned-file"
+            sdk = target["kind"] == "device" ? "iphoneos" : "iphonesimulator"
+            media = IOSMediaFixture.new(@context, target, app: File.join(@products, "Debug-#{sdk}/Dieter.app"), bundle_id: @bundle_id, journal: target["kind"] == "device" ? @device_journal : @journal, simulator: @simulator, evidence: dir)
+            environment["DIETER_IOS_TEST_SHARE_FILE"] = media.stage
+          else
+            @context.command(["xcrun", "simctl", "addmedia", @simulator, File.join(@root, "apps/android/design/reference/phone-board.png")], timeout: 30)
+          end
         end
         spec = private_test_run(state, environment, test_case.fetch("native").fetch("target"))
         bundle = File.join(state, "result.xcresult")
@@ -222,7 +230,8 @@ module Dieter
       end
       inventory = @context.command(["xcrun", "simctl", "listapps", @simulator], timeout: 120, binary: true, label: "Inspect owned simulator packages", log: File.join(@context.output, "simulator-packages.log"))
       installed = JSON.parse(@context.command(["plutil", "-convert", "json", "-o", "-", "--", "-"], input: inventory, timeout: 30)).keys
-      %w[com.dbpprt.dieter.ios com.dbpprt.dieter.ios.native-tests com.dbpprt.dieter.ios.uitests.xctrunner].each do |id|
+      app = @bundle_id || "com.dbpprt.dieter.ios"
+      [app, app + ".native-tests", app + ".uitests.xctrunner"].each do |id|
         next unless installed.include?(id)
         @context.command(["xcrun", "simctl", "uninstall", @simulator, id], timeout: 120, label: "Reset owned simulator package #{id}")
       end

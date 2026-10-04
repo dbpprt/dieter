@@ -3,6 +3,7 @@
 require "shellwords"
 require "digest"
 require_relative "../fixtures/gateway"
+require_relative "../fixtures/screen"
 require_relative "../pipeline/contract"
 require_relative "../pipeline/artifacts"
 require_relative "emulator"
@@ -55,6 +56,7 @@ module Dieter
       plan.map { |test_case| package(test_case) }.uniq.each do |id|
         raise Unavailable, "#{id} already running; preserving its owner" unless shell(["pidof", id], check: false).strip.empty?
       end
+      ScreenFixture.admit(@context, input: true) if plan.any? { |test_case| test_case["fixture"] == "screen" }
       @context.lease("android-build")
     end
 

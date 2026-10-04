@@ -7,6 +7,7 @@ require "rbconfig"
 require_relative "../lib/dieter/config"
 require_relative "../lib/dieter/pipeline/context"
 require_relative "../lib/dieter/pipeline/engine"
+require_relative "../lib/dieter/platforms/apple_build"
 
 class PipelineConfigTest < Minitest::Test
   def setup
@@ -50,6 +51,24 @@ class PipelineConfigTest < Minitest::Test
   def test_duplicate_keys_are_rejected_before_merge
     File.write(File.join(@root, "fastlane/local.json"), '{"schema_version":1,"schema_version":1}')
     assert_raises(Dieter::PipelineError) { Dieter::Config.new(@root, ci: false) }
+  end
+
+  def test_explicit_apple_job_limit_overrides_the_local_limit_but_paths_still_conflict
+    previous = %w[DIETER_SWIFT_JOBS DEVELOPER_DIR].to_h { |key| [key, ENV[key]] }
+    override(toolchains: {swift_jobs: 2, developer_dir: "/configured/xcode"})
+    ENV["DIETER_SWIFT_JOBS"] = "4"
+    ENV["DEVELOPER_DIR"] = "/configured/xcode"
+    environment = Dieter::Config.new(@root, ci: false).environment
+    context = Struct.new(:environment).new(environment)
+    assert_equal ["-jobs", "4"], Dieter::AppleBuild.jobs(context, tool: :xcode)
+    ENV["DEVELOPER_DIR"] = "/another/xcode"
+    assert_raises(Dieter::PipelineError) { Dieter::Config.new(@root, ci: false).environment }
+    ENV["DEVELOPER_DIR"] = "/configured/xcode"
+    ENV["DIETER_SWIFT_JOBS"] = "65"
+    context.environment = Dieter::Config.new(@root, ci: false).environment
+    assert_raises(Dieter::PipelineError) { Dieter::AppleBuild.jobs(context, tool: :xcode) }
+  ensure
+    previous.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
   end
 
   def test_unresolved_simulator_runtime_and_physical_identity_fail_admission

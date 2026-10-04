@@ -59,8 +59,12 @@ account resources are created automatically. The fixture route uses a reachable
 local-network host address and existing certificate/key; USB pairing controls
 the device and does not itself expose host loopback to it. Credentials and
 offline controls cross that route through authenticated TLS. Physical Share
-qualification additionally requires an owned media fixture; unavailable cells
-fail and must be reported, never presented as passes.
+tests stage an exact PNG in the isolated E2E app's Documents container and share
+it through Files. Only Debug `.e2e` apps expose that container as `Dieter E2E`;
+package cleanup removes the owned media. The operator's Photos library is never
+used for physical tests. `ios.share-owned-file` qualifies the same Files path on
+a disposable phone simulator. Physical hardware remains unqualified until its
+configured native plan actually passes; unavailable cells fail.
 
 ## Local checks and app work
 
@@ -138,6 +142,7 @@ just pipeline android e2e suite:screens
 just pipeline ios e2e profile:ios-iphone suite:functional
 just pipeline ios e2e profile:ios-ipad suite:functional
 just pipeline ios e2e profile:ios-device cases:ios.remote-node
+just pipeline ios e2e profile:ios-iphone cases:ios.share-owned-file
 just pipeline mac e2e suite:functional
 just pipeline mac e2e cases:mac.navigation,mac.sidebar
 just pipeline ios prepare_tests profile:ios-iphone suite:smoke
@@ -197,7 +202,8 @@ Runner labels are `dieter-android` (Linux for physical Android suites;
 macOS for the visible Android emulator and every Android screen suite),
 `dieter-ios` (macOS), and `dieter-mac` (macOS). The Android macOS runner needs the
 configured Pixel AVD, host GLES and, for screens, capture/input permissions.
-Register/configure runners before dispatching those cells.
+Register/configure runners before dispatching those cells. Self-hosted runners
+must use Actions runner 2.327.1 or newer for the pinned Node 24 actions.
 
 Every push to main reserves one numeric SemVer and monotonically increasing
 native build counter before producing candidates. All gateway, daemon/CLI and

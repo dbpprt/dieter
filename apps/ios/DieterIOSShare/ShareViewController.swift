@@ -263,6 +263,14 @@ private enum SharePayloadWriter {
     }
 
     private static func payload(_ provider: NSItemProvider, index: Int) async throws -> Payload {
+        // Files can offer image bytes without a suggested name alongside its
+        // file URL. Read the file representation first to retain its metadata.
+        if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            let file = try await provider.loadSharedFileRepresentation()
+            return try validatedPayload(
+                data: file.data, suggestedName: file.filename,
+                type: file.mediaType.flatMap { UTType(mimeType: $0) }, fallback: "Attachment \(index + 1)")
+        }
         let preferredImages: [UTType] = [.png, .jpeg, .heic, .gif]
         if let type = preferredImages.first(where: {
             provider.hasItemConformingToTypeIdentifier($0.identifier)
@@ -279,12 +287,6 @@ private enum SharePayloadWriter {
             return try validatedPayload(
                 data: data, suggestedName: provider.suggestedName,
                 type: UTType(identifier), fallback: "Screenshot \(index + 1)")
-        }
-        if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-            let file = try await provider.loadSharedFileRepresentation()
-            return try validatedPayload(
-                data: file.data, suggestedName: file.filename,
-                type: file.mediaType.flatMap { UTType(mimeType: $0) }, fallback: "Attachment \(index + 1)")
         }
         guard let identifier = preferredContentTypeIdentifier(for: provider) else {
             throw SharePayloadError.unavailable

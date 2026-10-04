@@ -5,8 +5,25 @@ require "uri"
 
 module Dieter
   class ScreenFixture
+    def self.supported_host? = RUBY_PLATFORM.include?("darwin")
+
+    def self.admit(context, input: false)
+      raise Unavailable, "Screen fixtures require macOS" unless supported_host?
+      context.lease("apple-build")
+      if input
+        context.lease("mac-desktop")
+        assert_stopped(context)
+      end
+    end
+
+    def self.assert_stopped(context)
+      process = context.start(["pgrep", "-x", "DieterMac"])
+      output = process.wait(timeout: 15, check: false)
+      raise Unavailable, "DieterMac already running (PIDs #{output.strip}); preserving the operator app" unless process.status.exitstatus == 1 && output.strip.empty?
+    end
+
     def self.tools(context, state, input: false)
-      raise Unavailable, "Screen fixtures require macOS" unless RUBY_PLATFORM.include?("darwin")
+      admit(context, input: input)
       helper = File.join(state, "dieter-capture")
       fixture = File.join(state, "screens-fixture")
       context.command(["bash", "native/macos-capture/build.sh", helper], timeout: 300)

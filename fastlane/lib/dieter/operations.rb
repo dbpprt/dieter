@@ -39,7 +39,7 @@ module Dieter
         context.command(["python3", "-c", code + "app.assert_single_or_stopped(); app.activate(); app.wait_for_count(1)"], timeout: 30)
       when "quit" then context.command(["python3", "-c", code + "app.quit_app()"], timeout: 30)
       when "verify" then context.command(["bash", "apps/mac/scripts/verify-bundle.sh", "apps/mac/build/Dieter.app"], timeout: 120)
-      when "format", "format_check" then context.command(["bash", "apps/mac/scripts/format-swift.sh", *(action == "format_check" ? ["--check"] : [])], timeout: 300)
+      when "format", "format_check" then context.command(["bash", "apps/mac/scripts/format-swift.sh", action == "format_check" ? "--check" : "--write"], timeout: 300)
       when "proto_generate", "proto_check" then context.command(["bash", "apps/mac/scripts/sync-proto.sh", *(action == "proto_check" ? ["--check"] : [])], timeout: 600)
       else raise PipelineError, "Unknown Mac local action #{action}"
       end

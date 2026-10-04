@@ -526,6 +526,39 @@ class ScreenSessionTest {
     }
 
     @Test
+    fun admittedClipboardWorkDoesNotHoldDisconnectAndCannotOutliveItsSession() = runTest {
+        for (toggle in listOf(false, true)) {
+            val engines = Engines()
+            val daemon = FakeDaemon()
+            daemon.caps = daemon.caps.copy(clipboard_supported = true)
+            val local = object : LocalClipboard {
+                override fun stamp() = 1L
+                override fun read(binary: Boolean) = "owned clipboard" to emptyList<RemoteDesktopClipboardItem>()
+                override fun apply(text: String, items: List<RemoteDesktopClipboardItem>) = Unit
+            }
+            val session = virtualSession(engines, clipboard = local)
+            val engine = streaming(session, daemon, engines, clipboard = true)
+            if (toggle) session.requestClipboardEnabled(false) else session.requestClipboard("paste")
+            runCurrent()
+            assertTrue(session.view.value.clipboardBusy, "the admitted operation awaits the unanswered host")
+            assertTrue(engine.sent.any { it.first == ScreenChannels.CLIPBOARD })
+
+            session.disconnect()
+            runCurrent()
+            assertEquals(ScreenPhase.Idle, session.view.value.phase)
+            assertFalse(session.view.value.controlActive)
+            assertFalse(session.view.value.clipboardBusy)
+            assertTrue(engine.closed)
+            assertEquals(0, session.heldJobs)
+            val sent = engine.sent.size
+            advanceTimeBy(ScreenSession.CLIPBOARD_TIMEOUT + ScreenSession.CLIPBOARD_POLL)
+            runCurrent()
+            assertEquals(sent, engine.sent.size, "cancelled work cannot send on the stopped peer")
+            assertEquals(null, session.view.value.clipboardError, "the old timeout cannot alter the idle view")
+        }
+    }
+
+    @Test
     fun finishedAttemptWorkIsNotHeld() = runTest {
         val engines = Engines()
         val daemon = FakeDaemon()

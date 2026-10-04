@@ -280,6 +280,10 @@ import Testing
         #expect(resumedAges.allSatisfy { $0 < 200 }, "Motion must resume without a slow keyframe drain")
         #expect(controller.sessionState.captureToSendMs > 0)
         #expect(controller.sessionState.renderMs >= 0)
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(surface)
+        controller.inputFocused = true
+        try await screenWait("synthetic input readiness", timeout: 3) { controller.controlActive }
         let responses = try await measureScreenInputResponse(controller, x: 0.02, y: 0.02) { white in
             controller.sendText("dieter-latency:\(white ? 235 : 16)")
         }
@@ -968,7 +972,17 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
     let closing = model.detachedWindows[session.id]?.window
     model.closeSession(session.id)
     #expect(closing?.isVisible == false && model.detachedWindows.isEmpty)
-    #expect(controller.phase == .idle)
+    #expect(!controller.session.observing)
+    await controller.session.settle()
+    // The closed view stops folding slices. Verify the actual host session
+    // closes instead of expecting its last observed presentation to change.
+    let closeDeadline = ContinuousClock.now + .seconds(8)
+    var remaining = try await rpc.remoteDesktopSessions()
+    while !remaining.sessions.isEmpty, ContinuousClock.now < closeDeadline {
+        try await Task.sleep(for: .milliseconds(25))
+        remaining = try await rpc.remoteDesktopSessions()
+    }
+    #expect(remaining.sessions.isEmpty, "Closing the viewer must release its host session")
     let report: [String: Any] = [
         "sameSession": sessionID, "cursorEventMs": cursorMS,
         "dockedInputMedianMs": docked[docked.count / 2], "dockedInputP95Ms": docked[docked.count * 95 / 100],

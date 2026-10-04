@@ -144,10 +144,13 @@ platform-specific script.
 so CI and release use the same portable gate. `just pipeline ci action:check component:android` compiles the
 E2E and performance apps/test drivers as well as running unit tests, debug assembly, and lint.
 All device execution uses `just pipeline android e2e`. The Android job in the manual
-`Native E2E` workflow requires a runner labeled `self-hosted`, `Linux`,
-`dieter-android`, with Just/Go/Node/JDK21/Android SDK and the healthy visible
-`Pixel_9_API_37_1` AVD already available. It does not create, cold boot, or replace
-an emulator. The Mac job uses a provisioned desktop; the iOS job uses the hosted macOS iPhone/iPad matrix. No runner provisioning or GitHub execution is implied by the file.
+`Native E2E` workflow uses `self-hosted`, `macOS`, `dieter-android` for the visible
+Pixel emulator and all Android screen suites. Other physical Android suites use
+`self-hosted`, `Linux`, `dieter-android`. Install Just/Go/Node/JDK21/Android SDK and
+qualify the configured visible `Pixel_9_API_37_1` AVD with host GLES first. The
+pipeline does not create, cold boot, or replace an emulator. The Mac job uses a
+provisioned desktop; iOS virtual jobs use hosted macOS iPhone/iPad simulators.
+Runner provisioning is an explicit prerequisite for hardware dispatches.
 
 Android client logic (sign-in, routing, sync, the outbox, navigation,
 terminals, workspace review) lives in the shared KMP core and is covered by its
@@ -165,6 +168,8 @@ The adapter's host-side lifecycle, configuration, redaction, catalog and result
 qualification tests run through `go test ./internal/pipeline ./tools/pipeline-contract ./tools/pipeline-support`. Build-only verification is
 `just pipeline ios build`. These checks do not establish simulator UI correctness. After
 pulling, colleagues should run both iOS smoke commands above and review each
-run's `results.json`, `junit.xml`, screenshots and failure console. The migration
-was prepared on a host without an installed iOS runtime; device execution remains
-to be qualified on those hosts.
+run's `results.json`, `junit.xml`, screenshots and failure console. Physical iOS
+needs its exact development-signed E2E profile and authenticated TLS fixture
+route. Share tests on a phone use only the named file staged in the owned E2E
+Documents container; `ios.share-owned-file` exercises that Files path on a
+disposable simulator. The default simulator share case retains its Photos path.

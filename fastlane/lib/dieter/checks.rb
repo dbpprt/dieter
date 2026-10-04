@@ -8,6 +8,7 @@ require_relative "platforms/linux_capture"
 module Dieter
   module Checks
     def self.cli(argv)
+      $stdout.sync = true
       options = {}
       parser = OptionParser.new do |flags|
         flags.banner = "just check-changed [--dry-run] [--base REF] [--ci]"
@@ -62,6 +63,7 @@ module Dieter
         return Runtime.invoke(operation, component, options)
       end
       context = RunContext.new(Config.new(Runtime::ROOT))
+      puts "Checking #{component}/#{operation}; evidence: #{context.output}"
       begin
         packages = request.fetch("packages", [])
         packages = packages.split(",") if packages.is_a?(String)

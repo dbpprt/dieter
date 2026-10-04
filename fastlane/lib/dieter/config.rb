@@ -91,7 +91,7 @@ module Dieter
         value = key == "swift_jobs" ? configured.to_s : path(configured)
         inherited = ENV[variable]
         if inherited && !inherited.empty?
-          raise PipelineError, "#{variable} conflicts with local configuration" if local_loaded && inherited != value
+          raise PipelineError, "#{variable} conflicts with local configuration" if local_loaded && key != "swift_jobs" && inherited != value
           value = inherited
         end
         result[variable] = value

@@ -3,6 +3,7 @@
 require_relative "framework"
 require_relative "apple_build"
 require_relative "../fixtures/gateway"
+require_relative "../fixtures/screen"
 require_relative "../pipeline/contract"
 
 module Dieter
@@ -47,9 +48,7 @@ module Dieter
     end
 
     def assert_stopped
-      process = @context.start(["pgrep", "-x", "DieterMac"])
-      output = process.wait(timeout: 15, check: false)
-      raise Unavailable, "DieterMac already running (PIDs #{output.strip}); preserving the operator app" unless process.status.exitstatus == 1 && output.strip.empty?
+      ScreenFixture.assert_stopped(@context)
     end
 
     def screens_native_test
