@@ -38,7 +38,7 @@ module Dieter
       # Publication consumes these digest-pinned bytes. Numeric/floating stable
       # aliases are reserved for the separate stable promotion path.
       reference = "#{BUNDLE}:candidate-#{@identity.version}"
-      @context.command(["oras", "push", reference, "--artifact-type", "application/vnd.dieter.gateway.deployment.v1", "--annotation", "org.opencontainers.image.revision=#{@identity.source}", "--workdir", @context.output, "dieter-gateway-deploy.tar.gz:application/gzip", "gateway-manifest.json:application/json", "gateway-manifest.sigstore.json:application/json"], timeout: 300)
+      push_bundle(reference)
       descriptor = JSON.parse(@context.command(["oras", "manifest", "fetch", "--descriptor", reference], timeout: 180, binary: true))
       artifact_digest = descriptor.fetch("digest")
       raise PipelineError, "Invalid deployment artifact digest" unless artifact_digest.match?(/\Asha256:[0-9a-f]{64}\z/)
@@ -61,6 +61,12 @@ module Dieter
     end
 
     private
+
+    def push_bundle(reference)
+      # ORAS 1.3.4 reads relative files from its process directory; it has no
+      # --workdir flag. Keep layer titles portable without changing Ruby's cwd.
+      @context.command(["oras", "push", reference, "--artifact-type", "application/vnd.dieter.gateway.deployment.v1", "--annotation", "org.opencontainers.image.revision=#{@identity.source}", "dieter-gateway-deploy.tar.gz:application/gzip", "gateway-manifest.json:application/json", "gateway-manifest.sigstore.json:application/json"], timeout: 300, chdir: @context.output)
+    end
 
     def immutable_alias(reference)
       repository, expected = reference.split("@", 2)

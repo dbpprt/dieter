@@ -10,7 +10,7 @@ module Dieter
     LINE_LIMIT = 64 * 1024
     attr_reader :pid, :status, :argv
 
-    def initialize(root, argv, environment: {}, input: nil, binary: false, log: nil, secrets: [], output_limit: nil, stream: nil)
+    def initialize(root, argv, environment: {}, input: nil, binary: false, log: nil, secrets: [], output_limit: nil, stream: nil, chdir: nil)
       raise PipelineError, "Expected nonempty exact argv" unless argv.is_a?(Array) && argv.all? { |v| v.is_a?(String) && !v.include?("\0") } && !argv.empty?
       @argv, @root, @binary, @log, @secrets = argv, root, binary, log, secrets
       # Fixture readiness and structured/binary stdout must remain private.
@@ -18,7 +18,7 @@ module Dieter
       @limit = output_limit || (binary ? 32 * 1024 * 1024 : LIMIT)
       @stdout, @stderr, @overflow = "".b, "".b, false
       @mutex = Mutex.new
-      @stdin, stdout, stderr, @waiter = Open3.popen3(environment, *argv, chdir: root, pgroup: true)
+      @stdin, stdout, stderr, @waiter = Open3.popen3(environment, *argv, chdir: chdir || root, pgroup: true)
       @pid = @waiter.pid
       @readers = [read(stdout, :@stdout), read(stderr, :@stderr)]
       @writer = Thread.new do

@@ -177,3 +177,13 @@ skipped. Explicit status conditions now admit producers only after successful
 reservation, and a required release gate rejects missing/skipped/failed producer,
 publication or dev delivery stages. A green qualification run alone is not proof
 of release delivery.
+
+The `beb14c07` hosted run passed all required component/native checks and cleanup.
+Routine portable qualification took 1m40s (115 contracts / 569 assertions), and
+Android took 6m02s. The Mac app build reused its test graph: 1m35s rather than
+5m53s, while its cold initial Swift compile took 14m18s. Apple compiler caches
+were retained; this first cold run does not establish a warm feedback time.
+Both iOS layouts passed the connection journey. Five server binaries and Android
+then passed candidate production. OCI production exposed an unsupported ORAS
+`--workdir` argument: relative artifact inputs now use the owned child process's
+working directory, preserving layer basenames without changing Ruby's global cwd.

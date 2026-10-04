@@ -237,6 +237,21 @@ class PipelinePrimitivesTest < Minitest::Test
     assert_raises(Errno::ESRCH) { Process.kill(0, process.pid) }
   end
 
+  def test_owned_process_can_read_relative_artifacts_without_changing_the_parent_directory
+    artifact_dir = File.join(@root, "artifact directory")
+    Dir.mkdir(artifact_dir)
+    File.write(File.join(artifact_dir, "payload"), "exact retained bytes")
+    before = Dir.pwd
+    process = Dieter::OwnedProcess.new(@root, [RbConfig.ruby, "-e", 'print File.read("payload")'], chdir: artifact_dir, binary: true)
+    assert_equal "exact retained bytes", process.wait(timeout: 5)
+    assert_equal before, Dir.pwd
+    default = Dieter::OwnedProcess.new(@root, [RbConfig.ruby, "-e", 'print Dir.pwd'], binary: true)
+    assert_equal File.realpath(@root), default.wait(timeout: 5)
+  ensure
+    process&.stop
+    default&.stop
+  end
+
   def test_progress_observer_receives_the_owned_process_without_changing_its_result
     process = Dieter::OwnedProcess.new(@root, [RbConfig.ruby, "-e", 'sleep 0.2; print "done"'])
     process.define_singleton_method(:clock) { @tick = (@tick || 0) + 31 }
