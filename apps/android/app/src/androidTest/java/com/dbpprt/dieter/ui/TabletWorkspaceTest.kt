@@ -39,6 +39,7 @@ import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.api.v1.Lane
 import com.dbpprt.dieter.api.v1.Project
+import com.dbpprt.dieter.core.activity.Activity
 import java.time.Instant
 import org.junit.After
 import org.junit.Assert.*
@@ -64,7 +65,11 @@ class TabletWorkspaceTest {
     )
     private val fixture get() = DieterUiState(
         loading = false, desiredConnected = false, connectionPhase = ConnectionPhase.CONNECTED,
+        endpointConnections = listOf(com.dbpprt.dieter.core.machines.MachineRow(
+            id = "tablet-host", label = "mini-home", address = "https://fixture.invalid", daemonId = "tablet-host",
+        )),
         projects = projects, boards = listOf(board), spaceBoards = listOf(board), cards = cards, spaceCards = cards,
+        activityItems = Activity.project(cards, emptyMap(), projects, listOf(board)),
         selectedProjectId = "dieter", selectedBoardId = "main", selectedLane = "todo", boardOverviewVisible = false,
         pinnedProjectOrder = listOf("dieter"),
         projectFolders = listOf(NavigationFolder("work", "Work", listOf("infra", "atlas"))),
@@ -74,9 +79,10 @@ class TabletWorkspaceTest {
         check(context.packageName.endsWith(".e2e")) { "Tablet tests require the isolated E2E package" }
         core = TestCore(navigationAccount = "component-fixture")
         compose.runOnUiThread {
-            model = core.viewModel()
+            model = core.viewModel(withCaptures = true)
             lifecycle.put("tablet", model)
         }
+        compose.waitUntil(5_000) { core.core.captures.view.value.bound }
     }
 
     @After fun cleanup() {
@@ -279,16 +285,18 @@ class TabletWorkspaceTest {
     }
 
     @Test fun inboxTimelineUsesExistingActivityAndReturnsTheSelectedConversation() {
-        var timeline by mutableStateOf(false)
         var opened: Card? = null
+        var titlePadding = 0f
         compose.setContent { TabletTestSurface {
+            val density = LocalDensity.current
+            SideEffect { titlePadding = with(density) { 16.dp.toPx() } }
             DieterTheme(palette = DieterPalette.ULTRAVIOLET_RELAY, darkTheme = true) {
                 Surface(Modifier.fillMaxSize()) {
                     Row {
                         TabletNavigationRail(Destination.ACTIVITY, false, false, 1, "2 of 2 machines online", {}, {}, {}, {}, {})
                         val feed: @Composable (Modifier) -> Unit = { modifier ->
-                            ActivityFeed(fixture, modifier, { opened = it; timeline = false }, {}, {}, {}, now,
-                                tablet = true, timelineOnly = timeline, onTimelineToggle = { timeline = it })
+                            ActivityFeed(fixture, modifier, { opened = it }, {}, {}, {}, now,
+                                tablet = true)
                         }
                         Box(Modifier.weight(1f).fillMaxHeight()) {
                             TabletListDetail(dividerTag = "activity-pane-divider", list = feed, detail = { modifier ->
@@ -302,14 +310,45 @@ class TabletWorkspaceTest {
             }
         } }
         compose.onNodeWithTag("inbox-detail").assertIsDisplayed()
+        compose.onNodeWithTag("activity-timeline").assertIsDisplayed()
+        compose.onNodeWithTag("tablet-inbox-list").assertDoesNotExist()
+        compose.onNodeWithTag("tablet-inbox-timeline").assertDoesNotExist()
+        compose.onNodeWithTag("tablet-inbox-projects").assertDoesNotExist()
+        val title = compose.onNode(hasText("Review the tablet workspace") and hasAnyAncestor(hasTestTag("inbox-detail"))).fetchSemanticsNode().boundsInRoot
+        val detail = compose.onNodeWithTag("inbox-detail").fetchSemanticsNode().boundsInRoot
+        assertTrue("Conversation title has padding beside the divider", title.left >= detail.left + titlePadding - 1f)
+        compose.onNodeWithTag("conversation-owner-machine").assertIsDisplayed().assertTextEquals("mini-home")
         capture("tablet-inbox")
-        compose.onNodeWithTag("tablet-inbox-timeline").performClick()
+        compose.onNodeWithTag("activity-timeline-expand").performClick()
         compose.onNodeWithTag("inbox-detail").assertIsDisplayed()
-        compose.onNodeWithTag("tablet-activity-timeline").assertIsDisplayed()
+        compose.onNodeWithTag("activity-timeline").assertIsDisplayed()
         capture("tablet-timeline")
-        compose.onNodeWithTag("tablet-activity-running").performScrollTo().performClick()
+        compose.onNodeWithTag("activity-bar-running").performScrollTo().performClick()
         compose.runOnIdle { assertEquals("running", opened?.id) }
         compose.onNodeWithTag("inbox-detail").assertIsDisplayed()
+    }
+
+    @Test fun tabletComposerKeepsAgentSettingsBehindOneButton() {
+        val controls = com.dbpprt.dieter.core.selection.AgentControls(
+            com.dbpprt.dieter.api.v1.HarnessSelection(provider = "codex", model = "gpt-6.1-sol"),
+            emptyList(), locked = true,
+        )
+        compose.setContent { TabletTestSurface {
+            CompositionLocalProvider(LocalTabletWorkspace provides true) {
+                DieterTheme(darkTheme = true) {
+                    MessageComposer("", "Message", true, controls = controls,
+                        onValueChange = {}, onSend = {})
+                }
+            }
+        } }
+        compose.onNodeWithText("gpt-6.1-sol").assertDoesNotExist()
+        compose.onNodeWithTag("composer-next-message-settings").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Show agent settings").performClick()
+        compose.onNodeWithText("gpt-6.1-sol").assertIsDisplayed()
+        compose.onNodeWithTag("composer-next-message-settings").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Hide agent settings").performClick()
+        compose.onNodeWithText("gpt-6.1-sol").assertDoesNotExist()
+        compose.onNodeWithTag("message-input").assertIsDisplayed()
     }
 
     @Test fun railAndSettingsRemainUsableAtLargeFontScale() {
@@ -358,6 +397,7 @@ class TabletWorkspaceTest {
         compose.runOnIdle { width = 840f }
         compose.onNodeWithTag("activity-feed").assertIsDisplayed()
         visibleMessageEditor().assertIsDisplayed()
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-review"))
         compose.onNodeWithTag("activity-row-review").assertIsSelected()
         val feed = compose.onNodeWithTag("activity-feed").fetchSemanticsNode().boundsInRoot
         val editor = visibleMessageEditor().fetchSemanticsNode().boundsInRoot
@@ -374,6 +414,7 @@ class TabletWorkspaceTest {
         capture("tablet-projects-portrait")
         compose.runOnIdle { destination = Destination.ACTIVITY }
         compose.runOnIdle { width = 1280f }
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-review"))
         compose.onNodeWithTag("activity-row-review").assertIsSelected()
         visibleMessageEditor().assertIsDisplayed()
     }
@@ -392,12 +433,11 @@ class TabletWorkspaceTest {
         compose.runOnIdle { selected = "review" }
         visibleMessageEditor().assertIsDisplayed()
         capture("tablet-inbox-detail")
-        compose.onNodeWithTag("tablet-inbox-timeline").performClick()
-        compose.onNodeWithTag("tablet-activity-timeline").assertIsDisplayed()
+        compose.onNodeWithTag("activity-timeline-expand").performClick()
+        compose.onNodeWithTag("activity-timeline").assertIsDisplayed()
         visibleMessageEditor().assertIsDisplayed()
         capture("tablet-inbox-timeline-detail")
         assertEquals(width, compose.onNodeWithTag("activity-feed").fetchSemanticsNode().boundsInRoot.width, 1f)
-        compose.onNodeWithTag("tablet-inbox-list").performClick()
         // Review cards without unread replies sort into Recent, sometimes offscreen.
         compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-review"))
         compose.onNodeWithTag("activity-row-review").assertIsSelected()
@@ -453,7 +493,7 @@ class TabletWorkspaceTest {
         compose.onNodeWithText("Your activity").assertIsDisplayed()
         compose.runOnIdle { width = 1280f; selected = "review" }
         verifyButtonInList()
-        compose.onNodeWithTag("tablet-inbox-timeline").performClick()
+        compose.onNodeWithTag("activity-timeline-expand").performClick()
         verifyButtonInList()
         capture("activity-tablet-new-task")
         compose.runOnIdle { width = 400f }
@@ -463,6 +503,7 @@ class TabletWorkspaceTest {
         verifyButtonInList()
         capture("activity-phone-new-task")
         compose.onNodeWithTag("inbox-new-task").performClick()
+        compose.waitUntil(5_000) { model.captureChooserVisible }
         compose.runOnIdle { assertTrue("New task opens the capture chooser", model.captureChooserVisible) }
     }
 
@@ -514,7 +555,6 @@ class TabletWorkspaceTest {
     }
 
     @Test fun longPressActionsKeepTabletDetailVisibleInListAndTimeline() {
-        var timeline by mutableStateOf(false)
         var opened: String? = null
         val archived = mutableListOf<String>()
         val renamed = mutableListOf<Pair<String, String>>()
@@ -522,7 +562,7 @@ class TabletWorkspaceTest {
             DieterTheme(darkTheme = true) {
                 TabletListDetail(dividerTag = "activity-pane-divider", list = { modifier ->
                     ActivityFeed(fixture, modifier, { opened = it.id }, {}, {}, {}, now,
-                        tablet = true, timelineOnly = timeline, onTimelineToggle = { timeline = it },
+                        tablet = true,
                         actions = ActivityItemActions({ card, title -> renamed += card.id to title },
                             { archived += it.id }, {}))
                 }, detail = { modifier ->
@@ -539,9 +579,9 @@ class TabletWorkspaceTest {
         compose.onNodeWithTag("activity-rename-confirm-running").performClick()
         compose.runOnIdle { assertEquals(listOf("running" to "Renamed from tablet"), renamed); assertNull(opened) }
         assertEquals(editor, visibleMessageEditor().fetchSemanticsNode().boundsInRoot)
-        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("tablet-inbox-timeline"))
-        compose.onNodeWithTag("tablet-inbox-timeline").performClick()
-        compose.onNodeWithTag("tablet-activity-running").performScrollTo().performTouchInput { longClick() }
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-timeline-expand"))
+        compose.onNodeWithTag("activity-timeline-expand").performClick()
+        compose.onNodeWithTag("activity-bar-running").performScrollTo().performTouchInput { longClick() }
         compose.onNodeWithTag("activity-archive-running").performClick()
         compose.runOnIdle { assertEquals(listOf("running"), archived); assertNull(opened) }
         visibleMessageEditor().assertIsDisplayed()
@@ -586,5 +626,5 @@ class TabletWorkspaceTest {
     }
 
     private fun project(id: String, name: String) = Project(id = id, name = name, path = "/work/$id")
-    private fun card(id: String, title: String, lane: String, runtime: String = "idle") = Card(id = id, title = title, project_id = "dieter", board_id = "main", lane = lane, runtime = runtime, initial_prompt_sent_at = now.minusSeconds(1200).toString(), runtime_updated_at = now.minusSeconds(600).toString(), updated_at = now.minusSeconds(600).toString())
+    private fun card(id: String, title: String, lane: String, runtime: String = "idle") = Card(id = id, title = title, project_id = "dieter", board_id = "main", owner_daemon_id = "tablet-host", lane = lane, runtime = runtime, initial_prompt_sent_at = now.minusSeconds(1200).toString(), runtime_updated_at = now.minusSeconds(600).toString(), updated_at = now.minusSeconds(600).toString())
 }

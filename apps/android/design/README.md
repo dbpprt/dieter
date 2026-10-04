@@ -71,8 +71,8 @@ phone emulator, so regression runs
 do not depend on changing device resolution. Run:
 
 ```sh
-just e2e run --case component.tablet-workspace-test --output tmp/tablet-ui
-just e2e run --case activity.navigation --output tmp/tablet-navigation
+just pipeline android e2e cases:component.tablet-workspace-test output:tmp/tablet-ui
+just pipeline android e2e cases:activity.navigation output:tmp/tablet-navigation
 ```
 
 The latter tests real fixture-backed card/chat navigation and back behavior at

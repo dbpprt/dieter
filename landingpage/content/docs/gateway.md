@@ -85,7 +85,7 @@ after two minutes.
 
 ## Security validation
 
-Run `just gateway test` and `just gateway vulncheck` before deploying a gateway
+Run `just pipeline ci action:check component:gateway` before deploying a gateway
 build. The vulnerability check uses the Go version pinned in `go.mod` and the
 gateway image. CI requires both checks before publishing an image. Confirm the
 deployed build identity through `/healthz` after deployment.

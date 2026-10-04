@@ -61,6 +61,7 @@ class TaskCaptureEndToEndTest {
         assertTrue(requireNotNull(senderButton).performAction(AccessibilityNodeInfo.ACTION_CLICK))
         val deadline = System.currentTimeMillis() + 15_000
         var clicked = false
+        var expanded = false
         while (!clicked && System.currentTimeMillis() < deadline) {
             val node = find(instrumentation.uiAutomation.rootInActiveWindow) {
                 it.text?.toString() == "Dieter task capture" && it.packageName?.toString() != context.packageName
@@ -71,11 +72,41 @@ class TaskCaptureEndToEndTest {
                 instrumentation.uiAutomation.waitForIdle(250, 2000)
                 capture("capture-system-sharesheet.png")
                 clicked = target?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+            } else if (!expanded) {
+                // Samsung's chooser initially shows a short ranked row. Open
+                // its observed More control to reach the isolated fixture app;
+                // never select the operator's separately installed Dieter.
+                val more = find(instrumentation.uiAutomation.rootInActiveWindow) {
+                    it.text?.toString() == "More" && it.packageName?.toString() == "com.android.intentresolver"
+                }
+                if (more != null) {
+                    var target: AccessibilityNodeInfo? = more
+                    while (target != null && !target.isClickable) target = target.parent
+                    capture("capture-expand-system-sharesheet.png")
+                    expanded = target?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+                }
             }
             if (!clicked) Thread.sleep(100)
         }
         if (!clicked) capture("capture-missing-share-target.png")
         assertTrue("Dieter must be selectable in the real Android Sharesheet", clicked)
+        // Samsung groups multiple share activities under the app label and
+        // opens a second picker. Select the observed capture activity there.
+        val activityDeadline = System.currentTimeMillis() + 10_000
+        while (System.currentTimeMillis() < activityDeadline) {
+            val root = instrumentation.uiAutomation.rootInActiveWindow
+            if (root?.packageName?.toString() == context.packageName) break
+            val alternative = find(root) { it.text?.toString() == "Capture test alternative" }
+            if (alternative != null) {
+                val captureActivity = find(root) { it.text?.toString() == "Dieter task capture" }
+                var target: AccessibilityNodeInfo? = captureActivity
+                while (target != null && !target.isClickable) target = target.parent
+                capture("capture-system-activity-picker.png")
+                assertTrue("Select the isolated capture activity", target?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true)
+                break
+            }
+            Thread.sleep(100)
+        }
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("capture-project-${project.id}").fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty() }
         capture("capture-project-picker.png")
         compose.onNodeWithTag("capture-project-${project.id}").performClick()

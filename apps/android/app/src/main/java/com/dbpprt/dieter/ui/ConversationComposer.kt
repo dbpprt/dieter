@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -250,6 +251,8 @@ internal fun MessageComposer(
     onRemoveAttachment: (Int) -> Unit = {},
     onSend: () -> Unit,
 ) {
+    val tablet = LocalTabletWorkspace.current
+    var settingsExpanded by remember { mutableStateOf(false) }
     var providerMenu by remember { mutableStateOf(false) }
     var modelMenu by remember { mutableStateOf(false) }
     var effortMenu by remember { mutableStateOf(false) }
@@ -274,7 +277,7 @@ internal fun MessageComposer(
             }
         }
         if (error != null) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-        if (controls != null) {
+        if (controls != null && (!tablet || settingsExpanded)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Row(
                     Modifier.weight(1f).horizontalScroll(rememberScrollState()),
@@ -386,6 +389,14 @@ internal fun MessageComposer(
                                 }
                             } else {
                                 Spacer(Modifier.width(17.dp))
+                            }
+                            if (tablet && controls != null) {
+                                IconButton(
+                                    onClick = { settingsExpanded = !settingsExpanded },
+                                    modifier = Modifier.size(48.dp).testTag("composer-agent-settings"),
+                                ) {
+                                    Icon(Icons.Outlined.Tune, if (settingsExpanded) "Hide agent settings" else "Show agent settings", tint = DieterMuted, modifier = Modifier.size(19.dp))
+                                }
                             }
                             Box(Modifier.weight(1f).padding(end = 14.dp, top = 15.dp, bottom = 14.dp)) {
                                 if (value.isEmpty()) Text(placeholder, color = DieterMuted.copy(alpha = 0.72f), fontSize = 14.sp)

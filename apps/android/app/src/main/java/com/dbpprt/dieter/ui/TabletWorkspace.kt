@@ -25,7 +25,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dbpprt.dieter.core.activity.Activity
-import com.dbpprt.dieter.core.activity.ActivityItem
 import com.dbpprt.dieter.core.board.ProjectOverview
 import com.dbpprt.dieter.core.board.ProjectSort
 import com.dbpprt.dieter.core.machines.MachineRows
@@ -438,59 +437,5 @@ internal fun SettingsAdaptiveLayout(
             }
             content()
         }
-    }
-}
-
-@Composable
-internal fun TabletActivityTimeline(
-    intervals: List<Activity.TimelineBar>,
-    projectNames: Map<String, String>,
-    hours: Int,
-    live: Boolean,
-    onHours: (Int) -> Unit,
-    onOpen: (com.dbpprt.dieter.api.v1.Card) -> Unit,
-    actions: (com.dbpprt.dieter.api.v1.Card) -> ActivityItemActions? = { null },
-) {
-    var visibleCount by rememberSaveable(hours) { mutableIntStateOf(40) }
-    Column(Modifier.fillMaxWidth().testTag("tablet-activity-timeline"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Latest activity per conversation", style = MaterialTheme.typography.titleMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Activity.TIMELINE_HOURS.forEach { value ->
-                FilterChip(selected = hours == value, onClick = { onHours(value) }, label = { Text("${value}h") }, modifier = Modifier.testTag("tablet-range-$value"))
-            }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("−${hours}h", color = DieterMuted, style = MaterialTheme.typography.labelSmall)
-            Text(if (live) "Now" else "Last sync", color = DieterMuted, style = MaterialTheme.typography.labelSmall)
-        }
-        intervals.take(visibleCount).groupBy { it.item.card.project_id }.forEach { (projectId, activity) ->
-            Surface(color = DieterSurface, shape = RoundedCornerShape(20.dp)) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(projectNames[projectId] ?: "Project unavailable", color = stableAccent(projectId), fontWeight = FontWeight.SemiBold)
-                    activity.forEach { interval ->
-                        val color = if (interval.item.kind.needsYou) DieterAmber else DieterShell
-                        ActivityItem(card = interval.item.card, onOpen = onOpen, actions = actions(interval.item.card), color = DieterSurfaceHigh, shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth().testTag("tablet-activity-${interval.item.card.id}")) {
-                            Column(Modifier.padding(12.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                    Text(interval.item.title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                                    Text(interval.item.kind.label, style = MaterialTheme.typography.labelSmall, color = color)
-                                }
-                                Text(interval.item.detail, style = MaterialTheme.typography.bodySmall, color = DieterMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 10.dp).height(6.dp).background(DieterDivider, RoundedCornerShape(3.dp))) {
-                                    val start = interval.from.toFloat().coerceIn(0f, 1f)
-                                    val end = interval.to.toFloat().coerceIn(start, 1f)
-                                    val barWidth = (maxWidth * (end - start)).coerceAtLeast(4.dp).coerceAtMost(maxWidth)
-                                    Box(Modifier.offset(x = (maxWidth * start).coerceAtMost(maxWidth - barWidth)).width(barWidth).fillMaxHeight().background(color, RoundedCornerShape(3.dp)))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (intervals.isEmpty()) Text(Activity.emptyTimeline(hours), color = DieterMuted, modifier = Modifier.padding(20.dp))
-        if (intervals.size > visibleCount) TextButton(onClick = { visibleCount += 40 }) { Text("Show more conversations") }
-        Text("Bars show recorded durations; short marks are events without a recorded duration.", style = MaterialTheme.typography.labelSmall, color = DieterMuted)
     }
 }

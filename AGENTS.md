@@ -53,6 +53,33 @@ conversation.
 - Dieter has no web UI. The public gateway root is intentionally 404; only
   OAuth completion pages, health, gateway gRPC, and tunneled Dieter gRPC exist.
 
+## Pipeline ownership
+
+Read `fastlane/README.md` before changing app builds, E2E or releases.
+`just pipeline` / `just app` forward to the pinned Fastlane implementation.
+Add compositions to `fastlane/lib/dieter`; add typed catalog/result contracts to
+`internal/pipeline` and isolated fixtures to `tools/fixtures`. Do not reintroduce
+platform Just modules, host test loops in scripts, or workflow shell pipelines.
+
+Use `fastlane/local.example.json` as the template for ignored `fastlane/local.json`;
+run `just pipeline config_init` once, then edit explicit named target profiles.
+Local JSON cannot override release policy and CI ignores it. Physical Android/iOS
+tests require an explicit exact-serial/UDID profile, separate E2E identities, and
+existing development signing/network configuration. Never auto-select a phone.
+
+Preserve exact-device, desktop, build and signing leases and ownership journals.
+Manage only devices/processes started by the task; preserve operator apps and the
+live daemon. Android uses visible host GLES with normal snapshot loading/saving;
+never add wipe, cold-boot, software-renderer, headless or no-snapshot shortcuts.
+Required missing/skipped/unavailable assertions and cleanup failures fail gates.
+Use registered background processes and collect their result before finishing.
+
+Main produces **dev** prereleases with one reserved numeric SemVer across every
+component. Candidate reruns recover exact retained bytes; never rebuild a consumed
+identity. TestFlight consumes the retained IPA and verifies internal delivery.
+Stable promotion is separate and protected; dev cannot advance Latest/Homebrew/
+updaters or activate production. See `fastlane/release-policy.json`.
+
 ## Repository checks
 
 For local development, use `just check-changed --dry-run` to inspect the affected
@@ -64,14 +91,13 @@ daemon, and emulator lifecycle rules; report an unavailable integration run
 instead of disrupting a running operator app. Full checks below remain for CI
 and explicitly requested repository-wide validation.
 
-The shared Kotlin client core in `apps/core` has its own checks: `just core
-test` (JVM unit and isolated end-to-end tests over the OkHttp transport that
-Android shares) and, on macOS, `just core apple-test`. See `apps/core/README.md`.
+The shared Kotlin client core in `apps/core` has its own checks: `just pipeline core_test` (JVM unit and isolated end-to-end tests over the OkHttp transport that
+Android shares) and, on macOS, `just pipeline core_apple_test`. See `apps/core/README.md`.
 All three native clients are presentation-only clients of the core; the macOS
 and iOS apps link it as `DieterShared` through `apps/mac/Sources/SharedCore`.
-Put rules in the core, not in an app. `just ios build` assembles the iOS
+Put rules in the core, not in an app. `just pipeline ios build` assembles the iOS
 framework slices (it needs a Java runtime) and compiles the iOS app and its test
-bundles; the iOS tests run through `just e2e run --platform ios`.
+bundles; the iOS tests run through `just pipeline ios e2e`.
 
 Android builds use Android Studio's bundled JBR. If `JAVA_HOME` is absent or
 points to a removed Homebrew JDK, use:
@@ -81,11 +107,11 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ```
 
 ```sh
-just harness install
+npm --prefix internal/harness/runtime ci
 just check
-just mac test
-just ios build
-just android test
+just pipeline mac test_unit
+just pipeline ios build
+just pipeline android test_unit
 ```
 
 Use `gofmt` on Go files. Keep every native client accessible and adaptive.

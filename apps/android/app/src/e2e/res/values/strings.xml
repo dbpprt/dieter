@@ -1,0 +1,5 @@
+<resources>
+    <!-- OEM choosers may display the application label rather than the activity
+         label. Keep the fixture selectable without touching the operator app. -->
+    <string name="app_name">Dieter task capture</string>
+</resources>

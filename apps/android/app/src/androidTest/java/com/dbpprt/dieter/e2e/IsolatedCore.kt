@@ -10,6 +10,7 @@ import com.dbpprt.dieter.api.v1.GetConversationRequest
 import com.dbpprt.dieter.api.v1.Harness
 import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.core.identity.Gateway
+import com.dbpprt.dieter.core.outbox.OutboxPolicy
 import com.dbpprt.dieter.core.store.WorkspaceView
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -42,7 +43,7 @@ object IsolatedCore {
      * Skips the calling test when the runner started no isolated gateway.
      */
     fun connect(container: DieterContainer, timeout: Duration = 30.seconds): WorkspaceView = runBlocking {
-        assumeTrue("Needs the isolated gateway that `just e2e run` starts", !arguments.getString("isolatedGatewayToken").isNullOrBlank())
+        assumeTrue("Needs the isolated gateway that `just pipeline android e2e` starts", !arguments.getString("isolatedGatewayToken").isNullOrBlank())
         container.core.adoptSession(gateway, token)
         container.policy.setForeground(true)
         withTimeout(timeout) {
@@ -79,7 +80,10 @@ object IsolatedCore {
     /** The first synced card matching [predicate] (board cards and chats). */
     fun awaitCard(container: DieterContainer, timeout: Duration = 30.seconds, predicate: (Card) -> Boolean): Card = runBlocking {
         withTimeout(timeout) {
-            container.core.workspace.state.first { view -> view.allItems.any(predicate) }.allItems.first(predicate)
+            // Optimistic cards already carry their intended owner. They cannot
+            // be passed to daemon RPCs until the outbox resolves their identity.
+            val synced: (Card) -> Boolean = { OutboxPolicy.isServerBacked(it.id) && predicate(it) }
+            container.core.workspace.state.first { view -> view.allItems.any(synced) }.allItems.first(synced)
         }
     }
 

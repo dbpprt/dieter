@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: ios.share-owned-file
+platform: ios
+devices: [iphone]
+suites:
+- manual
+components:
+- ios
+fixture: gateway
+timeout: 10m
+native:
+  target: DieterIOSUITests
+  class: RemoteNodeUITests
+  methods:
+  - testShareExtensionRoutesOwnedFileToNewTask

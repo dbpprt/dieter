@@ -120,7 +120,7 @@ See [service activation and rollback](https://github.com/dbpprt/dieter/blob/main
 
 See [Development](/docs/development/) for tool versions and checks.
 `just build` produces `bin/dieter` and `bin/dieter-gateway`.
-`just mac build` packages the Mac app; `just android build` produces the debug APK.
+`just pipeline mac build` packages the Mac app; `just pipeline android build` produces the debug APK.
 
 ## Uninstall
 

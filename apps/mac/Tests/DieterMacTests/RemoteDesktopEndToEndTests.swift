@@ -280,6 +280,10 @@ import Testing
         #expect(resumedAges.allSatisfy { $0 < 200 }, "Motion must resume without a slow keyframe drain")
         #expect(controller.sessionState.captureToSendMs > 0)
         #expect(controller.sessionState.renderMs >= 0)
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(surface)
+        controller.inputFocused = true
+        try await screenWait("synthetic input readiness", timeout: 3) { controller.controlActive }
         let responses = try await measureScreenInputResponse(controller, x: 0.02, y: 0.02) { white in
             controller.sendText("dieter-latency:\(white ? 235 : 16)")
         }
@@ -297,6 +301,7 @@ import Testing
             "captureMedianMs": median, "captureP95Ms": p95, "idleResumeMs": resumedAges,
             "inputSamples": responseAges.count, "inputMedianMs": responseAges[responseAges.count / 2],
             "inputP95Ms": responseAges[responseAges.count * 95 / 100],
+            "inputMaxMs": responseAges.last!, "inputSampleMs": responses,
             "encodeMs": controller.sessionState.encodeMs, "sendMs": controller.sessionState.sendMs,
             "jitterBufferMs": controller.sessionState.jitterBufferMs,
             "renderMs": controller.sessionState.renderMs,
@@ -361,6 +366,7 @@ import Testing
             "measurement": "owned app input to actual Metal presentation", "samples": responses.count,
             "inputSamples": responses.count, "inputMedianMs": responses[responses.count / 2],
             "inputP95Ms": responses[responses.count * 95 / 100], "requestedFps": requestedFPS,
+            "inputMaxMs": responses.last!, "inputSampleMs": responses,
             "width": controller.sessionState.width, "height": controller.sessionState.height,
             "codec": controller.sessionState.codec, "presentationMode": controller.renderer.presentationMode.rawValue,
             "fastBitrate": environment["DIETER_SCREEN_FAST_BITRATE"] != "0",
@@ -668,6 +674,7 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
     let previous = controller.renderer.onPresentationTiming
     var waiting: (white: Bool, started: Double)?
     var samples: [Double] = []
+    var observed = 0, minimumLuma: UInt8 = 255, maximumLuma: UInt8 = 0
     controller.renderer.onPresentationTiming = { frame, presentedAt in
         previous?(frame, presentedAt)
         guard let pending = waiting, presentedAt >= pending.started,
@@ -680,6 +687,9 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
         let px = max(0, min(CVPixelBufferGetWidth(buffer) - 1, Int(x * Double(CVPixelBufferGetWidth(buffer)))))
         let py = max(0, min(CVPixelBufferGetHeight(buffer) - 1, Int(y * Double(CVPixelBufferGetHeight(buffer)))))
         let luma = base.load(fromByteOffset: py * CVPixelBufferGetBytesPerRowOfPlane(buffer, 0) + px, as: UInt8.self)
+        observed += 1
+        minimumLuma = min(minimumLuma, luma)
+        maximumLuma = max(maximumLuma, luma)
         guard pending.white ? luma > 215 : luma < 35 else { return }
         samples.append((presentedAt - pending.started) * 1000)
         waiting = nil
@@ -688,12 +698,25 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
     let count = max(
         24, min(1000, Int(ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_INPUT_SAMPLES"] ?? "24") ?? 24))
     for index in 0..<count {
+        observed = 0; minimumLuma = 255; maximumLuma = 0
+        let acknowledged = controller.sessionState.lastInputOrdinal
         waiting = (index % 2 != 0, CACurrentMediaTime())
         send(index % 2 != 0)
-        try await screenWait("input changed presented pixels", timeout: 3) { waiting == nil }
+        do {
+            try await screenWait("input changed presented pixels", timeout: 3) { waiting == nil }
+        } catch {
+            print(
+                "Input response failed: sample=\(index) white=\(index % 2 != 0) frames=\(observed) luma=\(minimumLuma)...\(maximumLuma) inputOrdinal=\(acknowledged)->\(controller.sessionState.lastInputOrdinal) focused=\(controller.inputFocused) control=\(controller.controlActive) appActive=\(NSApplication.shared.isActive)"
+            )
+            throw error
+        }
     }
     #expect(samples.count == count)
-    #expect(samples.allSatisfy { $0 >= 0 && $0 < 500 }, "Input response must not build a stale queue")
+    let outsideBound = samples.enumerated().filter { $0.element < 0 || $0.element >= 500 }
+        .map { "sample=\($0.offset) ms=\($0.element)" }
+    #expect(
+        samples.allSatisfy { $0 >= 0 && $0 < 500 },
+        "Input response must not build a stale queue: \(outsideBound)")
     return samples
 }
 
@@ -968,7 +991,17 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
     let closing = model.detachedWindows[session.id]?.window
     model.closeSession(session.id)
     #expect(closing?.isVisible == false && model.detachedWindows.isEmpty)
-    #expect(controller.phase == .idle)
+    #expect(!controller.session.observing)
+    await controller.session.settle()
+    // The closed view stops folding slices. Verify the actual host session
+    // closes instead of expecting its last observed presentation to change.
+    let closeDeadline = ContinuousClock.now + .seconds(8)
+    var remaining = try await rpc.remoteDesktopSessions()
+    while !remaining.sessions.isEmpty, ContinuousClock.now < closeDeadline {
+        try await Task.sleep(for: .milliseconds(25))
+        remaining = try await rpc.remoteDesktopSessions()
+    }
+    #expect(remaining.sessions.isEmpty, "Closing the viewer must release its host session")
     let report: [String: Any] = [
         "sameSession": sessionID, "cursorEventMs": cursorMS,
         "dockedInputMedianMs": docked[docked.count / 2], "dockedInputP95Ms": docked[docked.count * 95 / 100],

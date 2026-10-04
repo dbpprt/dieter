@@ -37,7 +37,7 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * Runs only with `just e2e run --suite screens` and its disposable native
+ * Runs only with `just pipeline android e2e --suite screens` and its disposable native
  * service: the app's canvas, gestures, keyboard, clipboard, and the shared
  * core's session lifecycle and recovery over the real WebRTC engine.
  * No production credential or endpoint is read or replaced by this test.
@@ -59,7 +59,7 @@ class ScreenEndToEndTest {
     @Test fun nativeVideoCanvasGesturesKeyboardAndSessionLifecycle() {
         val arguments = InstrumentationRegistry.getArguments()
         val fixture = ScreenFixture.fromArguments()
-        assumeTrue("Run just e2e run --suite screens for native screen integration", fixture != null)
+        assumeTrue("Run just pipeline android e2e --suite screens for native screen integration", fixture != null)
         fixture!!
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val host = fixture.host(context) {

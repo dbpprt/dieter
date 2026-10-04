@@ -10,7 +10,7 @@ for dieter_task_arg in "$@"; do
             fi
             if [ "${DIETER_SCREEN_DEVICE_LEASE_V2:-}" != "$ANDROID_SERIAL" ]; then
                 dieter_wrapper_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-                exec go -C "$dieter_wrapper_dir/../.." run ./tools/e2e device-lease "$ANDROID_SERIAL" sh "$dieter_wrapper_dir/gradlew" "$@"
+                exec go -C "$dieter_wrapper_dir/../.." run ./tools/pipeline-support device-lease "$ANDROID_SERIAL" sh "$dieter_wrapper_dir/gradlew" "$@"
             fi
             break
             ;;

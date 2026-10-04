@@ -9,6 +9,7 @@ import com.dbpprt.dieter.sharedcore.ConnectionPolicy
 import com.dbpprt.dieter.sharedcore.SharedCore
 import com.dbpprt.dieter.ui.AppHost
 import com.dbpprt.dieter.ui.DieterViewModel
+import com.dbpprt.dieter.ui.TaskCaptureStore
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
@@ -27,6 +28,7 @@ class TestCore(
     val core: CoreRuntime = SharedCore.create(context, null, directory)
     val preferences = AppPreferences(context)
     val policy = ConnectionPolicy(context, core) { _, _ -> }
+    private val captures = lazy { TaskCaptureStore(context, core) }
 
     init {
         navigationAccount?.let { account ->
@@ -36,14 +38,17 @@ class TestCore(
         core.start()
     }
 
-    fun viewModel(): DieterViewModel = DieterViewModel(core, preferences, policy, object : AppHost {
+    fun viewModel(withCaptures: Boolean = false): DieterViewModel = DieterViewModel(core, preferences, policy, object : AppHost {
         override fun openUrl(url: String) = Unit
-    }, null)
+    }, if (withCaptures) captures.value else null)
 
     /** A second core over the same state, as after a process restart. */
     fun reopen(): TestCore = TestCore(context, directory = directory)
 
-    override fun close() = runBlocking { core.shutdown() }
+    override fun close() = runBlocking {
+        if (captures.isInitialized()) captures.value.close()
+        core.shutdown()
+    }
 
     /** Removes the state directory; call once every core over it is closed. */
     fun delete() {

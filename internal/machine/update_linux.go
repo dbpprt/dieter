@@ -29,7 +29,7 @@ import (
 )
 
 const linuxReleaseBaseURL = "https://github.com/dbpprt/dieter/releases/latest/download"
-const linuxReleaseSigner = "https://github.com/dbpprt/dieter/.github/workflows/release.yml@refs/heads/main"
+const linuxReleaseSigner = `^https://github[.]com/dbpprt/dieter/[.]github/workflows/(release|release-coordinate)[.]yml@refs/heads/main$`
 const githubOIDCIssuer = "https://token.actions.githubusercontent.com"
 
 func linuxUpdateCapability(root string) OperationCapability {
@@ -213,7 +213,7 @@ func verifyLinuxReleaseManifest(ctx context.Context, checksumsPath, bundlePath s
 	defer cancel()
 	output, err := exec.CommandContext(verifyCtx, cosign, "verify-blob",
 		"--bundle", bundlePath,
-		"--certificate-identity", linuxReleaseSigner,
+		"--certificate-identity-regexp", linuxReleaseSigner,
 		"--certificate-oidc-issuer", githubOIDCIssuer,
 		checksumsPath,
 	).CombinedOutput()

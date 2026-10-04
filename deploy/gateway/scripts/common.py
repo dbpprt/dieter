@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-IDENTITY = "https://github.com/dbpprt/dieter/.github/workflows/gateway-image.yml@refs/heads/main"
+IDENTITY = "https://github.com/dbpprt/dieter/.github/workflows/component-candidate.yml@refs/heads/main"
 ISSUER = "https://token.actions.githubusercontent.com"
 IMAGE = re.compile(r"[a-z0-9./_-]+@sha256:[a-f0-9]{64}\Z")
 NAME = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}\Z")

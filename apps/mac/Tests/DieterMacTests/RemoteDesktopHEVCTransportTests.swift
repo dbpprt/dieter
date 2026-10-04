@@ -74,7 +74,8 @@ private func envRecovery(_ name: String) -> [String]? {
     let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
     let peer = try #require(factory.peerConnection(with: configuration, constraints: constraints, delegate: delegate))
     defer { peer.close() }
-    let channel = peer.dataChannel(forLabel: "dieter-session-v1", configuration: RTCDataChannelConfiguration())
+    let channel = peer.dataChannel(
+        forLabel: "dieter-session-v\(DieterRemoteDesktopProtocol.number)", configuration: RTCDataChannelConfiguration())
     channel?.delegate = delegate
     let receive = RTCRtpTransceiverInit(); receive.direction = .recvOnly
     let video = try #require(peer.addTransceiver(of: .video, init: receive))
@@ -142,7 +143,16 @@ private func envRecovery(_ name: String) -> [String]? {
     #expect(frames.native && frames.width == 1920 && frames.height == 1080)
     #expect(signaling.codec == codec)
     if mode != "clean" {
-        if request.referenceRecovery { try await hevcWait { delegate.state.referenceAcks > 0 } }
+        if request.referenceRecovery {
+            do {
+                try await hevcWait { delegate.state.referenceAcks > 0 }
+            } catch {
+                print(
+                    "Reference ACK failed: codec=\(codec) mode=\(mode) frames=\(frames.count) references=\(references.diagnostics)"
+                )
+                throw error
+            }
+        }
         let keysBefore = await keyFrameCount(peer)
         let before = frames.count
         let started = ProcessInfo.processInfo.systemUptime
@@ -168,18 +178,30 @@ private func envRecovery(_ name: String) -> [String]? {
         )
         if ["fec", "both"].contains(mode) {
             try await hevcWait { delegate.state.fecPercent > 0 }
+            try await mediaLoss(connection, mode: "none")
+            let anchorBefore = frames.count
+            var refresh = Dieter_V1_UpdateRemoteDesktopSessionRequest()
+            refresh.sessionID = signaling.sessionID
+            refresh.refresh = true
+            _ = try await rpc.service.updateRemoteDesktopSession(request: .init(message: refresh))
+            // Resolve random-loss dependencies before withholding one exact
+            // protected packet. FEC must repair that packet without inheriting
+            // the previous random-loss interval's decoder backlog.
+            try await hevcWait { frames.count >= anchorBefore + 15 }
             try await mediaLoss(connection, mode: "fec-proof")
             var repaired: UInt32 = 0
+            var fault = ""
             for _ in 0..<60 {
                 var probe = URLRequest(url: URL(string: connection.url + "/test/media-loss")!);
                 probe.setValue("Bearer " + connection.token, forHTTPHeaderField: "Authorization")
                 let (data, _) = try await URLSession.shared.data(for: probe)
+                fault = String(decoding: data, as: UTF8.self)
                 repaired =
                     ((try JSONSerialization.jsonObject(with: data) as? [String: Any])?["repairedTimestamp"] as? NSNumber)?
                     .uint32Value ?? 0
                 if repaired != 0 { break }; try await Task.sleep(for: .milliseconds(25))
             }
-            try #require(repaired != 0, "Fixture must drop a protected packet")
+            try #require(repaired != 0, "Fixture must drop a protected packet: \(fault)")
             try await hevcWait { frames.contains(repaired) }
             print(
                 "FEC PROOF codec=\(codec) decoded RTP timestamp=\(repaired) with original and retransmissions discarded"
@@ -385,6 +407,12 @@ private final class HEVCReferenceAcks: @unchecked Sendable {
 
     init(acknowledge: @escaping @Sendable ([Dieter_V1_RemoteDesktopReference]) -> Void) {
         self.acknowledge = acknowledge
+    }
+
+    var diagnostics: String {
+        lock.withLock {
+            "pending=\(pending.map { $0.rtpTimestamp }) decoded=\(decodedTimestamps.suffix(4))"
+        }
     }
 
     func decoded(timestamp: UInt32) {

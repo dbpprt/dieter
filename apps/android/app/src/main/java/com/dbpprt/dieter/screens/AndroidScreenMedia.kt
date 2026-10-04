@@ -69,7 +69,7 @@ class AndroidScreenMedia(context: Context) : ScreenMediaEngineFactory, AutoClose
     @Volatile internal var decoderSurface: DecoderSurface? = null
     @Volatile var decoderStatus: ScreenDecoderStatus? = null
         private set
-    private var decoderSurfaceAttached = false
+    private val decoderTargetLock = Any()
     @Volatile private var active: Engine? = null
     private val mutableStats = MutableStateFlow(ScreenMediaStats())
     val stats: StateFlow<ScreenMediaStats> = mutableStats.asStateFlow()
@@ -128,10 +128,15 @@ class AndroidScreenMedia(context: Context) : ScreenMediaEngineFactory, AutoClose
     }
 
     internal fun attachDecoderSurface(surface: DecoderSurface) {
-        decoderSurface?.close()
-        decoderSurface = surface
-        val replaced = decoderSurfaceAttached
-        decoderSurfaceAttached = true
+        val (previous, replaced) = synchronized(decoderTargetLock) {
+            val previous = decoderSurface
+            decoderSurface = surface
+            previous to (active?.needsDecoderSurface(surface) == true)
+        }
+        if (previous !== surface) previous?.close()
+        // A holder can arrive while the next peer is still selecting its
+        // decoder. Only replace an already selected target; restarting an
+        // unfinished attempt can leave an unobserved host control grant.
         if (replaced) onDecoderSurfaceReplaced?.invoke()
     }
 
@@ -166,13 +171,25 @@ class AndroidScreenMedia(context: Context) : ScreenMediaEngineFactory, AutoClose
         private val factory: PeerConnectionFactory
         private val peer: PeerConnection
         private val channels = LinkedHashMap<String, DataChannel>()
+        private var decoderTargetSelected = false
+        private var selectedDecoderSurface: DecoderSurface? = null
+
+        internal fun needsDecoderSurface(surface: DecoderSurface): Boolean =
+            !closed && directSurfacePresentation && decoderTargetSelected && selectedDecoderSurface !== surface
 
         init {
             decoderStatus = null
             val hevc = config.codecs.any { it.name.equals(ScreenCodecs.H265, true) }
             val decoders = ScreenDecoderFactory(
                 egl.eglBaseContext, enableHEVC = hevc, lowLatency = lowLatencyDecoding,
-                directSurface = { if (directSurfacePresentation) decoderSurface else null },
+                directSurface = {
+                    synchronized(decoderTargetLock) {
+                        (if (directSurfacePresentation) decoderSurface?.takeIf { it.isOpen } else null).also {
+                            selectedDecoderSurface = it
+                            decoderTargetSelected = true
+                        }
+                    }
+                },
                 outputDecoded = { timestamp ->
                     if (!closed) {
                         events.decoded(rtp(timestamp))

@@ -822,7 +822,9 @@ class DieterViewModel internal constructor(
                 selectedCardId = cardId,
                 conversation = core.workspace.state.value.conversations[cardId],
                 conversationScrollRequest = it.conversationScrollRequest + 1,
-                conversationSyncing = OutboxPolicy.isServerBacked(cardId),
+                // The core decides whether its cached tail needs a refresh.
+                // Clear the previous presentation until that view arrives.
+                conversationSyncing = false,
                 detailTab = 0,
                 error = core.outbox.view.value.failure(cardId),
             )

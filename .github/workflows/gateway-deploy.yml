@@ -1,0 +1,46 @@
+name: Prepare gateway deployment
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Exact promoted stable release; retain verified bytes for operator admission
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: gateway-production-preparation
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: gateway-production
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/pipeline-setup
+        with:
+          component: distribution
+      - name: Verify retained signed digests and pin the deployment release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PIPELINE_RELEASE_TAG: ${{ inputs.tag }}
+        run: just pipeline release action:gateway_prepare tag:"$PIPELINE_RELEASE_TAG" output:tmp/gateway-deployment
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verified-gateway-distribution-${{ github.run_attempt }}
+          path: |
+            tmp/gateway-deployment/dieter-gateway-deploy.tar.gz
+            tmp/gateway-deployment/gateway-manifest.json
+            tmp/gateway-deployment/gateway-manifest.sigstore.json
+            tmp/gateway-deployment/gateway-release.lock.json
+            tmp/gateway-deployment/gateway-deployment-plan.json
+          retention-days: 90
+          if-no-files-found: error

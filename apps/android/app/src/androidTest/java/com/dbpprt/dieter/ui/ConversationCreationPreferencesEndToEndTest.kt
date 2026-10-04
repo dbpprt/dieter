@@ -6,6 +6,7 @@ import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -95,11 +96,11 @@ class ConversationCreationPreferencesEndToEndTest {
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("new-card").fetchSemanticsNodes().isNotEmpty()
             }
-            composeRule.onNodeWithTag("new-card").performClick()
+            openQuickTask()
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("quick-task-popover").fetchSemanticsNodes().isNotEmpty()
             }
-            composeRule.onNodeWithTag("quick-task-story").performTextInput("Preserve the quick task draft")
+            composeRule.onNodeWithTag("quick-task-story", useUnmergedTree = true).performTextInput("Preserve the quick task draft")
             capture("quick-task-before-options.png")
             composeRule.onNodeWithText("More options").performScrollTo().performClick()
             composeRule.waitUntil(20_000) {
@@ -126,12 +127,12 @@ class ConversationCreationPreferencesEndToEndTest {
             // Both toolbar Back and system Back dispose the full editor. The
             // shared board draft must still own the text and selected settings.
             composeRule.onNodeWithContentDescription("Back").performClick()
-            composeRule.onNodeWithTag("new-card").performClick()
-            composeRule.onNodeWithTag("quick-task-story").assertTextContains("Preserve the quick task draft")
+            openQuickTask()
+            composeRule.onNodeWithTag("quick-task-story", useUnmergedTree = true).assertTextContains("Preserve the quick task draft")
             composeRule.onNodeWithContentDescription("Close quick task").performClick()
-            composeRule.onNodeWithTag("new-card").performClick()
+            openQuickTask()
             composeRule.activityRule.scenario.recreate()
-            composeRule.onNodeWithTag("quick-task-story").assertTextContains("Preserve the quick task draft")
+            composeRule.onNodeWithTag("quick-task-story", useUnmergedTree = true).assertTextContains("Preserve the quick task draft")
             composeRule.onNodeWithText("More options").performScrollTo().performClick()
             composeRule.onNodeWithTag("conversation-title").assertTextContains(fixtureTitle)
             composeRule.onNodeWithTag("conversation-prompt").performTextReplacement("Edited task\nKeep every line")
@@ -144,8 +145,8 @@ class ConversationCreationPreferencesEndToEndTest {
             cardNode("agent", hasTestTag("creation-model")).assertTextEquals(targetModel.name)
             targetEffort?.let { cardNode("agent", hasTestTag("creation-effort")).assertTextEquals(it.name) }
             composeRule.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
-            composeRule.onNodeWithTag("new-card").performClick()
-            composeRule.onNodeWithTag("quick-task-story").assertTextContains("Edited task\nKeep every line")
+            openQuickTask()
+            composeRule.onNodeWithTag("quick-task-story", useUnmergedTree = true).assertTextContains("Edited task\nKeep every line")
             composeRule.onNodeWithText("More options").performScrollTo().performClick()
             composeRule.onNodeWithTag("conversation-title").assertTextContains(fixtureTitle)
 
@@ -166,8 +167,8 @@ class ConversationCreationPreferencesEndToEndTest {
             assertEquals(listOf(label.id), created.label_ids)
             val snapshot = IsolatedCore.conversation(container, created.id, created.owner_daemon_id)
             assertEquals(listOf(attachment), snapshot.conversation?.draft_attachments)
-            composeRule.onNodeWithTag("new-card").performClick()
-            assertEquals("", composeRule.onNodeWithTag("quick-task-story").fetchSemanticsNode()
+            openQuickTask()
+            assertEquals("", composeRule.onNodeWithTag("quick-task-story", useUnmergedTree = true).fetchSemanticsNode()
                 .config[androidx.compose.ui.semantics.SemanticsProperties.EditableText].text)
             composeRule.onNodeWithContentDescription("Close quick task").performClick()
             val remembered = runBlocking { core.onCore { core.creation.state.value } }
@@ -175,21 +176,25 @@ class ConversationCreationPreferencesEndToEndTest {
             assertEquals(targetModel.id, remembered.model)
             assertEquals(targetEffort?.id.orEmpty(), remembered.effort)
             assertEquals("project", remembered.workspace_mode)
+            assertEquals(optionValue, remembered.provider_options[targetOption.id])
 
             // A user may return from More options and use Add task instead
             // of Save. That path must submit the same expanded draft fields.
             val quickTitle = "$fixtureTitle quick"
-            composeRule.onNodeWithTag("new-card").performClick()
-            composeRule.onNodeWithTag("quick-task-story").performTextInput("Second task body")
+            openQuickTask()
+            composeRule.onNodeWithTag("quick-task-story", useUnmergedTree = true).performTextInput("Second task body")
             composeRule.onNodeWithText("More options").performScrollTo().performClick()
             composeRule.onNodeWithTag("conversation-title").performTextReplacement(quickTitle)
-            cardNode("agent", hasTestTag("provider-option-${targetOption.id}")).performClick()
+            // The first submission remembers provider options too. Verify the
+            // inherited value instead of toggling it back to the default.
+            val inheritedOption = cardNode("agent", hasTestTag("provider-option-${targetOption.id}"))
+            if (optionValue == "true") inheritedOption.assertIsSelected() else inheritedOption.assertIsNotSelected()
             cardNode("labels", hasText(label.name)).performClick()
             composeRule.runOnIdle {
                 model().activeCapture!!.edit { TaskDrafts.admit(it, attachment) }
             }
             composeRule.onNodeWithContentDescription("Back").performClick()
-            composeRule.onNodeWithTag("new-card").performClick()
+            openQuickTask()
             composeRule.onNodeWithTag("quick-task-create").performClick()
             val quickCreated = IsolatedCore.awaitCard(container) { it.title == quickTitle && it.owner_daemon_id.isNotBlank() }
             assertEquals("Second task body", quickCreated.initial_prompt)
@@ -239,6 +244,16 @@ class ConversationCreationPreferencesEndToEndTest {
                 }
             }
         }
+    }
+
+    private fun openQuickTask() {
+        composeRule.onNodeWithTag("new-card").performClick()
+        // Address the tagged editor itself, including when the sheet merges
+        // its semantics into a parent during presentation.
+        composeRule.waitUntil(10_000) {
+            composeRule.onAllNodesWithTag("quick-task-story", useUnmergedTree = true).fetchSemanticsNodes().size == 1
+        }
+        composeRule.onNodeWithTag("quick-task-story", useUnmergedTree = true).assertIsDisplayed()
     }
 
     private fun cardNode(section: String, matcher: SemanticsMatcher): SemanticsNodeInteraction {

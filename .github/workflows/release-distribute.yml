@@ -1,0 +1,45 @@
+name: Release distribution
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+    secrets:
+      IOS_APP_STORE_CONNECT_KEY_BASE64:
+        required: true
+      IOS_APP_STORE_CONNECT_KEY_ID:
+        required: true
+      IOS_APP_STORE_CONNECT_ISSUER_ID:
+        required: true
+      IOS_BUNDLE_ID:
+        required: true
+permissions:
+  contents: read
+jobs:
+  testflight:
+    runs-on: macos-26
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    concurrency:
+      group: testflight-${{ inputs.tag }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/pipeline-setup
+        with:
+          component: distribution
+      - name: Reconcile exact release IPA, processing and internal group delivery
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PIPELINE_RELEASE_TAG: ${{ inputs.tag }}
+          IOS_APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_BASE64 }}
+          IOS_APP_STORE_CONNECT_KEY_ID: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_ID }}
+          IOS_APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.IOS_APP_STORE_CONNECT_ISSUER_ID }}
+          IOS_BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}
+        run: just pipeline release action:distribute tag:"$PIPELINE_RELEASE_TAG"

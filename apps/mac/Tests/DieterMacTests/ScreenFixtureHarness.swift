@@ -7,7 +7,7 @@ import Synchronization
 import Testing
 @testable import DieterMac
 
-/// What the disposable native screen fixture (`scripts/screens-fixture`)
+/// What the disposable native screen fixture (`tools/fixtures/screens`)
 /// writes once it listens: a loopback daemon API, its signing certificate,
 /// ICE configuration, and a bearer token.
 struct ScreenFixtureConnection: Decodable {

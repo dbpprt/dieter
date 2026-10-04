@@ -22,7 +22,7 @@ same secret bytes in `static-auth-secret`. Never copy production credentials
 into this fixture. The loader rejects public permissions, unknown JSON fields,
 trailing data and files larger than 64 KiB without printing credentials.
 
-Both `scripts/isolated-gateway` and `scripts/screens-fixture` read this file.
+Both `tools/fixtures/gateway` and `tools/fixtures/screens` read this file.
 The API fixture uses the gateway's normal credential generator. The screen
 fixture generates coturn REST credentials and signs its RTC configuration with
 the disposable fixture identity. Production binaries do not load this file.
@@ -55,7 +55,7 @@ capture/input latency and the complete session lifecycle.
 
 ```sh
 DIETER_TEST_TURN_CONFIG=/absolute/private/turn.json \
-DIETER_TEST_FORCE_TURN=1 just mac screens-test
+DIETER_TEST_FORCE_TURN=1 just pipeline check component:mac operation:screens_test
 ```
 
 No native test drives the API route through TURN: the Swift connection
@@ -76,14 +76,14 @@ normal Dieter application:
 
 ```sh
 DIETER_TEST_TURN_CONFIG=/absolute/private/turn.json \
-DIETER_TEST_FORCE_TURN=1 just e2e run --suite screens
+DIETER_TEST_FORCE_TURN=1 just pipeline android e2e suite:screens
 ```
 
 When the TURN URL points at host loopback, create a separate, temporary ADB
 reverse mapping for that TCP port on the explicitly selected emulator and remove
 it afterward. The recipe owns only the screen service's reverse mapping.
 
-For API coverage, `just e2e run --suite sync` builds and installs the isolated
+For API coverage, `just pipeline android e2e suite:sync` builds and installs the isolated
 app/test APKs and executes the ordinary sync regressions. No Android
 instrumentation test drives the WebRTC API route through TURN; the screen
 recipe above is the Android TURN qualification. The app's WebRTC API bridge

@@ -26,12 +26,13 @@ import com.dbpprt.dieter.DieterApplication
 import com.dbpprt.dieter.MainActivity
 import com.dbpprt.dieter.DieterContainer
 import com.dbpprt.dieter.api.v1.CreateConversationRequest
+import com.dbpprt.dieter.api.v1.GetConversationRequest
 import com.dbpprt.dieter.api.v1.MessagePart
 import com.dbpprt.dieter.api.v1.SendMessageRequest
 import com.dbpprt.dieter.e2e.IsolatedCore
 import com.dbpprt.dieter.e2e.saveEvidence
 import java.util.UUID
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertTrue
@@ -124,7 +125,17 @@ class ConversationDraftQueueEndToEndTest {
             createdIds += queueCard.id
             runBlocking {
                 core.startCard(queueCard.id)
-                withTimeout(15_000) { core.workspace.state.first { it.card(queueCard.id)?.runtime == "running" } }
+                // Fixture admission is authoritative on the execution owner.
+                // A cached directory row is not proof that its turn has started.
+                withTimeout(15_000) {
+                    while (true) {
+                        val snapshot = core.onMachine(daemonId) {
+                            it.GetConversation().execute(GetConversationRequest(card_id = queueCard.id, limit = 1))
+                        }
+                        if (snapshot.conversation?.status == "running") break
+                        delay(100)
+                    }
+                }
                 val messageId = "msg_android_queue_ui_${UUID.randomUUID().toString().replace("-", "").take(12)}"
                 val queued = core.onMachine(daemonId) {
                     it.SendMessage().execute(

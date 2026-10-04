@@ -76,16 +76,16 @@ Install `cosign` using
 [Sigstore's documented method](https://docs.sigstore.dev/cosign/system_config/installation/).
 The Dieter installer deliberately does not invoke a package manager or `sudo`.
 
-Published archives already contain `dieter-capture`. A source install with
-`just install` builds it locally and additionally needs a C compiler, `pkg-config`,
+Published archives already contain `dieter-capture`. A source build with
+`just pipeline component component:daemon operation:build` builds it locally and additionally needs a C compiler, `pkg-config`,
 and development headers. Install `base-devel pkgconf glib2 gstreamer
 gst-plugins-base-libs json-glib libx11 libxtst libxrandr` on Arch;
 `build-essential pkg-config libglib2.0-dev libgstreamer1.0-dev
 libgstreamer-plugins-base1.0-dev libjson-glib-dev libx11-dev libxtst-dev
 libxrandr-dev` on Debian/Ubuntu; or `gcc make pkgconf-pkg-config glib2-devel
 gstreamer1-devel gstreamer1-plugins-base-devel json-glib-devel libX11-devel
-libXtst-devel libXrandr-devel` on Fedora. Use `just install "$HOME/.local" "" false`
-only for an intentionally headless source installation.
+libXtst-devel libXrandr-devel` on Fedora. Install from verified distribution artifacts for managed operation; local build
+lanes never replace an operator service.
 
 Install `tmux` before starting the daemon when possible. If it is added while
 the daemon is already running, finish active agent turns and then run
@@ -110,7 +110,8 @@ dieter project open /absolute/path/to/project
 ```
 
 The installer verifies `SHA256SUMS.sigstore.json` against the GitHub Actions
-OIDC identity of `.github/workflows/release.yml` on `main`, verifies the selected
+OIDC identity of `.github/workflows/release-coordinate.yml` on `main`
+(or the retained historical release workflow identity), verifies the selected
 archive's SHA-256 digest, validates archive paths, and replaces each executable
 by atomic rename. On systemd it also stages the verified pair under
 `$DIETER_HOME/service/bin` and installs `dieter.service` under the user's systemd

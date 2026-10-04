@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "repository": "dbpprt/dieter",
+  "release_line": "0.4",
+  "channels": {
+    "draft": {
+      "publish": false,
+      "testflight": false,
+      "homebrew": false,
+      "deploy_gateway": false
+    },
+    "dev": {
+      "publish": true,
+      "prerelease": true,
+      "make_latest": false,
+      "testflight": true,
+      "testflight_groups": [],
+      "homebrew": false,
+      "deploy_gateway": false
+    },
+    "stable": {
+      "publish": true,
+      "prerelease": false,
+      "make_latest": true,
+      "testflight": true,
+      "testflight_groups": [],
+      "homebrew": true,
+      "deploy_gateway": false
+    }
+  },
+  "retention": {
+    "dev_count": 20,
+    "dev_days": 14,
+    "candidate_days": 90
+  },
+  "required_components": [
+    "daemon-linux-amd64",
+    "daemon-linux-arm64",
+    "daemon-darwin-arm64",
+    "gateway-linux-amd64",
+    "gateway-linux-arm64",
+    "gateway-oci",
+    "android",
+    "mac",
+    "ios"
+  ]
+}

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -91,6 +92,7 @@ internal fun CardDetailScreen(
     modifier: Modifier = Modifier,
     showBack: Boolean = true,
 ) {
+    val tablet = LocalTabletWorkspace.current
     val snapshot = state.conversation
     val card = snapshot?.detail?.card ?: state.selectedCard
     var renameOpen by remember { mutableStateOf(false) }
@@ -140,7 +142,7 @@ internal fun CardDetailScreen(
     }
     Column(modifier.fillMaxSize()) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().padding(start = if (showBack) 8.dp else 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (showBack) IconButton(onClick = model::closeDetail) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
@@ -157,7 +159,7 @@ internal fun CardDetailScreen(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
+                if (!tablet) Text(
                     conversationRefreshLabel(
                         state.conversationLastRefreshedAtMillis,
                         state.conversationSyncing,
@@ -170,7 +172,17 @@ internal fun CardDetailScreen(
                     modifier = Modifier.testTag("conversation-last-refreshed"),
                 )
             }
-            StatusPill(presentation.runtime)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                StatusPill(presentation.runtime)
+                if (tablet) Text(
+                    state.machineLabel(card.owner_daemon_id),
+                    color = DieterMuted,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 120.dp).testTag("conversation-owner-machine"),
+                )
+            }
             if (presentation.canHalt) {
                 IconButton(onClick = model::cancelSelected) {
                     Icon(Icons.Outlined.Cancel, "Cancel active turn")
@@ -179,6 +191,12 @@ internal fun CardDetailScreen(
             Box {
                 IconButton(onClick = { actionsOpen = true }) { Icon(Icons.Outlined.MoreVert, "Conversation actions") }
                 DropdownMenu(expanded = actionsOpen, onDismissRequest = { actionsOpen = false }) {
+                    if (tablet) DropdownMenuItem(
+                        text = { Text(conversationRefreshLabel(state.conversationLastRefreshedAtMillis, state.conversationSyncing, refreshClockMillis)) },
+                        enabled = false,
+                        onClick = {},
+                        modifier = Modifier.testTag("conversation-last-refreshed"),
+                    )
                     if (model.isFailedOutboxItem(card.id)) {
                         DropdownMenuItem(
                             text = { Text("Retry queued action") },

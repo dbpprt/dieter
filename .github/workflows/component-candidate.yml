@@ -1,0 +1,142 @@
+name: Component candidate
+on:
+  workflow_call:
+    inputs:
+      component:
+        required: true
+        type: string
+      profile:
+        default: ''
+        type: string
+      source:
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+      identity_artifact:
+        required: true
+        type: string
+    secrets:
+      ANDROID_KEYSTORE_BASE64:
+        required: false
+      ANDROID_KEYSTORE_PASSWORD:
+        required: false
+      ANDROID_KEY_ALIAS:
+        required: false
+      ANDROID_KEY_PASSWORD:
+        required: false
+      IOS_APP_STORE_CONNECT_ISSUER_ID:
+        required: false
+      IOS_APP_STORE_CONNECT_KEY_BASE64:
+        required: false
+      IOS_APP_STORE_CONNECT_KEY_ID:
+        required: false
+      IOS_BUNDLE_ID:
+        required: false
+      IOS_DISTRIBUTION_CERTIFICATE_BASE64:
+        required: false
+      IOS_DISTRIBUTION_CERTIFICATE_PASSWORD:
+        required: false
+      IOS_PROVISIONING_PROFILE_BASE64:
+        required: false
+      IOS_SHARE_PROVISIONING_PROFILE_BASE64:
+        required: false
+      IOS_TEAM_ID:
+        required: false
+      MACOS_DEVELOPER_ID_CERTIFICATE_BASE64:
+        required: false
+      MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD:
+        required: false
+      MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_BASE64:
+        required: false
+      MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_PASSWORD:
+        required: false
+      MACOS_NOTARY_ISSUER_ID:
+        required: false
+      MACOS_NOTARY_KEY_BASE64:
+        required: false
+      MACOS_NOTARY_KEY_ID:
+        required: false
+permissions:
+  contents: read
+jobs:
+  candidate:
+    if: github.ref == 'refs/heads/main' && inputs.source == github.sha
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source }}
+          persist-credentials: false
+      - uses: ./.github/actions/pipeline-setup
+        with:
+          component: ${{ inputs.component == 'gateway-oci' && 'gateway' || inputs.component }}
+          fixture: 'true'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ inputs.identity_artifact }}
+          path: tmp/release-identity
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        if: inputs.component == 'gateway-oci'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        if: inputs.component == 'gateway-oci'
+      - name: Build, sign, package and qualify exact candidate
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PIPELINE_COMPONENT: ${{ inputs.component }}
+          PIPELINE_PROFILE: ${{ inputs.profile }}
+          CERTIFICATE_BASE64: ${{ (inputs.component == 'mac' || (inputs.component == 'daemon' && inputs.runner == 'macos-26')) && secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 || '' }}
+          CERTIFICATE_PASSWORD: ${{ (inputs.component == 'mac' || (inputs.component == 'daemon' && inputs.runner == 'macos-26')) && secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD || '' }}
+          INSTALLER_CERTIFICATE_BASE64: ${{ (inputs.component == 'daemon' && inputs.runner == 'macos-26') && secrets.MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_BASE64 || '' }}
+          INSTALLER_CERTIFICATE_PASSWORD: ${{ (inputs.component == 'daemon' && inputs.runner == 'macos-26') && secrets.MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_PASSWORD || '' }}
+          NOTARY_KEY_BASE64: ${{ (inputs.component == 'mac' || (inputs.component == 'daemon' && inputs.runner == 'macos-26')) && secrets.MACOS_NOTARY_KEY_BASE64 || '' }}
+          NOTARY_KEY_ID: ${{ (inputs.component == 'mac' || (inputs.component == 'daemon' && inputs.runner == 'macos-26')) && secrets.MACOS_NOTARY_KEY_ID || '' }}
+          NOTARY_ISSUER_ID: ${{ (inputs.component == 'mac' || (inputs.component == 'daemon' && inputs.runner == 'macos-26')) && secrets.MACOS_NOTARY_ISSUER_ID || '' }}
+          ANDROID_KEYSTORE_BASE64: ${{ inputs.component == 'android' && secrets.ANDROID_KEYSTORE_BASE64 || '' }}
+          DIETER_ANDROID_KEYSTORE_PASSWORD: ${{ inputs.component == 'android' && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+          DIETER_ANDROID_KEY_ALIAS: ${{ inputs.component == 'android' && secrets.ANDROID_KEY_ALIAS || '' }}
+          DIETER_ANDROID_KEY_PASSWORD: ${{ inputs.component == 'android' && secrets.ANDROID_KEY_PASSWORD || '' }}
+          IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ inputs.component == 'ios' && secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 || '' }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ inputs.component == 'ios' && secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD || '' }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ inputs.component == 'ios' && secrets.IOS_PROVISIONING_PROFILE_BASE64 || '' }}
+          IOS_SHARE_PROVISIONING_PROFILE_BASE64: ${{ inputs.component == 'ios' && secrets.IOS_SHARE_PROVISIONING_PROFILE_BASE64 || '' }}
+          IOS_APP_STORE_CONNECT_KEY_BASE64: ${{ inputs.component == 'ios' && secrets.IOS_APP_STORE_CONNECT_KEY_BASE64 || '' }}
+          IOS_APP_STORE_CONNECT_KEY_ID: ${{ inputs.component == 'ios' && secrets.IOS_APP_STORE_CONNECT_KEY_ID || '' }}
+          IOS_APP_STORE_CONNECT_ISSUER_ID: ${{ inputs.component == 'ios' && secrets.IOS_APP_STORE_CONNECT_ISSUER_ID || '' }}
+          IOS_TEAM_ID: ${{ inputs.component == 'ios' && secrets.IOS_TEAM_ID || '' }}
+          IOS_BUNDLE_ID: ${{ inputs.component == 'ios' && secrets.IOS_BUNDLE_ID || '' }}
+        run: just pipeline candidate phase:prepare output:tmp/candidate component:"$PIPELINE_COMPONENT" profile:"$PIPELINE_PROFILE" identity:tmp/release-identity/identity.json
+      - name: Retain immutable producer checkpoint before release upload
+        if: steps.prepare.outputs.checkpoint_required == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: producer-${{ steps.prepare.outputs.tag }}-${{ steps.prepare.outputs.component }}
+          path: tmp/candidate/producer/
+          retention-days: 90
+          if-no-files-found: error
+      - name: Upload exact prepared candidate and commit its manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PIPELINE_COMPONENT: ${{ inputs.component }}
+          PIPELINE_PROFILE: ${{ inputs.profile }}
+        run: just pipeline candidate phase:retain component:"$PIPELINE_COMPONENT" profile:"$PIPELINE_PROFILE" identity:tmp/release-identity/identity.json products:tmp/candidate/producer
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: candidate-evidence-${{ inputs.component }}-${{ inputs.runner }}-${{ github.run_attempt }}
+          path: |
+            tmp/app-pipelines/
+            tmp/candidate/
+          retention-days: 14
+          if-no-files-found: error

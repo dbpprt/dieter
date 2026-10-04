@@ -180,6 +180,9 @@ class ScreenRecoveryEndToEndTest {
             compose.onNodeWithText("HEVC · up to 1080p60").performClick()
             exercise("H265")
             Evidence.text("screen-recovery.json", JSONObject().put("schemaVersion", 1).put("cases", results).toString())
+        } catch (failure: Throwable) {
+            Evidence.text("screen-recovery-failure.txt", "${view()}\nfault=${fault()}\ncompleted=$results")
+            throw failure
         } finally {
             fault("none")
             compose.runOnIdle { host.close() }

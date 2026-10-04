@@ -26,7 +26,7 @@ timestamps are deterministic. Rebuilding with the same compiler and inputs must
 produce the same AAR; compiler changes intentionally change provenance. This is
 a Java SDK rebuild, not a claim of rebuilding native WebRTC from source.
 
-Run `just android test` to build the normal application against this contract.
+Run `just pipeline android test_unit` to build the normal application against this contract.
 No Linux VM is necessary for this extension because native JNI signatures and
 implementations are unchanged. Source investigation did verify a separate Linux
 builder, but its dependency synchronization is not release-build evidence.
@@ -77,7 +77,7 @@ production presentation default.
 ## Evidence and qualification
 
 The isolated physical runner accepts `DIETER_SCREEN_TEST_DIRECT_SURFACE=1`.
-Run `just e2e run --suite sdk --serial SERIAL` for the bounded
+Run `just pipeline android e2e suite:sdk profile:android-device` for the bounded
 codec/ownership checks and launcher-namespace regression in the separate fixture
 application. It acquires the shared device lease, requires all selected tests
 to execute without skips, and emits `decoder-sdk.json` from fresh JUnit results.

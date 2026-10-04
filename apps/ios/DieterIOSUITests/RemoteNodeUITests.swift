@@ -35,11 +35,34 @@ final class RemoteNodeUITests: XCTestCase {
         let keyboard = app.keyboards.firstMatch
         var activated = false
         for attempt in 0..<2 {
-            field.tap()
+            if field.elementType == .textView {
+                // On landscape iPad the keyboard shrinks the sheet viewport.
+                // A multiline editor keeps its full accessibility frame while
+                // the submission bar covers its center. Tap its visible first
+                // line using observed geometry, then still require real focus.
+                let frame = field.frame
+                XCTAssertTrue(hasUsableFrame(frame), "\(identifier) must have a finite visible frame.")
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+                    .withOffset(
+                        CGVector(
+                            dx: frame.minX + min(16, frame.width / 2),
+                            dy: frame.minY + min(12, frame.height / 2))
+                    )
+                    .tap()
+            } else {
+                field.tap()
+            }
             if keyboard.waitForExistence(timeout: 5) {
                 dismissKeyboardIntroduction(app)
-                activated = true
-                break
+                // An existing keyboard does not prove this tap changed the
+                // responder. iPad CI can leave the title focused after the
+                // prompt tap; verify the intended native field before typing.
+                let focused = XCTNSPredicateExpectation(
+                    predicate: NSPredicate(format: "hasKeyboardFocus == true"), object: field)
+                if XCTWaiter.wait(for: [focused], timeout: 5) == .completed {
+                    activated = true
+                    break
+                }
             }
             // iPad CI can leave a first native text-field tap unconsumed after
             // the transcript updates. Retry once while the field is hittable.
@@ -47,11 +70,17 @@ final class RemoteNodeUITests: XCTestCase {
         }
         XCTAssertTrue(
             activated, "Tapping \(identifier) should activate text input.\n\(app.debugDescription)")
+        guard activated else { return }
         // A vertical SwiftUI TextField can be rebuilt while its value wraps to
         // another line. Sending keys through the focused application responder
         // avoids re-resolving a now-stale TextField query midway through input.
         app.typeText(text)
         dismissKeyboardIntroduction(app)
+        let entered = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value ENDSWITH %@", text), object: field)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [entered], timeout: 5), .completed,
+            "Typing must update \(identifier).\n\(app.debugDescription)")
     }
 
     private func dismissKeyboardIntroduction(_ app: XCUIApplication) {
@@ -238,6 +267,8 @@ final class RemoteNodeUITests: XCTestCase {
         }
         enter(app, "ios.create.title", title)
         enter(app, "ios.create.prompt", prompt)
+        XCTAssertEqual(app.textFields.matching(identifier: "ios.create.title").firstMatch.value as? String, title)
+        XCTAssertEqual(app.textViews.matching(identifier: "ios.create.prompt").firstMatch.value as? String, prompt)
         // The prompt's UIKit accessory and SwiftUI keyboard toolbar can be
         // rebuilt while XCTest resolves them, leaving a stale Done element.
         // The form already opts into interactive keyboard dismissal, and this
@@ -315,10 +346,8 @@ final class RemoteNodeUITests: XCTestCase {
     }
 
     private func verifyConnectionRecovery(_ app: XCUIApplication, triggerPath: String) throws {
-        let trigger = URL(fileURLWithPath: triggerPath)
-        try? FileManager.default.removeItem(at: trigger)
-        try Data().write(to: trigger, options: .atomic)
-        defer { try? FileManager.default.removeItem(at: trigger) }
+        try setFixtureOffline(true, triggerPath: triggerPath)
+        defer { try? setFixtureOffline(false, triggerPath: triggerPath) }
 
         let banner = element(app, "ios.connection.banner")
         XCTAssertTrue(
@@ -335,7 +364,7 @@ final class RemoteNodeUITests: XCTestCase {
         let requestAlert = app.alerts["Couldn’t complete the request"]
         if requestAlert.exists { requestAlert.buttons["OK"].tap() }
 
-        try FileManager.default.removeItem(at: trigger)
+        try setFixtureOffline(false, triggerPath: triggerPath)
         // Only a settled (not working) notice offers Retry; otherwise the core
         // reconnects on its own backoff.
         let retry = banner.buttons["Retry"]
@@ -345,6 +374,33 @@ final class RemoteNodeUITests: XCTestCase {
         XCTAssertEqual(
             XCTWaiter.wait(for: [recovered], timeout: 60), .completed,
             "Restoring the isolated daemon must reconnect the conversation.\n\(app.debugDescription)")
+    }
+
+    private func setFixtureOffline(_ offline: Bool, triggerPath: String) throws {
+        if let endpoint = URL(string: triggerPath), endpoint.scheme == "https" {
+            let token = try XCTUnwrap(ProcessInfo.processInfo.environment["DIETER_IOS_TEST_CONTROL_TOKEN"])
+            var request = URLRequest(url: endpoint)
+            request.httpMethod = offline ? "POST" : "DELETE"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.timeoutInterval = 15
+            let completion = expectation(description: "Authenticated fixture presence control")
+            let task = URLSession.shared.dataTask(with: request) { _, response, error in
+                XCTAssertNil(error, "Device must trust and reach the configured fixture TLS route")
+                XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 204)
+                completion.fulfill()
+            }
+            task.resume()
+            let result = XCTWaiter.wait(for: [completion], timeout: 20)
+            task.cancel()
+            XCTAssertEqual(result, .completed)
+        } else {
+            let trigger = URL(fileURLWithPath: triggerPath)
+            if offline {
+                try Data().write(to: trigger, options: .atomic)
+            } else if FileManager.default.fileExists(atPath: trigger.path) {
+                try FileManager.default.removeItem(at: trigger)
+            }
+        }
     }
 
     private func waitForBoard(
@@ -395,6 +451,13 @@ final class RemoteNodeUITests: XCTestCase {
     }
 
     private func screenshot(_ app: XCUIApplication, _ name: String) {
+        // XCTest can crop a rotated iPad app using its portrait coordinate
+        // space, yielding a truncated image with a black margin. Capture the
+        // display for this layout so the evidence matches the visible device.
+        if ProcessInfo.processInfo.environment["DIETER_IOS_TEST_LANDSCAPE"] == "1" {
+            screenScreenshot(name)
+            return
+        }
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = name
         shot.lifetime = .keepAlways
@@ -820,6 +883,53 @@ final class RemoteNodeUITests: XCTestCase {
         }
     }
 
+    private func openOwnedFileShare(_ files: XCUIApplication, filename: String) {
+        if files.state == .notRunning { files.launch() } else { files.activate() }
+        XCTAssertTrue(files.wait(for: .runningForeground, timeout: 20))
+        let browse = files.tabBars.buttons.matching(
+            NSPredicate(format: "label IN %@", ["Browse", "Durchsuchen"])
+        ).firstMatch
+        if browse.waitForExistence(timeout: 10) {
+            browse.tap()
+            browse.tap()
+        }
+        let location = files.staticTexts.matching(
+            NSPredicate(format: "label IN %@", ["On My iPhone", "On My iPad", "Auf meinem iPhone", "Auf meinem iPad"])
+        )
+        .firstMatch
+        for _ in 0..<5 {
+            if location.waitForExistence(timeout: 2) { break }
+            let back = files.navigationBars.buttons.firstMatch
+            guard back.exists && back.isHittable else { break }
+            back.tap()
+        }
+        XCTAssertTrue(
+            location.waitForExistence(timeout: 10), "Files must expose local storage.\n\(files.debugDescription)")
+        location.tap()
+        let directory = files.staticTexts["Dieter E2E"]
+        XCTAssertTrue(
+            directory.waitForExistence(timeout: 15),
+            "The owned E2E container must appear in Files.\n\(files.debugDescription)")
+        directory.tap()
+        let name = (filename as NSString).deletingPathExtension
+        let image = files.staticTexts.matching(NSPredicate(format: "label IN %@", [filename, name])).firstMatch
+        XCTAssertTrue(
+            image.waitForExistence(timeout: 15),
+            "Files must expose the exact owned media file.\n\(files.debugDescription)")
+        image.press(forDuration: 1)
+        let share = files.buttons.matching(
+            NSPredicate(format: "label IN %@", ["Share", "Share…", "Teilen", "Teilen …"])
+        ).firstMatch
+        XCTAssertTrue(
+            share.waitForExistence(timeout: 10), "The owned file must expose Share.\n\(files.debugDescription)")
+        share.tap()
+    }
+
+    func testShareExtensionRoutesOwnedFileToNewTask() throws {
+        _ = try XCTUnwrap(ProcessInfo.processInfo.environment["DIETER_IOS_TEST_SHARE_FILE"])
+        try testAShareExtensionRoutesScreenshotToNewTask()
+    }
+
     func testAShareExtensionRoutesScreenshotToNewTask() throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["DIETER_IOS_TEST_LANDSCAPE"] != "1" else {
@@ -846,58 +956,66 @@ final class RemoteNodeUITests: XCTestCase {
         // while it is receiving the same request.
         app.terminate()
 
-        let photos = XCUIApplication(bundleIdentifier: "com.apple.mobileslideshow")
+        let ownedFile = environment["DIETER_IOS_TEST_SHARE_FILE"]
+        let photos = XCUIApplication(
+            bundleIdentifier: ownedFile == nil ? "com.apple.mobileslideshow" : "com.apple.DocumentsApp")
+        let borrowedFiles = ownedFile != nil && photos.state != .notRunning
         addTeardownBlock {
-            photos.terminate()
+            if !borrowedFiles { photos.terminate() }
             app.terminate()
         }
-        photos.launch()
-        XCTAssertTrue(photos.wait(for: .runningForeground, timeout: 20))
-        dismissPhotosOnboarding(photos)
-
-        let thumbnails = photos.images.matching(identifier: "PXGGridLayout-Info")
-        let thumbnailCount = thumbnails.count
-        XCTAssertGreaterThan(
-            thumbnailCount, 0,
-            "The imported screenshot must appear in Photos.\n\(photos.debugDescription)")
-        guard thumbnailCount > 0 else { return }
-        var photo = thumbnails.element(boundBy: thumbnailCount - 1)
-        XCTAssertTrue(
-            photo.waitForExistence(timeout: 10),
-            "The imported screenshot must appear in Photos.\n\(photos.debugDescription)")
-        if !photo.isHittable {
-            // A slow simulator can finish presenting onboarding while the
-            // library snapshot above is being resolved.
-            dismissPhotosOnboarding(photos, timeout: 5)
-            // Re-resolve after Photos replaces its library hierarchy.
-            photo = photos.images.matching(identifier: "PXGGridLayout-Info")
-                .element(boundBy: thumbnailCount - 1)
-        }
-        let photoReady = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == true AND hittable == true"), object: photo)
-        if XCTWaiter.wait(for: [photoReady], timeout: 10) == .completed {
-            photo.tap()
+        if let ownedFile {
+            openOwnedFileShare(photos, filename: ownedFile)
         } else {
-            // Photos 26 can expose a visible grid image as non-hittable after
-            // dismissing onboarding. Its resolved frame still accepts the
-            // same user tap; the share-action assertion below verifies that
-            // the screenshot actually opened.
-            XCTAssertTrue(
-                photo.exists && !photo.frame.isEmpty,
-                "The imported screenshot must remain visible after Photos onboarding.\n\(photos.debugDescription)")
-            photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        }
-        let share = photos.buttons.matching(
-            NSPredicate(format: "label CONTAINS[c] 'share' OR label CONTAINS[c] 'teilen'")
-        )
-        .firstMatch
-        XCTAssertTrue(
-            share.waitForExistence(timeout: 10),
-            "The opened screenshot must expose the Photos share action.\n\(photos.debugDescription)")
-        share.tap()
+            photos.launch()
+            XCTAssertTrue(photos.wait(for: .runningForeground, timeout: 20))
+            dismissPhotosOnboarding(photos)
 
+            let thumbnails = photos.images.matching(identifier: "PXGGridLayout-Info")
+            let thumbnailCount = thumbnails.count
+            XCTAssertGreaterThan(
+                thumbnailCount, 0,
+                "The imported screenshot must appear in Photos.\n\(photos.debugDescription)")
+            guard thumbnailCount > 0 else { return }
+            var photo = thumbnails.element(boundBy: thumbnailCount - 1)
+            XCTAssertTrue(
+                photo.waitForExistence(timeout: 10),
+                "The imported screenshot must appear in Photos.\n\(photos.debugDescription)")
+            if !photo.isHittable {
+                // A slow simulator can finish presenting onboarding while the
+                // library snapshot above is being resolved.
+                dismissPhotosOnboarding(photos, timeout: 5)
+                // Re-resolve after Photos replaces its library hierarchy.
+                photo = photos.images.matching(identifier: "PXGGridLayout-Info")
+                    .element(boundBy: thumbnailCount - 1)
+            }
+            let photoReady = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "exists == true AND hittable == true"), object: photo)
+            if XCTWaiter.wait(for: [photoReady], timeout: 10) == .completed {
+                photo.tap()
+            } else {
+                // Photos 26 can expose a visible grid image as non-hittable after
+                // dismissing onboarding. Its resolved frame still accepts the
+                // same user tap; the share-action assertion below verifies that
+                // the screenshot actually opened.
+                XCTAssertTrue(
+                    photo.exists && !photo.frame.isEmpty,
+                    "The imported screenshot must remain visible after Photos onboarding.\n\(photos.debugDescription)")
+                photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            }
+            let share = photos.buttons.matching(
+                NSPredicate(format: "label CONTAINS[c] 'share' OR label CONTAINS[c] 'teilen'")
+            )
+            .firstMatch
+            XCTAssertTrue(
+                share.waitForExistence(timeout: 10),
+                "The opened screenshot must expose the Photos share action.\n\(photos.debugDescription)")
+            share.tap()
+        }
+
+        let shareAppName = ownedFile == nil ? "Dieter" : "Dieter E2E"
         let dieter = photos.cells.matching(
-            NSPredicate(format: "identifier == 'shareCell' AND label == 'Dieter'")
+            NSPredicate(format: "identifier == 'shareCell' AND label == %@", shareAppName)
         )
         .firstMatch
         XCTAssertTrue(
@@ -939,6 +1057,11 @@ final class RemoteNodeUITests: XCTestCase {
         XCTAssertTrue(element(app, "ios.create.attach-photos").exists)
         XCTAssertTrue(element(app, "ios.create.attach-files").exists)
         screenScreenshot("14-shared-screenshot-in-new-task")
+        if let ownedFile {
+            XCTAssertTrue(
+                form.staticTexts[ownedFile].waitForExistence(timeout: 10),
+                "The attachment must come from the exact owned fixture file.\n\(app.debugDescription)")
+        }
         app.terminate()
     }
 }

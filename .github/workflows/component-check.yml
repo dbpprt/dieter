@@ -1,0 +1,60 @@
+name: Component check
+on:
+  workflow_call:
+    inputs:
+      component:
+        type: string
+        required: true
+      runner:
+        type: string
+        required: true
+      native_cases:
+        type: string
+        default: ''
+      native_suite:
+        type: string
+        default: ''
+      native_profile:
+        type: string
+        default: ''
+      native_only:
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  check:
+    if: ${{ !endsWith(inputs.runner, '-hardware') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
+    runs-on: ${{ fromJSON(inputs.runner == 'android-hardware' && '["self-hosted","Linux","dieter-android"]' || inputs.runner == 'android-mac-hardware' && '["self-hosted","macOS","dieter-android"]' || inputs.runner == 'mac-hardware' && '["self-hosted","macOS","dieter-mac"]' || inputs.runner == 'ios-hardware' && '["self-hosted","macOS","dieter-ios"]' || format('["{0}"]', inputs.runner)) }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/pipeline-setup
+        with:
+          component: ${{ inputs.component }}
+          fixture: 'true'
+          native: ${{ inputs.native_cases != '' || inputs.native_suite != '' }}
+      - name: Run component checks
+        if: ${{ !inputs.native_only }}
+        env:
+          PIPELINE_COMPONENT: ${{ inputs.component }}
+        run: just pipeline ci action:check component:"$PIPELINE_COMPONENT"
+      - name: Execute required native cases
+        if: inputs.native_cases != '' || inputs.native_suite != ''
+        env:
+          PIPELINE_COMPONENT: ${{ inputs.component }}
+          PIPELINE_CASES: ${{ inputs.native_cases }}
+          PIPELINE_SUITE: ${{ inputs.native_suite }}
+          PIPELINE_PROFILE: ${{ inputs.native_profile }}
+          DIETER_CI_DEVICE_CONFIG: ${{ (inputs.runner == 'android-hardware' || inputs.runner == 'android-mac-hardware') && vars.DIETER_ANDROID_CI_CONFIG || inputs.runner == 'ios-hardware' && vars.DIETER_IOS_CI_CONFIG || '' }}
+        run: just pipeline native_ci component:"$PIPELINE_COMPONENT" cases:"$PIPELINE_CASES" suite:"$PIPELINE_SUITE" profile:"$PIPELINE_PROFILE"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: check-${{ inputs.component }}-${{ inputs.runner }}-${{ inputs.native_profile }}-${{ github.run_attempt }}
+          path: tmp/app-pipelines/
+          retention-days: 14
+          if-no-files-found: error

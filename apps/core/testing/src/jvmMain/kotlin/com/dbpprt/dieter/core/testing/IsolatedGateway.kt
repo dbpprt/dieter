@@ -5,7 +5,7 @@ import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 
 /**
- * scripts/isolated-gateway: a disposable gateway plus enrolled daemons on
+ * tools/fixtures/gateway: a disposable gateway plus enrolled daemons on
  * random loopback ports. Never touches the operator's gateway or DIETER_HOME.
  */
 class IsolatedGateway(

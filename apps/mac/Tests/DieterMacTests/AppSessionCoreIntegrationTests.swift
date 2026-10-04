@@ -5,8 +5,9 @@ import Testing
 @testable import DieterMac
 
 /// Drives the whole Mac session — AppSession over the real DieterShared
-/// framework — against scripts/isolated-gateway, never an operator's
-/// gateway or daemon. `just mac core-test` starts the fixture and exports its
+/// framework — against tools/fixtures/gateway, never an operator's
+/// gateway or daemon. `just pipeline check component:mac operation:core_test`
+/// starts the fixture and exports its
 /// DIETER_ISOLATED_* environment; without it these tests are skipped.
 @MainActor
 @Suite(.serialized, .enabled(if: ProcessInfo.processInfo.environment["DIETER_ISOLATED_ADDR"] != nil))
@@ -14,7 +15,8 @@ final class AppSessionCoreIntegrationTests {
     let environment = ProcessInfo.processInfo.environment
 
     func fixture(_ key: String) throws -> String {
-        try #require(environment[key], "run `just mac core-test`, which exports \(key)")
+        let instruction = "run `just pipeline check component:mac operation:core_test`"
+        return try #require(environment[key], "\(instruction), which exports \(key)")
     }
 
     /// The session as the core last described it, for failure messages.

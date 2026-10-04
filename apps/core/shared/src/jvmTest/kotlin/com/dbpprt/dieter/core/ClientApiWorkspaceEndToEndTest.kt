@@ -13,6 +13,7 @@ import com.dbpprt.dieter.client.v1.ProjectWorkspacesLoad
 import com.dbpprt.dieter.client.v1.ReviewCommand
 import com.dbpprt.dieter.client.v1.ReviewLayout
 import com.dbpprt.dieter.client.v1.ReviewMerge
+import com.dbpprt.dieter.client.v1.ReviewSelect
 import com.dbpprt.dieter.client.v1.ReviewSlice
 import com.dbpprt.dieter.client.v1.ReviewTarget
 import com.dbpprt.dieter.client.v1.Slice
@@ -89,6 +90,13 @@ class ClientApiWorkspaceEndToEndTest : EndToEnd() {
         assertTrue(full.workspace_state.isNotEmpty(), "the workspace's state in words")
         assertTrue(full.moves_to_done)
         assertTrue(full.merge_readiness!!.items.any { it.id == "conflicts" })
+        val cleared = step("review Back", reviewCommand(ReviewCommand(select = ReviewSelect()))).review!!
+        assertTrue(cleared.selected_path.isEmpty() && cleared.selected_commit.isEmpty())
+        assertTrue(cleared.diff == null && cleared.display_rows.isEmpty() && !cleared.diff_loading)
+        val listing = step("review refresh in file list", reviewCommand(ReviewCommand(refresh = Step()))).review!!
+        assertTrue(listing.selected_path.isEmpty() && listing.diff == null && listing.display_rows.isEmpty(), "refresh preserves Back")
+        val reopened = step("review reselect file", reviewCommand(ReviewCommand(select = ReviewSelect(path = full.selected_path)))).review!!
+        assertTrue(reopened.display_rows.any { it.line?.row?.kind == DiffRow.Kind.KIND_ADDITION }, "select opens the diff again")
         val split = step("review split", reviewCommand(ReviewCommand(layout = ReviewLayout(split = true)))).review!!
         assertTrue(split.split && split.display_rows.any { it.pair?.after?.kind == DiffRow.Kind.KIND_ADDITION }, "split: ${split.display_rows}")
         val merged = step("review merge", reviewCommand(ReviewCommand(merge = ReviewMerge(strategy = "squash", subject = "Add mock file", validate = true, remove_workspace = true, move_to_done = true)))).outcome!!

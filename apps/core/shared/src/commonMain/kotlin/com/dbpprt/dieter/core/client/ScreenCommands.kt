@@ -11,8 +11,8 @@ import com.dbpprt.dieter.core.screens.ScreenSurface
  */
 internal suspend fun ScreenSurface.execute(command: ScreenCommand, routes: (daemonId: String) -> ScreenRouteFactory) {
     command.control?.let { session.transferControl(it.on) }
-    command.clipboard?.let { session.performClipboard(it.operation) }
-    command.clipboard_enabled?.let { session.setClipboardEnabled(it.on) }
+    command.clipboard?.let { session.requestClipboard(it.operation) }
+    command.clipboard_enabled?.let { session.requestClipboardEnabled(it.on) }
     command.connect?.let { session.connect(it.daemon_id, routes(it.daemon_id)) }
     command.disconnect?.let { session.disconnect() }
     command.viewport?.let { session.viewport(it.width_points, it.height_points, it.scale) }

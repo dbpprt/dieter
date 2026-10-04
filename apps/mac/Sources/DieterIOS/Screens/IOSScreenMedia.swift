@@ -138,7 +138,7 @@
 
     #if DEBUG
         /// The disposable native screen fixture the UI tests start
-        /// (scripts/screens-fixture): every screen signals through its
+        /// (tools/fixtures/screens): every screen signals through its
         /// loopback daemon API instead of a machine's route.
         final class IOSScreenFixtureRoutes: NSObject, NativeScreenFixture, Sendable {
             /// What the fixture writes once it listens, base64-encoded JSON.

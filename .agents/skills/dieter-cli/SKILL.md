@@ -824,9 +824,9 @@ for a parity group. Protection adds redundancy and cannot repair every loss burs
 
 For disposable-process A/B tests, `DIETER_SCREEN_LTR=0` disables reference recovery
 and `DIETER_SCREEN_FEC=0` disables FEC negotiation. Do not restart an operator daemon
-for these comparisons. `DIETER_TEST_SCREEN_RECOVERY=1 just mac screens-test`
+for these comparisons. `DIETER_TEST_SCREEN_RECOVERY=1 just pipeline check component:mac operation:screens_test`
 runs the native H.264/HEVC recovery matrix. Android coverage uses
-`just e2e run --case screens.screen-recovery-end-to-end-test`.
+`just pipeline android e2e cases:screens.screen-recovery-end-to-end-test`.
 Both use authenticated disposable fixtures and targeted packet loss, without
 altering saved credentials or system network configuration.
 
@@ -852,7 +852,7 @@ Performance candidates remain isolated-process switches: Mac
 behavior until matched qualification. Never restart the live service to set them.
 The qualified one-credit fallback remains available with older helpers.
 
-`scripts/qualify_screens.py --help` describes reproducible local/device evidence
+`just pipeline catalog action:plan platform:android suite:screens` describes reproducible local/device evidence
 collection. The physical Android runner requires an exact serial and a separate
 fixture application ID; the original emulator-only runner remains unchanged in
 its device policy. Do not present a skipped/unavailable matrix cell as a pass.

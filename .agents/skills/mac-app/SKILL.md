@@ -5,7 +5,7 @@ description: Operate Dieter's native macOS app in the visible local desktop from
 
 # Operate the Dieter Mac app
 
-Run the repository's `just mac` commands from the repository root. Reuse one
+Run the repository's `just pipeline mac` lanes from the repository root. Reuse one
 packaged app process, observe native UI state after every interaction, and leave
 no task-owned `DieterMac` process behind.
 
@@ -24,20 +24,22 @@ Never stop, restart, replace, or install over the operator's running daemon.
 Use `$dieter-cli` for daemon-side inspection and never edit `DIETER_HOME`.
 
 Do not run `swift run DieterMac`, create alternate scratch paths, delete
-`.build`, or use `swift package clean`. `just mac build` packages the app with
-the canonical app cache, while `just mac test` uses the canonical test cache so
-their incompatible compiler flags cannot invalidate each other. Do not run two
-commands against the same cache concurrently.
+`.build`, or use `swift package clean`. `just pipeline mac build` packages the app with
+the canonical app cache, while `just pipeline mac test_unit` uses the canonical test cache so
+their incompatible compiler flags cannot invalidate each other. The Mac build/test/core-test and iOS build commands share an Apple build lease.
+Apple E2E holds it until its packaged app/test products are no longer in use.
+Contention fails promptly with the owner PID; inspect the active command and
+retry after it completes. Never delete its lock to bypass admission.
 
-When compiler processes contend for memory, run builds and tests sequentially
-and set `DIETER_SWIFT_JOBS=2` on `just mac build`, `just mac test`, or the Mac
-E2E command. This limits compiler concurrency while preserving canonical caches;
-unset it to use SwiftPM's normal job count. Do not stop unrelated processes.
+When compiler processes contend for memory, run builds and tests sequentially.
+The configured `toolchains.swift_jobs` defaults to two jobs for SwiftPM and Xcode;
+`DIETER_SWIFT_JOBS` may select an explicit integer from 1 to 64 on a build or test.
+This preserves canonical caches. Do not stop unrelated processes.
 
 ## Inventory first
 
 ```sh
-just mac status
+just pipeline mac local action:status
 ```
 
 Inspect the exact command of every reported PID. One process from the canonical
@@ -51,11 +53,11 @@ or task owns a process, do not terminate it or launch a second copy.
 ## Build, test, and launch
 
 ```sh
-just mac doctor
-just mac proto-check
-just mac build
-just mac test '<optional-filter>'
-just mac run
+just pipeline doctor
+just pipeline mac local action:proto_check
+just pipeline mac build
+just pipeline mac test_unit filter:NAME
+just pipeline mac local action:run
 ```
 
 The first build or test after a compiler, dependency, generated-schema,
@@ -63,22 +65,26 @@ configuration, or source change can be long. A second unchanged command should
 be incremental. If it is not, compare the Xcode version, configuration,
 `Package.resolved`, and the command's canonical scratch path before cleaning
 anything. Never point builds at `dieter-tests` or tests at `dieter-local`.
+Shared-core framework preparation uses a cross-process publication lease,
+hashes production sources/schema/toolchains, and preserves identical framework
+bytes and timestamps. `ios-simulator` builds only macOS and simulator slices;
+Mac refreshes retain any existing slices of the same configuration. Test and
+documentation edits do not replace the framework.
 
-`just mac run` refuses conflicting processes, launches without `open -n`, and
+`just pipeline mac local action:run` refuses conflicting processes, launches without `open -n`, and
 requires exactly one canonical executable. If that app is already running, it
 activates it without building or signing. Builds check for running apps before
-compilation and again before packaging, including direct `build.sh` calls.
+compilation and again before packaging, through the shared Mac adapter.
 For current code, quit a task-owned app before rebuilding. For observation only,
-reuse the already-running canonical app. `just mac lifecycle-test` verifies
+reuse the already-running canonical app. `just pipeline check component:portable operation:support_tests` verifies
 these guards with isolated fixtures, without launching an app.
 
-Release builds use `just mac build release`. Versioning, archive verification,
-and CI signing are exposed as `set-release-version`, `package-release`, and the
-confirmed CI-only `sign-notarize-release` recipe; do not duplicate those steps
-in workflow shell blocks.
+Release builds use `just pipeline mac build configuration:release`. Versioning, signing, notarization, package verification and retention live in
+the candidate composition. See `fastlane/README.md`; do not duplicate those
+steps in workflow shell blocks.
 
 After changing the authoritative protobuf schema, run `just proto`. Use
-`just mac proto-generate` only when working specifically on Swift generator
+`just pipeline mac local action:proto_generate` only when working specifically on Swift generator
 inputs or dependencies.
 
 ## Observe and interact
@@ -109,21 +115,21 @@ suites when these permissions are unavailable.
 ## Run isolated packaged-app smoke tests
 
 ```sh
-just e2e run --platform mac --case mac.core
-just e2e run --platform mac --case mac.conversation
-just e2e run --platform mac --suite smoke
+just pipeline mac e2e cases:mac.core
+just pipeline mac e2e cases:mac.conversation
+just pipeline mac e2e suite:smoke
 ```
 
 Suites are `core`, `board`, `conversation`, `machine`, `sidebar`, `terminal`,
 `island`, `workspace`, and `inbox`, plus the YAML `mac.navigation` journey.
-Run cases sequentially through `just e2e run`. The shared Go runner:
+Run cases sequentially through `just pipeline mac e2e`. The shared Fastlane pipeline:
 
 - refuses to run beside any existing `DieterMac` process;
 - owns the exact packaged-app and isolated-gateway PIDs;
 - uses an ephemeral loopback listener and unique state/preferences roots;
 - waits for multi-phase app processes to exit before relaunching;
 - preserves reports, logs, and screenshots under
-  `tmp/e2e-<run-id>` with shared JSON/JUnit reports; and
+  `tmp/app-pipelines/<run-id>` with shared JSON/JUnit reports; and
 - verifies no app process remains.
 
 Read every report and inspect relevant PNGs; exit status alone is insufficient.
@@ -131,7 +137,7 @@ The app-side smoke interface exists only in debug builds. Retain the selected
 shared-runner evidence directory until reviewed.
 
 For a longer isolated performance sweep, run
-`DIETER_PERFORMANCE_SWEEP=1 just e2e run --platform mac --case mac.board`. It seeds 40 chats with two
+`DIETER_PERFORMANCE_SWEEP=1 just pipeline mac e2e cases:mac.board`. It seeds 40 chats with two
 300-message tool-heavy histories alongside the 100-card board, measures 15
 returns per Board/Chats route and 30 alternating chat clicks, and records quiet
 CPU, physical footprint, rendering counters and directory-generation deltas.
@@ -153,7 +159,7 @@ first selection can already have Live cache coverage.
 For a hang, capture identity and evidence first:
 
 ```sh
-just mac status
+just pipeline mac local action:status
 sample <verified-pid> 5 -file "$MAC_EVIDENCE/DieterMac.sample.txt"
 log show --last 10m --style compact \
   --predicate 'process == "DieterMac"' > "$MAC_EVIDENCE/DieterMac.log.txt"
@@ -165,7 +171,7 @@ window. A client connection problem is not permission to restart the daemon.
 For a crash or launch failure:
 
 ```sh
-just mac verify
+just pipeline mac local action:verify
 ls -lt "$MAC_EVIDENCE" tmp/e2e-* 2>/dev/null
 ```
 
@@ -176,11 +182,11 @@ URL and HTTP status; do not delete the cache.
 ## Close cleanly
 
 ```sh
-just mac quit
-just mac status
+just pipeline mac local action:quit
+just pipeline mac local action:status
 ```
 
-`just mac quit` sends a normal application quit event and fails while preserving
+`just pipeline mac local action:quit` sends a normal application quit event and fails while preserving
 the process if it does not exit. Only after recording diagnostics may you send
 `TERM` to an exact, reverified task-owned PID. Do not use `KILL` without explicit
 authorization. Closing the app must not close daemon-owned terminal sessions.

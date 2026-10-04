@@ -85,7 +85,7 @@ large TLS/gRPC messages, cancellation, ownership checks and configuration
 integrity. CLI route tests cover direct TLS, WebRTC, and relay fallback.
 
 For native integration, `DIETER_TEST_CONTROL_WEBRTC=1` enables the bridge on the
-primary daemon of `scripts/isolated-gateway`. It advertises no direct TLS route,
+primary daemon of `tools/fixtures/gateway`. It advertises no direct TLS route,
 forcing compatible clients through WebRTC. No native test currently drives this
 route: the Swift test that did (`controlWebRTCRoutesNativeRPCAndReportsSelectedMode`)
 was removed with the Swift connection manager when the apps moved onto the

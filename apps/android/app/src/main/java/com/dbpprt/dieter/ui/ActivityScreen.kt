@@ -62,19 +62,16 @@ internal fun ActivityScreen(state: DieterUiState, model: DieterViewModel, expand
     val feedState = rememberSaveableStateHolder()
     var folderChatId by rememberSaveable { mutableStateOf<String?>(null) }
     val tablet = LocalTabletWorkspace.current
-    var timeline by rememberSaveable { mutableStateOf(false) }
     val content: @Composable (Modifier) -> Unit = { modifier ->
         feedState.SaveableStateProvider(state.activeGatewayId) {
             Box(modifier) {
                 ActivityFeed(
                     state = state, modifier = Modifier.fillMaxSize(),
-                    onOpen = { timeline = false; model.openCard(it, Destination.ACTIVITY) },
+                    onOpen = { model.openCard(it, Destination.ACTIVITY) },
                     onConnections = model::showConnectionDialog,
                     onAccount = { accountKey = it.account_key },
                     onRefreshAccounts = { model.refreshProviderQuotas() },
                     tablet = tablet,
-                    timelineOnly = tablet && timeline,
-                    onTimelineToggle = { timeline = it },
                     actions = ActivityItemActions(
                         onRename = model::renameConversation,
                         onArchive = model::archiveConversation,
@@ -149,8 +146,6 @@ internal fun ActivityFeed(
     onRefreshAccounts: () -> Unit,
     clock: Instant? = null,
     tablet: Boolean = false,
-    timelineOnly: Boolean = false,
-    onTimelineToggle: (Boolean) -> Unit = {},
     actions: ActivityItemActions? = null,
     onClearError: () -> Unit = {},
 ) {
@@ -182,7 +177,7 @@ internal fun ActivityFeed(
     }
     Box(modifier, contentAlignment = Alignment.TopCenter) {
         LazyColumn(
-            Modifier.widthIn(max = if (timelineOnly) 1800.dp else 900.dp).fillMaxSize().testTag("activity-feed"),
+            Modifier.widthIn(max = 900.dp).fillMaxSize().testTag("activity-feed"),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
@@ -204,91 +199,53 @@ internal fun ActivityFeed(
                     }
                 }
             }
-            if (tablet) item("view-mode") {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = !timelineOnly, onClick = { onTimelineToggle(false) }, label = { Text("List") }, modifier = Modifier.testTag("tablet-inbox-list"))
-                    FilterChip(selected = timelineOnly, onClick = { onTimelineToggle(true) }, label = { Text("Timeline") }, modifier = Modifier.testTag("tablet-inbox-timeline"))
-                }
-            }
             if (searchOpen) item("search") {
                 OutlinedTextField(query, { query = it }, label = { Text("Search chats and cards") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("activity-search"))
             }
-            item("projects") {
-                if (tablet) {
-                    var projectMenu by remember { mutableStateOf(false) }
-                    Box {
-                        FilterChip(selected = selectedProject.isNotBlank(), onClick = { projectMenu = true },
-                            label = { Text(projectNames[selectedProject] ?: "All projects") },
-                            trailingIcon = { Icon(Icons.Outlined.KeyboardArrowDown, null, Modifier.size(18.dp)) },
-                            modifier = Modifier.testTag("tablet-inbox-projects"))
-                        DropdownMenu(expanded = projectMenu, onDismissRequest = { projectMenu = false }) {
-                            DropdownMenuItem(text = { Text("All projects") }, onClick = { projectId = ""; projectMenu = false })
-                            state.projects.forEach { project ->
-                                DropdownMenuItem(text = { Text(project.name) }, onClick = { projectId = project.id; projectMenu = false })
-                            }
-                        }
-                    }
-                } else {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
-                        item("all") { ActivityProjectTile("", "All", selectedProject.isEmpty(), null, { projectId = "" }) }
-                        items(state.projects, key = { it.id }) { project ->
-                            ActivityProjectTile(project.id, project.name, selectedProject == project.id,
-                                Activity.needsYouCount(entries.filter { it.card.project_id == project.id }).takeIf { it > 0 }, { projectId = project.id })
-                        }
+            if (!tablet) item("projects") {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
+                    item("all") { ActivityProjectTile("", "All", selectedProject.isEmpty(), null, { projectId = "" }) }
+                    items(state.projects, key = { it.id }) { project ->
+                        ActivityProjectTile(project.id, project.name, selectedProject == project.id,
+                            Activity.needsYouCount(entries.filter { it.card.project_id == project.id }).takeIf { it > 0 }, { projectId = project.id })
                     }
                 }
             }
-            if (timelineOnly) item("wide-timeline") {
-                TabletActivityTimeline(intervals, projectNames, hours, state.connected, { hours = it }, onOpen, itemActions)
+            item("timeline") {
+                ActivityTimelinePanel(intervals, hours, state.connected, running.size, expandedTimeline,
+                    onHours = { hours = it }, onExpand = { expandedTimeline = !expandedTimeline }, onOpen = onOpen, actions = itemActions)
             }
-            if (!timelineOnly) {
-                item("timeline") {
-                    if (tablet) {
-                        Surface(onClick = { onTimelineToggle(true) }, color = DieterSurfaceHigh, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(if (state.connected) "● LIVE" else "CACHED", color = if (state.connected) DieterEyes else DieterAmber, style = MaterialTheme.typography.labelMedium)
-                                Text("  ${running.size} running", Modifier.weight(1f), color = DieterMuted, style = MaterialTheme.typography.bodySmall)
-                                Icon(Icons.Outlined.Timeline, "Open activity timeline", Modifier.size(20.dp), tint = DieterMuted)
-                            }
-                        }
-                    } else ActivityTimelinePanel(intervals, hours, state.connected, running.size, expandedTimeline,
-                        onHours = { hours = it }, onExpand = { expandedTimeline = !expandedTimeline }, onOpen = onOpen, actions = itemActions)
+            ActivitySection.entries.forEach { section ->
+                activitySection(section.title, sections.getValue(section), now, state::machineLabel, onOpen, state.selectedCardId, itemActions)
+            }
+            if (filtered.isEmpty()) item("empty") {
+                Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(if (query.isNotBlank()) "No matching activity" else "All quiet here", fontWeight = FontWeight.SemiBold)
+                    Text("Activity from chats and cards appears here when an agent starts, replies, or needs you.", color = DieterMuted)
                 }
-                ActivitySection.entries.forEach { section ->
-                    activitySection(section.title, sections.getValue(section), now, state::machineLabel, onOpen, state.selectedCardId, itemActions)
-                }
-                if (filtered.isEmpty()) item("empty") {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(if (query.isNotBlank()) "No matching activity" else "All quiet here", fontWeight = FontWeight.SemiBold)
-                        Text("Activity from chats and cards appears here when an agent starts, replies, or needs you.", color = DieterMuted)
+            }
+            item("accounts-header") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ActivitySectionHeading("Accounts · usage remaining", Modifier.weight(1f))
+                    TextButton(onClick = onRefreshAccounts, enabled = !state.providerQuotasLoading) {
+                        Text(if (state.providerQuotasLoading) "Refreshing…" else "Refresh")
                     }
                 }
             }
-            if (!timelineOnly) {
-                item("accounts-header") {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        ActivitySectionHeading("Accounts · usage remaining", Modifier.weight(1f))
-                        TextButton(onClick = onRefreshAccounts, enabled = !state.providerQuotasLoading) {
-                            Text(if (state.providerQuotasLoading) "Refreshing…" else "Refresh")
-                        }
-                    }
-                }
-                state.providerQuotaError?.let { error -> item("accounts-error") { Text(error, color = DieterAmber, style = MaterialTheme.typography.bodySmall) } }
-                if (accounts.isEmpty()) item("accounts-empty") {
-                    Text(if (state.providerQuotasLoading) "Loading accounts…" else "No account usage available. Sign in to a supported provider on a Dieter machine.",
-                        color = DieterMuted, modifier = Modifier.padding(bottom = 12.dp))
-                }
-                items(if (expandedAccounts) accounts else accounts.take(3), key = { "account-${it.first.value}-${it.second.account_key}" }) { (provider, account) ->
-                    ActivityAccountRow(provider, account, now, onClick = { onAccount(account) })
-                }
-                if (accounts.size > 3) item("accounts-more") {
-                    TextButton(onClick = { expandedAccounts = !expandedAccounts }) {
-                        Text(if (expandedAccounts) "Show fewer accounts" else "Show all ${accounts.size} accounts")
-                    }
+            state.providerQuotaError?.let { error -> item("accounts-error") { Text(error, color = DieterAmber, style = MaterialTheme.typography.bodySmall) } }
+            if (accounts.isEmpty()) item("accounts-empty") {
+                Text(if (state.providerQuotasLoading) "Loading accounts…" else "No account usage available. Sign in to a supported provider on a Dieter machine.",
+                    color = DieterMuted, modifier = Modifier.padding(bottom = 12.dp))
+            }
+            items(if (expandedAccounts) accounts else accounts.take(3), key = { "account-${it.first.value}-${it.second.account_key}" }) { (provider, account) ->
+                ActivityAccountRow(provider, account, now, onClick = { onAccount(account) })
+            }
+            if (accounts.size > 3) item("accounts-more") {
+                TextButton(onClick = { expandedAccounts = !expandedAccounts }) {
+                    Text(if (expandedAccounts) "Show fewer accounts" else "Show all ${accounts.size} accounts")
                 }
             }
-
         }
     }
 }

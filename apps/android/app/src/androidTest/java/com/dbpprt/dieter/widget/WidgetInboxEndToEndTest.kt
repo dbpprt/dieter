@@ -120,7 +120,7 @@ class WidgetInboxEndToEndTest {
             awaitHeaderColor(if (nightMode) DieterPalette.MONOCHROME.tokens.lightInt else DieterPalette.MONOCHROME.tokens.darkBrandInt)
             capture("widget-inbox-compact-monochrome")
             onView(withText(chat.title)).perform(click())
-            compose.waitUntil(15_000) { compose.onAllNodesWithTag("message-input").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(15_000) { compose.onAllNodesWithTag("message-input").fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty() }
             compose.waitUntil(15_000) { cards().any { it.id == chat.id && it.seen_response_seq >= it.response_seq } }
             assertTrue(runBlocking {
                 core.onMachine(chat.owner_daemon_id) { it.GetCard().execute(GetCardRequest(card_id = chat.id)) }
@@ -128,7 +128,7 @@ class WidgetInboxEndToEndTest {
             showWidget(360, 480)
             awaitText("Needs attention · 1")
             onView(withText(card.title)).perform(click())
-            compose.waitUntil(15_000) { compose.onAllNodesWithTag("message-input").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(15_000) { compose.onAllNodesWithTag("message-input").fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty() }
             compose.waitUntil(15_000) { cards().any { it.id == card.id && it.seen_response_seq >= it.response_seq } }
             showWidget(360, 480)
             awaitText("Recent · 2")

@@ -2343,13 +2343,18 @@
             output: URL
         ) async {
             if NativeUIAccessibility.find("sidebar.board.\(board.id)", in: window) == nil {
-                let expanded = NativeUIAccessibility.click(
-                    "sidebar.project.\(project.id).toggle", in: window)
+                let toggle = "sidebar.project.\(project.id).toggle"
+                let ready = await waitForExpandedSidebarTarget(
+                    toggle, navigation: NativeUIAccessibility.navigationSplitController(in: window), in: window)
+                let expanded = ready && NativeUIAccessibility.click(toggle, in: window)
                 guard expanded,
                     await NativeUIAccessibility.wait(until: {
                         NativeUIAccessibility.find("sidebar.board.\(board.id)", in: window) != nil
                     })
                 else {
+                    recordNavigationTargetFailure(
+                        toggle, section: store.section, window: window,
+                        to: output.appending(path: "navigation-project-expansion.txt"))
                     results["navigation-controls"] = "failed: project destinations did not expand"
                     return
                 }

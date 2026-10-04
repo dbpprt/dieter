@@ -117,6 +117,7 @@ class WorkspaceReview(
     val view: StateFlow<WorkspaceReviewView> = mutableView.asStateFlow()
     private var binding = 0L
     private var diffRequest = 0L
+    private var selectionCleared = false
     private var inFlight: Deferred<Unit>? = null
     private var refreshAgain = false
     private var poller: Job? = null
@@ -128,6 +129,7 @@ class WorkspaceReview(
         val current = view.value
         if (cardId == current.cardId && daemonId == current.daemonId) return
         binding++
+        selectionCleared = false
         poller?.cancel()
         watcher?.cancel()
         watchedId = null
@@ -239,6 +241,9 @@ class WorkspaceReview(
     }
 
     private suspend fun resolveSelection(revisionChanged: Boolean) {
+        // Back keeps the file list open across periodic refreshes. A new
+        // binding still opens the first file until the user clears it.
+        if (selectionCleared) return
         val state = view.value
         val files = state.changeset?.files.orEmpty()
         val commits = state.changeset?.commits.orEmpty()
@@ -246,7 +251,8 @@ class WorkspaceReview(
         val path = state.selectedPath?.takeIf { selected -> files.any { it.path == selected } || commit != null }
         val nextPath = path ?: if (commit == null) files.firstOrNull()?.path else null
         if (nextPath == null && commit == null) {
-            mutableView.update { it.copy(selectedPath = null, selectedCommit = null, diff = null).withDiffLines(emptyList()) }
+            diffRequest++
+            mutableView.update { it.copy(selectedPath = null, selectedCommit = null, diff = null, diffLoading = false).withDiffLines(emptyList()) }
             return
         }
         val moved = nextPath != state.selectedPath || commit != state.selectedCommit
@@ -254,9 +260,13 @@ class WorkspaceReview(
         if (revisionChanged || moved || state.diff == null) loadDiff(append = false, retryStale = false)
     }
 
-    /** Shows [path] (or a whole commit when [commit] is set and [path] is empty). */
+    /** Shows [path] or a whole [commit]; clearing both returns to the file list. */
     suspend fun select(path: String?, commit: String? = null) {
-        mutableView.update { it.copy(selectedPath = path, selectedCommit = commit, diff = null).withDiffLines(emptyList()) }
+        selectionCleared = path.isNullOrEmpty() && commit.isNullOrEmpty()
+        // An earlier request must not repopulate the diff after Back.
+        diffRequest++
+        mutableView.update { it.copy(selectedPath = path, selectedCommit = commit, diff = null, diffLoading = false).withDiffLines(emptyList()) }
+        if (selectionCleared) return
         loadDiff(append = false, retryStale = true)
     }
 
@@ -268,6 +278,7 @@ class WorkspaceReview(
     }
 
     private suspend fun loadDiff(append: Boolean, retryStale: Boolean) {
+        if (selectionCleared) return
         val (cardId, daemonId) = target()
         val state = view.value
         val changeset = state.changeset ?: return
@@ -286,7 +297,8 @@ class WorkspaceReview(
             mutableView.update { it.copy(diff = combined, diffLoading = false).withDiffLines(UnifiedDiff.parse(combined.patch)) }
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
-            if (owns(bound) && request == diffRequest) mutableView.update { it.copy(diffLoading = false) }
+            if (!owns(bound) || request != diffRequest) return
+            mutableView.update { it.copy(diffLoading = false) }
             if (error is GrpcException && error.grpcStatus == GrpcStatus.ABORTED) {
                 // The workspace changed under the diff; one user-initiated refresh brings the new revision.
                 if (retryStale && owns(bound)) {

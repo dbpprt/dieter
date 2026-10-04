@@ -161,11 +161,12 @@ just check-changed --dry-run
 just check-changed
 ```
 
-Run Android journeys with `just e2e run --suite smoke`, or macOS with
-`just e2e run --platform mac --suite smoke`, or iOS with
-`just e2e run --platform ios --device iphone --suite smoke` (also `--device ipad`). The
+Run Android journeys with `just pipeline android e2e suite:smoke`, or macOS with
+`just pipeline mac e2e suite:smoke`, or iOS with
+`just pipeline ios e2e profile:ios-iphone suite:smoke` (also `profile:ios-ipad`). The
 [native test guide](tests/e2e/README.md) covers YAML cases, suite selection,
-shared lifecycle, failure evidence, and iOS preparation.
+shared lifecycle and failure evidence. [The pipeline guide](fastlane/README.md)
+covers local emulator/device profiles, builds, signing and dev/stable releases.
 
 [Mac](apps/mac/README.md) · [Android](apps/android/README.md) ·
 [iOS](apps/ios/README.md) · [Website](landingpage/README.md)

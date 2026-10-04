@@ -37,7 +37,7 @@ class LiveActivityTest {
     @Test
     fun previewsDescribeToolsWhoseArgumentsHaveNotStreamed() {
         assertEquals("Reading App.kt", live(tool("Read", "/workspace/App.kt")))
-        assertEquals("Running just android test", live(tool("exec_command", """{"cmd":"just android test"}""")))
+        assertEquals("Running just pipeline android test_unit", live(tool("exec_command", """{"cmd":"just pipeline android test_unit"}""")))
         assertEquals("Running go test ./...", live(tool("bash", "go test ./...")))
         assertEquals("Thinking…", live(tool("Read", "App.kt", state = "output-available")), "a finished tool no longer describes the turn")
         assertEquals("Reading App.kt · +2 tools", live(tool("bash", "go test", id = "1"), tool("bash", "go vet", id = "2"), tool("Read", "App.kt", id = "3")))

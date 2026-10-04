@@ -694,7 +694,7 @@ class ScreenSession(
     fun key(hid: Int, down: Boolean, repeat: Boolean = false, modifiers: Int = 0) {
         val shortcut = ScreenInputEncoder.clipboardShortcut(hid, modifiers)
         if (shortcut != null && down && !repeat && view.value.clipboardEnabled && view.value.capabilities?.clipboard_supported == true) {
-            scope.launch { performClipboard(shortcut) }
+            requestClipboard(shortcut)
             return
         }
         input.key(hid, down, repeat, modifiers)
@@ -717,6 +717,16 @@ class ScreenSession(
     }
 
     // --- Clipboard ----------------------------------------------------------------------
+
+    /** Admit clipboard work without holding later input or disconnect commands behind its reply. */
+    fun requestClipboard(operation: String) {
+        track(scope.launch { performClipboard(operation) })
+    }
+
+    /** The sharing exchange belongs to this attempt and is cancelled when the session ends. */
+    fun requestClipboardEnabled(enabled: Boolean) {
+        track(scope.launch { setClipboardEnabled(enabled) })
+    }
 
     /**
      * Copy, cut, or paste on the host, as Command-C/X/V would. It waits for a

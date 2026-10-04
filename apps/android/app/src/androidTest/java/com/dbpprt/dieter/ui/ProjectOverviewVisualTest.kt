@@ -4,8 +4,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -55,14 +53,13 @@ class ProjectOverviewVisualTest {
 
     @Test fun projectHubMatchesTheReferenceHierarchy() {
         compose.setContent {
-            val live by model.state.collectAsState()
             DieterTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize()) {
                     Scaffold(
                         bottomBar = { DieterBottomBar(Destination.BOARD, {}, {}) },
                     ) { padding ->
                         SpacesOverview(
-                            visualState.copy(projectFolders = live.projectFolders),
+                            visualState,
                             model,
                             Modifier.fillMaxSize().padding(padding),
                         )
