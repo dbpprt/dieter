@@ -213,7 +213,7 @@
                 results["board-card-double-click-edit-\(index)"] =
                     doubleClicked && edited ? "passed" : "failed: immediate card opening prevented double-click editing"
                 if let sheet = window.attachedSheet {
-                    let cancelled = NativeUIAccessibility.click("card-editor.cancel", in: sheet)
+                    let cancelled = await NativeUIAccessibility.pressWhenSettled("card-editor.cancel", in: sheet)
                     let dismissed = await waitUntil(timeout: 3) { window.attachedSheet == nil }
                     results["board-card-editor-dismiss-\(index)"] =
                         cancelled && dismissed ? "passed" : "failed: editor remained open"
