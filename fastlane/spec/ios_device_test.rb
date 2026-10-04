@@ -73,3 +73,40 @@ class IOSPhysicalOwnershipTest < Minitest::Test
     assert_includes @context.installed, @app
   end
 end
+
+class IOSSimulatorOwnershipTest < Minitest::Test
+  def test_simulator_inventory_resets_only_fixture_apps_and_rejects_invalid_inventory
+    Dir.mktmpdir("ios-simulator-ownership-") do |root|
+      commands = []
+      inventory = {"com.apple.Preferences" => {}, "com.dbpprt.dieter.ios" => {}, "com.example.operator" => {}}
+      context = Object.new
+      context.define_singleton_method(:root) { root }
+      context.define_singleton_method(:output) { root }
+      context.define_singleton_method(:private_dir) { root }
+      context.define_singleton_method(:command) do |argv, **options|
+        commands << argv
+        if argv.include?("listapps")
+          "simulator inventory"
+        elsif argv.first == "plutil"
+          raise Dieter::PipelineError, "Invalid simulator inventory" unless inventory
+          raise "Inventory input lost" unless options[:input] == "simulator inventory"
+          JSON.generate(inventory)
+        elsif argv.include?("uninstall")
+          inventory.delete(argv.last)
+        else
+          raise "Unexpected command #{argv.inspect}"
+        end
+      end
+      adapter = Dieter::IOS.new(context)
+      adapter.instance_variable_set(:@target, {"kind" => "simulator"})
+      adapter.instance_variable_set(:@simulator, "owned-simulator")
+      adapter.send(:reset_owned_packages)
+      assert_equal ["com.dbpprt.dieter.ios"], commands.select { |argv| argv.include?("uninstall") }.map(&:last)
+      assert_equal %w[com.apple.Preferences com.example.operator], inventory.keys.sort
+      inventory = nil
+      commands.clear
+      assert_raises(Dieter::PipelineError) { adapter.send(:reset_owned_packages) }
+      refute commands.any? { |argv| argv.include?("uninstall") }
+    end
+  end
+end

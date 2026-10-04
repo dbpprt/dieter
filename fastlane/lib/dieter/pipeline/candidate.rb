@@ -6,6 +6,7 @@ require_relative "../distribution/github"
 require_relative "../distribution/apple"
 require_relative "../distribution/gateway"
 require_relative "../platforms/server"
+require_relative "../platforms/apple_build"
 
 module Dieter
   class CandidatePipeline
@@ -55,18 +56,23 @@ module Dieter
         checkpoint_output(false)
         return @phase == "prepare" ? recovered : retain(name, recovered, producer, manifest_name)
       end
-      # A payload without its producer checkpoint cannot be reconstructed by
-      # signing another copy under an already used immutable reservation.
-      expected_names = @github.receipts(@identity, "candidate-#{name}").flat_map { |receipt| receipt.fetch("artifacts", []) }
-      if !expected_names.empty? || assets.any? { |asset| expected_product_names(name).include?(asset["name"]) }
-        raise Unavailable, "Partial candidate has no recoverable producer artifact; preserve this draft and reserve a new source revision"
+      manifest = @github.with_claim(@identity, "producer-#{name}") do
+        # Startup is a durable boundary even if the worker dies before its
+        # checkpoint upload. Concurrent or later workers may recover bytes,
+        # but must never sign another copy under this consumed reservation.
+        receipts = @github.receipts(@identity, "candidate-#{name}")
+        expected_names = receipts.flat_map { |receipt| receipt.fetch("artifacts", []) }
+        if receipts.any? { |receipt| receipt["state"] == "producing" } || !expected_names.empty? || assets.any? { |asset| expected_product_names(name).include?(asset["name"]) }
+          raise Unavailable, "Partial candidate has no recoverable producer artifact; preserve this draft and reserve a new source revision"
+        end
+        @github.receipt(@identity, "candidate-#{name}", {"state" => "producing", "source_revision" => source})
+        puts "Candidate #{name}: build, sign, package, verify"
+        products = produce
+        value = {"schema_version" => 1, "component" => name, "identity_sha256" => @identity.digest, "source_revision" => source, "release_version" => @identity.version, "native_build" => @identity.build, "qualification" => "passed", "artifacts" => products.map { |path| {"name" => File.basename(path), "sha256" => ArtifactSet.sha256(path), "bytes" => File.size(path)} }}
+        products.each { |path| FileUtils.cp(path, producer) }
+        Atomic.json(File.join(producer, manifest_name), value)
+        self.class.validate(value, @identity, producer, expected: name)
       end
-      puts "Candidate #{name}: build, sign, package, verify"
-      products = produce
-      manifest = {"schema_version" => 1, "component" => name, "identity_sha256" => @identity.digest, "source_revision" => source, "release_version" => @identity.version, "native_build" => @identity.build, "qualification" => "passed", "artifacts" => products.map { |path| {"name" => File.basename(path), "sha256" => ArtifactSet.sha256(path), "bytes" => File.size(path)} }}
-      products.each { |path| FileUtils.cp(path, producer) }
-      Atomic.json(File.join(producer, manifest_name), manifest)
-      self.class.validate(manifest, @identity, producer, expected: name)
       checkpoint_output(true)
       @phase == "prepare" ? manifest : retain(name, manifest, producer, manifest_name)
     ensure
@@ -192,7 +198,7 @@ module Dieter
       signer.with_profiles(profiles) do
         signer.keychain(certificate: certificate, password: signer.secret("IOS_DISTRIBUTION_CERTIFICATE_PASSWORD"), kind: "Apple Distribution") do |_keychain, identity|
           archive = File.join(@context.output, "Dieter.xcarchive")
-          @context.command(["xcodebuild", "-skipPackagePluginValidation", "-project", "apps/ios/DieterIOS.xcodeproj", "-scheme", "DieterIOS", "-configuration", "Release", "-destination", "generic/platform=iOS", "-derivedDataPath", File.join(@context.root, "apps/ios/.build/DerivedData"), "-archivePath", archive, "archive", "MARKETING_VERSION=#{@identity.version}", "CURRENT_PROJECT_VERSION=#{@identity.apple_build}", "DIETER_RELEASE_VERSION=#{@identity.version}", "DIETER_IOS_BUNDLE_ID=#{app.fetch('bundle_id')}", "DIETER_IOS_TEAM_ID=#{app.fetch('team_id')}", "DIETER_IOS_SIGN_STYLE=Manual", "DIETER_IOS_SIGN_IDENTITY=#{identity}", "DIETER_IOS_PROFILE_SPECIFIER=#{app.fetch('profile_uuid')}", "DIETER_IOS_SHARE_PROFILE_SPECIFIER=#{share.fetch('profile_uuid')}"], timeout: 2400, log: File.join(@context.output, "archive.log"))
+          @context.command(["xcodebuild", *AppleBuild.jobs(@context, tool: :xcode), "-skipPackagePluginValidation", "-project", "apps/ios/DieterIOS.xcodeproj", "-scheme", "DieterIOS", "-configuration", "Release", "-destination", "generic/platform=iOS", "-derivedDataPath", File.join(@context.root, "apps/ios/.build/DerivedData"), "-archivePath", archive, "archive", "MARKETING_VERSION=#{@identity.version}", "CURRENT_PROJECT_VERSION=#{@identity.apple_build}", "DIETER_RELEASE_VERSION=#{@identity.version}", "DIETER_IOS_BUNDLE_ID=#{app.fetch('bundle_id')}", "DIETER_IOS_TEAM_ID=#{app.fetch('team_id')}", "DIETER_IOS_SIGN_STYLE=Manual", "DIETER_IOS_SIGN_IDENTITY=#{identity}", "DIETER_IOS_PROFILE_SPECIFIER=#{app.fetch('profile_uuid')}", "DIETER_IOS_SHARE_PROFILE_SPECIFIER=#{share.fetch('profile_uuid')}"], timeout: 2400, log: File.join(@context.output, "archive.log"))
           @context.command(["python3", "-c", "from pathlib import Path; import sys; from fastlane.lib.dieter.native.ios_metadata import validate_archive; validate_archive(Path(sys.argv[1]),sys.argv[2],sys.argv[3],sys.argv[4],signed=True)", archive, @identity.version, @identity.apple_build, app.fetch("bundle_id")], timeout: 120)
           options = {"method" => "app-store-connect", "destination" => "export", "signingStyle" => "manual", "teamID" => app.fetch("team_id"), "signingCertificate" => identity, "provisioningProfiles" => {app.fetch("bundle_id") => app.fetch("profile_uuid"), share.fetch("bundle_id") => share.fetch("profile_uuid")}, "manageAppVersionAndBuildNumber" => false, "uploadSymbols" => true}
           spec = File.join(@context.private_dir, "ExportOptions.plist")

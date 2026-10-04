@@ -31,10 +31,10 @@ Apple E2E holds it until its packaged app/test products are no longer in use.
 Contention fails promptly with the owner PID; inspect the active command and
 retry after it completes. Never delete its lock to bypass admission.
 
-When compiler processes contend for memory, run builds and tests sequentially
-and set `DIETER_SWIFT_JOBS=2` on `just pipeline mac build`, `just pipeline mac test_unit`, or the Mac
-E2E command. This limits compiler concurrency while preserving canonical caches;
-unset it to use SwiftPM's normal job count. Do not stop unrelated processes.
+When compiler processes contend for memory, run builds and tests sequentially.
+The configured `toolchains.swift_jobs` defaults to two jobs for SwiftPM and Xcode;
+`DIETER_SWIFT_JOBS` may select an explicit integer from 1 to 64 on a build or test.
+This preserves canonical caches. Do not stop unrelated processes.
 
 ## Inventory first
 

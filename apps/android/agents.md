@@ -105,7 +105,7 @@ bad snapshot has been quarantined, the launcher identifies the missing
 `default_boot` and this one recovery launch intentionally boots from preserved
 userdata. Let it reach every health condition above; do not interrupt the
 fallback boot. Once Android is responsive and screenshots plus accessibility
-work, shut it down gracefully with `the owning Fastlane run's graceful cleanup` and wait for
+work, shut it down through the owning Fastlane run's graceful cleanup and wait for
 snapshot saving and the emulator process to finish.
 
 Relaunch with the same standard command. A repaired AVD is not accepted until
@@ -141,7 +141,7 @@ repeatedly loading or overwriting broken graphics state.
    instrumentation task. Gradle does not inherit the serial embedded in
    separate ADB commands and can otherwise choose an attached physical phone.
 
-The Android Just module detects Android Studio's JDK and the local SDK when the
+The Fastlane pipeline detects Android Studio's JDK and the local SDK when the
 shell environment does not already expose them.
 
 ## Reproduce and verify visibly

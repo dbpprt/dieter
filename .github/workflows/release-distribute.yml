@@ -5,6 +5,15 @@ on:
       tag:
         type: string
         required: true
+    secrets:
+      IOS_APP_STORE_CONNECT_KEY_BASE64:
+        required: true
+      IOS_APP_STORE_CONNECT_KEY_ID:
+        required: true
+      IOS_APP_STORE_CONNECT_ISSUER_ID:
+        required: true
+      IOS_BUNDLE_ID:
+        required: true
 permissions:
   contents: read
 jobs:

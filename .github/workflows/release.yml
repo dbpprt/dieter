@@ -137,7 +137,27 @@ jobs:
       source: ${{ github.sha }}
       runner: ${{ matrix.runner }}
       identity_artifact: ${{ needs.reserve.outputs.identity_artifact }}
-    secrets: inherit
+    secrets:
+      ANDROID_KEYSTORE_BASE64: ${{ matrix.component == 'android' && secrets.ANDROID_KEYSTORE_BASE64 || '' }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ matrix.component == 'android' && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+      ANDROID_KEY_ALIAS: ${{ matrix.component == 'android' && secrets.ANDROID_KEY_ALIAS || '' }}
+      ANDROID_KEY_PASSWORD: ${{ matrix.component == 'android' && secrets.ANDROID_KEY_PASSWORD || '' }}
+      IOS_APP_STORE_CONNECT_ISSUER_ID: ${{ matrix.component == 'ios' && secrets.IOS_APP_STORE_CONNECT_ISSUER_ID || '' }}
+      IOS_APP_STORE_CONNECT_KEY_BASE64: ${{ matrix.component == 'ios' && secrets.IOS_APP_STORE_CONNECT_KEY_BASE64 || '' }}
+      IOS_APP_STORE_CONNECT_KEY_ID: ${{ matrix.component == 'ios' && secrets.IOS_APP_STORE_CONNECT_KEY_ID || '' }}
+      IOS_BUNDLE_ID: ${{ matrix.component == 'ios' && secrets.IOS_BUNDLE_ID || '' }}
+      IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ matrix.component == 'ios' && secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 || '' }}
+      IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ matrix.component == 'ios' && secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD || '' }}
+      IOS_PROVISIONING_PROFILE_BASE64: ${{ matrix.component == 'ios' && secrets.IOS_PROVISIONING_PROFILE_BASE64 || '' }}
+      IOS_SHARE_PROVISIONING_PROFILE_BASE64: ${{ matrix.component == 'ios' && secrets.IOS_SHARE_PROVISIONING_PROFILE_BASE64 || '' }}
+      IOS_TEAM_ID: ${{ matrix.component == 'ios' && secrets.IOS_TEAM_ID || '' }}
+      MACOS_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ (matrix.component == 'mac' || (matrix.component == 'daemon' && matrix.runner == 'macos-26')) && secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 || '' }}
+      MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ (matrix.component == 'mac' || (matrix.component == 'daemon' && matrix.runner == 'macos-26')) && secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD || '' }}
+      MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_BASE64: ${{ (matrix.component == 'daemon' && matrix.runner == 'macos-26') && secrets.MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_BASE64 || '' }}
+      MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_PASSWORD: ${{ (matrix.component == 'daemon' && matrix.runner == 'macos-26') && secrets.MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE_PASSWORD || '' }}
+      MACOS_NOTARY_ISSUER_ID: ${{ (matrix.component == 'mac' || (matrix.component == 'daemon' && matrix.runner == 'macos-26')) && secrets.MACOS_NOTARY_ISSUER_ID || '' }}
+      MACOS_NOTARY_KEY_BASE64: ${{ (matrix.component == 'mac' || (matrix.component == 'daemon' && matrix.runner == 'macos-26')) && secrets.MACOS_NOTARY_KEY_BASE64 || '' }}
+      MACOS_NOTARY_KEY_ID: ${{ (matrix.component == 'mac' || (matrix.component == 'daemon' && matrix.runner == 'macos-26')) && secrets.MACOS_NOTARY_KEY_ID || '' }}
   coordinate:
     needs: [reserve, candidates]
     permissions:
@@ -148,7 +168,6 @@ jobs:
     with:
       channel: ${{ inputs.channel || 'dev' }}
       identity_artifact: ${{ needs.reserve.outputs.identity_artifact }}
-    secrets: inherit
   distribute:
     needs: [reserve, coordinate]
     if: github.event_name == 'push' || inputs.channel == 'dev'
@@ -157,4 +176,8 @@ jobs:
     uses: ./.github/workflows/release-distribute.yml
     with:
       tag: ${{ needs.reserve.outputs.tag }}
-    secrets: inherit
+    secrets:
+      IOS_APP_STORE_CONNECT_KEY_BASE64: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_BASE64 }}
+      IOS_APP_STORE_CONNECT_KEY_ID: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_ID }}
+      IOS_APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.IOS_APP_STORE_CONNECT_ISSUER_ID }}
+      IOS_BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}

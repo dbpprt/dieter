@@ -89,6 +89,15 @@ bytes without rebuilding. Mac app and test caches remain
 `apps/mac/.build/dieter-local` and `apps/mac/.build/dieter-tests`; the shared
 framework cache hashes production inputs, toolchains and published bytes,
 preserves unchanged products/timestamps and retains existing compatible slices.
+The configured `toolchains.swift_jobs` limit applies to SwiftPM and Xcode builds;
+`DIETER_SWIFT_JOBS` may select an explicit limit from 1 to 64.
+
+Local Android Release builds require `signing.android-release.keystore_file`
+and its three environment references, or the canonical signing environment
+provided by the candidate workflow. Missing credentials fail before Gradle.
+iOS local builds honor `configuration:debug|release` for simulator test products;
+signed device archives and Apple distribution credentials belong to the trusted
+candidate workflow.
 
 ```sh
 just pipeline framework configuration:debug platforms:ios-simulator
@@ -184,8 +193,11 @@ For self-hosted main device runs only, repository variables
 override for `profiles.android-device`/`profiles.ios-device`, existing
 `signing.ios-development`, and TLS fixture routes. All schema checks still apply.
 They cannot change defaults, toolchains, release policy or distribution signing.
-Runner labels are `dieter-android` (Linux), `dieter-ios` (macOS), and `dieter-mac`
-(macOS). Register/configure runners before dispatching those cells.
+Runner labels are `dieter-android` (Linux for physical Android suites;
+macOS for the visible Android emulator and every Android screen suite),
+`dieter-ios` (macOS), and `dieter-mac` (macOS). The Android macOS runner needs the
+configured Pixel AVD, host GLES and, for screens, capture/input permissions.
+Register/configure runners before dispatching those cells.
 
 Every push to main reserves one numeric SemVer and monotonically increasing
 native build counter before producing candidates. All gateway, daemon/CLI and
@@ -203,6 +215,8 @@ gateway Linux amd64/arm64 and signed OCI deployment, Android, Mac and iOS.
 Build/sign/package/verification happens once per reservation. A 90-day immutable
 producer checkpoint precedes release asset uploads. Reruns recover those bytes;
 an unrecoverable partially consumed identity fails instead of rebuilding.
+Producer startup is recorded before building; a stopped producer without a
+recoverable checkpoint requires a new source revision.
 Assembly signs the exact candidate hashes. Numeric OCI aliases refuse a
 conflicting existing digest. Floating stable aliases are never advanced on main.
 

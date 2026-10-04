@@ -97,6 +97,7 @@ class CandidateRecoveryTest < Minitest::Test
   end
 
   def test_recovered_checkpoint_is_qualified_and_preparation_has_no_upload
+    @destination.records << {"state" => "producing"}
     pipeline = runner("prepare")
     manifest = @manifest
     source = @producer
@@ -113,5 +114,26 @@ class CandidateRecoveryTest < Minitest::Test
     assert_equal [%w[git rev-parse HEAD]], @context.commands
   ensure
     previous ? ENV["GITHUB_OUTPUT"] = previous : ENV.delete("GITHUB_OUTPUT")
+  end
+
+  def test_stopped_producer_without_checkpoint_never_builds_under_the_same_identity_again
+    first = runner("prepare")
+    calls = 0
+    first.define_singleton_method(:produce) do
+      calls += 1
+      raise Dieter::Interrupted, "producer stopped before checkpoint"
+    end
+    assert_raises(Dieter::Interrupted) { first.run }
+    assert_equal "producing", @destination.records.last.fetch("state")
+    assert_empty @destination.uploads
+
+    next_output = File.join(@root, "next-output")
+    Dir.mkdir(next_output)
+    @context = Context.new(@root, next_output, @policy, @identity.source)
+    second = runner("prepare")
+    second.define_singleton_method(:produce) { calls += 1 }
+    assert_raises(Dieter::Unavailable) { second.run }
+    assert_equal 1, calls
+    assert @context.closed
   end
 end

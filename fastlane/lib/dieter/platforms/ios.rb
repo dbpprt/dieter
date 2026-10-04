@@ -3,6 +3,7 @@
 require "uri"
 require "securerandom"
 require_relative "framework"
+require_relative "apple_build"
 require_relative "../fixtures/gateway"
 require_relative "../fixtures/screen"
 require_relative "../fixtures/device_route"
@@ -24,16 +25,18 @@ module Dieter
     end
 
     def build(options)
+      configuration = options.fetch("configuration", "debug")
+      raise PipelineError, "configuration must be debug or release" unless %w[debug release].include?(configuration)
       @context.lease("apple-build")
       physical = @target && @target["kind"] == "device"
       if physical
         @derived = File.join(@root, "apps/ios/.build/DerivedDataDevice")
         @products = File.join(@derived, "Build/Products")
       end
-      SharedFramework.new(@context).build(configuration: "debug", platforms: physical ? "all" : "ios-simulator")
+      SharedFramework.new(@context).build(configuration: configuration, platforms: physical ? "all" : "ios-simulator")
       sdk = physical ? "iphoneos" : "iphonesimulator"
       Dir.glob(File.join(@products, "*#{sdk}*.xctestrun")).each { |path| File.unlink(path) }
-      argv = ["xcodebuild", "-skipPackagePluginValidation", "-project", "apps/ios/DieterIOS.xcodeproj", "-scheme", physical ? "DieterIOSE2E" : "DieterIOS", "-configuration", "Debug", "-destination", physical ? "generic/platform=iOS" : "generic/platform=iOS Simulator", "-derivedDataPath", @derived, "build-for-testing", "ARCHS=arm64", "CODE_SIGNING_ALLOWED=YES", "DIETER_RELEASE_VERSION=#{@context.environment.fetch('DIETER_RELEASE_VERSION')}"]
+      argv = ["xcodebuild", *AppleBuild.jobs(@context, tool: :xcode), "-skipPackagePluginValidation", "-project", "apps/ios/DieterIOS.xcodeproj", "-scheme", physical ? "DieterIOSE2E" : "DieterIOS", "-configuration", configuration.capitalize, "-destination", physical ? "generic/platform=iOS" : "generic/platform=iOS Simulator", "-derivedDataPath", @derived, "build-for-testing", "ARCHS=arm64", "CODE_SIGNING_ALLOWED=YES", "ENABLE_TESTABILITY=YES", "DIETER_RELEASE_VERSION=#{@context.environment.fetch('DIETER_RELEASE_VERSION')}"]
       argv += if physical
                 ["DIETER_IOS_BUNDLE_ID=#{@signing.fetch('app_bundle_id')}", "DIETER_IOS_APP_GROUP_ID=#{@signing.fetch('app_group_id')}", "DIETER_IOS_TEAM_ID=#{@signing.fetch('team_id')}", "DEVELOPMENT_TEAM=#{@signing.fetch('team_id')}", "DIETER_IOS_SIGN_STYLE=Manual", "DIETER_IOS_SIGN_IDENTITY=#{@profiles.fetch('certificate')}", "DIETER_IOS_PROFILE_SPECIFIER=#{@profiles.fetch('app')}", "DIETER_IOS_SHARE_PROFILE_SPECIFIER=#{@profiles.fetch('share')}", "DIETER_IOS_TEST_PROFILE_SPECIFIER=#{@profiles.fetch('runner')}"]
               else
@@ -43,7 +46,7 @@ module Dieter
       candidates = Dir.glob(File.join(@products, "*#{sdk}*.xctestrun"))
       raise PipelineError, "Expected one build-for-testing plan" unless candidates.length == 1
       source = @context.command(["git", "rev-parse", "HEAD"], timeout: 30).strip
-      ArtifactSet.new(component: "ios", source: source, configuration: "debug", products: {"xctestrun" => candidates.first, "app" => File.join(@products, "Debug-#{sdk}/Dieter.app")}).write(File.join(@context.output, "artifacts.json"))
+      ArtifactSet.new(component: "ios", source: source, configuration: configuration, products: {"xctestrun" => candidates.first, "app" => File.join(@products, "#{configuration.capitalize}-#{sdk}/Dieter.app")}).write(File.join(@context.output, "artifacts.json"))
       candidates.first
     end
 
@@ -217,10 +220,11 @@ module Dieter
         end
         return
       end
+      inventory = @context.command(["xcrun", "simctl", "listapps", @simulator], timeout: 120, binary: true, label: "Inspect owned simulator packages", log: File.join(@context.output, "simulator-packages.log"))
+      installed = JSON.parse(@context.command(["plutil", "-convert", "json", "-o", "-", "--", "-"], input: inventory, timeout: 30)).keys
       %w[com.dbpprt.dieter.ios com.dbpprt.dieter.ios.native-tests com.dbpprt.dieter.ios.uitests.xctrunner].each do |id|
-        process = @context.start(["xcrun", "simctl", "get_app_container", @simulator, id])
-        process.wait(timeout: 30, check: false)
-        @context.command(["xcrun", "simctl", "uninstall", @simulator, id], timeout: 30) if process.status.success?
+        next unless installed.include?(id)
+        @context.command(["xcrun", "simctl", "uninstall", @simulator, id], timeout: 120, label: "Reset owned simulator package #{id}")
       end
     end
 

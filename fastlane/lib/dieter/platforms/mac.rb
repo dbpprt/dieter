@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "framework"
+require_relative "apple_build"
 require_relative "../fixtures/gateway"
 require_relative "../pipeline/contract"
 
@@ -215,8 +216,7 @@ module Dieter
     end
 
     def jobs
-      value = @context.environment["DIETER_SWIFT_JOBS"] || ENV["DIETER_SWIFT_JOBS"]
-      value ? ["--jobs", value] : []
+      AppleBuild.jobs(@context, tool: :swift)
     end
 
     def swift_test(filter, extra_environment = {})

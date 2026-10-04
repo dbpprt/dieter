@@ -28,7 +28,7 @@ jobs:
     uses: ./.github/workflows/component-check.yml
     with:
       component: android
-      runner: android-hardware
+      runner: ${{ (inputs.target == 'virtual' || inputs.suite == 'screens') && 'android-mac-hardware' || 'android-hardware' }}
       native_only: true
       native_profile: ${{ inputs.target == 'device' && 'android-device' || 'android-emulator' }}
       native_suite: ${{ inputs.suite }}

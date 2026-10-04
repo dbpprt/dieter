@@ -28,6 +28,7 @@ module Dieter
     def build(options)
       @context.lease("android-build")
       configuration = options.fetch("configuration", "debug")
+      configure_release_signing if configuration == "release"
       gradle([":app:assemble#{configuration.capitalize}"])
       artifact = File.join(@root, "apps/android/app/build/outputs/apk", configuration, "app-#{configuration}.apk")
       source = @context.command(["git", "rev-parse", "HEAD"], timeout: 30).strip
@@ -147,6 +148,20 @@ module Dieter
     end
 
     private
+
+    def configure_release_signing
+      profile = @context.config.data.fetch("signing").fetch("android-release")
+      path = @context.config.path(@context.environment["DIETER_ANDROID_KEYSTORE_PATH"] || ENV["DIETER_ANDROID_KEYSTORE_PATH"] || profile["keystore_file"])
+      raise Unavailable, "Android release requires a configured existing keystore" unless path && File.file?(path)
+      values = {"DIETER_ANDROID_KEYSTORE_PATH" => File.realpath(path)}
+      {"DIETER_ANDROID_KEYSTORE_PASSWORD" => "keystore_password_env", "DIETER_ANDROID_KEY_ALIAS" => "key_alias_env", "DIETER_ANDROID_KEY_PASSWORD" => "key_password_env"}.each do |name, field|
+        value = @context.environment[name] || ENV[profile.fetch(field)]
+        raise Unavailable, "Missing Android signing environment reference #{profile.fetch(field)}" unless value && !value.empty?
+        @context.secrets << value
+        values[name] = value
+      end
+      @context.environment.merge!(values)
+    end
 
     def build_type(test_case) = test_case["build"] == "performance" ? "performance" : "e2e"
     def package(test_case) = APP + (test_case["build"] == "performance" ? ".performance" : "")
