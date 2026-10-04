@@ -19,8 +19,9 @@ used Michael Ermer's team (`DS6N5L85E7`). The daemon's fixed service runtime
 checks the signing team before activation, so uploading new GitHub secrets
 alone is insufficient for existing Homebrew services.
 
-1. Publish a bridge release containing the team-rotation verifier with the
-   existing Mac credentials. Update and activate that release on existing Mac
+1. Produce a bridge candidate containing the team-rotation verifier with the
+   existing Mac credentials. Promote that retained candidate through
+   `release-promote.yml`, then update and activate it on existing Mac
    daemon installations before staging a release signed by the new team. An
    older service executable rejects the new team's pending pair before it can
    execute the candidate. This is an operator rollout step; credential setup
@@ -29,9 +30,12 @@ alone is insufficient for existing Homebrew services.
    notarization team API key under `FNGU8JFNPL`, then configure the seven Mac
    secrets below. The Mac app and daemon use the same credentials and rotate
    together. Keep iOS credentials separate.
-3. Dispatch `release.yml` with `publish=false` to verify the new signed Mac
-   artifacts, then publish a canonical release through the usual workflow.
-   Replacing repository secrets does not change already published artifacts.
+3. Dispatch `release.yml` on main with `channel=draft` to verify and retain the
+   new signed Mac candidates without TestFlight distribution or stable
+   promotion. Candidate production is restricted to trusted main; PR CI checks
+   the migration without access to signing keys. Replacing repository secrets
+   does not change retained candidates. Never rerun a consumed identity to
+   obtain a different signature: reserve a new source revision after rotation.
 
 During the transition, the service verifier accepts a complete daemon/helper
 pair signed by either named team. It rejects mixed-team pairs, unrelated teams,
@@ -70,9 +74,9 @@ Developer ID certificates identify an Apple developer team; Apple does not limit
 them to a single app or bundle identifier. These credentials are dedicated to
 Dieter by how they are stored and used. Repository owners and collaborators who
 can modify trusted release workflows can use them to sign code. This arrangement
-lets Dennis Bappert (`dbpprt`) run Dieter releases through GitHub without access to
-the certificate provider's Apple developer account. GitHub stores the secrets encrypted and does not
-display their plaintext values in its settings.
+lets collaborators run Dieter releases through GitHub without access to the
+certificate provider's Apple developer account. GitHub stores the secrets
+encrypted and does not display their plaintext values in its settings.
 
 See Apple's [Developer ID certificate instructions](https://developer.apple.com/help/account/certificates/create-developer-id-certificates/)
 and [notarization authentication documentation](https://developer.apple.com/documentation/technotes/tn3147-migrating-to-the-latest-notarization-tool).
