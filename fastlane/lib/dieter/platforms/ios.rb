@@ -55,7 +55,7 @@ module Dieter
     def admit(target, plan)
       raise Unavailable, "iOS tests require macOS/Xcode" unless RUBY_PLATFORM.include?("darwin")
       @target = target
-      @share_files = target.fetch("kind") == "device" || plan.any? { |test_case| test_case["id"] == "ios.share-owned-file" }
+      @share_files = target.fetch("kind") == "device" || plan.any? { |test_case| %w[ios.share-extension ios.share-owned-file].include?(test_case["id"]) }
       if target.fetch("kind") == "device"
         @context.lease("ios-device", identity: target.fetch("udid"))
         @context.lease("apple-build")
@@ -145,13 +145,9 @@ module Dieter
         end
         reset_owned_packages
         if %w[ios.share-extension ios.share-owned-file].include?(test_case["id"])
-          if target["kind"] == "device" || test_case["id"] == "ios.share-owned-file"
-            sdk = target["kind"] == "device" ? "iphoneos" : "iphonesimulator"
-            media = IOSMediaFixture.new(@context, target, app: File.join(@products, "Debug-#{sdk}/Dieter.app"), bundle_id: @bundle_id, journal: target["kind"] == "device" ? @device_journal : @journal, simulator: @simulator, evidence: dir)
-            environment["DIETER_IOS_TEST_SHARE_FILE"] = media.stage
-          else
-            @context.command(["xcrun", "simctl", "addmedia", @simulator, File.join(@root, "apps/android/design/reference/phone-board.png")], timeout: 30)
-          end
+          sdk = target["kind"] == "device" ? "iphoneos" : "iphonesimulator"
+          media = IOSMediaFixture.new(@context, target, app: File.join(@products, "Debug-#{sdk}/Dieter.app"), bundle_id: @bundle_id, journal: target["kind"] == "device" ? @device_journal : @journal, simulator: @simulator, evidence: dir)
+          environment["DIETER_IOS_TEST_SHARE_FILE"] = media.stage
         end
         spec = private_test_run(state, environment, test_case.fetch("native").fetch("target"))
         bundle = File.join(state, "result.xcresult")

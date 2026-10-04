@@ -2,11 +2,16 @@ package server
 
 import (
 	"context"
+	"io"
+	"log/slog"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/gen/dieter/v1/dieterv1connect"
+	"github.com/dbpprt/dieter/internal/model"
 	"github.com/dbpprt/dieter/internal/store"
 )
 
@@ -31,7 +36,20 @@ func TestQueuedSelectionSurvivesCommandReplayAndRemoval(t *testing.T) {
 	}
 	release := make(chan struct{})
 	stopped := make(chan struct{})
-	client, _ := newConnectTestClient(t, data, gatedRunner{release: release, stopped: stopped})
+	application := NewWithRunner(data, slog.New(slog.NewTextHandler(io.Discard, nil)), gatedRunner{release: release, stopped: stopped})
+	httpServer := httptest.NewServer(application.Handler())
+	t.Cleanup(httpServer.Close)
+	client := dieterv1connect.NewDieterServiceClient(httpServer.Client(), httpServer.URL)
+	updates, err := application.app.StartCardWithMessageParts(card.ID, []model.UIMessagePart{{Type: "text", Text: "First"}}, card.Provider, card.Model, card.Effort, card.ProviderOptions, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	turnDone := make(chan struct{})
+	go func() {
+		for range updates {
+		}
+		close(turnDone)
+	}()
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -45,11 +63,15 @@ func TestQueuedSelectionSurvivesCommandReplayAndRemoval(t *testing.T) {
 		case <-ctx.Done():
 			t.Errorf("isolated runner did not stop: %v", ctx.Err())
 		}
+		// Runner return and lease release precede final service writes and queued
+		// admission. Join the owning turn before closing or deleting its store.
+		select {
+		case <-turnDone:
+		case <-ctx.Done():
+			t.Errorf("isolated turn did not finish: %v", ctx.Err())
+		}
 		waitForCanceledCard(t, data, card.ID)
 	}()
-	if _, err := client.SendMessage(t.Context(), connect.NewRequest(&dieterv1.SendMessageRequest{CardId: card.ID, Parts: []*dieterv1.MessagePart{{Type: "text", Text: "First"}}})); err != nil {
-		t.Fatal(err)
-	}
 	request := &dieterv1.SendMessageRequest{CardId: card.ID, ClientId: "selection-test", CommandId: "one-queued-intent", Parts: []*dieterv1.MessagePart{{Type: "text", Text: "Next"}}, Model: "gpt-5.6-sol", Effort: "high", ProviderOptions: map[string]string{"fast_mode": "true"}}
 	first, err := client.SendMessage(t.Context(), connect.NewRequest(request))
 	if err != nil || !first.Msg.GetQueued() {

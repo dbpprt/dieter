@@ -70,6 +70,14 @@ module Dieter
           puts "Screen qualification: #{scenario.fetch('id')}"
           record["cases"] << run_case(context, scenario, values["profile"])
           Atomic.json(File.join(context.output, "results.json"), record)
+          if record["cases"].last["status"] == "interrupted"
+            record["missingRequired"] = required - record["cases"].map { |item| item["id"] }
+            record["finalSourceSHA256"] = fingerprint(context)
+            record["sourceUnchangedDuringRun"] = record["sourceSHA256"] == record["finalSourceSHA256"]
+            record["status"] = "failed"
+            Atomic.json(File.join(context.output, "results.json"), record)
+            raise Interrupted, record["cases"].last.fetch("reason")
+          end
         end
         if values["baseline"]
           baseline = File.expand_path(values["baseline"], context.root)
@@ -113,7 +121,8 @@ module Dieter
         end
         result.merge!(evidence(parent, {directory: directory, runner: runner}))
       rescue StandardError => error
-        result.merge!("status" => error.is_a?(Unavailable) ? "unavailable" : "failed", "reason" => error.message)
+        status = error.is_a?(Interrupted) ? "interrupted" : error.is_a?(Unavailable) ? "unavailable" : "failed"
+        result.merge!("status" => status, "reason" => error.message)
         # Retain allowlisted measurements after a native assertion fails too.
         # An aggregate metric or collector pass cannot replace the native failure.
         if File.directory?(directory)

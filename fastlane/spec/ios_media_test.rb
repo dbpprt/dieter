@@ -57,4 +57,34 @@ class IOSMediaOwnershipTest < Minitest::Test
     assert_raises(Dieter::PipelineError) { fixture.stage }
     assert_equal ["plutil"], @commands.map(&:first)
   end
+
+  def test_simulator_media_stays_inside_the_exact_owned_container
+    simulator = "owned-simulator"
+    Dieter::Atomic.json(@journal, {"ID" => simulator, "Name" => "Dieter Pipeline share"})
+    home = File.realpath(@root)
+    container = File.join(home, "Library/Developer/CoreSimulator/Devices", simulator, "data/Containers/Data/Application/owned-app")
+    FileUtils.mkdir_p(container)
+    original = @context.method(:command)
+    @context.define_singleton_method(:command) do |argv, **options|
+      output = original.call(argv, **options)
+      argv.include?("get_app_container") ? container : output
+    end
+    media = Dieter::IOSMediaFixture.new(@context, {"kind" => "simulator"}, app: File.join(@root, "Dieter.app"), bundle_id: @id, journal: @journal, simulator: simulator)
+    Dir.stub(:home, home) do
+      name = media.stage
+      assert_equal "owned PNG fixture", File.read(File.join(container, "Documents", name))
+      assert_equal ["xcrun", "simctl", "get_app_container", simulator, @id, "data"], @commands.find { |argv| argv.include?("get_app_container") }
+      FileUtils.rm_r(File.join(container, "Documents"))
+      escaped = File.join(@root, "operator-container")
+      FileUtils.mkdir_p(escaped)
+      FileUtils.rm_r(container)
+      File.symlink(escaped, container)
+      assert_raises(Dieter::PipelineError) { media.stage }
+      refute File.exist?(File.join(escaped, "Documents"))
+    end
+    @commands.clear
+    Dieter::Atomic.json(@journal, {"ID" => "another-simulator", "Name" => "Dieter Pipeline share"})
+    assert_raises(Dieter::PipelineError) { media.stage }
+    assert_empty @commands
+  end
 end

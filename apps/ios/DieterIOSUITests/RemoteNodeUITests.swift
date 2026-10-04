@@ -95,24 +95,6 @@ final class RemoteNodeUITests: XCTestCase {
         }
     }
 
-    private func dismissPhotosOnboarding(_ photos: XCUIApplication, timeout: TimeInterval = 10) {
-        let onboardingLabels = [
-            "Continue", "Fortfahren", "Get Started", "Los geht’s", "Start Using Photos",
-            "Fotos verwenden", "Not Now", "Nicht jetzt", "Später",
-        ]
-        let onboarding = photos.buttons.matching(
-            NSPredicate(format: "label IN %@", onboardingLabels)
-        ).firstMatch
-        for attempt in 0..<3 {
-            // Photos can present its first-run sheet several seconds after it
-            // has reached the foreground. Give the first screen enough time to
-            // arrive, then keep handling any immediately following screens.
-            let wait = attempt == 0 ? timeout : 2
-            guard onboarding.waitForExistence(timeout: wait) else { return }
-            onboarding.tap()
-        }
-    }
-
     private func hasUsableFrame(_ frame: CGRect) -> Bool {
         frame.minX.isFinite && frame.minY.isFinite && frame.maxX.isFinite && frame.maxY.isFinite
             && frame.width > 0 && frame.height > 0
@@ -933,7 +915,7 @@ final class RemoteNodeUITests: XCTestCase {
     func testAShareExtensionRoutesScreenshotToNewTask() throws {
         let environment = ProcessInfo.processInfo.environment
         guard environment["DIETER_IOS_TEST_LANDSCAPE"] != "1" else {
-            throw XCTSkip("The phone smoke captures the compact Photos share sheet")
+            throw XCTSkip("The phone smoke captures the compact Files share sheet")
         }
         let gateway = try XCTUnwrap(environment["DIETER_IOS_TEST_GATEWAY"])
         let token = try XCTUnwrap(environment["DIETER_IOS_TEST_TOKEN"])
@@ -941,101 +923,53 @@ final class RemoteNodeUITests: XCTestCase {
         let board = try XCTUnwrap(environment["DIETER_IOS_TEST_BOARD"])
         XCUIDevice.shared.orientation = .portrait
 
-        // Authenticate the app before Photos launches it through the share URL.
+        // Authenticate the app before Files launches it through the share URL.
         let app = XCUIApplication()
         app.launchEnvironment["DIETER_IOS_TEST_GATEWAY"] = gateway
         app.launchEnvironment["DIETER_IOS_TEST_TOKEN"] = token
         app.launch()
-        // This launch only primes the authenticated app before Photos takes
+        // This launch only primes the authenticated app before Files takes
         // the foreground. Xcode 26 can briefly report the visible sidebar at
         // device-scale coordinates and mark its controls non-hittable; the
         // directory's existence is the readiness signal needed here.
         waitForBoard(app, project: project, board: board, requireHittable: false)
         // Exercise the persisted cold-start handoff. Stop the primed host before
-        // Photos stages anything, so reopening never replaces a suspended app
+        // Files stages anything, so reopening never replaces a suspended app
         // while it is receiving the same request.
         app.terminate()
 
-        let ownedFile = environment["DIETER_IOS_TEST_SHARE_FILE"]
-        let photos = XCUIApplication(
-            bundleIdentifier: ownedFile == nil ? "com.apple.mobileslideshow" : "com.apple.DocumentsApp")
-        let borrowedFiles = ownedFile != nil && photos.state != .notRunning
+        let ownedFile = try XCTUnwrap(environment["DIETER_IOS_TEST_SHARE_FILE"])
+        let files = XCUIApplication(bundleIdentifier: "com.apple.DocumentsApp")
+        let borrowedFiles = files.state != .notRunning
         addTeardownBlock {
-            if !borrowedFiles { photos.terminate() }
+            if !borrowedFiles { files.terminate() }
             app.terminate()
         }
-        if let ownedFile {
-            openOwnedFileShare(photos, filename: ownedFile)
-        } else {
-            photos.launch()
-            XCTAssertTrue(photos.wait(for: .runningForeground, timeout: 20))
-            dismissPhotosOnboarding(photos)
+        openOwnedFileShare(files, filename: ownedFile)
 
-            let thumbnails = photos.images.matching(identifier: "PXGGridLayout-Info")
-            let thumbnailCount = thumbnails.count
-            XCTAssertGreaterThan(
-                thumbnailCount, 0,
-                "The imported screenshot must appear in Photos.\n\(photos.debugDescription)")
-            guard thumbnailCount > 0 else { return }
-            var photo = thumbnails.element(boundBy: thumbnailCount - 1)
-            XCTAssertTrue(
-                photo.waitForExistence(timeout: 10),
-                "The imported screenshot must appear in Photos.\n\(photos.debugDescription)")
-            if !photo.isHittable {
-                // A slow simulator can finish presenting onboarding while the
-                // library snapshot above is being resolved.
-                dismissPhotosOnboarding(photos, timeout: 5)
-                // Re-resolve after Photos replaces its library hierarchy.
-                photo = photos.images.matching(identifier: "PXGGridLayout-Info")
-                    .element(boundBy: thumbnailCount - 1)
-            }
-            let photoReady = XCTNSPredicateExpectation(
-                predicate: NSPredicate(format: "exists == true AND hittable == true"), object: photo)
-            if XCTWaiter.wait(for: [photoReady], timeout: 10) == .completed {
-                photo.tap()
-            } else {
-                // Photos 26 can expose a visible grid image as non-hittable after
-                // dismissing onboarding. Its resolved frame still accepts the
-                // same user tap; the share-action assertion below verifies that
-                // the screenshot actually opened.
-                XCTAssertTrue(
-                    photo.exists && !photo.frame.isEmpty,
-                    "The imported screenshot must remain visible after Photos onboarding.\n\(photos.debugDescription)")
-                photo.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-            }
-            let share = photos.buttons.matching(
-                NSPredicate(format: "label CONTAINS[c] 'share' OR label CONTAINS[c] 'teilen'")
-            )
-            .firstMatch
-            XCTAssertTrue(
-                share.waitForExistence(timeout: 10),
-                "The opened screenshot must expose the Photos share action.\n\(photos.debugDescription)")
-            share.tap()
-        }
-
-        let shareAppName = ownedFile == nil ? "Dieter" : "Dieter E2E"
-        let dieter = photos.cells.matching(
+        let shareAppName = "Dieter E2E"
+        let dieter = files.cells.matching(
             NSPredicate(format: "identifier == 'shareCell' AND label == %@", shareAppName)
         )
         .firstMatch
         XCTAssertTrue(
             dieter.waitForExistence(timeout: 15),
-            "The installed Dieter share extension must appear in the share sheet.\n\(photos.debugDescription)")
+            "The installed Dieter share extension must appear in the share sheet.\n\(files.debugDescription)")
         dieter.tap()
         XCTAssertTrue(
-            photos.staticTexts["Where should this go?"].waitForExistence(timeout: 20),
-            "The Dieter share extension must finish staging the screenshot.\n\(photos.debugDescription)")
+            files.staticTexts["Where should this go?"].waitForExistence(timeout: 20),
+            "The Dieter share extension must finish staging the screenshot.\n\(files.debugDescription)")
         screenScreenshot("12-share-destination-picker")
 
-        let newTask = photos.buttons.matching(identifier: "ios.share.new-task").firstMatch
+        let newTask = files.buttons.matching(identifier: "ios.share.new-task").firstMatch
         XCTAssertTrue(newTask.waitForExistence(timeout: 5))
         newTask.tap()
         XCTAssertTrue(
-            photos.staticTexts["Ready in Dieter. Tap Done, then open Dieter to continue."]
+            files.staticTexts["Ready in Dieter. Tap Done, then open Dieter to continue."]
                 .waitForExistence(timeout: 10),
-            "The share extension must confirm the platform-safe handoff.\n\(photos.debugDescription)")
+            "The share extension must confirm the platform-safe handoff.\n\(files.debugDescription)")
         screenScreenshot("13-share-ready-in-dieter")
-        let done = photos.buttons.matching(identifier: "ios.share.done").firstMatch
+        let done = files.buttons.matching(identifier: "ios.share.done").firstMatch
         XCTAssertTrue(done.waitForExistence(timeout: 5))
         done.tap()
         // Reopening the stopped host must consume the persisted app-group request.
@@ -1053,15 +987,13 @@ final class RemoteNodeUITests: XCTestCase {
         let attachment = form.buttons.matching(identifier: "ios.create.attachment.remove.0").firstMatch
         XCTAssertTrue(
             attachment.waitForExistence(timeout: 15),
-            "The New Task form must contain the screenshot shared from Photos.\n\(app.debugDescription)")
+            "The New Task form must contain the screenshot shared from Files.\n\(app.debugDescription)")
         XCTAssertTrue(element(app, "ios.create.attach-photos").exists)
         XCTAssertTrue(element(app, "ios.create.attach-files").exists)
         screenScreenshot("14-shared-screenshot-in-new-task")
-        if let ownedFile {
-            XCTAssertTrue(
-                form.staticTexts[ownedFile].waitForExistence(timeout: 10),
-                "The attachment must come from the exact owned fixture file.\n\(app.debugDescription)")
-        }
+        XCTAssertTrue(
+            form.staticTexts[ownedFile].waitForExistence(timeout: 10),
+            "The attachment must come from the exact owned fixture file.\n\(app.debugDescription)")
         app.terminate()
     }
 }
