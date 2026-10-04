@@ -75,12 +75,20 @@ class ScreenCodecEndToEndTest {
                 // bounded watchdog must retire this target once, reconnect,
                 // and deliver normal texture frames through the genuine sink.
                 val sink = media.videoSink
+                val previousSession = view().sessionId
                 compose.runOnIdle {
                     media.videoSink = { frame, session ->
                         if (frame.buffer !is org.webrtc.VideoFrame.SurfaceBuffer) sink?.invoke(frame, session)
                     }
                     host.resume()
                 }
+                awaitNewSession(previousSession)
+                val withheldSession = view().sessionId
+                // The watchdog needs six real statistics samples before it
+                // retires the target. Await that transition before measuring
+                // the replacement decoder's five-second presentation deadline.
+                compose.waitUntil(30_000) { !oldSurface.isOpen && view().sessionId.isNotEmpty() &&
+                    view().sessionId != withheldSession }
                 waitVideo("H264", directOutput = false)
                 assertFalse(oldSurface.isOpen)
                 compose.runOnIdle { media.videoSink = sink }

@@ -672,6 +672,7 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
     let previous = controller.renderer.onPresentationTiming
     var waiting: (white: Bool, started: Double)?
     var samples: [Double] = []
+    var observed = 0, minimumLuma: UInt8 = 255, maximumLuma: UInt8 = 0
     controller.renderer.onPresentationTiming = { frame, presentedAt in
         previous?(frame, presentedAt)
         guard let pending = waiting, presentedAt >= pending.started,
@@ -684,6 +685,9 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
         let px = max(0, min(CVPixelBufferGetWidth(buffer) - 1, Int(x * Double(CVPixelBufferGetWidth(buffer)))))
         let py = max(0, min(CVPixelBufferGetHeight(buffer) - 1, Int(y * Double(CVPixelBufferGetHeight(buffer)))))
         let luma = base.load(fromByteOffset: py * CVPixelBufferGetBytesPerRowOfPlane(buffer, 0) + px, as: UInt8.self)
+        observed += 1
+        minimumLuma = min(minimumLuma, luma)
+        maximumLuma = max(maximumLuma, luma)
         guard pending.white ? luma > 215 : luma < 35 else { return }
         samples.append((presentedAt - pending.started) * 1000)
         waiting = nil
@@ -692,9 +696,18 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
     let count = max(
         24, min(1000, Int(ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_INPUT_SAMPLES"] ?? "24") ?? 24))
     for index in 0..<count {
+        observed = 0; minimumLuma = 255; maximumLuma = 0
+        let acknowledged = controller.sessionState.lastInputOrdinal
         waiting = (index % 2 != 0, CACurrentMediaTime())
         send(index % 2 != 0)
-        try await screenWait("input changed presented pixels", timeout: 3) { waiting == nil }
+        do {
+            try await screenWait("input changed presented pixels", timeout: 3) { waiting == nil }
+        } catch {
+            print(
+                "Input response failed: sample=\(index) white=\(index % 2 != 0) frames=\(observed) luma=\(minimumLuma)...\(maximumLuma) inputOrdinal=\(acknowledged)->\(controller.sessionState.lastInputOrdinal) focused=\(controller.inputFocused) control=\(controller.controlActive) appActive=\(NSApplication.shared.isActive)"
+            )
+            throw error
+        }
     }
     #expect(samples.count == count)
     #expect(samples.allSatisfy { $0 >= 0 && $0 < 500 }, "Input response must not build a stale queue")

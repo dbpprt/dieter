@@ -56,8 +56,8 @@ module Dieter
       [seconds, left].min
     end
 
-    def wait(process, timeout:, **options)
-      process.wait(timeout: remaining(timeout), **options)
+    def wait(process, timeout:, **options, &block)
+      process.wait(timeout: remaining(timeout), **options, &block)
     end
 
     def with_deadline(seconds)

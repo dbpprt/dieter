@@ -3,10 +3,31 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from fastlane.lib.dieter.native.screen_evidence import compare, complete_mac_recovery, recovery_evidence_error
+from fastlane.lib.dieter.native.screen_evidence import compare, complete_mac_recovery, recovery_evidence_error, qualify
 
 
 class QualificationContract(unittest.TestCase):
+    def test_sdk_adapter_root_receipt_is_retained_and_execution_is_still_required(self):
+        with tempfile.TemporaryDirectory() as root:
+            directory = Path(root)
+            receipt = directory / "decoder-sdk.json"
+            receipt.write_text(json.dumps({"schemaVersion": 1, "tests": 3, "failures": 0, "skipped": 0}))
+            report = directory / "results.json"
+            report.write_text(json.dumps({"results": [{"status": "passed"}]}))
+            request = {"directory": root, "runner": "android-sdk"}
+            result = qualify(request)
+            self.assertEqual(result["status"], "passed")
+            self.assertIn(receipt.name, result["artifacts"])
+            report.write_text(json.dumps({"results": [{"status": "unavailable"}]}))
+            self.assertEqual(qualify(request)["status"], "failed")
+            report.write_text(json.dumps({"results": [{"status": "passed"}]}))
+            receipt.unlink()
+            self.assertEqual(qualify(request)["status"], "failed")
+            external = directory / "private.json"
+            external.write_text("{}")
+            receipt.symlink_to(external)
+            self.assertEqual(qualify(request)["status"], "failed")
+
     def test_comparison_requires_matching_measurements_and_sample_count(self):
         value = {"hardware": {"model": "fixture"}, "cases": [{"id": "motion", "status": "passed", "scenario": {"runner": "mac-latency"},
                  "metrics": {"inputP95Ms": 60, "inputSamples": 200, "achievedFps": 60, "presentationEndpoint": "metal-presented-time",

@@ -55,6 +55,7 @@ module Dieter
         if clock >= next_progress
           puts "Still running #{label}; deadline in #{(deadline - clock).round}s"
           Atomic.write(@log, output) if @log
+          yield self if block_given?
           next_progress = clock + 30
         end
         @waiter.join(0.1)

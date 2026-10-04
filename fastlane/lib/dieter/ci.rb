@@ -2,6 +2,7 @@
 
 require_relative "runtime"
 require_relative "checks"
+require_relative "pipeline/gradle_diagnostics"
 
 module Dieter
   module CI
@@ -99,10 +100,11 @@ module Dieter
         adapter = Android.new(context)
         adapter.unit({})
         adapter.build({})
-        context.command([File.join(context.root, "apps/android/gradlew"), "--project-dir", "apps/android", "--console=plain", ":app:lintDebug"], timeout: 2400, log: File.join(context.output, "android-lint.log"))
         # Compile both E2E variants without pretending to execute an emulator.
         %w[e2e performance].each do |variant|
-          context.command([File.join(context.root, "apps/android/gradlew"), "--project-dir", "apps/android", "--console=plain", "-Pdieter.testBuildType=#{variant}", ":app:assemble#{variant.capitalize}", ":app:assemble#{variant.capitalize}AndroidTest"], timeout: 2400, log: File.join(context.output, "#{variant}-build.log"))
+          diagnostics = HostedGradleDiagnostics.new(context, variant)
+          process = context.start([File.join(context.root, "apps/android/gradlew"), "--project-dir", "apps/android", "--console=plain", "-Pdieter.testBuildType=#{variant}", ":app:assemble#{variant.capitalize}", ":app:assemble#{variant.capitalize}AndroidTest"], log: File.join(context.output, "#{variant}-build.log"))
+          context.wait(process, timeout: 2400) { |running| diagnostics.progress(running) }
         end
       when "ios"
         adapter = IOS.new(context)

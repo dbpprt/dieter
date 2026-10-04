@@ -193,6 +193,11 @@ catalogs and the Mac core/board cases. `native-e2e.yml` selects the explicit
 hardware matrix; Android and Mac desktop hardware runs need registered runners.
 No untrusted PR runs on an owned physical device.
 
+Unsigned Android variant checks on disposable hosted runners retain bounded
+Gradle thread/heap and host resource diagnostics after five minutes without new
+build output. They keep the same build deadline and failure gate. Local and
+self-hosted runs never inspect operator JVMs.
+
 For self-hosted main device runs only, repository variables
 `DIETER_ANDROID_CI_CONFIG` and `DIETER_IOS_CI_CONFIG` may hold a bounded JSON
 override for `profiles.android-device`/`profiles.ios-device`, existing

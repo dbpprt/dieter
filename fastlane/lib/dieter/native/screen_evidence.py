@@ -124,8 +124,12 @@ def qualify(request):
     artifacts = collect(log, directory)
     # Android's pipeline already retains allowlisted measurements under its case.
     for index, path in enumerate(sorted(directory.rglob("*"))):
-        if (path.parent == directory or not path.is_file() or path.is_symlink()
+        if (not path.is_file() or path.is_symlink()
                 or not ALLOWED_ARTIFACT.fullmatch(path.name) or path.stat().st_size > 16 << 20):
+            continue
+        if path.parent == directory:
+            if path.name not in artifacts:
+                artifacts.append(path.name)
             continue
         target = directory / f"native-{index}-{path.name}"
         shutil.copyfile(path, target)
@@ -137,7 +141,7 @@ def qualify(request):
         error = "Missing mandatory latency evidence"
     elif runner == "android-codec" and not any(a.endswith("decoder-H264.json") for a in artifacts):
         error = "Missing actual decoder identity"
-    elif runner == "android-sdk" and not any(a.endswith("-decoder-sdk.json") for a in artifacts):
+    elif runner == "android-sdk" and not any(a == "decoder-sdk.json" or a.endswith("-decoder-sdk.json") for a in artifacts):
         error = "Missing actual codec/ownership/launcher evidence"
     elif runner == "android-journey" and not any(a.endswith("-stats.json") for a in artifacts):
         error = "Missing actual Android journey evidence"

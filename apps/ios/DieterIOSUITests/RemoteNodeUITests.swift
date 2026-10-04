@@ -35,7 +35,22 @@ final class RemoteNodeUITests: XCTestCase {
         let keyboard = app.keyboards.firstMatch
         var activated = false
         for attempt in 0..<2 {
-            field.tap()
+            if field.elementType == .textView {
+                // On landscape iPad the keyboard shrinks the sheet viewport.
+                // A multiline editor keeps its full accessibility frame while
+                // the submission bar covers its center. Tap its visible first
+                // line using observed geometry, then still require real focus.
+                let frame = field.frame
+                XCTAssertTrue(hasUsableFrame(frame), "\(identifier) must have a finite visible frame.")
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+                    .withOffset(
+                        CGVector(
+                            dx: frame.minX + min(16, frame.width / 2),
+                            dy: frame.minY + min(12, frame.height / 2)))
+                    .tap()
+            } else {
+                field.tap()
+            }
             if keyboard.waitForExistence(timeout: 5) {
                 dismissKeyboardIntroduction(app)
                 // An existing keyboard does not prove this tap changed the

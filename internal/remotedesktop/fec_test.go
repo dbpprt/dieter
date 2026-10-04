@@ -102,6 +102,36 @@ func TestFECRequiresFreshLossAndWithdrawsOnQueueGrowth(t *testing.T) {
 		t.Fatal("stale feedback retained protection")
 	}
 }
+
+func TestFECAccumulatesFreshSparseFeedbackUntilMinimumSample(t *testing.T) {
+	now := time.Now()
+	var c fecController
+	rate := 0
+	for i := 0; i < 10; i++ {
+		at := now.Add(time.Duration(i) * 200 * time.Millisecond)
+		rate = c.next(at, rate, transportHealth{at: at, packets: 3, span: 200 * time.Millisecond, loss: .04})
+		if i < 9 && rate != 0 {
+			t.Fatal("enabled repair before thirty fresh packets")
+		}
+	}
+	if rate != 20 {
+		t.Fatalf("discarded sustained sparse loss: rate=%d packets=%d", rate, c.packets)
+	}
+	// A growing queue must discard the accumulated sample, just as it does
+	// for a high-rate stream. Sparse traffic cannot preserve stale loss.
+	at := now.Add(2 * time.Second)
+	rate = c.next(at, rate, transportHealth{at: at, packets: 3, span: 200 * time.Millisecond, loss: .04, growthMS: 20})
+	if rate != 0 || c.packets != 0 || !c.window.IsZero() {
+		t.Fatal("queue growth retained sparse loss or protection")
+	}
+	for i := 1; i <= 5; i++ {
+		at = now.Add(2*time.Second + time.Duration(i)*200*time.Millisecond)
+		rate = c.next(at, rate, transportHealth{at: at, packets: 3, span: 200 * time.Millisecond, loss: .04})
+	}
+	if c.next(at.Add(2*time.Second), rate, transportHealth{at: at}) != 0 || c.packets != 0 {
+		t.Fatal("stale feedback retained partial sparse samples")
+	}
+}
 func TestFECReservesEncoderBudgetBeforeActivation(t *testing.T) {
 	source := &fastTestSource{err: errors.New("configure failed")}
 	p := newPacketPacer(10_000_000)

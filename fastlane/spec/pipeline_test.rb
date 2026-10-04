@@ -152,6 +152,16 @@ class PipelinePrimitivesTest < Minitest::Test
     assert_raises(Errno::ESRCH) { Process.kill(0, process.pid) }
   end
 
+  def test_progress_observer_receives_the_owned_process_without_changing_its_result
+    process = Dieter::OwnedProcess.new(@root, [RbConfig.ruby, "-e", 'sleep 0.2; print "done"'])
+    process.define_singleton_method(:clock) { @tick = (@tick || 0) + 31 }
+    observed = []
+    assert_equal "done", process.wait(timeout: 10_000) { |running| observed << running }
+    refute_empty observed
+    assert observed.all? { |running| running.equal?(process) }
+    assert process.status.success?
+  end
+
   def test_lease_conflict_preserves_inode_then_releases
     lease = Dieter::Lease.new("spec", root: @root)
     inode = File.stat(lease.path).ino
