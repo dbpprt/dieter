@@ -76,11 +76,18 @@ final class RemoteNodeUITests: XCTestCase {
         // avoids re-resolving a now-stale TextField query midway through input.
         app.typeText(text)
         dismissKeyboardIntroduction(app)
+        // SwiftUI can replace the title's native field as its preview updates.
+        // CI retained the complete visible title while the optimized value
+        // predicate timed out. Read the current query's value on each poll;
+        // keep the exact suffix and fillTask's complete-value assertions.
         let entered = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value ENDSWITH %@", text), object: field)
+            predicate: NSPredicate { _, _ in
+                (field.value as? String)?.hasSuffix(text) == true
+            }, object: field)
         XCTAssertEqual(
-            XCTWaiter.wait(for: [entered], timeout: 5), .completed,
-            "Typing must update \(identifier).\n\(app.debugDescription)")
+            XCTWaiter.wait(for: [entered], timeout: 10), .completed,
+            "Typing must update \(identifier); current value=\(String(describing: field.value)).\n"
+                + app.debugDescription)
     }
 
     private func dismissKeyboardIntroduction(_ app: XCUIApplication) {
@@ -904,7 +911,25 @@ final class RemoteNodeUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(
             share.waitForExistence(timeout: 10), "The owned file must expose Share.\n\(files.debugDescription)")
-        share.tap()
+        let shareSheet = files.cells.matching(identifier: "shareCell").firstMatch
+        for attempt in 0..<2 {
+            // Hosted Files left the context menu open after an element tap.
+            // Resolve its visible geometry immediately before sending input,
+            // then require the actual activity sheet before leaving Files.
+            let frame = share.frame
+            guard hasUsableFrame(frame), files.frame.contains(frame) else {
+                XCTFail("Files Share must have a finite visible frame.\n\(files.debugDescription)")
+                return
+            }
+            tapPicker(files, frame: frame)
+            if shareSheet.waitForExistence(timeout: 5) { return }
+            // Retry only an unconsumed context-menu action; never send another
+            // tap into an already opened sheet or restart the Share journey.
+            guard attempt == 0, !shareSheet.exists, share.exists else { break }
+        }
+        XCTAssertTrue(
+            shareSheet.waitForExistence(timeout: 10),
+            "Files Share must open the activity sheet.\n\(files.debugDescription)")
     }
 
     func testShareExtensionRoutesOwnedFileToNewTask() throws {
