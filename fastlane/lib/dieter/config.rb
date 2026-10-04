@@ -37,7 +37,8 @@ module Dieter
       if ci && ENV["GITHUB_ACTIONS"] == "true" && ENV["DIETER_CI_IOS_RUNTIME"]
         runtime = ENV.fetch("DIETER_CI_IOS_RUNTIME")
         raise PipelineError, "Invalid CI simulator runtime" unless runtime.match?(/\Acom\.apple\.CoreSimulator\.SimRuntime\.iOS-\d+-\d+(?:-\d+)?\z/)
-        %w[ios-iphone ios-ipad].each { |name| @data.fetch("profiles").fetch(name)["runtime"] = runtime }
+        profiles = %w[ios-iphone ios-ipad].to_h { |name| [name, {"runtime" => runtime}] }
+        @data = merge(@data, {"profiles" => profiles})
       end
       validate!
       # Policy lives in its own tracked file and cannot be supplied locally.

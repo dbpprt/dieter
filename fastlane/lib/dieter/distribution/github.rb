@@ -55,6 +55,8 @@ module Dieter
     end
 
     def release(tag)
+      id = @release_ids && @release_ids[tag]
+      return api("releases/#{id}") if id
       api("releases/tags/#{URI.encode_www_form_component(tag)}")
     rescue PipelineError => error
       raise unless error.message.include?("404")
@@ -82,6 +84,9 @@ module Dieter
           value = release(identity.tag)
         end
       end
+      # Creation returns the authoritative numeric ID before draft indexes can
+      # reflect the new release. Reuse that ID for asset admission immediately.
+      (@release_ids ||= {})[identity.tag] = value.fetch("id")
       local = File.join(@context.output, "identity.json")
       identity.write(local)
       upload_immutable(identity, local)

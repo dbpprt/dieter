@@ -45,4 +45,12 @@ class GitHubDraftLookupTest < Minitest::Test
       assert_equal(status == 404 ? 2 : 1, destination.requests.length)
     end
   end
+
+  def test_newly_created_draft_uses_its_returned_id_before_tag_indexing
+    release = {"id" => 1234, "tag_name" => "v0.4.360", "draft" => true, "assets" => []}
+    destination = Destination.new("releases/1234" => release)
+    destination.instance_variable_set(:@release_ids, {"v0.4.360" => 1234})
+    assert_equal release, destination.release("v0.4.360")
+    assert_equal ["releases/1234"], destination.requests
+  end
 end

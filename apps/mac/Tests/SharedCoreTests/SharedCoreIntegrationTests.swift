@@ -6,7 +6,8 @@ import Testing
 
 /// Drives the real DieterShared framework against tools/fixtures/gateway (a
 /// disposable gateway and enrolled daemon running the mock harness), never an
-/// operator's gateway. `just pipeline check component:mac operation:core_test` starts the fixture and exports its
+/// operator's gateway. `just pipeline check component:mac operation:core_test`
+/// starts the fixture and exports its
 /// DIETER_ISOLATED_* environment; without it these tests are skipped.
 @MainActor
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["DIETER_ISOLATED_ADDR"] != nil))
@@ -14,7 +15,8 @@ struct SharedCoreIntegrationTests {
     let environment = ProcessInfo.processInfo.environment
 
     func fixture(_ key: String) throws -> String {
-        try #require(environment[key], "run `just pipeline check component:mac operation:core_test`, which exports \(key)")
+        let instruction = "run `just pipeline check component:mac operation:core_test`"
+        return try #require(environment[key], "\(instruction), which exports \(key)")
     }
 
     func wait(_ what: String, timeout: Duration = .seconds(30), _ condition: () -> Bool) async throws {

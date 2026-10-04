@@ -60,12 +60,24 @@ class PipelineConfigTest < Minitest::Test
   end
 
   def with_ci_environment(values)
-    keys = %w[DIETER_CI_DEVICE_CONFIG GITHUB_ACTIONS GITHUB_REF RUNNER_ENVIRONMENT]
+    keys = %w[DIETER_CI_DEVICE_CONFIG DIETER_CI_IOS_RUNTIME GITHUB_ACTIONS GITHUB_REF RUNNER_ENVIRONMENT]
     previous = keys.to_h { |key| [key, ENV[key]] }
     keys.each { |key| values[key] ? ENV[key] = values[key] : ENV.delete(key) }
     yield
   ensure
     previous.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
+  def test_ci_runtime_selection_replaces_template_values_without_disabling_duplicate_json_checks
+    runtime = "com.apple.CoreSimulator.SimRuntime.iOS-26-5"
+    with_ci_environment("GITHUB_ACTIONS" => "true", "DIETER_CI_IOS_RUNTIME" => runtime) do
+      config = Dieter::Config.new(@root, ci: true)
+      %w[ios-iphone ios-ipad].each { |name| assert_equal runtime, config.profile(name).fetch("runtime") }
+    end
+    override({profiles: {"ios-iphone" => {runtime: "com.apple.CoreSimulator.SimRuntime.iOS-27-0"}}})
+    assert_equal "com.apple.CoreSimulator.SimRuntime.iOS-27-0", Dieter::Config.new(@root, ci: false).profile("ios-iphone").fetch("runtime")
+    File.write(File.join(@root, "fastlane/local.json"), '{"profiles":{"ios-iphone":{"runtime":"a","runtime":"b"}}}')
+    assert_raises(Dieter::PipelineError) { Dieter::Config.new(@root, ci: false) }
   end
 
   def test_physical_ci_configuration_requires_trusted_main_and_preserves_policy
