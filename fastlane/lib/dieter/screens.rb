@@ -114,6 +114,16 @@ module Dieter
         result.merge!(evidence(parent, {directory: directory, runner: runner}))
       rescue StandardError => error
         result.merge!("status" => error.is_a?(Unavailable) ? "unavailable" : "failed", "reason" => error.message)
+        # Retain allowlisted measurements after a native assertion fails too.
+        # An aggregate metric or collector pass cannot replace the native failure.
+        if File.directory?(directory)
+          begin
+            observed = evidence(parent, {directory: directory, runner: runner})
+            result.merge!(observed.slice("artifacts", "metrics"))
+          rescue StandardError => diagnostic_error
+            result["diagnosticError"] = diagnostic_error.class.name
+          end
+        end
       ensure
         ENV.replace(previous)
       end

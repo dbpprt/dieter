@@ -130,7 +130,10 @@ func (c *fecController) next(now time.Time, current int, h transportHealth) int 
 		c.cleanAt = time.Time{}
 		return 0
 	}
-	if h.packets < 3 || h.span < 20*time.Millisecond {
+	// Packet loss counts remain useful even in a single-packet feedback
+	// report, which cannot provide a rate/span estimate. The accumulated
+	// thirty-packet and one-second gates below provide the sample floor.
+	if h.packets < 1 {
 		return current
 	}
 	if c.window.IsZero() {

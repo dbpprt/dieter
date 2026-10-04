@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/pion/interceptor/pkg/flexfec"
 	"github.com/pion/rtp"
@@ -132,6 +133,37 @@ func TestFECAccumulatesFreshSparseFeedbackUntilMinimumSample(t *testing.T) {
 		t.Fatal("stale feedback retained partial sparse samples")
 	}
 }
+func TestFECAccumulatesTinyReportsWithoutPerReportRateEstimates(t *testing.T) {
+	for _, size := range []int{1, 2} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			now := time.Now()
+			var c fecController
+			rate := 0
+			for packets := 0; packets < 30; packets += size {
+				at := now.Add(time.Duration(packets) * 100 * time.Millisecond)
+				loss := 0.0
+				if packets == 0 {
+					loss = 1.0 / float64(size) // One real loss among thirty packets.
+				}
+				rate = c.next(at, rate, transportHealth{at: at, packets: size, loss: loss})
+				if packets+size < 30 && rate != 0 {
+					t.Fatal("enabled repair before thirty fresh packets")
+				}
+			}
+			if rate != 20 {
+				t.Fatal("discarded moderate loss from tiny fresh reports")
+			}
+			at := now.Add(3 * time.Second)
+			if c.next(at, rate, transportHealth{at: at, packets: size, growthMS: 20}) != 0 || c.packets != 0 {
+				t.Fatal("tiny reports preserved protection under queue growth")
+			}
+			if c.next(at.Add(2*time.Second), 20, transportHealth{at: at, packets: size}) != 0 {
+				t.Fatal("tiny stale reports preserved protection")
+			}
+		})
+	}
+}
+
 func TestFECReservesEncoderBudgetBeforeActivation(t *testing.T) {
 	source := &fastTestSource{err: errors.New("configure failed")}
 	p := newPacketPacer(10_000_000)

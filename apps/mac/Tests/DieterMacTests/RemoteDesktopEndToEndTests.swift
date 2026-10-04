@@ -301,6 +301,7 @@ import Testing
             "captureMedianMs": median, "captureP95Ms": p95, "idleResumeMs": resumedAges,
             "inputSamples": responseAges.count, "inputMedianMs": responseAges[responseAges.count / 2],
             "inputP95Ms": responseAges[responseAges.count * 95 / 100],
+            "inputMaxMs": responseAges.last!, "inputSampleMs": responses,
             "encodeMs": controller.sessionState.encodeMs, "sendMs": controller.sessionState.sendMs,
             "jitterBufferMs": controller.sessionState.jitterBufferMs,
             "renderMs": controller.sessionState.renderMs,
@@ -365,6 +366,7 @@ import Testing
             "measurement": "owned app input to actual Metal presentation", "samples": responses.count,
             "inputSamples": responses.count, "inputMedianMs": responses[responses.count / 2],
             "inputP95Ms": responses[responses.count * 95 / 100], "requestedFps": requestedFPS,
+            "inputMaxMs": responses.last!, "inputSampleMs": responses,
             "width": controller.sessionState.width, "height": controller.sessionState.height,
             "codec": controller.sessionState.codec, "presentationMode": controller.renderer.presentationMode.rawValue,
             "fastBitrate": environment["DIETER_SCREEN_FAST_BITRATE"] != "0",
@@ -710,7 +712,11 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
         }
     }
     #expect(samples.count == count)
-    #expect(samples.allSatisfy { $0 >= 0 && $0 < 500 }, "Input response must not build a stale queue")
+    let outsideBound = samples.enumerated().filter { $0.element < 0 || $0.element >= 500 }
+        .map { "sample=\($0.offset) ms=\($0.element)" }
+    #expect(
+        samples.allSatisfy { $0 >= 0 && $0 < 500 },
+        "Input response must not build a stale queue: \(outsideBound)")
     return samples
 }
 
