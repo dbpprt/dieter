@@ -250,7 +250,7 @@ func planChecks(paths []string, packages []string, base string) CheckPlan {
 		add("portable", "justfile_check", nil)
 	}
 	if any(func(p string) bool {
-		return prefixAny(p, ".github/workflows/", ".github/actions/") || p == ".github/actionlint.yaml"
+		return prefixAny(p, ".github/workflows/", ".github/actions/")
 	}) {
 		add("portable", "workflow_check", nil)
 		add("portable", "contracts", nil)

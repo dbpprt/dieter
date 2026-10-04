@@ -138,8 +138,8 @@ Keep the previous hostname serving the same gateway while offline machines and
 older installations update. Native clients authenticate separately at the new
 origin; saved credentials are not copied between origins.
 
-See [the production domain migration plan](https://github.com/dbpprt/dieter/blob/main/docs/gateway-domain-migration-2026-09-22.md)
-for DNS, OAuth, certificate, rollout and acceptance ordering.
+Update DNS, OAuth callback URLs, and TLS certificates for the new origin before
+cutover. Keep the previous endpoint available until enrolled machines reconnect.
 
 The standard gateway is now `https://gateway.getdieter.com`, with STUN/TURN at
 `turn.getdieter.com`. App updates move saved standard gateway addresses and ask

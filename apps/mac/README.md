@@ -1,4 +1,5 @@
 <!-- Native pipeline commands: see ../../fastlane/README.md. -->
+
 # Dieter for macOS
 
 The native SwiftUI workspace for Dieter, requiring macOS 26+ on Apple Silicon.
@@ -44,7 +45,7 @@ its normal job count. Run builds and tests sequentially when memory is tight.
 Local builds use the sole available Apple Development identity when possible.
 Set `DIETER_MAC_SIGNING_IDENTITY` to a certificate fingerprint when needed, or
 `-` for ad-hoc signing. Ad-hoc or changed identities can require privacy grants
-again. Release signing and notarization use the [Apple signing guide](../../docs/apple-release-signing.md).
+again. Release signing and notarization use the [release pipeline guide](../../fastlane/README.md#ci-and-release-policy).
 
 ## Connection and ownership
 
@@ -82,7 +83,7 @@ not replace the saved selection. Production remote origins require HTTPS.
 Screen hosting is permission-based; there is no separate host enable switch.
 Screen inactivity disconnect is optional and disabled by default. Clipboard and
 Android viewing are implemented. Audio is not a promised feature. The
-[screen reference](../../docs/screen-sharing.md) documents negotiated limits.
+[screen guide](../../landingpage/content/docs/screens.md) documents negotiated limits.
 
 Appearance includes eight designs and light/dark modes. Native Monochrome is the
 default. Disable **Settings → General → Appearance → Window transparency** for
@@ -158,4 +159,4 @@ just pipeline ci action:check component:mac
 ```
 
 Historical design references live in [reference](reference/README.md). They are
-not current product screenshots; see [screenshot provenance](../../docs/screenshots/README.md).
+not current product screenshots; see [capture guidelines](../../landingpage/README.md#write-documentation).

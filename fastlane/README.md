@@ -25,8 +25,6 @@ to execute those, or select specific catalog cases. During implementation, rerun
 only a failed or newly affected check; run affected contracts once after changes
 are integrated. Shared orchestration edits do not select every local native build.
 Full repository/device suites belong to explicit full checks and release gates.
-[The refactor record](../docs/pipeline-refactor.md) contains measured causes,
-research and verification scope.
 
 Assertions stay in Compose/XCTest/Swift/Go tests. The catalog provides shared
 selection and results, rather than replacing native tests with another language.
@@ -308,9 +306,9 @@ a macOS capture host. Hardware availability is an explicit gate.
 
 ## Specialized screen measurements
 
-`just pipeline screens_qualify manifest:docs/screenshare-qualification-local.json
+`just pipeline screens_qualify manifest:PATH
 profile:android-device output:tmp/screen-qualification-UNIQUE` composes the same
-Mac and Android adapters for the tracked measurement/recovery matrix. Physical
+Mac and Android adapters for an explicit measurement/recovery manifest. Physical
 Android uses the configured exact profile; no arbitrary commands or environment
 hooks come from the scenario file. `baseline:PATH` compares matching hardware,
 scene, clock/output endpoint, 200+ samples and cadence. Required missing cells

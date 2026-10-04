@@ -113,7 +113,7 @@ dieter doctor
 | iOS 18+, iPhone and iPad | [Beta and source-build guide](apps/ios/README.md)                                                |
 
 The daemon supports headless Linux hosts. Screen hosting needs an active desktop
-and [platform dependencies](docs/linux-support.md).
+and [platform dependencies](landingpage/content/docs/installation.md#linux).
 [Full installation guide →](https://getdieter.com/docs/installation/)
 
 ## How it works
@@ -148,7 +148,7 @@ Mac, Android, and CLI clients converge on the same Git state.
 | Understand tasks, worktrees, and review | [Projects & tasks](https://getdieter.com/docs/projects/)                                               |
 | Automate through the daemon             | [CLI guide](https://getdieter.com/docs/cli/)                                                           |
 | Add machines or host a gateway          | [Machines](https://getdieter.com/docs/machines/) · [Self-hosting](https://getdieter.com/docs/gateway/) |
-| Understand internals                    | [Architecture](https://getdieter.com/docs/architecture/) · [Technical index](docs/README.md)           |
+| Understand internals                    | [Architecture](https://getdieter.com/docs/architecture/)                                               |
 | Fix a connection or setup problem       | [Troubleshooting](https://getdieter.com/docs/troubleshooting/)                                         |
 
 ## Contribute
@@ -235,4 +235,4 @@ expired transport failures while keeping unresolved record rejections visible.
 when both directions finish. Retained shared records and replay receipts use
 paged SQLite access, so historical count does not exhaust a lifetime write quota.
 Tombstones remain available to protect against stale offline replicas. See
-[peer storage and retention](docs/peer-store.md).
+[peer storage and retention](landingpage/content/docs/architecture.md#shared-identity-local-execution).

@@ -86,17 +86,16 @@ OpenH264 when installed. Raw desktop pixels remain in the helper.
 An active graphical login, the distro's GStreamer plugins, and the appropriate
 portal backend are required. A headless Linux daemon remains fully usable for
 agents, terminals, and remote execution while screen hosting reports an
-actionable degraded reason. See the **[Linux host guide](https://github.com/dbpprt/dieter/blob/main/docs/linux-support.md)**
-for distro packages, systemd graphical-session behavior, and current feature
-limits.
+actionable degraded reason. See [Installation](/docs/installation/#linux) for
+Linux service setup.
 
 ## Selecting a source
 
-| Variable | Effect |
-| --- | --- |
-| `DIETER_REMOTE_DESKTOP_HELPER` | Select another native helper for development or isolated diagnostics. |
-| `DIETER_REMOTE_DESKTOP_DISPLAY` | Select another capture source (display). |
-| `DIETER_REMOTE_DESKTOP_SOURCE=synthetic` | Reserved for isolated transport diagnostics. |
+| Variable                                 | Effect                                                                |
+| ---------------------------------------- | --------------------------------------------------------------------- |
+| `DIETER_REMOTE_DESKTOP_HELPER`           | Select another native helper for development or isolated diagnostics. |
+| `DIETER_REMOTE_DESKTOP_DISPLAY`          | Select another capture source (display).                              |
+| `DIETER_REMOTE_DESKTOP_SOURCE=synthetic` | Reserved for isolated transport diagnostics.                          |
 
 Wayland portal sources can be represented as a locally approved selection
 rather than a passively enumerable monitor. A viewer shows “waiting for approval
@@ -152,5 +151,7 @@ is an optical input-to-photon measurement. RTP traffic counters exclude
 transport/control overhead. Quality settings and bitrate are adaptive ceilings.
 No matched Parsec or Moonlight performance claim is implied by codec support.
 
-For protocol fields, recovery/FEC details, clipboard commands, and qualification
-workloads, see the [screen engineering reference](https://github.com/dbpprt/dieter/blob/main/docs/screen-sharing.md).
+For protocol fields, see the
+[API schema](https://github.com/dbpprt/dieter/blob/main/api/proto/dieter/v1/dieter.proto).
+Development qualification commands are in the
+[pipeline guide](https://github.com/dbpprt/dieter/blob/main/fastlane/README.md#specialized-screen-measurements).

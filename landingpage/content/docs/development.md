@@ -17,13 +17,13 @@ cd dieter
 For Go and harness development, use Go **1.26.8+**, Node.js **22.19+**, npm, Git,
 Python 3, and **just 1.58+**. Native and website toolchains are separate:
 
-| Component | Toolchain | Build / guide |
-| --- | --- | --- |
-| Daemon / gateway | Go | `just build` |
-| macOS | macOS 26+, Xcode 26.5+ | [Mac guide](https://github.com/dbpprt/dieter/blob/main/apps/mac/README.md) |
-| Android | Android SDK and Android Studio's bundled JBR | [Android guide](https://github.com/dbpprt/dieter/blob/main/apps/android/README.md) |
-| iOS beta | Xcode; signing for physical devices | [iOS guide](https://github.com/dbpprt/dieter/blob/main/apps/ios/README.md) |
-| Website | Hugo extended 0.164+ | `just site serve` |
+| Component        | Toolchain                                    | Build / guide                                                                      |
+| ---------------- | -------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Daemon / gateway | Go                                           | `just build`                                                                       |
+| macOS            | macOS 26+, Xcode 26.5+                       | [Mac guide](https://github.com/dbpprt/dieter/blob/main/apps/mac/README.md)         |
+| Android          | Android SDK and Android Studio's bundled JBR | [Android guide](https://github.com/dbpprt/dieter/blob/main/apps/android/README.md) |
+| iOS beta         | Xcode; signing for physical devices          | [iOS guide](https://github.com/dbpprt/dieter/blob/main/apps/ios/README.md)         |
+| Website          | Hugo extended 0.164+                         | `just site serve`                                                                  |
 
 ```sh
 just doctor
@@ -39,18 +39,17 @@ helper dependencies. Local build lanes never replace an operator service.
 
 ## Repository map
 
-| Directory | Responsibility |
-| --- | --- |
-| `cmd`, `internal` | Daemon, CLI, gateway, storage, transports, harnesses |
-| `api/proto` | Authoritative RPC schema and stable package namespaces |
-| `apps/mac`, `apps/ios`, `apps/android` | Native clients and their fixtures |
-| `native` | Platform screen capture and WebRTC integration |
-| `config` | Embedded harness registry |
-| `landingpage` | Public website and maintained user guides |
-| `docs` | Technical references, screenshot sources, historical investigations |
-| `deploy/gateway` | Signed gateway deployment tooling |
+| Directory                                         | Responsibility                                               |
+| ------------------------------------------------- | ------------------------------------------------------------ |
+| `cmd`, `internal`                                 | Daemon, CLI, gateway, storage, transports, harnesses         |
+| `api/proto`                                       | Authoritative RPC schema and stable package namespaces       |
+| `apps/mac`, `apps/ios`, `apps/android`            | Native clients and their fixtures                            |
+| `native`                                          | Platform screen capture and WebRTC integration               |
+| `config`                                          | Embedded harness registry                                    |
+| `landingpage`                                     | Public website and maintained user guides                    |
+| `deploy/gateway`                                  | Signed gateway deployment tooling                            |
 | `fastlane`, `internal/pipeline`, `tools/fixtures` | Shared pipelines, typed contracts and isolated test services |
-| `just`, `scripts` | Thin command facade and generated-code/distribution tools |
+| `just`, `scripts`                                 | Thin command facade and generated-code/distribution tools    |
 
 ## Run checks for your change
 
@@ -114,6 +113,5 @@ for bug reports and pull requests. Keep changes focused, explain the resulting
 behavior, and report relevant validation and limitations. `git diff --check`
 should pass before review.
 
-Signed releases use the existing Just release recipes. Apple credentials and the
-manual TestFlight workflow are documented in
-[Apple release signing](https://github.com/dbpprt/dieter/blob/main/docs/apple-release-signing.md).
+Fastlane owns signed releases, Apple credentials, and TestFlight delivery. See
+the [pipeline guide](https://github.com/dbpprt/dieter/blob/main/fastlane/README.md#ci-and-release-policy).

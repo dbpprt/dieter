@@ -57,7 +57,7 @@ dieter screen capabilities
 The result distinguishes ready, permission required, and unsupported. Grant
 permissions **on the target machine**, to the executable identified by setup.
 Mac app permissions and daemon permissions are separate. Linux needs an active
-graphical session and the [feature dependencies](https://github.com/dbpprt/dieter/blob/main/docs/linux-support.md).
+graphical session and the [screen host requirements](/docs/screens/#capture-on-linux).
 Wayland may require local portal consent when connecting.
 
 For network failures, check the configured STUN/TURN service. H.264 is the default;

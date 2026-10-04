@@ -141,7 +141,7 @@ report is allocation lifecycle evidence, not native screen or throughput
 qualification; the qualification gate still requires those separate workloads.
 
 Native fixtures can explicitly require TURN for both API traffic and screens.
-See [the native TURN test guide](../../docs/gateway-native-turn-testing.md).
+See the [screen transport guide](../../landingpage/content/docs/screens.md#transport-and-admission).
 The debug-only policy and protected fixture credentials preserve the real signed
 RTC configuration path; release clients retain their normal ICE policy.
 
@@ -261,6 +261,7 @@ qualify a network that permits only TLS. The default two-relay mode and the
 concentrated allocation soak remain unchanged. The container test exercises all
 three transports with a one-allocation user quota and rejects the two-allocation
 probe under the same limit.
+
 # Disposable Debian lifecycle qualification
 
 `tests/debian-vm.yaml` creates a separate Lima VM with one CPU, 1 GiB memory,

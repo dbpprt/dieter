@@ -104,7 +104,7 @@ Native operations, protobuf RPCs, core server implementation, Connect adapter,
 CLI, help, documentation, and local/direct-TLS/relay tests belong in the same
 change. Run `just proto` for schema edits. Use the one canonical release version
 and the gateway's reviewed client/daemon floors; do not add old-version branches
-or development-store migrations. See [release compatibility](docs/api-contract.md)
+or development-store migrations. See [release compatibility](landingpage/content/docs/architecture.md#compatibility)
 and [API documentation](api/proto/README.md).
 
 ## Write a useful pull request
@@ -115,10 +115,9 @@ changes. Keep unrelated cleanup out of the patch. A draft is useful when you
 want feedback before the implementation is ready.
 
 Documentation has one public source in `landingpage/content/docs`. Keep the root
-README short, link to the guide, and put implementation detail in `docs/`.
-Dated investigations remain historical evidence, not current setup instructions.
-Screenshot changes need captions and capture provenance; see
-[the screenshot guide](docs/screenshots/README.md).
+README short and put implementation details in the relevant component README
+or pipeline guide. Screenshot changes need captions and capture provenance;
+see the [website documentation guide](landingpage/README.md#write-documentation).
 
 By contributing, you agree that your contribution is licensed under the
 repository's [MIT license](LICENSE).

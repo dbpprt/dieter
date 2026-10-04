@@ -12,12 +12,12 @@ host work, or install just a client when your agents run on another machine.
 
 ## Supported platforms
 
-| Role | Apple Silicon macOS | Linux amd64 / arm64 | Android | iPhone / iPad |
-| --- | --- | --- | --- | --- |
-| CLI and daemon | Yes | Yes | — | — |
-| Native client | macOS 26+ | — | Android 8+ | iOS 18+, beta |
-| Screen host | With OS permissions | Active X11 / Wayland desktop | — | — |
-| Gateway | Source build | Published image and binaries | — | — |
+| Role           | Apple Silicon macOS | Linux amd64 / arm64          | Android    | iPhone / iPad |
+| -------------- | ------------------- | ---------------------------- | ---------- | ------------- |
+| CLI and daemon | Yes                 | Yes                          | —          | —             |
+| Native client  | macOS 26+           | —                            | Android 8+ | iOS 18+, beta |
+| Screen host    | With OS permissions | Active X11 / Wayland desktop | —          | —             |
+| Gateway        | Source build        | Published image and binaries | —          | —             |
 
 Each daemon host needs **Node.js 22.19+**, **npm**, **Git**, and a configured
 [harness account](/docs/harnesses/). Install **tmux** if terminals should survive
@@ -68,9 +68,9 @@ user manager is available. Use `--version`, `--install-dir`, or `--no-service`
 when needed; download the script and run `sh install.sh --help` for all options.
 
 Agents work on headless hosts. Screen hosting additionally needs an active
-graphical session, GStreamer, and X11 or Wayland portal packages. The
-[Linux host reference](https://github.com/dbpprt/dieter/blob/main/docs/linux-support.md)
-lists distribution packages and service details. Do not run the daemon as root.
+graphical session, GStreamer, and X11 or Wayland portal packages. See
+[Screen sharing](/docs/screens/#capture-on-linux) for host requirements.
+Do not run the daemon as root.
 
 ## Android
 
@@ -114,7 +114,6 @@ dieter machine update --confirm UPDATE
 Use global `--machine MACHINE_ID` to select another host. Capability checks explain
 when managed update is unavailable. Updates prepare the pinned harness runtime
 before restarting; an active turn retains its runtime digest across recovery.
-See [service activation and rollback](https://github.com/dbpprt/dieter/blob/main/docs/homebrew-service-runtime.md).
 
 ## Build from source
 

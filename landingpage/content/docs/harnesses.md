@@ -10,13 +10,13 @@ slug: "harnesses"
 Dieter integrates five harnesses through a pinned JavaScript runtime. Each uses
 its normal local configuration on the **execution machine**.
 
-| Harness | Default configuration |
-| --- | --- |
-| Codex | `~/.codex` or `CODEX_HOME` |
-| Claude Code | `~/.claude` or `CLAUDE_CONFIG_DIR` |
-| Pi | `~/.pi/agent` or `PI_AGENT_DIR` |
-| Oh My Pi | `~/.omp/agent`, with `OMP_PROFILE` when set |
-| DeepSeek Harness (DSH) | `~/.dsh` or `DSH_HOME` |
+| Harness                | Default configuration                       |
+| ---------------------- | ------------------------------------------- |
+| Codex                  | `~/.codex` or `CODEX_HOME`                  |
+| Claude Code            | `~/.claude` or `CLAUDE_CONFIG_DIR`          |
+| Pi                     | `~/.pi/agent` or `PI_AGENT_DIR`             |
+| Oh My Pi               | `~/.omp/agent`, with `OMP_PROFILE` when set |
+| DeepSeek Harness (DSH) | `~/.dsh` or `DSH_HOME`                      |
 
 Authenticate or configure the provider on that machine first. Dieter does not
 transfer provider credentials between hosts or store them on the gateway.
@@ -72,9 +72,8 @@ already in flight remains pinned to its digest across recovery, and the next tur
 uses the current runtime.
 
 DSH is installed lazily through the ACP bootstrap at its tested version; a global
-`dsh` installation is not required. See the
-[DSH integration reference](https://github.com/dbpprt/dieter/blob/main/docs/deepseek-dsh-harness.md)
-for provider configuration and diagnostics.
+`dsh` installation is not required. Use `dieter harness list` for the current
+provider configuration and `dieter doctor` for host diagnostics.
 
 ## Provider quotas
 

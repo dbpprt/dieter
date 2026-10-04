@@ -82,7 +82,7 @@ optional Apple/NVIDIA/AMD GPU telemetry. Optional GPU fields are omitted when a
 driver cannot provide them; zero remains a real measurement.
 
 Accidental re-enrollment does not move conversation ownership. If a revoked
-original machine ID and its active replacement share the *same* Ed25519 key,
+original machine ID and its active replacement share the _same_ Ed25519 key,
 the original account owner can recover it with an updated gateway and CLI.
 First preserve `DIETER_HOME`, confirm the original transcripts remain on the
 owner host, and check the two gateway records and key identity. Then run on
@@ -881,7 +881,7 @@ The response contains the gathered answer, session ID, expiry, state and mode.
 Mode is `unknown` before ICE selection and then `direct` or `turn`; candidate
 kinds describe the selected path without exposing addresses. A data-only peer
 must create the reliable ordered `dieter-control-tls-v1` channel and speak the
-bounded byte framing in `docs/webrtc-control-transport.md`. It carries the
+bounded byte framing in `internal/controlrtc/stream.go`. It carries the
 ordinary authenticated TLS/gRPC connection, not unencrypted protobuf RPCs.
 A close is transport-only. Existing agent turns, terminals and remote executions
 continue; callers resume eligible watches using their existing cursors.
@@ -922,7 +922,8 @@ Daemon synchronization needs no client. Initialized replicas accept offline edit
 credential discovery and RTC bootstrap may require the gateway. Paths, secrets,
 transcripts, queues, and executable validation stay on the owner. There are no
 parallel-agent caps; one conversation still has one active turn. Transport and
-storage bounds remain. Never edit DIETER_HOME directly. See docs/peer-store.md.
+storage bounds remain. Never edit DIETER_HOME directly. See the architecture guide in
+`landingpage/content/docs/architecture.md`.
 
 Gateway, daemon/CLI, and native clients report one canonical SemVer release. The
 gateway publishes minimum client and daemon releases and rejects software below
@@ -939,7 +940,8 @@ account-scoped portable JSON. All use the daemon API and global `--machine`.
 Folders, membership, project ordering, pinned-project membership/order,
 pinned-chat ordering, disclosure, and lane sort direction share the `navigation`
 namespace across native clients. See
-`docs/client-navigation-folders.md` for keys and projection rules.
+`apps/core/shared/src/commonMain/kotlin/com/dbpprt/dieter/core/navigation/SharedKv.kt`
+for keys and projection rules.
 
 `kv put --namespace NS --key KEY --file value.json --revision REV` replaces the
 observed local revision (omit revision only for creation). `kv move` accepts

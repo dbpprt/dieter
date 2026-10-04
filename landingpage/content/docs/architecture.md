@@ -9,11 +9,11 @@ slug: "architecture"
 
 ## Three components
 
-| Component | Owns |
-| --- | --- |
+| Component               | Owns                                                                                                                              |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `dieter` daemon and CLI | Local checkouts, conversations, harness workers, files, terminals, processes, and schedules; a replica of shared account metadata |
-| `dieter-gateway` | Account sessions, enrolled machine identity, presence, route metadata, and normalized provider quota snapshots |
-| Native clients | Presentation, local caches, drafts, and durable pending client commands |
+| `dieter-gateway`        | Account sessions, enrolled machine identity, presence, route metadata, and normalized provider quota snapshots                    |
+| Native clients          | Presentation, local caches, drafts, and durable pending client commands                                                           |
 
 The Go daemon hosts agents on macOS and Linux. SwiftUI clients serve macOS and
 iOS; Kotlin/Jetpack Compose serves Android. The CLI uses the same daemon API as
@@ -32,7 +32,7 @@ to the owner of the selected conversation, checkout, terminal, or process.
 
 Concurrent peer edits are causal siblings that can require explicit resolution.
 A write acknowledges local durability, not a quorum or globally linearizable CAS.
-See the [peer-store reference](https://github.com/dbpprt/dieter/blob/main/docs/peer-store.md).
+Use `dieter peer status` to inspect local peer synchronization.
 
 ## One API, three routes
 
@@ -95,5 +95,5 @@ software below those floors. Compatible releases may differ. The stable
 API implementations.
 
 The project is pre-release. Unsupported development stores have no automatic
-migration path. See the [release compatibility reference](https://github.com/dbpprt/dieter/blob/main/docs/api-contract.md)
-and [API schema](https://github.com/dbpprt/dieter/tree/main/api/proto).
+migration path. The [API schema](https://github.com/dbpprt/dieter/tree/main/api/proto)
+defines the current release contract.

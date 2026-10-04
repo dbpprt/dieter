@@ -68,8 +68,8 @@ bytes are retained separately from bounded diagnostic uploads.
 
 ## Signing and TestFlight
 
-See [Apple credential setup](../../docs/apple-release-signing.md) and
-[release policy](../../fastlane/README.md#ci-and-release-policy).
+See the [release pipeline guide](../../fastlane/README.md#ci-and-release-policy)
+for Apple credentials and release policy.
 Dedicated Apple Distribution credentials, separate app/Share App Store profiles,
 and a team App Store Connect API key are required for distribution. The default
 identities are `com.dbpprt.dieter.ios`, `.share`, and
@@ -130,7 +130,8 @@ The phone uses stacked navigation; iPad uses sidebar, list, and conversation col
 
 ## Verification
 
-See [implementation validation](VALIDATION.md) for observed results and current limits.
+Use the [native qualification commands](../../fastlane/README.md#native-end-to-end-tests)
+to verify the current implementation and collect its results.
 
 The shared E2E runner creates its own simulator, temporary gateway, enrolled daemon, mock harness, and Git repository. It exercises real native controls and real remote RPCs without production accounts or provider credentials. It stops only those owned resources and preserves test results and screenshots. Existing simulators and operator daemons are left untouched.
 
