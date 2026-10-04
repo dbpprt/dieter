@@ -70,10 +70,12 @@ bytes are retained separately from bounded diagnostic uploads.
 
 See the [release pipeline guide](../../fastlane/README.md#ci-and-release-policy)
 for Apple credentials and release policy.
+The release targets Dennis Bappert’s team through the tracked iOS identity in
+`fastlane/release-policy.json`; see the [migration runbook](../../docs/ios-testflight-account-migration.md).
 Dedicated Apple Distribution credentials, separate app/Share App Store profiles,
 and a team App Store Connect API key are required for distribution. The default
-identities are `com.dbpprt.dieter.ios`, `.share`, and
-`group.com.dbpprt.dieter.ios`; both profiles must include that App Group.
+identities are `com.getdieter.ios`, `.share`, and
+`group.com.getdieter.ios`; both profiles must include that App Group.
 
 Main builds one immutable signed IPA and retains it on the **dev** GitHub
 prerelease. Publication delivers those exact bytes to internal TestFlight groups

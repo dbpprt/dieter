@@ -7,9 +7,13 @@ require_relative "../lib/dieter/distribution/testflight"
 
 class TestFlightRecoveryTest < Minitest::Test
   class Context
-    attr_reader :secrets, :output, :commands
+    attr_reader :secrets, :output, :commands, :config
     def initialize(root)
       @secrets, @output, @commands = [], root, []
+      @config =
+        Struct.new(:policy).new(
+          JSON.parse(File.read(File.expand_path("../release-policy.json", __dir__)))
+        )
     end
     def command(argv, **options)
       @commands << [argv, options]
@@ -78,11 +82,14 @@ class TestFlightRecoveryTest < Minitest::Test
     @groups, @builds, @uploads, @queries = [@group], [], [], []
     @policy = { "testflight" => true, "testflight_groups" => ["Developers"] }
     @coordinator = Object.new
-    policy, hash = @policy, @hash
+    policy, hash, ios = @policy, @hash, @context.config.policy.fetch("ios")
     @coordinator.define_singleton_method(:verify_retained) do
-      [{ "policy" => { "channels" => { "dev" => policy } } }, { "Dieter-iOS.ipa" => hash }]
+      [
+        { "policy" => { "channels" => { "dev" => policy }, "ios" => ios } },
+        { "Dieter-iOS.ipa" => hash }
+      ]
     end
-    @app = OpenStruct.new(id: "app-1", bundle_id: "com.dbpprt.dieter.ios")
+    @app = OpenStruct.new(id: "app-1", bundle_id: ios.fetch("bundle_id"))
     groups = @groups
     @app.define_singleton_method(:get_beta_groups) { |**| groups }
     @app_model = Object.new
@@ -143,6 +150,39 @@ class TestFlightRecoveryTest < Minitest::Test
     assert_equal ["exact-build"], @group.members.map(&:id)
     assert_equal "1.4.12", @queries.first.fetch(:build_number)
     assert_equal "0.4.413", @queries.first.fetch(:version)
+  end
+
+  def test_previous_account_bundle_is_rejected_before_apple_authentication
+    ENV["IOS_BUNDLE_ID"] = "com.dbpprt.dieter.ios"
+    assert_raises(Dieter::PipelineError) { runner.deliver }
+    assert_nil @store.token
+    assert_empty @uploads
+    assert_empty @queries
+  end
+
+  def test_previous_account_candidate_is_rejected_before_apple_authentication
+    @coordinator.define_singleton_method(:verify_retained) do
+      [
+        {
+          "policy" => {
+            "channels" => {
+              "dev" => {
+                "testflight" => true,
+                "testflight_groups" => ["Developers"]
+              }
+            },
+            "ios" => {
+              "team_id" => "DS6N5L85E7",
+              "bundle_id" => "com.dbpprt.dieter.ios"
+            }
+          }
+        },
+        {}
+      ]
+    end
+    assert_raises(Dieter::PipelineError) { runner.deliver }
+    assert_nil @store.token
+    assert_empty @uploads
   end
 
   def test_repeated_delivery_reconciles_existing_build_without_upload_or_group_mutation

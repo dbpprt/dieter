@@ -117,7 +117,7 @@
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks";
 				"INFOPLIST_FILE" = "DieterIOSApp/Info.plist";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "$(DIETER_IOS_BUNDLE_ID)";
-				"DIETER_IOS_BUNDLE_ID" = "com.dbpprt.dieter.ios";
+				"DIETER_IOS_BUNDLE_ID" = "com.getdieter.ios";
 				"DIETER_IOS_APP_GROUP_ID" = "group.$(DIETER_IOS_BUNDLE_ID)";
 				"DIETER_IOS_SIGN_STYLE" = "Automatic";
 				"DIETER_IOS_SIGN_IDENTITY" = "Apple Development";
@@ -179,7 +179,7 @@
 				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/Dieter.app/Dieter";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "$(DIETER_IOS_BUNDLE_ID).native-tests";
-				"DIETER_IOS_BUNDLE_ID" = "com.dbpprt.dieter.ios";
+				"DIETER_IOS_BUNDLE_ID" = "com.getdieter.ios";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
 				"BUNDLE_LOADER" = "$(TEST_HOST)";
 				"PRODUCT_NAME" = "$(TARGET_NAME)";
@@ -215,7 +215,7 @@
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "$(DIETER_IOS_BUNDLE_ID).uitests";
-				"DIETER_IOS_BUNDLE_ID" = "com.dbpprt.dieter.ios";
+				"DIETER_IOS_BUNDLE_ID" = "com.getdieter.ios";
 				"TEST_TARGET_NAME" = "DieterIOSApp";
 				"DIETER_IOS_SIGN_STYLE" = "Automatic";
 				"DIETER_IOS_SIGN_IDENTITY" = "Apple Development";
@@ -329,7 +329,7 @@
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "$(DIETER_IOS_BUNDLE_ID).uitests";
-				"DIETER_IOS_BUNDLE_ID" = "com.dbpprt.dieter.ios";
+				"DIETER_IOS_BUNDLE_ID" = "com.getdieter.ios";
 				"TEST_TARGET_NAME" = "DieterIOSApp";
 				"DIETER_IOS_SIGN_STYLE" = "Automatic";
 				"DIETER_IOS_SIGN_IDENTITY" = "Apple Development";
@@ -350,7 +350,7 @@
 				"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/Dieter.app/Dieter";
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "$(DIETER_IOS_BUNDLE_ID).native-tests";
-				"DIETER_IOS_BUNDLE_ID" = "com.dbpprt.dieter.ios";
+				"DIETER_IOS_BUNDLE_ID" = "com.getdieter.ios";
 				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
 				"ENABLE_TESTABILITY" = "YES";
 				"BUNDLE_LOADER" = "$(TEST_HOST)";
@@ -454,7 +454,7 @@
 				"LD_RUNPATH_SEARCH_PATHS" = "$(inherited) @executable_path/Frameworks";
 				"INFOPLIST_FILE" = "DieterIOSApp/Info.plist";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "$(DIETER_IOS_BUNDLE_ID)";
-				"DIETER_IOS_BUNDLE_ID" = "com.dbpprt.dieter.ios";
+				"DIETER_IOS_BUNDLE_ID" = "com.getdieter.ios";
 				"DIETER_IOS_APP_GROUP_ID" = "group.$(DIETER_IOS_BUNDLE_ID)";
 				"DIETER_IOS_SIGN_STYLE" = "Automatic";
 				"DIETER_IOS_SIGN_IDENTITY" = "Apple Development";
@@ -565,7 +565,7 @@
 				"CURRENT_PROJECT_VERSION" = "1";
 				"DEVELOPMENT_TEAM" = "$(DIETER_IOS_TEAM_ID)";
 				"DIETER_IOS_APP_GROUP_ID" = "group.$(DIETER_IOS_BUNDLE_ID)";
-				"DIETER_IOS_BUNDLE_ID" = "com.dbpprt.dieter.ios";
+				"DIETER_IOS_BUNDLE_ID" = "com.getdieter.ios";
 				"DIETER_IOS_SIGN_IDENTITY" = "Apple Development";
 				"DIETER_IOS_SIGN_STYLE" = "Automatic";
 				"GENERATE_INFOPLIST_FILE" = "NO";
@@ -596,7 +596,7 @@
 				"CURRENT_PROJECT_VERSION" = "1";
 				"DEVELOPMENT_TEAM" = "$(DIETER_IOS_TEAM_ID)";
 				"DIETER_IOS_APP_GROUP_ID" = "group.$(DIETER_IOS_BUNDLE_ID)";
-				"DIETER_IOS_BUNDLE_ID" = "com.dbpprt.dieter.ios";
+				"DIETER_IOS_BUNDLE_ID" = "com.getdieter.ios";
 				"DIETER_IOS_SIGN_IDENTITY" = "Apple Development";
 				"DIETER_IOS_SIGN_STYLE" = "Automatic";
 				"GENERATE_INFOPLIST_FILE" = "NO";
