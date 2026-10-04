@@ -255,6 +255,9 @@ one SwiftPM scratch graph for tests and app packaging. Local/self-hosted builds
 keep their existing paths. Release producers do not restore qualification caches.
 The first cache fill is still cold; cache transfer has a measurable cost and these
 changes alone do not promise a ten-minute complete functional catalog.
+Routine portable CI executes the typed affected check/package plan, including
+reverse Go dependencies, without unrelated Go/harness/native suites. Full runs and
+events with no usable change base retain complete portable qualification.
 `native-e2e.yml` selects the explicit
 hardware matrix; Android and Mac desktop hardware runs need registered runners.
 No untrusted PR runs on an owned physical device.

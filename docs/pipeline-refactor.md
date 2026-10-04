@@ -160,6 +160,8 @@ Kotlin Apple 5m20s, Go/harness 10m02s and Android 12m36s. Portable/Android/core
 diagnostics were only about 3–12 KB.
 
 Routine PR/main checks now use affected selection and the explicit
+typed portable check/package plan (including reverse Go dependencies), rather
+than running every portable suite whenever any portable input changes. The
 `ios.connecting` journey on both layouts, while full scheduled/manual qualification
 retains every functional assertion. Hosted Apple qualification shares the Mac
 test/app compilation graph and caches unsigned compiler/dependency state. The

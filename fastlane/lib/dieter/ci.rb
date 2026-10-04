@@ -116,6 +116,16 @@ module Dieter
       context.environment["DIETER_RELEASE_VERSION"] = SourceIdentity.version(context)
       case component
       when "portable"
+        base = ENV["CI_CHANGE_BASE"]
+        if !full && base && !base.empty? && !base.match?(/\A0+\z/)
+          plan = Contract.new(context).call("affected-checks", {base: base, kind: "local"})
+          Atomic.json(File.join(context.output, "affected-checks.json"), plan)
+          plan.fetch("checks").each do |request|
+            next unless %w[portable daemon gateway].include?(request.fetch("component"))
+            Checks.perform(context, request.fetch("component"), request.fetch("operation"), request.fetch("options", {}), packages: request.fetch("packages", []))
+          end
+          return
+        end
         Checks.perform(context, "portable", "justfile_check")
         Checks.perform(context, "portable", "workflow_check")
         context.command(["bash", "scripts/generate-proto.sh"], timeout: 600)

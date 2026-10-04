@@ -58,6 +58,7 @@ jobs:
           PIPELINE_PROFILE: ${{ inputs.native_profile }}
           PIPELINE_PROFILES: ${{ inputs.native_profiles }}
           PIPELINE_FULL: ${{ inputs.full }}
+          CI_CHANGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           DIETER_APPLE_CHECK_CACHE: 'true'
         run: just pipeline ci action:check component:"$PIPELINE_COMPONENT" full:"$PIPELINE_FULL" cases:"$PIPELINE_CASES" suite:"$PIPELINE_SUITE" profile:"$PIPELINE_PROFILE" profiles:"$PIPELINE_PROFILES"
       - name: Execute required native cases

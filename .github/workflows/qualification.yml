@@ -39,6 +39,7 @@ jobs:
     with:
       component: portable
       runner: ubuntu-latest
+      full: ${{ inputs.full }}
   core:
     name: Kotlin core (JVM)
     needs: changes

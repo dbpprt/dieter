@@ -6,6 +6,32 @@ require "fastlane/command_line_handler"
 require_relative "../lib/dieter/ci"
 
 class CIOptionsTest < Minitest::Test
+  def test_routine_portable_ci_uses_the_typed_affected_package_plan_without_native_work
+    previous = ENV["CI_CHANGE_BASE"]
+    ENV["CI_CHANGE_BASE"] = "a" * 40
+    context = Struct.new(:root, :environment, :output).new("/isolated", {}, "/evidence")
+    requests = [{"component" => "portable", "operation" => "go_test", "packages" => ["./internal/pipeline"]},
+                {"component" => "portable", "operation" => "contracts"},
+                {"component" => "mac", "operation" => "e2e"}]
+    contract = Object.new
+    contract.define_singleton_method(:call) do |operation, values|
+      raise "wrong selection" unless operation == "affected-checks" && values == {base: "a" * 40, kind: "local"}
+      {"checks" => requests}
+    end
+    executed = []
+    executor = lambda { |_context, component, operation, options, packages:| executed << [component, operation, options, packages] }
+    Dieter::SourceIdentity.stub(:version, "0.4.413") do
+      Dieter::Contract.stub(:new, ->(*) { contract }) do
+        Dieter::Atomic.stub(:json, nil) do
+          Dieter::Checks.stub(:perform, executor) { Dieter::CI.check(context, "portable", full: false) }
+        end
+      end
+    end
+    assert_equal [["portable", "go_test", {}, ["./internal/pipeline"]], ["portable", "contracts", {}, []]], executed
+  ensure
+    previous ? ENV["CI_CHANGE_BASE"] = previous : ENV.delete("CI_CHANGE_BASE")
+  end
+
   def test_dev_release_cannot_pass_with_skipped_candidates_publication_or_delivery
     results = %w[reserve candidates coordinate distribute].to_h { |name| [name, {"result" => "success"}] }
     Dieter::CI.qualify_release(results, channel: "dev")
