@@ -98,7 +98,7 @@ end
 %i[android ios mac].each do |component|
   platform component do
     unless component == :ios
-      desc(component == :mac ? "Local Mac tools; action:status|run|quit|verify|format|format_check|proto_generate|proto_check" : "Local Android tools; action:status|emulator_check|install|launch|app_stop|ui_dump|screenshot|logs profile:NAME")
+      desc(component == :mac ? "Local Mac tools; action:status|run|quit|verify|format|format_check|proto_generate|proto_check" : "Local Android tools; action:status|emulator_setup|emulator_check|emulator_run|emulator_stop|install|launch|app_stop|ui_dump|screenshot|logs profile:NAME")
       lane :local do |options|
         Dieter::Operations.invoke(component.to_s, options)
       end

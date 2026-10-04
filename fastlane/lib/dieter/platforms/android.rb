@@ -37,10 +37,14 @@ module Dieter
       artifact
     end
 
+    def admit_preparation(_target, _plan)
+      @context.lease("android-build")
+    end
+
     def admit(target, plan)
       @target, @serial = target, target.fetch("serial")
       @context.lease("android-device", identity: @serial)
-      AndroidEmulator.new(@context, @sdk, target).start if target["kind"] == "emulator"
+      @emulator = AndroidEmulator.new(@context, @sdk, target).start if target["kind"] == "emulator"
       if plan.any? { |test_case| test_case["build"] == "performance" } && target["kind"] != "emulator"
         raise Unavailable, "Performance qualification requires the selected emulator"
       end
@@ -84,6 +88,7 @@ module Dieter
     end
 
     def execute_case(_target, test_case)
+      @emulator&.verify_ui!
       dir = File.join(@context.output, test_case.fetch("id"))
       FileUtils.mkdir_p(dir, mode: 0o700)
       state = Dir.mktmpdir("android-case-", @context.private_dir)

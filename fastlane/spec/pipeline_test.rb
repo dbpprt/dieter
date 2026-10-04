@@ -42,7 +42,7 @@ class PipelineConfigTest < Minitest::Test
   end
 
   def test_unknown_keys_executable_hooks_and_local_release_policy_are_rejected
-    [{hooks: {after: "sh"}}, {release: {channel: "stable"}}, {profiles: {"android-emulator" => {renderer: "software"}}}].each do |value|
+    [{hooks: {after: "sh"}}, {release: {channel: "stable"}}, {profiles: {"android-emulator" => {renderer: "unknown"}}}].each do |value|
       override(value)
       assert_raises(Dieter::PipelineError) { Dieter::Config.new(@root, ci: false) }
     end
@@ -391,6 +391,25 @@ class PipelineExecutionTest < Minitest::Test
     Dieter::Pipeline.new(@context, request, FakeAdapter.new, contract: @contract).run
     assert_equal "", @contract.plans.last.fetch(:suite)
     assert_equal ["first"], @contract.plans.last.fetch(:ids)
+  end
+
+  def test_android_preparation_builds_without_device_admission_or_cases
+    adapter = FakeAdapter.new(failure: Dieter::Unavailable.new("no device attached"))
+    adapter.define_singleton_method(:admit_preparation) { |*| @calls << :admit_preparation }
+    request = Dieter::PipelineRequest.new("prepare_tests", "android")
+    Dieter::Pipeline.new(@context, request, adapter, contract: @contract).run
+    assert_equal [:admit_preparation, :prepare], adapter.calls
+    assert_empty @contract.reports
+    assert JSON.parse(File.read(File.join(@context.output, "cleanup.json"))).fetch("passed")
+  end
+
+  def test_android_execution_prepares_before_booting_but_still_requires_device_admission
+    adapter = FakeAdapter.new
+    adapter.define_singleton_method(:admit_preparation) { |*| @calls << :admit_preparation }
+    request = Dieter::PipelineRequest.new("e2e", "android")
+    Dieter::Pipeline.new(@context, request, adapter, contract: @contract).run
+    assert_equal [:admit_preparation, :prepare, :admit, "first", "second"], adapter.calls
+    assert_equal ["passed", "passed"], @contract.reports.last.fetch("results").map { |value| value.fetch("status") }
   end
 
   def test_relative_artifact_verification_resolves_from_repository_while_fastlane_changes_directory

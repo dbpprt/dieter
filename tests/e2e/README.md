@@ -3,7 +3,7 @@
 Run repository commands from the root. macOS, iOS and Android share case selection, deadlines, JSON/JUnit reporting and
 required-result qualification. Android uses a separate
 `com.dbpprt.dieter.e2e` app, disposable authenticated daemon/gateway fixtures,
-and the existing visible `Pixel_9_API_37_1` emulator. No live account or operator
+and the headless `Dieter_AOSP_API_35` emulator. No live account or operator
 app data is used.
 
 See [the pipeline guide](../../fastlane/README.md) for setup, ignored local
@@ -67,13 +67,16 @@ native methods are listed; skipped, missing, duplicate, failed, and interrupted
 results fail the command. Native assertions remain native code. Ordinary journeys
 are YAML, interpreted by Compose; adding a flow does not require a new APK.
 
-Android's default profile pins `emulator-5554` and `Pixel_9_API_37_1`.
-Named profiles in ignored local JSON replace ambient serial/AVD selection.
-Physical devices require an explicit exact-serial profile. The pipeline verifies
-AVD identity, normal snapshot/host-GLES health and device boot before use.
-It borrows existing healthy targets and closes only emulators it launched, after
-healthy snapshot save. `android local action:emulator_check` verifies normal
-launch/save/close; repeat it to verify snapshot reload. Phones are never shut down.
+Android's default profile pins `emulator-5554` and `Dieter_AOSP_API_35`, with
+headless automatic rendering and snapshots disabled. Runtime/image and
+AVD userdata live in ignored project `.android/`. Named profiles in ignored local JSON select exact targets; physical devices require an explicit serial.
+Fastlane creates a missing test AVD from the installed API 35 image, checks exact
+AVD identity, boot and package services, and closes only processes it launched.
+`android local action:emulator_check` verifies startup/readiness/closure.
+`android local action:emulator_run` keeps an owned emulator warm for subsequent
+borrowers; run `android local action:emulator_stop` after borrowers finish.
+Borrowed emulators
+and phones remain running. See [Fastlane configuration and lifecycle](../../fastlane/README.md).
 
 Each physical device or emulator gets one lease; runs on different devices may
 execute concurrently after serialized shared-build preparation. The runner validates before building, acquires the per-device lease, prepares
@@ -154,9 +157,11 @@ so CI and release use the same portable gate. `just pipeline ci action:check com
 E2E apps/test drivers as well as running unit tests, debug assembly, and lint;
 `full:true` also compiles the performance variants for release qualification.
 Android device execution uses `just pipeline android e2e` with an explicit local
-profile. Install Just/Go/Node/JDK21/Android SDK and qualify the configured visible
-`Pixel_9_API_37_1` AVD with host GLES first. The pipeline does not create, cold boot,
-or replace an emulator. Mac journeys use the configured local desktop. The manual
+profile. Install Just/Go/Node/JDK21/Android SDK and the API 35 AOSP system image
+for the host architecture, then run `android local action:emulator_setup` once.
+Fastlane keeps its runtime/image and AVD in ignored project `.android/`, creates
+a missing selected test AVD and boots without snapshots. Existing AVDs are never
+replaced or wiped. Mac journeys use the configured local desktop. The manual
 `Native qualification` workflow runs iPhone and iPad simulator profiles sequentially
 on one GitHub-hosted macOS worker, using one verified simulator build.
 

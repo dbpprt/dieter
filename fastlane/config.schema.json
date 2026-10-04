@@ -189,14 +189,36 @@
               ]
             },
             "visible": {
-              "enum": [
-                true
-              ]
+              "type": "boolean"
             },
             "renderer": {
               "enum": [
-                "host"
+                "auto",
+                "host",
+                "software",
+                "swiftshader",
+                "swangle",
+                "lavapipe"
               ]
+            },
+            "system_image": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^system-images;android-[0-9]+;[a-z0-9_]+;(native|arm64-v8a|x86_64)$"
+            },
+            "boot_timeout": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 600
+            },
+            "storage_dir": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^\\.android(-[A-Za-z0-9_-]+)?$"
             }
           },
           "oneOf": [

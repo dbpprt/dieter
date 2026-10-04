@@ -13,108 +13,31 @@ render it here. View mechanics (layout, animation, focus, and the conversation
 scroll policy), gesture geometry, locale formatting, colours, and icons stay in
 the app.
 
-Use the real native app in the visible local Android emulator for every Android
-change. The standard AVD is `Pixel_9_API_37_1`; reuse it when it is already
-running instead of starting a headless or disposable emulator. Keep this as the
-only Dieter AVD; do not create another API-level-specific AVD for routine tests.
+Use Fastlane for builds, local operations and isolated native tests. Read
+[`fastlane/README.md`](../../fastlane/README.md) for named local profiles,
+headless emulator provisioning, the warm-emulator workflow and ownership rules.
+The default test AVD is separate from operator AVDs and uses no snapshots.
+No Android-specific skill or manual graphics/snapshot ritual is required.
 
-Launch it with its checked, working graphics configuration and saved snapshot:
+Android emulator E2E is currently flaky and is actively being worked on. Known
+software-rendered startup failures can leave a System UI ANR dialog that steals
+Espresso focus. Automatic headless rendering and system-error admission checks
+are being qualified; preserve failed evidence and keep the native assertions.
 
 ```sh
+just pipeline android local action:emulator_setup # once: project-local runtime/image
 just pipeline android local action:emulator_check
+just pipeline android e2e suite:smoke
 ```
 
-The pipeline selects `-gpu host` to prevent automatic memory-based software fallback.
-Do not add `-gpu swiftshader*`, `-no-snapshot-load`, `-no-snapshot`,
-or cold-boot flags. Those overrides bypass the AVD's working graphics and
-snapshot configuration and can leave Android system services unresponsive. If
-the saved snapshot fails to load, stop and diagnose the AVD instead of silently
-continuing with a cold boot. Before launching, avoid CPU starvation from stale
-browser-automation sessions and confirm that another emulator is not already
-running. Leave the AVD's `hw.gpu.mode` set to `auto`. Stop leftover Gradle
-daemons before a snapshot repair and make enough host memory available for the
-emulator's host GLES renderer:
-
-```sh
-./apps/android/gradlew --stop
-vm_stat
-```
-
-The launcher reports a 6 GiB reclaimable-memory estimate as advice. It must not
-block testing solely on that estimate: emulator auto-selection can choose
-software GL unnecessarily below 5 GiB. The supported Apple GPU is selected
-explicitly, and renderer, boot, focus, UI hierarchy and screenshot checks decide
-whether it is usable. Never kill unrelated operator apps to free memory or
-reduce the guest below the API image's supported RAM minimum.
-
-The AVD registry entry under `~/.android/avd` may point to its data directory on
-an external APFS volume. Resolve the `path=` value instead of assuming userdata
-is on the internal disk. Free-space checks, snapshot diagnosis, and lock-file
-inspection apply to that resolved volume. Keep it mounted through graceful
-shutdown and snapshot saving. If ordinary reads of its `config.ini` stall, stop
-the launcher attempt and restore volume responsiveness before retrying; do not
-copy, recreate, or cold-boot the AVD on another volume as a workaround.
-
-The startup log must report `gles_mode_selected:host` and identify the Apple
-GPU. If it instead says that software GL will be used due to system memory
-pressure, free memory and restart the emulator before using or saving its
-state. Emulator 37.1 on API 37 can still select `lavapipe` for its separate
-Vulkan compatibility path, while the guest `SurfaceFlinger` reports an
-ANGLE/SwiftShader `GLES:` string. Treat the latest `gles_mode_selected:host`
-and `OpenGL ES Translator (Apple ...)` launch-log lines as authoritative; use
-the `SurfaceFlinger` dump only to prove guest renderer responsiveness. A launch
-whose selected emulator GLES mode is `swangle` remains unhealthy.
-
-Never stop or snapshot the emulator while ADB is offline, boot animation is
-running, or Android has no focused window. Normal snapshot saving must stay enabled. The owning Fastlane run returns to
-the launcher, explicitly saves `default_boot`, checks its required artifacts and
-save log, and only then closes its emulator. Borrowed devices remain running.
-Stopping an incomplete fallback boot can still replace a missing snapshot with
-a corrupt one. The admission and cleanup stages wake and dismiss the keyguard before
-requiring the real launcher; a wallpaper-only or black health image is not an
-acceptable focused state. Before a deliberate shutdown require all of the
-following:
-
-```sh
-adb -s emulator-5554 shell getprop sys.boot_completed        # 1
-adb -s emulator-5554 shell getprop init.svc.bootanim          # stopped
-adb -s emulator-5554 shell dumpsys window | rg 'mCurrentFocus|mFocusedApp'
-adb -s emulator-5554 shell uiautomator dump /sdcard/avd-health.xml
-adb -s emulator-5554 shell screencap -p /sdcard/avd-health.png
-```
-
-`mCurrentFocus` must name a real window rather than `null`, the UI dump must
-complete without a null-root error, and the screenshot must be a valid full-size
-PNG. Also reject a boot if emulator output contains `Failed to find
-ColorBuffer`, `bad color buffer handle`, or snapshot restore errors. Keep the
-healthy emulator running between test passes when practical.
-
-## Recover a missing or corrupt snapshot
-
-Snapshot repair is exceptional maintenance, not a routine test launch. Confirm
-that no emulator process or ADB device remains and that the data volume has at
-least 10 GiB free after quarantining the old snapshot. Quarantine, rather than
-immediately delete, only the broken `snapshots/default_boot` directory and
-stale `hardware-qemu.ini.lock` or `multiinstance.lock` files. Preserve the AVD
-userdata images. If retaining a known-bad quarantine would leave insufficient
-working space, it may be deleted only after confirming its replacement is not
-needed for user-data recovery.
-
-Launch once with the standard command above and no override flags. Because the
-bad snapshot has been quarantined, the launcher identifies the missing
-`default_boot` and this one recovery launch intentionally boots from preserved
-userdata. Let it reach every health condition above; do not interrupt the
-fallback boot. Once Android is responsive and screenshots plus accessibility
-work, shut it down through the owning Fastlane run's graceful cleanup and wait for
-snapshot saving and the emulator process to finish.
-
-Relaunch with the same standard command. A repaired AVD is not accepted until
-the emulator reports that `default_boot` loaded successfully and the second
-boot again selects host GLES and passes every focus, accessibility, and
-screenshot check without color-buffer errors. Confirm that the saved
-`textures.bin` is nonempty. If that verification fails, quarantine the new
-snapshot and recreate the one standard AVD in Android Studio instead of
-repeatedly loading or overwriting broken graphics state.
+For repeated tests or manual app inspection, run
+`just pipeline android local action:emulator_run` as a registered background
+process. Wait for its ready message before running local operations or tests.
+Run `just pipeline android local action:emulator_stop` after borrowers finish
+to close the owned emulator.
+For a window, set `visible: true` in the named local emulator profile. PNG/XML
+inspection works headlessly too. Preserve existing AVDs, userdata, borrowed
+emulators, exact-device/build leases and the running operator daemon.
 
 ## Start and connect
 
@@ -144,7 +67,7 @@ repeatedly loading or overwriting broken graphics state.
 The Fastlane pipeline detects Android Studio's JDK and the local SDK when the
 shell environment does not already expose them.
 
-## Reproduce and verify visibly
+## Reproduce and verify
 
 Capture a semantic UI dump and screenshot before changing code, interact with
 the running app, then capture the same evidence after installing the fix:
@@ -204,7 +127,7 @@ just pipeline android e2e suite:functional changed:true
 just pipeline android e2e suite:sync
 ```
 
-After reinstalling, repeat the original interaction in the visible emulator,
+After reinstalling, repeat the original interaction in the selected emulator,
 inspect the final screenshot, and confirm the expected Dieter state through the
 app. Keep emulator screenshots and UI dumps outside the repository unless they
 are intentional design references.

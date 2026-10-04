@@ -92,14 +92,14 @@ environment variables are absent; a missing/removed `JAVA_HOME` falls back to JB
 
 Profiles select exact targets:
 
-| Profile                         | Target and ownership                                                                                                          |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `android-emulator`              | Visible `Pixel_9_API_37_1`, serial `emulator-5554`, host GLES; borrow a healthy running AVD or manage one launched by the run |
-| `android-device`                | Disabled until an exact ADB serial is configured; phone lifecycle remains with its owner                                      |
-| `ios-iphone`, `ios-ipad`        | Exact runtime and device type; create and delete a recorded disposable simulator                                              |
-| `ios-device`                    | Disabled until exact UDID, existing development signing and authenticated TLS fixture route are configured                    |
-| `mac-desktop`                   | Exclusive packaged test app on a logged-in desktop                                                                            |
-| `daemon-local`, `gateway-local` | Native host OS and architecture; build output never installs over a running service                                           |
+| Profile | Target and ownership |
+| --- | --- |
+| `android-emulator` | Project-local `.android/` AOSP `Dieter_AOSP_API_35`, serial `emulator-5554`, headless automatic rendering, no snapshots; borrow a healthy running AVD or manage one launched by the run |
+| `android-device` | Disabled until an exact ADB serial is configured; phone lifecycle remains with its owner |
+| `ios-iphone`, `ios-ipad` | Exact runtime and device type; create and delete a recorded disposable simulator |
+| `ios-device` | Disabled until exact UDID, existing development signing and authenticated TLS fixture route are configured |
+| `mac-desktop` | Exclusive packaged test app on a logged-in desktop |
+| `daemon-local`, `gateway-local` | Native host OS and architecture; build output never installs over a running service |
 
 To use an attached Android phone, set only this override and pass its profile
 explicitly on every operation:
@@ -219,7 +219,8 @@ just pipeline core_test
 just pipeline core_apple_test
 just pipeline android test_unit
 just pipeline android build
-just pipeline android local action:emulator_check # run twice for snapshot reload
+just pipeline android local action:emulator_setup # copy installed runtime/image into .android
+just pipeline android local action:emulator_check # boot/readiness/owned cleanup
 just pipeline ios test_unit
 just pipeline ios_qualify profiles:ios-iphone,ios-ipad suite:smoke
 just pipeline ios build
@@ -284,6 +285,7 @@ Never delete locks or use broad process kills to bypass them.
 ```sh
 just pipeline catalog action:lint
 just pipeline catalog action:plan platform:android suite:functional changed:true base:main
+just pipeline android prepare_tests suite:smoke # build APKs without starting a device
 just pipeline android e2e profile:android-emulator suite:smoke
 just pipeline android e2e profile:android-device suite:functional
 just pipeline android e2e cases:machines.telemetry
@@ -306,7 +308,8 @@ just pipeline check component:mac operation:screens_hevc_test
 
 The [existing catalog](../tests/e2e/README.md) and its native assertions remain
 authoritative. One shared stage loop plans, admits, prepares, executes, qualifies
-and cleans up. Adapters own platform tools; they do not implement another test
+and cleans up. Android builds APKs and fixtures before device admission to avoid
+compiler contention during emulator boot. Adapters own platform tools; they do not implement another test
 loop. Every case gets fresh private client/daemon/gateway state. Exact native
 methods and phase assertions must pass once; missing, skipped, duplicate,
 failed, interrupted, unavailable and failed-cleanup results fail required gates.
@@ -326,14 +329,112 @@ must select a fresh directory. Private credentials, xctestrun launch environment
 and raw credential-bearing results are removed on successful cleanup. Preserve
 failed ownership journals and diagnostics until recovery is understood.
 
-The emulator uses normal `default_boot` loading and saving with `-gpu host`.
-No cold boot, wipe, headless, software-renderer or `-no-snapshot-save` shortcut is
-allowed. Before use it checks exact AVD identity, external-volume space, boot,
-renderer, focused launcher, XML and PNG. A run closes only its own emulator,
-saves a healthy snapshot and verifies that the serial/process disappear. It
-leaves borrowed emulators and phones running. Performance requires the separate
-non-debuggable fixture APK and clean measurements; Android screen cases require
-a macOS capture host. Hardware availability is an explicit gate.
+Android emulator lifecycle is implemented in
+[platforms/emulator.rb](lib/dieter/platforms/emulator.rb), shared by E2E and local
+lanes. Install SDK command-line tools (`latest`), platform-tools, emulator 37.1+
+and the full API 35 AOSP image (`system-images;android-35;default;arm64-v8a`
+on Apple Silicon, `x86_64` on Intel/AMD) through Android Studio's SDK Manager.
+The profile's `native` suffix resolves the host architecture. ATD images disable
+UI drawing and cannot qualify our UI/capture tests.
+
+Run this once after installing those packages:
+
+```sh
+just pipeline android local action:emulator_setup
+```
+
+The default `storage_dir: ".android"` keeps real copies of emulator binaries,
+command-line tools, platform-tools and the selected image in the gitignored
+project `.android/sdk/`, AVD definitions and userdata in `.android/avd/`, and
+emulator preferences in `.android/user/`. Setup copies only missing packages
+from the configured host SDK, under a runtime lease, with atomic package
+publication. It never downloads or updates existing packages. App builds keep
+using the host SDK. To refresh a project runtime, close its managed emulator,
+remove the project cache, and run setup again. CI hardware runners need the same
+one-time setup in their checkout; CI ignores `fastlane/local.json`.
+
+Missing packages fail with their path and setup instruction. Test runs create a
+missing selected AVD from the local `system_image` with a Pixel 2 hardware profile,
+a 720p display and requested 4 GiB userdata (API 35 may increase it to 6 GiB).
+Fresh boot requires at least 8 GiB free; existing userdata requires 4 GiB free.
+Existing AVDs are never recreated, wiped or reconfigured. Android `prepare_tests`
+only leases/builds cached APK products and needs no running emulator or phone.
+
+The default boot disables snapshots, audio and boot animation and uses
+`-no-window -gpu auto`, which selects an available backend without a foreground
+window. GPU acceleration is used when available; software renderers remain
+configurable for hosts without a GPU. It retains userdata and APK build/install caches.
+Readiness polls exact AVD name and data directory, completed boot, stopped boot animation and
+package-manager responsiveness, then wakes/unlocks the display and requires a focused guest window without a
+system error dialog. The host emulator window stays hidden. No host-GPU log
+or foreground window is required. `boot_timeout` bounds startup (default 180s).
+Cold boots on software rendering can take about two minutes; the warm workflow
+avoids that cost between test runs. `emulator-admission.json` records measured
+startup and ownership; emulator
+output and `cleanup.json` retain diagnostics. Owned process groups close even
+when admission fails. Borrowed emulators and phones remain running.
+
+To customize a local target, merge this named profile into ignored
+`fastlane/local.json` (other signing/device settings remain as configured):
+
+```json
+{
+  "profiles": {
+    "android-emulator": {
+      "avd": "Dieter_AOSP_API_35",
+      "serial": "emulator-5554",
+      "system_image": "system-images;android-35;default;native",
+      "storage_dir": ".android",
+      "visible": false,
+      "renderer": "auto",
+      "boot_timeout": 180,
+      "lifecycle": "manage-if-started"
+    }
+  }
+}
+```
+
+Existing local JSON keeps its old explicit values: update its AVD/renderer/
+visibility/storage to adopt these defaults. `storage_dir` accepts `.android` or
+a named project dot folder such as `.android-ci`. Set `storage_dir: null` in an
+explicit profile to use the host SDK and existing `ANDROID_AVD_HOME` (or
+`~/.android/avd`) registry; no existing global AVD is moved. Never change storage
+while its warm controller runs: close it with its original profile first. `system_image: null` requires an existing
+AVD; `lifecycle: borrow` also requires that exact emulator to be running.
+`visible: true` opens a window. Renderers are `auto`, `host`, `software`,
+`swiftshader`, `swangle` and `lavapipe`; use a renderer supported by your pinned
+emulator. Borrowing validates the running guest without imposing launch flags.
+
+For fast iteration, keep one warm emulator under Fastlane ownership:
+
+```sh
+# Terminal: keep this command running; Ctrl-C closes its owned emulator.
+just pipeline android local action:emulator_run
+# After "ready", run in another terminal:
+just pipeline android e2e suite:smoke
+just pipeline android local action:screenshot
+just pipeline android local action:emulator_stop
+```
+
+Agents launch `emulator_run` through a registered background process, wait for
+readiness, and run `android local action:emulator_stop` after tests/inspection
+finish. Its AVD lease prevents duplicate launches while its device lease is
+released after startup so sequential tests can borrow it without rebooting. Tests hold the
+exact-device lease. Use `emulator_stop` only after borrowers finish; it holds the
+exact-device lease, verifies the journal/controller identity, requests graceful
+cleanup and waits for the journal and serial to disappear. Collect the registered
+owner result.
+The process Stop button force-kills jobs; use the Fastlane stop lane for cleanup.
+Running `emulator_check` without a warm owner tests boot and closure in one command.
+Never manually unlink locks or signal PIDs from a retained journal: an unfinished
+owner requires inspection, and only an absent process plus absent serial permits stale
+journal removal. A live warm owner's verified journal permits borrowing.
+
+Performance requires the separate non-debuggable fixture APK and clean
+measurements. Software rendering is suitable for functional tests; use an
+explicit `renderer: host` profile when qualifying GPU-dependent performance.
+Android screen cases require a macOS capture host. Required assertions,
+measurements, unavailable hardware and cleanup failures still fail gates.
 
 ## Specialized screen measurements
 

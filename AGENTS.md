@@ -73,14 +73,20 @@ existing development signing/network configuration. Never auto-select a phone.
 
 Preserve exact-device, desktop, build and signing leases and ownership journals.
 Manage only devices/processes started by the task; preserve operator apps and the
-live daemon. Android uses visible host GLES with normal snapshot loading/saving;
-never add wipe, cold-boot, software-renderer, headless or no-snapshot shortcuts.
+live daemon. Android lifecycle belongs to Fastlane: headless tests use a dedicated
+AVD with snapshots disabled; borrowed devices remain with their owners. Never
+wipe operator userdata or kill unrelated processes to repair a test run.
 Required missing/skipped/unavailable assertions and cleanup failures fail gates.
 Use registered background processes and collect their result before finishing.
 Stream sanitized build/test progress. Keep diagnostics bounded and separate from
 immutable checkpoints; never upload DerivedData, app bundles, archives or producer
 copies as diagnostics. Diagnostic upload outages do not require rerunning passed
 tests. Required assertions, cleanup and producer retention still fail closed.
+
+Android emulator E2E is currently flaky and is actively being worked on. A
+software-rendered boot can leave a System UI ANR dialog that steals test focus.
+Keep failed evidence and ownership journals; passing subsets do not qualify the
+full Android gate, and assertions must not be relaxed to hide emulator failures.
 
 Main produces **dev** prereleases with one reserved numeric SemVer across every
 component. Candidate reruns recover exact retained bytes; never rebuild a consumed

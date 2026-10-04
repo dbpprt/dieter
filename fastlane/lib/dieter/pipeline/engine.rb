@@ -23,6 +23,11 @@ module Dieter
 
     def run
       composition = COMPOSITIONS.fetch(@request.operation) { raise PipelineError, "Unknown operation #{@request.operation}" }
+      # Android APK/fixture preparation does not need a device. Finish compilation
+      # before booting the emulator so low-memory hosts do not thrash both VMs.
+      if @request.component == "android" && @request.operation == "e2e"
+        composition = %w[plan prepare_admission preparation admission cases qualification]
+      end
       Atomic.json(File.join(@context.output, "request.json"), @request.to_h)
       begin
         composition.each do |stage|
@@ -74,7 +79,11 @@ module Dieter
       return if @plan.empty?
       @target = @request.profile(@context.config)
       @report["serial"] = @target["serial"] || @target["udid"] || @target["name"]
-      @adapter.admit(@target, @plan)
+      if @request.operation == "prepare_tests" && @adapter.respond_to?(:admit_preparation)
+        @adapter.admit_preparation(@target, @plan)
+      else
+        @adapter.admit(@target, @plan)
+      end
     end
 
     def preparation
@@ -82,6 +91,12 @@ module Dieter
       began = clock
       @adapter.prepare(@target, @plan)
       @report["buildMs"] = ((clock - began) * 1000).round
+    end
+
+    def prepare_admission
+      return if @plan.empty?
+      @target = @request.profile(@context.config)
+      @adapter.admit_preparation(@target, @plan)
     end
 
     def cases

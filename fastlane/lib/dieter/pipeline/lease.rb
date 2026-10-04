@@ -12,8 +12,8 @@ module Dieter
 
     def self.path(resource, root: nil, identity: nil)
       case resource
-      when "android-device"
-        File.join(Dir.tmpdir, "android-device-leases-#{Process.uid}", "#{Digest::SHA256.hexdigest(identity)}.lock")
+      when "android-device", "android-avd", "android-runtime"
+        File.join(Dir.tmpdir, "#{resource}-leases-#{Process.uid}", "#{Digest::SHA256.hexdigest(identity)}.lock")
       when "ios-device"
         File.join(Dir.tmpdir, "ios-device-leases-#{Process.uid}", "#{Digest::SHA256.hexdigest(identity)}.lock")
       when "mac-desktop"

@@ -20,10 +20,13 @@
       "kind": "emulator",
       "enabled": true,
       "serial": "emulator-5554",
-      "avd": "Pixel_9_API_37_1",
+      "avd": "Dieter_AOSP_API_35",
       "lifecycle": "manage-if-started",
-      "visible": true,
-      "renderer": "host"
+      "visible": false,
+      "renderer": "auto",
+      "system_image": "system-images;android-35;default;native",
+      "boot_timeout": 180,
+      "storage_dir": ".android"
     },
     "android-device": {
       "platform": "android",

@@ -30,6 +30,7 @@ __pycache__/
 # Local scratch output
 /tmp/
 /.dieter-evidence/
+/.android*/
 /.bundle/
 /vendor/bundle/
 /fastlane/local.json
