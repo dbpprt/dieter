@@ -647,8 +647,13 @@ final class RemoteNodeUITests: XCTestCase {
             "Run task should remain visible and enabled after entering the task.\n\(app.debugDescription)")
         tap(app, "ios.create.run")
         assistantTextExists(app, "Mock harness received: Verify this request came from iOS", timeout: 150)
-        tap(app, "ios.conversation.model-settings")
-        XCTAssertTrue(element(app, "ios.conversation.model-settings.sheet").waitForExistence(timeout: 10))
+        // The reply can arrive before the agent catalog enables this toolbar
+        // action. Require its native readiness and observe the sheet opening.
+        let modelSettingsSheet = element(app, "ios.conversation.model-settings.sheet")
+        tapWhenEnabled(app, "ios.conversation.model-settings", opening: modelSettingsSheet)
+        XCTAssertTrue(
+            modelSettingsSheet.waitForExistence(timeout: 10),
+            "Model settings must open after its toolbar action.\n\(app.debugDescription)")
         XCTAssertTrue(element(app, "ios.conversation.model").exists)
         screenshot(app, "03-next-message-settings")
         tap(app, "ios.conversation.model-settings.done")
