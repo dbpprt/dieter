@@ -153,15 +153,12 @@ platform-specific script.
 so CI and release use the same portable gate. `just pipeline ci action:check component:android` compiles the
 E2E apps/test drivers as well as running unit tests, debug assembly, and lint;
 `full:true` also compiles the performance variants for release qualification.
-All device execution uses `just pipeline android e2e`. The Android job in the manual
-`Native qualification` workflow uses `self-hosted`, `macOS`, `dieter-android` for the visible
-Pixel emulator and all Android screen suites. Other physical Android suites use
-`self-hosted`, `Linux`, `dieter-android`. Install Just/Go/Node/JDK21/Android SDK and
-qualify the configured visible `Pixel_9_API_37_1` AVD with host GLES first. The
-pipeline does not create, cold boot, or replace an emulator. The Mac job uses a
-provisioned desktop; iOS simulator qualification runs iPhone and iPad profiles
-sequentially on one hosted macOS worker, using one verified simulator build.
-Runner provisioning is an explicit prerequisite for hardware dispatches.
+Android device execution uses `just pipeline android e2e` with an explicit local
+profile. Install Just/Go/Node/JDK21/Android SDK and qualify the configured visible
+`Pixel_9_API_37_1` AVD with host GLES first. The pipeline does not create, cold boot,
+or replace an emulator. Mac journeys use the configured local desktop. The manual
+`Native qualification` workflow runs iPhone and iPad simulator profiles sequentially
+on one GitHub-hosted macOS worker, using one verified simulator build.
 
 Android client logic (sign-in, routing, sync, the outbox, navigation,
 terminals, workspace review) lives in the shared KMP core and is covered by its

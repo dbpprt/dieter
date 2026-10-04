@@ -339,9 +339,9 @@ changes alone do not promise a ten-minute complete functional catalog.
 Routine portable CI executes the typed affected check/package plan, including
 reverse Go dependencies, without unrelated Go/harness/native suites. Full runs and
 events with no usable change base retain complete portable qualification.
-`native-e2e.yml` selects the explicit
-hardware matrix; Android and Mac desktop hardware runs need registered runners.
-No untrusted PR runs on an owned physical device.
+`native-e2e.yml` manually selects an iOS catalog suite and runs both iPhone and
+iPad simulator profiles on one GitHub-hosted macOS worker. Android, Mac desktop,
+and physical-device journeys run locally with explicit configured profiles.
 
 Main CI calls reusable `release.yml` after qualification; Release does not repeat
 those checks. Manual Release dispatch performs full qualification first. Main
@@ -363,18 +363,6 @@ Unsigned Android variant checks on disposable hosted runners retain bounded
 Gradle thread/heap and host resource diagnostics after five minutes without new
 build output. They keep the same build deadline and failure gate. Local and
 self-hosted runs never inspect operator JVMs.
-
-For self-hosted main device runs only, repository variables
-`DIETER_ANDROID_CI_CONFIG` and `DIETER_IOS_CI_CONFIG` may hold a bounded JSON
-override for `profiles.android-device`/`profiles.ios-device`, existing
-`signing.ios-development`, and TLS fixture routes. All schema checks still apply.
-They cannot change defaults, toolchains, release policy or distribution signing.
-Runner labels are `dieter-android` (Linux for physical Android suites;
-macOS for the visible Android emulator and every Android screen suite),
-`dieter-ios` (macOS), and `dieter-mac` (macOS). The Android macOS runner needs the
-configured Pixel AVD, host GLES and, for screens, capture/input permissions.
-Register/configure runners before dispatching those cells. Self-hosted runners
-must use Actions runner 2.327.1 or newer for the pinned Node 24 actions.
 
 Every push to main reserves one numeric SemVer and monotonically increasing
 native build counter before producing candidates. All gateway, daemon/CLI and

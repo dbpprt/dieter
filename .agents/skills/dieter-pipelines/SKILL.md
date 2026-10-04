@@ -42,7 +42,8 @@ unsigned compiler state in Actions; producers keep independent release graphs.
 Do not claim a ten-minute gate from a cold build or relabel a full catalog smoke.
 
 Named profiles in ignored `fastlane/local.json` select exact targets. CI ignores
-that file and uses tracked defaults or bounded trusted physical-device overrides.
+that file and uses tracked defaults on GitHub-hosted workers. Android, Mac desktop,
+and physical-device journeys use explicit local profiles.
 Never choose an arbitrary phone, replace an operator app, delete leases, clean
 build caches, or restart the live daemon. Use the Mac/Android skills when operating
 their devices. `ios_qualify` builds once and verifies products before each explicit

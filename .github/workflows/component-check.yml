@@ -10,17 +10,17 @@ on:
         required: true
       native_cases:
         type: string
-        default: ''
+        default: ""
       native_suite:
         type: string
-        default: ''
+        default: ""
       native_profile:
         type: string
-        default: ''
+        default: ""
       native_profiles:
         description: Simulator profiles sharing one verified build on the same worker
         type: string
-        default: ''
+        default: ""
       native_only:
         type: boolean
         default: false
@@ -32,8 +32,7 @@ permissions:
   contents: read
 jobs:
   check:
-    if: ${{ !endsWith(inputs.runner, '-hardware') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
-    runs-on: ${{ fromJSON(inputs.runner == 'android-hardware' && '["self-hosted","Linux","dieter-android"]' || inputs.runner == 'android-mac-hardware' && '["self-hosted","macOS","dieter-android"]' || inputs.runner == 'mac-hardware' && '["self-hosted","macOS","dieter-mac"]' || inputs.runner == 'ios-hardware' && '["self-hosted","macOS","dieter-ios"]' || format('["{0}"]', inputs.runner)) }}
+    runs-on: ${{ inputs.runner }}
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,7 +42,7 @@ jobs:
       - uses: ./.github/actions/pipeline-setup
         with:
           component: ${{ inputs.component }}
-          fixture: 'true'
+          fixture: "true"
           native: ${{ inputs.native_cases != '' || inputs.native_suite != '' }}
       - uses: ./.github/actions/apple-check-cache
         if: runner.environment == 'github-hosted' && (inputs.component == 'mac' || inputs.component == 'ios')
@@ -59,7 +58,7 @@ jobs:
           PIPELINE_PROFILES: ${{ inputs.native_profiles }}
           PIPELINE_FULL: ${{ inputs.full }}
           CI_CHANGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          DIETER_APPLE_CHECK_CACHE: 'true'
+          DIETER_APPLE_CHECK_CACHE: "true"
         run: just pipeline ci action:check component:"$PIPELINE_COMPONENT" full:"$PIPELINE_FULL" cases:"$PIPELINE_CASES" suite:"$PIPELINE_SUITE" profile:"$PIPELINE_PROFILE" profiles:"$PIPELINE_PROFILES"
       - name: Execute required native cases
         if: inputs.native_only && (inputs.native_cases != '' || inputs.native_suite != '')
@@ -69,8 +68,7 @@ jobs:
           PIPELINE_SUITE: ${{ inputs.native_suite }}
           PIPELINE_PROFILE: ${{ inputs.native_profile }}
           PIPELINE_PROFILES: ${{ inputs.native_profiles }}
-          DIETER_APPLE_CHECK_CACHE: 'true'
-          DIETER_CI_DEVICE_CONFIG: ${{ (inputs.runner == 'android-hardware' || inputs.runner == 'android-mac-hardware') && vars.DIETER_ANDROID_CI_CONFIG || inputs.runner == 'ios-hardware' && vars.DIETER_IOS_CI_CONFIG || '' }}
+          DIETER_APPLE_CHECK_CACHE: "true"
         run: just pipeline native_ci component:"$PIPELINE_COMPONENT" cases:"$PIPELINE_CASES" suite:"$PIPELINE_SUITE" profile:"$PIPELINE_PROFILE" profiles:"$PIPELINE_PROFILES"
       - name: Collect bounded diagnostic evidence
         if: always()
