@@ -63,14 +63,14 @@ environment variables are absent; a missing/removed `JAVA_HOME` falls back to JB
 
 Profiles select exact targets:
 
-| Profile | Target and ownership |
-| --- | --- |
-| `android-emulator` | Visible `Pixel_9_API_37_1`, serial `emulator-5554`, host GLES; borrow a healthy running AVD or manage one launched by the run |
-| `android-device` | Disabled until an exact ADB serial is configured; phone lifecycle remains with its owner |
-| `ios-iphone`, `ios-ipad` | Exact runtime and device type; create and delete a recorded disposable simulator |
-| `ios-device` | Disabled until exact UDID, existing development signing and authenticated TLS fixture route are configured |
-| `mac-desktop` | Exclusive packaged test app on a logged-in desktop |
-| `daemon-local`, `gateway-local` | Native host OS and architecture; build output never installs over a running service |
+| Profile                         | Target and ownership                                                                                                          |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `android-emulator`              | Visible `Pixel_9_API_37_1`, serial `emulator-5554`, host GLES; borrow a healthy running AVD or manage one launched by the run |
+| `android-device`                | Disabled until an exact ADB serial is configured; phone lifecycle remains with its owner                                      |
+| `ios-iphone`, `ios-ipad`        | Exact runtime and device type; create and delete a recorded disposable simulator                                              |
+| `ios-device`                    | Disabled until exact UDID, existing development signing and authenticated TLS fixture route are configured                    |
+| `mac-desktop`                   | Exclusive packaged test app on a logged-in desktop                                                                            |
+| `daemon-local`, `gateway-local` | Native host OS and architecture; build output never installs over a running service                                           |
 
 To use an attached Android phone, set only this override and pass its profile
 explicitly on every operation:
@@ -95,6 +95,89 @@ Physical hardware remains unqualified until its
 configured native plan actually passes; unavailable cells fail.
 
 ## Local checks and app work
+
+### Local commit checks
+
+```sh
+just hooks                  # prepare tools and install this worktree's hook
+just format                 # format changed authored source/config/docs
+just format-check           # check changed working-tree sources without writing
+git add PATHS               # review and stage exactly what belongs in the commit
+just pre-commit             # inspect staged bytes, including partial commits
+just hooks-test             # isolated local hook qualification
+```
+
+Run `just hooks` once per checkout/worktree on Linux x86_64/arm64 or Apple Silicon
+Mac (macOS 15+). It requires Python 3.11+ with venv/pip, Go, Git, Node 22+,
+Ruby from `.ruby-version`, network access for setup, and normal Linux C/C++
+runtime libraries. Kotlin formatting needs Java 11+; Android Studio's JBR works.
+Hook setup does not require Bundler, Xcode, Homebrew, or native app builds.
+Go's supported toolchain download supplies the exact formatter selected by
+`go.mod`; setup puts that Go toolchain on PATH when
+building the pinned Gitleaks hook.
+
+The tool versions live in `fastlane/precommit-tools.json` and
+`.pre-commit-config.yaml`. Setup verifies the ktfmt JAR and standalone Apple
+swift-format Homebrew bottles by SHA-256. The lean additions are Prettier 3.9.9,
+Ruff 0.16.10, Syntax Tree 6.3.0 (with prettier_print 1.2.1), and shfmt 3.14.1.
+The Prettier package and Ruby gems have verified SHA-256 downloads; Ruff uses
+the managed Python environment and shfmt builds through Go's module toolchain.
+Everything stays under ignored `tmp/precommit/`, including isolated Ruby gems
+and the upstream Gitleaks build. Existing app Node packages and Bundler gems
+are untouched. The standalone Swift bottles include its runtime; a Linux Swift
+toolchain is unnecessary.
+Commits reuse prepared tools offline. After changing tool pins, hook configuration,
+or the Go/Ruby version, run `just hooks` again. A missing required tool fails with a
+setup instruction rather than downloading during a commit.
+
+Installation sets `core.hooksPath=.githooks` in worktree-local Git configuration.
+It preserves other worktrees' settings and refuses to hide custom hooks. Standard
+pre-commit generated hooks can be replaced for this worktree; their shared files
+remain untouched. The checked-in dispatcher uses pre-commit's no-stash invocation.
+Its source checker reads staged Git objects into temporary files and uses staged
+`.editorconfig`, Swift, Prettier, Ruff, and Syntax Tree configuration.
+The index and working tree stay untouched.
+An index change during checking fails and asks for review/retry. Working edits
+made by another turn are retained. Ordinary pre-commit may conservatively reject
+a commit if it observes concurrent working-file edits; it never rolls them back
+through this dispatcher.
+
+Checks cover staged authored Go, Kotlin and Swift, plus these lean additions:
+
+| Tool        | Files and policy                                                                                                                             |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prettier    | `.js`, `.mjs`, CSS, JSON, YAML, Markdown, plain HTML and `.webmanifest`; 100 columns, preserve prose wrapping, leave embedded examples alone |
+| Ruff format | Python; 100 columns and Python 3.11 syntax target, without lint fixes                                                                        |
+| Syntax Tree | Ruby, `Gemfile`, and `Fastfile`; 100 columns, formatting only                                                                                |
+| shfmt       | `.sh` and the checked-in commit hook; four-space indentation and indented switch cases                                                       |
+
+The gate also checks JSON/YAML/TOML syntax,
+conflict markers, final newlines, trailing whitespace (Markdown hard breaks are
+preserved), and newly added files over 5 MiB. Vendor/generated API sources,
+generated Markdown bundles, imported WebRTC sources, and byte fixtures under
+`testdata` are excluded from formatting/file-style checks. Gitleaks still scans
+staged additions independently and redacts findings, including excluded source
+paths. Symlinks and submodules are not dereferenced by the formatting checker.
+
+`just format` changes only working files and never stages them. With partial
+commits, review the result and use `git add -p` to select the intended content;
+an intentionally unformatted staged version still fails even when the working
+file has been formatted. `just format --all` / `just format-check --all` select
+all authored working-tree sources. Existing Kotlin/Swift sources may need
+mechanical formatting; this rollout enforces touched staged files and does not
+perform a repository-wide rewrite. The same touched-file rollout applies to
+the newly covered languages. Full-inventory formatting should be reviewed
+as its own change. Hugo templates under `landingpage/layouts/`, XML/SVG,
+producer-owned JSON lockfiles, and generated Gradle wrappers do not get a new
+formatter. Their existing file-integrity checks remain. TOML still has syntax
+validation only. These local commands do not change CI qualification.
+
+`just hooks-test` uses disposable Git fixtures and cached real formatters and
+Gitleaks. It checks failure exits, staged/live differences, concurrent edits,
+unusual paths, configuration snapshots, excluded files, secret redaction, and
+worktree-local hook installation. It never installs over operator Git hooks.
+
+### Component checks
 
 ```sh
 just check-changed --dry-run

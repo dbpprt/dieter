@@ -1,0 +1,34 @@
+{
+  "pre_commit": "4.6.2",
+  "pyyaml": "6.0.3",
+  "prettier": {
+    "version": "3.9.9",
+    "url": "https://registry.npmjs.org/prettier/-/prettier-3.9.9.tgz",
+    "sha256": "c3b162d30c45126873cc6338a539383e92120a390d10de78f373f42c2045b338"
+  },
+  "ruff": "0.16.10",
+  "ruby_gems": {
+    "prettier_print": {
+      "version": "1.2.1",
+      "sha256": "a72838b5f23facff21f90a5423cdcdda19e4271092b41f4ea7f50b83929e6ff9"
+    },
+    "syntax_tree": {
+      "version": "6.3.0",
+      "sha256": "56e25a9692c798ec94c5442fe94c5e94af76bef91edc8bb02052cbdecf35f13d"
+    }
+  },
+  "shfmt": "v3.14.1",
+  "ktfmt": {
+    "version": "0.64",
+    "url": "https://github.com/Kotlin/ktfmt/releases/download/v0.64/ktfmt-0.64-with-dependencies.jar",
+    "sha256": "b8fbb814808d8da33f74a7bbacb6d1748cef81c0202a7f829b87139520b51273"
+  },
+  "swift_format": {
+    "version": "604.0.0",
+    "bottles": {
+      "Linux-x86_64": "90c1263e0a1f4cd7ec4242cb7c1d79433badb7f03c01bf2b0dfcb592d0986801",
+      "Linux-aarch64": "c36e52a9319d336be41f946bd5098580e8f76422e16293544d82ef3a942c8f0e",
+      "Darwin-arm64": "a4890bc578594b94782ec0e434097a467a1a8e94271b504e0430326a6db55fb2"
+    }
+  }
+}

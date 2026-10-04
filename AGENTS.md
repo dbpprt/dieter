@@ -140,6 +140,11 @@ just pipeline android test_unit
 ```
 
 Use `gofmt` on Go files. Keep every native client accessible and adaptive.
+Prepare local commit tools once per checkout/worktree with `just hooks`.
+Use `just format` for explicit source/config/docs working-file fixes and
+`just pre-commit` for staged checks. Keep the no-stash dispatcher and avoid
+automatic staging; qualify hook changes with `just hooks-test`. See
+`fastlane/README.md` for pinned tools, exclusions, and Mac/Linux setup.
 
 ## Daemon CLI feature parity
 

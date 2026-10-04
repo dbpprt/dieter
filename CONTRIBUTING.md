@@ -40,6 +40,17 @@ Install only the native toolchain relevant to your change:
 - [iOS development](apps/ios/README.md)
 - [Website and documentation](landingpage/README.md)
 
+Install local commit checks once in each Mac or Linux checkout/worktree with
+`just hooks` (Python 3.11+, Go, Node 22+, and Ruby from `.ruby-version` required;
+Kotlin formatting uses Java 11+).
+The setup prepares pinned Go/Kotlin/Swift, Prettier, Ruff, Syntax Tree, shfmt,
+and Gitleaks tools in an ignored worktree-local cache.
+Use `just format` to format changed source, review and stage it, then
+`just pre-commit` to check staged bytes. The hook also runs on `git commit`;
+it does not stash, format, or stage working files. See the
+[local hook guide](fastlane/README.md#local-commit-checks) for scope, offline
+operation, partial commits, and isolated qualification.
+
 ## Verify the change
 
 ```sh
@@ -72,7 +83,7 @@ are sufficient local verification. Main CI performs full qualification once
 before the immutable development release. See [the pipeline guide](fastlane/README.md)
 for common modules, exact local target profiles, signing, and retained products.
 
-Use `gofmt` on Go changes and the platform formatter commands. Tests should verify
+Use `just format` for authored source, web/config files, and Markdown changes. Tests should verify
 observable behavior and meaningful failure cases, rather than repeat the code.
 
 ## Protect the development environment

@@ -106,11 +106,11 @@ dieter project open ~/Development/my-project
 dieter doctor
 ```
 
-| Client | Get it |
-| --- | --- |
-| macOS 26+, Apple Silicon | Homebrew cask above or [release downloads](https://github.com/dbpprt/dieter/releases/latest) |
-| Android 8+ | [Download the APK](https://github.com/dbpprt/dieter/releases/latest/download/Dieter-Android.apk) |
-| iOS 18+, iPhone and iPad | [Beta and source-build guide](apps/ios/README.md) |
+| Client                   | Get it                                                                                           |
+| ------------------------ | ------------------------------------------------------------------------------------------------ |
+| macOS 26+, Apple Silicon | Homebrew cask above or [release downloads](https://github.com/dbpprt/dieter/releases/latest)     |
+| Android 8+               | [Download the APK](https://github.com/dbpprt/dieter/releases/latest/download/Dieter-Android.apk) |
+| iOS 18+, iPhone and iPad | [Beta and source-build guide](apps/ios/README.md)                                                |
 
 The daemon supports headless Linux hosts. Screen hosting needs an active desktop
 and [platform dependencies](docs/linux-support.md).
@@ -142,14 +142,14 @@ Mac, Android, and CLI clients converge on the same Git state.
 
 ## Find your way
 
-| You want to… | Read |
-| --- | --- |
-| Run your first agent | [Quick start](https://getdieter.com/docs/quickstart/) |
-| Understand tasks, worktrees, and review | [Projects & tasks](https://getdieter.com/docs/projects/) |
-| Automate through the daemon | [CLI guide](https://getdieter.com/docs/cli/) |
-| Add machines or host a gateway | [Machines](https://getdieter.com/docs/machines/) · [Self-hosting](https://getdieter.com/docs/gateway/) |
-| Understand internals | [Architecture](https://getdieter.com/docs/architecture/) · [Technical index](docs/README.md) |
-| Fix a connection or setup problem | [Troubleshooting](https://getdieter.com/docs/troubleshooting/) |
+| You want to…                            | Read                                                                                                   |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Run your first agent                    | [Quick start](https://getdieter.com/docs/quickstart/)                                                  |
+| Understand tasks, worktrees, and review | [Projects & tasks](https://getdieter.com/docs/projects/)                                               |
+| Automate through the daemon             | [CLI guide](https://getdieter.com/docs/cli/)                                                           |
+| Add machines or host a gateway          | [Machines](https://getdieter.com/docs/machines/) · [Self-hosting](https://getdieter.com/docs/gateway/) |
+| Understand internals                    | [Architecture](https://getdieter.com/docs/architecture/) · [Technical index](docs/README.md)           |
+| Fix a connection or setup problem       | [Troubleshooting](https://getdieter.com/docs/troubleshooting/)                                         |
 
 ## Contribute
 
@@ -160,6 +160,11 @@ expectations. Start local validation with:
 just check-changed --dry-run
 just check-changed
 ```
+
+Install local formatting and secret checks with `just hooks` on each development
+checkout. Run `just format`, review and stage changes, then `just pre-commit`.
+The [hook guide](fastlane/README.md#local-commit-checks) covers Mac/Linux setup
+and safe partial commits.
 
 The default runs affected fast checks and lists related device/desktop work.
 Select specific native cases or add `--native`; avoid full-suite reruns between

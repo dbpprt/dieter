@@ -64,7 +64,21 @@ workflow-check:
     just pipeline check component:portable operation:workflow_check
 
 hooks:
-    pre-commit install --install-hooks
+    python3 fastlane/lib/dieter/precommit.py install
 
+# Check the staged index without stashing or changing working files.
 pre-commit:
-    pre-commit run --all-files
+    python3 fastlane/lib/dieter/precommit.py run
+
+# Isolated local hook qualification; prepare tools with just hooks first.
+hooks-test:
+    python3 fastlane/lib/dieter/precommit.py test
+
+# Explicitly format changed authored sources; --all includes the full inventory.
+[positional-arguments]
+format *args:
+    python3 fastlane/lib/dieter/precommit.py format "$@"
+
+[positional-arguments]
+format-check *args:
+    python3 fastlane/lib/dieter/precommit.py format-check "$@"

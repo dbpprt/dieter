@@ -9,6 +9,15 @@ Read [the pipeline guide](../../../fastlane/README.md) and relevant platform
 instructions before changing builds, device lifecycle, or release compositions.
 Use `just pipeline`; local and CI commands execute the same pinned Fastlane.
 
+Local commit checks use `just hooks` once per checkout/worktree, `just format`
+for explicit working-source fixes, and `just pre-commit` for read-only staged
+checks. The no-stash dispatcher preserves concurrent working edits; do not run
+`pre-commit install` over it or add automatic staging. Tool pins/caches and the
+isolated `just hooks-test` gate are documented in the pipeline guide. These
+local commands require Python 3.11+; setup also needs Go, Node 22+, and Ruby
+from `.ruby-version`. The lean formatters cover source, web/config files and
+Markdown; they do not change CI qualification.
+
 Inspect `just check-changed --dry-run` before verification. It includes dirty
 files; add `--base REF` for the branch. Run affected contracts/packages once at
 the integration boundary. During implementation, rerun only a failed or newly
