@@ -103,8 +103,12 @@ daemon, and emulator lifecycle rules; report an unavailable integration run
 instead of disrupting a running operator app. Full checks below remain for CI
 and explicitly requested repository-wide validation.
 
-CI uses `.github/workflows/qualification.yml`: affected checks on PRs, full
-qualification on main. CI calls Release after qualification passes; Release must
+CI uses `.github/workflows/qualification.yml`: affected checks on PRs and main,
+full qualification on scheduled/manual runs. Routine iOS checks run portable
+policies and `ios.connecting` on both layouts; full runs retain the functional
+catalog. Measure cold builds, cache transfer and native execution separately;
+the ten-minute feedback target is not a promise for full catalogs or TestFlight.
+CI calls Release after qualification passes; Release must
 not independently repeat those checks. Manual releases qualify first.
 `ios_qualify` verifies one simulator build for explicit iPhone/iPad profiles under
 one build lease. Physical tests require their separate exact profile, existing

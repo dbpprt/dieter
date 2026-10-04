@@ -74,7 +74,8 @@ jobs:
       component: ios
       runner: macos-26
       native_profiles: ios-iphone,ios-ipad
-      native_suite: ${{ inputs.full && 'functional' || 'smoke' }}
+      native_cases: ${{ !inputs.full && 'ios.connecting' || '' }}
+      native_suite: ${{ inputs.full && 'functional' || '' }}
   android:
     name: Android client
     needs: changes

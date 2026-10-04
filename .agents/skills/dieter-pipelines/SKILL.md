@@ -27,6 +27,10 @@ to Fastlane inside owned subprocesses; keep launch environments and signing
 credentials private. Stream sanitized output and show measured phase/case times.
 Upload bounded diagnostics, never caches, archives or duplicate producer bytes.
 Diagnostic upload outages are distinct from mandatory checkpoint retention.
+For latency work, compare compilation, per-case execution and cache transfer
+separately. Hosted Apple checks share the Mac SwiftPM test/build graph and cache
+unsigned compiler state in Actions; producers keep independent release graphs.
+Do not claim a ten-minute gate from a cold build or relabel a full catalog smoke.
 
 Named profiles in ignored `fastlane/local.json` select exact targets. CI ignores
 that file and uses tracked defaults or bounded trusted physical-device overrides.
@@ -36,7 +40,10 @@ their devices. `ios_qualify` builds once and verifies products before each expli
 simulator layout; physical tests use `ios e2e` with exact profiles and existing
 development signing/TLS fixtures.
 
-The reusable qualification workflow owns checks. Main qualifies once, then CI
+The reusable qualification workflow owns affected PR/main checks and full
+scheduled/manual checks. Routine iOS uses policies and both-layout connection
+journeys. Full catalogs remain available through scheduled/manual qualification.
+Main qualifies once, then CI
 calls Release. Manual releases qualify first. Keep one canonical SemVer, exact
 producer checkpoints, byte-preserving reruns, retained-IPA TestFlight delivery,
 and protected stable promotion. Local configuration cannot change release policy.

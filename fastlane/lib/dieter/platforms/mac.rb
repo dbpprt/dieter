@@ -35,7 +35,7 @@ module Dieter
       @context.command(["bash", "apps/mac/scripts/sync-proto.sh"], timeout: 120)
       configuration = options.fetch("configuration", "debug")
       @framework.build(configuration: configuration)
-      scratch = File.join(@root, "apps/mac/.build/dieter-local")
+      scratch = AppleBuild.mac_scratch(@context, operation: :build)
       argv = ["swift", "build", "--package-path", "apps/mac", "--scratch-path", scratch, "--only-use-versions-from-resolved-file", "--manifest-cache", "local", "--disable-index-store", "--product", "DieterMac", "-c", configuration, *jobs]
       @context.command(argv, timeout: 2400, log: File.join(@context.output, "build.log"))
       assert_stopped
@@ -219,7 +219,7 @@ module Dieter
     end
 
     def swift_test(filter, extra_environment = {})
-      argv = ["swift", "test", "--package-path", "apps/mac", "--scratch-path", File.join(@root, "apps/mac/.build/dieter-tests"), "--only-use-versions-from-resolved-file", "--manifest-cache", "local", "--disable-index-store", "--no-parallel", *jobs]
+      argv = ["swift", "test", "--package-path", "apps/mac", "--scratch-path", AppleBuild.mac_scratch(@context, operation: :test), "--only-use-versions-from-resolved-file", "--manifest-cache", "local", "--disable-index-store", "--no-parallel", *jobs]
       argv += ["--filter", filter] unless filter.empty?
       @context.command(argv, environment: extra_environment, timeout: 3600, log: File.join(@context.output, "unit.log"))
     end

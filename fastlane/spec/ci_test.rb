@@ -6,6 +6,21 @@ require "fastlane/command_line_handler"
 require_relative "../lib/dieter/ci"
 
 class CIOptionsTest < Minitest::Test
+  def test_dev_release_cannot_pass_with_skipped_candidates_publication_or_delivery
+    results = %w[reserve candidates coordinate distribute].to_h { |name| [name, {"result" => "success"}] }
+    Dieter::CI.qualify_release(results, channel: "dev")
+    results.each_key do |name|
+      %w[skipped failure cancelled].each do |status|
+        bad = results.merge(name => {"result" => status})
+        assert_raises(Dieter::PipelineError) { Dieter::CI.qualify_release(bad, channel: "dev") }
+      end
+    end
+    assert_raises(Dieter::PipelineError) { Dieter::CI.qualify_release(results.except("candidates"), channel: "dev") }
+    results["distribute"]["result"] = "skipped"
+    Dieter::CI.qualify_release(results, channel: "draft")
+    assert_raises(Dieter::PipelineError) { Dieter::CI.qualify_release(results, channel: "stable") }
+  end
+
   def test_release_call_chain_can_read_producer_checkpoints_and_recover_completed_claim_owners
     jobs = {
       "ci" => %w[release], "release" => %w[candidates coordinate distribute],

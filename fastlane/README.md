@@ -237,14 +237,24 @@ source changes during a run fail its report. This never promotes codec defaults.
 ## CI and release policy
 
 CI calls the same lanes through pinned reusable workflows. `qualification.yml`
-selects affected PR components and requires all components on main, scheduled and
-manual full runs. iOS PRs run portable policies and both-layout smoke; main runs
-both complete functional catalogs. Mac core/board cases remain required, with
+selects affected PR/main components and requires all components on scheduled and
+manual full runs. Routine iOS checks run portable policies and `ios.connecting`
+on both layouts; full runs retain both complete functional catalogs. Mac core/board cases remain required, with
 full Mac functional qualification on scheduled and manual runs. Android
-PRs compile E2E drivers; main also compiles its performance variant.
+routine checks compile E2E drivers; full runs also compile the performance variant.
 The Kotlin Apple job runs only its Mac-target assertions. The Mac job owns Swift
 fixture integration; the iOS job owns portable iOS policies, avoiding duplicate
 assertions and unnecessary all-slice assembly across the Apple jobs.
+Hosted Apple qualification restores compiler/dependency state keyed by runner
+architecture, pinned Xcode/JDK, component and dependency locks. Earlier compatible
+revisions supply incremental state; toolchains rebuild changed inputs and framework
+manifests verify source/toolchain/product hashes. Successful jobs populate the
+Actions cache in their GitHub ref scope. Simulator products, test launch credentials,
+fixture state and logs are excluded from the Xcode cache. Mac qualification uses
+one SwiftPM scratch graph for tests and app packaging. Local/self-hosted builds
+keep their existing paths. Release producers do not restore qualification caches.
+The first cache fill is still cold; cache transfer has a measurable cost and these
+changes alone do not promise a ten-minute complete functional catalog.
 `native-e2e.yml` selects the explicit
 hardware matrix; Android and Mac desktop hardware runs need registered runners.
 No untrusted PR runs on an owned physical device.

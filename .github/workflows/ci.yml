@@ -16,7 +16,7 @@ jobs:
     name: Qualification
     uses: ./.github/workflows/qualification.yml
     with:
-      full: ${{ github.event_name != 'pull_request' }}
+      full: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
   release:
     name: Development release
     needs: qualification

@@ -45,6 +45,10 @@ jobs:
           component: ${{ inputs.component }}
           fixture: 'true'
           native: ${{ inputs.native_cases != '' || inputs.native_suite != '' }}
+      - uses: ./.github/actions/apple-check-cache
+        if: runner.environment == 'github-hosted' && (inputs.component == 'mac' || inputs.component == 'ios')
+        with:
+          component: ${{ inputs.component }}
       - name: Run component checks
         if: ${{ !inputs.native_only }}
         env:
@@ -54,6 +58,7 @@ jobs:
           PIPELINE_PROFILE: ${{ inputs.native_profile }}
           PIPELINE_PROFILES: ${{ inputs.native_profiles }}
           PIPELINE_FULL: ${{ inputs.full }}
+          DIETER_APPLE_CHECK_CACHE: 'true'
         run: just pipeline ci action:check component:"$PIPELINE_COMPONENT" full:"$PIPELINE_FULL" cases:"$PIPELINE_CASES" suite:"$PIPELINE_SUITE" profile:"$PIPELINE_PROFILE" profiles:"$PIPELINE_PROFILES"
       - name: Execute required native cases
         if: inputs.native_only && (inputs.native_cases != '' || inputs.native_suite != '')
@@ -63,6 +68,7 @@ jobs:
           PIPELINE_SUITE: ${{ inputs.native_suite }}
           PIPELINE_PROFILE: ${{ inputs.native_profile }}
           PIPELINE_PROFILES: ${{ inputs.native_profiles }}
+          DIETER_APPLE_CHECK_CACHE: 'true'
           DIETER_CI_DEVICE_CONFIG: ${{ (inputs.runner == 'android-hardware' || inputs.runner == 'android-mac-hardware') && vars.DIETER_ANDROID_CI_CONFIG || inputs.runner == 'ios-hardware' && vars.DIETER_IOS_CI_CONFIG || '' }}
         run: just pipeline native_ci component:"$PIPELINE_COMPONENT" cases:"$PIPELINE_CASES" suite:"$PIPELINE_SUITE" profile:"$PIPELINE_PROFILE" profiles:"$PIPELINE_PROFILES"
       - name: Collect bounded diagnostic evidence

@@ -60,8 +60,9 @@ DieterIOS framework; it does not link the Mac executable. The Share extension
 stages validated files in the App Group without linking the core. Icons come
 from `Artwork/AppIcon.svg` with an opaque background.
 
-Pull-request CI runs portable iOS policies and both-layout smoke for affected
-components. Main CI runs both complete functional catalogs, then calls Release
+PR/main CI runs portable iOS policies and the connection journey on both layouts
+for affected components. Scheduled/manual qualification runs complete functional
+catalogs. Main calls Release
 without repeating qualification. Manual releases qualify first. Required producer
 bytes are retained separately from bounded diagnostic uploads.
 

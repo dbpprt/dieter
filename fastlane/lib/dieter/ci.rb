@@ -11,7 +11,7 @@ module Dieter
 
     def self.invoke(options, actions: nil)
       options = options.transform_keys(&:to_sym)
-      unknown = options.keys.map(&:to_s) - %w[action component fixture native output cases suite profile profiles full]
+      unknown = options.keys.map(&:to_s) - %w[action component fixture native output cases suite profile profiles full channel]
       raise PipelineError, "Unknown CI options: #{unknown.join(', ')}" unless unknown.empty?
       component = options.fetch(:component, "portable")
       raise PipelineError, "Unknown CI component #{component}" unless COMPONENTS.include?(component)
@@ -34,6 +34,8 @@ module Dieter
           qualify_jobs(JSON.parse(ENV.fetch("PIPELINE_JOB_RESULTS")), full: boolean_option(ENV.fetch("PIPELINE_FULL", "false"), "full") == "true")
         when "result"
           raise PipelineError, "Required component check failed: #{ENV['PIPELINE_CHECK_RESULT']}" unless ENV["PIPELINE_CHECK_RESULT"] == "success"
+        when "release_gate"
+          qualify_release(JSON.parse(ENV.fetch("PIPELINE_JOB_RESULTS")), channel: options.fetch(:channel, "dev"))
         else raise PipelineError, "Unknown CI action"
         end
       ensure
@@ -52,6 +54,14 @@ module Dieter
         selected ? status != "success" : !%w[success skipped].include?(status)
       end
       raise PipelineError, "Required qualification failed: #{failed.join(', ')}" unless failed.empty?
+    end
+
+    def self.qualify_release(results, channel:)
+      raise PipelineError, "Unknown release gate channel" unless %w[dev draft].include?(channel)
+      required = %w[reserve candidates coordinate].to_h { |name| [name, "success"] }
+      required["distribute"] = channel == "dev" ? "success" : "skipped"
+      failed = required.keys.select { |name| results.dig(name, "result") != required.fetch(name) }
+      raise PipelineError, "Required release stages failed: #{failed.join(', ')}" unless failed.empty?
     end
 
     def self.setup(context, component, fixture, native)

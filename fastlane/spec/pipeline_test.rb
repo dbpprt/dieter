@@ -71,6 +71,25 @@ class PipelineConfigTest < Minitest::Test
     previous.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
   end
 
+  def test_only_disposable_hosted_checks_share_the_mac_test_and_app_build_graph
+    keys = %w[GITHUB_ACTIONS RUNNER_ENVIRONMENT DIETER_APPLE_CHECK_CACHE]
+    previous = keys.to_h { |key| [key, ENV[key]] }
+    context = Struct.new(:root).new(@root)
+    ENV["GITHUB_ACTIONS"] = "true"
+    ENV["RUNNER_ENVIRONMENT"] = "github-hosted"
+    ENV["DIETER_APPLE_CHECK_CACHE"] = "true"
+    assert_equal Dieter::AppleBuild.mac_scratch(context, operation: :test), Dieter::AppleBuild.mac_scratch(context, operation: :build)
+    ENV.delete("DIETER_APPLE_CHECK_CACHE") # Release producers keep their graph.
+    assert_equal File.join(@root, "apps/mac/.build/dieter-local"), Dieter::AppleBuild.mac_scratch(context, operation: :build)
+    ENV["DIETER_APPLE_CHECK_CACHE"] = "true"
+    ENV["RUNNER_ENVIRONMENT"] = "self-hosted"
+    assert_equal File.join(@root, "apps/mac/.build/dieter-local"), Dieter::AppleBuild.mac_scratch(context, operation: :build)
+    ENV.delete("GITHUB_ACTIONS")
+    assert_equal File.join(@root, "apps/mac/.build/dieter-local"), Dieter::AppleBuild.mac_scratch(context, operation: :build)
+  ensure
+    previous.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
   def test_unresolved_simulator_runtime_and_physical_identity_fail_admission
     config = Dieter::Config.new(@root, ci: false)
     assert_raises(Dieter::Unavailable) { config.profile("ios-iphone") }

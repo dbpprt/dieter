@@ -65,11 +65,11 @@ physical devices. Both local and CI use the same pinned Fastlane implementation.
 The catalog preserves the platform-native assertions and standardizes admission,
 fixtures, results and cleanup.
 
-PRs qualify affected components. Main qualifies all components once, then calls
+PRs and main qualify affected components. Main qualifies once, then calls
 Release in the same workflow run. iPhone and iPad share one verified simulator
 build. Kotlin Apple assertions, Mac Swift integration and portable iOS policies
 have separate owners, avoiding duplicate tests across the Apple jobs. Scheduled
-and manual full runs retain the complete Mac functional catalog.
+and manual full runs retain the complete Mac and iOS functional catalogs.
 
 Fastlane owns XCTest commands and iOS archive/export. Shared modules own process
 deadlines, sanitized streaming, leases, product integrity and evidence. Diagnostic
@@ -145,4 +145,33 @@ The release workflow chain also now grants `actions: read` where candidate
 checkpoints and completed claim-owner runs must be inspected. Its contract passed
 (11 assertions), and workflow lint passed. Existing assertions are not repeated
 locally before publishing; the new main run owns hosted qualification and release
-verification. Live results will be recorded after that run completes.
+verification.
+
+## Ten-minute feedback target
+
+The full hosted run on `46aeaa91` passed all qualification assertions and cleanup.
+macOS took 26m21s, including 10m44s Swift test compilation, a separate 5m53s app
+compilation, and about 4m37s native cases. iOS took 69m12s: roughly 17 minutes of
+cold policy/framework/app preparation, followed by sequential iPhone/iPad catalogs
+and simulator preparation. `ios.remote-node` alone took 6m29s on iPhone and
+10m30s on iPad; its native methods used 339s and 560s respectively. This is real
+test execution, not artifact transfer. Other job durations were Kotlin JVM 2m05s,
+Kotlin Apple 5m20s, Go/harness 10m02s and Android 12m36s. Portable/Android/core
+diagnostics were only about 3–12 KB.
+
+Routine PR/main checks now use affected selection and the explicit
+`ios.connecting` journey on both layouts, while full scheduled/manual qualification
+retains every functional assertion. Hosted Apple qualification shares the Mac
+test/app compilation graph and caches unsigned compiler/dependency state. The
+ten-minute target applies to warm required-check feedback; the first cache fill,
+broad core/schema changes and full catalogs can exceed it. Further work should
+measure warm transfer/build costs before choosing persistent isolated Apple
+workers, batching compatible XCTest launches, or splitting full layout execution
+across workers. Signed distribution and Apple's processing time remain separate.
+
+The run also exposed GitHub's transitive skipped-job behavior: the successful
+reservation followed a skipped manual-qualification job, so candidate jobs were
+skipped. Explicit status conditions now admit producers only after successful
+reservation, and a required release gate rejects missing/skipped/failed producer,
+publication or dev delivery stages. A green qualification run alone is not proof
+of release delivery.
