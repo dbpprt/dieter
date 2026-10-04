@@ -11,9 +11,13 @@ module Dieter
     end
 
     def apple_test(options = {})
-      @context.lease("apple-build")
-      gradle(%w[:shared:macosArm64Test :apple:macosArm64Test :apple:assembleDieterSharedDebugXCFramework])
+      apple_unit
       Mac.new(@context).core_test(options)
+    end
+
+    def apple_unit
+      @context.lease("apple-build")
+      gradle(%w[:shared:macosArm64Test :apple:macosArm64Test])
     end
 
     private

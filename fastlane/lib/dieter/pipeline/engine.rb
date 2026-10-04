@@ -13,9 +13,10 @@ module Dieter
       "verify" => %w[verify]
     }.freeze
 
-    def initialize(context, request, adapter, contract: nil)
+    def initialize(context, request, adapter, contract: nil, planned_cases: nil)
       @context, @request, @adapter = context, request, adapter
       @contract = contract || Contract.new(context)
+      @planned_cases = planned_cases
       @started = clock
       @plan, @report = [], nil
     end
@@ -57,18 +58,13 @@ module Dieter
     end
 
     def verify
-      ArtifactSet.load(@request.options.fetch("artifact"), component: @request.component)
+      ArtifactSet.load(File.expand_path(@request.options.fetch("artifact"), @context.root), component: @request.component)
     end
 
     def plan
       options = @request.options
       profile_name = options["profile"] || @context.config.default_profile(@request.component)
-      raw_profile = @context.config.data.fetch("profiles").fetch(profile_name) { raise PipelineError, "Unknown profile #{profile_name}" }
-      @plan = @contract.call("plan", {
-        platform: @request.component, suite: options["suite"] || (options["cases"] ? "" : @context.config.data.fetch("defaults").fetch("suite")),
-        ids: options.fetch("cases", "").split(","), device: raw_profile.fetch("layout", "iphone"),
-        changed: options.fetch("changed", false), base: options.fetch("base", "")
-      }).fetch("cases")
+      @plan = @planned_cases || @request.plan(@context.config, @contract)
       Atomic.json(File.join(@context.output, "plan.json"), @plan)
       @report = {"version" => 1, "platform" => @request.component, "serial" => profile_name,
                  "buildMs" => 0, "installMs" => 0, "durationMs" => 0, "results" => []}
@@ -89,9 +85,9 @@ module Dieter
     end
 
     def cases
-      @plan.each do |test_case|
+      @plan.each_with_index do |test_case, index|
         began = clock
-        puts "Running #{test_case.fetch('id')} (fresh isolated state)"
+        puts "Running #{index + 1}/#{@plan.length}: #{test_case.fetch('id')} (fresh isolated state)"
         seconds = test_case.fetch("timeout").scan(/(\d+(?:\.\d+)?)(h|m|s)/).sum { |number, unit| number.to_f * {"h" => 3600, "m" => 60, "s" => 1}.fetch(unit) }
         result = @context.with_deadline(seconds) { @adapter.execute_case(@target, test_case) }
         result["id"] = test_case.fetch("id")
@@ -101,7 +97,7 @@ module Dieter
         @report["results"] << result
         @report["durationMs"] = ((clock - @started) * 1000).round
         Atomic.json(File.join(@context.output, "results.json"), @report)
-        puts "#{result['status'].upcase} #{result['id']}: #{result['reason']}"
+        puts "#{result['status'].upcase} #{result['id']} in #{(result['durationMs'] / 1000.0).round(1)}s: #{result['reason']}"
         raise CleanupError, result["cleanupError"] if result["cleanupError"] && !result["cleanupError"].empty?
         raise Interrupted, result["reason"] if result["status"] == "interrupted"
       end

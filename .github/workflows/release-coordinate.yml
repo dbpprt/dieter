@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
+      actions: read
       contents: write
       packages: write
       id-token: write
@@ -50,10 +51,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PIPELINE_CHANNEL: ${{ inputs.channel }}
         run: just pipeline release action:publish identity:tmp/release-identity/identity.json channel:"$PIPELINE_CHANNEL"
+      - name: Collect bounded coordination diagnostics
+        if: always()
+        run: just pipeline ci action:evidence component:report output:tmp/coordination-evidence
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
+        continue-on-error: true
         with:
           name: release-coordination-evidence-${{ github.run_attempt }}
-          path: tmp/app-pipelines/
+          path: tmp/coordination-evidence/
           retention-days: 14
           if-no-files-found: error

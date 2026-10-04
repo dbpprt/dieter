@@ -3,21 +3,35 @@
 require_relative "runtime"
 require_relative "checks"
 require_relative "pipeline/gradle_diagnostics"
+require_relative "pipeline/evidence"
 
 module Dieter
   module CI
     COMPONENTS = %w[portable report core core-apple android mac ios daemon gateway distribution].freeze
 
-    def self.invoke(options)
-      unknown = options.keys.map(&:to_s) - %w[action component fixture native output]
+    def self.invoke(options, actions: nil)
+      options = options.transform_keys(&:to_sym)
+      unknown = options.keys.map(&:to_s) - %w[action component fixture native output cases suite profile profiles full]
       raise PipelineError, "Unknown CI options: #{unknown.join(', ')}" unless unknown.empty?
       component = options.fetch(:component, "portable")
       raise PipelineError, "Unknown CI component #{component}" unless COMPONENTS.include?(component)
+      return Evidence.collect(Runtime::ROOT, output: options.fetch(:output, "tmp/ci-evidence")) if options[:action] == "evidence"
       context = RunContext.new(Config.new(Runtime::ROOT), output: options[:output])
       begin
         case options.fetch(:action, "check")
         when "setup" then setup(context, component, options.fetch(:fixture, "false"), options.fetch(:native, "false"))
-        when "check" then check(context, component)
+        when "check"
+          check(context, component, full: boolean_option(options.fetch(:full, true), "full") == "true")
+          native = options.slice(:cases, :suite, :profile, :profiles).reject { |_key, value| value == "" }
+          unless native.empty?
+            if component == "ios" && native[:profiles]
+              Runtime.ios_qualify(native.except(:profile), actions: actions, parent: context, prepared: File.join(context.output, "artifacts.json"))
+            else
+              Runtime.invoke("e2e", component, native.transform_keys(&:to_s), actions: actions, parent: context)
+            end
+          end
+        when "gate"
+          qualify_jobs(JSON.parse(ENV.fetch("PIPELINE_JOB_RESULTS")), full: boolean_option(ENV.fetch("PIPELINE_FULL", "false"), "full") == "true")
         when "result"
           raise PipelineError, "Required component check failed: #{ENV['PIPELINE_CHECK_RESULT']}" unless ENV["PIPELINE_CHECK_RESULT"] == "success"
         else raise PipelineError, "Unknown CI action"
@@ -25,6 +39,19 @@ module Dieter
       ensure
         context.close
       end
+    end
+
+    def self.qualify_jobs(results, full:)
+      raise PipelineError, "Check selection did not pass" unless results.dig("changes", "result") == "success"
+      selections = results.fetch("changes").fetch("outputs")
+      mapping = {"portable" => "core", "core" => "kmp", "core-apple" => "kmp", "mac" => "macos", "ios" => "ios", "android" => "android"}
+      raise PipelineError, "Check selection outputs are missing or invalid" unless mapping.values.uniq.all? { |name| %w[true false].include?(selections[name]) }
+      failed = mapping.keys.select do |name|
+        selected = full || selections[mapping.fetch(name)] == "true"
+        status = results.dig(name, "result")
+        selected ? status != "success" : !%w[success skipped].include?(status)
+      end
+      raise PipelineError, "Required qualification failed: #{failed.join(', ')}" unless failed.empty?
     end
 
     def self.setup(context, component, fixture, native)
@@ -75,7 +102,7 @@ module Dieter
       raise PipelineError, "#{name} must be true or false"
     end
 
-    def self.check(context, component)
+    def self.check(context, component, full: true)
       context.environment["DIETER_RELEASE_VERSION"] = SourceIdentity.version(context)
       case component
       when "portable"
@@ -95,13 +122,15 @@ module Dieter
       when "core"
         Core.new(context).unit({})
       when "core-apple"
-        Core.new(context).apple_test({})
+        # The Mac component owns Swift fixture integration. This job owns the
+        # Kotlin Apple assertions and does not assemble unused iOS slices.
+        Core.new(context).apple_unit
       when "android"
         adapter = Android.new(context)
         adapter.unit({})
         adapter.build({})
         # Compile both E2E variants without pretending to execute an emulator.
-        %w[e2e performance].each do |variant|
+        (full ? %w[e2e performance] : %w[e2e]).each do |variant|
           diagnostics = HostedGradleDiagnostics.new(context, variant)
           process = context.start([File.join(context.root, "apps/android/gradlew"), "--project-dir", "apps/android", "--console=plain", "-Pdieter.testBuildType=#{variant}", ":app:assemble#{variant.capitalize}", ":app:assemble#{variant.capitalize}AndroidTest"], log: File.join(context.output, "#{variant}-build.log"))
           context.wait(process, timeout: 2400) { |running| diagnostics.progress(running) }
@@ -114,7 +143,7 @@ module Dieter
         context.command(["bash", "apps/mac/scripts/format-swift.sh", "--check"], timeout: 300)
         context.command(["bash", "apps/mac/scripts/sync-proto.sh", "--check"], timeout: 300)
         adapter = Mac.new(context)
-        adapter.unit({})
+        adapter.unit({"filter" => "DieterMacTests|SharedCoreTests"})
         adapter.build({})
         adapter.core_test
       when "daemon", "gateway"

@@ -232,8 +232,7 @@ Xcode. The first Kotlin/Native build downloads about 1.6 GB into `~/.konan`.
 
 ```sh
 just pipeline core_test          # JVM unit and end-to-end tests against isolated gateways and daemons, over the OkHttp transport Android shares
-just pipeline core_apple_test   # common tests natively on macOS, plus the DieterShared XCFramework
-just pipeline core_apple_test    # native tests, then `just pipeline check component:mac operation:core_test`: DieterShared driven from the Mac bridge
+just pipeline core_apple_test   # Kotlin Apple tests, then Swift fixture integration through the Mac bridge
 just pipeline ci action:check component:core         # everything this host supports
 ```
 

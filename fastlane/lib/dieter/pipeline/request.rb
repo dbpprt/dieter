@@ -33,6 +33,16 @@ module Dieter
       config.profile(name, component: component, physical_explicit: options.key?("profile"))
     end
 
+    def plan(config, contract)
+      name = options["profile"] || config.default_profile(component)
+      target = config.data.fetch("profiles").fetch(name) { raise PipelineError, "Unknown profile #{name}" }
+      contract.call("plan", {
+        platform: component, suite: options["suite"] || (options["cases"] ? "" : config.data.fetch("defaults").fetch("suite")),
+        ids: options.fetch("cases", "").split(","), device: target.fetch("layout", "iphone"),
+        changed: options.fetch("changed", false), base: options.fetch("base", "")
+      }).fetch("cases")
+    end
+
     def to_h
       {"schema_version" => 1, "operation" => operation, "component" => component, "options" => options}
     end

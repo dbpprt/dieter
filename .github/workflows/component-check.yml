@@ -17,7 +17,15 @@ on:
       native_profile:
         type: string
         default: ''
+      native_profiles:
+        description: Simulator profiles sharing one verified build on the same worker
+        type: string
+        default: ''
       native_only:
+        type: boolean
+        default: false
+      full:
+        description: Include release-only variant compilation
         type: boolean
         default: false
 permissions:
@@ -41,20 +49,30 @@ jobs:
         if: ${{ !inputs.native_only }}
         env:
           PIPELINE_COMPONENT: ${{ inputs.component }}
-        run: just pipeline ci action:check component:"$PIPELINE_COMPONENT"
+          PIPELINE_CASES: ${{ inputs.native_cases }}
+          PIPELINE_SUITE: ${{ inputs.native_suite }}
+          PIPELINE_PROFILE: ${{ inputs.native_profile }}
+          PIPELINE_PROFILES: ${{ inputs.native_profiles }}
+          PIPELINE_FULL: ${{ inputs.full }}
+        run: just pipeline ci action:check component:"$PIPELINE_COMPONENT" full:"$PIPELINE_FULL" cases:"$PIPELINE_CASES" suite:"$PIPELINE_SUITE" profile:"$PIPELINE_PROFILE" profiles:"$PIPELINE_PROFILES"
       - name: Execute required native cases
-        if: inputs.native_cases != '' || inputs.native_suite != ''
+        if: inputs.native_only && (inputs.native_cases != '' || inputs.native_suite != '')
         env:
           PIPELINE_COMPONENT: ${{ inputs.component }}
           PIPELINE_CASES: ${{ inputs.native_cases }}
           PIPELINE_SUITE: ${{ inputs.native_suite }}
           PIPELINE_PROFILE: ${{ inputs.native_profile }}
+          PIPELINE_PROFILES: ${{ inputs.native_profiles }}
           DIETER_CI_DEVICE_CONFIG: ${{ (inputs.runner == 'android-hardware' || inputs.runner == 'android-mac-hardware') && vars.DIETER_ANDROID_CI_CONFIG || inputs.runner == 'ios-hardware' && vars.DIETER_IOS_CI_CONFIG || '' }}
-        run: just pipeline native_ci component:"$PIPELINE_COMPONENT" cases:"$PIPELINE_CASES" suite:"$PIPELINE_SUITE" profile:"$PIPELINE_PROFILE"
+        run: just pipeline native_ci component:"$PIPELINE_COMPONENT" cases:"$PIPELINE_CASES" suite:"$PIPELINE_SUITE" profile:"$PIPELINE_PROFILE" profiles:"$PIPELINE_PROFILES"
+      - name: Collect bounded diagnostic evidence
+        if: always()
+        run: just pipeline ci action:evidence component:report output:tmp/ci-evidence
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
+        continue-on-error: true
         with:
           name: check-${{ inputs.component }}-${{ inputs.runner }}-${{ inputs.native_profile }}-${{ github.run_attempt }}
-          path: tmp/app-pipelines/
+          path: tmp/ci-evidence/
           retention-days: 14
           if-no-files-found: error

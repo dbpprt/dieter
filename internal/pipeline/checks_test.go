@@ -83,6 +83,25 @@ func TestSharedCoreCheckParity(t *testing.T) {
 		}
 	}
 }
+
+func TestOrchestrationContractsDoNotRequireLocalNativeCompilation(t *testing.T) {
+	for _, path := range []string{"fastlane/lib/dieter/pipeline/process.rb", "fastlane/lib/dieter/pipeline/evidence.rb", "fastlane/lib/dieter/ci.rb", "fastlane/lib/dieter/config.rb"} {
+		plan := planChecks([]string{path}, nil, "")
+		if !checkExists(plan, "portable", "contracts") {
+			t.Fatalf("missing contracts for %s", path)
+		}
+		for _, check := range plan.Checks {
+			if check.Component != "portable" {
+				t.Fatalf("orchestration selected native work: %v", plan.Checks)
+			}
+		}
+		for _, component := range ciComponents {
+			if !plan.CI[component] {
+				t.Fatalf("shared orchestration omitted CI component %s", component)
+			}
+		}
+	}
+}
 func TestMacCheckSelectionUsesConservativeMap(t *testing.T) {
 	for relative, expected := range macSmokeFiles {
 		actual := macChecks([]string{"apps/mac/Sources/DieterMac/" + relative})

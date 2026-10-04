@@ -4,6 +4,7 @@ ENV["FASTLANE_SKIP_UPDATE_CHECK"] = "true"
 ENV["FASTLANE_OPT_OUT_USAGE"] = "true"
 ENV["FASTLANE_HIDE_CHANGELOG"] = "true"
 ENV["FASTLANE_SKIP_DOCS"] = "true"
+$stdout.sync = true
 
 opt_out_usage
 
@@ -20,10 +21,10 @@ end
 
 desc "Run validated native qualification on an explicit CI runner/profile"
 lane :native_ci do |options|
-  Dieter::Runtime.native_ci(options)
+  Dieter::Runtime.native_ci(options, actions: self)
 end
 
-desc "Inspect or run typed affected checks; dry_run:true base:REF ci:true"
+desc "Inspect or run affected fast checks; dry_run:true base:REF native:true ci:true"
 lane :checks do |options|
   Dieter::Checks.invoke(options)
 end
@@ -36,12 +37,17 @@ end
 
 desc "Reusable CI setup and component checks; action:setup|check component:NAME fixture:true|false"
 lane :ci do |options|
-  Dieter::CI.invoke(options)
+  Dieter::CI.invoke(options, actions: self)
 end
 
-desc "Inspect configured targets/toolchains without launching devices or installing tools"
-lane :doctor do
-  Dieter::Runtime.doctor
+desc "Qualify configured iOS layouts with one verified build; profiles:ios-iphone,ios-ipad suite:smoke|functional cases:IDS"
+lane :ios_qualify do |options|
+  Dieter::Runtime.ios_qualify(options, actions: self)
+end
+
+desc "Inspect configured targets/toolchains; optional profile:NAME"
+lane :doctor do |options|
+  Dieter::Runtime.doctor(options)
 end
 
 desc "Create an ignored local configuration; select runtime:IDENTIFIER when several runtimes exist"
@@ -64,7 +70,7 @@ lane :core_apple_test do |options|
   Dieter::Runtime.core_apple(options)
 end
 
-desc "Build shared Apple framework slices using the canonical cache; configuration:debug|release platforms:macos|ios-simulator|all"
+desc "Build shared Apple framework slices using the canonical cache; configuration:debug|release platforms:macos|ios-simulator|ios-device|all"
 lane :framework do |options|
   Dieter::Operations.invoke("core", options.merge(action: "framework"))
 end

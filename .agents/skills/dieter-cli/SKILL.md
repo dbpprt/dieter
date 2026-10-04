@@ -10,6 +10,10 @@ the running daemon; never edit `DIETER_HOME` or use project-repository metadata
 as a substitute. Every card or standalone chat is one durable harness
 conversation owned by its daemon.
 
+For repository builds, tests, signing, and CI/release work, use
+[Dieter pipelines](../dieter-pipelines/SKILL.md). Keep execution registered to the
+card and collect bounded results; the pipeline owns device and fixture cleanup.
+
 ## Choose the target
 
 Omit `--machine` to use the running daemon on this machine:

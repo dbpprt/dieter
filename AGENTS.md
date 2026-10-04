@@ -60,6 +60,10 @@ Read `fastlane/README.md` before changing app builds, E2E or releases.
 Add compositions to `fastlane/lib/dieter`; add typed catalog/result contracts to
 `internal/pipeline` and isolated fixtures to `tools/fixtures`. Do not reintroduce
 platform Just modules, host test loops in scripts, or workflow shell pipelines.
+Use Fastlane's maintained actions for Apple tests and archive/export.
+`pipeline/action.rb` runs them inside owned processes with private input and
+deadlines. Shared process, evidence, lease and product contracts belong in
+`fastlane/lib/dieter/pipeline`, not duplicated adapters or workflow code.
 
 Use `fastlane/local.example.json` as the template for ignored `fastlane/local.json`;
 run `just pipeline config_init` once, then edit explicit named target profiles.
@@ -73,6 +77,10 @@ live daemon. Android uses visible host GLES with normal snapshot loading/saving;
 never add wipe, cold-boot, software-renderer, headless or no-snapshot shortcuts.
 Required missing/skipped/unavailable assertions and cleanup failures fail gates.
 Use registered background processes and collect their result before finishing.
+Stream sanitized build/test progress. Keep diagnostics bounded and separate from
+immutable checkpoints; never upload DerivedData, app bundles, archives or producer
+copies as diagnostics. Diagnostic upload outages do not require rerunning passed
+tests. Required assertions, cleanup and producer retention still fail closed.
 
 Main produces **dev** prereleases with one reserved numeric SemVer across every
 component. Candidate reruns recover exact retained bytes; never rebuild a consumed
@@ -82,14 +90,25 @@ updaters or activate production. See `fastlane/release-policy.json`.
 
 ## Repository checks
 
-For local development, use `just check-changed --dry-run` to inspect the affected
-checks, then `just check-changed` to run them. The default includes all
-uncommitted changes; use `--base REF` to include branch changes. Run tests for
-the affected packages/components, and native integration tests only for related
-app, shared schema, or integration fixture changes. Preserve the existing app,
+For local development, inspect `just check-changed --dry-run`, then run selected
+fast checks with `just check-changed`. Include branch changes with `--base REF`.
+Device/desktop checks are listed separately: use `--native` or specific catalog
+cases for related app, schema, fixture or lifecycle changes. Shared orchestration
+edits require pipeline contracts, not every local native build. During refactors,
+run focused checks as needed and affected contracts once at the integration
+boundary. Repeat passing checks only after a relevant change or new failure.
+Do not repeatedly run `just check`, `check-all`, full E2E catalogs, or unrelated
+components between edits. Preserve the existing app,
 daemon, and emulator lifecycle rules; report an unavailable integration run
 instead of disrupting a running operator app. Full checks below remain for CI
 and explicitly requested repository-wide validation.
+
+CI uses `.github/workflows/qualification.yml`: affected checks on PRs, full
+qualification on main. CI calls Release after qualification passes; Release must
+not independently repeat those checks. Manual releases qualify first.
+`ios_qualify` verifies one simulator build for explicit iPhone/iPad profiles under
+one build lease. Physical tests require their separate exact profile, existing
+development signing and authenticated fixtures; never reuse simulator bytes.
 
 The shared Kotlin client core in `apps/core` has its own checks: `just pipeline core_test` (JVM unit and isolated end-to-end tests over the OkHttp transport that
 Android shares) and, on macOS, `just pipeline core_apple_test`. See `apps/core/README.md`.
@@ -98,6 +117,8 @@ and iOS apps link it as `DieterShared` through `apps/mac/Sources/SharedCore`.
 Put rules in the core, not in an app. `just pipeline ios build` assembles the iOS
 framework slices (it needs a Java runtime) and compiles the iOS app and its test
 bundles; the iOS tests run through `just pipeline ios e2e`.
+`just pipeline ios test_unit` uses the small policy dependency graph and the
+canonical `apps/mac/.build/dieter-ios-policy` cache, without building the Mac app.
 
 Android builds use Android Studio's bundled JBR. If `JAVA_HOME` is absent or
 points to a removed Homebrew JDK, use:

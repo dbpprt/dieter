@@ -1,7 +1,10 @@
-name: Release
+name: Development release
 on:
-  push:
-    branches: [main]
+  workflow_call:
+    inputs:
+      channel:
+        type: string
+        default: dev
   workflow_dispatch:
     inputs:
       channel:
@@ -16,9 +19,16 @@ concurrency:
   group: release-${{ github.sha }}
   cancel-in-progress: false
 jobs:
+  manual-qualification:
+    name: Qualify manual release
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/qualification.yml
+    with:
+      full: true
   reserve:
     name: Reserve immutable development identity
-    if: github.ref == 'refs/heads/main'
+    needs: manual-qualification
+    if: always() && github.ref == 'refs/heads/main' && (needs.manual-qualification.result == 'success' || (github.event_name == 'push' && needs.manual-qualification.result == 'skipped'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -44,58 +54,9 @@ jobs:
           path: tmp/release-identity/identity.json
           retention-days: 90
           if-no-files-found: error
-  check-portable:
-    name: Go and harness runtime
-    needs: reserve
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: portable
-      runner: ubuntu-latest
-  check-core:
-    name: Shared Kotlin core
-    needs: reserve
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: core
-      runner: ubuntu-latest
-  check-android:
-    name: Android client
-    needs: reserve
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: android
-      runner: ubuntu-latest
-  check-mac:
-    name: macOS client
-    needs: reserve
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: mac
-      runner: macos-26
-      native_cases: mac.core,mac.board
-  check-core-apple:
-    name: Shared Kotlin core on Apple
-    needs: reserve
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: core-apple
-      runner: macos-26
-  check-ios:
-    name: iPhone and iPad client
-    needs: reserve
-    strategy:
-      fail-fast: false
-      matrix:
-        profile: [ios-iphone, ios-ipad]
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: ios
-      runner: macos-26
-      native_suite: functional
-      native_profile: ${{ matrix.profile }}
   candidates:
     name: ${{ matrix.name }}
-    needs: [reserve, check-portable, check-core, check-core-apple, check-android, check-mac, check-ios]
+    needs: reserve
     strategy:
       fail-fast: false
       matrix:
@@ -128,6 +89,7 @@ jobs:
             component: ios
             runner: macos-26
     permissions:
+      actions: read
       contents: write
       packages: write
       id-token: write
@@ -161,6 +123,7 @@ jobs:
   coordinate:
     needs: [reserve, candidates]
     permissions:
+      actions: read
       contents: write
       packages: write
       id-token: write
@@ -172,6 +135,7 @@ jobs:
     needs: [reserve, coordinate]
     if: github.event_name == 'push' || inputs.channel == 'dev'
     permissions:
+      actions: read
       contents: write
     uses: ./.github/workflows/release-distribute.yml
     with:

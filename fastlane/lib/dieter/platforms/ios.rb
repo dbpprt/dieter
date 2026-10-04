@@ -2,6 +2,7 @@
 
 require "uri"
 require "securerandom"
+require "shellwords"
 require_relative "framework"
 require_relative "apple_build"
 require_relative "../fixtures/gateway"
@@ -9,6 +10,8 @@ require_relative "../fixtures/screen"
 require_relative "../fixtures/device_route"
 require_relative "../fixtures/ios_media"
 require_relative "../pipeline/contract"
+require_relative "../pipeline/action"
+require_relative "../pipeline/inputs"
 
 module Dieter
   class IOS
@@ -22,7 +25,11 @@ module Dieter
     end
 
     def unit(options)
-      Mac.new(@context).unit(options.merge("filter" => options.fetch("filter", "DieterIOSTests")))
+      @context.lease("apple-build")
+      SharedFramework.new(@context).build
+      argv = ["swift", "test", "--package-path", "apps/mac", "--scratch-path", "apps/mac/.build/dieter-ios-policy", "--only-use-versions-from-resolved-file", "--disable-index-store", *AppleBuild.jobs(@context, tool: :swift)]
+      argv += ["--filter", options.fetch("filter")] if options["filter"]
+      @context.command(argv, environment: {"DIETER_SWIFT_TEST_SCOPE" => "ios-policy"}, timeout: 1200, log: File.join(@context.output, "ios-policy-tests.log"))
     end
 
     def build(options)
@@ -30,25 +37,33 @@ module Dieter
       raise PipelineError, "configuration must be debug or release" unless %w[debug release].include?(configuration)
       @context.lease("apple-build")
       physical = @target && @target["kind"] == "device"
-      @bundle_id = physical ? @signing.fetch("app_bundle_id") : @share_files ? "com.dbpprt.dieter.ios.e2e" : "com.dbpprt.dieter.ios"
+      @bundle_id = physical ? @signing.fetch("app_bundle_id") : "com.dbpprt.dieter.ios.e2e"
       if physical
         @derived = File.join(@root, "apps/ios/.build/DerivedDataDevice")
         @products = File.join(@derived, "Build/Products")
       end
-      SharedFramework.new(@context).build(configuration: configuration, platforms: physical ? "all" : "ios-simulator")
+      SharedFramework.new(@context).build(configuration: configuration, platforms: physical ? "ios-device" : "ios-simulator")
       sdk = physical ? "iphoneos" : "iphonesimulator"
       Dir.glob(File.join(@products, "*#{sdk}*.xctestrun")).each { |path| File.unlink(path) }
-      argv = ["xcodebuild", *AppleBuild.jobs(@context, tool: :xcode), "-skipPackagePluginValidation", "-project", "apps/ios/DieterIOS.xcodeproj", "-scheme", physical || @share_files ? "DieterIOSE2E" : "DieterIOS", "-configuration", configuration.capitalize, "-destination", physical ? "generic/platform=iOS" : "generic/platform=iOS Simulator", "-derivedDataPath", @derived, "build-for-testing", "ARCHS=arm64", "CODE_SIGNING_ALLOWED=YES", "ENABLE_TESTABILITY=YES", "DIETER_RELEASE_VERSION=#{@context.environment.fetch('DIETER_RELEASE_VERSION')}"]
+      argv = [*AppleBuild.jobs(@context, tool: :xcode), "-skipPackagePluginValidation", "ARCHS=arm64", "CODE_SIGNING_ALLOWED=YES", "ENABLE_TESTABILITY=YES", "DIETER_RELEASE_VERSION=#{@context.environment.fetch('DIETER_RELEASE_VERSION')}"]
       argv += if physical
                 ["DIETER_IOS_BUNDLE_ID=#{@signing.fetch('app_bundle_id')}", "DIETER_IOS_APP_GROUP_ID=#{@signing.fetch('app_group_id')}", "DIETER_IOS_TEAM_ID=#{@signing.fetch('team_id')}", "DEVELOPMENT_TEAM=#{@signing.fetch('team_id')}", "DIETER_IOS_SIGN_STYLE=Manual", "DIETER_IOS_SIGN_IDENTITY=#{@profiles.fetch('certificate')}", "DIETER_IOS_PROFILE_SPECIFIER=#{@profiles.fetch('app')}", "DIETER_IOS_SHARE_PROFILE_SPECIFIER=#{@profiles.fetch('share')}", "DIETER_IOS_TEST_PROFILE_SPECIFIER=#{@profiles.fetch('runner')}"]
               else
                 ["CODE_SIGN_IDENTITY=-", "DIETER_IOS_BUNDLE_ID=#{@bundle_id}", "DIETER_IOS_APP_GROUP_ID=group.#{@bundle_id}"]
               end
-      @context.command(argv, timeout: 2400, log: File.join(@context.output, "build.log"))
+      NativeAction.run(@context, "run_tests", {
+        project: "apps/ios/DieterIOS.xcodeproj", scheme: "DieterIOSE2E", configuration: configuration.capitalize,
+        destination: physical ? "generic/platform=iOS" : "generic/platform=iOS Simulator", derived_data_path: @derived,
+        build_for_testing: true, skip_build: true, skip_detect_devices: true, skip_slack: true,
+        output_types: "", output_directory: @context.private_dir, buildlog_path: @context.private_dir,
+        xcodebuild_formatter: "", xcargs: Shellwords.join(argv)
+      }, timeout: 2400, log: File.join(@context.output, "build.log"))
       candidates = Dir.glob(File.join(@products, "*#{sdk}*.xctestrun"))
       raise PipelineError, "Expected one build-for-testing plan" unless candidates.length == 1
       source = @context.command(["git", "rev-parse", "HEAD"], timeout: 30).strip
-      ArtifactSet.new(component: "ios", source: source, configuration: configuration, products: {"xctestrun" => candidates.first, "app" => File.join(@products, "#{configuration.capitalize}-#{sdk}/Dieter.app")}).write(File.join(@context.output, "artifacts.json"))
+      ArtifactSet.new(component: "ios", source: source, configuration: configuration,
+                      toolchain: {"input_sha256" => BuildInputs.digest(@context), "sdk" => sdk, "xcode" => @context.command(%w[xcodebuild -version], timeout: 30)},
+                      products: {"xctestrun" => candidates.first, "test-products" => @products}).write(File.join(@context.output, "artifacts.json"))
       candidates.first
     end
 
@@ -85,16 +100,21 @@ module Dieter
     end
 
     def prepare(target, _plan)
-      build({})
+      @prepared_manifest ? reuse_products(target) : build({})
       GatewayFixture.compile(@context)
       return if target.fetch("kind") == "device"
       @simulator_name = "Dieter Pipeline #{SecureRandom.uuid}"
       @simulator = @context.command(["xcrun", "simctl", "create", @simulator_name, target.fetch("device_type"), target.fetch("runtime")], timeout: 30, binary: true).strip
       raise PipelineError, "Invalid owned simulator identity" unless UUID.match?(@simulator)
       Atomic.json(@journal, {"ID" => @simulator, "Name" => @simulator_name})
-      @context.cleanup { delete_simulator(@simulator); File.unlink(@journal) if File.file?(@journal) }
+      simulator, journal = @simulator, @journal
+      @context.cleanup { delete_simulator(simulator); File.unlink(journal) if File.file?(journal) }
       @context.command(["xcrun", "simctl", "bootstatus", @simulator, "-b"], timeout: 180, log: File.join(@context.output, "boot.log"))
       @context.command(["xcrun", "simctl", "spawn", @simulator, "defaults", "write", "com.apple.keyboard.preferences", "DidShowContinuousPathIntroduction", "-bool", "true"], timeout: 120)
+    end
+
+    def prepared_products(manifest)
+      @prepared_manifest = manifest
     end
 
     def execute_case(target, test_case)
@@ -153,11 +173,17 @@ module Dieter
         bundle = File.join(state, "result.xcresult")
         native = test_case.fetch("native")
         destination = target["kind"] == "device" ? "platform=iOS,id=#{target.fetch('udid')}" : "platform=iOS Simulator,id=#{@simulator}"
-        argv = ["xcodebuild", "test-without-building", "-xctestrun", spec, "-destination", destination, "-parallel-testing-enabled", "NO", "-destination-timeout", "30", "-collect-test-diagnostics", "never", "-resultBundlePath", bundle]
-        argv += native.fetch("methods").map { |method| "-only-testing:#{native.fetch('target')}/#{native.fetch('class')}/#{method}" }
         result["setupMs"] = ((monotonic - started) * 1000).round
         began = monotonic
-        process = @context.start(argv, log: File.join(dir, "tests.log"))
+        process = NativeAction.start(@context, "run_tests", {
+          project: "apps/ios/DieterIOS.xcodeproj", scheme: "DieterIOSE2E", derived_data_path: @derived,
+          xctestrun: spec, destination: destination, test_without_building: true, skip_build: true,
+          skip_detect_devices: true, parallel_testing: false, disable_concurrent_testing: true,
+          only_testing: native.fetch("methods").map { |method| "#{native.fetch('target')}/#{native.fetch('class')}/#{method}" },
+          result_bundle_path: bundle, output_directory: state, buildlog_path: state, output_types: "",
+          skip_slack: true, number_of_retries: 0, xcodebuild_formatter: "",
+          xcargs: "-destination-timeout 30 -collect-test-diagnostics never"
+        }, log: File.join(dir, "tests.log"))
         @context.wait(process, timeout: 1200, check: false)
         result["executionMs"] = ((monotonic - began) * 1000).round
         @context.during_cleanup do
@@ -167,7 +193,7 @@ module Dieter
           if result["status"] == "passed" && !process.status.success?
             result.merge!("status" => "failed", "reason" => "XCTest process failed despite passing result fragments")
           end
-          @context.command(["xcrun", "xcresulttool", "export", "attachments", "--path", bundle, "--output-path", File.join(dir, "attachments")], timeout: 60, check: false)
+          @context.command(["xcrun", "xcresulttool", "export", "attachments", "--path", bundle, "--only-failures", "--output-path", File.join(dir, "attachments")], timeout: 60, check: false) unless result["status"] == "passed"
         end
       rescue StandardError => error
         result["status"] = error.is_a?(Unavailable) ? "unavailable" : error.is_a?(Interrupted) ? "interrupted" : "failed"
@@ -195,6 +221,18 @@ module Dieter
     end
 
     private
+
+    def reuse_products(target)
+      raise PipelineError, "Prepared simulator products cannot target a physical device" unless target.fetch("kind") == "simulator"
+      manifest = ArtifactSet.load(@prepared_manifest, component: "ios", source: @context.command(%w[git rev-parse HEAD], timeout: 30).strip).manifest
+      toolchain = manifest.fetch("toolchain")
+      raise PipelineError, "Prepared iOS inputs or toolchain changed" unless manifest["configuration"] == "debug" && toolchain["sdk"] == "iphonesimulator" && toolchain["input_sha256"] == BuildInputs.digest(@context) && toolchain["xcode"] == @context.command(%w[xcodebuild -version], timeout: 30)
+      product = manifest.fetch("products").find { |entry| entry["kind"] == "test-products" }
+      raise PipelineError, "Prepared iOS test products are missing" unless product
+      @products = product.fetch("path")
+      @bundle_id = "com.dbpprt.dieter.ios.e2e"
+      puts "Reusing verified iOS test products for #{target.fetch('name')}"
+    end
 
     def monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 

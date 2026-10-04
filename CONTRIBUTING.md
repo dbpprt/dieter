@@ -47,18 +47,30 @@ just check-changed --dry-run
 just check-changed
 # Include committed branch changes when appropriate:
 just check-changed --base origin/main
+# Execute related device/desktop gates explicitly:
+just check-changed --native
 git diff --check
 ```
 
-The selector includes all uncommitted files by default. Run affected package and
-component tests. Native integration is needed for related app, shared schema,
-or fixture changes; a documentation correction does not require a device suite.
+The selector includes all uncommitted files by default. It executes affected fast
+checks and lists related native checks separately. Run focused catalog cases for
+the behavior you changed, or use `--native` for every related device/desktop gate.
+Native integration is needed for related app, shared schema, or fixture changes;
+a documentation correction does not require a device suite.
 Shared Swift package, dependency-lock, vendor, and core/client test changes
 also select iOS validation. iOS sources and tests select iOS; policies in the
 shared Swift package additionally run their portable unit tests on the Mac host.
 Installer changes select the release regression suite; Mac lifecycle changes
 select process-ownership tests before native qualification.
 The website has an explicit `just site check` for links and assets.
+
+During implementation, rerun only a failed or newly affected check. Run the
+affected package and contract checks once when the change is ready for review;
+do not repeatedly run `just check` or full device catalogs. For pipeline-only
+changes, contract checks plus a focused native case through each changed adapter
+are sufficient local verification. Main CI performs full qualification once
+before the immutable development release. See [the pipeline guide](fastlane/README.md)
+for common modules, exact local target profiles, signing, and retained products.
 
 Use `gofmt` on Go changes and the platform formatter commands. Tests should verify
 observable behavior and meaningful failure cases, rather than repeat the code.

@@ -210,15 +210,14 @@ func planChecks(paths []string, packages []string, base string) CheckPlan {
 		return prefixAny(p, "apps/android/") && !prefixAny(p, "apps/android/app/src/test/") || kotlinAndroidSource(p) || prefixAny(p, "native/android-webrtc/") || slices.Contains([]string{"fastlane/lib/dieter/platforms/android.rb", "fastlane/lib/dieter/platforms/emulator.rb"}, p)
 	})
 	orchestration := any(func(p string) bool {
-		return prefixAny(p, "fastlane/lib/dieter/pipeline/") || slices.Contains([]string{"fastlane/Fastfile", "fastlane/lib/dieter/runtime.rb", "fastlane/lib/dieter/ci.rb", "fastlane/lib/dieter/operations.rb", "fastlane/lib/dieter/screens.rb", "fastlane/config.json", "fastlane/config.schema.json", "Gemfile", "Gemfile.lock", ".ruby-version", "justfile"}, p)
+		return prefixAny(p, "fastlane/lib/dieter/pipeline/") || slices.Contains([]string{"fastlane/Fastfile", "fastlane/lib/dieter/runtime.rb", "fastlane/lib/dieter/ci.rb", "fastlane/lib/dieter/config.rb", "fastlane/lib/dieter/operations.rb", "fastlane/lib/dieter/screens.rb", "fastlane/config.json", "fastlane/config.schema.json", "Gemfile", "Gemfile.lock", ".ruby-version", "justfile"}, p)
 	})
 	selector := any(func(p string) bool {
 		return prefixAny(p, "internal/pipeline/check", ".github/workflows/ci.yml") || p == "justfile"
 	})
 	catalog := any(func(p string) bool { return prefixAny(p, "tests/e2e/", "internal/pipeline/") })
-	if orchestration {
-		mac, ios, android, kmp, androidIntegration = true, true, true, true, true
-	}
+	// Orchestration contracts can be verified without compiling every native
+	// client locally. CI still selects all components for these shared changes.
 	if catalog || orchestration || any(func(p string) bool {
 		return prefixAny(p, "fastlane/spec/", "fastlane/lib/dieter/distribution/", "fastlane/release-policy.json", "fastlane/local.example.json")
 	}) {
@@ -305,7 +304,7 @@ func planChecks(paths []string, packages []string, base string) CheckPlan {
 		}
 	}
 	suites := macChecks(code)
-	if kmp || schema || fixture || brand || orchestration || framework || any(func(p string) bool {
+	if kmp || schema || fixture || brand || framework || any(func(p string) bool {
 		return prefixAny(p, "fastlane/lib/dieter/native/mac_") || p == "fastlane/lib/dieter/platforms/mac.rb" || prefixAny(p, "tests/e2e/cases/mac/")
 	}) {
 		suites = macSmokeSuites

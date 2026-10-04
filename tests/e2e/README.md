@@ -9,6 +9,11 @@ app data is used.
 See [the pipeline guide](../../fastlane/README.md) for setup, ignored local
 configuration, exact target profiles, command discovery and release policy.
 
+Inspect `just check-changed --dry-run` and run affected fast checks first. Device
+work is listed separately and selected with `--native` or specific cases. Run
+only related cases during implementation; complete catalogs remain release gates.
+Native test formats share selection, qualification, timing and evidence contracts.
+
 ```sh
 just pipeline catalog action:lint
 just pipeline catalog action:list
@@ -21,6 +26,7 @@ just pipeline android e2e suite:performance
 just pipeline android e2e suite:sdk
 just pipeline ios e2e profile:ios-iphone suite:functional
 just pipeline ios e2e profile:ios-ipad suite:functional
+just pipeline ios_qualify profiles:ios-iphone,ios-ipad suite:smoke
 just pipeline mac e2e suite:functional
 just pipeline mac e2e cases:mac.navigation,mac.sidebar
 ```
@@ -35,7 +41,7 @@ methods are qualified from structured xcresult; missing, skipped, duplicate,
 failed and interrupted methods fail. Physical `ios-device` execution additionally
 requires existing development signing, separate E2E identities and reachable TLS
 fixtures; unavailable prerequisites fail admission. Physical Share qualification
-needs owned media setup and is currently unavailable. Hosted CI prepares its
+uses owned media in the isolated app's Documents/Files provider. Hosted CI prepares its
 pinned runtime explicitly; local tests never install a runtime automatically.
 
 Both layouts cover the remote-node, terminal, screen, connection-state, native
@@ -47,7 +53,7 @@ not counted as a passing skip. Explicitly requesting it on iPad is an error.
 The `manual` case `ios.https-auth` requires `DIETER_IOS_TEST_HTTPS_GATEWAY` and
 performs only the existing invalid-session HTTPS probe. Credentials are injected
 through a private xctestrun file, never command arguments. Only sanitized test
-reports, console output and exported attachments are retained; private launch
+reports, console output and failure attachments are retained; private launch
 configuration and raw xcresult bundles are removed on cleanup.
 
 Mac execution requires a logged-in macOS desktop and refuses any existing
@@ -108,9 +114,12 @@ and clears attention. These setup/probe operations do not replace UI actions und
 Artifacts are in `tmp/app-pipelines/<run>/`: `plan.json`, `results.json`, `junit.xml`,
 per-case native logs and captures, flow step events, and failure evidence. Use
 `output:PATH` to select a fresh directory (existing paths are refused). CI uploads
-only that run’s directory, excluding build caches and prior runs. Reports
-separate build, installation, setup, and execution time. Builds and running cases
-emit credential-free elapsed/deadline progress every 30 seconds; this proves the
+an explicit diagnostic allowlist capped at 64 MiB, with per-file limits and an
+omission manifest. Archives, caches, raw xcresult bundles and producer checkpoints
+are excluded. Checkpoint retention is mandatory; diagnostic upload outages do
+not invalidate a passing test gate. Reports separate build, installation, setup,
+and execution time. Logged compiler/test commands stream sanitized stdout/stderr;
+builds and running cases also emit elapsed/deadline progress every 30 seconds. This proves the
 runner is active, not that its assertions have passed. Gate on results, not
 the shell exit status of `am instrument`. The runner stops owned processes and
 removes only owned reverses; failed cleanup also fails qualification.
@@ -142,14 +151,16 @@ platform-specific script.
 
 `just check` validates the catalog and both iOS layouts through `just pipeline check component:portable operation:contracts`,
 so CI and release use the same portable gate. `just pipeline ci action:check component:android` compiles the
-E2E and performance apps/test drivers as well as running unit tests, debug assembly, and lint.
+E2E apps/test drivers as well as running unit tests, debug assembly, and lint;
+`full:true` also compiles the performance variants for release qualification.
 All device execution uses `just pipeline android e2e`. The Android job in the manual
-`Native E2E` workflow uses `self-hosted`, `macOS`, `dieter-android` for the visible
+`Native qualification` workflow uses `self-hosted`, `macOS`, `dieter-android` for the visible
 Pixel emulator and all Android screen suites. Other physical Android suites use
 `self-hosted`, `Linux`, `dieter-android`. Install Just/Go/Node/JDK21/Android SDK and
 qualify the configured visible `Pixel_9_API_37_1` AVD with host GLES first. The
 pipeline does not create, cold boot, or replace an emulator. The Mac job uses a
-provisioned desktop; iOS virtual jobs use hosted macOS iPhone/iPad simulators.
+provisioned desktop; iOS simulator qualification runs iPhone and iPad profiles
+sequentially on one hosted macOS worker, using one verified simulator build.
 Runner provisioning is an explicit prerequisite for hardware dispatches.
 
 Android client logic (sign-in, routing, sync, the outbox, navigation,

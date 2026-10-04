@@ -7,6 +7,32 @@ SwiftPM, Xcode, Docker Buildx and the gateway deployment controller remain the
 tools that do their component work. Just contains no native lifecycle or
 release implementation.
 
+## Architecture and verification cost
+
+`pipeline/action.rb` runs Fastlane `run_tests` and `build_app` in owned subprocesses
+with private JSON input, redacted live output and Dieter deadlines. Fastlane builds
+the Apple commands; Dieter retains exact-device leases, isolated fixtures and
+qualification from structured native results. Adapters consume shared process,
+product, input-hash and evidence modules instead of implementing them.
+Apple builds use locked package versions; execution of verified xctestrun products
+skips package resolution, avoiding repeated network work for each native case.
+The pinned `xcpretty` formatter keeps Apple progress compact. Build-settings
+discovery has one 120-second deadline rather than repeated three-second queries.
+
+Inspect `just check-changed --dry-run` before testing. The default executes fast
+affected checks and lists related device/desktop checks separately. Use `--native`
+to execute those, or select specific catalog cases. During implementation, rerun
+only a failed or newly affected check; run affected contracts once after changes
+are integrated. Shared orchestration edits do not select every local native build.
+Full repository/device suites belong to explicit full checks and release gates.
+[The refactor record](../docs/pipeline-refactor.md) contains measured causes,
+research and verification scope.
+
+Assertions stay in Compose/XCTest/Swift/Go tests. The catalog provides shared
+selection and results, rather than replacing native tests with another language.
+Shared core behavior is tested below the UI; device journeys qualify native
+presentation and platform bindings.
+
 ## Setup and machine configuration
 
 Install Ruby from `.ruby-version`, Bundler 2.6.9, just 1.58+, Go from `go.mod`,
@@ -17,6 +43,7 @@ bundle install
 npm --prefix internal/harness/runtime ci
 just pipeline config_init
 just pipeline doctor
+just pipeline doctor profile:ios-iphone
 just pipeline lanes
 ```
 
@@ -73,6 +100,7 @@ configured native plan actually passes; unavailable cells fail.
 just check-changed --dry-run
 just check-changed
 just check-changed --base origin/main
+just check-changed --native        # include related device/desktop checks explicitly
 just check                         # portable Go/harness/pipeline/release checks
 just check-all                     # all component unit/build checks on a Mac
 just pipeline core_test
@@ -81,6 +109,7 @@ just pipeline android test_unit
 just pipeline android build
 just pipeline android local action:emulator_check # run twice for snapshot reload
 just pipeline ios test_unit
+just pipeline ios_qualify profiles:ios-iphone,ios-ipad suite:smoke
 just pipeline ios build
 just pipeline mac test_unit
 just pipeline mac build configuration:release
@@ -90,12 +119,22 @@ just pipeline component component:gateway operation:test_unit
 
 Build lanes publish an `artifacts.json` manifest in their printed evidence
 directory. `just pipeline PLATFORM verify artifact:PATH` verifies those exact
-bytes without rebuilding. Mac app and test caches remain
+bytes without rebuilding. Relative file options, including `artifact:`,
+`identity:`, `products:` and `output:`, resolve from the repository root even
+when Fastlane changes its working directory. Mac app and test caches remain
 `apps/mac/.build/dieter-local` and `apps/mac/.build/dieter-tests`; the shared
 framework cache hashes production inputs, toolchains and published bytes,
 preserves unchanged products/timestamps and retains existing compatible slices.
 The configured `toolchains.swift_jobs` limit applies to SwiftPM and Xcode builds;
 `DIETER_SWIFT_JOBS` may select an explicit limit from 1 to 64.
+Portable iOS tests use `apps/mac/.build/dieter-ios-policy` and the small policy
+graph selected by `DIETER_SWIFT_TEST_SCOPE=ios-policy`. It compiles production
+attachment/scroll policies, real Kotlin rules and protobuf messages without the
+Mac app, WebRTC or gRPC transport. The full Mac package graph is unchanged.
+Framework requests select only their needed `macos`, `ios-simulator` or `ios-device`
+slice; existing compatible slices are retained. Bundler's `vendor/bundle` is not a
+Go vendor directory; the pipeline supplies module flags locally and in CI without
+changing the operator's environment.
 
 Local Android Release builds require `signing.android-release.keystore_file`
 and its three environment references, or the canonical signing environment
@@ -142,6 +181,7 @@ just pipeline android e2e suite:performance
 just pipeline android e2e suite:screens
 just pipeline ios e2e profile:ios-iphone suite:functional
 just pipeline ios e2e profile:ios-ipad suite:functional
+just pipeline ios_qualify profiles:ios-iphone,ios-ipad suite:functional
 just pipeline ios e2e profile:ios-device cases:ios.remote-node
 just pipeline ios e2e profile:ios-iphone cases:ios.share-owned-file
 just pipeline mac e2e suite:functional
@@ -159,6 +199,14 @@ loop. Every case gets fresh private client/daemon/gateway state. Exact native
 methods and phase assertions must pass once; missing, skipped, duplicate,
 failed, interrupted, unavailable and failed-cleanup results fail required gates.
 Changed-only selections with no affected cases report `not-required` explicitly.
+
+`ios_qualify` prepares one `DieterIOSE2E` simulator build and verifies source inputs,
+Xcode identity, configuration and full product hashes before each layout. Both
+layouts execute on the same worker with fresh simulators and per-case state. The
+parent holds the build lease while child runs clean up their own resources. Test
+assertion failures still qualify the other layout; interruption or cleanup failure
+stops the group. Phones use `ios e2e` with existing development signing; simulator
+products cannot be reused on physical devices.
 
 Evidence is printed as `tmp/app-pipelines/UUID`: plan, stage events, JSON/JUnit,
 native result trees, sanitized logs, screenshots and cleanup results. `output:PATH`
@@ -188,11 +236,34 @@ source changes during a run fail its report. This never promotes codec defaults.
 
 ## CI and release policy
 
-CI calls the same lanes through pinned reusable workflows. Fast component checks
-run on hosted runners. Release gates execute full iPhone and iPad functional
-catalogs and the Mac core/board cases. `native-e2e.yml` selects the explicit
+CI calls the same lanes through pinned reusable workflows. `qualification.yml`
+selects affected PR components and requires all components on main, scheduled and
+manual full runs. iOS PRs run portable policies and both-layout smoke; main runs
+both complete functional catalogs. Mac core/board cases remain required, with
+full Mac functional qualification on scheduled and manual runs. Android
+PRs compile E2E drivers; main also compiles its performance variant.
+The Kotlin Apple job runs only its Mac-target assertions. The Mac job owns Swift
+fixture integration; the iOS job owns portable iOS policies, avoiding duplicate
+assertions and unnecessary all-slice assembly across the Apple jobs.
+`native-e2e.yml` selects the explicit
 hardware matrix; Android and Mac desktop hardware runs need registered runners.
 No untrusted PR runs on an owned physical device.
+
+Main CI calls reusable `release.yml` after qualification; Release does not repeat
+those checks. Manual Release dispatch performs full qualification first. Main
+runs survive newer revisions; superseded PR runs are canceled. The aggregate
+branch-protection check is **Qualification / Required checks**; update an existing
+rule naming retired reporter jobs when adopting these workflows.
+
+Build/test output streams with redaction and stream identity. Runs retain elapsed
+heartbeats, `timings.json` and per-case setup/execution/cleanup evidence. CI writes
+a case/target summary and uploads an explicit diagnostic manifest: 64 MiB total;
+logs 4 MiB, JSON/XML 1 MiB, images 8 MiB and failure videos 16 MiB per file. Omissions
+are recorded. Passing iOS cases do not export bulk attachments. Diagnostics exclude
+archives, app bundles, caches and producer copies. Diagnostic upload outages do
+not rerun passed gates. Evidence collection, required assertions, cleanup and
+immutable producer retention remain mandatory. Producer checkpoints avoid extra
+compression of signed archives.
 
 Unsigned Android variant checks on disposable hosted runners retain bounded
 Gradle thread/heap and host resource diagnostics after five minutes without new

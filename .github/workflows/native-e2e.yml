@@ -1,4 +1,4 @@
-name: Native E2E
+name: Native qualification
 on:
   workflow_dispatch:
     inputs:
@@ -42,16 +42,12 @@ jobs:
       native_suite: ${{ inputs.suite }}
   ios:
     if: inputs.platform == 'ios' && inputs.target == 'virtual'
-    strategy:
-      fail-fast: false
-      matrix:
-        profile: [ios-iphone, ios-ipad]
     uses: ./.github/workflows/component-check.yml
     with:
       component: ios
       runner: macos-26
       native_only: true
-      native_profile: ${{ matrix.profile }}
+      native_profiles: ios-iphone,ios-ipad
       native_suite: ${{ inputs.suite }}
   ios-device:
     if: inputs.platform == 'ios' && inputs.target == 'device' && github.ref == 'refs/heads/main'

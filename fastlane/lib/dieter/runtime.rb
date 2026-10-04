@@ -17,25 +17,26 @@ require_relative "distribution/retention"
 
 module Dieter
   module Runtime
-    def self.native_ci(options)
+    def self.native_ci(options, actions: nil)
       raise PipelineError, "Native CI composition requires Actions" unless ENV["GITHUB_ACTIONS"] == "true"
       values = options.transform_keys(&:to_s)
-      raise PipelineError, "Unknown native CI options" unless (values.keys - %w[component cases suite profile]).empty?
+      raise PipelineError, "Unknown native CI options" unless (values.keys - %w[component cases suite profile profiles]).empty?
       component = values.delete("component")
       raise PipelineError, "Invalid native CI component" unless %w[mac ios android].include?(component)
       values.reject! { |_key, value| value == "" }
       if values["suite"] && !%w[smoke functional sync performance sdk screens].include?(values["suite"])
         raise PipelineError, "Invalid native CI suite"
       end
-      invoke("e2e", component, values)
+      return ios_qualify(values, actions: actions) if component == "ios" && values["profiles"]
+      invoke("e2e", component, values, actions: actions)
     end
 
     ROOT = File.expand_path("../../..", __dir__)
 
-    def self.invoke(operation, component, options, actions: nil)
+    def self.invoke(operation, component, options, actions: nil, parent: nil)
       request = PipelineRequest.new(operation, component, options)
       config = Config.new(ROOT)
-      context = RunContext.new(config, output: request.options["output"])
+      context = RunContext.new(config, output: request.options["output"], parent: parent)
       begin
         context.environment["DIETER_RELEASE_VERSION"] = SourceIdentity.version(context)
         if %w[daemon gateway].include?(component)
@@ -50,6 +51,51 @@ module Dieter
       end
       puts "Pipeline evidence: #{context.output}"
       Pipeline.new(context, request, adapter).run
+    end
+
+    def self.ios_qualify(options, actions: nil, parent: nil, prepared: nil)
+      values = options.transform_keys(&:to_s).reject { |_key, value| value == "" }
+      raise PipelineError, "Unknown iOS qualification options" unless (values.keys - %w[profiles suite cases changed base output]).empty?
+      profiles = values.fetch("profiles", "ios-iphone,ios-ipad").split(",")
+      raise PipelineError, "Select one or more unique simulator profiles" if profiles.empty? || profiles.uniq != profiles
+      group = RunContext.new(Config.new(ROOT), output: values.delete("output"), parent: parent)
+      puts "iOS qualification evidence: #{group.output}"
+      begin
+        group.environment["DIETER_RELEASE_VERSION"] ||= SourceIdentity.version(group)
+        contract = Contract.new(group)
+        build_adapter = IOS.new(group, actions: actions)
+        selections = profiles.map do |name|
+          request = PipelineRequest.new("e2e", "ios", values.except("profiles").merge("profile" => name))
+          target = group.config.profile(name, component: "ios")
+          raise PipelineError, "iOS qualification requires simulator profiles; use ios e2e for an exact physical profile" unless target["kind"] == "simulator"
+          plan = request.plan(group.config, contract)
+          build_adapter.admit(target, plan) unless plan.empty?
+          [name, request, plan]
+        end
+        required = selections.any? { |_, _, plan| !plan.empty? }
+        Atomic.json(File.join(group.output, "selection.json"), {status: required ? "required" : "not-required", profiles: selections.to_h { |name, _, plan| [name, plan.map { |test_case| test_case.fetch("id") }] }})
+        unless prepared || !required
+          build_adapter.build({})
+          prepared = File.join(group.output, "artifacts.json")
+        end
+        failures = []
+        selections.each do |name, request, plan|
+          context = RunContext.new(group.config, output: File.join(group.output, name), parent: group)
+          adapter = IOS.new(context, actions: actions)
+          adapter.prepared_products(prepared)
+          begin
+            Pipeline.new(context, request, adapter, planned_cases: plan).run
+          rescue CleanupError, Interrupted
+            raise
+          rescue PipelineError => error
+            failures << "#{name}: #{error.message}"
+          end
+        end
+        raise PipelineError, failures.join("; ") unless failures.empty?
+      ensure
+        group.close
+      end
+      group.output
     end
 
     def self.catalog(options)
@@ -106,13 +152,25 @@ module Dieter
       end
     end
 
-    def self.doctor
+    def self.doctor(options = {})
+      values = options.transform_keys(&:to_s)
+      raise PipelineError, "doctor accepts only profile:NAME" unless (values.keys - %w[profile]).empty?
       config = Config.new(ROOT)
       puts "Ruby #{RUBY_VERSION}; local configuration #{config.local_loaded ? 'loaded' : 'ignored/absent'}"
-      config.data.fetch("profiles").each do |name, profile|
+      profiles = config.data.fetch("profiles")
+      if values["profile"]
+        raise PipelineError, "Unknown profile #{values['profile']}" unless profiles.key?(values["profile"])
+        profiles = profiles.slice(values["profile"])
+      end
+      profiles.each do |name, profile|
         begin
           config.profile(name)
-          puts "#{name}: configured (#{profile.fetch('kind')})"
+          target = profile.slice("serial", "udid", "avd", "runtime", "device_type", "layout")
+          puts "#{name}: configured (#{profile.fetch('kind')}) #{target.map { |key, value| "#{key}=#{value}" }.join(' ')}"
+          if profile["signing"]
+            signing = config.data.fetch("signing").fetch(profile.fetch("signing"))
+            puts "  signing=#{profile.fetch('signing')} team=#{signing['team_id'] || 'unconfigured'} app=#{signing['app_bundle_id']}"
+          end
         rescue Unavailable => error
           puts "#{name}: unavailable: #{error.message}"
         end
@@ -148,7 +206,7 @@ module Dieter
           return identity
         end
         if options[:identity]
-          identity = ReleaseIdentity.load(options.fetch(:identity))
+          identity = ReleaseIdentity.load(File.expand_path(options.fetch(:identity), context.root))
         else
           tag = options[:tag]
           tag ||= github.api("releases/#{Integer(options.fetch(:release_id))}").fetch("tag_name")

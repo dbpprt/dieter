@@ -161,12 +161,19 @@ just check-changed --dry-run
 just check-changed
 ```
 
+The default runs affected fast checks and lists related device/desktop work.
+Select specific native cases or add `--native`; avoid full-suite reruns between
+edits. Generic pipeline changes are verified through shared contracts.
+
 Run Android journeys with `just pipeline android e2e suite:smoke`, or macOS with
 `just pipeline mac e2e suite:smoke`, or iOS with
 `just pipeline ios e2e profile:ios-iphone suite:smoke` (also `profile:ios-ipad`). The
 [native test guide](tests/e2e/README.md) covers YAML cases, suite selection,
 shared lifecycle and failure evidence. [The pipeline guide](fastlane/README.md)
 covers local emulator/device profiles, builds, signing and dev/stable releases.
+`just pipeline ios_qualify profiles:ios-iphone,ios-ipad suite:smoke` builds and
+verifies simulator products once for both layouts. Main CI qualifies once before
+calling Release, preserving the existing immutable candidates and stable policy.
 
 [Mac](apps/mac/README.md) · [Android](apps/android/README.md) ·
 [iOS](apps/ios/README.md) · [Website](landingpage/README.md)

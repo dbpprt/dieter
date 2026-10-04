@@ -9,6 +9,13 @@ Read `fastlane/README.md` and `apps/android/agents.md`. Use `just pipeline andro
 from the repository root. Fastlane owns build, exact-device admission, fixtures,
 execution, native qualification and cleanup; do not add host scripts or Just loops.
 
+For pipeline changes, read [dieter-pipelines](../dieter-pipelines/SKILL.md).
+Inspect `just check-changed --dry-run`, run affected fast checks once after changes,
+and select related cases for native verification. Device execution requires
+`--native` or an explicit `android e2e` command. Do not rerun full functional,
+screen or performance suites between edits. CI compiles E2E drivers on affected
+PRs; full main qualification also compiles the performance variant.
+
 ## Configuration and ownership
 
 Run `just pipeline doctor`; configure the ignored `fastlane/local.json` from

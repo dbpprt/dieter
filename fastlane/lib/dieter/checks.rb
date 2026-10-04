@@ -11,10 +11,11 @@ module Dieter
       $stdout.sync = true
       options = {}
       parser = OptionParser.new do |flags|
-        flags.banner = "just check-changed [--dry-run] [--base REF] [--ci]"
+        flags.banner = "just check-changed [--dry-run] [--base REF] [--native] [--ci]"
         flags.on("--dry-run", "Inspect typed requests without executing checks") { options[:dry_run] = true }
         flags.on("--base REF", "Include branch changes against this merge base") { |value| options[:base] = value }
         flags.on("--ci", "Write affected component outputs to GITHUB_OUTPUT") { options[:ci] = true }
+        flags.on("--native", "Also execute selected device/desktop integration checks") { options[:native] = true }
       end
       parser.parse!(argv)
       raise PipelineError, "Unexpected check arguments" unless argv.empty?
@@ -23,7 +24,7 @@ module Dieter
 
     def self.invoke(options)
       options = options.transform_keys(&:to_sym)
-      raise PipelineError, "Unknown check options" unless (options.keys - %i[dry_run base ci output]).empty?
+      raise PipelineError, "Unknown check options" unless (options.keys - %i[dry_run base ci native output]).empty?
       ci = boolean(options.fetch(:ci, false))
       dry = boolean(options.fetch(:dry_run, false))
       context = RunContext.new(Config.new(Runtime::ROOT), output: options[:output])
@@ -31,6 +32,9 @@ module Dieter
         base = options[:base] || (ci ? ENV["CI_CHANGE_BASE"] : nil)
         all = ci && (%w[schedule workflow_dispatch].include?(ENV["GITHUB_EVENT_NAME"]) || base.nil? || base.empty? || base.match?(/\A0+\z/))
         plan = all ? {"paths" => [], "checks" => [], "ci" => %w[core macos ios android kmp].to_h { |name| [name, true] }} : Contract.new(context).call("affected-checks", {base: base || "", kind: ci ? "ci" : "local"})
+        unless ci || boolean(options.fetch(:native, false))
+          plan["nativeChecks"], plan["checks"] = plan.fetch("checks").partition { |request| request["operation"] == "e2e" || %w[screens_native_test screens_test screens_hevc_test].include?(request["operation"]) }
+        end
         Atomic.json(File.join(context.output, "affected-checks.json"), plan)
       ensure
         context.close
@@ -45,6 +49,10 @@ module Dieter
       end
       puts "Selected checks:"
       plan.fetch("checks").each { |request| puts "  #{JSON.generate(request)}" }
+      unless plan.fetch("nativeChecks", []).empty?
+        puts "Related native checks (select --native or execute specific catalog cases):"
+        plan.fetch("nativeChecks").each { |request| puts "  #{JSON.generate(request)}" }
+      end
       return plan if dry
       plan.fetch("checks").each { |request| execute(request) }
       plan

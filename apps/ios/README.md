@@ -13,6 +13,7 @@ just pipeline config_init
 just pipeline doctor
 just pipeline ios build
 just pipeline ios test_unit
+just pipeline ios_qualify profiles:ios-iphone,ios-ipad suite:smoke
 just pipeline ios e2e profile:ios-iphone suite:functional
 just pipeline ios e2e profile:ios-ipad suite:functional
 ```
@@ -24,6 +25,14 @@ Shared framework slices and SwiftPM caches are canonical and protected by the
 Apple build lease. Xcode products live in `.build/`; evidence is printed under
 `tmp/app-pipelines/UUID`. Source builds embed the source-derived compatibility
 SemVer; release archives embed the single reserved SemVer used by every component.
+
+Portable iOS tests compile the small policy graph in the canonical
+`apps/mac/.build/dieter-ios-policy` cache, using real Kotlin rules without the Mac
+app, WebRTC or gRPC transport. Fastlane `run_tests` owns XCTest command generation;
+`build_app` owns distribution archive/export. Dieter retains leases, private launch
+files, exact-result qualification and cleanup around those maintained actions.
+`ios_qualify` verifies one simulator build and executes both layouts on the same
+worker, preserving fresh simulator/client state and avoiding bundle transfers.
 
 Each simulator run creates and journals its own exact simulator, retains fresh
 fixture/client state per case, qualifies exact XCTest methods from xcresult,
@@ -37,8 +46,8 @@ app/Share/runner provisioning profiles, separate `.e2e` bundle/app-group identit
 and a reachable authenticated TLS fixture route. The `DieterIOSE2E` scheme builds
 those development-signed products. The pipeline refuses unowned installed fixture
 apps and journals/cleans up only its fixture packages. No Apple resources or
-operator credentials are replaced. Physical Share testing needs owned media
-setup and remains unavailable until that prerequisite can be supplied.
+operator credentials are replaced. Share tests stage owned media in the E2E app's
+Documents container and use Files; they do not import media into Photos.
 
 ```sh
 just pipeline ios prepare_tests profile:ios-device cases:ios.remote-node
@@ -51,9 +60,10 @@ DieterIOS framework; it does not link the Mac executable. The Share extension
 stages validated files in the App Group without linking the core. Icons come
 from `Artwork/AppIcon.svg` with an opaque background.
 
-Pull-request CI runs portable iOS policy tests and compiles the app/test bundles.
-Every main release additionally runs both complete iPhone and iPad functional
-catalogs before candidate preparation.
+Pull-request CI runs portable iOS policies and both-layout smoke for affected
+components. Main CI runs both complete functional catalogs, then calls Release
+without repeating qualification. Manual releases qualify first. Required producer
+bytes are retained separately from bounded diagnostic uploads.
 
 ## Signing and TestFlight
 

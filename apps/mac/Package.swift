@@ -1,8 +1,33 @@
 // swift-tools-version: 6.2
 
 import PackageDescription
+import Foundation
 
-let package = Package(
+// Portable iOS policies compile their production sources and the real Kotlin
+// rules, without linking the Mac app, UIKit surfaces, WebRTC or gRPC transport.
+// Keep a separate scratch directory because this is a different dependency graph.
+let package = ProcessInfo.processInfo.environment["DIETER_SWIFT_TEST_SCOPE"] == "ios-policy" ? Package(
+    name: "DieterIOSPolicy",
+    platforms: [.macOS(.v26)],
+    dependencies: [.package(url: "https://github.com/apple/swift-protobuf.git", from: "1.38.0")],
+    targets: [
+        .binaryTarget(name: "DieterShared", path: "Frameworks/DieterShared.xcframework"),
+        .target(
+            name: "DieterAPI", dependencies: [.product(name: "SwiftProtobuf", package: "swift-protobuf")],
+            path: "Sources/DieterAPI/Generated",
+            exclude: ["gateway.grpc.swift", "dieter.grpc.swift", ".inputs.sha256"],
+            sources: ["dieter.pb.swift", "gateway.pb.swift", "client_client.pb.swift"]),
+        .target(
+            name: "SharedCore", dependencies: [.product(name: "SwiftProtobuf", package: "swift-protobuf")],
+            path: "Sources/SharedCore", sources: ["SharedRulesSupport.swift"]),
+        .target(
+            name: "DieterIOS", dependencies: ["SharedCore", "DieterShared", "DieterAPI"],
+            path: "Sources/DieterIOS", sources: ["Model/IOSAttachments.swift", "Model/IOSConversationScroll.swift"]),
+        .testTarget(
+            name: "DieterIOSTests", dependencies: ["DieterIOS", "DieterAPI"],
+            path: "Tests/DieterIOSTests", exclude: ["IOSCoreAdapterTests.swift"]),
+    ]
+) : Package(
     name: "DieterMac",
     platforms: [.macOS(.v26), .iOS(.v18)],
     products: [

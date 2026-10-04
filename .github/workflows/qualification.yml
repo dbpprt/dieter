@@ -1,0 +1,103 @@
+name: Qualification
+on:
+  workflow_call:
+    inputs:
+      full:
+        description: Require every component and the complete release native gates
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  changes:
+    name: Select affected checks
+    runs-on: ubuntu-latest
+    outputs:
+      core: ${{ steps.select.outputs.core }}
+      macos: ${{ steps.select.outputs.macos }}
+      ios: ${{ steps.select.outputs.ios }}
+      android: ${{ steps.select.outputs.android }}
+      kmp: ${{ steps.select.outputs.kmp }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/pipeline-setup
+        with:
+          component: report
+      - name: Plan affected checks
+        id: select
+        env:
+          CI_CHANGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: just check-changed --ci
+  portable:
+    name: Go, CLI and harness
+    needs: changes
+    if: inputs.full || needs.changes.outputs.core == 'true'
+    uses: ./.github/workflows/component-check.yml
+    with:
+      component: portable
+      runner: ubuntu-latest
+  core:
+    name: Kotlin core (JVM)
+    needs: changes
+    if: inputs.full || needs.changes.outputs.kmp == 'true'
+    uses: ./.github/workflows/component-check.yml
+    with:
+      component: core
+      runner: ubuntu-latest
+  core-apple:
+    name: Kotlin core (Apple)
+    needs: changes
+    if: inputs.full || needs.changes.outputs.kmp == 'true'
+    uses: ./.github/workflows/component-check.yml
+    with:
+      component: core-apple
+      runner: macos-26
+  mac:
+    name: macOS client
+    needs: changes
+    if: inputs.full || needs.changes.outputs.macos == 'true'
+    uses: ./.github/workflows/component-check.yml
+    with:
+      component: mac
+      runner: macos-26
+      native_cases: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && 'mac.core,mac.board' || '' }}
+      native_suite: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'functional' || '' }}
+  ios:
+    name: iOS client (iPhone and iPad)
+    needs: changes
+    if: inputs.full || needs.changes.outputs.ios == 'true'
+    uses: ./.github/workflows/component-check.yml
+    with:
+      component: ios
+      runner: macos-26
+      native_profiles: ios-iphone,ios-ipad
+      native_suite: ${{ inputs.full && 'functional' || 'smoke' }}
+  android:
+    name: Android client
+    needs: changes
+    if: inputs.full || needs.changes.outputs.android == 'true'
+    uses: ./.github/workflows/component-check.yml
+    with:
+      component: android
+      runner: ubuntu-latest
+      full: ${{ inputs.full }}
+  required:
+    name: Required checks
+    needs: [changes, portable, core, core-apple, mac, ios, android]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/pipeline-setup
+        with:
+          component: report
+      - name: Require every selected gate
+        env:
+          PIPELINE_JOB_RESULTS: ${{ toJSON(needs) }}
+          PIPELINE_FULL: ${{ inputs.full }}
+        run: just pipeline ci action:gate component:report
