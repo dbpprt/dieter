@@ -46,7 +46,8 @@ final class RemoteNodeUITests: XCTestCase {
                     .withOffset(
                         CGVector(
                             dx: frame.minX + min(16, frame.width / 2),
-                            dy: frame.minY + min(12, frame.height / 2)))
+                            dy: frame.minY + min(12, frame.height / 2))
+                    )
                     .tap()
             } else {
                 field.tap()
