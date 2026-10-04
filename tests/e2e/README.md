@@ -42,7 +42,7 @@ Both layouts cover the remote-node, terminal, screen, connection-state, native
 Keychain, and shared-core adapter (`ios.adapters`) tests. The adapter tests live
 in `apps/mac/Tests/DieterIOSTests` and compile into the app-hosted
 `DieterIOSNativeTests` target. `ios.share-extension` declares `devices: [iphone]` because its
-Photos share-sheet journey is phone-specific; it is excluded from iPad plans,
+Files share-sheet journey is phone-specific; it is excluded from iPad plans,
 not counted as a passing skip. Explicitly requesting it on iPad is an error.
 The `manual` case `ios.https-auth` requires `DIETER_IOS_TEST_HTTPS_GATEWAY` and
 performs only the existing invalid-session HTTPS probe. Credentials are injected
@@ -172,4 +172,4 @@ run's `results.json`, `junit.xml`, screenshots and failure console. Physical iOS
 needs its exact development-signed E2E profile and authenticated TLS fixture
 route. Share tests on a phone use only the named file staged in the owned E2E
 Documents container; `ios.share-owned-file` exercises that Files path on a
-disposable simulator. The default simulator share case retains its Photos path.
+disposable simulator. The default simulator share case uses the same owned Files fixture.

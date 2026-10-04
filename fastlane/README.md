@@ -58,12 +58,13 @@ exact UDID and share one available Apple Development private key. No Apple
 account resources are created automatically. The fixture route uses a reachable
 local-network host address and existing certificate/key; USB pairing controls
 the device and does not itself expose host loopback to it. Credentials and
-offline controls cross that route through authenticated TLS. Physical Share
-tests stage an exact PNG in the isolated E2E app's Documents container and share
-it through Files. Only Debug `.e2e` apps expose that container as `Dieter E2E`;
-package cleanup removes the owned media. The operator's Photos library is never
-used for physical tests. `ios.share-owned-file` qualifies the same Files path on
-a disposable phone simulator. Physical hardware remains unqualified until its
+offline controls cross that route through authenticated TLS. Share tests on
+simulators and physical devices stage an exact PNG in the isolated E2E app's
+Documents container and share it through Files. Only Debug `.e2e` apps expose
+that container as `Dieter E2E`;
+package cleanup removes the owned media. No Share fixture imports media into
+Photos. `ios.share-owned-file` also qualifies the same Files path in isolation.
+Physical hardware remains unqualified until its
 configured native plan actually passes; unavailable cells fail.
 
 ## Local checks and app work

@@ -141,6 +141,6 @@ This probe never signs in or changes gateway data. The default isolated suite ex
 
 The [native test catalog](../../tests/e2e/README.md) includes every existing iOS
 XCTest method, including application-hosted Keychain assertions. iPhone and iPad
-plans select exact methods; the phone-only Photos share journey is declared in
+plans select exact methods; the phone-only Files share journey is declared in
 the catalog. Skipped or missing required tests fail qualification. An installed
 Simulator runtime is required; `just pipeline ios build` alone does not run these tests.
