@@ -154,7 +154,9 @@ Mac, Android, and CLI clients converge on the same Git state.
 ## Contribute
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, repository structure, and review
-expectations. Start local validation with:
+expectations. Shared local tools are declared in [mise.toml](mise.toml) and
+[mise.lock](mise.lock); follow the [setup guide](fastlane/README.md#setup-and-machine-configuration).
+After activating mise in your shell, start local validation with:
 
 ```sh
 just check-changed --dry-run

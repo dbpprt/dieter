@@ -14,8 +14,12 @@ git clone https://github.com/dbpprt/dieter.git
 cd dieter
 ```
 
-For Go and harness development, use Go **1.26.8+**, Node.js **22.19+**, npm, Git,
-Python 3, and **just 1.58+**. Native and website toolchains are separate:
+Install [mise](https://mise.jdx.dev/getting-started.html) 2026.10.2+ for shared
+command-line tools on macOS and Linux. The repository tracks versions in
+[mise.toml](https://github.com/dbpprt/dieter/blob/main/mise.toml) and
+[mise.lock](https://github.com/dbpprt/dieter/blob/main/mise.lock). See the
+[pipeline setup guide](https://github.com/dbpprt/dieter/blob/main/fastlane/README.md#setup-and-machine-configuration)
+for Java path configuration and shell activation. Native SDKs remain separate:
 
 | Component        | Toolchain                                    | Build / guide                                                                      |
 | ---------------- | -------------------------------------------- | ---------------------------------------------------------------------------------- |
@@ -26,11 +30,12 @@ Python 3, and **just 1.58+**. Native and website toolchains are separate:
 | Website          | Hugo extended 0.164+                         | `just site serve`                                                                  |
 
 ```sh
-just doctor
-bundle install
-npm --prefix internal/harness/runtime ci
-just pipeline config_init
-just build
+mise trust
+mise install --locked
+mise run setup
+mise exec -- just hooks
+mise exec -- just pipeline config_init
+mise exec -- just doctor
 ```
 
 Build lanes print fresh evidence paths and `artifacts.json` product manifests. Published releases already contain their native

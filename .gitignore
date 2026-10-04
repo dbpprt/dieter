@@ -33,6 +33,8 @@ __pycache__/
 /.bundle/
 /vendor/bundle/
 /fastlane/local.json
+/mise.local.toml
+/mise.local.lock
 /fastlane/.private/
 /fastlane/report.xml
 /fastlane/Preview.html

@@ -8,6 +8,11 @@ description: Develop or diagnose Dieter's Fastlane builds, test selection, CI qu
 Read [the pipeline guide](../../../fastlane/README.md) and relevant platform
 instructions before changing builds, device lifecycle, or release compositions.
 Use `just pipeline`; local and CI commands execute the same pinned Fastlane.
+Local tools come from root `mise.toml`/`mise.lock`; prepare them with
+`mise install --locked` and `mise run setup`. Use `mise exec -- just ...` for
+noninteractive commands. With managed Java, keep `toolchains.java_home` null
+in `fastlane/local.json` so it inherits `JAVA_HOME`. Mise does not provision
+Xcode, SDKs, emulators, or devices.
 
 Local commit checks use `just hooks` once per checkout/worktree, `just format`
 for explicit working-source fixes, and `just pre-commit` for read-only staged

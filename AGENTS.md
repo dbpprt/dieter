@@ -90,6 +90,12 @@ updaters or activate production. See `fastlane/release-policy.json`.
 
 ## Repository checks
 
+Shared local tools are declared in `mise.toml` and `mise.lock`. Prepare them with
+`mise install --locked` and `mise run setup`; use `mise exec -- just ...` in
+noninteractive shells. With managed Java, keep `toolchains.java_home` null in
+`fastlane/local.json` so it inherits `JAVA_HOME`. Mise does not provision native
+SDKs or devices; see `fastlane/README.md`.
+
 For local development, inspect `just check-changed --dry-run`, then run selected
 fast checks with `just check-changed`. Include branch changes with `--base REF`.
 Device/desktop checks are listed separately: use `--native` or specific catalog

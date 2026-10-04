@@ -1,0 +1,28 @@
+# Shared local tools; CI keeps its existing setup actions.
+min_version = "2026.10.2"
+
+[settings]
+lockfile = true
+lockfile_platforms = ["macos-arm64", "macos-x64", "linux-x64", "linux-arm64"]
+
+[tools]
+# Keep the existing language version files authoritative.
+ruby = "{{ read_file(path='.ruby-version') | trim }}"
+go = "{{ read_file(path='go.mod') | regex_replace(pattern='(?sm)^.*?^go ([0-9.]+)$.*', rep='$1') | trim }}"
+node = "22"
+python = "3.13"
+java = "temurin-21"
+"gem:bundler" = "2.6.9"
+just = "1.58.0"
+protoc = "35.1"
+"hugo-extended" = "0.164.0"
+ripgrep = "15.1.0"
+
+[env]
+# Keep project gems outside the managed Ruby/Bundler installations.
+BUNDLE_PATH = "{{ config_root }}/vendor/bundle"
+
+[tasks.setup]
+description = "Install locked Ruby and harness dependencies; no app builds or device setup"
+dir = "{{ config_root }}"
+run = ["bundle install", "npm --prefix internal/harness/runtime ci"]

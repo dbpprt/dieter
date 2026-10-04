@@ -22,15 +22,19 @@ pull request is a reviewable alternative. Report vulnerabilities through
 ```sh
 git clone https://github.com/dbpprt/dieter.git
 cd dieter
-bundle install
-just pipeline config_init
-just doctor
-npm --prefix internal/harness/runtime ci
-just build
+mise trust
+mise install --locked
+mise run setup
+mise exec -- just hooks
+mise exec -- just pipeline config_init
+mise exec -- just doctor
 ```
 
-Pipelines need Ruby from `.ruby-version` and Bundler 2.6.9.
-See [the pipeline guide](fastlane/README.md) for local profiles and release policy.
+Install [mise](https://mise.jdx.dev/getting-started.html) 2026.10.2+ first.
+[mise.toml](mise.toml) and [mise.lock](mise.lock) supply shared command-line tools
+on macOS and Linux. Use `mise exec -- just ...` for commands in agents/scripts,
+or activate mise in your shell. See [the pipeline guide](fastlane/README.md#setup-and-machine-configuration)
+for tool ownership, Java path configuration, local profiles, and release policy.
 
 Go work uses Go 1.26.8+, Node.js 22.19+, npm, Python 3, Git, and just 1.58+.
 Install only the native toolchain relevant to your change:

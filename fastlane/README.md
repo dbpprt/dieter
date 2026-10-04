@@ -33,17 +33,48 @@ presentation and platform bindings.
 
 ## Setup and machine configuration
 
-Install Ruby from `.ruby-version`, Bundler 2.6.9, just 1.58+, Go from `go.mod`,
-Python 3, Node 22 and the native toolchains you use. Then run:
+Install [mise](https://mise.jdx.dev/getting-started.html) 2026.10.2+ on macOS or
+Linux. The root [mise.toml](../mise.toml) and [mise.lock](../mise.lock) provide
+Ruby, Bundler, Go, Node, Python, Temurin Java 21, just, protoc, Hugo extended,
+and ripgrep. Ruby reads `.ruby-version`; Go reads `go.mod`. The lockfile records
+resolved versions and downloads for macOS/Linux on x86_64 and arm64.
+
+From the repository root:
 
 ```sh
-bundle install
-npm --prefix internal/harness/runtime ci
-just pipeline config_init
-just pipeline doctor
-just pipeline doctor profile:ios-iphone
-just pipeline lanes
+mise trust
+mise install --locked
+mise run setup              # bundle install and npm ci; no app builds
+mise exec -- just hooks     # prepare this worktree's commit tools
+mise exec -- just pipeline config_init
+mise exec -- just pipeline doctor
 ```
+
+`mise run setup` installs the locked project gems into ignored `vendor/bundle`
+and the harness npm dependencies. It does not configure devices or run tests.
+Use `mise exec -- just ...` for agent/noninteractive commands so they receive the
+managed tools and `JAVA_HOME`. For ordinary terminal use, activate mise in your
+shell as described in its installation guide, then use the existing `just`
+commands directly. A bare shim does not export `JAVA_HOME` to its parent shell.
+
+Mise manages these command-line tools. Install Xcode, Android Studio/SDKs,
+simulator runtimes, and operating-system libraries separately for your component.
+Gradle uses the checked-in wrappers; Kotlin dependencies remain in their catalogs.
+Formatters remain owned by `just hooks`. CI keeps its existing setup actions.
+
+Keep machine-specific mise overrides in ignored `mise.local.toml`. When using
+mise's Java, leave `toolchains.java_home` null in `fastlane/local.json` so the
+pipeline inherits `JAVA_HOME`; the example template contains a Mac JBR path that
+must be cleared or adapted. Do not configure a different Java path alongside
+mise's selected JDK. Other native paths and target identities remain in
+`fastlane/local.json`.
+
+To update managed tools, review `mise.toml` and run `mise lock --bump`. Commit the
+reviewed lockfile; update `.ruby-version` or `go.mod` for their language pins.
+`mise install --locked` fails if its lockfile needs changes rather than silently
+selecting new versions. Bundler's pin matches `Gemfile.lock`; just/protoc/Hugo pins
+match existing CI setup. Node, Python, and Java resolve within their declared
+major/minor series and remain fixed by the lockfile until deliberately updated.
 
 `config_init` copies [local.example.json](local.example.json) to
 `fastlane/local.json`, atomically with mode 0600. It refuses an existing file.
