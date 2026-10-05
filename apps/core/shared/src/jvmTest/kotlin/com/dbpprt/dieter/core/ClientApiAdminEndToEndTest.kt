@@ -99,7 +99,7 @@ class ClientApiAdminEndToEndTest : EndToEnd() {
             chat = false,
         )
         val cardId = runtime.outbox.view.await(45.seconds) { local.id in it.resolutions }.resolve(local.id)
-        runtime.workspace.state.await(30.seconds) { it.card(cardId) != null }
+        runtime.awaitSynced(cardId)
         val workspace = admin("conversation workspace", AdminCommand(conversation_workspace = AdminCard(cardId))).workspace!!
         assertEquals(File(checkout.path).canonicalPath, File(workspace.path).canonicalPath)
 

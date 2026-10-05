@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -100,12 +101,17 @@ func goPackages(ctx context.Context, root string) ([]goPackage, error) {
 		return nil, nil
 	}
 	slices.Sort(patterns)
-	argv := append([]string{"list", "-json"}, patterns...)
-	raw, err := command(ctx, root, nil, append([]string{"go"}, argv...)...)
-	if err != nil {
-		return nil, err
+	// Only stdout is JSON: with a cold module cache, go also reports downloads
+	// on stderr.
+	c, finish := buildCommand(ctx, "go", append([]string{"list", "-json"}, patterns...)...)
+	c.Dir = root
+	var stdout bytes.Buffer
+	stderr := &tailBuffer{limit: 64 << 10}
+	c.Stdout, c.Stderr = &stdout, stderr
+	if err := finish(c.Run()); err != nil {
+		return nil, fmt.Errorf("%w: %s", err, stderr.String())
 	}
-	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder := json.NewDecoder(&stdout)
 	packages := []goPackage{}
 	for {
 		var pkg goPackage

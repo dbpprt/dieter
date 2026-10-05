@@ -89,7 +89,7 @@ class FilesEndToEndTest : EndToEnd() {
             chat = false,
         )
         val cardId = runtime.outbox.view.await(45.seconds) { local.id in it.resolutions }.resolve(local.id)
-        runtime.workspace.state.await(30.seconds) { it.card(cardId) != null }
+        runtime.awaitSynced(cardId)
         val image = File(checkout.path, "workspace-image.png")
         image.writeBytes(byteArrayOf(1, 2, 3, 4))
         runtime.onCore {

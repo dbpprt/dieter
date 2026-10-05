@@ -747,16 +747,23 @@ private func terminalKeyEvent(
     store.endpoints = [checkoutMachine, conversationOwner]
     store.machineEntries = Dictionary(
         uniqueKeysWithValues: store.endpoints.map { machine in
-            (machine.id, ClientMachineEntry.with {
-                $0.id = machine.daemonID ?? ""
-                $0.online = true
-                $0.available = true
-                $0.compatible = true
-            })
+            (
+                machine.id,
+                ClientMachineEntry.with {
+                    $0.id = machine.daemonID ?? ""
+                    $0.online = true
+                    $0.available = true
+                    $0.compatible = true
+                }
+            )
         })
     var project = Dieter_V1_Project()
     project.id = "project"
-    project.checkouts = [.with { $0.id = "co"; $0.projectID = "project"; $0.daemonID = "daemon-mbp" }]
+    project.checkouts = [
+        .with {
+            $0.id = "co"; $0.projectID = "project"; $0.daemonID = "daemon-mbp"
+        }
+    ]
     store.projectDirectory = [project.id: project]
     store.projectHosts = [project.id: "daemon-mbp"]
     var chat = Dieter_V1_Card()

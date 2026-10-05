@@ -53,10 +53,10 @@ class OutboxEndToEndTest : EndToEnd() {
 
         fixture.daemonOnline()
         val expected = OutboxPolicy.expectedConversationId(runtime.clientId, runtime.outbox.view.value.entries.single().command_id)!!
-        val synced = runtime.workspace.state.await(45.seconds, describe = { "server card $expected" }) {
-            it.card(expected)?.title == "Offline card" && it.card(optimistic.id) == null
+        // The outbox shows the accepted card under its server ID until the stream lists it.
+        runtime.workspace.state.await(45.seconds, describe = { "server card $expected" }) {
+            it.card(expected)?.title == "Offline card" && it.card(optimistic.id) == null && expected !in it.pendingCardIds
         }
-        assertTrue(expected !in synced.pendingCardIds)
         runtime.outbox.view.await(describe = { "outbox drained: ${runtime.outbox.view.value.entries}" }) { it.entries.isEmpty() }
         assertEquals(expected, runtime.outbox.view.value.resolve(optimistic.id))
         val delivered = runtime.onMachine(fixture.daemonId) { it.GetConversation().execute(GetConversationRequest(card_id = expected, limit = 50)) }

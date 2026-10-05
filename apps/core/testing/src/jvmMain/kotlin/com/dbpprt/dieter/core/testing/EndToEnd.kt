@@ -57,6 +57,16 @@ open class EndToEnd {
     suspend fun CoreRuntime.awaitLoaded(fixture: IsolatedGateway) =
         workspace.state.await(describe = { "project ${fixture.projectId}" }) { it.project(fixture.projectId) != null }
 
+    /**
+     * Waits until the account view lists every card in [ids]. A created card
+     * shows from the outbox, pending, before its machine's stream lists it,
+     * and operations on it need the listed card.
+     */
+    suspend fun CoreRuntime.awaitSynced(vararg ids: String, timeout: Duration = 30.seconds) =
+        workspace.state.await(timeout, describe = { "synced ${ids.toList()}: pending ${workspace.state.value.pendingCardIds}" }) { view ->
+            ids.all { view.card(it) != null && it !in view.pendingCardIds }
+        }
+
     /** Waits until [machineId]'s part of the account view is in [state]. */
     suspend fun CoreRuntime.awaitSync(machineId: String, state: SyncState, timeout: Duration = 30.seconds) =
         connection.syncs.await(timeout, describe = { "$machineId $state: ${connection.syncs.value[machineId]}" }) { it[machineId]?.state == state }

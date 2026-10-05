@@ -42,7 +42,7 @@ class BoardEndToEndTest : EndToEnd() {
         runtime.awaitConnected()
         runtime.awaitLoaded(fixture)
         val (first, second, third) = cards(runtime, fixture, "First", "Second", "Third")
-        runtime.workspace.state.await { view -> listOf(first, second, third).all { view.card(it) != null } }
+        runtime.awaitSynced(first, second, third)
 
         // Reorder within todo: put Third before First.
         assertTrue(runtime.onBoard { move(third, "todo", DropAnchors(beforeCardId = first)) })
@@ -99,7 +99,7 @@ class BoardEndToEndTest : EndToEnd() {
         runtime.awaitConnected()
         runtime.awaitLoaded(fixture)
         val (card) = cards(runtime, fixture, "Stays")
-        runtime.workspace.state.await { it.card(card) != null }
+        runtime.awaitSynced(card)
         assertFailsWith<Exception> { runtime.onBoard { move(card, "no-such-lane") } }
         assertEquals("todo", runtime.workspace.state.value.card(card)?.lane)
         assertNotNull(runtime.board.view.value.errors[card])
@@ -120,7 +120,7 @@ class BoardEndToEndTest : EndToEnd() {
             chat = false,
         )
         val id = runtime.outbox.view.await { local.id in it.resolutions }.resolve(local.id)
-        runtime.workspace.state.await { it.card(id) != null }
+        runtime.awaitSynced(id)
         runtime.startCard(id)
         assertTrue(id in runtime.outbox.view.value.startingCardIds, "the board shows a start in the outbox as starting")
         // The overlay shows it running at once; sync then confirms the admitted turn.

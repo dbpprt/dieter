@@ -177,7 +177,9 @@ struct CoreSessionAdapterTests {
         #expect(store.lastSyncedAt == Date(timeIntervalSince1970: 1))
 
         // Every machine that can take work has its agents read once per connection.
-        func requested() -> [String] { commands { if case .ensureMetadata(let read) = $0 { read.daemonID } else { nil } } }
+        func requested() -> [String] {
+            commands { if case .ensureMetadata(let read) = $0 { read.daemonID } else { nil } }
+        }
         for _ in 0..<100 where requested().isEmpty { await Task.yield() }
         store.foldSession(session)
         for _ in 0..<10 { await Task.yield() }

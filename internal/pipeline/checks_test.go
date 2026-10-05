@@ -136,6 +136,33 @@ func TestAffectedGoIncludesEmbeddedDeletedAndTestOnlyImporters(t *testing.T) {
 		t.Fatal("module changes must broaden")
 	}
 }
+func TestGoInventoryReadsOnlyStdout(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is unavailable")
+	}
+	root := t.TempDir()
+	if output, err := exec.Command(git, "-C", root, "init").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %s: %v", output, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// A cold module cache makes go report downloads on stderr.
+	bin := t.TempDir()
+	fake := "#!/bin/sh\necho 'go: downloading example.com/module v1.0.0' >&2\necho '{\"ImportPath\":\"example.com/root\"}'\n"
+	if err := os.WriteFile(filepath.Join(bin, "go"), []byte(fake), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+filepath.Dir(git))
+	packages, err := goPackages(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(packages) != 1 || packages[0].ImportPath != "example.com/root" {
+		t.Fatalf("packages = %+v", packages)
+	}
+}
 func TestPlannerDoesNotLoadGoForNativeOrDocumentation(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	for _, path := range []string{"README.md", "apps/mac/Sources/View.swift", "apps/android/app/src/test/java/Test.kt"} {
