@@ -10,12 +10,24 @@ module Dieter
   module NativeAction
     ACTIONS = %w[run_tests build_app].freeze
 
+    # Fastlane reads build settings before every action. On hosted runners right
+    # after a simulator boot that lookup has exceeded 120s; it usually takes 20-47s.
+    SETTINGS_TIMEOUT = "240"
+
     def self.start(context, name, options, log:)
       raise PipelineError, "Unsupported native action #{name}" unless ACTIONS.include?(name)
-      context.start([RbConfig.ruby, "-r", File.expand_path(__FILE__), "-e", "Dieter::NativeAction.worker"],
-                    input: JSON.generate(action: name, options: options), log: log,
-                    environment: {"FASTLANE_SKIP_UPDATE_CHECK" => "true", "FASTLANE_OPT_OUT_USAGE" => "true", "FASTLANE_SKIP_DOCS" => "true",
-                                  "FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT" => "120", "FASTLANE_XCODEBUILD_SETTINGS_RETRIES" => "0"})
+      context.start(
+        [RbConfig.ruby, "-r", File.expand_path(__FILE__), "-e", "Dieter::NativeAction.worker"],
+        input: JSON.generate(action: name, options: options),
+        log: log,
+        environment: {
+          "FASTLANE_SKIP_UPDATE_CHECK" => "true",
+          "FASTLANE_OPT_OUT_USAGE" => "true",
+          "FASTLANE_SKIP_DOCS" => "true",
+          "FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT" => SETTINGS_TIMEOUT,
+          "FASTLANE_XCODEBUILD_SETTINGS_RETRIES" => "0"
+        }
+      )
     end
 
     def self.run(context, name, options, timeout:, log:)
