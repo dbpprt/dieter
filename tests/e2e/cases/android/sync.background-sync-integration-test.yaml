@@ -3,17 +3,17 @@ version: 1
 id: sync.background-sync-integration-test
 platform: android
 suites:
-- sync
+  - sync
 components:
-- sync
-- conversation
+  - sync
+  - conversation
 fixture: gateway
 timeout: 300s
 native:
   class: com.dbpprt.dieter.data.BackgroundSyncIntegrationTest
   methods:
-  - turnsArriveThroughTheMachinesStreamWithoutOpeningTheChat
-  - liveSyncKeepsTranscriptsWarmInBackground
+    - turnsArriveThroughTheMachinesStreamWithoutOpeningTheChat
+    - liveSyncKeepsTranscriptsWarmInBackground
 arguments:
-  idleSampleMillis: '30000'
-  idleSampleWindows: '2'
+  idleSampleMillis: "30000"
+  idleSampleWindows: "2"

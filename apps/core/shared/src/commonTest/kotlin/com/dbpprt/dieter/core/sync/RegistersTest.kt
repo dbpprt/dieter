@@ -18,8 +18,14 @@ class RegistersTest {
         assertEquals(listOf(later), Registers.join(listOf(listOf(first), listOf(later))))
         val siblings = Registers.join(listOf(listOf(later), listOf(concurrent)))
         assertEquals(setOf(later, concurrent), siblings.toSet())
-        assertEquals(siblings, Registers.join(listOf(listOf(concurrent), listOf(later), listOf(later, first))))
-        assertEquals(listOf(merged), Registers.join(listOf(siblings, listOf(merged), listOf(first))))
+        assertEquals(
+            siblings,
+            Registers.join(listOf(listOf(concurrent), listOf(later), listOf(later, first))),
+        )
+        assertEquals(
+            listOf(merged),
+            Registers.join(listOf(siblings, listOf(merged), listOf(first))),
+        )
         assertEquals(siblings.map { it.rank }.sorted(), siblings.map { it.rank }, "ordered by rank")
     }
 
@@ -35,11 +41,17 @@ class RegistersTest {
     @Test
     fun selectionShowsTheHighestRankUnlessATombstoneExists() {
         val tombstone = version(null, "b" to 2L)
-        assertEquals(listOf(later, concurrent).maxBy { it.rank }.value_json, Registers.selected(listOf(later, concurrent)))
+        assertEquals(
+            listOf(later, concurrent).maxBy { it.rank }.value_json,
+            Registers.selected(listOf(later, concurrent)),
+        )
         assertNull(Registers.selected(listOf(later, tombstone)), "a tombstone wins")
         assertNull(Registers.selected(emptyList()))
         assertEquals(tombstone, Registers.selectedKv(listOf(later, tombstone)))
-        assertEquals(listOf(later, concurrent).maxBy { it.rank }, Registers.selectedKv(listOf(later, concurrent)))
+        assertEquals(
+            listOf(later, concurrent).maxBy { it.rank },
+            Registers.selectedKv(listOf(later, concurrent)),
+        )
         assertTrue(Registers.same(listOf(later, concurrent), listOf(concurrent, later)))
         assertFalse(Registers.same(listOf(later), listOf(concurrent, later)))
     }

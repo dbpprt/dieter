@@ -102,14 +102,14 @@ environment variables are absent; a missing/removed `JAVA_HOME` falls back to JB
 
 Profiles select exact targets:
 
-| Profile | Target and ownership |
-| --- | --- |
-| `android-emulator` | Project-local `.android/` AOSP `Dieter_AOSP_API_35`, serial `emulator-5554`, headless automatic rendering, no snapshots; borrow a healthy running AVD or manage one launched by the run |
-| `android-device` | Disabled until an exact ADB serial is configured; phone lifecycle remains with its owner |
-| `ios-iphone`, `ios-ipad` | Exact runtime and device type; create and delete a recorded disposable simulator |
-| `ios-device` | Disabled until exact UDID, existing development signing and authenticated TLS fixture route are configured |
-| `mac-desktop` | Exclusive packaged test app on a logged-in desktop |
-| `daemon-local`, `gateway-local` | Native host OS and architecture; build output never installs over a running service |
+| Profile                         | Target and ownership                                                                                                                                                                    |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `android-emulator`              | Project-local `.android/` AOSP `Dieter_AOSP_API_35`, serial `emulator-5554`, headless automatic rendering, no snapshots; borrow a healthy running AVD or manage one launched by the run |
+| `android-device`                | Disabled until an exact ADB serial is configured; phone lifecycle remains with its owner                                                                                                |
+| `ios-iphone`, `ios-ipad`        | Exact runtime and device type; create and delete a recorded disposable simulator                                                                                                        |
+| `ios-device`                    | Disabled until exact UDID, existing development signing and authenticated TLS fixture route are configured                                                                              |
+| `mac-desktop`                   | Exclusive packaged test app on a logged-in desktop                                                                                                                                      |
+| `daemon-local`, `gateway-local` | Native host OS and architecture; build output never installs over a running service                                                                                                     |
 
 To use an attached Android phone, set only this override and pass its profile
 explicitly on every operation:

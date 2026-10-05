@@ -3,27 +3,27 @@ package com.dbpprt.dieter.ui
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Density
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.unit.Density
 import androidx.lifecycle.ViewModelStore
 import androidx.test.platform.app.InstrumentationRegistry
+import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.core.navigation.Destination
 import com.dbpprt.dieter.core.navigation.FolderScope
 import com.dbpprt.dieter.e2e.TestCore
 import com.dbpprt.dieter.e2e.saveEvidence
 import com.dbpprt.dieter.ui.theme.DieterTheme
-import com.dbpprt.dieter.api.v1.Card
-import com.dbpprt.dieter.api.v1.Project
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -35,23 +35,33 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * Runs real screens over an isolated shared core with local fixture data; the
- * navigation namespace is bound to a fixture account so edits queue offline.
- * Never contacts an operator gateway or daemon.
+ * Runs real screens over an isolated shared core with local fixture data; the navigation namespace
+ * is bound to a fixture account so edits queue offline. Never contacts an operator gateway or
+ * daemon.
  */
 class NavigationFoldersTest {
     @get:Rule val compose = createComposeRule()
-    private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
+    private val context
+        get() = InstrumentationRegistry.getInstrumentation().targetContext
+
     private val lifecycle = ViewModelStore()
     private lateinit var core: TestCore
     private lateinit var model: DieterViewModel
     private val projects = listOf(Project(id = "p1", name = "Dieter", path = "/work/dieter"))
-    private val chats = listOf(
-        Card(id = "c1", title = "Plan navigation", project_id = "p1", scope = "chat", pinned = true),
-        Card(id = "c2", title = "Review Android layouts", project_id = "p1", scope = "chat"),
-    )
+    private val chats =
+        listOf(
+            Card(
+                id = "c1",
+                title = "Plan navigation",
+                project_id = "p1",
+                scope = "chat",
+                pinned = true,
+            ),
+            Card(id = "c2", title = "Review Android layouts", project_id = "p1", scope = "chat"),
+        )
 
-    @Before fun setup() {
+    @Before
+    fun setup() {
         assumeTrue("Use the isolated E2E app", context.packageName.endsWith(".e2e"))
         core = TestCore()
         compose.runOnUiThread {
@@ -60,20 +70,25 @@ class NavigationFoldersTest {
         }
     }
 
-    @After fun cleanup() {
+    @After
+    fun cleanup() {
         compose.runOnUiThread { lifecycle.clear() }
         core.close()
         core.delete()
     }
 
     /** Reads the shared navigation as a restarted app would, from the same state directory. */
-    private fun <T> afterRestart(read: suspend (com.dbpprt.dieter.core.navigation.NavigationLayout) -> T?): T {
+    private fun <T> afterRestart(
+        read: suspend (com.dbpprt.dieter.core.navigation.NavigationLayout) -> T?
+    ): T {
         val reopened = core.reopen()
         try {
             return runBlocking {
                 withTimeout(5_000) {
                     var result: T? = null
-                    reopened.core.navigationLayout().first { layout -> read(layout).also { result = it } != null }
+                    reopened.core.navigationLayout().first { layout ->
+                        read(layout).also { result = it } != null
+                    }
                     result!!
                 }
             }
@@ -82,12 +97,18 @@ class NavigationFoldersTest {
         }
     }
 
-    @Test fun chatFoldersKeepPinsSupportSearchAndSurviveRecreation() {
+    @Test
+    fun chatFoldersKeepPinsSupportSearchAndSurviveRecreation() {
         compose.setContent {
             val state by model.state.collectAsState()
             DieterTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    ChatsScreen(state.copy(projects = projects, chats = chats), model, false, PaddingValues())
+                    ChatsScreen(
+                        state.copy(projects = projects, chats = chats),
+                        model,
+                        false,
+                        PaddingValues(),
+                    )
                 }
             }
         }
@@ -113,8 +134,12 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("folder-name").performTextReplacement("Reviews")
         compose.onNodeWithTag("save-folder").performClick()
         compose.onNodeWithTag("folder-$id").assertTextContains("Reviews")
-        compose.onAllNodesWithText("Reviews").assertCountEquals(2) // Header and pinned shortcut context.
-        val restored = afterRestart { layout -> layout.folders(FolderScope.CHATS).singleOrNull()?.takeIf { it.name == "Reviews" } }
+        compose
+            .onAllNodesWithText("Reviews")
+            .assertCountEquals(2) // Header and pinned shortcut context.
+        val restored = afterRestart { layout ->
+            layout.folders(FolderScope.CHATS).singleOrNull()?.takeIf { it.name == "Reviews" }
+        }
         assertEquals(id, restored.id)
         assertEquals("Reviews", restored.name)
         assertEquals(listOf("c1"), restored.itemIds)
@@ -128,26 +153,45 @@ class NavigationFoldersTest {
         compose.onNodeWithText("Reviews").assertDoesNotExist()
     }
 
-    @Test fun chatHierarchySearchRevealsCollapsedGroupsWithoutChangingPreferences() {
+    @Test
+    fun chatHierarchySearchRevealsCollapsedGroupsWithoutChangingPreferences() {
         val otherProject = Project(id = "p2", name = "NewsOS")
-        fun chat(id: String, title: String, project: String = "p1", pinned: Boolean = false, running: Boolean = false) =
-            Card(id = id, title = title, project_id = project, scope = "chat", owner_daemon_id = "mini-office", pinned = pinned, runtime = if (running) "running" else "idle", last_activity_at = "2026-09-23T10:00:00Z")
-        val fixtureChats = listOf(
-            chat("pin", "Release checklist", pinned = true),
-            chat("filed", "New Readerscore", "p2", running = true),
-            chat("filed-idle", "Erdbeerland", "p2"),
-            chat("project", "Refine Android navigation", running = true),
-            chat("project-2", "Review connection recovery"),
-            chat("project-3", "Write release notes"),
-            chat("project-4", "Check keyboard shortcuts"),
-        )
+        fun chat(
+            id: String,
+            title: String,
+            project: String = "p1",
+            pinned: Boolean = false,
+            running: Boolean = false,
+        ) =
+            Card(
+                id = id,
+                title = title,
+                project_id = project,
+                scope = "chat",
+                owner_daemon_id = "mini-office",
+                pinned = pinned,
+                runtime = if (running) "running" else "idle",
+                last_activity_at = "2026-09-23T10:00:00Z",
+            )
+        val fixtureChats =
+            listOf(
+                chat("pin", "Release checklist", pinned = true),
+                chat("filed", "New Readerscore", "p2", running = true),
+                chat("filed-idle", "Erdbeerland", "p2"),
+                chat("project", "Refine Android navigation", running = true),
+                chat("project-2", "Review connection recovery"),
+                chat("project-3", "Write release notes"),
+                chat("project-4", "Check keyboard shortcuts"),
+            )
         compose.runOnIdle { model.createFolder(FolderScope.CHATS, "Newsroom") }
         val news = folderID(FolderScope.CHATS)
         compose.runOnIdle {
             model.moveToFolder(FolderScope.CHATS, "filed", news)
             model.moveToFolder(FolderScope.CHATS, "filed-idle", news)
         }
-        compose.waitUntil(5_000) { model.state.value.chatFolders.single().itemIds == listOf("filed", "filed-idle") }
+        compose.waitUntil(5_000) {
+            model.state.value.chatFolders.single().itemIds == listOf("filed", "filed-idle")
+        }
         var dark by mutableStateOf(true)
         var fontScale by mutableStateOf(1f)
         compose.setContent {
@@ -155,9 +199,19 @@ class NavigationFoldersTest {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
                 DieterTheme(darkTheme = dark) {
-                    Scaffold(bottomBar = { DieterBottomBar(Destination.CHATS, {}, {}) }) { padding ->
-                        ChatsScreen(state.copy(projects = projects + otherProject, chats = fixtureChats,
-                            navigationPendingCount = 0, navigationSyncError = null), model, false, padding)
+                    Scaffold(bottomBar = { DieterBottomBar(Destination.CHATS, {}, {}) }) { padding
+                        ->
+                        ChatsScreen(
+                            state.copy(
+                                projects = projects + otherProject,
+                                chats = fixtureChats,
+                                navigationPendingCount = 0,
+                                navigationSyncError = null,
+                            ),
+                            model,
+                            false,
+                            padding,
+                        )
                     }
                 }
             }
@@ -170,7 +224,10 @@ class NavigationFoldersTest {
         compose.onRoot().saveEvidence("all-chats-dark.png")
         compose.runOnIdle { dark = false }
         compose.onRoot().saveEvidence("all-chats-light.png")
-        compose.runOnIdle { dark = true; fontScale = 1.5f }
+        compose.runOnIdle {
+            dark = true
+            fontScale = 1.5f
+        }
         compose.onRoot().saveEvidence("all-chats-large-text.png")
         compose.onNodeWithTag("chat-actions-pin").performClick()
         compose.onNodeWithText("Unpin").assertIsDisplayed()
@@ -178,7 +235,9 @@ class NavigationFoldersTest {
         androidx.test.espresso.Espresso.pressBack()
         compose.runOnIdle { fontScale = 1f }
         compose.onNodeWithTag("folder-$news").performClick()
-        compose.onNodeWithTag("chats-list").performScrollToNode(hasTestTag("project-chat-toggle-p1"))
+        compose
+            .onNodeWithTag("chats-list")
+            .performScrollToNode(hasTestTag("project-chat-toggle-p1"))
         compose.onNodeWithTag("project-chat-toggle-p1").performClick()
         compose.waitUntil { model.state.value.navigationLayout.chatSectionCollapsed("p1") }
         compose.onRoot().saveEvidence("all-chats-collapsed.png")
@@ -206,7 +265,8 @@ class NavigationFoldersTest {
         compose.onRoot().saveEvidence("all-chats-no-results.png")
     }
 
-    @Test fun projectFoldersMoveOutAndDeleteWithoutRemovingProjects() {
+    @Test
+    fun projectFoldersMoveOutAndDeleteWithoutRemovingProjects() {
         compose.setContent {
             val state by model.state.collectAsState()
             DieterTheme {
@@ -224,10 +284,14 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("space-project-p1").assertIsDisplayed()
         compose.onRoot().saveEvidence("project-folders.png")
         compose.onNodeWithTag("folder-$id").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodesWithTag("space-project-p1").fetchSemanticsNodes().isEmpty() }
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag("space-project-p1").fetchSemanticsNodes().isEmpty()
+        }
         compose.onNodeWithTag("space-project-p1").assertDoesNotExist()
         compose.onNodeWithTag("folder-$id").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodesWithTag("project-actions-p1").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag("project-actions-p1").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithTag("project-actions-p1").performClick()
         compose.onNodeWithTag("project-folder-p1").performClick()
         compose.onNodeWithTag("move-no-folder").performClick()
@@ -240,11 +304,18 @@ class NavigationFoldersTest {
         compose.runOnIdle { assertTrue(model.state.value.chatFolders.isEmpty()) }
     }
 
-    @Test fun projectSyncStatusExplainsFailuresAndClearsAfterRecovery() {
-        var state by mutableStateOf(DieterUiState(projects = projects,
-            peerSyncWarnings = listOf("Shared updates between Desktop and Laptop are delayed."),
-            navigationPendingCount = 1,
-            navigationSyncError = "Sign in again to sync folders and order."))
+    @Test
+    fun projectSyncStatusExplainsFailuresAndClearsAfterRecovery() {
+        var state by
+            mutableStateOf(
+                DieterUiState(
+                    projects = projects,
+                    peerSyncWarnings =
+                        listOf("Shared updates between Desktop and Laptop are delayed."),
+                    navigationPendingCount = 1,
+                    navigationSyncError = "Sign in again to sync folders and order.",
+                )
+            )
         compose.setContent {
             DieterTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -252,27 +323,49 @@ class NavigationFoldersTest {
                 }
             }
         }
-        compose.onNodeWithText("Shared updates between Desktop and Laptop are delayed.").assertIsDisplayed()
-        compose.onNodeWithText("1 navigation edit pending sync. Sign in again to sync folders and order.").assertIsDisplayed()
+        compose
+            .onNodeWithText("Shared updates between Desktop and Laptop are delayed.")
+            .assertIsDisplayed()
+        compose
+            .onNodeWithText(
+                "1 navigation edit pending sync. Sign in again to sync folders and order."
+            )
+            .assertIsDisplayed()
         compose.onNodeWithText("Navigation sync unavailable").assertDoesNotExist()
         compose.onRoot().saveEvidence("project-sync-needs-attention.png")
-        compose.runOnIdle { state = state.copy(peerSyncWarnings = emptyList(), navigationPendingCount = 0, navigationSyncError = null) }
-        compose.onNodeWithText("Shared updates between Desktop and Laptop are delayed.").assertDoesNotExist()
+        compose.runOnIdle {
+            state =
+                state.copy(
+                    peerSyncWarnings = emptyList(),
+                    navigationPendingCount = 0,
+                    navigationSyncError = null,
+                )
+        }
+        compose
+            .onNodeWithText("Shared updates between Desktop and Laptop are delayed.")
+            .assertDoesNotExist()
         compose.onNodeWithText("Sign in again", substring = true).assertDoesNotExist()
         compose.onNodeWithTag("space-project-p1").assertIsDisplayed()
         compose.onRoot().saveEvidence("project-sync-recovered.png")
     }
 
-    @Test fun projectPinsPersistInSharedNavigationAndCanBeRemovedFromThePinnedCard() {
+    @Test
+    fun projectPinsPersistInSharedNavigationAndCanBeRemovedFromThePinnedCard() {
         compose.setContent {
             val state by model.state.collectAsState()
             DieterTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     // The projects are fixture data, so derive their pins from
                     // shared navigation rather than the empty core workspace.
-                    SpacesOverview(state.copy(projects = projects,
-                        pinnedProjectOrder = state.navigationLayout.pinnedProjects(projects.map { it.id })),
-                        model, Modifier.fillMaxSize())
+                    SpacesOverview(
+                        state.copy(
+                            projects = projects,
+                            pinnedProjectOrder =
+                                state.navigationLayout.pinnedProjects(projects.map { it.id }),
+                        ),
+                        model,
+                        Modifier.fillMaxSize(),
+                    )
                 }
             }
         }
@@ -280,18 +373,31 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("project-actions-p1").performClick()
         compose.onNodeWithTag("project-pin-p1").performClick()
         // Shared-core persistence runs outside Compose's idling resources.
-        compose.waitUntil(5_000) { "p1" in model.state.value.navigationLayout.pinnedProjects(listOf("p1")) }
+        compose.waitUntil(5_000) {
+            "p1" in model.state.value.navigationLayout.pinnedProjects(listOf("p1"))
+        }
         compose.onNodeWithText("PINNED").assertIsDisplayed()
         compose.onNodeWithTag("project-pinned-p1").assertIsDisplayed()
-        assertEquals(listOf("p1"), afterRestart { layout -> layout.pinnedProjects(listOf("p1")).takeIf { it.isNotEmpty() } })
+        assertEquals(
+            listOf("p1"),
+            afterRestart { layout ->
+                layout.pinnedProjects(listOf("p1")).takeIf { it.isNotEmpty() }
+            },
+        )
 
         compose.onNodeWithTag("project-unpin-p1").performClick()
-        compose.waitUntil(5_000) { model.state.value.navigationLayout.pinnedProjects(listOf("p1")).isEmpty() }
+        compose.waitUntil(5_000) {
+            model.state.value.navigationLayout.pinnedProjects(listOf("p1")).isEmpty()
+        }
         compose.onNodeWithTag("project-pinned-p1").assertDoesNotExist()
-        assertTrue(afterRestart { layout -> layout.pinnedProjects(listOf("p1")).takeIf { it.isEmpty() } }.isEmpty())
+        assertTrue(
+            afterRestart { layout -> layout.pinnedProjects(listOf("p1")).takeIf { it.isEmpty() } }
+                .isEmpty()
+        )
     }
 
-    @Test fun boardlessProjectsExposeBoardCreationInsteadOfAnEmptyBoard() {
+    @Test
+    fun boardlessProjectsExposeBoardCreationInsteadOfAnEmptyBoard() {
         compose.setContent {
             DieterTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -315,22 +421,39 @@ class NavigationFoldersTest {
         compose.onNodeWithTag("new-card").assertDoesNotExist()
     }
 
-    @Test fun folderPickerScrollsWithLargeTextAndManyFolders() {
-        compose.runOnIdle { repeat(18) { model.createFolder(FolderScope.PROJECTS, "Project group ${it + 1}") } }
+    @Test
+    fun folderPickerScrollsWithLargeTextAndManyFolders() {
+        compose.runOnIdle {
+            repeat(18) { model.createFolder(FolderScope.PROJECTS, "Project group ${it + 1}") }
+        }
         compose.waitUntil(5_000) { model.state.value.projectFolders.size == 18 }
         val last = model.state.value.projectFolders.last().id
         var dismissed = false
         compose.setContent {
             val state by model.state.collectAsState()
             val density = LocalDensity.current
-            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 2f)) {
+            CompositionLocalProvider(
+                LocalDensity provides Density(density.density, fontScale = 2f)
+            ) {
                 DieterTheme {
-                    MoveToNavigationFolderDialog("p1", FolderScope.PROJECTS, state.projectFolders, model, onDismiss = { dismissed = true })
+                    MoveToNavigationFolderDialog(
+                        "p1",
+                        FolderScope.PROJECTS,
+                        state.projectFolders,
+                        model,
+                        onDismiss = { dismissed = true },
+                    )
                 }
             }
         }
-        compose.onNodeWithTag("move-folder-$last").performScrollTo().assertIsDisplayed().performClick()
-        compose.waitUntil(5_000) { model.state.value.projectFolders.folderContaining("p1")?.id == last }
+        compose
+            .onNodeWithTag("move-folder-$last")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
+        compose.waitUntil(5_000) {
+            model.state.value.projectFolders.folderContaining("p1")?.id == last
+        }
         compose.runOnIdle {
             assertTrue(dismissed)
             assertEquals(last, model.state.value.projectFolders.folderContaining("p1")?.id)
@@ -342,5 +465,7 @@ class NavigationFoldersTest {
         return folders(scope).single().id
     }
 
-    private fun folders(scope: FolderScope) = if (scope == FolderScope.CHATS) model.state.value.chatFolders else model.state.value.projectFolders
+    private fun folders(scope: FolderScope) =
+        if (scope == FolderScope.CHATS) model.state.value.chatFolders
+        else model.state.value.projectFolders
 }
