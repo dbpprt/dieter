@@ -111,8 +111,10 @@ module Dieter
       Atomic.json(@journal, {"ID" => @simulator, "Name" => @simulator_name})
       simulator, journal = @simulator, @journal
       @context.cleanup { delete_simulator(simulator); File.unlink(journal) if File.file?(journal) }
-      @context.command(["xcrun", "simctl", "bootstatus", @simulator, "-b"], timeout: 180, log: File.join(@context.output, "boot.log"))
-      @context.command(["xcrun", "simctl", "spawn", @simulator, "defaults", "write", "com.apple.keyboard.preferences", "DidShowContinuousPathIntroduction", "-bool", "true"], timeout: 120)
+      # Hosted runners take up to about 140s to boot and the first spawn waits up to
+      # about 100s more for the system apps.
+      @context.command(["xcrun", "simctl", "bootstatus", @simulator, "-b"], timeout: 300, log: File.join(@context.output, "boot.log"))
+      @context.command(["xcrun", "simctl", "spawn", @simulator, "defaults", "write", "com.apple.keyboard.preferences", "DidShowContinuousPathIntroduction", "-bool", "true"], timeout: 300)
     end
 
     def prepared_products(manifest)
@@ -276,8 +278,9 @@ module Dieter
     end
 
     def delete_simulator(id)
-      @context.command(["xcrun", "simctl", "shutdown", id], timeout: 30, check: false)
-      @context.command(["xcrun", "simctl", "delete", id], timeout: 30)
+      # Shutting down a booted simulator takes over 30s on hosted runners.
+      @context.command(["xcrun", "simctl", "shutdown", id], timeout: 120, check: false)
+      @context.command(["xcrun", "simctl", "delete", id], timeout: 120)
     end
 
     def reset_owned_packages
