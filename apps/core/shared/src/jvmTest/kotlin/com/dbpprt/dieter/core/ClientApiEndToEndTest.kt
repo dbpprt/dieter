@@ -550,7 +550,7 @@ class ClientApiEndToEndTest : EndToEnd() {
             ),
         ).card!!
         val todoId = mirror.workspace.await(30.seconds, describe = { "synced draft" }) { slice ->
-            slice?.cards?.any { OutboxPolicy.isServerBacked(it.id) && it.title == "Draft" } == true
+            slice?.cards?.any { OutboxPolicy.isServerBacked(it.id) && it.id !in slice.pending_card_ids && it.title == "Draft" } == true
         }!!.cards.first { it.title == "Draft" }.id
         assertTrue(todo.id.isNotEmpty())
         step("edit draft", Command(update_card_draft = UpdateCardDraft(card_id = todoId, title = "Edited draft", prompt = "second draft")))
