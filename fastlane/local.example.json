@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "toolchains": {
-    "java_home": "/Applications/Android Studio.app/Contents/jbr/Contents/Home",
+    "java_home": null,
     "android_sdk": "~/Library/Android/sdk",
     "developer_dir": "/Applications/Xcode.app/Contents/Developer",
     "swift_jobs": 2

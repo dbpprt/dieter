@@ -85,8 +85,18 @@ tests. Required assertions, cleanup and producer retention still fail closed.
 
 Android emulator E2E is currently flaky and is actively being worked on. A
 software-rendered boot can leave a System UI ANR dialog that steals test focus.
-Keep failed evidence and ownership journals; passing subsets do not qualify the
-full Android gate, and assertions must not be relaxed to hide emulator failures.
+Locally, keep one warm emulator (`just pipeline android local action:emulator_run`
+as its own registered process) so runs borrow a booted device. Between runs, if
+that emulator shows a System UI "isn't responding" dialog, tap **Wait** (for
+example `uiautomator dump`, then `input tap` on its bounds) and force-stop only
+the isolated `com.dbpprt.dieter.e2e` package an interrupted run left open.
+`conversation.task-capture` currently fails on the AOSP API 35 image: after
+"Preview screenshot.png" the attachment preview never shows "Close preview", and
+the system share chooser lists the test's alternative target under the same
+label and ignores taps while animating. Until it is fixed, the full Android gate
+cannot pass locally. Keep failed evidence and ownership journals; passing subsets
+do not qualify the full Android gate, and assertions must not be relaxed to hide
+emulator failures.
 
 Main produces **dev** prereleases with one reserved numeric SemVer across every
 component. Candidate reruns recover exact retained bytes; never rebuild a consumed
@@ -97,10 +107,21 @@ updaters or activate production. See `fastlane/release-policy.json`.
 ## Repository checks
 
 Shared local tools are declared in `mise.toml` and `mise.lock`. Prepare them with
-`mise install --locked` and `mise run setup`; use `mise exec -- just ...` in
-noninteractive shells. With managed Java, keep `toolchains.java_home` null in
-`fastlane/local.json` so it inherits `JAVA_HOME`. Mise does not provision native
-SDKs or devices; see `fastlane/README.md`.
+`mise trust`, `mise install --locked` and `mise run setup`; use
+`mise exec -- just ...` in noninteractive shells. Keep `toolchains.java_home`
+null in `fastlane/local.json` (the template default) so the pipeline inherits
+mise's `JAVA_HOME`, the same Temurin 21 as CI; a configured path that differs
+fails with "JAVA_HOME conflicts with local configuration". Without mise, the
+pipeline falls back to Android Studio's bundled JBR.
+
+Mise does not provision Xcode, SDKs, simulator runtimes, emulators, devices or
+Docker; see `fastlane/README.md`. Gateway `deployment_integration`, which
+`just check-changed` selects for `deploy/gateway/`, `Dockerfile.gateway` and
+TURN probe changes, builds the gateway image and needs a running Docker engine
+with Buildx (Docker Desktop, OrbStack or colima). Restore the previous Docker
+context after stopping a runtime you started. iOS builds need an installed iOS
+simulator runtime; when no simulator exists, the build creates and deletes its
+own.
 
 For local development, inspect `just check-changed --dry-run`, then run selected
 fast checks with `just check-changed`. Include branch changes with `--base REF`.
@@ -136,19 +157,11 @@ bundles; the iOS tests run through `just pipeline ios e2e`.
 `just pipeline ios test_unit` uses the small policy dependency graph and the
 canonical `apps/mac/.build/dieter-ios-policy` cache, without building the Mac app.
 
-Android builds use Android Studio's bundled JBR. If `JAVA_HOME` is absent or
-points to a removed Homebrew JDK, use:
-
 ```sh
-export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
-```
-
-```sh
-npm --prefix internal/harness/runtime ci
-just check
-just pipeline mac test_unit
-just pipeline ios build
-just pipeline android test_unit
+mise exec -- just check
+mise exec -- just pipeline mac test_unit
+mise exec -- just pipeline ios build
+mise exec -- just pipeline android test_unit
 ```
 
 Use `gofmt` on Go files. Keep every native client accessible and adaptive.

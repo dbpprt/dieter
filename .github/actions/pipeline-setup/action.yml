@@ -45,7 +45,7 @@ runs:
     - uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b
       if: inputs.component == 'portable'
       with:
-        version: '35.1'
+        version: '36.1'
         repo-token: ${{ github.token }}
     - name: Prepare component environment
       shell: bash

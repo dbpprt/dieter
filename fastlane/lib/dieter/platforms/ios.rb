@@ -51,13 +51,15 @@ module Dieter
               else
                 ["CODE_SIGN_IDENTITY=-", "DIETER_IOS_BUNDLE_ID=#{@bundle_id}", "DIETER_IOS_APP_GROUP_ID=group.#{@bundle_id}"]
               end
-      NativeAction.run(@context, "run_tests", {
-        project: "apps/ios/DieterIOS.xcodeproj", scheme: "DieterIOSE2E", configuration: configuration.capitalize,
-        destination: physical ? "generic/platform=iOS" : "generic/platform=iOS Simulator", derived_data_path: @derived,
-        build_for_testing: true, skip_build: true, skip_detect_devices: true, skip_slack: true,
-        output_types: "", output_directory: @context.private_dir, buildlog_path: @context.private_dir,
-        xcodebuild_formatter: "", xcargs: Shellwords.join(argv)
-      }, timeout: 2400, log: File.join(@context.output, "build.log"))
+      with_detectable_simulator do
+        NativeAction.run(@context, "run_tests", {
+          project: "apps/ios/DieterIOS.xcodeproj", scheme: "DieterIOSE2E", configuration: configuration.capitalize,
+          destination: physical ? "generic/platform=iOS" : "generic/platform=iOS Simulator", derived_data_path: @derived,
+          build_for_testing: true, skip_build: true, skip_detect_devices: true, skip_slack: true,
+          output_types: "", output_directory: @context.private_dir, buildlog_path: @context.private_dir,
+          xcodebuild_formatter: "", xcargs: Shellwords.join(argv)
+        }, timeout: 2400, log: File.join(@context.output, "build.log"))
+      end
       candidates = Dir.glob(File.join(@products, "*#{sdk}*.xctestrun"))
       raise PipelineError, "Expected one build-for-testing plan" unless candidates.length == 1
       source = @context.command(["git", "rev-parse", "HEAD"], timeout: 30).strip
@@ -236,15 +238,41 @@ module Dieter
 
     def monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-    def recover_simulator
-      return unless File.file?(@journal)
-      owner = JSON.parse(File.read(@journal))
+    # Fastlane's run_tests resolves an installed iOS simulator for every iOS
+    # project, even for a generic build-for-testing destination, and fails when
+    # none exists. Without one, the build owns a disposable simulator that is
+    # never booted and deletes it afterwards. Other simulators are only read.
+    def with_detectable_simulator
+      journal = File.join(@root, "tmp/e2e-cache/ios-build-simulator.json")
+      recover_simulator(journal)
+      inventory = JSON.parse(@context.command(["xcrun", "simctl", "list", "-j"], timeout: 120, binary: true))
+      installed = inventory.fetch("devices").any? { |runtime, devices| runtime.include?(".SimRuntime.iOS-") && devices.any? { |device| device["isAvailable"] } }
+      return yield if installed
+      runtime = inventory.fetch("runtimes").select { |entry| entry["platform"] == "iOS" && entry["isAvailable"] }.max_by { |entry| Gem::Version.new(entry.fetch("version")) }
+      raise Unavailable, "iOS builds require an installed iOS simulator runtime" unless runtime
+      type = runtime.fetch("supportedDeviceTypes", []).find { |entry| entry["productFamily"] == "iPhone" }
+      raise Unavailable, "The installed iOS simulator runtime supports no iPhone" unless type
+      name = "Dieter Pipeline build #{SecureRandom.uuid}"
+      simulator = @context.command(["xcrun", "simctl", "create", name, type.fetch("identifier"), runtime.fetch("identifier")], timeout: 30, binary: true).strip
+      raise PipelineError, "Invalid owned simulator identity" unless UUID.match?(simulator)
+      Atomic.json(journal, {"ID" => simulator, "Name" => name})
+      begin
+        yield
+      ensure
+        delete_simulator(simulator)
+        File.unlink(journal)
+      end
+    end
+
+    def recover_simulator(journal = @journal)
+      return unless File.file?(journal)
+      owner = JSON.parse(File.read(journal))
       raise PipelineError, "Invalid simulator ownership journal" unless UUID.match?(owner.fetch("ID")) && owner.fetch("Name").match?(/\ADieter (?:Pipeline |E2E dieter-ios-case-)/)
       inventory = JSON.parse(@context.command(["xcrun", "simctl", "list", "devices", "-j"], timeout: 120, binary: true))
       actual = inventory.fetch("devices").values.flatten.find { |device| device["udid"] == owner.fetch("ID") }
       raise PipelineError, "Recorded simulator identity changed; preserve its journal" if actual && actual["name"] != owner.fetch("Name")
       delete_simulator(owner.fetch("ID")) if actual
-      File.unlink(@journal)
+      File.unlink(journal)
     end
 
     def delete_simulator(id)

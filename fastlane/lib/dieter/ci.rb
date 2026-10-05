@@ -129,6 +129,7 @@ module Dieter
         Checks.perform(context, "portable", "justfile_check")
         Checks.perform(context, "portable", "workflow_check")
         context.command(["bash", "scripts/generate-proto.sh"], timeout: 600)
+        Checks.go_mod_tidy(context)
         # Integration packages each launch real subprocesses. Bound package
         # concurrency so host CPU count cannot exhaust their readiness budgets.
         context.command(["go", "test", "-race", "-p", "2", "./..."], timeout: 3600, log: File.join(context.output, "go-tests.log"))

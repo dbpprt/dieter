@@ -14,13 +14,14 @@ python = "3.13"
 java = "temurin-21"
 "gem:bundler" = "2.6.9"
 just = "1.58.0"
-protoc = "35.1"
+protoc = "36.1"
 "hugo-extended" = "0.164.0"
 ripgrep = "15.1.0"
 
 [env]
-# Keep project gems outside the managed Ruby/Bundler installations.
-BUNDLE_PATH = "{{ config_root }}/vendor/bundle"
+# Keep project gems outside the managed Ruby/Bundler installations, and out of a
+# top-level vendor/ that plain go commands would treat as a vendored module.
+BUNDLE_PATH = "{{ config_root }}/tmp/bundle"
 
 [tasks.setup]
 description = "Install locked Ruby and harness dependencies; no app builds or device setup"

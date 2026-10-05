@@ -111,6 +111,8 @@ module Dieter
         context.command(["bash", "apps/mac/scripts/sync-proto.sh"], timeout: 600) if RUBY_PLATFORM.include?("darwin")
       when ["portable", "go_test"], ["portable", "go_vet"]
         raise PipelineError, "Invalid Go package selection" unless !packages.empty? && packages.all? { |name| name.is_a?(String) && name.match?(/\A(?:\.\/|[A-Za-z0-9])[A-Za-z0-9_.\/-]*\z/) }
+        # -mod=mod would quietly rewrite untidy module files; check them first.
+        go_mod_tidy(context) if operation == "go_test"
         argv = operation == "go_test" ? ["go", "test", "-race", "-p", "2"] : ["go", "vet"]
         context.command([*argv, *packages], timeout: 3600, log: File.join(context.output, "#{operation}.log"))
       when ["portable", "harness_test"]
@@ -118,6 +120,11 @@ module Dieter
       when ["portable", "site_build"] then context.command(["just", "site", "build"], timeout: 300)
       else raise PipelineError, "Unknown typed check #{component}/#{operation}"
       end
+    end
+
+    # Fails when go.mod or go.sum differ from `go mod tidy`; never rewrites them.
+    def self.go_mod_tidy(context)
+      context.command(["go", "mod", "tidy", "-diff"], timeout: 600, log: File.join(context.output, "go-mod-tidy.log"))
     end
 
     def self.markdown(context)

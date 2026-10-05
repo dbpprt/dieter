@@ -50,24 +50,34 @@ mise exec -- just pipeline config_init
 mise exec -- just pipeline doctor
 ```
 
-`mise run setup` installs the locked project gems into ignored `vendor/bundle`
-and the harness npm dependencies. It does not configure devices or run tests.
+`mise run setup` installs the locked project gems into ignored `tmp/bundle`
+and the harness npm dependencies. A top-level `vendor/` would make plain `go`
+commands assume a vendored module, so local gems stay under `tmp/`; delete a
+`vendor/bundle` left by an earlier setup. It does not configure devices or run tests.
 Use `mise exec -- just ...` for agent/noninteractive commands so they receive the
 managed tools and `JAVA_HOME`. For ordinary terminal use, activate mise in your
 shell as described in its installation guide, then use the existing `just`
 commands directly. A bare shim does not export `JAVA_HOME` to its parent shell.
 
 Mise manages these command-line tools. Install Xcode, Android Studio/SDKs,
-simulator runtimes, and operating-system libraries separately for your component.
-Gradle uses the checked-in wrappers; Kotlin dependencies remain in their catalogs.
-Formatters remain owned by `just hooks`. CI keeps its existing setup actions.
+simulator runtimes, Docker, and operating-system libraries separately for your
+component. Gradle uses the checked-in wrappers; Kotlin dependencies remain in
+their catalogs. Formatters remain owned by `just hooks`. CI keeps its existing
+setup actions.
 
-Keep machine-specific mise overrides in ignored `mise.local.toml`. When using
-mise's Java, leave `toolchains.java_home` null in `fastlane/local.json` so the
-pipeline inherits `JAVA_HOME`; the example template contains a Mac JBR path that
-must be cleared or adapted. Do not configure a different Java path alongside
-mise's selected JDK. Other native paths and target identities remain in
-`fastlane/local.json`.
+Gateway `deployment_integration` builds `Dockerfile.gateway` and runs the
+gateway transports in containers. `just check-changed` selects it for
+`deploy/gateway/`, `Dockerfile.gateway` and `tools/fixtures/turn-probe/`
+changes; it needs a running Docker engine with Buildx (Docker Desktop, OrbStack
+or colima). colima switches the Docker context when it starts: after
+`colima stop`, restore the previous context with `docker context use`.
+
+Keep machine-specific mise overrides in ignored `mise.local.toml`. The example
+template leaves `toolchains.java_home` null, so the pipeline inherits mise's
+`JAVA_HOME` (Temurin 21, as in CI) and falls back to Android Studio's bundled JBR
+when none is set. Do not configure a Java path alongside mise's JDK: a differing
+configured path fails with "JAVA_HOME conflicts with local configuration". Other
+native paths and target identities remain in `fastlane/local.json`.
 
 To update managed tools, review `mise.toml` and run `mise lock --bump`. Commit the
 reviewed lockfile; update `.ruby-version` or `go.mod` for their language pins.
@@ -245,16 +255,23 @@ graph selected by `DIETER_SWIFT_TEST_SCOPE=ios-policy`. It compiles production
 attachment/scroll policies, real Kotlin rules and protobuf messages without the
 Mac app, WebRTC or gRPC transport. The full Mac package graph is unchanged.
 Framework requests select only their needed `macos`, `ios-simulator` or `ios-device`
-slice; existing compatible slices are retained. Bundler's `vendor/bundle` is not a
-Go vendor directory; the pipeline supplies module flags locally and in CI without
-changing the operator's environment.
+slice; existing compatible slices are retained. CI's Bundler cache in
+`vendor/bundle` is not a Go vendor directory; the pipeline supplies module flags
+locally and in CI without changing the operator's environment. Because those
+flags would quietly rewrite untidy module files, Go tests first fail when
+`go mod tidy -diff` reports a change.
 
 Local Android Release builds require `signing.android-release.keystore_file`
 and its three environment references, or the canonical signing environment
 provided by the candidate workflow. Missing credentials fail before Gradle.
 iOS local builds honor `configuration:debug|release` for simulator test products;
 signed device archives and Apple distribution credentials belong to the trusted
-candidate workflow.
+candidate workflow. Fastlane's test action resolves an installed iOS simulator
+even for a generic build-for-testing destination, so a build needs an installed
+iOS simulator runtime. When no iOS simulator exists, the build creates an
+unbooted `Dieter Pipeline build` simulator, records it in
+`tmp/e2e-cache/ios-build-simulator.json`, and deletes it afterwards; other
+simulators are only read.
 
 ```sh
 just pipeline framework configuration:debug platforms:ios-simulator
@@ -429,6 +446,16 @@ Running `emulator_check` without a warm owner tests boot and closure in one comm
 Never manually unlink locks or signal PIDs from a retained journal: an unfinished
 owner requires inspection, and only an absent process plus absent serial permits stale
 journal removal. A live warm owner's verified journal permits borrowing.
+
+Software-rendered boots can leave a System UI "isn't responding" dialog that
+steals test focus. Between runs on a warm emulator, tap **Wait** (for example
+`adb -s emulator-5554 shell uiautomator dump`, then `input tap` on its bounds)
+and force-stop only the isolated `com.dbpprt.dieter.e2e` package an interrupted
+run left open. `conversation.task-capture` currently fails on the AOSP API 35
+image: after "Preview screenshot.png" the attachment preview never shows "Close
+preview", and the system share chooser lists the test's alternative target under
+the same label and ignores taps while animating. Until it is fixed, the full
+Android gate cannot pass locally; do not relax its assertions.
 
 Performance requires the separate non-debuggable fixture APK and clean
 measurements. Software rendering is suitable for functional tests; use an
