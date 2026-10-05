@@ -28,13 +28,14 @@ final class AppSession {
         }
     }
     var phase: ConnectionPhase = .disconnected {
-        didSet { refreshLiveFlags() }
+        didSet {
+            refreshLiveFlags()
+            if phase.isConnected != oldValue.isConnected { onConversationContentConnectionChanged() }
+        }
     }
-    /// The attached machine's live projection is applied: the workspace is
-    /// current, neither cached nor still loading (the core's `workspace_live`).
-    var workspaceIsLive = false {
-        didSet { if workspaceIsLive != oldValue { refreshLiveFlags() } }
-    }
+    /// Connected, with every reachable machine's view caught up: nothing the
+    /// workspace shows is cached or still loading (the core's `synced`).
+    var workspaceIsLive = false
     /// What synchronized views with a cached workspace show while it is
     /// unavailable; nil while it is current.
     var workspaceNotice: ClientWorkspaceNotice?
@@ -43,23 +44,16 @@ final class AppSession {
         didSet { if machineEntries != oldValue { refreshLiveFlags() } }
     }
 
-    private func refreshLiveFlags() {
-        filesModel.isLive = filesAreLive; schedulesModel.isLive = workspaceIsLive
-        terminalsModel.isLive =
-            terminalScopeCardID == nil
-            ? terminalOverviewMachines.contains(where: machineIsAvailable)
-            : workspaceIsLive
+    /// Surfaces can change what lives on a machine while that machine is available.
+    func refreshLiveFlags() {
+        filesModel.isLive = filesAreLive
+        schedulesModel.isLive = schedulesAreLive
+        terminalsModel.isLive = terminalsAreLive
     }
-    var endpoint: MachineEndpoint {
-        didSet {
-            if endpoint.id != oldValue.id {
-                bindComposer(); resetFileSurface(); bindSchedules(); bindConversation(); bindWorktree(); bindTerminals()
-            }
-        }
-    }
+    /// The gateway this Mac signs in to; its machines come with the session.
+    var activeGateway: MachineEndpoint
+    /// The active gateway's enrolled machines, in the core's order.
     var endpoints: [MachineEndpoint]
-    var health = Dieter_V1_HealthResponse()
-    var runtime = Dieter_V1_RuntimeStatus()
     let replica = WorkspaceReplica()
     /// The shared core: connection, sync, outbox, and conversations.
     @ObservationIgnored let core: CoreClient
@@ -67,6 +61,7 @@ final class AppSession {
     @ObservationIgnored var coreStart: Task<Void, Never>?
     @ObservationIgnored var coreSubscriptions: [SliceSubscription] = []
     @ObservationIgnored var coreWorkspace = ClientWorkspaceSlice()
+    @ObservationIgnored var coreMetadata = ClientMetadataSlice()
     var session = ClientSessionSlice()
     var outboxState = ClientOutboxSlice()
     var boardState = ClientBoardSlice()
@@ -76,9 +71,11 @@ final class AppSession {
     var activity = ClientActivitySlice() {
         didSet { refreshIslandActivity() }
     }
-    @ObservationIgnored var machineMetadata: [String: ClientMachineMetadata] = [:]
-    /// The attached machine whose metadata was last requested.
-    @ObservationIgnored var requestedMetadata: String?
+    /// Each machine's agents and runtime, by daemon ID, once read.
+    var machineMetadata: [String: ClientMachineMetadata] = [:]
+    /// Machines whose metadata this connection requested; each available
+    /// machine's is read once it is listed.
+    @ObservationIgnored var requestedMetadata: Set<String> = []
     /// UI fixtures that render injected state hold the core's folds; the
     /// latest slices apply when released.
     @ObservationIgnored var coreFoldsHeld = false {
@@ -86,16 +83,10 @@ final class AppSession {
     }
     /// A session this launch adopts from `--dieter-endpoint` and `--dieter-access-token-file`.
     let launchSession: (gateway: MachineEndpoint, token: String)?
-    var harnessCatalog = Dieter_V1_HarnessCatalog()
-    var boardSettings = Dieter_V1_Settings()
-    var settingsOptions = Dieter_V1_SettingsOptions()
     @ObservationIgnored lazy var fleet = FleetModel(
         machines: { [weak self] in
             guard let self else { return [] }
-            let machines =
-                self.machines.contains(where: { $0.id == self.endpoint.id })
-                ? self.machines : self.machines + [self.endpoint]
-            return machines.map {
+            return self.machines.map {
                 FleetMachine(id: $0.id, daemonID: $0.daemonID ?? "", name: $0.name, entry: self.machineEntry($0))
             }
         },
@@ -114,7 +105,7 @@ final class AppSession {
 
     @ObservationIgnored var navigationEditTail: Task<Void, Never>?
     var navigationPendingCount = 0
-    /// The core has replayed the account's navigation since it attached a machine.
+    /// Some machine's complete, current view of the account's navigation is applied.
     @ObservationIgnored var navigationCaughtUp = false
     var navigationSyncError: String?
     let conversationModel = ConversationModel()
@@ -133,7 +124,7 @@ final class AppSession {
     let filesModel = FilesModel()
     let worktreeChanges = WorktreeChangesModel()
     let projectChanges = ProjectChangesModel()
-    /// Counts `refreshState()` calls; navigating a live workspace makes none.
+    /// Counts `refreshState()` calls; navigating never makes one.
     @ObservationIgnored var stateRefreshCount: UInt64 = 0
     var chatsRequestGeneration: UInt64 = 0
     /// This device shows reasoning traces. The core keeps the preference,
@@ -194,14 +185,10 @@ final class AppSession {
     var failedOutboxIDs: Set<String> = []
     /// What waits for each machine in the outbox, as the core words it.
     var machineOutboxes: [ClientMachineOutbox] = []
-    /// When the attached machine's feed last applied an update.
+    /// When some machine's view last changed, kept with the cached views.
     var lastSyncedAt: Date?
     var islandActivity = DieterIslandActivity.empty
     var boardProjection = BoardProjection.empty
-
-    var selectedProjectIsLive: Bool {
-        workspaceIsLive && (projectReplicaEndpointIDs[selectedProjectID] ?? endpoint.id) == endpoint.id
-    }
 
     /// `machine` as the core presents it; nil for a machine it does not list.
     func machineEntry(_ machine: MachineEndpoint) -> ClientMachineEntry? {
@@ -223,9 +210,9 @@ final class AppSession {
     /// core remembers each pick too.
     var creationCheckoutIDs: [String: String] = [:]
 
+    /// Whether a machine with a checkout of the project can take work now.
     func projectIsAvailable(_ projectID: String) -> Bool {
-        guard let machine = replica(forProjectID: projectID) else { return workspaceIsLive }
-        return machineIsAvailable(machine)
+        projectMachine(forProjectID: projectID).map(machineIsAvailable) ?? false
     }
 
     var chatsLoading = false
@@ -236,20 +223,6 @@ final class AppSession {
 
     var errorMessage: String?
 
-    /// The attached machine while the core is connected to it. The feature
-    /// surfaces rebind when it changes.
-    var connectedMachineID: String? {
-        didSet {
-            if connectedMachineID != oldValue {
-                connectionGeneration &+= 1
-                resetFileSurface(); bindSchedules(); bindConversation();
-                bindWorktree(); bindTerminals()
-                onConversationContentConnectionChanged()
-            }
-        }
-    }
-    /// Changes whenever the connected machine changes.
-    var connectionGeneration: UInt64 = 0
     var boardSelectionGeneration: UInt64 = 0
     #if DIETER_UI_SMOKE
         /// The `--dieter-access-token-file` session smoke fixtures use for host-side calls.
@@ -303,7 +276,7 @@ final class AppSession {
         launchSession = override.flatMap { gateway in tokenOverride.map { (gateway, $0) } }
         let gateway = override ?? MachineEndpoint.defaultGateway
         endpoints = []
-        endpoint = gateway
+        activeGateway = gateway
         gatewayOrigins = [gateway]
         var host: CoreHost?
         var screenMedia: CoreScreenMedia?
@@ -336,13 +309,13 @@ final class AppSession {
         refreshBoardProjection()
     }
 
+    /// Points the composer at the selected conversation's draft, which the
+    /// core keeps per conversation on the machine that runs it. Project
+    /// selection is not part of a draft's identity: chats open from any project.
     func bindComposer() {
         let id = selectedCardID ?? selectedChatID
-        // Conversation IDs are unique on one daemon; project selection is not
-        // part of draft identity because global chats can open from any project.
-        let projectID =
-            selectedCard?.projectID ?? selectedDetail.flatMap { $0.card.id == id ? $0.card.projectID : nil } ?? ""
-        let destination = projectReplicaEndpointIDs[projectID] ?? endpoint.id
-        composer.select(id.map { WorkspaceTarget(endpointID: destination, projectID: "", conversationID: $0) })
+        let card = selectedCard ?? selectedDetail.flatMap { $0.card.id == id ? $0.card : nil }
+        guard let id, let card, !card.ownerDaemonID.isEmpty else { return composer.select(nil) }
+        composer.select(WorkspaceTarget(endpointID: endpointID(for: card), projectID: "", conversationID: id))
     }
 }

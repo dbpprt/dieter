@@ -51,7 +51,7 @@ class ScheduleEditorEndToEndTest {
         val application = composeRule.activity.application as DieterApplication
         val container = application.container
         val connected = IsolatedCore.connect(container)
-        val daemonId = IsolatedCore.daemonId(container)
+        val daemonId = IsolatedCore.machineId
         IsolatedCore.harnesses(container, daemonId)
         val boards = connected.boards.values.flatten()
         val project = connected.projects.first { candidate -> boards.any { it.project_id == candidate.id } }

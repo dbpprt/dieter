@@ -32,10 +32,10 @@ class NewTerminalTest {
         assertEquals(listOf("c", "a", "b"), NewTerminal.projects(projects).map { it.id })
     }
 
-    @Test fun newTerminalsStartOnTheChosenMachineElseTheAttachedOne() {
-        assertEquals("chosen", TerminalScope.creationMachine("chosen", "attached"))
-        assertEquals("attached", TerminalScope.creationMachine(null, "attached"))
-        assertEquals("No machine is attached.", assertFailsWith<CoreException> { TerminalScope.creationMachine(null, null) }.message)
+    @Test fun newTerminalsStartOnTheChosenMachineElseAReachableOne() {
+        assertEquals("chosen", TerminalScope.creationMachine("chosen", listOf("local", "other")))
+        assertEquals("local", TerminalScope.creationMachine(null, listOf("local", "other")))
+        assertEquals("No machine is reachable.", assertFailsWith<CoreException> { TerminalScope.creationMachine(null, emptyList()) }.message)
     }
 
     @Test fun surfacesCountTheirPersistentSessions() {

@@ -86,11 +86,9 @@ const (
 	DieterServicePerformMachineOperationProcedure = "/dieter.v1.DieterService/PerformMachineOperation"
 	// DieterServiceGetStateProcedure is the fully-qualified name of the DieterService's GetState RPC.
 	DieterServiceGetStateProcedure = "/dieter.v1.DieterService/GetState"
-	// DieterServiceWatchStateProcedure is the fully-qualified name of the DieterService's WatchState
-	// RPC.
-	DieterServiceWatchStateProcedure = "/dieter.v1.DieterService/WatchState"
-	// DieterServiceWatchSyncProcedure is the fully-qualified name of the DieterService's WatchSync RPC.
-	DieterServiceWatchSyncProcedure = "/dieter.v1.DieterService/WatchSync"
+	// DieterServiceWatchChangesProcedure is the fully-qualified name of the DieterService's
+	// WatchChanges RPC.
+	DieterServiceWatchChangesProcedure = "/dieter.v1.DieterService/WatchChanges"
 	// DieterServiceGetHarnessesProcedure is the fully-qualified name of the DieterService's
 	// GetHarnesses RPC.
 	DieterServiceGetHarnessesProcedure = "/dieter.v1.DieterService/GetHarnesses"
@@ -439,11 +437,12 @@ type DieterServiceClient interface {
 	GetMachineInformation(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.MachineInformation], error)
 	PerformMachineOperation(context.Context, *connect.Request[v1.MachineOperationRequest]) (*connect.Response[v1.MachineOperationResponse], error)
 	GetState(context.Context, *connect.Request[v1.GetStateRequest]) (*connect.Response[v1.State], error)
-	WatchState(context.Context, *connect.Request[v1.WatchStateRequest]) (*connect.ServerStreamForClient[v1.State], error)
-	// WatchSync is the daemon-wide durable change stream used by native
-	// clients. Views are rendered from the client projection rather than by
-	// opening per-view RPCs.
-	WatchSync(context.Context, *connect.Request[v1.SyncRequest]) (*connect.ServerStreamForClient[v1.SyncFrame], error)
+	// WatchChanges streams this machine's view to native clients: its replica of
+	// the account's shared records in the peer store's own order, plus the
+	// owner-only details and live activity of the conversations it runs. A
+	// client holds one stream per online machine and merges the shared records
+	// causally; no machine is attached or preferred.
+	WatchChanges(context.Context, *connect.Request[v1.ChangesRequest]) (*connect.ServerStreamForClient[v1.ChangesFrame], error)
 	GetHarnesses(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.HarnessCatalog], error)
 	GetSettings(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.Settings], error)
 	GetSettingsOptions(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.SettingsOptions], error)
@@ -707,16 +706,10 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(dieterServiceMethods.ByName("GetState")),
 			connect.WithClientOptions(opts...),
 		),
-		watchState: connect.NewClient[v1.WatchStateRequest, v1.State](
+		watchChanges: connect.NewClient[v1.ChangesRequest, v1.ChangesFrame](
 			httpClient,
-			baseURL+DieterServiceWatchStateProcedure,
-			connect.WithSchema(dieterServiceMethods.ByName("WatchState")),
-			connect.WithClientOptions(opts...),
-		),
-		watchSync: connect.NewClient[v1.SyncRequest, v1.SyncFrame](
-			httpClient,
-			baseURL+DieterServiceWatchSyncProcedure,
-			connect.WithSchema(dieterServiceMethods.ByName("WatchSync")),
+			baseURL+DieterServiceWatchChangesProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("WatchChanges")),
 			connect.WithClientOptions(opts...),
 		),
 		getHarnesses: connect.NewClient[emptypb.Empty, v1.HarnessCatalog](
@@ -1404,8 +1397,7 @@ type dieterServiceClient struct {
 	getMachineInformation           *connect.Client[emptypb.Empty, v1.MachineInformation]
 	performMachineOperation         *connect.Client[v1.MachineOperationRequest, v1.MachineOperationResponse]
 	getState                        *connect.Client[v1.GetStateRequest, v1.State]
-	watchState                      *connect.Client[v1.WatchStateRequest, v1.State]
-	watchSync                       *connect.Client[v1.SyncRequest, v1.SyncFrame]
+	watchChanges                    *connect.Client[v1.ChangesRequest, v1.ChangesFrame]
 	getHarnesses                    *connect.Client[emptypb.Empty, v1.HarnessCatalog]
 	getSettings                     *connect.Client[emptypb.Empty, v1.Settings]
 	getSettingsOptions              *connect.Client[emptypb.Empty, v1.SettingsOptions]
@@ -1618,14 +1610,9 @@ func (c *dieterServiceClient) GetState(ctx context.Context, req *connect.Request
 	return c.getState.CallUnary(ctx, req)
 }
 
-// WatchState calls dieter.v1.DieterService.WatchState.
-func (c *dieterServiceClient) WatchState(ctx context.Context, req *connect.Request[v1.WatchStateRequest]) (*connect.ServerStreamForClient[v1.State], error) {
-	return c.watchState.CallServerStream(ctx, req)
-}
-
-// WatchSync calls dieter.v1.DieterService.WatchSync.
-func (c *dieterServiceClient) WatchSync(ctx context.Context, req *connect.Request[v1.SyncRequest]) (*connect.ServerStreamForClient[v1.SyncFrame], error) {
-	return c.watchSync.CallServerStream(ctx, req)
+// WatchChanges calls dieter.v1.DieterService.WatchChanges.
+func (c *dieterServiceClient) WatchChanges(ctx context.Context, req *connect.Request[v1.ChangesRequest]) (*connect.ServerStreamForClient[v1.ChangesFrame], error) {
+	return c.watchChanges.CallServerStream(ctx, req)
 }
 
 // GetHarnesses calls dieter.v1.DieterService.GetHarnesses.
@@ -2206,11 +2193,12 @@ type DieterServiceHandler interface {
 	GetMachineInformation(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.MachineInformation], error)
 	PerformMachineOperation(context.Context, *connect.Request[v1.MachineOperationRequest]) (*connect.Response[v1.MachineOperationResponse], error)
 	GetState(context.Context, *connect.Request[v1.GetStateRequest]) (*connect.Response[v1.State], error)
-	WatchState(context.Context, *connect.Request[v1.WatchStateRequest], *connect.ServerStream[v1.State]) error
-	// WatchSync is the daemon-wide durable change stream used by native
-	// clients. Views are rendered from the client projection rather than by
-	// opening per-view RPCs.
-	WatchSync(context.Context, *connect.Request[v1.SyncRequest], *connect.ServerStream[v1.SyncFrame]) error
+	// WatchChanges streams this machine's view to native clients: its replica of
+	// the account's shared records in the peer store's own order, plus the
+	// owner-only details and live activity of the conversations it runs. A
+	// client holds one stream per online machine and merges the shared records
+	// causally; no machine is attached or preferred.
+	WatchChanges(context.Context, *connect.Request[v1.ChangesRequest], *connect.ServerStream[v1.ChangesFrame]) error
 	GetHarnesses(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.HarnessCatalog], error)
 	GetSettings(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.Settings], error)
 	GetSettingsOptions(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.SettingsOptions], error)
@@ -2470,16 +2458,10 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(dieterServiceMethods.ByName("GetState")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dieterServiceWatchStateHandler := connect.NewServerStreamHandler(
-		DieterServiceWatchStateProcedure,
-		svc.WatchState,
-		connect.WithSchema(dieterServiceMethods.ByName("WatchState")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dieterServiceWatchSyncHandler := connect.NewServerStreamHandler(
-		DieterServiceWatchSyncProcedure,
-		svc.WatchSync,
-		connect.WithSchema(dieterServiceMethods.ByName("WatchSync")),
+	dieterServiceWatchChangesHandler := connect.NewServerStreamHandler(
+		DieterServiceWatchChangesProcedure,
+		svc.WatchChanges,
+		connect.WithSchema(dieterServiceMethods.ByName("WatchChanges")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dieterServiceGetHarnessesHandler := connect.NewUnaryHandler(
@@ -3184,10 +3166,8 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServicePerformMachineOperationHandler.ServeHTTP(w, r)
 		case DieterServiceGetStateProcedure:
 			dieterServiceGetStateHandler.ServeHTTP(w, r)
-		case DieterServiceWatchStateProcedure:
-			dieterServiceWatchStateHandler.ServeHTTP(w, r)
-		case DieterServiceWatchSyncProcedure:
-			dieterServiceWatchSyncHandler.ServeHTTP(w, r)
+		case DieterServiceWatchChangesProcedure:
+			dieterServiceWatchChangesHandler.ServeHTTP(w, r)
 		case DieterServiceGetHarnessesProcedure:
 			dieterServiceGetHarnessesHandler.ServeHTTP(w, r)
 		case DieterServiceGetSettingsProcedure:
@@ -3497,12 +3477,8 @@ func (UnimplementedDieterServiceHandler) GetState(context.Context, *connect.Requ
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetState is not implemented"))
 }
 
-func (UnimplementedDieterServiceHandler) WatchState(context.Context, *connect.Request[v1.WatchStateRequest], *connect.ServerStream[v1.State]) error {
-	return connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.WatchState is not implemented"))
-}
-
-func (UnimplementedDieterServiceHandler) WatchSync(context.Context, *connect.Request[v1.SyncRequest], *connect.ServerStream[v1.SyncFrame]) error {
-	return connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.WatchSync is not implemented"))
+func (UnimplementedDieterServiceHandler) WatchChanges(context.Context, *connect.Request[v1.ChangesRequest], *connect.ServerStream[v1.ChangesFrame]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.WatchChanges is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) GetHarnesses(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.HarnessCatalog], error) {

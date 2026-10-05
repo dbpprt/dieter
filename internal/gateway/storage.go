@@ -184,7 +184,6 @@ CREATE TABLE IF NOT EXISTS daemons (
   created_at TEXT NOT NULL,
   last_seen_at TEXT NOT NULL DEFAULT '',
   version TEXT NOT NULL DEFAULT '',
-  api_version TEXT NOT NULL DEFAULT '',
   routes_json BLOB NOT NULL DEFAULT '[]',
   remote_desktop_json BLOB NOT NULL DEFAULT '{}'
 );
@@ -395,10 +394,9 @@ func (s *Store) Daemon(id string) (DaemonRecord, error) {
 	var record DaemonRecord
 	var generation int64
 	var revoked int
-	var legacyAPIVersion string
 	var created, lastSeen string
-	err := s.DB.QueryRow(`SELECT id, name, github_id, login, public_key, certificate, generation, revoked, created_at, last_seen_at, version, api_version, routes_json, remote_desktop_json FROM daemons WHERE id=?`, id).
-		Scan(&record.ID, &record.Name, &record.GitHubID, &record.Login, &record.PublicKey, &record.Certificate, &generation, &revoked, &created, &lastSeen, &record.Version, &legacyAPIVersion, &record.RoutesJSON, &record.RemoteDesktopJSON)
+	err := s.DB.QueryRow(`SELECT id, name, github_id, login, public_key, certificate, generation, revoked, created_at, last_seen_at, version, routes_json, remote_desktop_json FROM daemons WHERE id=?`, id).
+		Scan(&record.ID, &record.Name, &record.GitHubID, &record.Login, &record.PublicKey, &record.Certificate, &generation, &revoked, &created, &lastSeen, &record.Version, &record.RoutesJSON, &record.RemoteDesktopJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return record, errors.New("daemon not found")
 	}

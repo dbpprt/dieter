@@ -436,27 +436,17 @@ func TestInterruptConversationReconcilesOrphanedRuntime(t *testing.T) {
 	}
 }
 
-func TestOrphanedTurnCardsDoesNotPublishSyncMutation(t *testing.T) {
+func TestOrphanedTurnCardsDoesNotRecordAChange(t *testing.T) {
 	s := New(t.TempDir())
 	if err := s.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	before, events, err := s.SyncEvents(0, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(events) != 0 {
-		t.Fatalf("fresh store events=%#v", events)
-	}
+	beforeChanges, beforeMetadata := changeCounters(t, s)
 	if orphans, err := s.OrphanedTurnCards(); err != nil || len(orphans) != 0 {
 		t.Fatalf("orphans=%#v err=%v", orphans, err)
 	}
-	after, events, err := s.SyncEvents(before.Sequence, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after != before || len(events) != 0 {
-		t.Fatalf("read-only orphan inspection advanced sync from %#v to %#v with events=%#v", before, after, events)
+	if changes, metadata := changeCounters(t, s); changes != beforeChanges || metadata != beforeMetadata {
+		t.Fatalf("read-only orphan inspection recorded a change: %d/%d -> %d/%d", beforeChanges, beforeMetadata, changes, metadata)
 	}
 }
 
@@ -668,22 +658,15 @@ func TestArchiveDoneCardsNoopDoesNotAdvanceSyncHighwater(t *testing.T) {
 	if _, err := s.UpdateBoardDoneArchivePolicy(board.ID, model.DoneArchiveAfter7Days); err != nil {
 		t.Fatal(err)
 	}
-	before, _, err := s.SyncEvents(0, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	beforeChanges, beforeMetadata := changeCounters(t, s)
 	for range 4 {
 		archived, archiveErr := s.ArchiveDoneCards(now)
 		if archiveErr != nil || len(archived) != 0 {
 			t.Fatalf("no-op archive=%#v err=%v", archived, archiveErr)
 		}
 	}
-	after, events, err := s.SyncEvents(before.Sequence, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after != before || len(events) != 0 {
-		t.Fatalf("no-op archiving advanced sync: before=%#v after=%#v events=%#v", before, after, events)
+	if changes, metadata := changeCounters(t, s); changes != beforeChanges || metadata != beforeMetadata {
+		t.Fatalf("no-op archiving recorded a change: %d/%d -> %d/%d", beforeChanges, beforeMetadata, changes, metadata)
 	}
 }
 
@@ -710,20 +693,13 @@ func TestArchiveDoneCardsActiveCandidateDoesNotPublishNoop(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = s.ReleaseRuntimeLease(lease) }()
-	before, _, err := s.SyncEvents(0, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	beforeChanges, beforeMetadata := changeCounters(t, s)
 	archived, err := s.ArchiveDoneCards(now)
 	if err != nil || len(archived) != 0 {
 		t.Fatalf("active archive=%#v err=%v", archived, err)
 	}
-	after, events, err := s.SyncEvents(before.Sequence, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after != before || len(events) != 0 {
-		t.Fatalf("active no-op advanced sync: before=%#v after=%#v events=%#v", before, after, events)
+	if changes, metadata := changeCounters(t, s); changes != beforeChanges || metadata != beforeMetadata {
+		t.Fatalf("active no-op recorded a change: %d/%d -> %d/%d", beforeChanges, beforeMetadata, changes, metadata)
 	}
 }
 
@@ -1129,7 +1105,7 @@ func TestArchiveSurvivesStoreRestart(t *testing.T) {
 	}
 }
 
-func TestGlobalStateCacheAdvancesWithSyncCursor(t *testing.T) {
+func TestGlobalStateCacheAdvancesWithMetadataRevision(t *testing.T) {
 	s, project, board := setup(t, model.WorkflowReview)
 	if _, err := s.CreateCard(CreateCardInput{Project: project.ID, Board: board.ID, Title: "First"}); err != nil {
 		t.Fatal(err)

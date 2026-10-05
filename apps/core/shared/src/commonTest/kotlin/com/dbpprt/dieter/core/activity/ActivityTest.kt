@@ -1,9 +1,7 @@
 package com.dbpprt.dieter.core.activity
 
 import com.dbpprt.dieter.api.v1.Card
-import com.dbpprt.dieter.api.v1.CardDetail
 import com.dbpprt.dieter.api.v1.Conversation
-import com.dbpprt.dieter.api.v1.ConversationSnapshot
 import com.dbpprt.dieter.api.v1.MessagePart
 import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.api.v1.Subagent
@@ -60,13 +58,12 @@ class ActivityTest {
     }
 
     @Test
-    fun runningRowsKeepTheirPlaceAndArchivedTombstonesWin() {
+    fun runningRowsKeepTheirPlaceAndArchivedCardsLeave() {
         val cards = listOf(
             started("running", "running", minutesAgo = 30),
             started("recent", "idle", minutesAgo = 1),
             started("old", "idle", minutesAgo = 60),
-            started("gone", "idle", minutesAgo = 2),
-            started("gone", "idle", minutesAgo = 2).copy(archived = true, updated_at = at(0)),
+            started("gone", "idle", minutesAgo = 2).copy(archived = true),
         )
         val items = Activity.project(cards, emptyMap(), listOf(Project(id = "p", name = "Dieter")), emptyList())
         assertEquals(listOf("recent", "running", "old"), items.map { it.id })
@@ -78,12 +75,20 @@ class ActivityTest {
     }
 
     @Test
-    fun aStaleTranscriptNeverDescribesTheCurrentTurn() {
+    fun theOwnersActivityDescribesTheRunningTurn() {
         val card = started("c", "running")
-        val oldSnapshot = ConversationSnapshot(detail = CardDetail(card = card.copy(runtime_updated_at = at(90))), conversation = Conversation(status = "running"))
-        assertEquals("Working on your request", Activity.project(listOf(card), mapOf("c" to oldSnapshot), emptyList(), emptyList()).single().detail)
-        val fresh = oldSnapshot.copy(detail = CardDetail(card = card), conversation = Conversation(status = "running", messages = listOf(UiMessage(role = "assistant", parts = listOf(MessagePart(type = "text", text = "x", state = "streaming"))))))
-        assertEquals("Writing response…", Activity.project(listOf(card), mapOf("c" to fresh), emptyList(), emptyList()).single().detail)
+        assertEquals("Working on your request", Activity.project(listOf(card), emptyMap(), emptyList(), emptyList()).single().detail)
+        val streaming = Conversation(status = "running", messages = listOf(UiMessage(role = "assistant", parts = listOf(MessagePart(type = "text", text = "x", state = "streaming")))))
+        assertEquals("Writing response…", Activity.project(listOf(card), mapOf("c" to streaming), emptyList(), emptyList()).single().detail)
+    }
+
+    @Test
+    fun rowsSayWhenTheirMachinesDataMayBeOld() {
+        val card = started("c", "running")
+        val item = Activity.project(listOf(card), emptyMap(), emptyList(), emptyList(), staleness = { "Studio is offline" }).single()
+        assertEquals("Studio is offline", item.stale)
+        assertEquals(ActivityKind.RUNNING, item.kind, "a stale row keeps what its machine last reported")
+        assertEquals(null, Activity.project(listOf(card), emptyMap(), emptyList(), emptyList()).single().stale)
     }
 
     @Test
@@ -310,7 +315,7 @@ class ActivityTest {
     @Test
     fun resultContentAndSummaries() {
         val long = "word ".repeat(100).trim()
-        val preview = NotificationContent.resultPreview(ConversationSnapshot(conversation = Conversation(messages = listOf(UiMessage(role = "assistant", parts = listOf(MessagePart(type = "text", text = long)))))))!!
+        val preview = NotificationContent.resultPreview(Conversation(messages = listOf(UiMessage(role = "assistant", parts = listOf(MessagePart(type = "text", text = long))))))!!
         assertTrue(preview.startsWith("…") && preview.length <= 320 && preview.endsWith("word"))
         val event = NotificationEvent.ChatFinished("c", Card(id = "c", runtime = "idle"), "Done", listOf(Subagent(status = "completed"), Subagent(status = "running")))
         assertEquals("Subagents finished · 1 of 2", NotificationContent.result(event, NotificationSettings()).title)

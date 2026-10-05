@@ -3,7 +3,6 @@ package com.dbpprt.dieter.e2e
 import android.content.Context
 import androidx.test.platform.app.InstrumentationRegistry
 import com.dbpprt.dieter.core.CoreRuntime
-import com.dbpprt.dieter.core.navigation.KvActive
 import com.dbpprt.dieter.settings.AppPreferences
 import com.dbpprt.dieter.sharedcore.ConnectionPolicy
 import com.dbpprt.dieter.sharedcore.SharedCore
@@ -16,13 +15,11 @@ import kotlinx.coroutines.runBlocking
 
 /**
  * An isolated shared core for component tests: a private state directory,
- * never connected, and no background service. With [navigationAccount] the
- * shared navigation namespace is bound to that account, so folder and order
- * edits queue offline exactly as they do for a signed-in user.
+ * never connected, and no background service. Folder and order edits queue
+ * offline exactly as they do for a signed-in user.
  */
 class TestCore(
     val context: Context = InstrumentationRegistry.getInstrumentation().targetContext,
-    navigationAccount: String? = null,
     val directory: File = File(context.noBackupFilesDir, "test-core-${UUID.randomUUID()}"),
 ) : AutoCloseable {
     val core: CoreRuntime = SharedCore.create(context, null, directory)
@@ -31,10 +28,6 @@ class TestCore(
     private val captures = lazy { TaskCaptureStore(context, core) }
 
     init {
-        navigationAccount?.let { account ->
-            core.storageFor(core.accounts.state.value.active).scope("navigation")
-                .write("kv-active-navigation.pb", KvActive.ADAPTER.encode(KvActive(account = account)))
-        }
         core.start()
     }
 

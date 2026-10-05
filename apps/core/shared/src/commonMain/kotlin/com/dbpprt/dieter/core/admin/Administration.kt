@@ -42,6 +42,7 @@ import com.dbpprt.dieter.api.v1.UpdatePromptSettingsRequest
 import com.dbpprt.dieter.api.v1.ValidationCommand
 import com.dbpprt.dieter.api.v1.Workspace
 import com.dbpprt.dieter.core.composition.WorkspaceMode
+import com.dbpprt.dieter.core.machines.MachineChoice
 import com.dbpprt.dieter.core.runtime.CoreException
 import com.dbpprt.dieter.core.runtime.Deadlines
 import com.dbpprt.dieter.core.runtime.FailureKind
@@ -59,8 +60,8 @@ import okio.ByteString.Companion.encodeUtf8
 
 /** Which machine must receive an administrative call. */
 sealed interface AdminRoute {
-    /** Any replica of the project: the peer store accepts and replicates the write. */
-    data class Replica(val projectId: String) : AdminRoute
+    /** A reachable machine that holds the project: the peer store accepts and replicates the write. */
+    data class ForProject(val projectId: String) : AdminRoute
 
     /** The machine holding a checkout's path, validation commands, and leases. */
     data class Owner(val checkoutId: String, val projectId: String) : AdminRoute
@@ -68,26 +69,28 @@ sealed interface AdminRoute {
     /** A machine the user chose, e.g. to host a new project. */
     data class Target(val daemonId: String) : AdminRoute
 
-    /** The machine the feed is attached to. */
-    data object Attached : AdminRoute
+    /** A reachable machine that observed every version of the register [key], for a compare-and-swap; else [ForProject]. */
+    data class Observer(val key: String, val projectId: String) : AdminRoute
+
+    /** Any reachable machine, this device's first. */
+    data object Anywhere : AdminRoute
 
     companion object {
-        /** Shared records of [projectId] live on its replica; without a project, on the attached machine. */
-        fun shared(projectId: String?): AdminRoute = projectId?.takeIf { it.isNotEmpty() }?.let(::Replica) ?: Attached
+        /** Shared records of [projectId] live on every machine that holds it; without a project, on any. */
+        fun shared(projectId: String?): AdminRoute = projectId?.takeIf { it.isNotEmpty() }?.let(::ForProject) ?: Anywhere
     }
 }
 
-/** A project replica's archived projects and a board's archived cards, as the Archives view lists them. */
+/** The archived projects a machine knows and a board's archived cards, as the Archives view lists them. */
 data class AdministrationArchives(val projects: List<Project> = emptyList(), val cards: List<Card> = emptyList())
 
 /**
  * Projects, checkouts, boards, labels, prompt settings, and shared-record
- * conflicts. Owner and target machines are reached over scoped connections;
- * the feed never moves. Returned projects and boards show at once and yield
- * to the next machine view that is at least as new. Confined to the core
- * dispatcher.
+ * conflicts, each on the machine [MachineChoice] picks for it. Returned
+ * projects and boards show at once and yield to the account view once it is
+ * at least as new. Confined to the core dispatcher.
  */
-class Administration(private val sessions: MachineSessions, private val store: WorkspaceStore, private val attached: () -> String?) {
+class Administration(private val sessions: MachineSessions, private val store: WorkspaceStore, private val choice: MachineChoice) {
     /** Intent → its operation ID, oldest first; an intent is forgotten once it succeeded. */
     private val operationIds = LinkedHashMap<String, String>()
 
@@ -98,11 +101,13 @@ class Administration(private val sessions: MachineSessions, private val store: W
         val directory = store.directoryProjection
         return when (route) {
             is AdminRoute.Target -> route.daemonId
-            is AdminRoute.Replica -> directory.projectReplicas[route.projectId] ?: attached()
-                ?: throw CoreException(FailureKind.TRANSIENT, "No project replica is online.")
+            is AdminRoute.ForProject -> choice.project(route.projectId)
+                ?: throw CoreException(FailureKind.TRANSIENT, "No machine with this project is reachable.")
+            is AdminRoute.Observer -> choice.observer(route.key) ?: choice.project(route.projectId)
+                ?: throw CoreException(FailureKind.TRANSIENT, "No machine with this project is reachable.")
             is AdminRoute.Owner -> directory.checkoutMachine(route.projectId, route.checkoutId)
                 ?: throw CoreException(FailureKind.TRANSIENT, "The checkout’s machine is unavailable")
-            AdminRoute.Attached -> attached() ?: throw CoreException(FailureKind.TRANSIENT, "No machine is attached.")
+            AdminRoute.Anywhere -> choice.any() ?: throw CoreException(FailureKind.TRANSIENT, "No machine is reachable.")
         }
     }
 
@@ -151,8 +156,8 @@ class Administration(private val sessions: MachineSessions, private val store: W
         val response = idempotent("project", CreateProjectRequest.ADAPTER.encodeByteString(request)) { operationId ->
             call(AdminRoute.Target(daemonId), Deadlines.PROVISION) { it.CreateProject().execute(request.copy(operation_id = operationId)) }
         }
-        // Calls for the new project reach the machine that created it until a machine view lists it.
-        response.project?.let { store.overlayProject(it, replicaDaemonId = daemonId) }
+        // Its checkout routes calls for the new project to the machine that created it.
+        response.project?.let(store::overlayProject)
         response.board?.let(store::overlayBoard)
         val created = response.project
         if (created == null || (summary.isBlank() && prompt.isBlank())) return response
@@ -164,7 +169,7 @@ class Administration(private val sessions: MachineSessions, private val store: W
             project_id = projectId, name = name?.trim()?.ifEmpty { null }, summary = summary, prompt = prompt,
             hostnames = hostnames?.let { ProjectHostnames(values = Hostnames.normalize(it).getOrElse { error -> throw CoreException(FailureKind.PERMANENT, error.message.orEmpty()) }) },
         )
-        return call(AdminRoute.Replica(projectId)) { it.UpdateProject().execute(request) }.also(store::overlayProject)
+        return call(AdminRoute.ForProject(projectId)) { it.UpdateProject().execute(request) }.also(store::overlayProject)
     }
 
     /**
@@ -185,15 +190,15 @@ class Administration(private val sessions: MachineSessions, private val store: W
         validation: List<ValidationCommandDraft>?,
     ): Project {
         val project = store.state.value.project(projectId) ?: throw CoreException(FailureKind.PERMANENT, "The project is no longer available.")
-        ProjectWorkspaceSettings.update(sessions, store, project, baseRemote, baseBranch, checkoutId, validation).also(store::overlayProject)
+        ProjectWorkspaceSettings.update(sessions, store, choice, project, baseRemote, baseBranch, checkoutId, validation).also(store::overlayProject)
         return updateProject(projectId, name = name, summary = summary, prompt = prompt)
     }
 
     suspend fun setProjectArchived(projectId: String, archived: Boolean): Project =
-        call(AdminRoute.Replica(projectId)) { it.ArchiveProject().execute(ArchiveProjectRequest(project_id = projectId, archived = archived)) }.also(store::overlayProject)
+        call(AdminRoute.ForProject(projectId)) { it.ArchiveProject().execute(ArchiveProjectRequest(project_id = projectId, archived = archived)) }.also(store::overlayProject)
 
-    suspend fun archivedProjects(daemonId: String? = attached()): List<Project> {
-        val machine = daemonId ?: throw CoreException(FailureKind.TRANSIENT, "Connect to a machine first.")
+    suspend fun archivedProjects(daemonId: String? = choice.any()): List<Project> {
+        val machine = daemonId ?: throw CoreException(FailureKind.TRANSIENT, "No machine is reachable.")
         return call(AdminRoute.Target(machine)) { it.ListArchivedProjects().execute(Unit) }.projects
     }
 
@@ -204,7 +209,7 @@ class Administration(private val sessions: MachineSessions, private val store: W
      */
     suspend fun consolidate(sourceId: String, destinationId: String): Project {
         if (sourceId == destinationId) return store.directoryProjection.projects[destinationId] ?: throw CoreException(FailureKind.PERMANENT, "The project is no longer available.")
-        return call(AdminRoute.Replica(destinationId)) { it.ConsolidateProject().execute(ConsolidateProjectRequest(source_project_id = sourceId, destination_project_id = destinationId)) }
+        return call(AdminRoute.ForProject(destinationId)) { it.ConsolidateProject().execute(ConsolidateProjectRequest(source_project_id = sourceId, destination_project_id = destinationId)) }
             .also { store.overlayConsolidation(sourceId, it) }
     }
 
@@ -244,7 +249,7 @@ class Administration(private val sessions: MachineSessions, private val store: W
             project_id = projectId, name = name.trim(), workflow = workflow, description = description.trim(), done_archive_policy = policy,
             base_remote = baseRemote.ifEmpty { store.directoryProjection.projects[projectId]?.base_remote.orEmpty() }, remote_publish_mode = publishMode,
         )
-        return call(AdminRoute.Replica(projectId)) { it.CreateBoard().execute(request) }.also(store::overlayBoard)
+        return call(AdminRoute.ForProject(projectId)) { it.CreateBoard().execute(request) }.also(store::overlayBoard)
     }
 
     private fun projectOf(boardId: String): String = store.findBoard(boardId)?.project_id
@@ -252,34 +257,35 @@ class Administration(private val sessions: MachineSessions, private val store: W
 
     suspend fun renameBoard(boardId: String, name: String): Board {
         if (name.isBlank()) throw CoreException(FailureKind.PERMANENT, "board name is required")
-        return call(AdminRoute.Replica(projectOf(boardId))) { it.RenameBoard().execute(RenameBoardRequest(board_id = boardId, name = name.trim())) }.also(store::overlayBoard)
+        return call(AdminRoute.ForProject(projectOf(boardId))) { it.RenameBoard().execute(RenameBoardRequest(board_id = boardId, name = name.trim())) }.also(store::overlayBoard)
     }
 
     suspend fun setArchivePolicy(boardId: String, policy: String): Board {
         if (policy !in ARCHIVE_POLICIES) throw CoreException(FailureKind.PERMANENT, "Done archive policy must be never, immediately, after_1_day, after_7_days, after_30_days, or after_90_days")
-        return call(AdminRoute.Replica(projectOf(boardId))) { it.SetBoardArchivePolicy().execute(SetBoardArchivePolicyRequest(board_id = boardId, done_archive_policy = policy)) }.also(store::overlayBoard)
+        return call(AdminRoute.ForProject(projectOf(boardId))) { it.SetBoardArchivePolicy().execute(SetBoardArchivePolicyRequest(board_id = boardId, done_archive_policy = policy)) }.also(store::overlayBoard)
     }
 
     suspend fun setGitSettings(boardId: String, baseRemote: String, publishMode: String): Board {
         if (publishMode !in PUBLISH_MODES) throw CoreException(FailureKind.PERMANENT, "remote publish mode must be manual, pull_request, or push_base")
-        return call(AdminRoute.Replica(projectOf(boardId))) {
+        return call(AdminRoute.ForProject(projectOf(boardId))) {
             it.UpdateBoardGitSettings().execute(UpdateBoardGitSettingsRequest(board_id = boardId, base_remote = baseRemote.trim(), remote_publish_mode = publishMode))
         }.also(store::overlayBoard)
     }
 
     suspend fun setHostnames(boardId: String, hostnames: List<String>, append: Boolean = false): Board {
         val values = Hostnames.normalize(hostnames).getOrElse { throw CoreException(FailureKind.PERMANENT, it.message.orEmpty()) }
-        return call(AdminRoute.Replica(projectOf(boardId))) { it.UpdateBoardHostnames().execute(UpdateBoardHostnamesRequest(board_id = boardId, hostnames = values, append = append)) }
+        return call(AdminRoute.ForProject(projectOf(boardId))) { it.UpdateBoardHostnames().execute(UpdateBoardHostnamesRequest(board_id = boardId, hostnames = values, append = append)) }
             .also(store::overlayBoard)
     }
 
     /**
-     * Retires (deletes) or restores a board against the lifecycle revision the
-     * replica reports. Only empty boards can be retired. The operation ID is
-     * kept for the whole intent, so a retry never applies twice.
+     * Retires (deletes) or restores a board against the lifecycle revision
+     * of a machine that observed every intent this client shows. Only empty
+     * boards can be retired. The operation ID is kept for the whole intent,
+     * so a retry never applies twice.
      */
     suspend fun setBoardRetired(boardId: String, retired: Boolean): Board {
-        val route = AdminRoute.Replica(projectOf(boardId))
+        val route = AdminRoute.Observer("board/$boardId.retired", projectOf(boardId))
         return idempotent("board", "retire:$boardId:$retired".encodeUtf8()) { operationId ->
             call(route) { client ->
                 val current = client.GetBoard().execute(BoardRef(board_id = boardId))
@@ -292,21 +298,21 @@ class Administration(private val sessions: MachineSessions, private val store: W
 
     suspend fun createLabel(boardId: String, name: String, color: String = "", instructions: String = ""): Board {
         Labels.validate(name, color)?.let { throw CoreException(FailureKind.PERMANENT, it) }
-        return call(AdminRoute.Replica(projectOf(boardId))) {
+        return call(AdminRoute.ForProject(projectOf(boardId))) {
             it.CreateBoardLabel().execute(CreateBoardLabelRequest(board_id = boardId, name = name.trim(), color = color.trim(), instructions = instructions))
         }.also(store::overlayBoard)
     }
 
     suspend fun updateLabel(boardId: String, labelId: String, name: String, color: String, instructions: String): Board {
         Labels.validate(name, color)?.let { throw CoreException(FailureKind.PERMANENT, it) }
-        return call(AdminRoute.Replica(projectOf(boardId))) {
+        return call(AdminRoute.ForProject(projectOf(boardId))) {
             it.UpdateBoardLabel().execute(UpdateBoardLabelRequest(board_id = boardId, label_id = labelId, name = name.trim(), color = color.trim(), instructions = instructions))
         }.also(store::overlayBoard)
     }
 
     /** Removes the label from the board and from every card. */
     suspend fun deleteLabel(boardId: String, labelId: String): Board =
-        call(AdminRoute.Replica(projectOf(boardId))) { it.DeleteBoardLabel().execute(DeleteBoardLabelRequest(board_id = boardId, label_id = labelId)) }.also(store::overlayBoard)
+        call(AdminRoute.ForProject(projectOf(boardId))) { it.DeleteBoardLabel().execute(DeleteBoardLabelRequest(board_id = boardId, label_id = labelId)) }.also(store::overlayBoard)
 
     // --- Prompts ----------------------------------------------------------------------
 
@@ -327,21 +333,21 @@ class Administration(private val sessions: MachineSessions, private val store: W
     /** Sets or clears ([template] null) a project's prompt override. */
     suspend fun setProjectPrompt(projectId: String, template: String?): Project {
         template?.let { PromptTemplates.validate(it, context = true) }?.let { throw CoreException(FailureKind.PERMANENT, it) }
-        return call(AdminRoute.Replica(projectId)) {
+        return call(AdminRoute.ForProject(projectId)) {
             it.SetProjectPromptTemplate().execute(SetScopedPromptTemplateRequest(scope_id = projectId, inherit = template == null, prompt_template = template.orEmpty()))
         }.also(store::overlayProject)
     }
 
     suspend fun setBoardPrompt(boardId: String, template: String?): Board {
         template?.let { PromptTemplates.validate(it, context = true) }?.let { throw CoreException(FailureKind.PERMANENT, it) }
-        return call(AdminRoute.Replica(projectOf(boardId))) {
+        return call(AdminRoute.ForProject(projectOf(boardId))) {
             it.SetBoardPromptTemplate().execute(SetScopedPromptTemplateRequest(scope_id = boardId, inherit = template == null, prompt_template = template.orEmpty()))
         }.also(store::overlayBoard)
     }
 
     /** Renders the prompt an agent would receive; runs where the checkout lives, since it reads the repository. */
     suspend fun previewPrompt(projectId: String, boardId: String = "", cardId: String = "", labelIds: List<String> = emptyList(), checkoutId: String? = null): PromptPreview {
-        val route = checkoutId?.let { AdminRoute.Owner(it, projectId) } ?: AdminRoute.Replica(projectId)
+        val route = checkoutId?.let { AdminRoute.Owner(it, projectId) } ?: AdminRoute.ForProject(projectId)
         return call(route) {
             it.PreviewPrompt().execute(PreviewPromptRequest(project_id = projectId, board_id = boardId, card_id = cardId, label_ids = labelIds, scope = if (boardId.isNotEmpty()) "board" else "chat"))
         }
@@ -349,7 +355,7 @@ class Administration(private val sessions: MachineSessions, private val store: W
 
     // --- Shared-record conflicts --------------------------------------------------------
 
-    /** The competing versions behind a conflict key such as `board/b_1.name`, read from [projectId]'s replica. */
+    /** The competing versions behind a conflict key such as `board/b_1.name`, read from a machine with [projectId]. */
     suspend fun conflict(projectId: String?, key: String): PeerRecord? {
         val kind = key.substringBefore('/')
         val id = key.substringAfter('/').substringBefore('.')
@@ -357,7 +363,7 @@ class Administration(private val sessions: MachineSessions, private val store: W
         return record.takeIf { it.versions.size > 1 }
     }
 
-    /** Keeps one version (or the deletion) on the replica that served the record. */
+    /** Keeps one version (or the deletion) on a machine with [projectId]. */
     suspend fun resolve(projectId: String?, record: PeerRecord, valueJson: ByteString?, deleted: Boolean): PeerRecord =
         call(AdminRoute.shared(projectId)) {
             it.PutPeerRecord().execute(
@@ -382,7 +388,7 @@ class Administration(private val sessions: MachineSessions, private val store: W
     suspend fun updateConversationWorkspace(cardId: String, mode: WorkspaceMode, branch: String, baseBranch: String, baseRemote: String, publishMode: String): Card {
         val daemon = ownerOf(cardId)
         val worktree = mode == WorkspaceMode.WORKTREE
-        val card = call(AdminRoute.Target(daemon)) {
+        return call(AdminRoute.Target(daemon)) {
             it.UpdateConversationWorkspace().execute(
                 UpdateConversationWorkspaceRequest(
                     card_id = cardId, mode = mode.wire, branch = if (worktree) branch.trim() else "", base_branch = if (worktree) baseBranch.trim() else "",
@@ -390,8 +396,6 @@ class Administration(private val sessions: MachineSessions, private val store: W
                 ),
             )
         }
-        store.foldCard(card, daemon)
-        return card
     }
 
     /** A machine's archived chats; live chats are in the workspace. */
@@ -404,10 +408,10 @@ class Administration(private val sessions: MachineSessions, private val store: W
             it.ReadFile().execute(ReadFileRequest(project_id = projectId, checkout_id = if (cardId.isEmpty()) checkoutId else "", card_id = cardId, path = path))
         }
 
-    /** The archived projects [projectId]'s replica knows and [boardId]'s archived cards, read together for the Archives view. */
+    /** The archived projects a machine with [projectId] knows and [boardId]'s archived cards, read together for the Archives view. */
     suspend fun archives(projectId: String, boardId: String?): AdministrationArchives {
-        val projects = archivedProjects(daemonFor(AdminRoute.Replica(projectId)))
-        val cards = boardId?.let { board -> call(AdminRoute.Replica(projectId)) { it.ListArchivedCards().execute(BoardRef(board_id = board)) }.cards }.orEmpty()
+        val projects = archivedProjects(daemonFor(AdminRoute.ForProject(projectId)))
+        val cards = boardId?.let { board -> call(AdminRoute.ForProject(projectId)) { it.ListArchivedCards().execute(BoardRef(board_id = board)) }.cards }.orEmpty()
         return AdministrationArchives(projects, cards)
     }
 

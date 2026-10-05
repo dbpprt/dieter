@@ -57,8 +57,8 @@ func TestSendMessageRequestContextDoesNotOwnAdmittedTurn(t *testing.T) {
 	for time.Now().Before(deadline) {
 		stored, err = data.ResolveCard(card.ID)
 		if err == nil && stored.Runtime == "idle" {
-			// Wait for the completion transaction and its sync journal before TempDir cleanup.
-			if _, _, err := data.GlobalStateContext(t.Context()); err != nil {
+			// Wait for the completion transaction and its change count before TempDir cleanup.
+			if _, err := data.GlobalStateContext(t.Context()); err != nil {
 				t.Fatal(err)
 			}
 			return

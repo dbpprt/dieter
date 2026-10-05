@@ -37,11 +37,13 @@ import com.dbpprt.dieter.core.composition.WorkspaceMode
 import com.dbpprt.dieter.core.connection.Availability
 import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.core.connection.ConnectionPrompt
+import com.dbpprt.dieter.core.connection.MachineSyncs
 import com.dbpprt.dieter.core.conversation.ConversationSession
 import com.dbpprt.dieter.core.conversation.ConversationView
 import com.dbpprt.dieter.core.files.Files
 import com.dbpprt.dieter.core.files.FilesTarget
 import com.dbpprt.dieter.core.identity.Gateway
+import com.dbpprt.dieter.core.machines.MachineChoice
 import com.dbpprt.dieter.core.machines.MachineRow
 import com.dbpprt.dieter.core.machines.MachineRows
 import com.dbpprt.dieter.core.navigation.BoardSelection
@@ -161,33 +163,46 @@ class DieterViewModel internal constructor(
                     it.copy(
                         connectionPhase = connection.phase,
                         connectionError = connection.error,
-                        attachedMachineId = connection.attachedMachineId,
                     )
                 }
                 reconcileConnectionDialog()
                 if (connection.phase == ConnectionPhase.CONNECTED && previous != ConnectionPhase.CONNECTED) onConnected()
             }
         }
-        collect(core.connection.feedStatus) { feed ->
-            copy(lastConnectedAtMillis = feed.lastAppliedAt?.toEpochMilliseconds(), feedLive = feed.live && !feed.projectionPending)
+        // When some machine's view last changed, kept with the cached views.
+        collect(core.accountSync.updatedAt) { updated -> copy(lastConnectedAtMillis = updated.values.maxOrNull()?.toEpochMilliseconds()) }
+        collect(combine(core.connection.syncs, core.connection.machines, core.connection.state, ::Triple)) { (syncs, machines, connection) ->
+            copy(machineSyncs = syncs, synced = connection.phase == ConnectionPhase.CONNECTED && MachineSyncs.current(machines, syncs))
         }
+        // The workspace is loading while a wanted connection has not delivered any reachable machine's view.
+        collect(
+            combine(
+                core.workspace.state.map { it.loaded }.distinctUntilChanged(),
+                core.connection.state.map { it.phase }.distinctUntilChanged(),
+                combine(core.connection.machines, core.sessions.routes) { machines, routes -> MachineChoice.ordered(machines, routes).isNotEmpty() }.distinctUntilChanged(),
+                core.accounts.state.map { it.wantsConnection }.distinctUntilChanged(),
+            ) { loaded, phase, reachable, desired -> Availability.loading(desired, loaded, phase, reachable) },
+        ) { loading -> copy(loading = loading) }
         viewModelScope.launch {
-            combine(core.connection.machines, core.sessions.routes, core.connection.state, core.workspace.state, core.connection.freshness) { machines, routes, connection, workspace, freshness ->
+            combine(
+                core.connection.machines, core.sessions.routes, core.connection.state, core.workspace.state,
+                core.accountSync.snapshot.map { it.peerSyncIssues }.distinctUntilChanged(),
+            ) { machines, routes, connection, workspace, issues ->
                 val now = machines.evaluatedAt
-                val endpoints = machines.all.map { machine -> MachineRows.of(machine, machine.online(now), routes[machine.id], connection.attachedMachineId) }
+                val endpoints = machines.all.map { machine -> MachineRows.of(machine, machine.online(now), routes[machine.id]) }
                 val connected = connection.phase == ConnectionPhase.CONNECTED
                 val checked = Clock.System.now()
                 MachinesUpdate(
                     endpoints,
-                    workspace.projectReplicas,
-                    MachineRows.syncWarnings(endpoints, freshness, connected, checked),
-                    MachineRows.syncWarningsByMachine(endpoints, freshness, connected, checked),
+                    workspace.projects.mapNotNull { project -> core.choice.checkout(project.id)?.let { project.id to it } }.toMap(),
+                    MachineRows.syncWarnings(endpoints, issues, connected, checked),
+                    MachineRows.syncWarningsByMachine(endpoints, issues, connected, checked),
                 )
             }.collect { update ->
                 _state.update {
                     it.copy(
                         endpointConnections = update.endpoints,
-                        projectReplicas = update.replicas,
+                        projectHosts = update.hosts,
                         peerSyncWarnings = update.warnings,
                         machineSyncWarnings = update.warningsByMachine,
                     )
@@ -219,7 +234,6 @@ class DieterViewModel internal constructor(
                         selectedBoardId = selection.boardId,
                         selectedLane = selection.lane,
                         creationCheckoutId = checkoutId,
-                        loading = Availability.loading(current.desiredConnected, view.loaded, current.connectionPhase),
                         pinnedProjectOrder = layout.pinnedProjects(projects.map(Project::id)),
                         projectFolders = layout.folders(FolderScope.PROJECTS),
                         chatFolders = layout.folders(FolderScope.CHATS),
@@ -229,7 +243,7 @@ class DieterViewModel internal constructor(
             }
         }
         collect(core.navigationKv.status) { status ->
-            copy(navigationPendingCount = status.pending, navigationSyncError = status.localError ?: status.deliveryError ?: status.watchError)
+            copy(navigationPendingCount = status.pending, navigationSyncError = status.localError ?: status.deliveryError)
         }
         viewModelScope.launch {
             core.outbox.view.collect { outbox ->
@@ -294,7 +308,7 @@ class DieterViewModel internal constructor(
         _state.update { it.copy(notificationSettings = NotificationSettings.load(core.platform.settings)) }
     }
 
-    private fun <T> collect(flow: StateFlow<T>, apply: DieterUiState.(T) -> DieterUiState) {
+    private fun <T> collect(flow: Flow<T>, apply: DieterUiState.(T) -> DieterUiState) {
         viewModelScope.launch { flow.collect { value -> _state.update { it.apply(value) } } }
     }
 
@@ -447,7 +461,7 @@ class DieterViewModel internal constructor(
 
     fun showConnectionDialogIfNeeded() {
         val current = _state.value
-        connectionPrompt.showIfNeeded(current.desiredConnected, current.connectionPhase, current.hasCachedWorkspace)
+        connectionPrompt.showIfNeeded(current.desiredConnected, current.connectionPhase)
         _state.update { it.copy(connectionDialogVisible = connectionPrompt.visible) }
     }
 
@@ -464,7 +478,7 @@ class DieterViewModel internal constructor(
     private fun reconcileConnectionDialog() {
         connectionDialogJob?.cancel()
         val current = _state.value
-        val wait = connectionPrompt.reconcile(current.desiredConnected, current.connectionPhase, current.hasCachedWorkspace, foreground, Clock.System.now())
+        val wait = connectionPrompt.reconcile(current.desiredConnected, current.connectionPhase, foreground, Clock.System.now())
         _state.update { it.copy(connectionDialogVisible = connectionPrompt.visible) }
         if (wait != null) {
             connectionDialogJob = viewModelScope.launch {
@@ -820,10 +834,11 @@ class DieterViewModel internal constructor(
                 destination = destination,
                 boardOverviewVisible = if (destination == Destination.BOARD) false else it.boardOverviewVisible,
                 selectedCardId = cardId,
-                conversation = core.workspace.state.value.conversations[cardId],
+                conversation = null,
                 conversationScrollRequest = it.conversationScrollRequest + 1,
-                // The core decides whether its cached tail needs a refresh.
-                // Clear the previous presentation until that view arrives.
+                // The session shows its cached transcript at once and decides
+                // whether it needs a refresh. Clear the previous presentation
+                // until that view arrives.
                 conversationSyncing = false,
                 detailTab = 0,
                 error = core.outbox.view.value.failure(cardId),
@@ -885,7 +900,9 @@ class DieterViewModel internal constructor(
     fun openRequested(cardId: String, inInbox: Boolean): Boolean {
         val current = _state.value
         val cards = current.spaceCards + current.cards + current.chats
-        when (val target = OpenRequests.resolve(cardId, cards, inInbox, current.loading, current.connectionPhase)) {
+        // A reachable machine still catching up may yet deliver the conversation.
+        val catchingUp = current.connected && !current.synced
+        when (val target = OpenRequests.resolve(cardId, cards, inInbox, current.loading, current.connectionPhase, catchingUp)) {
             OpenTarget.Wait -> return false
             OpenTarget.Inbox -> navigate(Destination.ACTIVITY)
             is OpenTarget.Conversation -> openCard(target.card, target.destination)
@@ -1132,24 +1149,19 @@ class DieterViewModel internal constructor(
     /**
      * The checkout new conversations of [project] run on: [current] while it
      * is one of the project's attached checkouts, else the core's preselection
-     * (the last one chosen there, else the attached machine's, else the only
-     * one, else the replica's), else none.
+     * (the last one chosen there, else this device's machine's, else the only
+     * one), else none.
      */
     private fun checkoutFor(project: Project?, current: String): String {
         project ?: return ""
         if (project.checkouts.any { it.id == current && !it.detached }) return current
-        val attached = core.connection.state.value.attachedMachineId
-        return core.creation.preferredCheckout(project, attached, core.workspace.state.value.projectReplicas[project.id])?.id.orEmpty()
+        return core.creation.preferredCheckout(project, core.choice.local())?.id.orEmpty()
     }
 
     /** Loads the agent catalog of the machine a new conversation would run on. */
     private fun refreshHarnesses() {
         val current = _state.value
-        val daemonId = Creation.catalogMachine(
-            current.creationCheckout,
-            current.projectReplicas[current.selectedProjectId],
-            core.connection.state.value.attachedMachineId,
-        ) ?: return
+        val daemonId = Creation.catalogMachine(current.creationCheckout, current.projectHosts[current.selectedProjectId]) ?: return
         val metadata = core.metadata.machines.value[daemonId]
         _state.update { it.copy(harnesses = metadata?.harnesses?.harnesses.orEmpty(), harnessesEndpointId = daemonId.takeIf { metadata?.loaded == true }) }
         if (metadata == null) launchCore(report = false) { core.metadata.ensure(daemonId) }
@@ -1230,7 +1242,7 @@ class DieterViewModel internal constructor(
 
     fun loadTerminals() {
         if (!foreground) return
-        val daemonId = terminalMachineId ?: core.connection.state.value.attachedMachineId ?: return
+        val daemonId = terminalMachineId ?: core.choice.reachable().firstOrNull() ?: return
         // Route/presence refreshes must not silently move this surface to another machine.
         terminalMachineId = daemonId
         launchCore {
@@ -1255,7 +1267,7 @@ class DieterViewModel internal constructor(
     fun closeTerminal(terminalId: String) = launchCore { terminals.close(terminalId) }
 
     fun createTerminal(form: NewTerminal, onCreated: () -> Unit = {}) = action {
-        val machine = TerminalScope.creationMachine(terminalMachineId, core.connection.state.value.attachedMachineId)
+        val machine = TerminalScope.creationMachine(terminalMachineId, core.choice.reachable())
         val scope = TerminalScope.forCreation(machine, _state.value.projects.firstOrNull { it.id == form.projectId })
         if (terminals.view.value.scope != scope) {
             terminals.bind(scope)
@@ -1535,7 +1547,7 @@ class DieterViewModel internal constructor(
     /** One machine-list update: rows, project hosts, and sync warnings overall and per machine. */
     private data class MachinesUpdate(
         val endpoints: List<MachineRow>,
-        val replicas: Map<String, String>,
+        val hosts: Map<String, String>,
         val warnings: List<String>,
         val warningsByMachine: Map<String, List<String>>,
     )

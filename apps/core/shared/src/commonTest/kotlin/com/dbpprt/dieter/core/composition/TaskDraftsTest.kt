@@ -209,9 +209,9 @@ class TaskDraftsTest {
         assertTrue(Creation.needsCatalog(linux, machineOnline = true, CatalogState.NONE))
         assertFalse(Creation.needsCatalog(linux, machineOnline = false, CatalogState.NONE))
         assertFalse(Creation.needsCatalog(mac, machineOnline = true, CatalogState.LIVE))
-        assertEquals("mac", Creation.catalogMachine(mac, "replica", "attached"))
-        assertEquals("replica", Creation.catalogMachine(null, "replica", "attached"))
-        assertEquals("attached", Creation.catalogMachine(null, "", "attached"))
+        assertEquals("mac", Creation.catalogMachine(mac, "project"))
+        assertEquals("project", Creation.catalogMachine(null, "project"))
+        assertNull(Creation.catalogMachine(null, ""))
 
         val project = Project(id = "p", checkouts = listOf(mac, linux))
         assertEquals("No checkouts available for this project", Creation.destinationStatus(project.copy(checkouts = emptyList()), null, false, CatalogState.NONE))

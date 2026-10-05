@@ -332,8 +332,8 @@ object OutboxPolicy {
         return snapshot.copy(conversation = conversation.copy(messages = messages, queue = queue))
     }
 
-    /** True once the accepted command is represented by durable sync data. */
-    fun isSynced(entry: OutboxEntry, cards: Map<String, Card>, conversations: Map<String, ConversationSnapshot>): Boolean {
+    /** True once the accepted command shows in the account view: its card, or its owner's activity. */
+    fun isSynced(entry: OutboxEntry, cards: Map<String, Card>, activities: Map<String, Conversation>): Boolean {
         val serverId = entry.server_id.ifEmpty { return false }
         return when (entry.kind) {
             OutboxKind.OUTBOX_KIND_CREATE_CARD -> cards[serverId]?.let { creationIsComplete(entry, it) } == true
@@ -341,13 +341,13 @@ object OutboxPolicy {
                 val card = cards[serverId] ?: return false
                 if (!creationIsComplete(entry, card)) return false
                 if (optimisticInitialMessage(entry) == null) return true
-                // Without the tail the daemon's initial_prompt_sent_at is the evidence.
-                val conversation = conversations[serverId]?.conversation ?: return card.initial_prompt_sent_at.isNotEmpty()
+                // Without its activity the daemon's initial_prompt_sent_at is the evidence.
+                val conversation = activities[serverId] ?: return card.initial_prompt_sent_at.isNotEmpty()
                 conversation.messages.any(::isUserMessage)
             }
             OutboxKind.OUTBOX_KIND_SEND_MESSAGE -> {
                 val cardId = sendRequest(entry)?.card_id ?: return false
-                val conversation = conversations[cardId]?.conversation ?: return false
+                val conversation = activities[cardId] ?: return false
                 conversation.messages.any { it.id == serverId } || conversation.queue.any { it.id == serverId }
             }
             OutboxKind.OUTBOX_KIND_START_CARD -> {

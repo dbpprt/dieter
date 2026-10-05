@@ -82,7 +82,6 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
     conversation.conversation.messages = [user, assistant]
 
     store.projectDirectory = [activeProject.id: activeProject]
-    store.projectReplicaEndpointIDs = [activeProject.id: store.endpoint.id]
     store.selectedProjectID = activeProject.id
     store.state.project = activeProject
     store.state.chats = [chat]
@@ -138,7 +137,6 @@ private func part(_ type: String, text: String = "", tool: String = "", callID: 
     conversation.conversation.queue = [queued]
 
     store.projectDirectory = [project.id: project]
-    store.projectReplicaEndpointIDs = [project.id: store.endpoint.id]
     store.selectedProjectID = project.id
     store.state.project = project
     store.state.chats = [chat]

@@ -29,16 +29,17 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Transcripts reach the device through the shared core's global feed, and
- * Live mode keeps them warm across backgrounding, against the isolated gateway
- * the e2e runner reverses to the device's loopback.
+ * Turns reach the device through every machine's change stream without
+ * opening their conversations, and Live mode keeps opened conversations warm
+ * across backgrounding, against the isolated gateway the e2e runner reverses
+ * to the device's loopback.
  */
 @RunWith(AndroidJUnit4::class)
-class BackgroundTranscriptSyncIntegrationTest {
+class BackgroundSyncIntegrationTest {
     private val container get() = (InstrumentationRegistry.getInstrumentation().targetContext.applicationContext as DieterApplication).container
 
     @Test
-    fun transcriptsArriveThroughGlobalSyncWithoutOpeningTheChat() = runBlocking {
+    fun turnsArriveThroughTheMachinesStreamWithoutOpeningTheChat() = runBlocking {
         val core = container.core
         val workspace = IsolatedCore.connect(container)
         val project = workspace.projects.first()
@@ -50,10 +51,10 @@ class BackgroundTranscriptSyncIntegrationTest {
                 chat = true,
             )
             chatId = chat.id
-            // The chat is never opened: its transcript tail arrives with the account feed.
-            val messageId = core.sendMessage(chat.id, listOf(MessagePart(type = "text", text = "Background delta please")), HarnessSelection("mock", "mock"))
-            withTimeout(15_000) {
-                core.workspace.state.first { view -> view.conversations[chat.id]?.conversation?.messages.orEmpty().any { it.id == messageId } }
+            // The chat is never opened: its reply arrives with its machine's change stream.
+            core.sendMessage(chat.id, listOf(MessagePart(type = "text", text = "Background delta please")), HarnessSelection("mock", "mock"))
+            withTimeout(30_000) {
+                core.workspace.state.first { view -> (view.card(chat.id)?.response_seq ?: 0L) > 0L }
             }
             assertTrue("No transcript session was opened", core.onCore { core.conversations.session(chat.id) } == null)
         } finally {
@@ -79,7 +80,7 @@ class BackgroundTranscriptSyncIntegrationTest {
             withContext(kotlinx.coroutines.Dispatchers.Main) { policy.setMode(BackgroundMode.LIVE) }
             val workspace = IsolatedCore.connect(container)
             val project = workspace.projects.first()
-            val daemonId = IsolatedCore.daemonId(container)
+            val daemonId = IsolatedCore.machineId
             val chat = IsolatedCore.createConversation(
                 container,
                 CreateConversationRequest(project_id = project.id, title = "Warm cache E2E ${UUID.randomUUID().toString().take(8)}", prompt = "Reply with WARM_OK.", provider = "mock", model = "mock", workspace_mode = "project"),
@@ -91,26 +92,24 @@ class BackgroundTranscriptSyncIntegrationTest {
                 chat = true,
             )
             chatIds += listOf(chat.id, secondChat.id)
-            withTimeout(30_000) {
-                core.workspace.state.first { view -> chatIds.all { view.conversations[it]?.conversation?.messages.orEmpty().isNotEmpty() } }
-            }
 
             model = withContext(kotlinx.coroutines.Dispatchers.Main) {
                 DieterViewModel(core, container.appPreferences, policy, container, container.taskCaptures).also { it.start() }
             }
-            withTimeout(5_000) { model.state.first { state -> state.chats.any { it.id == chat.id } } }
-            val openedAt = SystemClock.elapsedRealtime()
-            withContext(kotlinx.coroutines.Dispatchers.Main) { model.openCard(chat, Destination.CHATS) }
-            val opened = withTimeout(1_000) {
-                model.state.first { state -> state.selectedCardId == chat.id && state.conversation?.detail?.card?.id == chat.id }
+            withTimeout(5_000) { model.state.first { state -> chatIds.all { id -> state.chats.any { it.id == id } } } }
+            // The first open reads each transcript from its machine and caches it.
+            for (selected in listOf(chat, secondChat)) {
+                val openedAt = SystemClock.elapsedRealtime()
+                withContext(kotlinx.coroutines.Dispatchers.Main) { model.openCard(selected, Destination.CHATS) }
+                withTimeout(15_000) {
+                    model.state.first { state -> state.selectedCardId == selected.id && state.conversation?.detail?.card?.id == selected.id }
+                }
+                Log.i("DieterPerformance", "liveChatFirstOpen ms=${SystemClock.elapsedRealtime() - openedAt}")
             }
-            val initialOpenMs = SystemClock.elapsedRealtime() - openedAt
-            assertTrue("Warm transcript open took ${initialOpenMs}ms", initialOpenMs < 250)
-            assertFalse("Opening a feed-covered chat must not show a redundant sync", opened.conversationSyncing)
 
             phaseObserver = launch {
                 core.connection.state.collect {
-                    if (it.phase !in setOf(ConnectionPhase.CONNECTED, ConnectionPhase.SYNCING)) lostConnection.set(true)
+                    if (it.phase != ConnectionPhase.CONNECTED) lostConnection.set(true)
                 }
             }
             val switchTimes = mutableListOf<Long>()
@@ -130,19 +129,14 @@ class BackgroundTranscriptSyncIntegrationTest {
             }
             val sortedSwitches = switchTimes.sorted()
             val switchP95 = sortedSwitches[(sortedSwitches.size * 0.95).toInt().coerceAtMost(sortedSwitches.lastIndex)]
-            Log.i("DieterPerformance", "liveChatOpen initialMs=$initialOpenMs switches=${switchTimes.size} p95Ms=$switchP95 maxMs=${sortedSwitches.last()}")
+            Log.i("DieterPerformance", "liveChatOpen switches=${switchTimes.size} p95Ms=$switchP95 maxMs=${sortedSwitches.last()}")
             assertTrue("Warm chat-switch p95 was ${switchP95}ms", switchP95 < 250)
 
             // Require both replies and terminal state before measuring idle;
             // worker startup and streaming belong to active cost.
             withTimeout(60_000) {
                 core.workspace.state.first { view ->
-                    chatIds.all { id ->
-                        view.conversations[id]?.let { snapshot ->
-                            snapshot.detail?.card?.runtime == "idle" && snapshot.conversation?.status == "idle" &&
-                                snapshot.conversation?.messages.orEmpty().any { it.role == "assistant" }
-                        } == true
-                    }
+                    chatIds.all { id -> view.card(id)?.let { card -> card.runtime == "idle" && card.response_seq > 0L } == true }
                 }
             }
             delay(2_000)
@@ -163,7 +157,7 @@ class BackgroundTranscriptSyncIntegrationTest {
             }
             assertFalse(model.state.value.conversationSyncing)
             assertEquals(ConnectionPhase.CONNECTED, core.connection.state.value.phase)
-            assertEquals(daemonId, core.workspace.state.value.projectReplicas[project.id])
+            assertEquals(daemonId, core.choice.checkout(project.id))
             assertFalse("Activation and chat switches must preserve the shared connection", lostConnection.get())
         } finally {
             phaseObserver?.cancel()

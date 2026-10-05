@@ -3,6 +3,7 @@ package com.dbpprt.dieter.core.testing
 import com.dbpprt.dieter.core.CoreRuntime
 import com.dbpprt.dieter.core.RuntimeConfig
 import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.connection.SyncState
 import com.dbpprt.dieter.core.identity.Gateway
 import com.dbpprt.dieter.core.platform.Platform
 import kotlin.time.Duration
@@ -55,6 +56,10 @@ open class EndToEnd {
 
     suspend fun CoreRuntime.awaitLoaded(fixture: IsolatedGateway) =
         workspace.state.await(describe = { "project ${fixture.projectId}" }) { it.project(fixture.projectId) != null }
+
+    /** Waits until [machineId]'s part of the account view is in [state]. */
+    suspend fun CoreRuntime.awaitSync(machineId: String, state: SyncState, timeout: Duration = 30.seconds) =
+        connection.syncs.await(timeout, describe = { "$machineId $state: ${connection.syncs.value[machineId]}" }) { it[machineId]?.state == state }
 
     companion object {
         const val RELEASE = "0.0.0-dev.0"

@@ -281,29 +281,16 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
-        /// Namespace for "WatchState" metadata.
-        public enum WatchState: Sendable {
-            /// Request type for "WatchState".
-            public typealias Input = Dieter_V1_WatchStateRequest
-            /// Response type for "WatchState".
-            public typealias Output = Dieter_V1_State
-            /// Descriptor for "WatchState".
+        /// Namespace for "WatchChanges" metadata.
+        public enum WatchChanges: Sendable {
+            /// Request type for "WatchChanges".
+            public typealias Input = Dieter_V1_ChangesRequest
+            /// Response type for "WatchChanges".
+            public typealias Output = Dieter_V1_ChangesFrame
+            /// Descriptor for "WatchChanges".
             public static let descriptor = GRPCCore.MethodDescriptor(
                 service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
-                method: "WatchState",
-                type: .serverStreaming
-            )
-        }
-        /// Namespace for "WatchSync" metadata.
-        public enum WatchSync: Sendable {
-            /// Request type for "WatchSync".
-            public typealias Input = Dieter_V1_SyncRequest
-            /// Response type for "WatchSync".
-            public typealias Output = Dieter_V1_SyncFrame
-            /// Descriptor for "WatchSync".
-            public static let descriptor = GRPCCore.MethodDescriptor(
-                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
-                method: "WatchSync",
+                method: "WatchChanges",
                 type: .serverStreaming
             )
         }
@@ -1759,8 +1746,7 @@ public enum Dieter_V1_DieterService: Sendable {
             GetMachineInformation.descriptor,
             PerformMachineOperation.descriptor,
             GetState.descriptor,
-            WatchState.descriptor,
-            WatchSync.descriptor,
+            WatchChanges.descriptor,
             GetHarnesses.descriptor,
             GetSettings.descriptor,
             GetSettingsOptions.descriptor,
@@ -2285,48 +2271,31 @@ extension Dieter_V1_DieterService {
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_State>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
-        /// Call the "WatchState" method.
-        ///
-        /// - Parameters:
-        ///   - request: A request containing a single `Dieter_V1_WatchStateRequest` message.
-        ///   - serializer: A serializer for `Dieter_V1_WatchStateRequest` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_State` messages.
-        ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
-        /// - Returns: The result of `handleResponse`.
-        func watchState<Result>(
-            request: GRPCCore.ClientRequest<Dieter_V1_WatchStateRequest>,
-            serializer: some GRPCCore.MessageSerializer<Dieter_V1_WatchStateRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_State>,
-            options: GRPCCore.CallOptions,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_State>) async throws -> Result
-        ) async throws -> Result where Result: Sendable
-
-        /// Call the "WatchSync" method.
+        /// Call the "WatchChanges" method.
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > WatchSync is the daemon-wide durable change stream used by native
-        /// > clients. Views are rendered from the client projection rather than by
-        /// > opening per-view RPCs.
+        /// > WatchChanges streams this machine's view to native clients: its replica of
+        /// > the account's shared records in the peer store's own order, plus the
+        /// > owner-only details and live activity of the conversations it runs. A
+        /// > client holds one stream per online machine and merges the shared records
+        /// > causally; no machine is attached or preferred.
         ///
         /// - Parameters:
-        ///   - request: A request containing a single `Dieter_V1_SyncRequest` message.
-        ///   - serializer: A serializer for `Dieter_V1_SyncRequest` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_SyncFrame` messages.
+        ///   - request: A request containing a single `Dieter_V1_ChangesRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ChangesRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ChangesFrame` messages.
         ///   - options: Options to apply to this RPC.
         ///   - handleResponse: A closure which handles the response, the result of which is
         ///       returned to the caller. Returning from the closure will cancel the RPC if it
         ///       hasn't already finished.
         /// - Returns: The result of `handleResponse`.
-        func watchSync<Result>(
-            request: GRPCCore.ClientRequest<Dieter_V1_SyncRequest>,
-            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SyncRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_SyncFrame>,
+        func watchChanges<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ChangesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ChangesRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ChangesFrame>,
             options: GRPCCore.CallOptions,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_SyncFrame>) async throws -> Result
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ChangesFrame>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "GetHarnesses" method.
@@ -5093,61 +5062,35 @@ extension Dieter_V1_DieterService {
             )
         }
 
-        /// Call the "WatchState" method.
-        ///
-        /// - Parameters:
-        ///   - request: A request containing a single `Dieter_V1_WatchStateRequest` message.
-        ///   - serializer: A serializer for `Dieter_V1_WatchStateRequest` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_State` messages.
-        ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
-        /// - Returns: The result of `handleResponse`.
-        public func watchState<Result>(
-            request: GRPCCore.ClientRequest<Dieter_V1_WatchStateRequest>,
-            serializer: some GRPCCore.MessageSerializer<Dieter_V1_WatchStateRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_State>,
-            options: GRPCCore.CallOptions = .defaults,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_State>) async throws -> Result
-        ) async throws -> Result where Result: Sendable {
-            try await self.client.serverStreaming(
-                request: request,
-                descriptor: Dieter_V1_DieterService.Method.WatchState.descriptor,
-                serializer: serializer,
-                deserializer: deserializer,
-                options: options,
-                onResponse: handleResponse
-            )
-        }
-
-        /// Call the "WatchSync" method.
+        /// Call the "WatchChanges" method.
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > WatchSync is the daemon-wide durable change stream used by native
-        /// > clients. Views are rendered from the client projection rather than by
-        /// > opening per-view RPCs.
+        /// > WatchChanges streams this machine's view to native clients: its replica of
+        /// > the account's shared records in the peer store's own order, plus the
+        /// > owner-only details and live activity of the conversations it runs. A
+        /// > client holds one stream per online machine and merges the shared records
+        /// > causally; no machine is attached or preferred.
         ///
         /// - Parameters:
-        ///   - request: A request containing a single `Dieter_V1_SyncRequest` message.
-        ///   - serializer: A serializer for `Dieter_V1_SyncRequest` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_SyncFrame` messages.
+        ///   - request: A request containing a single `Dieter_V1_ChangesRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ChangesRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ChangesFrame` messages.
         ///   - options: Options to apply to this RPC.
         ///   - handleResponse: A closure which handles the response, the result of which is
         ///       returned to the caller. Returning from the closure will cancel the RPC if it
         ///       hasn't already finished.
         /// - Returns: The result of `handleResponse`.
-        public func watchSync<Result>(
-            request: GRPCCore.ClientRequest<Dieter_V1_SyncRequest>,
-            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SyncRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_SyncFrame>,
+        public func watchChanges<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ChangesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ChangesRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ChangesFrame>,
             options: GRPCCore.CallOptions = .defaults,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_SyncFrame>) async throws -> Result
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ChangesFrame>) async throws -> Result
         ) async throws -> Result where Result: Sendable {
             try await self.client.serverStreaming(
                 request: request,
-                descriptor: Dieter_V1_DieterService.Method.WatchSync.descriptor,
+                descriptor: Dieter_V1_DieterService.Method.WatchChanges.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -9007,53 +8950,32 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
-    /// Call the "WatchState" method.
-    ///
-    /// - Parameters:
-    ///   - request: A request containing a single `Dieter_V1_WatchStateRequest` message.
-    ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
-    /// - Returns: The result of `handleResponse`.
-    public func watchState<Result>(
-        request: GRPCCore.ClientRequest<Dieter_V1_WatchStateRequest>,
-        options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_State>) async throws -> Result
-    ) async throws -> Result where Result: Sendable {
-        try await self.watchState(
-            request: request,
-            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_WatchStateRequest>(),
-            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_State>(),
-            options: options,
-            onResponse: handleResponse
-        )
-    }
-
-    /// Call the "WatchSync" method.
+    /// Call the "WatchChanges" method.
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > WatchSync is the daemon-wide durable change stream used by native
-    /// > clients. Views are rendered from the client projection rather than by
-    /// > opening per-view RPCs.
+    /// > WatchChanges streams this machine's view to native clients: its replica of
+    /// > the account's shared records in the peer store's own order, plus the
+    /// > owner-only details and live activity of the conversations it runs. A
+    /// > client holds one stream per online machine and merges the shared records
+    /// > causally; no machine is attached or preferred.
     ///
     /// - Parameters:
-    ///   - request: A request containing a single `Dieter_V1_SyncRequest` message.
+    ///   - request: A request containing a single `Dieter_V1_ChangesRequest` message.
     ///   - options: Options to apply to this RPC.
     ///   - handleResponse: A closure which handles the response, the result of which is
     ///       returned to the caller. Returning from the closure will cancel the RPC if it
     ///       hasn't already finished.
     /// - Returns: The result of `handleResponse`.
-    public func watchSync<Result>(
-        request: GRPCCore.ClientRequest<Dieter_V1_SyncRequest>,
+    public func watchChanges<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ChangesRequest>,
         options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_SyncFrame>) async throws -> Result
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ChangesFrame>) async throws -> Result
     ) async throws -> Result where Result: Sendable {
-        try await self.watchSync(
+        try await self.watchChanges(
             request: request,
-            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_SyncRequest>(),
-            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_SyncFrame>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ChangesRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ChangesFrame>(),
             options: options,
             onResponse: handleResponse
         )
@@ -12440,40 +12362,15 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
-    /// Call the "WatchState" method.
-    ///
-    /// - Parameters:
-    ///   - message: request message to send.
-    ///   - metadata: Additional metadata to send, defaults to empty.
-    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
-    /// - Returns: The result of `handleResponse`.
-    public func watchState<Result>(
-        _ message: Dieter_V1_WatchStateRequest,
-        metadata: GRPCCore.Metadata = [:],
-        options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_State>) async throws -> Result
-    ) async throws -> Result where Result: Sendable {
-        let request = GRPCCore.ClientRequest<Dieter_V1_WatchStateRequest>(
-            message: message,
-            metadata: metadata
-        )
-        return try await self.watchState(
-            request: request,
-            options: options,
-            onResponse: handleResponse
-        )
-    }
-
-    /// Call the "WatchSync" method.
+    /// Call the "WatchChanges" method.
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > WatchSync is the daemon-wide durable change stream used by native
-    /// > clients. Views are rendered from the client projection rather than by
-    /// > opening per-view RPCs.
+    /// > WatchChanges streams this machine's view to native clients: its replica of
+    /// > the account's shared records in the peer store's own order, plus the
+    /// > owner-only details and live activity of the conversations it runs. A
+    /// > client holds one stream per online machine and merges the shared records
+    /// > causally; no machine is attached or preferred.
     ///
     /// - Parameters:
     ///   - message: request message to send.
@@ -12483,17 +12380,17 @@ extension Dieter_V1_DieterService.ClientProtocol {
     ///       returned to the caller. Returning from the closure will cancel the RPC if it
     ///       hasn't already finished.
     /// - Returns: The result of `handleResponse`.
-    public func watchSync<Result>(
-        _ message: Dieter_V1_SyncRequest,
+    public func watchChanges<Result>(
+        _ message: Dieter_V1_ChangesRequest,
         metadata: GRPCCore.Metadata = [:],
         options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_SyncFrame>) async throws -> Result
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ChangesFrame>) async throws -> Result
     ) async throws -> Result where Result: Sendable {
-        let request = GRPCCore.ClientRequest<Dieter_V1_SyncRequest>(
+        let request = GRPCCore.ClientRequest<Dieter_V1_ChangesRequest>(
             message: message,
             metadata: metadata
         )
-        return try await self.watchSync(
+        return try await self.watchChanges(
             request: request,
             options: options,
             onResponse: handleResponse

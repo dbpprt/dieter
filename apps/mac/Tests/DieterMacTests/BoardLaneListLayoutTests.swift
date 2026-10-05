@@ -89,12 +89,9 @@ import Testing
 @Test @MainActor func boardLanePresenceRefreshDoesNotReevaluateRichCards() async throws {
     let store = boardLaneFixtureStore()
     var cards = boardLaneFixtureCards(count: 3)
-    var machine = store.endpoint
-    machine.daemonID = "board-machine"
-    machine.online = true
+    var machine = MachineEndpoint(name: "Board machine", host: "test", port: 443, daemonID: "board-machine")
     machine.lastSeenAt = "2026-09-22T12:00:00Z"
     store.endpoints = [machine]
-    store.endpoint = machine
     for index in cards.indices { cards[index].ownerDaemonID = "board-machine" }
     store.state.cards = cards
     let root = NSHostingView(rootView: AnyView(boardLaneFixtureView(cards: cards, store: store)))
@@ -105,11 +102,9 @@ import Testing
     BoardRenderingDiagnostics.start()
     machine.lastSeenAt = "2026-09-22T12:00:05Z"
     store.endpoints = [machine]
-    store.endpoint = machine
     await settleBoardLane(root)
     machine.online = false
     store.endpoints = [machine]
-    store.endpoint = machine
     await settleBoardLane(root)
     let updated = BoardRenderingDiagnostics.stop()
     #expect(updated["fullReload"] == 0)
@@ -234,11 +229,11 @@ import Testing
     #expect(counts["heightTransaction"] == 0, "Unchanged geometry must not relayout the lane on every update")
 }
 
-@Test @MainActor func boardLaneReplicaRefreshDoesNotChangeVisibleCardsOrGeometry() async throws {
+@Test @MainActor func boardLaneRepublishedWorkspaceDoesNotChangeVisibleCardsOrGeometry() async throws {
     let store = boardLaneFixtureStore()
     let owner = MachineEndpoint(name: "Owner", host: "test", port: 443, daemonID: "owner")
     let peer = MachineEndpoint(name: "Peer", host: "test", port: 443, daemonID: "peer")
-    store.endpoint = owner; store.endpoints = [owner, peer]
+    store.endpoints = [owner, peer]
     var cards = boardLaneFixtureCards(count: 3)
     for index in cards.indices {
         cards[index].ownerDaemonID = "owner"
@@ -247,7 +242,7 @@ import Testing
         cards[index].updatedAt = "2026-09-23T09:00:00Z"
     }
     var full = store.state; full.cards = cards
-    store.foldFixture(full, daemonID: "owner")
+    store.foldFixture(full)
     let root = NSHostingView(rootView: AnyView(BoardLaneNavigationFixture().environment(store)))
     root.sizingOptions = []
     let window = boardLaneFixtureWindow(root: root, width: 300, height: 1000)
@@ -256,11 +251,12 @@ import Testing
     let table = try #require(boardLaneNativeTable(in: root))
     let frames = cards.indices.map { table.rect(ofRow: $0) }
     let cells = try cards.indices.map { try #require(table.view(atColumn: 0, row: $0, makeIfNecessary: false)) }
-    // The core merges a peer's partial cards with the owner's details; what it
-    // republishes for another reporting replica must not re-render the lane.
+    // The core joins every machine's records with the owner's details; the
+    // same account view republished, e.g. as a peer catches up, must not
+    // re-render the lane.
     BoardRenderingDiagnostics.start()
     for index in 0..<6 {
-        store.foldFixture(full, daemonID: index.isMultiple(of: 2) ? "peer" : "owner")
+        store.foldFixture(full)
         store.selectedCardID = cards[index % cards.count].id
         await settleBoardLane(root)
         #expect(store.state.cards == cards)
@@ -361,7 +357,7 @@ import Testing
     #expect(table.isHiddenOrHasHiddenAncestor)
     BoardRenderingDiagnostics.start()
     store.state.cards[50].summary = "Updated while away"
-    store.endpoint.name = "Updated machine"
+    store.activeGateway.name = "Updated gateway"
     try? await Task.sleep(for: .milliseconds(200))
     let hidden = BoardRenderingDiagnostics.stop()
     #expect(hidden["cardBody"] == 0)

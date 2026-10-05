@@ -23,12 +23,12 @@ data class ConnectionNotice(val title: String, val detail: String, val working: 
 /** What each destination can do in the connection state it is in. */
 object Availability {
     /**
-     * Cached data stays current through routine connection handoffs
-     * (connecting, syncing); anything else makes it read-only.
+     * Cached data stays current through a routine connection handoff
+     * (connecting); anything else makes it read-only.
      */
     fun treatment(destination: Destination, hasCache: Boolean, phase: ConnectionPhase): SurfaceTreatment = when {
         !destination.synchronized || !hasCache -> SurfaceTreatment.CURRENT
-        phase == ConnectionPhase.CONNECTED || phase == ConnectionPhase.CONNECTING || phase == ConnectionPhase.SYNCING -> SurfaceTreatment.CURRENT
+        phase == ConnectionPhase.CONNECTED || phase == ConnectionPhase.CONNECTING -> SurfaceTreatment.CURRENT
         else -> SurfaceTreatment.UNAVAILABLE
     }
 
@@ -40,25 +40,28 @@ object Availability {
     fun initialSync(destination: Destination, hasCache: Boolean, loading: Boolean, desired: Boolean, phase: ConnectionPhase): Boolean =
         destination.synchronized && !hasCache && desired && (loading || phase != ConnectionPhase.CONNECTED)
 
-    /** The workspace is loading while a wanted connection has not delivered it; with no machine there is nothing to wait for. */
-    fun loading(desired: Boolean, loaded: Boolean, phase: ConnectionPhase): Boolean = desired && !loaded && phase != ConnectionPhase.NO_MACHINE
+    /**
+     * The workspace is loading while a wanted connection has not delivered
+     * any machine's view; connected with no [reachable] machine, there is
+     * nothing to wait for.
+     */
+    fun loading(desired: Boolean, loaded: Boolean, phase: ConnectionPhase, reachable: Boolean): Boolean =
+        desired && !loaded && (phase != ConnectionPhase.CONNECTED || reachable)
 
     /** Project-scoped destinations need at least one project whose machine is not known to be offline. */
     fun projectScopedEnabled(projectIds: List<String>, replicaOnline: (String) -> Boolean?): Boolean = projectIds.any { replicaOnline(it) != false }
 
-    private val interrupted = setOf(ConnectionPhase.RECONNECTING, ConnectionPhase.AUTH_REQUIRED, ConnectionPhase.UPDATE_REQUIRED, ConnectionPhase.NO_MACHINE, ConnectionPhase.DISCONNECTED)
+    private val interrupted = setOf(ConnectionPhase.RECONNECTING, ConnectionPhase.AUTH_REQUIRED, ConnectionPhase.UPDATE_REQUIRED, ConnectionPhase.DISCONNECTED)
 
     fun notice(phase: ConnectionPhase, cached: Boolean, offlineOutbox: Boolean = false): ConnectionNotice {
         val cachedDetail = when {
             offlineOutbox && phase in interrupted -> "Cached conversations stay available; messages and new conversations queue until Dieter reconnects."
             phase == ConnectionPhase.CONNECTING -> "Your workspace stays available while Dieter connects."
-            phase == ConnectionPhase.SYNCING -> "Your current workspace stays available while changes load."
             phase == ConnectionPhase.RECONNECTING -> "Cached data stays visible while the connection recovers."
             else -> "Cached data is read-only until Dieter reconnects."
         }
         val uncachedDetail = when (phase) {
             ConnectionPhase.CONNECTING -> "Contacting Dieter and discovering your machines."
-            ConnectionPhase.SYNCING -> "Projects, boards, and conversations are loading."
             ConnectionPhase.RECONNECTING -> "Restoring your connection to Dieter."
             else -> "Open connection settings to continue."
         }
@@ -66,15 +69,14 @@ object Availability {
             title = when (phase) {
                 ConnectionPhase.CONNECTED -> "Workspace is up to date"
                 ConnectionPhase.CONNECTING -> "Connecting to Dieter"
-                ConnectionPhase.SYNCING -> "Refreshing workspace"
                 ConnectionPhase.RECONNECTING -> "Reconnecting to Dieter"
                 ConnectionPhase.AUTH_REQUIRED -> "Sign in required"
                 ConnectionPhase.UPDATE_REQUIRED -> "Update required"
-                ConnectionPhase.NO_MACHINE, ConnectionPhase.DISCONNECTED -> if (cached) "Working from cached data" else "Dieter is unavailable"
+                ConnectionPhase.DISCONNECTED -> if (cached) "Working from cached data" else "Dieter is unavailable"
             },
             detail = if (cached) cachedDetail else uncachedDetail,
-            working = phase == ConnectionPhase.CONNECTING || phase == ConnectionPhase.SYNCING || phase == ConnectionPhase.RECONNECTING,
-            offline = phase == ConnectionPhase.AUTH_REQUIRED || phase == ConnectionPhase.UPDATE_REQUIRED || phase == ConnectionPhase.NO_MACHINE || phase == ConnectionPhase.DISCONNECTED,
+            working = phase == ConnectionPhase.CONNECTING || phase == ConnectionPhase.RECONNECTING,
+            offline = phase == ConnectionPhase.AUTH_REQUIRED || phase == ConnectionPhase.UPDATE_REQUIRED || phase == ConnectionPhase.DISCONNECTED,
         )
     }
 
@@ -82,12 +84,11 @@ object Availability {
     fun firstSync(phase: ConnectionPhase): ConnectionNotice = when (phase) {
         ConnectionPhase.DISCONNECTED -> ConnectionNotice("Preparing your workspace", "Dieter is getting ready to connect.", working = true, offline = false)
         ConnectionPhase.CONNECTING -> ConnectionNotice("Connecting to Dieter", "Discovering your enrolled machines and choosing the fastest route.", working = true, offline = false)
-        ConnectionPhase.SYNCING, ConnectionPhase.CONNECTED ->
+        ConnectionPhase.CONNECTED ->
             ConnectionNotice("Syncing your workspace", "Projects, boards, and conversations will appear together as soon as they arrive.", working = true, offline = false)
         ConnectionPhase.RECONNECTING -> ConnectionNotice("Reconnecting to Dieter", "Restoring the secure route to your workspace.", working = true, offline = false)
         ConnectionPhase.AUTH_REQUIRED -> ConnectionNotice("Sign in to continue", "Open connection settings and sign in to load your workspace.", working = false, offline = true)
         ConnectionPhase.UPDATE_REQUIRED -> ConnectionNotice("Update required", "Update Dieter before syncing this workspace.", working = false, offline = true)
-        ConnectionPhase.NO_MACHINE -> ConnectionNotice("Dieter is unavailable", "Check your connection and try again.", working = false, offline = true)
     }
 
     /** "Updated just now", "Updated 5m ago", or "Waiting for first update". */
@@ -104,43 +105,42 @@ object Availability {
 
     /**
      * What synchronized destinations with cached data show about the
-     * connection: a notice while that data is unavailable, else null. Chats
-     * and boards queue changes offline, and the notice says so.
+     * connection: a notice while that data is unavailable, including while
+     * connected with no [reachable] machine, else null. Chats and boards
+     * queue changes offline, and the notice says so.
      */
-    fun workspaceNotice(phase: ConnectionPhase, hasCache: Boolean): ConnectionNotice? =
-        if (treatment(Destination.BOARD, hasCache, phase) == SurfaceTreatment.UNAVAILABLE) notice(phase, cached = true, offlineOutbox = true) else null
-
-    /** Connected, with the attached machine's live projection applied: the workspace is current, not cached or loading. */
-    fun workspaceLive(phase: ConnectionPhase, feedLive: Boolean, projectionPending: Boolean): Boolean =
-        phase == ConnectionPhase.CONNECTED && feedLive && !projectionPending
+    fun workspaceNotice(phase: ConnectionPhase, hasCache: Boolean, reachable: Boolean): ConnectionNotice? = when {
+        treatment(Destination.BOARD, hasCache, phase) == SurfaceTreatment.UNAVAILABLE -> notice(phase, cached = true, offlineOutbox = true)
+        // Connected, but no machine is reachable: everything shown is cached.
+        phase == ConnectionPhase.CONNECTED && hasCache && !reachable ->
+            ConnectionNotice("Working from cached data", "None of your machines is reachable; changes queue until one is back.", working = false, offline = true)
+        else -> null
+    }
 
     /** How [phase] reads, for its color: connected succeeds, a connection on its way or a sign-in warns, a blocked one is danger. */
     fun tone(phase: ConnectionPhase): Tone = when (phase) {
-        ConnectionPhase.CONNECTED, ConnectionPhase.SYNCING -> Tone.TONE_SUCCESS
+        ConnectionPhase.CONNECTED -> Tone.TONE_SUCCESS
         ConnectionPhase.CONNECTING, ConnectionPhase.RECONNECTING, ConnectionPhase.AUTH_REQUIRED -> Tone.TONE_WARNING
-        ConnectionPhase.UPDATE_REQUIRED, ConnectionPhase.NO_MACHINE -> Tone.TONE_DANGER
+        ConnectionPhase.UPDATE_REQUIRED -> Tone.TONE_DANGER
         ConnectionPhase.DISCONNECTED -> Tone.TONE_NEUTRAL
     }
 
     /** A short connection status, e.g. for a header chip. */
     fun label(phase: ConnectionPhase): String = when (phase) {
         ConnectionPhase.CONNECTED -> "Connected"
-        ConnectionPhase.SYNCING -> "Syncing"
         ConnectionPhase.RECONNECTING -> "Reconnecting"
         ConnectionPhase.UPDATE_REQUIRED -> "Update required"
-        ConnectionPhase.NO_MACHINE -> "Unavailable"
         ConnectionPhase.AUTH_REQUIRED -> "Sign in required"
         ConnectionPhase.DISCONNECTED -> "Disconnected"
         ConnectionPhase.CONNECTING -> "Connecting"
     }
 
-    /** The connection cannot work until something changes: a sign-in, an update, or a machine. */
+    /** The connection cannot work until something changes: a sign-in or an update. */
     fun blocked(phase: ConnectionPhase): Boolean =
-        phase == ConnectionPhase.AUTH_REQUIRED || phase == ConnectionPhase.UPDATE_REQUIRED || phase == ConnectionPhase.NO_MACHINE
+        phase == ConnectionPhase.AUTH_REQUIRED || phase == ConnectionPhase.UPDATE_REQUIRED
 
-    /** Phases the user must act on: sign in, update, or (with nothing cached) enroll or start a machine. */
-    fun needsUser(phase: ConnectionPhase, hasCache: Boolean): Boolean =
-        phase == ConnectionPhase.AUTH_REQUIRED || phase == ConnectionPhase.UPDATE_REQUIRED || (phase == ConnectionPhase.NO_MACHINE && !hasCache)
+    /** Phases the user must act on: sign in or update. */
+    fun needsUser(phase: ConnectionPhase): Boolean = blocked(phase)
 }
 
 /**
@@ -181,8 +181,8 @@ class ConnectionPrompt {
     }
 
     /** A notification asked for the sheet; it opens only when it can help. */
-    fun showIfNeeded(desired: Boolean, phase: ConnectionPhase, hasCache: Boolean) {
-        if (!desired || Availability.needsUser(phase, hasCache)) {
+    fun showIfNeeded(desired: Boolean, phase: ConnectionPhase) {
+        if (!desired || Availability.needsUser(phase)) {
             manual = false
             visible = true
         }
@@ -205,7 +205,7 @@ class ConnectionPrompt {
      * Applies the current state. Returns how long until the sheet should open
      * by itself (then call again), or null when no timer is needed.
      */
-    fun reconcile(desired: Boolean, phase: ConnectionPhase, hasCache: Boolean, foreground: Boolean, now: Instant): Duration? {
+    fun reconcile(desired: Boolean, phase: ConnectionPhase, foreground: Boolean, now: Instant): Duration? {
         when {
             desired && phase == ConnectionPhase.CONNECTED -> {
                 dismissedPhase = null
@@ -218,7 +218,7 @@ class ConnectionPrompt {
             }
             !foreground || visible -> Unit
             else -> {
-                if (!Availability.needsUser(phase, hasCache)) return null
+                if (!Availability.needsUser(phase)) return null
                 // Only losing a working connection interrupts; at launch the first-sync screen explains the phase.
                 val since = interruptedAt ?: return null
                 val remaining = GRACE - (now - since).coerceAtLeast(Duration.ZERO)

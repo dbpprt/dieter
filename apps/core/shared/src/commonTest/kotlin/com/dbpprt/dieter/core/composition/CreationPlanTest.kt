@@ -33,7 +33,7 @@ class CreationPlanTest {
 
     @Test
     fun anOnlineDestinationWithItsCatalogValidatesLive() {
-        val plan = Creation.plan(input(), CreationDestinations(online = setOf("mac"), attachedDaemonId = "mac", catalogs = mapOf("mac" to listOf(codex))))
+        val plan = Creation.plan(input(), CreationDestinations(online = setOf("mac"), localDaemonId = "mac", catalogs = mapOf("mac" to listOf(codex))))
         assertEquals(CatalogState.LIVE, plan.catalogState)
         assertEquals("mac", plan.daemonId)
         assertNull(plan.problem)
@@ -58,7 +58,7 @@ class CreationPlanTest {
 
     @Test
     fun aCatalogStillLoadingBlocksValidation() {
-        val plan = Creation.plan(input(), CreationDestinations(online = setOf("mac"), attachedDaemonId = "mac"))
+        val plan = Creation.plan(input(), CreationDestinations(online = setOf("mac"), localDaemonId = "mac"))
         assertEquals(CatalogState.NONE, plan.catalogState)
         assertTrue(plan.needsCatalog)
         assertEquals("Loading agent models…", plan.problem)
@@ -69,15 +69,15 @@ class CreationPlanTest {
     @Test
     fun pickersShowTheProjectsMachineUntilACheckoutIsChosen() {
         val destinations = CreationDestinations(
-            online = setOf("mac", "linux"), attachedDaemonId = "mac", replicas = mapOf("p" to "linux"),
+            online = setOf("mac", "linux"), localDaemonId = "mac", projectMachines = mapOf("p" to "linux"),
             catalogs = mapOf("mac" to listOf(Harness(id = "local")), "linux" to listOf(Harness(id = "remote"))),
         )
         val unchosen = Creation.plan(input(checkoutId = ""), destinations)
         assertNull(unchosen.checkout)
-        assertEquals(listOf("remote"), unchosen.harnesses.map { it.id }, "the project's machine, not the attached one")
+        assertEquals(listOf("remote"), unchosen.harnesses.map { it.id }, "the machine that serves the project")
         assertEquals("Choose where this task will run", unchosen.problem)
         assertEquals(listOf("local"), Creation.plan(input(checkoutId = "k-mac"), destinations).harnesses.map { it.id }, "the checkout's machine")
-        assertEquals(listOf("local"), Creation.plan(input(checkoutId = ""), destinations.copy(replicas = emptyMap())).harnesses.map { it.id }, "else the attached machine")
+        assertTrue(Creation.plan(input(checkoutId = ""), destinations.copy(projectMachines = emptyMap())).harnesses.isEmpty(), "no machine serves it: nothing to offer yet")
     }
 
     @Test
@@ -112,13 +112,13 @@ class CreationPlanTest {
     }
 
     @Test
-    fun preselectionsPreferTheChosenThenTheAttachedMachine() {
-        assertEquals("k-linux", Creation.preferredCheckout(project, "k-linux", attachedDaemonId = "mac", replicaDaemonId = "mac")?.id)
-        assertEquals("k-mac", Creation.preferredCheckout(project, null, attachedDaemonId = "mac", replicaDaemonId = "linux")?.id)
-        assertEquals("k-linux", Creation.preferredCheckout(project, null, attachedDaemonId = "", replicaDaemonId = "linux")?.id)
-        assertNull(Creation.preferredCheckout(project, null, attachedDaemonId = "other", replicaDaemonId = null))
+    fun preselectionsPreferTheChosenThenThisDevicesMachine() {
+        assertEquals("k-linux", Creation.preferredCheckout(project, "k-linux", localDaemonId = "mac")?.id)
+        assertEquals("k-mac", Creation.preferredCheckout(project, null, localDaemonId = "mac")?.id)
+        assertNull(Creation.preferredCheckout(project, null, localDaemonId = ""), "several checkouts and no preference: the user chooses")
+        assertNull(Creation.preferredCheckout(project, null, localDaemonId = "other"))
         val detached = project.copy(checkouts = listOf(mac.copy(detached = true), linux))
-        assertEquals("k-linux", Creation.preferredCheckout(detached, "k-mac", attachedDaemonId = "mac", replicaDaemonId = null)?.id, "a detached checkout is never preselected")
+        assertEquals("k-linux", Creation.preferredCheckout(detached, "k-mac", localDaemonId = "mac")?.id, "a detached checkout is never preselected")
         val boards = listOf(Board(id = "a", retired = true), Board(id = "b"), Board(id = "c"))
         assertEquals("c", Creation.preferredBoard("c", boards)?.id)
         assertEquals("b", Creation.preferredBoard("a", boards)?.id, "a retired board gives way to the first live one")

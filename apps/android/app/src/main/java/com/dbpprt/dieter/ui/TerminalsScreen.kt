@@ -192,7 +192,7 @@ fun TerminalsScreen(
             TerminalStatusBar(
                 terminal = selected,
                 project = state.projects.firstOrNull { it.id == selected.project_id },
-                hostname = state.presentedProjectReplicas[selected.project_id]?.label.orEmpty(),
+                hostname = state.presentedProjectHosts[selected.project_id]?.label.orEmpty(),
                 connected = state.terminalStreamConnected,
                 status = status,
             )
@@ -486,7 +486,7 @@ private fun NewTerminalSheet(state: DieterUiState, model: DieterViewModel) {
             }
             TerminalProjectPicker(
                 projects = state.projects,
-                projectReplicas = state.presentedProjectReplicas,
+                projectHosts = state.presentedProjectHosts,
                 selectedProjectId = form.projectId,
                 onProjectChange = { id -> state.projects.firstOrNull { it.id == id }?.let { form = form.project(it) } },
             )
@@ -534,7 +534,7 @@ private fun NewTerminalSheet(state: DieterUiState, model: DieterViewModel) {
 @Composable
 internal fun TerminalProjectPicker(
     projects: List<Project>,
-    projectReplicas: Map<String, MachineRow>,
+    projectHosts: Map<String, MachineRow>,
     selectedProjectId: String,
     onProjectChange: (String) -> Unit,
 ) {
@@ -549,7 +549,7 @@ internal fun TerminalProjectPicker(
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
                 Text(selectedProject?.name ?: "Choose project", color = DieterText, fontWeight = FontWeight.SemiBold)
                 Text(
-                    selectedProject?.let { terminalProjectDetails(it, projectReplicas[it.id]) }.orEmpty(),
+                    selectedProject?.let { terminalProjectDetails(it, projectHosts[it.id]) }.orEmpty(),
                     color = DieterMuted,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 10.sp,
@@ -565,7 +565,7 @@ internal fun TerminalProjectPicker(
                         Column {
                             Text(candidate.name)
                             Text(
-                                terminalProjectDetails(candidate, projectReplicas[candidate.id]),
+                                terminalProjectDetails(candidate, projectHosts[candidate.id]),
                                 color = DieterMuted,
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 10.sp,

@@ -17,18 +17,14 @@ struct ProjectCheckoutMenu: View {
 
     private var selectedCheckoutLabel: String {
         guard let checkout = selectedCheckout else { return "Choose machine" }
-        let machine =
-            store.endpoints.first { $0.daemonID == checkout.daemonID }
-            ?? (store.endpoint.daemonID == checkout.daemonID ? store.endpoint : nil)
+        let machine = store.endpoints.first { $0.daemonID == checkout.daemonID }
         return "\(machine?.name ?? checkout.daemonID) · \(checkout.title())"
     }
 
     var body: some View {
         Menu {
             ForEach(store.projectDirectory[projectID]?.checkoutChoices ?? [], id: \.id) { checkout in
-                let machine =
-                    store.endpoints.first { $0.daemonID == checkout.daemonID }
-                    ?? (store.endpoint.daemonID == checkout.daemonID ? store.endpoint : nil)
+                let machine = store.endpoints.first { $0.daemonID == checkout.daemonID }
                 Button {
                     Task { await store.selectCheckout(checkout) }
                 } label: {

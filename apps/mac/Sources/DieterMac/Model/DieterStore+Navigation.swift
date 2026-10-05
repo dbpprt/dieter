@@ -12,19 +12,17 @@ extension DieterStore {
         selectedProjectID = id
         selectedBoardID = boards(for: id).first?.id ?? ""
         resetFileSurface()
-        await refreshState()
         if section == .files { await loadFiles() }
         if section == .schedules { await loadSchedules() }
     }
 
-    func selectBoard(_ id: String) async {
+    /// Every machine's stream keeps the workspace live, so navigating reads nothing.
+    func selectBoard(_ id: String) {
         selectedBoardID = id
-        if !hasLiveBoardProjection(projectID: selectedProjectID) { await refreshState() }
     }
 
-    func openBoard(_ boardID: String, projectID: String) async {
+    func openBoard(_ boardID: String, projectID: String) {
         boardSelectionGeneration &+= 1
-        let generation = boardSelectionGeneration
         stopTerminalWatch()
         closeConversation()
         section = .board
@@ -33,20 +31,9 @@ extension DieterStore {
         query = ""
         stateFilter = .all
         labelFilter = ""
-        guard await ensureConnected(reportOffline: false) else { return }
-        guard generation == boardSelectionGeneration, section == .board else { return }
-        selectCachedBoard(boardID, projectID: projectID)
-        // The core's feed already keeps a live project current; a board click
-        // only asks for a refresh when the workspace is not live.
-        if !hasLiveBoardProjection(projectID: projectID) { await refreshState() }
     }
 
-    func hasLiveBoardProjection(projectID: String) -> Bool {
-        workspaceIsLive && projectDirectory[projectID] != nil
-    }
-
-    /// Board navigation shows the core's cached workspace at once; a refresh
-    /// can follow when the machine is reachable.
+    /// Board navigation shows the core's workspace at once, live or cached.
     func selectCachedBoard(_ boardID: String, projectID: String) {
         selectedProjectID = projectID
         selectedBoardID = boardID
@@ -55,7 +42,6 @@ extension DieterStore {
 
     func openProject(_ projectID: String, section destination: AppSection) async {
         boardSelectionGeneration &+= 1
-        let generation = boardSelectionGeneration
         stopTerminalWatch()
         closeConversation()
         section = destination
@@ -69,25 +55,14 @@ extension DieterStore {
         }
         resetFileSurface()
         updateSelectedState()
-        // Schedules owns connection preparation and its paginated reads.
-        if destination == .schedules { return }
-        let ready: Bool
-        if destination == .files || destination == .changes {
-            ready = await ensureCheckoutConnection(projectID)
-        } else {
-            ready = await ensureConnected(reportOffline: false)
-        }
-        guard ready,
-            generation == boardSelectionGeneration,
-            selectedProjectID == projectID, section == destination
-        else {
-            if generation == boardSelectionGeneration, destination == .files {
-                filesError = "This machine is unavailable. Reconnect and retry."
-            }
+        // Schedules and changes load themselves; files and changes need the
+        // chosen checkout's machine.
+        guard destination == .files || destination == .changes else { return }
+        guard checkoutIsAvailable(projectID) else {
+            if destination == .files { filesError = "This machine is unavailable. Reconnect and retry." }
             return
         }
-        if destination == .changes { return }
-        if destination == .files { await loadFiles() } else { await refreshState() }
+        if destination == .files { await loadFiles() }
     }
 
     func openProjectChanges(_ projectID: String) async {
@@ -123,7 +98,7 @@ extension DieterStore {
     }
 
     func openWorkspaceFiles(card: Dieter_V1_Card, opening path: String? = nil) async {
-        guard await ensureConversationConnection(card) else { return }
+        guard conversationMachineIsAvailable(card) else { return }
         selectedProjectID = card.projectID
         fileScopeCardID = card.id
         resetFileSurface()
@@ -176,19 +151,28 @@ extension DieterStore {
     func bindTerminals() {
         terminalsModel.onCreated = { [weak self] in self?.section = .terminals }
         guard let cardID = terminalScopeCardID else {
-            terminalsModel.isLive = terminalOverviewMachines.contains(where: machineIsAvailable)
+            terminalsModel.isLive = terminalsAreLive
             terminalsModel.active = section == .terminals
             return
         }
         terminalOverview.stop()
         let card = synchronizedCardValues().first { $0.id == cardID } ?? chats.first { $0.id == cardID }
-        let machine = card.map { endpointID(for: $0) } ?? endpoint.id
+        let owner = card.flatMap { machine(for: $0) }
         terminalsModel.bind(
-            target: WorkspaceTarget(endpointID: machine, projectID: selectedProjectID, conversationID: cardID),
+            target: WorkspaceTarget(endpointID: owner?.id ?? "", projectID: selectedProjectID, conversationID: cardID),
             core: core)
-        terminalsModel.machineName = endpoints.first { $0.id == machine }?.name ?? endpoint.name
-        terminalsModel.isLive = workspaceIsLive
+        terminalsModel.machineName = owner?.name ?? ""
+        terminalsModel.isLive = terminalsAreLive
         terminalsModel.active = section == .terminals
+    }
+
+    /// The overview opens shells while any machine is available; a
+    /// conversation's terminals while the machine that runs it is.
+    var terminalsAreLive: Bool {
+        guard phase.isConnected else { return false }
+        guard terminalScopeCardID != nil else { return machines.contains(where: machineIsAvailable) }
+        let machineID = terminalsModel.target.endpointID
+        return endpoints.contains { $0.id == machineID && machineIsAvailable($0) }
     }
     func loadTerminals() async {
         if terminalScopeCardID == nil {
@@ -226,16 +210,6 @@ extension DieterStore {
     func stopTerminalWatch() {
         terminalsModel.active = false
         terminalOverview.stop()
-    }
-
-    /// The machines the terminal overview lists, in the core's order.
-    var terminalOverviewMachines: [MachineEndpoint] {
-        var values = endpoints.filter { $0.daemonID != nil || $0.id == endpoint.id }
-        if !values.contains(where: { $0.id == endpoint.id }), endpoint.daemonID != nil {
-            values.append(endpoint)
-        }
-        var seen = Set<String>()
-        return values.filter { seen.insert($0.id).inserted }
     }
 
     func beginStandaloneChat(projectID: String? = nil) {

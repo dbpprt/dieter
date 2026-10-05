@@ -53,7 +53,7 @@ struct InboxFeed: View {
         .onChange(of: query) { _, _ in visibleLimit = 20 }
         .onChange(of: projectID) { _, _ in visibleLimit = 20 }
         .onChange(of: hours) { _, _ in visibleLimit = 20 }
-        .onChange(of: store.endpoint.credentialID) { _, _ in
+        .onChange(of: store.activeGateway.credentialID) { _, _ in
             query = ""; projectID = ""; visibleLimit = 20
         }
     }
@@ -269,6 +269,11 @@ private struct InboxActivityRow: View {
                         if entry.running {
                             Text(entry.row.detail).font(.system(size: 11))
                                 .foregroundStyle(DieterTheme.subtle).lineLimit(1)
+                        }
+                        // What its machine reports may be old, e.g. while that machine is offline.
+                        if !entry.row.stale.isEmpty {
+                            Label(entry.row.stale, systemImage: "icloud.slash")
+                                .font(.system(size: 10)).foregroundStyle(DieterTheme.amber).lineLimit(1)
                         }
                         HStack(spacing: 5) {
                             Image(systemName: statusSymbol(entry.kind)).font(.system(size: 9, weight: .semibold))

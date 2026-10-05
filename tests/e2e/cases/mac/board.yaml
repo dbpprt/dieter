@@ -38,7 +38,7 @@ native:
   - "board.global-titlebar-actions-top"
   - "board.global-titlebar-actions-trailing"
   - "board.mixed-version-compatible-startup"
-  - "board.mixed-version-switch-isolation"
+  - "board.mixed-version-isolation"
   - "board.project-context-dismissal"
   - "board.quick-task-paste-screenshot"
   - "board.quick-task-run-before-title"

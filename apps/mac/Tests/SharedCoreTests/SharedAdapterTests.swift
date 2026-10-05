@@ -26,7 +26,8 @@ struct SharedAdapterTests {
             $0.upsertedCards = [card("b", "renamed"), card("d")]
             $0.removedCardIds = ["a"]
             $0.loaded = true
-            $0.projectReplicas = ["p": "daemon"]
+            $0.retiredBoards = [.with { $0.id = "retired" }]
+            $0.projectHosts = ["p": "daemon"]
         }
         let next = base.applying(delta)
         #expect(next.cards.map(\.id) == ["b", "c", "d"])
@@ -35,7 +36,8 @@ struct SharedAdapterTests {
         #expect(next.loaded)
         #expect(next.pendingCardIds.isEmpty)
         #expect(next.boardAttention.isEmpty)
-        #expect(next.projectReplicas == ["p": "daemon"])
+        #expect(next.retiredBoards.map(\.id) == ["retired"])
+        #expect(next.projectHosts == ["p": "daemon"])
         // An explicit order wins when it changed.
         let reordered = next.applying(
             .with {

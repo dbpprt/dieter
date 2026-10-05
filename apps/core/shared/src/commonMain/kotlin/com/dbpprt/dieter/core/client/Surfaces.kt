@@ -69,8 +69,8 @@ internal class ViewSurfaces(runtime: CoreRuntime, screenHost: ScreenHost?) {
     val processes = Surfaces(Processes::stop) { Processes(runtime.sessions, runtime.scope) }
     val reviews = Surfaces(WorkspaceReview::stop) { runtime.workspaceReview() }
     val projectChanges = Surfaces(ProjectChanges::stop) { runtime.projectChanges() }
-    val projectWorkspaces = Surfaces { ProjectWorkspaces(runtime.sessions, runtime.workspace) }
-    val schedules = Surfaces(Schedules::stop) { Schedules(runtime.sessions, runtime.workspace, runtime.scope, runtime.metadata) }
+    val projectWorkspaces = Surfaces { ProjectWorkspaces(runtime.sessions, runtime.workspace, runtime.choice) }
+    val schedules = Surfaces(Schedules::stop) { Schedules(runtime.sessions, runtime.workspace, runtime.choice, runtime.scope, runtime.metadata) }
     val telemetry = Surfaces(MachineTelemetry::stop) { MachineTelemetry(runtime.sessions, runtime.scope) }
     val boardViews = Surfaces { BoardViewSurface(runtime.workspace.state, runtime.board, runtime.outbox.view, runtime.navigationKv.values, runtime.connection.machines) }
     val chats = Surfaces(ChatsSurface::stop) { ChatsSurface(runtime.workspace.state, runtime.navigationKv.values, runtime.scope) { runtime.archivedChats() } }

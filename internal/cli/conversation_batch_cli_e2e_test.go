@@ -48,7 +48,7 @@ func assertBatchedConversationCLI(t *testing.T, client *CLI, output *bytes.Buffe
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, _, err := data.SyncEvents(0, 256)
+	before, err := data.ChangeCount()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,9 +94,9 @@ func assertBatchedConversationCLI(t *testing.T, client *CLI, output *bytes.Buffe
 	if err := protojson.Unmarshal([]byte(raw), &update); err != nil || update.GetSnapshot() != nil || len(update.GetChangedMessages()) != 0 || update.GetLastSeq() != conversation.LastSeq {
 		t.Fatalf("watch resume replayed batched output: %s %v", raw, err)
 	}
-	after, _, err := data.SyncEvents(before.Sequence, 256)
-	if err != nil || after.Sequence-before.Sequence >= 64 {
-		t.Fatalf("128 tokens generated %d sync transactions: %v", after.Sequence-before.Sequence, err)
+	after, err := data.ChangeCount()
+	if err != nil || after-before >= 64 {
+		t.Fatalf("128 tokens generated %d store transactions: %v", after-before, err)
 	}
-	t.Logf("route=%s: 128 deltas, durable trailing session, watch and resume passed; %d total turn transactions", client.transport.route, after.Sequence-before.Sequence)
+	t.Logf("route=%s: 128 deltas, durable trailing session, watch and resume passed; %d total turn transactions", client.transport.route, after-before)
 }

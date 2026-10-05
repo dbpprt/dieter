@@ -541,7 +541,7 @@ private fun NotificationSettings(state: DieterUiState, model: DieterViewModel) {
     val boardScope = NotificationBoardScope.of(
         state.spaceBoards + state.boards,
         state.projects,
-        state.presentedProjectReplicas.mapValues { (_, host) -> host.label },
+        state.presentedProjectHosts.mapValues { (_, host) -> host.label },
         settings,
     )
     val context = LocalContext.current

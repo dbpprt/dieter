@@ -21,6 +21,7 @@ import com.dbpprt.dieter.core.board.PendingMove
 import com.dbpprt.dieter.core.composition.ConversationDraft
 import com.dbpprt.dieter.core.connection.Availability
 import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.connection.MachineSync
 import com.dbpprt.dieter.core.conversation.ConversationView
 import com.dbpprt.dieter.core.identity.Gateway
 import com.dbpprt.dieter.core.machines.MachineRow
@@ -63,10 +64,10 @@ data class DieterUiState(
     val lastConnectedAtMillis: Long? = null,
     val connectionDialogVisible: Boolean = false,
     val connectionError: String? = null,
-    /** The machine the live feed is attached to. */
-    val attachedMachineId: String? = null,
-    /** The attached machine's feed applied a live, complete frame. */
-    val feedLive: Boolean = false,
+    /** Machine ID → how current its part of the workspace is. */
+    val machineSyncs: Map<String, MachineSync> = emptyMap(),
+    /** Connected, with every reachable machine's view caught up. */
+    val synced: Boolean = false,
     val desiredConnected: Boolean = true,
     val backgroundSyncMode: BackgroundMode = BackgroundMode.LIVE,
     val palette: DieterPalette = DieterPalette.DEFAULT,
@@ -100,8 +101,8 @@ data class DieterUiState(
     val activityPaneLeadingFraction: Float = DEFAULT_SIDEBAR_LEADING_FRACTION,
     val projectsPaneLeadingFraction: Float = DEFAULT_SIDEBAR_LEADING_FRACTION,
     val boardPaneLeadingFraction: Float = DEFAULT_PANE_LEADING_FRACTION,
-    /** Project ID → the daemon whose view last listed it. */
-    val projectReplicas: Map<String, String> = emptyMap(),
+    /** Project ID → the machine that hosts its work ([MachineChoice.checkout]); projects without a checkout are left out. */
+    val projectHosts: Map<String, String> = emptyMap(),
     /** The selected project's boards and cards. */
     val boards: List<Board> = emptyList(),
     val cards: List<Card> = emptyList(),
@@ -174,13 +175,13 @@ data class DieterUiState(
         get() = projects.isNotEmpty() || boards.isNotEmpty() || cards.isNotEmpty() || chats.isNotEmpty()
     /** Files and schedules need a project whose machine is not known to be offline. */
     val projectSurfacesEnabled: Boolean
-        get() = Availability.projectScopedEnabled(projects.map { it.id }) { presentedProjectReplicas[it]?.online }
+        get() = Availability.projectScopedEnabled(projects.map { it.id }) { presentedProjectHosts[it]?.online }
 
-    /** Project ID → the machine that last listed it, as machine lists present it ([MachineRows.host]). */
-    val presentedProjectReplicas: Map<String, MachineRow>
+    /** Project ID → the machine that hosts its work, as machine lists present it ([MachineRows.host]). */
+    val presentedProjectHosts: Map<String, MachineRow>
         get() {
             val rows = presentedEndpointConnections
-            return projectReplicas.mapValues { (_, daemonId) -> MachineRows.host(rows, daemonId) }
+            return projectHosts.mapValues { (_, daemonId) -> MachineRows.host(rows, daemonId) }
         }
 
     /** Machines, plus rows for machines that only have queued changes; cached presence is never online while disconnected. */

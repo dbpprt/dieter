@@ -43,8 +43,9 @@ class OkHttpRpcTransport(
 ) : RpcTransport {
     // Wire runs every call, including long-lived streams, on OkHttp's async
     // dispatcher. Its default of 5 calls per host would queue a unary call
-    // behind the feed, navigation, presence, quota, and feature streams that
-    // all share the gateway host. HTTP/2 multiplexes them on one connection.
+    // behind every machine's change stream and the presence, quota, and
+    // feature streams that all share the gateway host. HTTP/2 multiplexes
+    // them on one connection.
     private val base = base.newBuilder()
         .dispatcher(Dispatcher().apply { maxRequests = MAX_CALLS; maxRequestsPerHost = MAX_CALLS_PER_HOST })
         .build()

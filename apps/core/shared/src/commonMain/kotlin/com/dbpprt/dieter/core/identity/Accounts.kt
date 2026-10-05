@@ -12,8 +12,6 @@ import kotlinx.coroutines.flow.asStateFlow
 data class Accounts(
     val gateways: List<Gateway>,
     val active: Gateway,
-    /** Gateway origin → the machine whose feed the client attaches to. */
-    val preferredMachine: Map<String, String> = emptyMap(),
     /** Gateway origin → the user asked to stay connected. Defaults to true. */
     val desiredConnected: Map<String, Boolean> = emptyMap(),
 ) {
@@ -33,7 +31,6 @@ class AccountStore(private val storage: CoreStorage) {
         return Accounts(
             gateways = gateways,
             active = activeOrigin ?: gateways.first(),
-            preferredMachine = saved?.preferred_machine.orEmpty(),
             desiredConnected = saved?.desired_connected.orEmpty(),
         )
     }
@@ -74,20 +71,13 @@ class AccountStore(private val storage: CoreStorage) {
         if (current.gateways.size == 1) throw CoreException(FailureKind.PERMANENT, "At least one Dieter gateway is required.")
         val gateways = current.gateways.filter { it.origin != origin }
         val active = current.active.takeIf { it.origin != origin } ?: gateways.first()
-        save(current.copy(gateways = gateways, active = active, preferredMachine = current.preferredMachine - origin, desiredConnected = current.desiredConnected - origin))
+        save(current.copy(gateways = gateways, active = active, desiredConnected = current.desiredConnected - origin))
     }
 
     fun select(origin: String) {
         val current = mutableState.value
         val gateway = current.gateways.firstOrNull { it.origin == origin } ?: return
         if (gateway != current.active) save(current.copy(active = gateway))
-    }
-
-    fun preferMachine(daemonId: String?) {
-        val current = mutableState.value
-        val origin = current.active.origin
-        val next = if (daemonId == null) current.preferredMachine - origin else current.preferredMachine + (origin to daemonId)
-        if (next != current.preferredMachine) save(current.copy(preferredMachine = next))
     }
 
     fun setDesiredConnected(value: Boolean) {
@@ -102,7 +92,6 @@ class AccountStore(private val storage: CoreStorage) {
                 AccountsState(
                     gateways = accounts.gateways.map { it.record() },
                     active_origin = accounts.active.origin,
-                    preferred_machine = accounts.preferredMachine,
                     desired_connected = accounts.desiredConnected,
                 ),
             ),

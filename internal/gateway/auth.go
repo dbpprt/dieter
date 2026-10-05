@@ -49,20 +49,57 @@ type Principal struct {
 }
 
 type Auth struct {
-	config         Config
-	store          *Store
-	client         *http.Client
-	log            *slog.Logger
-	rateMu         sync.Mutex
-	rates          map[string][]time.Time
-	activeSessions chan struct{}
+	config  Config
+	store   *Store
+	client  *http.Client
+	log     *slog.Logger
+	rateMu  sync.Mutex
+	rates   map[string][]time.Time
+	streams streamBudget
+}
+
+// Authenticated streams are bounded per account, so one account's clients and
+// daemons cannot exhaust the gateway for others, and in total.
+const (
+	maxAccountStreams = 256
+	maxGatewayStreams = 4096
+)
+
+type streamBudget struct {
+	mu       sync.Mutex
+	total    int
+	accounts map[int64]int
+}
+
+func (b *streamBudget) acquire(account int64) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.total >= maxGatewayStreams || b.accounts[account] >= maxAccountStreams {
+		return false
+	}
+	if b.accounts == nil {
+		b.accounts = map[int64]int{}
+	}
+	b.total++
+	b.accounts[account]++
+	return true
+}
+
+func (b *streamBudget) release(account int64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.total--
+	b.accounts[account]--
+	if b.accounts[account] == 0 {
+		delete(b.accounts, account)
+	}
 }
 
 func NewAuth(config Config, store *Store, logger *slog.Logger) *Auth {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Auth{config: config, store: store, client: &http.Client{Timeout: 12 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, log: logger, rates: map[string][]time.Time{}, activeSessions: make(chan struct{}, 128)}
+	return &Auth{config: config, store: store, client: &http.Client{Timeout: 12 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, log: logger, rates: map[string][]time.Time{}}
 }
 
 func (a *Auth) RegisterHTTP(mux *http.ServeMux) {
@@ -183,14 +220,12 @@ func (a *Auth) AuthenticateSession(ctx context.Context, authorization string) (c
 		}
 		stillAuthorized = func() bool { return a.daemonEnrollmentCurrent(claims) }
 	}
-	select {
-	case a.activeSessions <- struct{}{}:
-	default:
+	if !a.streams.acquire(principal.GitHubID) {
 		return nil, nil, status.Error(codes.ResourceExhausted, "too many authenticated streams")
 	}
 	ctx, cancel := context.WithCancelCause(context.WithValue(ctx, principalKey{}, principal))
 	go func() {
-		defer func() { <-a.activeSessions }()
+		defer a.streams.release(principal.GitHubID)
 		ticker := time.NewTicker(sessionCheckInterval)
 		defer ticker.Stop()
 		for {

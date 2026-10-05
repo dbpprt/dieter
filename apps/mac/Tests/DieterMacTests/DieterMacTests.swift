@@ -220,8 +220,6 @@ private actor ScheduleRPCStub: DieterScheduleRPC {
     #expect(endpoint.credentialID == "https://dieter.example:443")
     #expect(endpoint.name == "Studio Mac")
     #expect(!endpoint.online)
-    #expect(endpoint.gatewayEndpoint.daemonID == nil)
-    #expect(endpoint.gatewayEndpoint.credentialID == endpoint.credentialID)
     // The core's origins round-trip; anything else is not a gateway.
     let gateway = MachineEndpoint(origin: "https://dieter.example:443", name: "Gateway")
     #expect(gateway?.credentialID == endpoint.credentialID)
@@ -738,17 +736,29 @@ private func terminalKeyEvent(
     #expect(!AppSection.allCases.map(\.rawValue).contains("Machines"))
 }
 
-@Test @MainActor func conversationWorkspaceRouteUsesTheConversationOwnerNotTheProjectReplica() throws {
+@Test @MainActor func workRoutesToTheConversationOwnerAndProjectReadsToTheProjectHost() throws {
     let store = DieterStore(liveEnvironment: false)
-    let projectReplica = MachineEndpoint(
+    let checkoutMachine = MachineEndpoint(
         name: "MBP", host: "mbp.invalid", port: 443, secure: true,
         daemonID: "daemon-mbp", online: true)
     let conversationOwner = MachineEndpoint(
         name: "Mini", host: "mini.invalid", port: 443, secure: true,
         daemonID: "daemon-mini", online: true)
-    store.endpoint = conversationOwner
-    store.endpoints = [projectReplica, conversationOwner]
-    store.projectReplicaEndpointIDs = ["project": projectReplica.id]
+    store.endpoints = [checkoutMachine, conversationOwner]
+    store.machineEntries = Dictionary(
+        uniqueKeysWithValues: store.endpoints.map { machine in
+            (machine.id, ClientMachineEntry.with {
+                $0.id = machine.daemonID ?? ""
+                $0.online = true
+                $0.available = true
+                $0.compatible = true
+            })
+        })
+    var project = Dieter_V1_Project()
+    project.id = "project"
+    project.checkouts = [.with { $0.id = "co"; $0.projectID = "project"; $0.daemonID = "daemon-mbp" }]
+    store.projectDirectory = [project.id: project]
+    store.projectHosts = [project.id: "daemon-mbp"]
     var chat = Dieter_V1_Card()
     chat.id = "chat"
     chat.scope = "chat"
@@ -758,8 +768,12 @@ private func terminalKeyEvent(
     let route = try #require(store.conversationWorkspaceRoute(for: chat))
     #expect(route.endpointID == conversationOwner.id)
     #expect(route.machineName == "Mini")
-    #expect(route.endpointID != store.projectReplicaEndpointIDs[chat.projectID])
-    #expect(route.endpointID == store.endpoint.id)
+    #expect(store.projectMachine(forProjectID: "project")?.id == checkoutMachine.id)
+    #expect(store.projectIsAvailable("project"))
+    // A machine the session does not list is still the owner, shown as offline.
+    chat.ownerDaemonID = "daemon-gone"
+    #expect(store.machine(for: chat)?.online == false)
+    #expect(store.endpointID(for: chat) == "\(store.activeGateway.credentialID)#daemon-gone")
 }
 
 @Test func appearancePreferenceDefaultsToSystemAndRecognizesEveryStoredMode() {
@@ -842,8 +856,7 @@ private func terminalKeyEvent(
 
     let groups = ProjectDestinationCatalog.groups(
         projects: [officeProject, homeProject],
-        endpoints: [office, home],
-        fallbackEndpoint: gateway
+        endpoints: [office, home]
     )
 
     #expect(groups.map(\.machineName) == ["mini-home", "mini-office"])
@@ -866,8 +879,7 @@ private func terminalKeyEvent(
 
     let groups = ProjectDestinationCatalog.groups(
         projects: [project],
-        endpoints: [machine],
-        fallbackEndpoint: machine
+        endpoints: [machine]
     )
 
     #expect(groups.isEmpty)
@@ -895,8 +907,7 @@ private func terminalKeyEvent(
 
     let groups = ProjectDestinationCatalog.groups(
         projects: [project],
-        endpoints: [remote, current],
-        fallbackEndpoint: current
+        endpoints: [remote, current]
     )
 
     let defaultDestination = try #require(
@@ -966,7 +977,7 @@ private func terminalKeyEvent(
     #expect(store.errorMessage == "This board has no done lane.")
 
     store.errorMessage = nil
-    store.phase = .connected(version: "fixture")
+    store.phase = .connected
     store.show(CoreFailure(kind: .transient, message: "The machine is unreachable."))
     #expect(store.errorMessage == "The machine is unreachable.")
     store.errorMessage = nil

@@ -356,7 +356,7 @@ private struct NewTerminalSheet: View {
         destinationGroups.flatMap(\.destinations).first { $0.checkoutID == checkoutID }
     }
     private var selectedProject: Dieter_V1_Project? { selectedDestination?.project }
-    private var machines: [MachineEndpoint] { store.terminalOverviewMachines }
+    private var machines: [MachineEndpoint] { store.machines }
     private var selectedMachine: MachineEndpoint? {
         if let selectedDestination {
             return machines.first { $0.id == selectedDestination.machineID }
@@ -600,7 +600,7 @@ private struct NewTerminalSheet: View {
                 machineID =
                     store.terminalOverview.terminalOverviewPreferredMachineID
                     ?? machines.first(where: { store.machineIsAvailable($0) })?.id
-                    ?? store.endpoint.id
+                    ?? ""
                 checkoutID = ""
                 workingDirectory = "~"
             }

@@ -28,18 +28,21 @@ counts; it is the cheapest bounded directory overview for one machine.
 Use `dieter daemon status` when diagnosing this machine's process and gateway
 tunnel. Its `gatewayLastAcknowledgedAt` value is bidirectional liveness proof;
 a reconnect affects relay transports only and does not stop a running agent.
-State, conversation and KV watches wake on commit notifications; a two-second
+Change, conversation and KV watches wake on commit notifications; a two-second
 recovery check covers missed filesystem notifications and interrupted writers.
-`watch state --interval` bounds the rate of updates during bursts.
 `card watch --after-seq N` (also `chat watch`) immediately acknowledges an
 up-to-date cursor with current metadata and no unchanged messages. This initial
 frame counts toward `--count`; retain the cached transcript when applying it.
 A stale cursor receives the existing snapshot/delta recovery.
-`dieter watch sync --count 3` emits metadata, deltas, and transport-only
-heartbeats. A heartbeat or `observedCursor` is reachability evidence, not applied
-workspace data. Persist a cursor only with its complete projection, never from a
-heartbeat or a frame with `projectionPending=true`. Native resume falls back to
-an explicit reset when the exact projection identity is no longer retained.
+`dieter watch changes --count 3` emits one machine's change frames, naming its
+peer identity and account: its replica of the account's shared peer records
+(every causal sibling with its rank), then what only it knows: owner-only card
+details, its checkouts' paths and validation commands, live conversation
+activity and peer replication issues. `resetRecords`/`resetLocal` replace what was received
+for that half; `caughtUp` marks a complete view and heartbeats repeat the
+cursor. A frame is sent only when something changed, so an idle machine emits
+heartbeats alone. Native clients hold this stream for every online machine and
+merge the records; no machine is primary.
 
 For another enrolled machine, first enroll the local daemon, then pass the
 target's exact ID or unique name as a global option before the command. The CLI

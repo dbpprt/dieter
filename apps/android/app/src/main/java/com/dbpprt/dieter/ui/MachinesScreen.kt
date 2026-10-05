@@ -100,7 +100,7 @@ import kotlin.time.Instant
  */
 internal fun DieterUiState.machineStatusLine(machine: MachineRow, now: Instant): String {
     val own = endpointConnections.firstOrNull { it.id == machine.id } ?: machine
-    return MachineRows.status(own, own.id == attachedMachineId, connectionPhase, connectionError, machineSyncWarnings[own.id].orEmpty(), feedLive)
+    return MachineRows.status(own, machineSyncs[own.id], connectionPhase, machineSyncWarnings[own.id].orEmpty())
         .line(own.lastSeenAt, now)
 }
 

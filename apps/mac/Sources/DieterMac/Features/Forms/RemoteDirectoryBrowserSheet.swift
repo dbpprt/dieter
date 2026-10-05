@@ -18,7 +18,7 @@ struct RemoteDirectoryBrowserSheet: View {
     @State private var activeLoadID = UUID()
 
     private var machine: MachineEndpoint? {
-        store.machines.first { $0.id == machineID } ?? (store.endpoint.id == machineID ? store.endpoint : nil)
+        store.machines.first { $0.id == machineID }
     }
     private var entries: [Dieter_V1_DirectoryEntry] {
         (listing?.entries ?? []).filter { showHidden || !$0.hidden }

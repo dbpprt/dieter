@@ -38,7 +38,7 @@ class ProjectOverviewVisualTest {
 
     @Before fun setup() {
         assumeTrue("Use the isolated screen fixture app", (context.packageName.endsWith(".e2e")))
-        core = TestCore(navigationAccount = "component-fixture")
+        core = TestCore()
         compose.runOnUiThread {
             model = core.viewModel()
             lifecycle.put("project-overview", model)
@@ -118,7 +118,7 @@ class ProjectOverviewVisualTest {
         spaceBoards = boards,
         spaceCards = cards,
         selectedProjectId = "dieter",
-        projectReplicas = projects.associate { project ->
+        projectHosts = projects.associate { project ->
             project.id to when (project.id) {
                 "atlas" -> "mbp-home"
                 "experiments" -> "mini-lab"

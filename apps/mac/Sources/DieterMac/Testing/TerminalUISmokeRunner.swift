@@ -52,18 +52,12 @@
 
         private static func create(store: DieterStore, window: NSWindow, output: URL) async {
             await store.openTerminals()
-            let originalEndpointID = store.endpoint.id
+            // Every machine is reachable at once; the terminals go to a second one.
             guard
                 await waitUntil(
                     timeout: 15,
-                    condition: {
-                        store.endpoints.contains {
-                            $0.id != store.endpoint.id && store.machineIsAvailable($0)
-                        }
-                    }),
-                let destination = store.endpoints.first(where: {
-                    $0.id != store.endpoint.id && store.machineIsAvailable($0)
-                })
+                    condition: { store.machines.filter(store.machineIsAvailable).count >= 2 }),
+                let destination = store.machines.filter(store.machineIsAvailable).dropFirst().first
             else {
                 writeReport(
                     ["machine-switch": "failed: second compatible machine was not discovered"],
@@ -71,9 +65,10 @@
                 return
             }
             await store.openTerminals(on: destination)
-            guard store.endpoint.id == originalEndpointID, store.phase.isConnected else {
+            guard store.terminalOverview.terminalOverviewPreferredMachineID == destination.id, store.phase.isConnected
+            else {
                 writeReport(
-                    ["overview-routing": "failed: opening a machine changed the app's active workspace connection"],
+                    ["overview-routing": "failed: opening a machine's terminals did not target that machine"],
                     named: "create-report.json", to: output)
                 return
             }
@@ -201,7 +196,6 @@
                     "connection": "passed",
                     "terminal-id": terminalID,
                     "machine-id": destination.id,
-                    "active-machine-id": originalEndpointID,
                     "overview-routing": "passed",
                     "terminal-create": "passed",
                     "machine-home-scope": store.terminalsModel.selectedTerminal?.projectID.isEmpty == true
@@ -274,10 +268,9 @@
             let machineRestored = await waitUntil(timeout: 10) {
                 store.terminalOverview.selectedTerminalOverviewID == overviewID
                     && store.terminalsModel.target.endpointID == machineID
-                    && store.endpoint.id == create["active-machine-id"]
             }
             let routingDetail =
-                "selection=\(store.terminalOverview.selectedTerminalOverviewID ?? "none") expected=\(overviewID), target=\(store.terminalsModel.target.endpointID) expected=\(machineID), active=\(store.endpoint.id) expected=\(create["active-machine-id"] ?? "none")"
+                "selection=\(store.terminalOverview.selectedTerminalOverviewID ?? "none") expected=\(overviewID), target=\(store.terminalsModel.target.endpointID) expected=\(machineID)"
             let listed = await waitUntil(
                 timeout: 20,
                 condition: {
@@ -336,7 +329,7 @@
                         : "failed: terminal was not running after restart",
                     "terminal-cleanup": cleanedUp
                         ? "passed" : "failed: persistent terminal was not closed after the smoke run",
-                    "gateway": store.endpoint.address,
+                    "gateway": store.activeGateway.address,
                 ], named: "report.json", to: output)
         }
 

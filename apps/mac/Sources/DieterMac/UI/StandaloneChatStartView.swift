@@ -312,7 +312,7 @@ struct StandaloneChatStartView: View {
                 ? store.newChatProjectID
                 : (!store.selectedProjectID.isEmpty ? store.selectedProjectID : projectID))
         let selected = ProjectDestinationCatalog.preferredDestination(
-            preferredMachineID: store.endpoint.id,
+            preferredMachineID: store.localMachine?.id ?? "",
             preferredProjectID: requestedProjectID,
             preferredCheckoutID: store.checkout(forProjectID: requestedProjectID)?.id ?? "",
             in: destinationGroups

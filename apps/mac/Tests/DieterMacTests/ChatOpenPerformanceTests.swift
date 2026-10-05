@@ -23,7 +23,7 @@ import Testing
     let core = ScriptedCoreClient()
     let store = DieterStore(core: core, liveEnvironment: false)
     store.foldFixture(Dieter_V1_State())
-    store.phase = .connected(version: "fixture")
+    store.phase = .connected
     let before = store.chatsRequestGeneration
     await store.openChats()
     #expect(store.chatsRequestGeneration == before)

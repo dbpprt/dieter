@@ -129,56 +129,69 @@ struct CoreSessionAdapterTests {
         #expect(store.outbox(for: machine) == nil)
     }
 
-    @Test func theSessionSliceBecomesTheMachinesAndPhaseViewsRead() throws {
-        store.foldSession(
-            .with {
-                $0.phase = .connected
-                $0.gatewayOrigin = "https://gateway.getdieter.com:443"
-                $0.gateways = [
-                    .with {
-                        $0.origin = "https://gateway.getdieter.com:443"; $0.name = "Dieter Gateway"; $0.active = true
-                    }
-                ]
-                $0.attachedMachineID = "d_mac"
-                $0.machines = [
-                    .with {
-                        $0.id = "d_mac"; $0.name = "Mac"; $0.online = true; $0.route = "Local"
-                        $0.releaseVersion = "0.4.340"
-                        $0.compatible = true
-                        $0.detail = "Local · 3 ms"; $0.available = true
-                    },
-                    .with {
-                        $0.id = "d_old"; $0.name = "Old"; $0.online = true; $0.route = "Relay"
-                        $0.compatible = false
-                        $0.detail = "Update required · Dieter 0.4.1 (requires 0.4.300)"
-                        $0.unavailableMessage = "Dieter 0.4.1 needs an update to 0.4.300."
-                    },
-                ]
-                $0.feed = .with { $0.lastAppliedAtMillis = 1_000 }
-                $0.workspaceLive = true
-                $0.phaseLabel = "Connected"
-            })
-        #expect(store.phase == .connected(version: "0.4.340"))
-        #expect(store.endpoint.daemonID == "d_mac")
-        #expect(store.endpoint.credentialID == "https://gateway.getdieter.com:443")
+    @Test func theSessionSliceBecomesTheMachinesAndPhaseViewsRead() async throws {
+        let session = ClientSessionSlice.with {
+            $0.phase = .connected
+            $0.gatewayOrigin = "https://gateway.getdieter.com:443"
+            $0.gateways = [
+                .with {
+                    $0.origin = "https://gateway.getdieter.com:443"; $0.name = "Dieter Gateway"; $0.active = true
+                }
+            ]
+            $0.machines = [
+                .with {
+                    $0.id = "d_mac"; $0.name = "Mac"; $0.online = true; $0.route = "Local"; $0.local = true
+                    $0.releaseVersion = "0.4.340"
+                    $0.compatible = true
+                    $0.detail = "Local · 3 ms"; $0.available = true
+                    $0.syncState = .live; $0.syncLabel = "Live"
+                },
+                .with {
+                    $0.id = "d_old"; $0.name = "Old"; $0.online = true; $0.route = "Relay"
+                    $0.compatible = false
+                    $0.detail = "Update required · Dieter 0.4.1 (requires 0.4.300)"
+                    $0.unavailableMessage = "Dieter 0.4.1 needs an update to 0.4.300."
+                    $0.syncState = .incompatible; $0.syncLabel = "Update required"
+                },
+            ]
+            $0.updatedAtMillis = 1_000
+            $0.synced = true
+            $0.phaseLabel = "Connected"
+        }
+        store.foldSession(session)
+        #expect(store.phase == .connected)
+        #expect(store.activeGateway.credentialID == "https://gateway.getdieter.com:443")
+        #expect(store.activeGateway.name == "Dieter Gateway")
         #expect(store.machines.map(\.name) == ["Mac", "Old"])
-        #expect(store.machineEntry(store.endpoint)?.route == "Local")
-        #expect(store.machineStatusLine(store.endpoint) == "Local · 3 ms")
+        let mac = try #require(store.localMachine)
+        #expect(mac.daemonID == "d_mac")
+        #expect(store.machineEntry(mac)?.route == "Local")
+        #expect(store.machineStatusLine(mac) == "Local · 3 ms")
         let old = try #require(store.endpoints.first { $0.daemonID == "d_old" })
         // The machine list shows the core's own wording.
         #expect(store.machineStatusLine(old) == "Update required · Dieter 0.4.1 (requires 0.4.300)")
         #expect(!store.machineIsAvailable(old))
         #expect(store.unavailableReason(old) == "Dieter 0.4.1 needs an update to 0.4.300.")
-        #expect(store.unavailableReason(store.endpoint) == nil)
+        #expect(store.unavailableReason(mac) == nil)
         #expect(store.workspaceIsLive)
         #expect(store.lastSyncedAt == Date(timeIntervalSince1970: 1))
+
+        // Every machine that can take work has its agents read once per connection.
+        func requested() -> [String] { commands { if case .ensureMetadata(let read) = $0 { read.daemonID } else { nil } } }
+        for _ in 0..<100 where requested().isEmpty { await Task.yield() }
+        store.foldSession(session)
+        for _ in 0..<10 { await Task.yield() }
+        #expect(requested() == ["d_mac"])
+
         store.foldSession(
             .with {
                 $0.phase = .authRequired
                 $0.gatewayOrigin = "https://gateway.getdieter.com:443"
             })
         #expect(store.phase == .authenticationRequired)
-        #expect(store.endpoint.daemonID == nil)
+        #expect(store.machines.isEmpty)
+        #expect(store.localMachine == nil)
+        #expect(store.lastSyncedAt == nil)
     }
 
     @Test func boardMovesAreCommandsWhoseOverlayComesFromTheCore() async {

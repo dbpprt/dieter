@@ -39,12 +39,12 @@ import kotlinx.coroutines.withTimeoutOrNull
  * board ([Creation.preferredBoard]) and checkout ([Creation.preferredCheckout])
  * to preselect. A project not loaded yet keeps the board last chosen.
  */
-internal fun creationSlice(saved: CreationPreferences, workspace: WorkspaceView, attachedDaemonId: String?): CreationSlice {
+internal fun creationSlice(saved: CreationPreferences, workspace: WorkspaceView, localDaemonId: String?): CreationSlice {
     val boards = workspace.projects.mapNotNull { project ->
         Creation.preferredBoard(saved.boards[project.id], workspace.boards[project.id].orEmpty())?.let { project.id to it.id }
     }.toMap()
     val checkouts = workspace.projects.mapNotNull { project ->
-        Creation.preferredCheckout(project, saved.checkouts[project.id], attachedDaemonId, workspace.projectReplicas[project.id])?.let { project.id to it.id }
+        Creation.preferredCheckout(project, saved.checkouts[project.id], localDaemonId)?.let { project.id to it.id }
     }.toMap()
     return CreationSlice(
         workspace_mode = saved.workspace_mode, project_id = saved.project_id,
@@ -63,14 +63,13 @@ internal fun CoreRuntime.creationInput(intent: CreationIntent, chat: Boolean): C
     val view = workspace.state.value
     val project = view.project(intent.project_id) ?: Project()
     val destinations = creationDestinations()
-    val replica = destinations.replicas[project.id]
-    val checkoutId = intent.checkout_id.ifEmpty { creation.preferredCheckout(project, destinations.attachedDaemonId, replica)?.id.orEmpty() }
+    val checkoutId = intent.checkout_id.ifEmpty { creation.preferredCheckout(project, destinations.localDaemonId)?.id.orEmpty() }
     val board = when {
         chat -> null
         intent.board_id.isNotEmpty() -> view.board(intent.board_id) ?: view.retiredBoards.firstOrNull { it.id == intent.board_id }
         else -> creation.rememberedBoard(project, view.boards[project.id].orEmpty())
     }
-    val harnesses = Creation.catalogMachine(Creation.checkout(project, checkoutId), replica, destinations.attachedDaemonId)
+    val harnesses = Creation.catalogMachine(Creation.checkout(project, checkoutId), destinations.projectMachines[project.id])
         ?.let(destinations.catalogs::get).orEmpty()
     val selection = intent.selection?.takeIf { it.provider.isNotEmpty() }?.let { Selections.validated(it, harnesses) }
         ?: creation.selection(harnesses) ?: HarnessSelection()
@@ -112,8 +111,8 @@ internal fun creationIntent(input: CreationInput): CreationIntent = CreationInte
 
 /**
  * One creation form's preview (SLICE_CREATION_PREVIEW): the intent the form
- * binds, previewed again whenever the workspace, a machine's catalog or
- * presence, the attached machine, or the remembered choices change, so a
+ * binds, previewed again whenever the workspace, a machine's catalog,
+ * presence or route, or the remembered choices change, so a
  * catalog that arrives late updates the form. Confined to the core
  * dispatcher.
  */
@@ -124,7 +123,7 @@ internal class CreationPreviewSurface(private val runtime: CoreRuntime) {
 
     val view: Flow<CreationPreview> = combine(
         form.filterNotNull(), runtime.workspace.state, runtime.metadata.machines, runtime.connection.machines,
-        combine(runtime.connection.active, runtime.creation.state, ::Pair),
+        combine(runtime.sessions.routes, runtime.creation.state, ::Pair),
     ) { bound, _, _, _, _ -> preview(bound) }.distinctUntilChanged()
 
     /**

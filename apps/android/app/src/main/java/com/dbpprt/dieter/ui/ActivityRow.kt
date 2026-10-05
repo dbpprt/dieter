@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.PlayCircleOutline
@@ -106,6 +107,16 @@ internal fun ActivityRow(
                 }, null, Modifier.size(15.dp), tint = statusColor)
                 Text(entry.detail, color = statusColor, style = MaterialTheme.typography.bodySmall,
                     maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            }
+            // What its machine reports may be old, e.g. while that machine is offline.
+            entry.stale?.let { stale ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.testTag("activity-stale-${entry.card.id}"),
+                ) {
+                    Icon(Icons.Outlined.CloudOff, null, Modifier.size(13.dp), tint = DieterAmber)
+                    Text(stale, color = DieterAmber, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
     }

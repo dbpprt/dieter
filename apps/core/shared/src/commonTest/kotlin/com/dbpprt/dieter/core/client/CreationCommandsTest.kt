@@ -62,14 +62,14 @@ class CreationCommandsTest {
             provider = "codex", model = "sol", effort = "low", workspace_mode = "project", project_id = "p1",
             boards = mapOf("p1" to "b2", "unloaded" to "bx"), checkouts = mapOf("p1" to "k2"),
         )
-        val slice = creationSlice(saved, view, attachedDaemonId = "d1")
+        val slice = creationSlice(saved, view, localDaemonId = "d1")
         assertEquals(listOf("project", "p1"), listOf(slice.workspace_mode, slice.project_id))
         assertEquals(mapOf("p1" to "b2", "unloaded" to "bx"), slice.boards, "a project without boards is absent; one not loaded keeps its choice")
         assertEquals(mapOf("p1" to "k2", "p2" to "k3"), slice.checkouts)
-        val fresh = creationSlice(CreationPreferences(), view, attachedDaemonId = "d1")
+        val fresh = creationSlice(CreationPreferences(), view, localDaemonId = "d1")
         assertEquals(mapOf("p1" to "b1"), fresh.boards)
-        assertEquals(mapOf("p1" to "k1", "p2" to "k3"), fresh.checkouts, "the attached machine's checkout")
-        assertEquals(mapOf("p2" to "k3"), creationSlice(CreationPreferences(), view, attachedDaemonId = null).checkouts, "several checkouts and no preference: the user chooses")
+        assertEquals(mapOf("p1" to "k1", "p2" to "k3"), fresh.checkouts, "this device's machine's checkout")
+        assertEquals(mapOf("p2" to "k3"), creationSlice(CreationPreferences(), view, localDaemonId = null).checkouts, "several checkouts and no preference: the user chooses")
     }
 
     @Test

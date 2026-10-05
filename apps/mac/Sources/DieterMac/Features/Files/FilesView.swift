@@ -382,9 +382,9 @@ struct FilesView: View {
     }
 
     private var externalActionKey: String {
-        let transport = "\(store.connectionGeneration):\(store.isLocalMachine(model.target.endpointID))"
+        let local = store.isLocalMachine(model.target.endpointID)
         return
-            "\(model.documentKey):\(model.fileScopeGeneration):\(model.projectPath):\(model.isLive):\(store.phase.isConnected):\(model.fileDocument?.revision ?? ""):\(transport)"
+            "\(model.documentKey):\(model.fileScopeGeneration):\(model.projectPath):\(model.isLive):\(store.phase.isConnected):\(model.fileDocument?.revision ?? ""):\(local)"
     }
 
     private var preparedExternalActions: FileExternalActions? {

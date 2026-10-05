@@ -371,7 +371,7 @@ func (c *GatewayClient) runOnce(ctx context.Context) (time.Duration, error) {
 			}
 			// Always drain command responses, terminal frames, and control
 			// traffic before another streaming data frame. This keeps a busy
-			// WatchSync/WatchConversation call from hiding a unary admission ack.
+			// WatchChanges/WatchConversation call from hiding a unary admission ack.
 			select {
 			case <-linkCtx.Done():
 				sendErr <- linkCtx.Err()
@@ -783,10 +783,9 @@ func (c *GatewayClient) consumeRelayProof(claims trust.DelegationClaims, now tim
 }
 
 func relayMethodPriority(method string) bool {
-	return !strings.HasSuffix(method, "/WatchSync") &&
+	return !strings.HasSuffix(method, "/WatchChanges") &&
 		!strings.HasSuffix(method, "/WatchConversation") &&
 		!strings.HasSuffix(method, "/WatchGitOperation") &&
-		!strings.HasSuffix(method, "/WatchState") &&
 		!strings.HasSuffix(method, "/WatchTerminal") &&
 		!strings.HasSuffix(method, "/WatchExecution") &&
 		!strings.HasSuffix(method, "/StartRemoteDesktop")

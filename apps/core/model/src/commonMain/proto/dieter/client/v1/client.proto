@@ -22,7 +22,6 @@ message Command {
     BeginSignIn begin_sign_in = 2;
     CompleteSignIn complete_sign_in = 3;
     SelectGateway select_gateway = 5;
-    AttachMachine attach_machine = 6;
     SetConnected set_connected = 7;
     SetForeground set_foreground = 8;
     CreateConversation create_conversation = 10;
@@ -116,15 +115,15 @@ message CompleteSignIn { string callback_url = 1; }
 // cached workspace. The gateway stays listed and asks for sign-in again.
 message SignOut {}
 message SelectGateway { string origin = 1; }
-message AttachMachine { string daemon_id = 1; }
 message SetConnected { bool connected = 1; }
 
 // Connects to the active gateway now: restarts the connection, so routes and
-// the feed open again without waiting for the next retry, and connects again
-// when the person had disconnected. A pull to refresh or a Retry button.
+// every machine's change stream open again without waiting for the next
+// retry, and connects again when the person had disconnected. A pull to
+// refresh or a Retry button.
 message Reconnect {}
 
-// The app is in the foreground (keeps the feed live) or in the background.
+// The app is in the foreground (keeps the streams live) or in the background.
 message SetForeground { bool foreground = 1; }
 
 // Queues a new task or chat: the core applies its defaults to `intent`,
@@ -697,7 +696,8 @@ message FilesDelete {
 // the overview's scope address that one.
 
 // ---------------------------------------------------------------------------
-// Schedules: the shown project's schedules. Lists come from any replica; full
+// Schedules: the shown project's schedules. Lists come from any machine with
+// the project; full
 // definitions, run history, and every change go to the machine that owns the
 // schedule. Results for a project that is no longer shown are dropped.
 
@@ -1276,24 +1276,21 @@ message Update {
 }
 
 message SessionSlice {
+  // The gateway connection. Each machine has its own sync state.
   enum Phase {
     PHASE_DISCONNECTED = 0;
     PHASE_CONNECTING = 1;
-    PHASE_SYNCING = 2;
     PHASE_CONNECTED = 3;
     PHASE_RECONNECTING = 4;
-    PHASE_NO_MACHINE = 5;
     PHASE_AUTH_REQUIRED = 6;
     PHASE_UPDATE_REQUIRED = 7;
   }
   Phase phase = 1;
   string gateway_origin = 2;
   repeated GatewayEntry gateways = 3;
-  string attached_machine_id = 5;
   string error = 6;
   // By name ignoring case, then by ID.
   repeated MachineEntry machines = 8;
-  FeedStatus feed = 10;
   // The active gateway's build, once it has described itself.
   GatewayBuild gateway_build = 12;
   // What synchronized views with a cached workspace show while that data is
@@ -1302,14 +1299,17 @@ message SessionSlice {
   // A short connection status, e.g. "Connected", "Reconnecting", or
   // "Update required".
   string phase_label = 14;
-  // Connected with the attached machine's live projection applied: the
-  // workspace is current, neither cached nor still loading.
-  bool workspace_live = 15;
   // This device shows reasoning traces in transcripts (SetShowReasoning).
   bool show_reasoning = 17;
   // How the phase reads: connected succeeds, connecting or signing in is a
   // warning, a blocked connection is danger.
   Tone tone = 18;
+  // Connected, with every online, compatible machine's view caught up over
+  // an open stream: nothing reachable is cached or still loading.
+  bool synced = 19;
+  // When some machine's view last changed, kept with the cached views; 0
+  // before any. Heartbeats never advance it.
+  int64 updated_at_millis = 20;
 }
 
 // The connection notice above cached synchronized views.
@@ -1326,13 +1326,6 @@ message GatewayBuild {
   string release_version = 1;
   string source_revision = 2;
   string built_at = 3;
-}
-
-// The attached machine's workspace feed.
-message FeedStatus {
-  // The last applied workspace change; heartbeats never advance it. It is
-  // restored with the cached projection after a restart.
-  int64 last_applied_at_millis = 4;
 }
 
 message GatewayEntry {
@@ -1359,9 +1352,9 @@ message MachineEntry {
   // its paths can be opened locally.
   bool local = 17;
   // The list row's status line, without relative times: why it needs an
-  // update, the attached machine's connection failure, shared-update
-  // warnings, "Synchronizing", "Unavailable", "Offline",
-  // "Direct TLS · 12 ms", "Attached", or "Online".
+  // update, shared-update warnings, "Unavailable", "Offline", why its
+  // changes stopped arriving, "Synchronizing", "Direct TLS · 12 ms", or
+  // "Online".
   string detail = 18;
   // Views follow `detail` with when the machine was last seen, worded when
   // rendered ("Unavailable · Last seen 5m ago").
@@ -1384,8 +1377,31 @@ message MachineEntry {
   // Available succeeds, a compatible machine that cannot take work warns,
   // an outdated one is danger.
   Tone tone = 26;
+  // How current its part of the account view is.
+  MachineSyncState sync_state = 27;
+  // "Live", "Catching up", "Connecting", "Not responding", "Offline", or
+  // "Update required".
+  string sync_label = 28;
+  // When its view was last current, for a stale or offline machine; 0 when
+  // unknown or current.
+  int64 stale_since_millis = 29;
 }
 
+// How current one machine's part of the account view is.
+enum MachineSyncState {
+  // No frame from it yet in this session; its cached view shows meanwhile.
+  MACHINE_SYNC_STATE_CONNECTING = 0;
+  // Replaying what changed since its cached view.
+  MACHINE_SYNC_STATE_CATCHING_UP = 1;
+  MACHINE_SYNC_STATE_LIVE = 2;
+  // Online, but its changes stopped arriving; its view may be old.
+  MACHINE_SYNC_STATE_STALE = 3;
+  MACHINE_SYNC_STATE_OFFLINE = 4;
+  // Below the release the gateway requires; it is not read.
+  MACHINE_SYNC_STATE_INCOMPATIBLE = 5;
+}
+
+// The account view every machine's stream adds up to.
 message WorkspaceSlice {
   repeated dieter.v1.Project projects = 1;
   repeated dieter.v1.Board boards = 2;
@@ -1393,15 +1409,15 @@ message WorkspaceSlice {
   repeated dieter.v1.Card cards = 3;
   repeated string pending_card_ids = 4;
   bool loaded = 5;
-  // Project ID → the machine that last listed it.
-  map<string, string> project_replicas = 6;
   // Retired boards, still shown where their cards are.
   repeated dieter.v1.Board retired_boards = 7;
-  // The attached machine's settings.
-  dieter.v1.Settings settings = 8;
   // Board ID → its cards that want a look: waiting in a review lane or with
   // an agent at work. Boards with none are left out.
   map<string, int32> board_attention = 9;
+  // Project ID → the machine that hosts its work and project-wide reads: a
+  // reachable machine with a checkout of it, this device's first, else one
+  // that is away. Projects without a checkout are left out.
+  map<string, string> project_hosts = 10;
 }
 
 // Projects and boards are small and always complete; cards are keyed.
@@ -1415,11 +1431,11 @@ message WorkspaceDelta {
   bool order_changed = 6;
   repeated string pending_card_ids = 7;
   bool loaded = 8;
-  map<string, string> project_replicas = 9;
   repeated dieter.v1.Board retired_boards = 10;
-  dieter.v1.Settings settings = 11;
   // Complete, like the slice's.
   map<string, int32> board_attention = 12;
+  // Complete, like the slice's.
+  map<string, string> project_hosts = 13;
 }
 
 message OutboxSlice {
@@ -1541,6 +1557,9 @@ message ActivityRow {
   // The menu bar's line: "Needs you", "Unread reply", "Ready for review",
   // "Failed", or "Finished".
   string menu_bar_title = 15;
+  // Why what its machine reports may be old, e.g. "Studio is offline"; empty
+  // while current.
+  string stale = 16;
 }
 
 // Where an activity row sits on the Inbox timeline, as fractions of the
@@ -2035,7 +2054,7 @@ message NavigationSlice {
   int32 pending = 10;
   // Why edits are not being delivered, if they are not.
   string error = 11;
-  // A full replay arrived since the machine was attached.
+  // Some machine's complete, current view of the layout is applied.
   bool caught_up = 12;
   // The sidebar's projects as it shows them.
   ProjectNavigation projects = 13;
@@ -2142,9 +2161,9 @@ message CreationSlice {
   // is retired, else the first live board. Projects without boards are absent.
   map<string, string> boards = 4;
   // Project ID → the checkout a new conversation runs on unless another is
-  // chosen: the one last chosen while it is attached, else the attached
-  // machine's, else the only one, else the project replica's. A project with
-  // several checkouts and none of these is absent: the user chooses.
+  // chosen: the one last chosen while it is attached, else this device's
+  // machine's, else the only one. A project with several checkouts and none
+  // of these is absent: the user chooses.
   map<string, string> checkouts = 5;
 }
 
@@ -2839,8 +2858,8 @@ message ProjectWorkspacesSlice {
 
 // ---------------------------------------------------------------------------
 // Administration and one-off machine reads. Each runs on the machine that
-// holds what it changes: a project's replica, a checkout's owner, a
-// conversation's owner, or the machine the command names.
+// holds what it changes: a reachable machine with the project, a checkout's
+// owner, a conversation's owner, or the machine the command names.
 
 message AdminCommand {
   oneof action {

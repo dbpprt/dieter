@@ -376,6 +376,23 @@ func (s *Store) ListCheckouts(projectID string) ([]model.Checkout, error) {
 	}
 	return result, data.Err()
 }
+
+// OwnedCheckouts are this machine's attached checkouts with what only it
+// knows: their paths and validation commands.
+func (s *Store) OwnedCheckouts() ([]model.Checkout, error) {
+	values, err := s.ListCheckouts("")
+	if err != nil {
+		return nil, err
+	}
+	result := []model.Checkout{}
+	for _, checkout := range values {
+		if checkout.Path != "" {
+			result = append(result, checkout)
+		}
+	}
+	return result, nil
+}
+
 func (s *Store) localCheckout(projectID, checkoutID string) (model.Checkout, error) {
 	values, err := s.ListCheckouts(projectID)
 	if err != nil {

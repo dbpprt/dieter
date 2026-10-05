@@ -81,10 +81,10 @@ enum class CatalogState {
 data class CreationDestinations(
     /** Machines online now. */
     val online: Set<String> = emptySet(),
-    /** The machine the feed is attached to. */
-    val attachedDaemonId: String? = null,
-    /** Project ID → the machine whose view last listed it. */
-    val replicas: Map<String, String> = emptyMap(),
+    /** This device's machine, when it runs a reachable one. */
+    val localDaemonId: String? = null,
+    /** Project ID → the reachable machine that serves it ([com.dbpprt.dieter.core.machines.MachineChoice.project]). */
+    val projectMachines: Map<String, String> = emptyMap(),
     /** Daemon ID → its loaded agent catalog. */
     val catalogs: Map<String, List<Harness>> = emptyMap(),
 )
@@ -140,9 +140,9 @@ object Creation {
     fun checkoutTitle(checkout: Checkout, machineOnline: Boolean = true): String =
         checkout.name.ifBlank { "Project checkout" } + (if (machineOnline) "" else " · Offline")
 
-    /** The machine whose catalog a new conversation loads: its checkout's, else the project's replica, else the attached machine. */
-    fun catalogMachine(checkout: Checkout?, replicaDaemonId: String?, attachedDaemonId: String?): String? =
-        checkout?.daemon_id?.ifEmpty { null } ?: replicaDaemonId?.ifEmpty { null } ?: attachedDaemonId?.ifEmpty { null }
+    /** The machine whose catalog a new conversation loads: its checkout's, else the one that serves its project. */
+    fun catalogMachine(checkout: Checkout?, projectDaemonId: String?): String? =
+        checkout?.daemon_id?.ifEmpty { null } ?: projectDaemonId?.ifEmpty { null }
 
     fun catalogState(checkout: Checkout?, catalogDaemonId: String?, machineOnline: Boolean): CatalogState = when {
         checkout == null || catalogDaemonId == null || checkout.daemon_id != catalogDaemonId -> CatalogState.NONE
@@ -205,16 +205,15 @@ object Creation {
 
     /**
      * The checkout a new conversation runs on unless another is chosen: the
-     * [selectedId] one while it is attached, else the attached machine's,
-     * else the only one, else the project replica's. Never just the first of
-     * several; then the user chooses.
+     * [selectedId] one while it is attached, else this device's machine's,
+     * else the only one. Never just the first of several; then the user
+     * chooses.
      */
-    fun preferredCheckout(project: Project, selectedId: String?, attachedDaemonId: String?, replicaDaemonId: String?): Checkout? {
+    fun preferredCheckout(project: Project, selectedId: String?, localDaemonId: String?): Checkout? {
         val candidates = choices(project)
         return candidates.firstOrNull { it.id == selectedId }
-            ?: candidates.firstOrNull { !attachedDaemonId.isNullOrEmpty() && it.daemon_id == attachedDaemonId }
+            ?: candidates.firstOrNull { !localDaemonId.isNullOrEmpty() && it.daemon_id == localDaemonId }
             ?: candidates.singleOrNull()
-            ?: candidates.firstOrNull { !replicaDaemonId.isNullOrEmpty() && it.daemon_id == replicaDaemonId }
     }
 
     /** The board to preselect: [rememberedId] unless it is retired or gone, else the first live board. */
@@ -315,7 +314,7 @@ object Creation {
         val daemonId = checkout?.daemon_id?.ifEmpty { null }
         val online = daemonId != null && daemonId in destinations.online
         val loaded = daemonId?.takeIf { it in destinations.catalogs }
-        val catalogMachine = catalogMachine(checkout, destinations.replicas[input.project.id], destinations.attachedDaemonId)
+        val catalogMachine = catalogMachine(checkout, destinations.projectMachines[input.project.id])
         return CreationPlan(
             input = input, checkout = checkout, daemonId = daemonId, machineOnline = online,
             catalogState = catalogState(checkout, loaded, online),
@@ -364,8 +363,8 @@ class CreationMemory(private val storage: CoreStorage, private val logger: CoreL
     fun rememberedBoard(project: Project, boards: List<Board>): Board? = Creation.preferredBoard(state.value.boards[project.id], boards)
 
     /** [project]'s checkout to preselect ([Creation.preferredCheckout]), starting from the one last chosen there. */
-    fun preferredCheckout(project: Project, attachedDaemonId: String?, replicaDaemonId: String?): Checkout? =
-        Creation.preferredCheckout(project, state.value.checkouts[project.id], attachedDaemonId, replicaDaemonId)
+    fun preferredCheckout(project: Project, localDaemonId: String?): Checkout? =
+        Creation.preferredCheckout(project, state.value.checkouts[project.id], localDaemonId)
 
     private fun save(next: CreationPreferences) {
         if (next == state.value) return
@@ -410,7 +409,7 @@ object CaptureDestinations {
 
     /**
      * Where a project's repository lives: each checkout's machine, online ones
-     * first, marked offline or unavailable. A replica is not a checkout.
+     * first, marked offline or unavailable.
      */
     fun checkoutSummary(project: Project, label: (String) -> String, online: (String) -> Boolean?): String =
         Creation.choices(project).map { it.daemon_id }.distinct()

@@ -3,9 +3,9 @@
     import SharedCore
     import SwiftUI
 
-    /// The account's machines as the core lists and describes them. Choosing
-    /// an available machine attaches the workspace feed to it; a compatible
-    /// machine's gauge opens its live state.
+    /// The account's machines as the core lists and describes them, each with
+    /// how current its part of the workspace is. Every machine is streamed at
+    /// once; a compatible machine's row opens its live state.
     struct IOSMachinesView: View {
         @Environment(\.dismiss) private var dismiss
         @Environment(IOSAppModel.self) private var app
@@ -17,26 +17,8 @@
             TimelineView(.periodic(from: .now, by: 30)) { clock in
                 List {
                     ForEach(machines, id: \.id) { machine in
-                        HStack(spacing: 8) {
-                            IOSMachineRow(
-                                machine: machine, status: app.machineStatus(machine, now: clock.date),
-                                attached: machine.id == app.session.attachedMachineID
-                            ) {
-                                Task { await app.attachMachine(machine.id) }
-                            }
-                            if machine.compatible {
-                                Button {
-                                    stateMachineID = machine.id
-                                } label: {
-                                    Image(systemName: "gauge.with.dots.needle.67percent")
-                                        .font(.title3)
-                                        .frame(minWidth: 44, minHeight: 44)
-                                }
-                                .buttonStyle(.borderless)
-                                .accessibilityLabel("Machine state")
-                                .accessibilityHint(machine.displayName)
-                                .accessibilityIdentifier("ios.machines.state.\(machine.id)")
-                            }
+                        IOSMachineRow(machine: machine, status: app.machineStatus(machine, now: clock.date)) {
+                            stateMachineID = machine.id
                         }
                     }
                 }
@@ -66,11 +48,10 @@
     private struct IOSMachineRow: View {
         let machine: ClientMachineEntry
         let status: String
-        let attached: Bool
-        let attach: () -> Void
+        let openState: () -> Void
 
         var body: some View {
-            Button(action: attach) {
+            Button(action: openState) {
                 HStack(spacing: 12) {
                     Image(systemName: "desktopcomputer")
                         .font(.title3)
@@ -88,17 +69,19 @@
                         }
                     }
                     Spacer(minLength: 8)
-                    if attached {
-                        Image(systemName: "checkmark").foregroundStyle(.tint).accessibilityLabel("Attached")
+                    Text(machine.syncLabel).font(.caption).foregroundStyle(.secondary)
+                    if machine.compatible {
+                        Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
+                            .foregroundStyle(.tertiary).accessibilityHidden(true)
                     }
                 }
+                .frame(minHeight: 44)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(!machine.available)
+            .disabled(!machine.compatible)
             .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(attached ? .isSelected : [])
-            .accessibilityHint(machine.unavailableMessage)
+            .accessibilityHint(machine.compatible ? "Shows its live state" : machine.unavailableMessage)
             .accessibilityIdentifier("ios.machines.machine.\(machine.id)")
         }
     }

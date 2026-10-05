@@ -64,17 +64,14 @@ extension DieterStore {
                 let card = self.selectedCard ?? self.selectedDetail?.card,
                 card.id == id,
                 let route = self.conversationWorkspaceRoute(for: card),
-                route.endpointID == self.endpoint.id, self.phase.isConnected
+                self.conversationMachineIsAvailable(card, reportOffline: false)
             else { throw ConversationContentUnavailable() }
-            let generation = self.connectionGeneration
             let target = WorkspaceTarget(
                 endpointID: route.endpointID, projectID: card.projectID, conversationID: id)
             // Ask the owning daemon for the actual root, including managed worktrees.
             // No paths are resolved against the Mac client's checkout.
             let workspace = try await self.conversationWorkspace(cardID: id)
-            guard self.connectionGeneration == generation, self.endpoint.id == target.endpointID,
-                (self.selectedCardID ?? self.selectedChatID) == id
-            else { throw CancellationError() }
+            guard (self.selectedCardID ?? self.selectedChatID) == id else { throw CancellationError() }
             return ConversationContentScope(
                 target: target, rootPath: workspace.path,
                 card: card, machineName: route.machineName,
@@ -85,10 +82,8 @@ extension DieterStore {
             await self?.sendAgentMessage(text, card: card, endpointID: target.endpointID) ?? false
         }
         context.content.onReviewOperationFinished = { [weak self] target in
-            guard let self, self.endpoint.id == target.endpointID else { return }
+            guard let self, self.selectedProjectID == target.projectID else { return }
             await self.loadProjectWorkspaces()
-            guard self.endpoint.id == target.endpointID else { return }
-            await self.refreshState()
         }
         context.content.onSaveFailure = { [weak self] message in self?.errorMessage = message }
         context.content.validateWebURL = { [weak self] url, id in

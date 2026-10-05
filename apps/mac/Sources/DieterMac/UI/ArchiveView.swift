@@ -54,7 +54,7 @@ struct ArchiveView: View {
                                 Task {
                                     await store.archive(card, archived: false); await store.loadArchive()
                                 }
-                            }.buttonStyle(DieterSecondaryButtonStyle()).disabled(!store.workspaceIsLive)
+                            }.buttonStyle(DieterSecondaryButtonStyle()).disabled(!store.phase.isConnected)
                         }
                         .padding(11).background(
                             DieterTheme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -73,7 +73,7 @@ struct ArchiveView: View {
                                 Task {
                                     await store.archive(card, archived: false); await store.loadArchive()
                                 }
-                            }.buttonStyle(DieterSecondaryButtonStyle()).disabled(!store.workspaceIsLive)
+                            }.buttonStyle(DieterSecondaryButtonStyle()).disabled(!store.phase.isConnected)
                         }
                         .padding(11).background(
                             DieterTheme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -90,7 +90,7 @@ struct ArchiveView: View {
                             }; Spacer();
                             Button("Restore") {
                                 Task { await store.setProjectArchived(id: project.id, archived: false) }
-                            }.buttonStyle(DieterSecondaryButtonStyle()).disabled(!store.workspaceIsLive)
+                            }.buttonStyle(DieterSecondaryButtonStyle()).disabled(!store.phase.isConnected)
                         }
                         .padding(11).background(
                             DieterTheme.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 10, style: .continuous)

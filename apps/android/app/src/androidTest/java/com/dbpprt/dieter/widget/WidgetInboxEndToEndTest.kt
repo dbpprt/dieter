@@ -121,7 +121,10 @@ class WidgetInboxEndToEndTest {
             capture("widget-inbox-compact-monochrome")
             onView(withText(chat.title)).perform(click())
             compose.waitUntil(15_000) { compose.onAllNodesWithTag("message-input").fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty() }
-            compose.waitUntil(15_000) { cards().any { it.id == chat.id && it.seen_response_seq >= it.response_seq } }
+            // The view shows the reply read at once; the machine has it once no change to the chat is in flight.
+            compose.waitUntil(15_000) {
+                core.board.view.value.operations[chat.id] == null && cards().any { it.id == chat.id && it.seen_response_seq >= it.response_seq }
+            }
             assertTrue(runBlocking {
                 core.onMachine(chat.owner_daemon_id) { it.GetCard().execute(GetCardRequest(card_id = chat.id)) }
             }.card!!.let { it.seen_response_seq >= it.response_seq })

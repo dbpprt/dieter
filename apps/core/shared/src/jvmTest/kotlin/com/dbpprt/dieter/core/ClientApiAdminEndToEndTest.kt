@@ -177,7 +177,7 @@ class ClientApiAdminEndToEndTest : EndToEnd() {
             val response = result.created_project!!
             val project = response.project!!
             assertEquals("Fresh", afterProject.projects.single { it.id == project.id }.name)
-            assertEquals(fixture.daemonId, afterProject.project_replicas[project.id])
+            assertEquals(fixture.daemonId, afterProject.projects.single { it.id == project.id }.checkouts.single().daemon_id)
             assertEquals(listOf(response.board!!.id), afterProject.boards.filter { it.project_id == project.id }.map { it.id })
             assertEquals(1, afterProject.boardCount(project.id))
         } finally {

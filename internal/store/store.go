@@ -38,7 +38,6 @@ type Store struct {
 	conversations conversationCache
 	statuses      conversationStatusCache
 	checkpoints   conversationCheckpoints
-	syncJournal   syncJournalCache
 	notifications changeNotifications
 
 	usageMu             sync.Mutex
@@ -46,12 +45,11 @@ type Store struct {
 	compatibilityMu     sync.RWMutex
 	compatibilityPolicy *GatewayCompatibilityPolicy
 
-	scheduleDBMu           sync.Mutex
-	scheduleDB             *sql.DB
-	globalStateMu          contextMutex
-	globalStateCursor      SyncCursor
-	globalStateSnapshot    *model.State
-	globalStateMetadataKey string
+	scheduleDBMu        sync.Mutex
+	scheduleDB          *sql.DB
+	globalStateMu       contextMutex
+	globalStateSnapshot *model.State
+	globalStateRevision StoreRevision
 }
 
 func DefaultRoot() string {
@@ -136,7 +134,7 @@ func (s *Store) Ensure() error {
 	if err := s.ensurePrivateMetadataPermissions(); err != nil {
 		return err
 	}
-	if _, err := s.ensureSyncEpoch(); err != nil {
+	if err := s.ensureSyncEpoch(); err != nil {
 		return err
 	}
 	release, err := s.beginWriteLock()
@@ -148,9 +146,9 @@ func (s *Store) Ensure() error {
 }
 
 // beginWriteLock serializes access both within the process and across CLI/server
-// processes without publishing a sync mutation. Conditional writers use it to
-// revalidate that a domain change is still necessary before advancing the sync
-// journal. Kernel file locking releases the cross-process lock on process exit.
+// processes without recording a change. Conditional writers use it to
+// revalidate that a domain change is still necessary before advancing the change
+// counter. Kernel file locking releases the cross-process lock on process exit.
 func (s *Store) beginWriteLock() (func(), error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -195,10 +193,10 @@ func (s *Store) beginWriteLockContext(ctx context.Context) (func(), error) {
 	}, nil
 }
 
-// beginWrite acquires the central writer lock and publishes a durable sync
-// invalidation before the caller changes domain files.
+// beginWrite acquires the central writer lock and records a durable pending
+// change before the caller changes domain files.
 func (s *Store) beginWrite() (func(), error) {
-	return s.beginWriteKind("store_changed")
+	return s.beginWriteKind(metadataChange)
 }
 
 func (s *Store) beginWriteKind(kind string) (func(), error) {
@@ -218,7 +216,7 @@ func (s *Store) beginWriteKind(kind string) (func(), error) {
 type storeWrite struct {
 	store   *Store
 	release func()
-	event   *SyncEvent
+	pending *pendingMutation
 }
 
 func (s *Store) beginConditionalWrite() (*storeWrite, error) {
@@ -243,7 +241,7 @@ func (s *Store) beginConditionalWrite() (*storeWrite, error) {
 
 func (w *storeWrite) prepare(kind string) error {
 	var err error
-	w.event, err = w.store.prepareSyncMutation(kind)
+	w.pending, err = w.store.prepareSyncMutation(kind)
 	return err
 }
 
@@ -252,14 +250,15 @@ func (w *storeWrite) finish() {
 	if err := s.flushScheduleOutbox(); err != nil {
 		slog.Error("schedule publication deferred to recovery", "error", err)
 	}
-	// A failed publication leaves the durable pending marker for reader/next
+	// A failed commit leaves the durable pending marker for reader/next
 	// writer recovery. Domain data is already durable; never hide a partial write.
-	if err := s.commitSyncMutation(w.event); err != nil {
-		slog.Error("sync commit deferred to recovery", "error", err)
+	if err := s.commitSyncMutation(w.pending); err != nil {
+		slog.Error("change commit deferred to recovery", "error", err)
 	}
 	w.release()
 	// Recovery may have changed domain data even when the requested update was
-	// a no-op. Wake readers; their unchanged cursor avoids a projection rebuild.
+	// a no-op. Waking is a hint; readers compare the counters and send nothing
+	// when nothing changed.
 	s.notifyChanges()
 	s.flushConversationCheckpoints()
 }

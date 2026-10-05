@@ -75,16 +75,13 @@ func TestTokenUsageMetadataRefreshesDirectorySync(t *testing.T) {
 	if _, _, err := s.AppendUIChunk(card.ID, "turn", json.RawMessage(`{"type":"start","messageId":"answer"}`)); err != nil {
 		t.Fatal(err)
 	}
-	cursor, _, err := s.SyncEvents(0, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	beforeChanges, beforeMetadata := changeCounters(t, s)
 	if _, _, err := s.AppendUIChunk(card.ID, "turn", json.RawMessage(`{"type":"message-metadata","messageMetadata":{"totalUsage":{"inputTokens":8,"outputTokens":2}}}`)); err != nil {
 		t.Fatal(err)
 	}
-	_, events, err := s.SyncEvents(cursor.Sequence, 10)
-	if err != nil || len(events) != 1 || events[0].Kind != "store_changed" {
-		t.Fatalf("usage invalidation: %+v %v", events, err)
+	// The metadata counter holds the sequence of the latest metadata change.
+	if changes, metadata := changeCounters(t, s); changes != beforeChanges+1 || metadata != changes {
+		t.Fatalf("usage must change metadata once: %d/%d -> %d/%d", beforeChanges, beforeMetadata, changes, metadata)
 	}
 	state, err := s.GlobalState()
 	if err != nil || len(state.Cards) != 1 || state.Cards[0].TokenUsage == nil || state.Cards[0].TokenUsage.TotalTokens != 10 {

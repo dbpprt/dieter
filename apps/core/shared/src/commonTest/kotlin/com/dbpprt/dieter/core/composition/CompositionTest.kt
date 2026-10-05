@@ -287,10 +287,9 @@ class CompositionTest {
         assertNull(Creation.checkout(two, "stale"))
         assertEquals("k2", Creation.checkout(two, "k2")?.id)
         assertNull(Creation.checkout(project.copy(checkouts = listOf(Checkout(id = "k", detached = true))), null))
-        assertEquals("k2", Creation.preferredCheckout(two, null, attachedDaemonId = "d2", replicaDaemonId = "d1")?.id)
-        assertEquals("k1", Creation.preferredCheckout(two, null, attachedDaemonId = null, replicaDaemonId = "d1")?.id)
-        assertEquals("k1", Creation.preferredCheckout(two, "gone", attachedDaemonId = "d3", replicaDaemonId = "d1")?.id, "a choice that is gone falls back")
-        assertNull(Creation.preferredCheckout(two, null, attachedDaemonId = "d3", replicaDaemonId = null), "several checkouts and no preference: the user chooses")
+        assertEquals("k2", Creation.preferredCheckout(two, null, localDaemonId = "d2")?.id)
+        assertEquals("k1", Creation.preferredCheckout(two, "gone", localDaemonId = "d1")?.id, "a choice that is gone falls back")
+        assertNull(Creation.preferredCheckout(two, null, localDaemonId = "d3"), "several checkouts and no preference: the user chooses")
 
         val input = CreationInput(project, board, lane = "todo", prompt = "Fix it", selection = HarnessSelection("codex", "sol", "low"), labelIds = listOf("l1"))
         assertNull(Creation.problem(input, listOf(codex)))
@@ -342,10 +341,10 @@ class CompositionTest {
 
         // The checkout chosen in a project is preselected there while it is attached.
         val two = project.copy(checkouts = project.checkouts + Checkout(id = "k2", daemon_id = "d2"))
-        assertNull(restored.preferredCheckout(two, attachedDaemonId = null, replicaDaemonId = null))
+        assertNull(restored.preferredCheckout(two, localDaemonId = null))
         restored.remember(projectId = "p", checkoutId = "k2")
         val reloaded = CreationMemory(storage("install"), SilentLogger)
-        assertEquals("k2", reloaded.preferredCheckout(two, attachedDaemonId = "d1", replicaDaemonId = null)?.id)
+        assertEquals("k2", reloaded.preferredCheckout(two, localDaemonId = "d1")?.id)
         assertEquals("b", reloaded.state.value.boards["p"], "remembering a checkout keeps the board")
 
         // A queued chat remembers its agent, mode, project, and checkout, never a board.

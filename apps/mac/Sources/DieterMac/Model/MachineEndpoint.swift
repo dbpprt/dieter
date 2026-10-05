@@ -22,12 +22,6 @@ struct MachineEndpoint: Equatable, Hashable, Identifiable, Sendable {
     var remoteDesktopReason: String
     var remoteDesktopPlatform: String
 
-    /// The gateway this machine is reached through.
-    var gatewayEndpoint: MachineEndpoint {
-        guard daemonID != nil else { return self }
-        return MachineEndpoint(name: SharedRules.shared.defaultGatewayName(), host: host, port: port, secure: secure)
-    }
-
     init(
         name: String, host: String, port: Int, secure: Bool = false, daemonID: String? = nil, online: Bool = true,
         lastSeenAt: String = "", releaseVersion: String = "", minimumReleaseVersion: String = "",
@@ -81,16 +75,13 @@ struct MachineEndpoint: Equatable, Hashable, Identifiable, Sendable {
 enum ConnectionPhase: Equatable, Sendable {
     case disconnected
     case connecting
-    case connected(version: String)
+    case connected
     case authenticationRequired
-    /// The core's reason this client or the machine must update.
+    /// The core's reason this client must update before it can connect.
     case incompatible(String)
     case failed(String)
 
-    var isConnected: Bool {
-        if case .connected = self { return true }
-        return false
-    }
+    var isConnected: Bool { self == .connected }
 
     /// The onboarding overlay covers the window only to ask for sign-in.
     var needsConnectionOverlay: Bool { self == .authenticationRequired }

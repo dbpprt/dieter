@@ -144,3 +144,60 @@ func TestRelayClosedDaemonIsImmediatelyOffline(t *testing.T) {
 		t.Fatal("closed daemon remains online until the heartbeat lease expires")
 	}
 }
+
+func TestRelayBoundsWatchesAndRequestsSeparately(t *testing.T) {
+	hub, link := newTestRelayHub(t)
+	open := func(method string) error {
+		stream, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: method})
+		if err == nil {
+			t.Cleanup(stream.Close)
+			<-link.send
+		}
+		return err
+	}
+	for range maxDaemonRelayStreams {
+		if err := open("/dieter.v1.DieterService/GetState"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := open("/dieter.v1.DieterService/GetState"); status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("request above its bound = %v", err)
+	}
+	for range maxDaemonWatchStreams {
+		if err := open("/dieter.v1.DieterService/WatchChanges"); err != nil {
+			t.Fatalf("watch beside exhausted requests = %v", err)
+		}
+	}
+	if err := open("/dieter.v1.DieterService/WatchConversation"); status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("watch above its bound = %v", err)
+	}
+}
+
+func TestAuthenticatedStreamsAreBoundedPerAccount(t *testing.T) {
+	var budget streamBudget
+	for range maxAccountStreams {
+		if !budget.acquire(1) {
+			t.Fatal("account stream below its bound was rejected")
+		}
+	}
+	if budget.acquire(1) {
+		t.Fatal("account exceeded its stream bound")
+	}
+	if !budget.acquire(2) {
+		t.Fatal("one account's streams exhausted another's")
+	}
+	budget.release(1)
+	if !budget.acquire(1) {
+		t.Fatal("released stream was not returned to its account")
+	}
+	for account := int64(3); budget.total < maxGatewayStreams; account++ {
+		for range maxAccountStreams {
+			if budget.total < maxGatewayStreams && !budget.acquire(account) {
+				t.Fatal("stream below the gateway bound was rejected")
+			}
+		}
+	}
+	if budget.acquire(1 << 40) {
+		t.Fatal("gateway exceeded its total stream bound")
+	}
+}

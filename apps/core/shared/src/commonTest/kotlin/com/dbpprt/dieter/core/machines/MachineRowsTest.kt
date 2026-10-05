@@ -9,9 +9,10 @@ import com.dbpprt.dieter.api.v1.GPUVendor
 import com.dbpprt.dieter.api.v1.MachineInformation
 import com.dbpprt.dieter.api.v1.PeerSyncDiagnostic
 import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.connection.MachineSync
+import com.dbpprt.dieter.core.connection.SyncState
 import com.dbpprt.dieter.core.routing.RouteKind
 import com.dbpprt.dieter.core.session.MachineRoute
-import com.dbpprt.dieter.core.sync.MachineFreshness
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -30,8 +31,8 @@ class MachineRowsTest {
     private fun row(id: String, label: String = id, online: Boolean = true, phase: MachineLink = MachineLink.PENDING) =
         MachineRow(id = id, label = label, address = id, phase = phase, online = online, daemonId = id)
 
-    @Test fun rowsDescribeRouteAttachmentAndPresence() {
-        val routed = MachineRows.of(machine("m1", "Studio"), online = true, MachineRoute(RouteKind.DIRECT, 12.milliseconds), attached = "m1")
+    @Test fun rowsDescribeRouteAndPresence() {
+        val routed = MachineRows.of(machine("m1", "Studio"), online = true, MachineRoute(RouteKind.DIRECT, 12.milliseconds))
         assertEquals(MachineLink.CONNECTED, routed.phase)
         assertEquals("Direct TLS", routed.detail)
         assertEquals(12L, routed.latencyMs)
@@ -40,15 +41,14 @@ class MachineRowsTest {
         assertEquals("Grant screen recording", routed.remoteDesktopReason)
         assertEquals("macos", routed.remoteDesktopPlatform)
 
-        assertEquals("Attached", MachineRows.of(machine("m1"), online = true, route = null, attached = "m1").detail)
-        assertEquals(MachineLink.PENDING, MachineRows.of(machine("m2"), online = true, route = null, attached = "m1").phase)
-        assertEquals("Online", MachineRows.of(machine("m2"), online = true, route = null, attached = "m1").detail)
-        val offline = MachineRows.of(machine("m3"), online = false, route = null, attached = null)
+        assertEquals(MachineLink.PENDING, MachineRows.of(machine("m2"), online = true, route = null).phase)
+        assertEquals("Online", MachineRows.of(machine("m2"), online = true, route = null).detail)
+        val offline = MachineRows.of(machine("m3"), online = false, route = null)
         assertEquals(MachineLink.FAILED, offline.phase)
         assertEquals("Offline", offline.detail)
         assertEquals("m3 is offline.", offline.unavailableMessage)
 
-        val outdated = MachineRows.of(machine("m4", compatibility = CompatibilityStatus.COMPATIBILITY_STATUS_UPDATE_REQUIRED), online = true, route = null, attached = null)
+        val outdated = MachineRows.of(machine("m4", compatibility = CompatibilityStatus.COMPATIBILITY_STATUS_UPDATE_REQUIRED), online = true, route = null)
         assertTrue(outdated.detail.startsWith("Update required"))
         assertFalse(outdated.isCompatible)
         assertEquals("Dieter 1.2.0 needs an update to 1.3.0.", outdated.unavailableMessage)
@@ -62,7 +62,7 @@ class MachineRowsTest {
         assertEquals(MachineLink.PENDING, reconnecting.phase)
         assertEquals("Unavailable", reconnecting.detail)
         assertNull(reconnecting.latencyMs)
-        assertEquals("Synchronizing", MachineRows.presented(rows, ConnectionPhase.SYNCING, emptySet(), emptyMap()).single().detail)
+        assertEquals("Unavailable", MachineRows.presented(rows, ConnectionPhase.CONNECTING, emptySet(), emptyMap()).single().detail)
         assertEquals(rows, MachineRows.presented(rows, ConnectionPhase.CONNECTED, emptySet(), emptyMap()))
     }
 
@@ -89,27 +89,27 @@ class MachineRowsTest {
     }
 
     @Test fun statusLinesExplainTheMostImportantStateFirst() {
-        val routed = MachineRows.of(machine("m1", "Studio"), online = true, MachineRoute(RouteKind.DIRECT, 12.milliseconds), attached = "m1")
-        val idle = MachineRows.of(machine("m2"), online = true, route = null, attached = "m1")
-        val offline = MachineRows.of(machine("m3"), online = false, route = null, attached = null)
-        val outdated = MachineRows.of(machine("m4", compatibility = CompatibilityStatus.COMPATIBILITY_STATUS_UPDATE_REQUIRED), online = true, route = null, attached = null)
-        fun status(row: MachineRow, attached: Boolean = false, phase: ConnectionPhase = ConnectionPhase.CONNECTED, error: String? = null, warnings: List<String> = emptyList(), live: Boolean = true) =
-            MachineRows.status(row, attached, phase, error, warnings, live)
+        val routed = MachineRows.of(machine("m1", "Studio"), online = true, MachineRoute(RouteKind.DIRECT, 12.milliseconds))
+        val idle = MachineRows.of(machine("m2"), online = true, route = null)
+        val offline = MachineRows.of(machine("m3"), online = false, route = null)
+        val outdated = MachineRows.of(machine("m4", compatibility = CompatibilityStatus.COMPATIBILITY_STATUS_UPDATE_REQUIRED), online = true, route = null)
+        val live = MachineSync(SyncState.LIVE)
+        fun status(row: MachineRow, sync: MachineSync? = live, phase: ConnectionPhase = ConnectionPhase.CONNECTED, warnings: List<String> = emptyList()) =
+            MachineRows.status(row, sync, phase, warnings)
 
         assertEquals(MachineStatus("Update required · Dieter 1.2.0 (requires 1.3.0)"), status(outdated, warnings = listOf("delayed")))
-        assertEquals(MachineStatus("No route to the machine"), status(routed, attached = true, phase = ConnectionPhase.RECONNECTING, error = "No route to the machine"))
-        // Another machine's error, or one while syncing, is not this row's.
-        assertEquals(MachineStatus("Unavailable", showsLastSeen = true), status(idle, phase = ConnectionPhase.RECONNECTING, error = "No route to the machine"))
-        assertEquals(MachineStatus("Synchronizing"), status(routed, attached = true, phase = ConnectionPhase.SYNCING, error = "stale"))
         assertEquals(MachineStatus("Shared updates are delayed.\nShared updates are blocked."), status(idle, warnings = listOf("Shared updates are delayed.", "Shared updates are blocked.")))
-        // The attached machine synchronizes until its projection is live.
-        assertEquals(MachineStatus("Synchronizing"), status(routed, attached = true, live = false))
-        assertEquals(MachineStatus("Direct TLS · 12 ms"), status(routed, attached = false, live = false))
-        assertEquals(MachineStatus("Unavailable", showsLastSeen = true), status(routed, attached = true, phase = ConnectionPhase.DISCONNECTED))
-        assertEquals(MachineStatus("Offline", showsLastSeen = true), status(offline))
-        assertEquals(MachineStatus("Direct TLS · 12 ms"), status(routed, attached = true))
+        // Without a live gateway connection, presence cannot be trusted.
+        assertEquals(MachineStatus("Unavailable", showsLastSeen = true), status(routed, phase = ConnectionPhase.RECONNECTING))
+        assertEquals(MachineStatus("Unavailable", showsLastSeen = true), status(routed, phase = ConnectionPhase.DISCONNECTED))
+        assertEquals(MachineStatus("Offline", showsLastSeen = true), status(offline, sync = MachineSync(SyncState.OFFLINE)))
+        // Each machine's own stream decides its line.
+        assertEquals(MachineStatus("Studio stopped sending changes."), status(routed, sync = MachineSync(SyncState.STALE, error = "Studio stopped sending changes.")))
+        assertEquals(MachineStatus("Not responding"), status(routed, sync = MachineSync(SyncState.STALE)))
+        assertEquals(MachineStatus("Synchronizing"), status(routed, sync = MachineSync(SyncState.CATCHING_UP)))
+        assertEquals(MachineStatus("Synchronizing"), status(idle, sync = null))
+        assertEquals(MachineStatus("Direct TLS · 12 ms"), status(routed))
         assertEquals(MachineStatus("Online"), status(idle))
-        assertEquals(MachineStatus("Attached"), status(idle, attached = true))
     }
 
     @Test fun screenPickersSayWhyAMachineCannotShare() {
@@ -178,10 +178,10 @@ class MachineRowsTest {
     @Test fun syncWarningsStayWithTheMachineThatReportsThem() {
         val rows = listOf(row("a", "Studio"), row("b", "Laptop"))
         val rejected = PeerSyncDiagnostic(peer_id = "b", failure_code = "Rejected", record_id = "r1", record_kind = "card")
-        val freshness = mapOf("a" to MachineFreshness(peerSyncIssues = listOf(rejected)), "b" to MachineFreshness())
+        val issues = mapOf("a" to listOf(rejected), "b" to emptyList())
         val now = Instant.parse("2026-08-14T12:00:00Z")
-        assertEquals(mapOf("a" to listOf("Shared updates between Studio and Laptop are blocked by a rejected record.")), MachineRows.syncWarningsByMachine(rows, freshness, connected = true, now))
-        assertEquals(emptyMap(), MachineRows.syncWarningsByMachine(rows, freshness, connected = false, now))
+        assertEquals(mapOf("a" to listOf("Shared updates between Studio and Laptop are blocked by a rejected record.")), MachineRows.syncWarningsByMachine(rows, issues, connected = true, now))
+        assertEquals(emptyMap(), MachineRows.syncWarningsByMachine(rows, issues, connected = false, now))
     }
 
     @Test fun screenPickersNameThePlatformAndRelease() {
@@ -222,7 +222,7 @@ class MachineRowsTest {
         assertFalse(MachineRow("gateway", "Gateway", "x").hostsProjects)
         assertEquals("Offline", offline.hostDetail)
         assertEquals("Update required · 1.3.0", outdated.hostDetail)
-        assertEquals("Online", MachineRows.of(machine("x"), true, null, null).hostDetail)
+        assertEquals("Online", MachineRows.of(machine("x"), true, null).hostDetail)
         assertEquals("Requires Dieter 1.3.0", outdated.hostSummary)
         assertEquals("Online · repository and agents run here", online.hostSummary)
 
@@ -256,10 +256,10 @@ class MachineRowsTest {
     @Test fun syncWarningsNameMachinesAndAppearOnce() {
         val rows = listOf(row("a", "Studio"), row("b", "Laptop"))
         val rejected = PeerSyncDiagnostic(peer_id = "b", failure_code = "Rejected", record_id = "r1", record_kind = "card")
-        val freshness = mapOf("a" to MachineFreshness(peerSyncIssues = listOf(rejected, rejected)))
+        val issues = mapOf("a" to listOf(rejected, rejected))
         val now = Instant.parse("2026-08-14T12:00:00Z")
-        assertEquals(listOf("Shared updates between Studio and Laptop are blocked by a rejected record."), MachineRows.syncWarnings(rows, freshness, connected = true, now))
-        assertEquals(emptyList(), MachineRows.syncWarnings(rows, freshness, connected = false, now))
+        assertEquals(listOf("Shared updates between Studio and Laptop are blocked by a rejected record."), MachineRows.syncWarnings(rows, issues, connected = true, now))
+        assertEquals(emptyList(), MachineRows.syncWarnings(rows, issues, connected = false, now))
     }
 
     @Test fun formatsTelemetryWithoutInventingPrecision() {

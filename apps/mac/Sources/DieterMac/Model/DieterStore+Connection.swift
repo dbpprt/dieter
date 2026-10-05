@@ -7,28 +7,23 @@ import SharedCore
 /// Connection commands go to the shared core, which owns gateways, routes,
 /// reconnects, and sign-in.
 extension DieterStore {
-    /// Connects to the active gateway, or to `newEndpoint`: a machine is
-    /// attached, a gateway becomes active. Returns once the core is
-    /// connected, fails, or the attempt times out.
-    func connect(to newEndpoint: MachineEndpoint? = nil, automatic: Bool = false) async {
+    /// Connects to the active gateway, or makes `gateway` active first. The
+    /// core streams every machine of the gateway; none is chosen. Returns
+    /// once the core is connected, fails, or the attempt times out.
+    func connect(to gateway: MachineEndpoint? = nil) async {
         await startCore()
-        if let daemonID = newEndpoint?.daemonID {
-            guard await perform({ $0.attachMachine = .with { $0.daemonID = daemonID } }) != nil else { return }
-            _ = await awaitCore { (session.attachedMachineID == daemonID && phase.isConnected) || settled }
-            return
-        }
-        if let gateway = newEndpoint, gateway.credentialID != activeGateway.credentialID {
+        if let gateway, gateway.credentialID != activeGateway.credentialID {
             await useGateway(gateway)
         }
         await perform { $0.setConnected = .with { $0.connected = true } }
         _ = await awaitCore { phase.isConnected || settled }
     }
 
-    /// The core reached an outcome other than connected: it needs the user,
-    /// an update, or a machine, or it is retrying after a failed attempt.
+    /// The core reached an outcome other than connected: it needs the user
+    /// or an update, or it is retrying after a failed attempt.
     private var settled: Bool {
         switch session.phase {
-        case .authRequired, .updateRequired, .noMachine: true
+        case .authRequired, .updateRequired: true
         case .reconnecting: !session.error.isEmpty
         default: false
         }
@@ -63,7 +58,8 @@ extension DieterStore {
         Task { await perform { $0.setConnected = .with { $0.connected = false } } }
     }
 
-    /// Forgets every cached projection and reloads the workspace from scratch.
+    /// Replays every machine's changes from scratch; the workspace stays shown
+    /// until each machine has caught up.
     func cleanSync() async {
         await perform { $0.resync = ClientResync() }
     }

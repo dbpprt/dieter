@@ -49,7 +49,7 @@ func TestPeerAvailabilityPreservesHistoryAndWorkspaceCursor(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	before, err := s.MetadataCursor()
+	before, err := s.MetadataRevision()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestPeerAvailabilityPreservesHistoryAndWorkspaceCursor(t *testing.T) {
 			t.Fatalf("lost current problem: %+v", d)
 		}
 	}
-	after, err := s.MetadataCursor()
+	after, err := s.MetadataRevision()
 	if err != nil || before != after {
 		t.Fatalf("presence mutated workspace: %v %v %v", before, after, err)
 	}

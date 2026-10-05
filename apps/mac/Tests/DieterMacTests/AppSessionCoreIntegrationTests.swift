@@ -23,7 +23,7 @@ final class AppSessionCoreIntegrationTests {
     var state: String {
         guard let store = current else { return "no session" }
         return
-            "phase \(store.session.phase) error '\(store.session.error)' attached '\(store.session.attachedMachineID)' "
+            "phase \(store.session.phase) error '\(store.session.error)' synced \(store.session.synced) "
             + "gateways \(store.session.gateways.map(\.origin)) machines \(store.machines.map(\.name)) "
             + "projects \(store.projectDirectory.count) app error '\(store.errorMessage ?? "")'"
     }
@@ -73,13 +73,17 @@ final class AppSessionCoreIntegrationTests {
         current = store
         #expect(store.coreHost != nil, "a live launch runs the shared core")
         await store.connect()
-        try await wait("connected") { store.phase.isConnected && store.connectedMachineID == store.endpoint.id }
-        #expect(store.endpoint.daemonID == daemon)
+        try await wait("connected") { store.phase.isConnected }
+        // Every machine streams at once; nothing is chosen.
+        try await wait("synced") { store.workspaceIsLive }
         try await wait("project") { store.projectDirectory[project] != nil }
         try await wait("selected board") { store.selectedProjectID == project && store.selectedBoardID == board }
         #expect(store.machines.contains { $0.daemonID == daemon && $0.online })
-        #expect(store.machineEntry(store.endpoint)?.route.isEmpty == false)
-        try await wait("agents") { store.harnessCatalog.harnesses.contains { $0.id == "mock" } }
+        let fixtureMachine = try #require(store.machines.first { $0.daemonID == daemon })
+        #expect(store.machineEntry(fixtureMachine)?.route.isEmpty == false)
+        #expect(store.projectMachine(forProjectID: project)?.daemonID == daemon)
+        // Every available machine's agents are read once it is listed.
+        try await wait("agents") { store.harnessCatalog(forDaemon: daemon).harnesses.contains { $0.id == "mock" } }
 
         // The project's files are listed, created, opened, and saved on its
         // checkout's machine through a core files surface.

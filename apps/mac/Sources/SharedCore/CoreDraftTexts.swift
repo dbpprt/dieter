@@ -6,7 +6,7 @@ import Foundation
 package protocol DraftTextStore: AnyObject {
     func text(for target: WorkspaceTarget) -> String
     func update(_ text: String, for target: WorkspaceTarget)
-    func retarget(from old: WorkspaceTarget, to new: WorkspaceTarget)
+    func retarget(conversation old: String, to new: String)
 }
 
 /// Draft text kept by the shared core on this device, per conversation on
@@ -56,11 +56,17 @@ package final class CoreDraftTexts: DraftTextStore {
         scheduleSave()
     }
 
-    /// The core moves a created conversation's draft to its server ID itself.
-    package func retarget(from old: WorkspaceTarget, to new: WorkspaceTarget) {
-        let from = Self.key(old), to = Self.key(new)
-        guard from != to, let text = texts.removeValue(forKey: from) else { return }
-        texts[to] = text
+    /// The core moves a created conversation's draft to its server ID itself,
+    /// on the same machine.
+    package func retarget(conversation old: String, to new: String) {
+        guard old != new else { return }
+        for key in Array(texts.keys) where key.cardID == old {
+            texts[Key(daemonID: key.daemonID, cardID: new)] = texts.removeValue(forKey: key)
+        }
+        // Typing not saved yet is saved under the server ID.
+        for key in Array(unsaved.keys) where key.cardID == old {
+            unsaved[Key(daemonID: key.daemonID, cardID: new)] = unsaved.removeValue(forKey: key)
+        }
     }
 
     /// Saves what was typed since the last save now.

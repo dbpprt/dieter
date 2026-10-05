@@ -9,6 +9,7 @@ import com.dbpprt.dieter.api.v1.CreateConversationRequest
 import com.dbpprt.dieter.api.v1.GetConversationRequest
 import com.dbpprt.dieter.api.v1.Harness
 import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.connection.SyncState
 import com.dbpprt.dieter.core.identity.Gateway
 import com.dbpprt.dieter.core.outbox.OutboxPolicy
 import com.dbpprt.dieter.core.store.WorkspaceView
@@ -48,12 +49,11 @@ object IsolatedCore {
         container.policy.setForeground(true)
         withTimeout(timeout) {
             container.core.connection.state.first { it.phase == ConnectionPhase.CONNECTED }
+            // Every machine streams at once; the fixture's has caught up.
+            container.core.connection.syncs.first { it[machineId]?.state == SyncState.LIVE }
             container.core.workspace.state.first { view -> view.loaded && view.projects.isNotEmpty() && view.boards.values.any { it.isNotEmpty() } }
         }
     }
-
-    /** The machine the feed is attached to (the fixture daemon). */
-    fun daemonId(container: DieterContainer): String = requireNotNull(container.core.connection.state.value.attachedMachineId)
 
     /** Queues a conversation through the core's outbox and returns it once the daemon's copy synced. */
     fun createConversation(container: DieterContainer, request: CreateConversationRequest, chat: Boolean, timeout: Duration = 30.seconds): Card = runBlocking {
@@ -73,7 +73,7 @@ object IsolatedCore {
     }
 
     /** The daemon's current snapshot of a conversation (draft attachments included). */
-    fun conversation(container: DieterContainer, cardId: String, daemonId: String = daemonId(container)): ConversationSnapshot = runBlocking {
+    fun conversation(container: DieterContainer, cardId: String, daemonId: String = machineId): ConversationSnapshot = runBlocking {
         container.core.onMachine(daemonId) { it.GetConversation().execute(GetConversationRequest(card_id = cardId, limit = 50)) }
     }
 

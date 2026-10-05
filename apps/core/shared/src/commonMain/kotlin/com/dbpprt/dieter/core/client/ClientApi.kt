@@ -50,6 +50,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import okio.ByteString
@@ -110,7 +111,6 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
         command.complete_sign_in?.let { runtime.completeSignIn(it.callback_url); return done }
         command.sign_out?.let { runtime.signOut(); return done }
         command.select_gateway?.let { runtime.selectGateway(it.origin); return done }
-        command.attach_machine?.let { runtime.attachMachine(it.daemon_id); return done }
         command.set_connected?.let { runtime.setConnected(it.connected); return done }
         command.reconnect?.let { runtime.reconnect(); return done }
         command.set_foreground?.let { runtime.setActive(it.foreground); return done }
@@ -281,10 +281,17 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
             Slice.SLICE_SESSION -> collect(runtime.sessionSlices()) { emit(Update(session = it)) }
             Slice.SLICE_WORKSPACE -> {
                 var previous: WorkspaceSlice? = null
-                collect(runtime.workspaceSlices()) { next ->
+                fun publish(next: WorkspaceSlice) {
                     val last = previous
                     previous = next
                     if (last == null) emit(Update(workspace = next)) else Deltas.workspace(last, next)?.let { emit(Update(workspace_delta = it)) }
+                }
+                // The workspace's changes reach the observer one dispatch after
+                // the store's, so an admin reply never overtakes the update that
+                // shows it; each project's host also follows which machines are reachable.
+                runtime.scope.launch {
+                    launch { runtime.reachabilityChanges().drop(1).collect { publish(runtime.workspaceSlice(runtime.workspace.state.value)) } }
+                    runtime.workspace.state.collect { view -> publish(runtime.workspaceSlice(view)) }
                 }
             }
             Slice.SLICE_OUTBOX -> collect(runtime.outboxSlices()) { emit(Update(outbox = it)) }
@@ -293,7 +300,7 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
             Slice.SLICE_BOARD -> collect(runtime.boardSlices()) { emit(Update(board = it)) }
             Slice.SLICE_NAVIGATION -> collect(runtime.navigationSlices()) { emit(Update(navigation = it)) }
             Slice.SLICE_CREATION -> collect(
-                combine(runtime.creation.state, runtime.workspace.state, runtime.connection.active) { saved, workspace, active -> creationSlice(saved, workspace, active?.attachedMachineId) },
+                combine(runtime.creation.state, runtime.workspace.state, runtime.connection.machines, runtime.sessions.routes) { saved, workspace, _, _ -> creationSlice(saved, workspace, runtime.choice.local()) },
             ) { emit(Update(creation = it)) }
             Slice.SLICE_QUOTAS -> collect(runtime.quotas.view.map(::quotasSlice)) { emit(Update(quotas = it)) }
             Slice.SLICE_FILES -> observeSurface(surfaces.files, scope, ::emit) { files ->

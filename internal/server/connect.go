@@ -47,15 +47,8 @@ func (api *connectAPI) GetState(ctx context.Context, request *connect.Request[di
 	return connectUnary(ctx, request, api.core.GetState)
 }
 
-func (api *connectAPI) WatchState(ctx context.Context, request *connect.Request[dieterv1.WatchStateRequest], stream *connect.ServerStream[dieterv1.State]) error {
-	if err := api.core.watchState(ctx, request.Msg, stream.Send); err != nil {
-		return connectFailure(err)
-	}
-	return nil
-}
-
-func (api *connectAPI) WatchSync(ctx context.Context, request *connect.Request[dieterv1.SyncRequest], stream *connect.ServerStream[dieterv1.SyncFrame]) error {
-	if err := api.core.watchSync(ctx, request.Msg, stream.Send); err != nil {
+func (api *connectAPI) WatchChanges(ctx context.Context, request *connect.Request[dieterv1.ChangesRequest], stream *connect.ServerStream[dieterv1.ChangesFrame]) error {
+	if err := api.core.watchChanges(ctx, request.Msg, stream.Send); err != nil {
 		return connectFailure(err)
 	}
 	return nil

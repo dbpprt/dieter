@@ -76,8 +76,8 @@ struct DieterSettingsView: View {
                 Divider().overlay(DieterTheme.border)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Dieter \(store.health.releaseVersion)")
-                    Text(store.endpoint.address).lineLimit(1).help(store.endpoint.address)
+                    Text("Dieter \(DieterRelease.current)")
+                    Text(store.activeGateway.address).lineLimit(1).help(store.activeGateway.address)
                 }
                 .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -230,6 +230,8 @@ struct PromptSettingsEditor: View {
     @State private var preview: Dieter_V1_PromptPreview?
     @State private var loading = true
     @State private var saving = false
+    /// The machine whose global templates show; each machine's agents use its own.
+    @State private var machineID = ""
 
     var body: some View {
         ScrollView {
@@ -237,6 +239,21 @@ struct PromptSettingsEditor: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Text("GLOBAL TEMPLATES").promptSectionLabel()
+                        Picker(
+                            "Machine",
+                            selection: Binding(
+                                get: { machineID },
+                                set: { value in
+                                    machineID = value
+                                    Task { await loadGlobal() }
+                                })
+                        ) {
+                            ForEach(store.machines.filter(store.machineIsAvailable)) { machine in
+                                Text(machine.name).tag(machine.daemonID ?? "")
+                            }
+                        }
+                        .labelsHidden().frame(width: 180)
+                        .accessibilityIdentifier("settings.prompts.machine")
                         Spacer()
                         Picker("Template", selection: $globalKind) {
                             Text("Context").tag("Context")
@@ -263,7 +280,7 @@ struct PromptSettingsEditor: View {
                     HStack {
                         Spacer();
                         Button("Save global templates") { Task { await saveGlobal() } }.buttonStyle(.borderedProminent)
-                            .disabled(saving)
+                            .disabled(saving || machineID.isEmpty)
                     }
                 }.promptPanel()
 
@@ -389,12 +406,25 @@ struct PromptSettingsEditor: View {
 
     private func load() async {
         loading = true
-        do {
-            if let value = try await store.loadPromptSettings() { settings = value }
-            syncScopedTemplates()
-            await loadPreview()
-        } catch { store.show(error) }
+        if machineID.isEmpty { machineID = defaultMachineID }
+        await loadGlobal()
+        syncScopedTemplates()
+        await loadPreview()
         loading = false
+    }
+
+    /// The selected project's machine, whose templates the preview resolves,
+    /// else this Mac's, else any that can take work.
+    private var defaultMachineID: String {
+        let available = store.machines.filter(store.machineIsAvailable)
+        let preferred = [store.projectMachine(forProjectID: store.selectedProjectID), store.localMachine]
+            .compactMap { $0 }.first { available.contains($0) }
+        return (preferred ?? available.first)?.daemonID ?? ""
+    }
+
+    private func loadGlobal() async {
+        guard !machineID.isEmpty else { settings = Dieter_V1_PromptSettings(); return }
+        do { settings = try await store.loadPromptSettings(daemonID: machineID) } catch { store.show(error) }
     }
 
     private func syncScopedTemplates() {
@@ -410,7 +440,7 @@ struct PromptSettingsEditor: View {
     private func saveGlobal() async {
         saving = true; defer { saving = false }
         do {
-            if let value = try await store.updatePromptSettings(settings) { settings = value }
+            settings = try await store.updatePromptSettings(settings, daemonID: machineID)
             await loadPreview()
         } catch { store.show(error) }
     }
@@ -524,6 +554,13 @@ private struct SettingsValueRow: View {
 struct GeneralSettings: View {
     @Environment(DieterStore.self) private var store
     @State private var archiveConfirmation = false
+
+    /// The machine that runs the selected project's work.
+    private var projectMachine: MachineEndpoint? { store.projectMachine(forProjectID: store.selectedProjectID) }
+
+    private var projectRuntime: Dieter_V1_RuntimeStatus {
+        projectMachine?.daemonID.flatMap { store.machineMetadata[$0]?.runtime } ?? Dieter_V1_RuntimeStatus()
+    }
 
     var body: some View {
         SettingsPage {
@@ -690,11 +727,13 @@ struct GeneralSettings: View {
                     .fixedSize(horizontal: false, vertical: true)
                 }
                 SettingsPanel(
-                    title: "Current project route", subtitle: "Dieter routes each project to the machine that owns it."
+                    title: "Current project route",
+                    subtitle: projectMachine.map { "Runs on \($0.name)" }
+                        ?? "No machine has a checkout of this project."
                 ) {
-                    SettingsValueRow(title: "Runtime", value: store.runtime.mode)
-                    SettingsValueRow(title: "Ready", value: store.runtime.ready ? "Yes" : "No")
-                    SettingsValueRow(title: "Sandboxed", value: store.runtime.sandboxed ? "Yes" : "No")
+                    SettingsValueRow(title: "Runtime", value: projectRuntime.mode)
+                    SettingsValueRow(title: "Ready", value: projectRuntime.ready ? "Yes" : "No")
+                    SettingsValueRow(title: "Sandboxed", value: projectRuntime.sandboxed ? "Yes" : "No")
                 }
                 SettingsPanel(title: "Client") {
                     Toggle("Open Dieter at login", isOn: .constant(false)).disabled(true)
@@ -842,7 +881,7 @@ struct ConnectionSettings: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(
-                "Dieter will remove all cached workspace data on this Mac, keep your sign-in and pending changes, then download fresh snapshots. Content may briefly disappear."
+                "Dieter will replay every machine's changes from the beginning and replace each machine's cached view once it has caught up. Your sign-in and pending changes are kept."
             )
         }
     }
@@ -896,7 +935,7 @@ struct ConnectionSettings: View {
                 }
             }
             Text(
-                "Clean sync discards this Mac's cached snapshots and sync cursors, then rebuilds the workspace from every machine. Sign-in and pending changes are kept."
+                "Clean sync replays every machine's changes from the beginning, rebuilding this Mac's cached workspace while it stays shown. Sign-in and pending changes are kept."
             )
             .font(.caption2).foregroundStyle(DieterTheme.tertiary).fixedSize(horizontal: false, vertical: true)
         }
@@ -1170,15 +1209,28 @@ struct AgentSettings: View {
     var body: some View {
         SettingsPage {
             VStack(spacing: 14) {
-                SettingsPanel(title: "Harness capabilities") {
-                    ForEach(store.harnessCatalog.harnesses, id: \.id) { harness in
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(harness.name).font(.system(size: 12, weight: .semibold))
-                            Text(harness.models.map(\.name).joined(separator: ", ")).font(.caption).foregroundStyle(
-                                DieterTheme.tertiary)
-                        }
-                        if harness.id != store.harnessCatalog.harnesses.last?.id {
-                            Divider().overlay(DieterTheme.border)
+                if store.machines.isEmpty {
+                    SettingsPanel(title: "Harness capabilities") {
+                        Text("No machines discovered yet.").font(.caption).foregroundStyle(DieterTheme.tertiary)
+                    }
+                }
+                // Each machine runs its own agents.
+                ForEach(store.machines) { machine in
+                    let harnesses = store.harnessCatalog(forDaemon: machine.daemonID ?? "").harnesses
+                    SettingsPanel(
+                        title: machine.name,
+                        subtitle: harnesses.isEmpty
+                            ? (store.unavailableReason(machine) ?? "Loading agents…") : "Harness capabilities"
+                    ) {
+                        ForEach(harnesses, id: \.id) { harness in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(harness.name).font(.system(size: 12, weight: .semibold))
+                                Text(harness.models.map(\.name).joined(separator: ", ")).font(.caption)
+                                    .foregroundStyle(DieterTheme.tertiary)
+                            }
+                            if harness.id != harnesses.last?.id {
+                                Divider().overlay(DieterTheme.border)
+                            }
                         }
                     }
                 }

@@ -29,7 +29,7 @@ object MachineExports {
     fun lastConnected(atMillis: Long, nowMillis: Long): String =
         Availability.lastConnected(FormatExports.instant(atMillis), Instant.fromEpochMilliseconds(nowMillis))
 
-    /** "Updated just now", "Updated 5m ago", or "Waiting for first update", e.g. for `FeedStatus.last_applied_at_millis`. */
+    /** "Updated just now", "Updated 5m ago", or "Waiting for first update", e.g. for `SessionSlice.updated_at_millis`. */
     fun updated(atMillis: Long, nowMillis: Long): String =
         Availability.updated(FormatExports.instant(atMillis), Instant.fromEpochMilliseconds(nowMillis))
 

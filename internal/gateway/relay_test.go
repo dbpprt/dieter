@@ -41,7 +41,7 @@ func TestRemoteDesktopRelayAllowsBoundedSignalingBurst(t *testing.T) {
 	if got := relayFrameBuffer("/dieter.v1.DieterService/StartRemoteDesktop"); got != remoteDesktopRelayFrameBuffer {
 		t.Fatalf("remote desktop relay buffer = %d, want %d", got, remoteDesktopRelayFrameBuffer)
 	}
-	if got := relayFrameBuffer("/dieter.v1.DieterService/WatchSync"); got != defaultRelayFrameBuffer {
+	if got := relayFrameBuffer("/dieter.v1.DieterService/WatchChanges"); got != defaultRelayFrameBuffer {
 		t.Fatalf("default relay buffer = %d, want %d", got, defaultRelayFrameBuffer)
 	}
 }
@@ -233,7 +233,7 @@ func newTestRelayHub(t *testing.T) (*Hub, *daemonLink) {
 	hub := NewHub(nil, Config{})
 	link := &daemonLink{
 		id: "isolated-test-daemon", send: make(chan *gatewayv1.DaemonLinkFrame, 8),
-		control: make(chan *gatewayv1.DaemonLinkFrame, 32),
+		control: make(chan *gatewayv1.DaemonLinkFrame, 2*(maxDaemonRelayStreams+maxDaemonWatchStreams)),
 		done:    make(chan struct{}), streams: map[uint64]*relayFrameQueue{},
 	}
 	link.markSeen(time.Now())

@@ -34,8 +34,9 @@ import (
 
 type Server struct {
 	kvWatches               atomic.Int32
+	changeStreams           atomic.Int32
+	local                   *localChanges
 	controlRTC              *controlrtc.Manager
-	syncProjections         syncProjectionCache
 	store                   *store.Store
 	app                     *app.Service
 	workspaces              *workspace.Manager
@@ -124,6 +125,7 @@ func newServer(data *store.Store, logger *slog.Logger, runner harness.Runner) *S
 		machineDelay: 750 * time.Millisecond, machineOperations: map[string]acceptedMachineOperation{},
 	}
 	s.changesets = changeset.New(s.workspaces)
+	s.local = newLocalChanges(s)
 	service.BackgroundProcesses = s.backgroundProcess
 	if err := data.InterruptRunningGitOperations(); err != nil {
 		logger.Warn("could not reconcile interrupted Git operations", "error", err)

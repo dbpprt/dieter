@@ -464,13 +464,13 @@ final class ConversationContentModel {
         for tab in tabs { tab.terminals.active = false; tab.processes.active = false }
     }
 
-    /// When the connected machine changes, every tab stops until it rebinds;
+    /// When the connection drops or returns, every tab stops until it rebinds;
     /// rebinding a same-target FilesModel keeps the native editor and its unsaved text.
     func invalidateTransports() {
         bindingGeneration &+= 1
         bindingTask?.cancel(); bindingTask = nil
         for tab in tabs {
-            guard let scope = tab.scope else { continue }
+            guard tab.scope != nil else { continue }
             tab.files.isLive = false
             tab.terminals.active = false
             tab.terminals.isLive = false

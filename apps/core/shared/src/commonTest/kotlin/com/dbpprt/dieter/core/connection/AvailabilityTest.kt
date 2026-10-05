@@ -15,7 +15,7 @@ class AvailabilityTest {
     private val start = Instant.fromEpochSeconds(1_800_000_000)
 
     @Test fun routineSyncDoesNotCoverCachedWorkspaceWhileUnavailableReadOnlyDestinationsMute() {
-        listOf(ConnectionPhase.CONNECTING, ConnectionPhase.SYNCING, ConnectionPhase.CONNECTED).forEach { phase ->
+        listOf(ConnectionPhase.CONNECTING, ConnectionPhase.CONNECTED).forEach { phase ->
             val refreshing = Availability.treatment(Destination.BOARD, hasCache = true, phase)
             assertEquals(SurfaceTreatment.CURRENT, refreshing)
             assertFalse(refreshing.showsNotice)
@@ -28,45 +28,47 @@ class AvailabilityTest {
         // Chats and boards queue offline, so the notice shows but input stays open.
         assertEquals(SurfaceTreatment.UNAVAILABLE, Availability.treatment(Destination.CHATS, hasCache = true, ConnectionPhase.DISCONNECTED))
         assertFalse(Availability.blocksInteraction(Destination.CHATS, hasCache = true, ConnectionPhase.DISCONNECTED))
-        assertEquals(SurfaceTreatment.CURRENT, Availability.treatment(Destination.BOARD, hasCache = false, ConnectionPhase.NO_MACHINE))
-        assertEquals(SurfaceTreatment.CURRENT, Availability.treatment(Destination.MACHINES, hasCache = true, ConnectionPhase.NO_MACHINE))
+        assertEquals(SurfaceTreatment.CURRENT, Availability.treatment(Destination.BOARD, hasCache = false, ConnectionPhase.RECONNECTING))
+        assertEquals(SurfaceTreatment.CURRENT, Availability.treatment(Destination.MACHINES, hasCache = true, ConnectionPhase.RECONNECTING))
     }
 
     @Test fun firstSyncReplacesTheEmptyWorkspaceUntilLiveDataArrives() {
-        assertTrue(Availability.initialSync(Destination.ACTIVITY, hasCache = false, loading = true, desired = true, ConnectionPhase.SYNCING))
-        assertTrue(Availability.initialSync(Destination.ACTIVITY, hasCache = false, loading = false, desired = true, ConnectionPhase.NO_MACHINE))
-        assertFalse(Availability.initialSync(Destination.ACTIVITY, hasCache = true, loading = true, desired = true, ConnectionPhase.SYNCING))
+        assertTrue(Availability.initialSync(Destination.ACTIVITY, hasCache = false, loading = true, desired = true, ConnectionPhase.CONNECTED))
+        assertTrue(Availability.initialSync(Destination.ACTIVITY, hasCache = false, loading = false, desired = true, ConnectionPhase.RECONNECTING))
+        assertFalse(Availability.initialSync(Destination.ACTIVITY, hasCache = true, loading = true, desired = true, ConnectionPhase.CONNECTED))
         assertFalse(Availability.initialSync(Destination.ACTIVITY, hasCache = false, loading = false, desired = true, ConnectionPhase.CONNECTED))
         assertFalse(Availability.initialSync(Destination.ACTIVITY, hasCache = false, loading = true, desired = false, ConnectionPhase.DISCONNECTED))
-        assertFalse(Availability.initialSync(Destination.TERMINALS, hasCache = false, loading = true, desired = true, ConnectionPhase.SYNCING))
+        assertFalse(Availability.initialSync(Destination.TERMINALS, hasCache = false, loading = true, desired = true, ConnectionPhase.CONNECTED))
 
-        val syncing = Availability.firstSync(ConnectionPhase.SYNCING)
+        val syncing = Availability.firstSync(ConnectionPhase.CONNECTED)
         assertEquals("Syncing your workspace", syncing.title)
         assertTrue(syncing.working)
         assertTrue(Availability.firstSync(ConnectionPhase.AUTH_REQUIRED).offline)
     }
 
     @Test fun loadingEndsWithTheFirstViewOrWhenNoMachineCanDeliverIt() {
-        assertTrue(Availability.loading(desired = true, loaded = false, ConnectionPhase.SYNCING))
-        assertFalse(Availability.loading(desired = true, loaded = true, ConnectionPhase.SYNCING))
-        assertFalse(Availability.loading(desired = true, loaded = false, ConnectionPhase.NO_MACHINE))
-        assertFalse(Availability.loading(desired = false, loaded = false, ConnectionPhase.DISCONNECTED))
+        assertTrue(Availability.loading(desired = true, loaded = false, ConnectionPhase.CONNECTED, reachable = true))
+        assertTrue(Availability.loading(desired = true, loaded = false, ConnectionPhase.CONNECTING, reachable = false))
+        assertFalse(Availability.loading(desired = true, loaded = true, ConnectionPhase.CONNECTED, reachable = true))
+        // Connected with no reachable machine, nothing will deliver a view.
+        assertFalse(Availability.loading(desired = true, loaded = false, ConnectionPhase.CONNECTED, reachable = false))
+        assertFalse(Availability.loading(desired = false, loaded = false, ConnectionPhase.DISCONNECTED, reachable = false))
     }
 
     @Test fun workspaceNoticeMatchesTheQuietMacPresentation() {
-        val syncing = Availability.notice(ConnectionPhase.SYNCING, cached = true)
-        assertEquals("Refreshing workspace", syncing.title)
-        assertEquals("Your current workspace stays available while changes load.", syncing.detail)
-        assertTrue(syncing.working)
-        assertFalse(syncing.offline)
+        val connecting = Availability.notice(ConnectionPhase.CONNECTING, cached = true)
+        assertEquals("Connecting to Dieter", connecting.title)
+        assertEquals("Your workspace stays available while Dieter connects.", connecting.detail)
+        assertTrue(connecting.working)
+        assertFalse(connecting.offline)
 
-        val offline = Availability.notice(ConnectionPhase.NO_MACHINE, cached = true)
+        val offline = Availability.notice(ConnectionPhase.DISCONNECTED, cached = true)
         assertEquals("Working from cached data", offline.title)
         assertFalse(offline.working)
         assertTrue(offline.offline)
         assertEquals("Dieter is unavailable", Availability.notice(ConnectionPhase.DISCONNECTED, cached = false).title)
 
-        assertTrue(Availability.notice(ConnectionPhase.NO_MACHINE, cached = true, offlineOutbox = true).detail.contains("messages and new conversations queue"))
+        assertTrue(Availability.notice(ConnectionPhase.DISCONNECTED, cached = true, offlineOutbox = true).detail.contains("messages and new conversations queue"))
         assertEquals("Your workspace stays available while Dieter connects.", Availability.notice(ConnectionPhase.CONNECTING, cached = true, offlineOutbox = true).detail)
     }
 
@@ -91,41 +93,40 @@ class AvailabilityTest {
 
     @Test fun cachedWorkspacesShowANoticeOnlyWhileUnavailable() {
         // Routine handoffs keep the cached workspace current without a banner.
-        listOf(ConnectionPhase.CONNECTED, ConnectionPhase.SYNCING, ConnectionPhase.CONNECTING).forEach { phase ->
-            assertNull(Availability.workspaceNotice(phase, hasCache = true), "$phase")
+        listOf(ConnectionPhase.CONNECTED, ConnectionPhase.CONNECTING).forEach { phase ->
+            assertNull(Availability.workspaceNotice(phase, hasCache = true, reachable = true), "$phase")
         }
         // Nothing cached: the first-sync screen explains the phase instead.
-        assertNull(Availability.workspaceNotice(ConnectionPhase.DISCONNECTED, hasCache = false))
+        assertNull(Availability.workspaceNotice(ConnectionPhase.DISCONNECTED, hasCache = false, reachable = false))
 
-        val reconnecting = Availability.workspaceNotice(ConnectionPhase.RECONNECTING, hasCache = true)!!
+        val reconnecting = Availability.workspaceNotice(ConnectionPhase.RECONNECTING, hasCache = true, reachable = true)!!
         assertEquals("Reconnecting to Dieter", reconnecting.title)
         assertEquals("Cached conversations stay available; messages and new conversations queue until Dieter reconnects.", reconnecting.detail)
         assertTrue(reconnecting.working)
         assertFalse(reconnecting.offline)
 
-        val offline = Availability.workspaceNotice(ConnectionPhase.DISCONNECTED, hasCache = true)!!
+        val offline = Availability.workspaceNotice(ConnectionPhase.DISCONNECTED, hasCache = true, reachable = false)!!
         assertEquals("Working from cached data", offline.title)
         assertTrue(offline.offline)
         assertFalse(offline.working)
-        assertEquals("Sign in required", Availability.workspaceNotice(ConnectionPhase.AUTH_REQUIRED, hasCache = true)!!.title)
-        assertEquals("Update required", Availability.workspaceNotice(ConnectionPhase.UPDATE_REQUIRED, hasCache = true)!!.title)
-    }
+        assertEquals("Sign in required", Availability.workspaceNotice(ConnectionPhase.AUTH_REQUIRED, hasCache = true, reachable = false)!!.title)
+        assertEquals("Update required", Availability.workspaceNotice(ConnectionPhase.UPDATE_REQUIRED, hasCache = true, reachable = false)!!.title)
 
-    @Test fun theWorkspaceIsLiveOnlyWithATransportAndAnAppliedLiveFrame() {
-        assertTrue(Availability.workspaceLive(ConnectionPhase.CONNECTED, feedLive = true, projectionPending = false))
-        assertFalse(Availability.workspaceLive(ConnectionPhase.CONNECTED, feedLive = false, projectionPending = false))
-        assertFalse(Availability.workspaceLive(ConnectionPhase.CONNECTED, feedLive = true, projectionPending = true))
-        assertFalse(Availability.workspaceLive(ConnectionPhase.SYNCING, feedLive = true, projectionPending = false))
-        assertFalse(Availability.workspaceLive(ConnectionPhase.RECONNECTING, feedLive = true, projectionPending = false))
+        // Connected while every machine is away: the cached workspace says so until one is back.
+        val unreachable = Availability.workspaceNotice(ConnectionPhase.CONNECTED, hasCache = true, reachable = false)!!
+        assertEquals("Working from cached data", unreachable.title)
+        assertTrue(unreachable.offline)
+        assertNull(Availability.workspaceNotice(ConnectionPhase.CONNECTED, hasCache = false, reachable = false))
     }
 
     @Test fun phasesDescribeRecoveryInsteadOfCollapsingToOffline() {
         assertEquals("Connecting", Availability.label(ConnectionPhase.CONNECTING))
-        assertEquals("Syncing", Availability.label(ConnectionPhase.SYNCING))
+        assertEquals("Connected", Availability.label(ConnectionPhase.CONNECTED))
         assertEquals("Reconnecting", Availability.label(ConnectionPhase.RECONNECTING))
         assertEquals("Disconnected", Availability.label(ConnectionPhase.DISCONNECTED))
         assertEquals("Update required", Availability.label(ConnectionPhase.UPDATE_REQUIRED))
-        assertTrue(Availability.blocked(ConnectionPhase.NO_MACHINE))
+        assertTrue(Availability.blocked(ConnectionPhase.AUTH_REQUIRED))
+        assertTrue(Availability.blocked(ConnectionPhase.UPDATE_REQUIRED))
         assertFalse(Availability.blocked(ConnectionPhase.RECONNECTING))
     }
 
@@ -138,88 +139,86 @@ class AvailabilityTest {
     }
 
     @Test fun statusNotificationDoesNotTurnRoutineSynchronizationIntoAModalSheet() {
-        fun opens(desired: Boolean, phase: ConnectionPhase, hasCache: Boolean) = ConnectionPrompt().apply { showIfNeeded(desired, phase, hasCache) }.visible
-        assertFalse(opens(true, ConnectionPhase.CONNECTING, false))
-        assertFalse(opens(true, ConnectionPhase.SYNCING, true))
-        assertFalse(opens(true, ConnectionPhase.RECONNECTING, true))
-        assertFalse(opens(true, ConnectionPhase.NO_MACHINE, true))
-        assertTrue(opens(true, ConnectionPhase.AUTH_REQUIRED, true))
-        assertTrue(opens(true, ConnectionPhase.UPDATE_REQUIRED, true))
-        assertTrue(opens(true, ConnectionPhase.NO_MACHINE, false))
-        assertTrue(opens(false, ConnectionPhase.DISCONNECTED, true))
+        fun opens(desired: Boolean, phase: ConnectionPhase) = ConnectionPrompt().apply { showIfNeeded(desired, phase) }.visible
+        assertFalse(opens(true, ConnectionPhase.CONNECTING))
+        assertFalse(opens(true, ConnectionPhase.CONNECTED))
+        assertFalse(opens(true, ConnectionPhase.RECONNECTING))
+        assertTrue(opens(true, ConnectionPhase.AUTH_REQUIRED))
+        assertTrue(opens(true, ConnectionPhase.UPDATE_REQUIRED))
+        assertTrue(opens(false, ConnectionPhase.DISCONNECTED))
     }
 
     @Test fun connectedStartupAndRoutineRecoveryNeverOpenTheSheet() {
         val prompt = ConnectionPrompt()
-        assertNull(prompt.reconcile(desired = true, ConnectionPhase.CONNECTED, hasCache = true, foreground = true, start))
+        assertNull(prompt.reconcile(desired = true, ConnectionPhase.CONNECTED, foreground = true, start))
         assertFalse(prompt.visible)
         prompt.phaseChanged(ConnectionPhase.CONNECTED, ConnectionPhase.RECONNECTING, start)
-        assertNull(prompt.reconcile(desired = true, ConnectionPhase.RECONNECTING, hasCache = true, foreground = true, start + 70.seconds))
-        assertNull(prompt.reconcile(desired = true, ConnectionPhase.NO_MACHINE, hasCache = true, foreground = true, start + 70.seconds))
+        assertNull(prompt.reconcile(desired = true, ConnectionPhase.RECONNECTING, foreground = true, start + 70.seconds))
+        assertNull(prompt.reconcile(desired = true, ConnectionPhase.CONNECTING, foreground = true, start + 70.seconds))
         assertFalse(prompt.visible)
     }
 
     @Test fun userActionableFailureGetsGraceBeforeOpeningTheSheet() {
         val prompt = ConnectionPrompt()
         prompt.phaseChanged(ConnectionPhase.CONNECTED, ConnectionPhase.AUTH_REQUIRED, start)
-        assertEquals(ConnectionPrompt.GRACE, prompt.reconcile(desired = true, ConnectionPhase.AUTH_REQUIRED, hasCache = true, foreground = true, start))
-        assertEquals(20.seconds, prompt.reconcile(desired = true, ConnectionPhase.AUTH_REQUIRED, hasCache = true, foreground = true, start + 40.seconds))
+        assertEquals(ConnectionPrompt.GRACE, prompt.reconcile(desired = true, ConnectionPhase.AUTH_REQUIRED, foreground = true, start))
+        assertEquals(20.seconds, prompt.reconcile(desired = true, ConnectionPhase.AUTH_REQUIRED, foreground = true, start + 40.seconds))
         assertFalse(prompt.visible)
         // In the background, nothing opens and no timer runs.
-        assertNull(prompt.reconcile(desired = true, ConnectionPhase.AUTH_REQUIRED, hasCache = true, foreground = false, start + 70.seconds))
+        assertNull(prompt.reconcile(desired = true, ConnectionPhase.AUTH_REQUIRED, foreground = false, start + 70.seconds))
         assertFalse(prompt.visible)
-        assertNull(prompt.reconcile(desired = true, ConnectionPhase.AUTH_REQUIRED, hasCache = true, foreground = true, start + 60.seconds + 1.milliseconds))
+        assertNull(prompt.reconcile(desired = true, ConnectionPhase.AUTH_REQUIRED, foreground = true, start + 60.seconds + 1.milliseconds))
         assertTrue(prompt.visible)
 
         // Without a working connection to lose, the first-sync screen explains the phase: no sheet, no timer.
         val launch = ConnectionPrompt()
-        assertNull(launch.reconcile(desired = true, ConnectionPhase.NO_MACHINE, hasCache = false, foreground = true, start))
-        assertNull(launch.reconcile(desired = true, ConnectionPhase.UPDATE_REQUIRED, hasCache = true, foreground = true, start + 5.minutes))
+        assertNull(launch.reconcile(desired = true, ConnectionPhase.AUTH_REQUIRED, foreground = true, start))
+        assertNull(launch.reconcile(desired = true, ConnectionPhase.UPDATE_REQUIRED, foreground = true, start + 5.minutes))
         assertFalse(launch.visible)
     }
 
     @Test fun aDismissedSheetStaysClosedUntilThePhaseChanges() {
         val prompt = ConnectionPrompt()
         prompt.phaseChanged(ConnectionPhase.CONNECTED, ConnectionPhase.AUTH_REQUIRED, start)
-        prompt.reconcile(desired = true, ConnectionPhase.AUTH_REQUIRED, hasCache = true, foreground = true, start + 2.minutes)
+        prompt.reconcile(desired = true, ConnectionPhase.AUTH_REQUIRED, foreground = true, start + 2.minutes)
         assertTrue(prompt.visible)
         prompt.dismiss(desired = true, ConnectionPhase.AUTH_REQUIRED)
         assertFalse(prompt.visible)
-        assertNull(prompt.reconcile(desired = true, ConnectionPhase.AUTH_REQUIRED, hasCache = true, foreground = true, start + 5.minutes))
+        assertNull(prompt.reconcile(desired = true, ConnectionPhase.AUTH_REQUIRED, foreground = true, start + 5.minutes))
         assertFalse(prompt.visible)
         // A different blocking phase is news.
-        assertNull(prompt.reconcile(desired = true, ConnectionPhase.UPDATE_REQUIRED, hasCache = true, foreground = true, start + 5.minutes))
+        assertNull(prompt.reconcile(desired = true, ConnectionPhase.UPDATE_REQUIRED, foreground = true, start + 5.minutes))
         assertTrue(prompt.visible)
 
         // Leaving for settings counts as a dismissal of that phase too.
         val settings = ConnectionPrompt()
         settings.show()
-        settings.leaveForSettings(ConnectionPhase.NO_MACHINE)
+        settings.leaveForSettings(ConnectionPhase.AUTH_REQUIRED)
         assertFalse(settings.visible)
-        assertNull(settings.reconcile(desired = true, ConnectionPhase.NO_MACHINE, hasCache = false, foreground = true, start + 5.minutes))
+        assertNull(settings.reconcile(desired = true, ConnectionPhase.AUTH_REQUIRED, foreground = true, start + 5.minutes))
         assertFalse(settings.visible)
     }
 
     @Test fun aRequestedSheetStaysOpenWhileConnectedAndTurningOffKeepsItOpen() {
         val prompt = ConnectionPrompt()
         prompt.show()
-        prompt.reconcile(desired = true, ConnectionPhase.CONNECTED, hasCache = true, foreground = true, start)
+        prompt.reconcile(desired = true, ConnectionPhase.CONNECTED, foreground = true, start)
         assertTrue(prompt.visible)
         prompt.dismiss(desired = true, ConnectionPhase.CONNECTED)
         assertFalse(prompt.visible)
         // A connected dismissal is not remembered: a later failure still opens it.
         prompt.phaseChanged(ConnectionPhase.CONNECTED, ConnectionPhase.AUTH_REQUIRED, start)
-        prompt.reconcile(desired = true, ConnectionPhase.AUTH_REQUIRED, hasCache = true, foreground = true, start + 2.minutes)
+        prompt.reconcile(desired = true, ConnectionPhase.AUTH_REQUIRED, foreground = true, start + 2.minutes)
         assertTrue(prompt.visible)
 
         val off = ConnectionPrompt()
         off.disconnected()
         assertTrue(off.visible)
-        off.reconcile(desired = false, ConnectionPhase.DISCONNECTED, hasCache = true, foreground = true, start)
+        off.reconcile(desired = false, ConnectionPhase.DISCONNECTED, foreground = true, start)
         assertTrue(off.visible)
         // An automatically opened sheet closes once the connection works again.
         off.connecting()
-        off.reconcile(desired = true, ConnectionPhase.CONNECTED, hasCache = true, foreground = true, start)
+        off.reconcile(desired = true, ConnectionPhase.CONNECTED, foreground = true, start)
         assertFalse(off.visible)
     }
 }

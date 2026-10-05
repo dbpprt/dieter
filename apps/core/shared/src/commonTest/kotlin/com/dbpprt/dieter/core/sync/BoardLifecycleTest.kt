@@ -1,22 +1,22 @@
 package com.dbpprt.dieter.core.sync
 
-import com.dbpprt.dieter.api.v1.Board
-import com.dbpprt.dieter.api.v1.BoardRetirementVersion
-import com.dbpprt.dieter.api.v1.Card
-import com.dbpprt.dieter.api.v1.Project
+import com.dbpprt.dieter.core.sync.TestRecords.board
+import com.dbpprt.dieter.core.sync.TestRecords.checkout
+import com.dbpprt.dieter.core.sync.TestRecords.project
+import com.dbpprt.dieter.core.sync.TestRecords.record
+import com.dbpprt.dieter.core.sync.TestRecords.replica
+import com.dbpprt.dieter.core.sync.TestRecords.version
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
 
-/** Board retirement as a causal intent, joined across observations. */
+/** Board retirement as a causal intent, joined across machines. */
 class BoardLifecycleTest {
     private class Row(val name: String, val observations: String, val referenced: Boolean, val retired: Boolean, val blocked: Boolean)
 
     /**
      * The rows of `tests/fixtures/board-lifecycle.tsv`, which the daemon's
-     * projection is tested against too: observations in arrival order
-     * (`clock=retired`, `-` for a board without an intent), whether a card
+     * projection is tested against too: each machine's copy of the intent
+     * (`clock=retired`, `-` for a machine without one), whether an item
      * references the board, and the expected projection.
      */
     private val fixture = listOf(
@@ -34,68 +34,47 @@ class BoardLifecycleTest {
         ),
     )
 
-    private fun observed(observation: String): Board {
-        val board = Board(id = "b_fixture", project_id = "project")
-        if (observation == "-") return board
-        val clock = observation.substringBefore('=').split(',').associate { entry ->
-            entry.substringBefore(':') to entry.substringAfter(':').toULong().toLong()
-        }
-        val version = BoardRetirementVersion(clock = clock, rank = observation, retired = observation.substringAfter('=') == "true")
-        return board.copy(retirement_versions = listOf(version), retired = version.retired, retirement_revision = observation)
-    }
-
     @Test
     fun theSharedLifecycleFixtureProjectsAsTheDaemonDoes() {
         for (row in fixture) {
-            var current: Board? = null
-            for (observation in row.observations.split(';')) current = DirectoryReducer.mergeBoardLifecycle(observed(observation), current)
-            val project = Project(id = "project")
-            val card = Card(id = "card", project_id = project.id, board_id = "b_fixture")
-            val initial = DirectoryProjection(
-                projects = mapOf(project.id to project),
-                boards = mapOf(project.id to listOf(current!!)),
-                cards = if (row.referenced) mapOf(project.id to listOf(card)) else emptyMap(),
-            )
-            val result = DirectoryReducer.merge(initial, listOf(MachineSnapshot("peer", listOf(project), emptyList(), emptyList(), emptyList())))
-            val board = result.retiredBoards["b_fixture"] ?: result.boards.getValue(project.id).single()
+            val base = project("p") + checkout("co", "p", "m0") + board("b_fixture", "p")
+            val reference = if (row.referenced) listOf(TestRecords.field("item", "card", "placement", """{"boardId":"b_fixture","lane":"todo"}""")) else emptyList()
+            val machines = row.observations.split(';').mapIndexed { index, observation ->
+                val records = if (observation == "-") emptyList() else {
+                    val clock = observation.substringBefore('=').split(',').map { entry ->
+                        entry.substringBefore(':') to entry.substringAfter(':').toULong().toLong()
+                    }
+                    listOf(record("board/b_fixture.retired", version(observation.substringAfter('='), *clock.toTypedArray())))
+                }
+                replica("m$index", records + if (index == 0) base + reference else emptyList())
+            }
+            val view = TestRecords.project(*machines.toTypedArray()).directory
+            val board = view.retiredBoards["b_fixture"] ?: view.boards.getValue("p").single()
             assertEquals(row.retired, board.retired, row.name)
             assertEquals(row.blocked, board.retirement_blocked, row.name)
-            assertEquals(if (board.retired) 0 else 1, result.projects.getValue(project.id).board_count, row.name)
+            assertEquals(if (board.retired) 0 else 1, view.projects.getValue("p").board_count, row.name)
+            // Arrival order never matters.
+            val reversed = TestRecords.project(*machines.reversed().toTypedArray()).directory
+            assertEquals(view.boards, reversed.boards, row.name)
+            assertEquals(view.retiredBoards, reversed.retiredBoards, row.name)
         }
     }
 
     @Test
-    fun aLaterRetirementCannotEraseKnownBlockingReferences() {
-        val version = BoardRetirementVersion(clock = mapOf("a" to 1L), rank = "a", retired = true)
-        val known = Board(id = "board", retirement_versions = listOf(version), retirement_blocked = true, retirement_references = listOf("item/offline"))
-        val later = known.copy(
-            retirement_versions = listOf(version.copy(clock = mapOf("a" to 2L), rank = "b")),
-            retirement_blocked = false, retired = true, retirement_references = emptyList(),
-        )
-        val merged = DirectoryReducer.mergeBoardLifecycle(later, known)
-        assertFalse(merged.retired)
-        assertTrue(merged.retirement_blocked)
-        assertEquals(listOf("item/offline"), merged.retirement_references)
-    }
+    fun aRetirementBlockedByAnItemNamesItAndARevisionOnlyAnObserverHas() {
+        val base = project("p") + checkout("co", "p", "m0") + board("b", "p")
+        val retired = record("board/b.retired", version("true", "a" to 1L))
+        val placed = TestRecords.field("item", "c_1", "placement", """{"boardId":"b","lane":"done"}""")
+        val view = TestRecords.project(replica("m0", base + retired + placed)).directory
+        val board = view.boards.getValue("p").single()
+        assertEquals(true, board.retirement_blocked)
+        assertEquals(listOf("item/c_1"), board.retirement_references)
+        assertEquals(retired.revision, board.retirement_revision)
 
-    @Test
-    fun aViewCoversAnIntentOnlyOnceItsLifecycleIncludesIt() {
-        val retired = observed("a:1=true")
-        val restored = observed("a:2=false")
-        assertTrue(DirectoryReducer.coversLifecycle(restored, retired))
-        assertFalse(DirectoryReducer.coversLifecycle(retired, restored))
-        assertFalse(DirectoryReducer.coversLifecycle(observed("-"), retired))
-        // A board without an intent is covered by any view of it.
-        assertTrue(DirectoryReducer.coversLifecycle(observed("-"), observed("-")))
-    }
-
-    @Test
-    fun aCardFiledOnOrPlacedOnABoardReferencesIt() {
-        val filed = Card(id = "c_1", board_id = "b_1")
-        val chat = Card(id = "c_2", scope = "chat")
-        assertEquals(setOf("b_1", ""), DirectoryReducer.referencedBoards(listOf(filed, chat)))
-        val retired = Board(id = "b_1", retired = true)
-        assertEquals(Board(id = "b_1", retirement_blocked = true), DirectoryReducer.blockingReferenced(retired, setOf("b_1")))
-        assertEquals(retired, DirectoryReducer.blockingReferenced(retired, setOf("b_2")))
+        // Two machines with different intents: no machine has observed the join, so no compare-and-swap can target it.
+        val restored = record("board/b.retired", version("false", "b" to 1L))
+        val joined = TestRecords.project(replica("m0", base + retired), replica("m1", listOf(restored))).directory
+        assertEquals(UNOBSERVED_JOIN, joined.boards.getValue("p").single().retirement_revision)
+        assertEquals("absent", TestRecords.project(replica("m0", base)).directory.boards.getValue("p").single().retirement_revision)
     }
 }

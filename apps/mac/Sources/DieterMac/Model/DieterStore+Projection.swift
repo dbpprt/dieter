@@ -22,7 +22,7 @@ extension DieterStore {
     var projects: [Dieter_V1_Project] { replica.projects }
 
     /// Every project's cards, for cross-project navigation. `state.cards`
-    /// holds only the selected project; the core's workspace feed keeps
+    /// holds only the selected project; every machine's stream keeps
     /// `navigationCards` current in the background.
     func synchronizedCardValues() -> [Dieter_V1_Card] {
         var byID: [String: Dieter_V1_Card] = [:]
@@ -60,10 +60,6 @@ extension DieterStore {
         }
     }
 
-    var activeGateway: MachineEndpoint {
-        gatewayOrigins.first(where: { $0.credentialID == endpoint.credentialID }) ?? endpoint.gatewayEndpoint
-    }
-
     var hasLoadedWorkspace: Bool {
         coreWorkspace.loaded || !projectDirectory.isEmpty
     }
@@ -94,10 +90,16 @@ extension DieterStore {
         }
     }
 
-    func replica(forProjectID projectID: String) -> MachineEndpoint? {
-        // This selects a replica for shared metadata, never an execution owner.
-        if machineIsAvailable(endpoint), phase.isConnected { return endpoint }
-        return endpoints.first { $0.daemonID != nil && machineIsAvailable($0) }
+    /// This Mac's own machine, reached over loopback, when it is enrolled.
+    var localMachine: MachineEndpoint? {
+        endpoints.first { machineEntry($0)?.local == true }
+    }
+
+    /// The machine that hosts `projectID`'s work and project-wide reads, as
+    /// the core picks it; nil when no listed machine has a checkout of it.
+    func projectMachine(forProjectID projectID: String) -> MachineEndpoint? {
+        guard let daemonID = projectHosts[projectID] else { return nil }
+        return endpoints.first { $0.daemonID == daemonID }
     }
 
     /// What waits in the outbox for `machine`; nil when nothing does.

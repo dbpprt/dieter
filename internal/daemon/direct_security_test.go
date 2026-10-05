@@ -91,7 +91,7 @@ func TestDirectTLSExpiryReleasesStalledNetworkStreams(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { _ = connection.Close() })
-			stream, err := connection.NewStream(ctx, &grpc.StreamDesc{ServerStreams: true}, "/dieter.v1.DieterService/WatchState", grpc.ForceCodec(rpcraw.Codec{}))
+			stream, err := connection.NewStream(ctx, &grpc.StreamDesc{ServerStreams: true}, "/dieter.v1.DieterService/WatchChanges", grpc.ForceCodec(rpcraw.Codec{}))
 			if err != nil {
 				t.Fatal(err)
 			}

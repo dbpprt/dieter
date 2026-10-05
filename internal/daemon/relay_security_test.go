@@ -193,7 +193,7 @@ func TestCanceledRelayEscapesSaturatedResponseQueue(t *testing.T) {
 			c, private, connection, calls := relaySecurityFixture(t)
 			frame := signedRelayFrame(t, c, private, func(frame *gatewayv1.DaemonLinkFrame, claims *trust.DelegationClaims) {
 				if !priority {
-					frame.Method = "/dieter.v1.DieterService/WatchState"
+					frame.Method = "/dieter.v1.DieterService/WatchChanges"
 					claims.Method = frame.Method
 				}
 			})

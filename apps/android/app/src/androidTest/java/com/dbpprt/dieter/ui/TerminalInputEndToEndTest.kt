@@ -47,7 +47,7 @@ class TerminalInputEndToEndTest {
         val container = (compose.activity.application as DieterApplication).container
         val connected = IsolatedCore.connect(container)
         val project = connected.projects.first { candidate -> connected.boards[candidate.id].orEmpty().isNotEmpty() }
-        val daemonId = IsolatedCore.daemonId(container)
+        val daemonId = IsolatedCore.machineId
         fun terminals(): List<Terminal> = runBlocking {
             container.core.onMachine(daemonId) { client ->
                 (client.ListTerminals().execute(ListTerminalsRequest()).terminals +

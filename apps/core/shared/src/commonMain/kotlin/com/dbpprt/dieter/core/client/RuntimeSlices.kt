@@ -1,16 +1,17 @@
 package com.dbpprt.dieter.core.client
 
+import com.dbpprt.dieter.api.v1.PeerSyncDiagnostic
 import com.dbpprt.dieter.client.v1.ActivityRow
 import com.dbpprt.dieter.client.v1.ActivitySlice
 import com.dbpprt.dieter.client.v1.ActivitySummary
 import com.dbpprt.dieter.client.v1.BoardSlice
 import com.dbpprt.dieter.client.v1.FailedOperation
-import com.dbpprt.dieter.client.v1.FeedStatus
 import com.dbpprt.dieter.client.v1.GatewayBuild
 import com.dbpprt.dieter.client.v1.GatewayEntry
 import com.dbpprt.dieter.client.v1.MachineEntry
 import com.dbpprt.dieter.client.v1.MachineMetadata
 import com.dbpprt.dieter.client.v1.MachineOutbox
+import com.dbpprt.dieter.client.v1.MachineSyncState
 import com.dbpprt.dieter.client.v1.MetadataSlice
 import com.dbpprt.dieter.client.v1.NavigationFolder as ClientNavigationFolder
 import com.dbpprt.dieter.client.v1.NavigationSlice
@@ -32,9 +33,13 @@ import com.dbpprt.dieter.core.connection.Availability
 import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.core.connection.ConnectionState
 import com.dbpprt.dieter.core.connection.MachineDirectory
+import com.dbpprt.dieter.core.connection.MachineSync
+import com.dbpprt.dieter.core.connection.MachineSyncs
+import com.dbpprt.dieter.core.connection.SyncState
 import com.dbpprt.dieter.core.identity.Accounts
 import com.dbpprt.dieter.core.journal.OutboxKind
 import com.dbpprt.dieter.core.journal.OutboxState
+import com.dbpprt.dieter.core.machines.MachineChoice
 import com.dbpprt.dieter.core.machines.MachineRow
 import com.dbpprt.dieter.core.machines.MachineRows
 import com.dbpprt.dieter.core.navigation.FolderScope
@@ -42,6 +47,7 @@ import com.dbpprt.dieter.core.navigation.NavigationLayout
 import com.dbpprt.dieter.core.outbox.DeliveryPhase
 import com.dbpprt.dieter.core.routing.RouteKind
 import com.dbpprt.dieter.core.session.MachineRoute
+import com.dbpprt.dieter.core.store.WorkspaceView
 import kotlin.time.Instant
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -61,31 +67,36 @@ private data class SessionInputs(
     val showReasoning: Boolean,
 )
 
+private data class SyncInputs(
+    val syncs: Map<String, MachineSync>,
+    val issues: Map<String, List<PeerSyncDiagnostic>>,
+    val updatedAt: Long,
+)
+
 internal fun CoreRuntime.sessionSlices(): Flow<SessionSlice> = combine(
     combine(connection.state, connection.machines, accounts.state, sessions.routes, conversations.showReasoning, ::SessionInputs),
-    connection.feedStatus, connection.freshness, connection.gatewayInformation,
+    combine(connection.syncs, accountSync.snapshot.map { it.peerSyncIssues }.distinctUntilChanged(), accountSync.updatedAt.map { it.values.maxOrNull()?.toEpochMilliseconds() ?: 0 }.distinctUntilChanged(), ::SyncInputs),
+    connection.gatewayInformation,
     workspace.state.map { it.loaded }.distinctUntilChanged(),
-) { inputs, feed, freshness, gateway, cached ->
+) { inputs, sync, gateway, cached ->
     val (state, machines, accounts, routes, showReasoning) = inputs
     val active = accounts.active
-    val rows = machines.all.map { MachineRows.of(it, it.online(machines.evaluatedAt), routes[it.id], state.attachedMachineId) }
+    val rows = machines.all.map { MachineRows.of(it, it.online(machines.evaluatedAt), routes[it.id]) }
     // Without a live gateway connection, cached presence is never shown as online.
     val presented = MachineRows.presented(rows, state.phase, emptySet(), emptyMap())
     val connected = state.phase == ConnectionPhase.CONNECTED
-    val feedLive = feed.live && !feed.projectionPending
     val now = platform.clock.now()
     SessionSlice(
         phase = SessionSlice.Phase.valueOf("PHASE_${state.phase.name}"),
         gateway_origin = active.origin,
         gateways = accounts.gateways.map { GatewayEntry(it.origin, it.name, it.origin == active.origin, accounts.desiredConnected[it.origin] ?: true) },
-        attached_machine_id = state.attachedMachineId.orEmpty(),
         error = state.error.orEmpty(),
         machines = machines.all.indices.sortedWith(compareBy<Int, MachineRow>(MachineRows.ORDER) { rows[it] }).map { index ->
             val machine = machines.all[index]
             val route = routes[machine.id]
-            val attached = machine.id == state.attachedMachineId
-            val warnings = freshness[machine.id]?.let { MachineRows.syncWarnings(rows, mapOf(machine.id to it), connected, now) }.orEmpty()
-            val status = MachineRows.status(rows[index], attached, state.phase, state.error, warnings, feedLive)
+            val machineSync = sync.syncs[machine.id]
+            val warnings = sync.issues[machine.id]?.let { MachineRows.syncWarnings(rows, mapOf(machine.id to it), connected, now) }.orEmpty()
+            val status = MachineRows.status(rows[index], machineSync, state.phase, warnings)
             val shown = presented[index]
             MachineEntry(
                 id = machine.id, name = machine.name, online = machine.online(machines.evaluatedAt),
@@ -98,15 +109,27 @@ internal fun CoreRuntime.sessionSlices(): Flow<SessionSlice> = combine(
                 screen_status = shown.screenStatus, can_share_screen = shown.canShareScreen,
                 presence = MachineRows.presence(machine.online(machines.evaluatedAt)), display_name = machine.name.ifBlank { machine.id },
                 tone = MachineRows.tone(shown.hostsProjects, machine.compatible),
+                sync_state = syncState(machineSync?.state), sync_label = (machineSync ?: MachineSync()).label,
+                stale_since_millis = machineSync?.takeIf { it.stale }?.since?.toEpochMilliseconds() ?: 0,
             )
         },
-        feed = FeedStatus(last_applied_at_millis = feed.lastAppliedAt?.toEpochMilliseconds() ?: 0),
         gateway_build = gateway?.let { GatewayBuild(it.release_version, it.source_revision, it.built_at) },
-        notice = Availability.workspaceNotice(state.phase, cached)?.let { WorkspaceNotice(it.title, it.detail, it.working, it.offline) },
+        notice = Availability.workspaceNotice(state.phase, cached, reachable = MachineChoice.ordered(machines, routes).isNotEmpty())
+            ?.let { WorkspaceNotice(it.title, it.detail, it.working, it.offline) },
         phase_label = Availability.label(state.phase), tone = Availability.tone(state.phase),
-        workspace_live = Availability.workspaceLive(state.phase, feed.live, feed.projectionPending),
+        synced = connected && MachineSyncs.current(machines, sync.syncs),
+        updated_at_millis = sync.updatedAt,
         show_reasoning = showReasoning,
     )
+}
+
+private fun syncState(state: SyncState?): MachineSyncState = when (state ?: SyncState.CONNECTING) {
+    SyncState.CONNECTING -> MachineSyncState.MACHINE_SYNC_STATE_CONNECTING
+    SyncState.CATCHING_UP -> MachineSyncState.MACHINE_SYNC_STATE_CATCHING_UP
+    SyncState.LIVE -> MachineSyncState.MACHINE_SYNC_STATE_LIVE
+    SyncState.STALE -> MachineSyncState.MACHINE_SYNC_STATE_STALE
+    SyncState.OFFLINE -> MachineSyncState.MACHINE_SYNC_STATE_OFFLINE
+    SyncState.INCOMPATIBLE -> MachineSyncState.MACHINE_SYNC_STATE_INCOMPATIBLE
 }
 
 internal fun CoreRuntime.metadataSlices(): Flow<MetadataSlice> = metadata.machines.map { machines ->
@@ -146,18 +169,21 @@ internal fun CoreRuntime.navigationSlices(): Flow<NavigationSlice> = combine(
         collapsed_chat_sections = layout.collapsedChatSections(),
         chats_show_all = layout.projectsShowingAllChats(),
         pending = status.pending,
-        error = (status.deliveryError ?: status.watchError).orEmpty(), caught_up = status.caughtUp,
+        error = status.deliveryError.orEmpty(), caught_up = status.caughtUp,
     )
 }
 
-internal fun CoreRuntime.workspaceSlices(): Flow<WorkspaceSlice> = workspace.state.map { view ->
-    WorkspaceSlice(
-        projects = view.projects, boards = view.boards.values.flatten(), cards = view.allItems,
-        pending_card_ids = view.pendingCardIds.sorted(), loaded = view.loaded, project_replicas = view.projectReplicas,
-        retired_boards = view.retiredBoards, settings = view.settings,
-        board_attention = ProjectOverview.boardAttention(view.cards.values.flatten()),
-    )
-}
+/** [view] as the workspace slice, with each project's host ([MachineChoice.checkout]). */
+internal fun CoreRuntime.workspaceSlice(view: WorkspaceView): WorkspaceSlice = WorkspaceSlice(
+    projects = view.projects, boards = view.boards.values.flatten(), cards = view.allItems,
+    pending_card_ids = view.pendingCardIds.sorted(), loaded = view.loaded, retired_boards = view.retiredBoards,
+    board_attention = ProjectOverview.boardAttention(view.cards.values.flatten()),
+    project_hosts = view.projects.mapNotNull { project -> choice.checkout(project.id)?.let { project.id to it } }.toMap(),
+)
+
+/** Which machines are reachable, in order, which decides each project's host; not every presence refresh. */
+internal fun CoreRuntime.reachabilityChanges(): Flow<List<String>> =
+    combine(connection.machines, sessions.routes) { machines, routes -> MachineChoice.ordered(machines, routes) }.distinctUntilChanged()
 
 internal fun CoreRuntime.outboxSlices(): Flow<OutboxSlice> = combine(outbox.view, connection.machines, connection.state) { view, machines, state ->
     OutboxSlice(
@@ -231,6 +257,7 @@ internal fun activitySlice(items: List<ActivityItem>, now: Instant): ActivitySli
                 project_name = item.projectName.orEmpty(), board_name = item.boardName.orEmpty(), chat = item.chat,
                 needs_you = item.needsYou, can_finish = item.canFinish, kind_label = item.kind.label, title = item.title,
                 shown_at_millis = item.shownAt?.toEpochMilliseconds() ?: 0, menu_bar_title = MenuBar.title(item.kind),
+                stale = item.stale.orEmpty(),
             )
         },
         summary = ActivitySummary(

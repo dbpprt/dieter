@@ -48,7 +48,7 @@ func TestRejectedPeerPagePreservesCheckpointAndReportsBlocker(t *testing.T) {
 	if err != nil || len(diagnostics) != 1 || diagnostics[0].RecordID != "b_bad.retired" || diagnostics[0].Direction != "pull" {
 		t.Fatalf("diagnostic: %+v %v", diagnostics, err)
 	}
-	initial, err := reopened.MetadataCursor()
+	initial, err := reopened.MetadataRevision()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +59,7 @@ func TestRejectedPeerPagePreservesCheckpointAndReportsBlocker(t *testing.T) {
 	if err != nil || len(diagnostics) != 2 {
 		t.Fatalf("lost other peer blocker: %+v %v", diagnostics, err)
 	}
-	after, err := reopened.MetadataCursor()
+	after, err := reopened.MetadataRevision()
 	if err != nil || initial != after {
 		t.Fatalf("diagnostics changed workspace cursor: %+v %+v %v", initial, after, err)
 	}

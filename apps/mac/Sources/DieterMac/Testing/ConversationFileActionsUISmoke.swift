@@ -188,7 +188,8 @@
             }
             let button = nativeButton(identifier, in: window)
             let enabled = button?.isEnabled
-            let expectedEnabled = store.isLocalMachine(store.endpoint.id)
+            // The conversation's files open locally only on this Mac's own machine.
+            let expectedEnabled = store.isLocalMachine(tab.scope?.target.endpointID ?? "")
             let name = tab.files.fileDocument?.name ?? "unknown"
             results["content-finder-\(name)"] =
                 ready && enabled == expectedEnabled

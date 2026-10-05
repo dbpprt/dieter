@@ -67,7 +67,7 @@ struct EditCardSheet: View {
 
     /// The agents of the machine that runs the card.
     private var catalog: Dieter_V1_HarnessCatalog {
-        store.machineMetadata[card.ownerDaemonID]?.harnesses ?? store.harnessCatalog
+        store.harnessCatalog(forDaemon: card.ownerDaemonID)
     }
 
     var body: some View {

@@ -193,7 +193,8 @@
                 let resolved = await wait {
                     external?.submenu?.items.contains(where: { $0.title == "Loading…" }) == false
                 }
-                let remoteCorrect = store.isLocalMachine(store.endpoint.id) || finder?.isEnabled == false
+                let owner = store.selectedCard.map { store.endpointID(for: $0) } ?? ""
+                let remoteCorrect = store.isLocalMachine(owner) || finder?.isEnabled == false
                 results["content-link-context-menu"] =
                     external?.submenu != nil && finder != nil && resolved && remoteCorrect
                     ? "passed" : "failed: external submenu/Finder missing or remote file enabled"

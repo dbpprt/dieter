@@ -461,7 +461,7 @@ struct QuickTaskPopover: View {
             submitting = false
             return
         }
-        await store.selectBoard(draftBoardID)
+        store.selectBoard(draftBoardID)
         guard store.selectedBoard?.id == draftBoardID else {
             submissionError = "This board is unavailable. Choose another board."
             submitting = false

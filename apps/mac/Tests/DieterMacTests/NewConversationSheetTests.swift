@@ -16,9 +16,6 @@ struct NewConversationSheetTests {
         var project = Dieter_V1_Project()
         project.id = projectID; project.checkouts = [mini, garuda]
         store.projectDirectory[projectID] = project
-        store.endpoint = MachineEndpoint(
-            name: "Garuda", host: "127.0.0.1", port: 1, daemonID: "garuda", online: true,
-            releaseVersion: "0.4.309")
 
         // Several checkouts and no choice yet: the user chooses.
         #expect(store.checkout(forProjectID: projectID) == nil)
@@ -116,7 +113,6 @@ private final class NewConversationSheetFixture {
         store.state.boards = [board]
         store.selectedProjectID = project.id
         store.selectedBoardID = board.id
-        store.projectReplicaEndpointIDs[project.id] = "native-creation-machine"
         self.store = store
 
         let host = NSHostingView(rootView: NewConversationSheet().environment(store))

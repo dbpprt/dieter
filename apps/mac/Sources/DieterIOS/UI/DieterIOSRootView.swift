@@ -84,9 +84,9 @@
 
         // MARK: - Share extension handoff
 
-        /// A shared item opens once the workspace is current.
+        /// A shared item opens once every reachable machine's view is current.
         private var shareReady: Bool {
-            pendingShare != nil && app.signedIn && app.session.workspaceLive
+            pendingShare != nil && app.signedIn && app.session.synced
         }
 
         private func receivePendingShare() {

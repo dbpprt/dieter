@@ -16,8 +16,8 @@ internal object Deltas {
         return WorkspaceDelta(
             projects = next.projects, boards = next.boards, upserted_cards = cards.upserted, removed_card_ids = cards.removed,
             card_order = if (cards.orderChanged) next.cards.map(Card::id) else emptyList(), order_changed = cards.orderChanged,
-            pending_card_ids = next.pending_card_ids, loaded = next.loaded, project_replicas = next.project_replicas,
-            retired_boards = next.retired_boards, settings = next.settings, board_attention = next.board_attention,
+            pending_card_ids = next.pending_card_ids, loaded = next.loaded,
+            retired_boards = next.retired_boards, board_attention = next.board_attention, project_hosts = next.project_hosts,
         )
     }
 

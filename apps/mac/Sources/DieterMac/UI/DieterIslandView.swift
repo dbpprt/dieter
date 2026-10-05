@@ -221,7 +221,7 @@ struct DieterIslandView: View {
 
                 HStack(spacing: 6) {
                     Circle().fill(connectionColor).frame(width: 5, height: 5)
-                    Text(store.endpoint.name)
+                    Text(store.activeGateway.name)
                         .lineLimit(1)
                 }
                 .font(.system(size: 9.5, weight: .medium))

@@ -42,6 +42,11 @@ const (
 	daemonHandshakeTimeout    = 10 * time.Second
 	maxDaemonHandshakes       = 64
 	maxDaemonRelayStreams     = 16
+	// Every client holds a change stream to every online machine and may
+	// watch conversations, KV and executions there. These long-lived reads
+	// have their own bound, so they cannot starve requests or each other's
+	// clients of the ordinary streams.
+	maxDaemonWatchStreams = 64
 )
 
 type Hub struct {
@@ -89,6 +94,7 @@ type queuedRelayFrame struct {
 type relayFrameQueue struct {
 	frames chan queuedRelayFrame
 	bytes  atomic.Int64
+	watch  bool
 }
 
 func (q *relayFrameQueue) push(frame *gatewayv1.DaemonLinkFrame) bool {
@@ -223,7 +229,7 @@ func (h *Hub) connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame,
 	}
 	link := &daemonLink{
 		id: identity, generation: record.Generation, controlWebRTC: controlWebRTC,
-		send: make(chan *gatewayv1.DaemonLinkFrame, 8), control: make(chan *gatewayv1.DaemonLinkFrame, 2*maxDaemonRelayStreams),
+		send: make(chan *gatewayv1.DaemonLinkFrame, 8), control: make(chan *gatewayv1.DaemonLinkFrame, 2*(maxDaemonRelayStreams+maxDaemonWatchStreams)),
 		quota: make(chan *gatewayv1.DaemonLinkFrame, 16), done: make(chan struct{}), streams: map[uint64]*relayFrameQueue{},
 		capabilities: map[string]bool{},
 	}
@@ -530,7 +536,17 @@ func (h *Hub) Open(ctx context.Context, daemonID string, frame *gatewayv1.Daemon
 		return nil, status.Error(14, "daemon disconnected")
 	default:
 	}
-	if len(link.streams) >= maxDaemonRelayStreams {
+	watch := isWatchMethod(frame.GetMethod())
+	streams, limit := 0, maxDaemonRelayStreams
+	if watch {
+		limit = maxDaemonWatchStreams
+	}
+	for _, existing := range link.streams {
+		if existing.watch == watch {
+			streams++
+		}
+	}
+	if streams >= limit {
 		link.mu.Unlock()
 		return nil, status.Error(codes.ResourceExhausted, "daemon relay concurrency is exhausted")
 	}
@@ -538,7 +554,7 @@ func (h *Hub) Open(ctx context.Context, daemonID string, frame *gatewayv1.Daemon
 	// receiver is scheduled. Allow bounded bursts without increasing the old
 	// ordinary-RPC memory ceiling (four 16 MiB frames). Large frames still hit
 	// the byte limit; a stalled stream never blocks the shared daemon link.
-	queue := &relayFrameQueue{frames: make(chan queuedRelayFrame, relayFrameBuffer(frame.GetMethod()))}
+	queue := &relayFrameQueue{frames: make(chan queuedRelayFrame, relayFrameBuffer(frame.GetMethod())), watch: watch}
 	link.streams[id] = queue
 	link.mu.Unlock()
 	frame.StreamId, frame.DaemonId = id, daemonID
@@ -556,6 +572,10 @@ func (h *Hub) Open(ctx context.Context, daemonID string, frame *gatewayv1.Daemon
 		}
 	}()
 	return result, nil
+}
+
+func isWatchMethod(method string) bool {
+	return strings.HasPrefix(method, "/dieter.v1.DieterService/Watch")
 }
 
 func relayFrameBuffer(method string) int {

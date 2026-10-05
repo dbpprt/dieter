@@ -84,7 +84,7 @@ private suspend fun CoreRuntime.runAdministration(command: AdminCommand): Result
         val validation = if (update.set_validation) update.validation.map(ValidationCommandDraft::from) else null
         return Result(
             project = ProjectWorkspaceSettings.update(
-                sessions, workspace, project, update.base_remote, update.base_branch, update.checkout_id.ifEmpty { null }, validation,
+                sessions, workspace, choice, project, update.base_remote, update.base_branch, update.checkout_id.ifEmpty { null }, validation,
             ).also(workspace::overlayProject),
         )
     }

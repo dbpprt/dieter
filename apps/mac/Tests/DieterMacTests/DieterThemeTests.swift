@@ -453,7 +453,6 @@ struct DieterThemePerformanceTests {
             project.id = "project-\(projectIndex)"
             project.name = "Project \(projectIndex)"
             store.projectDirectory[project.id] = project
-            store.projectReplicaEndpointIDs[project.id] = store.endpoint.id
 
             for chatIndex in 0..<5 {
                 var chat = Dieter_V1_Card()
@@ -472,7 +471,7 @@ struct DieterThemePerformanceTests {
         }
         store.chats = chats
         store.showChatsFixture()
-        store.phase = .connected(version: "theme-performance-fixture")
+        store.phase = .connected
         store.workspaceIsLive = true
         store.section = .chats
         return (store, running, chats.count)
@@ -554,7 +553,7 @@ struct DieterThemePerformanceTests {
         store.navigationBoards[project.id] = [board]
         store.selectedProjectID = project.id
         store.selectedBoardID = board.id
-        store.phase = .connected(version: "board-performance-fixture")
+        store.phase = .connected
         store.workspaceIsLive = true
         store.section = .board
         store.showBoardFixture(board, cards: cards)

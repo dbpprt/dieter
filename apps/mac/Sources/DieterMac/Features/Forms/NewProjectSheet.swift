@@ -16,12 +16,8 @@ struct NewProjectSheet: View {
     @State private var suggestedName = ""
     @State private var workspaceSettingsExpanded = false
 
-    private var availableMachines: [MachineEndpoint] {
-        store.machines.isEmpty ? [store.endpoint] : store.machines
-    }
-
     private var selectedMachine: MachineEndpoint? {
-        availableMachines.first { $0.id == machineID }
+        store.machines.first { $0.id == machineID }
     }
 
     private var selectedMachineAvailable: Bool {
@@ -72,7 +68,7 @@ struct NewProjectSheet: View {
                     }
                     projectLabel("Checkout machine")
                     Menu {
-                        ForEach(availableMachines) { machine in
+                        ForEach(store.machines) { machine in
                             Button {
                                 if store.machineIsAvailable(machine) { machineID = machine.id }
                             } label: {
@@ -273,9 +269,10 @@ struct NewProjectSheet: View {
         .background(DieterTheme.background)
         .task {
             if machineID.isEmpty {
+                // This Mac's machine, else the first that can take work.
                 machineID =
-                    availableMachines.first(where: { $0.id == store.endpoint.id })?.id ?? availableMachines.first(
-                        where: \.online)?.id ?? ""
+                    store.localMachine.flatMap { store.machineIsAvailable($0) ? $0.id : nil }
+                    ?? store.machines.first(where: store.machineIsAvailable)?.id ?? ""
             }
         }
         .onChange(of: existingProjectID) { _, value in

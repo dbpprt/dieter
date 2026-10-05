@@ -533,7 +533,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		if peer.transport.route != "webrtc-direct" {
 			t.Fatalf("want WebRTC, got %s", peer.transport.route)
 		}
-		assertSyncCursorCLI(t, peer, &output)
+		assertChangesCLI(t, peer, &output)
 		assertMachineHomeTerminalCLI(t, peer, &output)
 		output.Reset()
 		if err := peer.Run([]string{"project", "update", "--hostname", "rtc.example", remoteProject.ID}); err != nil {
@@ -654,7 +654,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	localCLI.Out, localCLI.Err = &localCLIOutput, &localCLIOutput
 	assertScreenSessionCLI(t, localCLI, &localCLIOutput, localConfig)
 	localCLI.Close()
-	assertSyncCursorCLI(t, first, &firstOutput)
+	assertChangesCLI(t, first, &firstOutput)
 	assertMachineHomeTerminalCLI(t, first, &firstOutput)
 	assertQueueRemovalCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
 	assertCardMergeCLI(t, first, &firstOutput, remoteStore, remoteProject.ID)
@@ -682,7 +682,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 	if second.transport == nil || second.transport.route != expectedRoute {
 		t.Fatalf("route=%#v want %s", second.transport, expectedRoute)
 	}
-	assertSyncCursorCLI(t, second, &secondOutput)
+	assertChangesCLI(t, second, &secondOutput)
 	secondOutput.Reset()
 	if err := second.Run([]string{"machine", "info"}); err != nil || !strings.Contains(secondOutput.String(), `"daemonBuild"`) || !strings.Contains(secondOutput.String(), `"gpu"`) {
 		t.Fatalf("relay machine info output=%q err=%v", secondOutput.String(), err)
@@ -853,14 +853,15 @@ func assertProjectHostnameCLI(t *testing.T, client *CLI, output *bytes.Buffer, p
 	}
 }
 
-func assertSyncCursorCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
+func assertChangesCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
 	t.Helper()
-	raw := runDaemonCLI(t, client, output, "watch", "sync", "--count", "1")
-	var frame dieterv1.SyncFrame
+	raw := runDaemonCLI(t, client, output, "watch", "changes", "--count", "1")
+	var frame dieterv1.ChangesFrame
 	if err := protojson.Unmarshal([]byte(raw), &frame); err != nil {
 		t.Fatal(err)
 	}
-	if frame.Snapshot == nil || frame.Cursor.GetProjectionId() == "" || frame.Heartbeat || frame.ProjectionPending {
-		t.Fatalf("CLI did not negotiate complete resumable metadata: %+v", &frame)
+	cursor := frame.GetCursor()
+	if !frame.ResetRecords || !frame.ResetLocal || frame.Heartbeat || cursor.GetRecordsEpoch() == "" || cursor.GetLocalEpoch() == "" || len(frame.Records) == 0 {
+		t.Fatalf("CLI did not start a resumable change stream: %+v", &frame)
 	}
 }

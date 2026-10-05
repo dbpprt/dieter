@@ -343,8 +343,8 @@ final class RemoteNodeUITests: XCTestCase {
             banner.waitForExistence(timeout: 45),
             "Taking the isolated daemon offline must present the connection state.\n\(app.debugDescription)")
 
-        // The core words the notice by phase: reconnecting while it retries the
-        // feed, then cached data once presence reports the machine offline.
+        // The core words the notice by phase: reconnecting while the connection
+        // recovers, then cached data once no machine is reachable.
         let noticeTitles = ["Reconnecting to Dieter", "Working from cached data", "Dieter is unavailable"]
         let notice = banner.staticTexts.matching(NSPredicate(format: "label IN %@", noticeTitles)).firstMatch
         XCTAssertTrue(

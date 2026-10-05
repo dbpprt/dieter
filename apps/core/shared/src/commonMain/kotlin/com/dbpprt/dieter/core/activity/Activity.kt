@@ -2,7 +2,7 @@ package com.dbpprt.dieter.core.activity
 
 import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
-import com.dbpprt.dieter.api.v1.ConversationSnapshot
+import com.dbpprt.dieter.api.v1.Conversation
 import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.core.board.Cards
 import com.dbpprt.dieter.core.board.Lanes
@@ -12,7 +12,6 @@ import com.dbpprt.dieter.core.presentation.Ages
 import com.dbpprt.dieter.core.presentation.Counts
 import com.dbpprt.dieter.core.presentation.LiveActivities
 import com.dbpprt.dieter.core.runtime.Timestamps
-import com.dbpprt.dieter.core.sync.mergeCardState
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
@@ -40,6 +39,8 @@ data class ActivityItem(
     val sortAt: Instant?,
     val projectName: String?,
     val boardName: String?,
+    /** Why what its owner reports may be old, e.g. "Studio is offline"; null while current. */
+    val stale: String? = null,
 ) {
     val id: String get() = card.id
     val chat: Boolean get() = Cards.isChat(card)
@@ -71,8 +72,8 @@ data class ActivityItem(
 
 /**
  * One activity projection for the inbox, widgets, the island, the menu bar,
- * and notification decisions. Built from the merged directory and the bounded
- * conversation cache; it never fetches transcripts.
+ * and notification decisions. Built from the account view and the latest
+ * turn each owner reports; it never fetches transcripts.
  */
 object Activity {
     fun classify(card: Card): ActivityKind? {
@@ -104,41 +105,38 @@ object Activity {
     }
 
     /**
-     * Folds duplicate copies of each card (the causal merge wins over
-     * timestamps), drops archived ones, and builds the items, newest first
-     * except that running rows keep their start order.
+     * The items of [cards], archived ones left out, newest first except that
+     * running rows keep their start order. A running row says what its turn
+     * does from the owner's [activities]; [staleness] says when its owner's
+     * data may be old.
      */
     fun project(
         cards: List<Card>,
-        conversations: Map<String, ConversationSnapshot>,
+        activities: Map<String, Conversation>,
         projects: List<Project>,
         boards: List<Board>,
         hiddenMessageIds: Set<String> = emptySet(),
         excludedIds: Set<String> = emptySet(),
+        staleness: (Card) -> String? = { null },
     ): List<ActivityItem> {
         val projectNames = projects.associate { it.id to it.name }
         val boardNames = boards.associate { it.id to it.name }
-        val merged = cards.filter { it.id.isNotBlank() && it.id !in excludedIds }.groupBy { it.id }.mapNotNull { (_, copies) ->
-            val latest = copies.maxBy { copy -> listOf(copy.updated_at, copy.runtime_updated_at, copy.last_activity_at).mapNotNull(Timestamps::parse).maxOrNull() ?: Instant.DISTANT_PAST }
-            copies.fold(latest) { acc, copy -> if (copy === latest) acc else mergeCardState(acc, copy) }.takeUnless { it.archived }
-        }
-        return merged.mapNotNull { card ->
+        return cards.filter { it.id.isNotBlank() && it.id !in excludedIds && !it.archived }.mapNotNull { card ->
             val kind = classify(card) ?: return@mapNotNull null
             val at = listOfNotNull(Timestamps.parse(card.last_activity_at), Timestamps.parse(card.runtime_updated_at)).maxOrNull()
-            // A cached transcript only describes this turn when it was read for the same runtime update.
-            val snapshot = conversations[card.id]?.takeIf { it.detail?.card?.runtime_updated_at == card.runtime_updated_at }
-            val messages = snapshot?.conversation?.messages.orEmpty().filterNot { it.id in hiddenMessageIds }
-            val live = snapshot?.conversation?.takeIf { kind == ActivityKind.RUNNING }?.let { conversation ->
+            val activity = activities[card.id]
+            val messages = activity?.messages.orEmpty().filterNot { it.id in hiddenMessageIds }
+            val live = activity?.takeIf { kind == ActivityKind.RUNNING }?.let { conversation ->
                 LiveActivities.resolve(messages, conversation.pending_tools, conversation.task_plans, false, conversation.status, card.runtime, conversation.provider_status).english()
             }
-            val detailStart = snapshot?.let { LiveActivities.turnStart(messages, null) }
+            val detailStart = activity?.let { LiveActivities.turnStart(messages, null) }
             val start = detailStart?.takeIf { at != null && it <= at } ?: if (kind == ActivityKind.RUNNING) Timestamps.parse(card.runtime_updated_at) else null
             val sortAt = if (kind == ActivityKind.RUNNING) {
                 Timestamps.parse(card.runtime_updated_at) ?: Timestamps.parse(card.initial_prompt_sent_at) ?: Timestamps.parse(card.created_at)
             } else {
                 at
             }
-            ActivityItem(card, kind, detail(card, kind, live), at, start, sortAt, projectNames[card.project_id], card.board_id.takeIf { it.isNotEmpty() }?.let(boardNames::get))
+            ActivityItem(card, kind, detail(card, kind, live), at, start, sortAt, projectNames[card.project_id], card.board_id.takeIf { it.isNotEmpty() }?.let(boardNames::get), staleness(card))
         }.sortedWith(compareByDescending<ActivityItem> { it.sortAt ?: Instant.DISTANT_PAST }.thenBy { it.id })
     }
 

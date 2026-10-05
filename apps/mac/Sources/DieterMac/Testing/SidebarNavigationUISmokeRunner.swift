@@ -462,13 +462,22 @@
                     releaseVersion: "smoke"
                 ),
             ]
-            let machine = machines[2]
+            // Each project has its checkout on one machine; the second one's is offline.
+            let projectMachines = [machines[2], machines[0], machines[1]]
             var projects: [Dieter_V1_Project] = []
             var boardsByProject: [String: [Dieter_V1_Board]] = [:]
             for (index, id) in projectIDs.enumerated() {
                 var project = Dieter_V1_Project()
                 project.id = id
                 project.name = names[index]
+                project.checkouts = [
+                    .with {
+                        $0.id = "co_sidebar_\(index + 1)"
+                        $0.projectID = id
+                        $0.daemonID = projectMachines[index].daemonID ?? ""
+                        $0.name = names[index]
+                    }
+                ]
                 projects.append(project)
 
                 var board = Dieter_V1_Board()
@@ -482,12 +491,9 @@
             store.projectDirectory = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
             store.navigationBoards = boardsByProject
             store.navigationCards = Dictionary(uniqueKeysWithValues: projectIDs.map { ($0, []) })
-            store.endpoint = machine
             store.endpoints = machines
-            store.projectReplicaEndpointIDs = Dictionary(
-                uniqueKeysWithValues: zip(projectIDs, [machines[2], machines[0], machines[1]]).map { pair in
-                    (pair.0, pair.1.id)
-                })
+            store.projectHosts = Dictionary(
+                uniqueKeysWithValues: zip(projectIDs, projectMachines).map { ($0, $1.daemonID ?? "") })
             store.machineEntries = Dictionary(
                 uniqueKeysWithValues: machines.map { machine in
                     (
@@ -508,6 +514,7 @@
                 var chat = Dieter_V1_Card()
                 chat.id = chatIDs[index]
                 chat.projectID = projectID
+                chat.ownerDaemonID = projectMachines[index].daemonID ?? ""
                 chat.scope = "chat"
                 chat.title = "\(names[index]) planning"
                 chat.updatedAt = "2026-09-08T06:00:0\(index)Z"
@@ -520,7 +527,7 @@
             store.state.boards = boardsByProject[projectIDs[0]] ?? []
             store.selectedProjectID = projectIDs[0]
             store.selectedBoardID = boardsByProject[projectIDs[0]]?.first?.id ?? ""
-            store.phase = .connected(version: "sidebar-smoke")
+            store.phase = .connected
             store.workspaceIsLive = true
             // Lay the fixture's projects and chats out from the saved layout.
             store.foldNavigation(store.navigation)

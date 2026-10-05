@@ -156,7 +156,7 @@ func TestCardSendUsesRunningDaemonAndOutlivesClient(t *testing.T) {
 		if resolveErr == nil && leaseErr == nil && !leased && stored.Runtime == "idle" {
 			// The cache file precedes the final sync-journal commit. Wait for
 			// that writer to finish before TempDir cleanup removes its root.
-			if _, _, err := data.GlobalStateContext(context.Background()); err != nil {
+			if _, err := data.GlobalStateContext(context.Background()); err != nil {
 				t.Fatal(err)
 			}
 			return

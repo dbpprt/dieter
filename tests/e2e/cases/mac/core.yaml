@@ -92,7 +92,7 @@ native:
   - "core.files-markdown-source-undo"
   - "core.files-warm-revisit"
   - "core.mixed-version-compatible-startup"
-  - "core.mixed-version-switch-isolation"
+  - "core.mixed-version-isolation"
   - "core.navigation-collapse"
   - "core.required-permissions-onboarding"
   - "core.window-titlebar-double-click"

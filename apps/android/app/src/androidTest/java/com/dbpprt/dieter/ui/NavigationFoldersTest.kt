@@ -53,7 +53,7 @@ class NavigationFoldersTest {
 
     @Before fun setup() {
         assumeTrue("Use the isolated E2E app", context.packageName.endsWith(".e2e"))
-        core = TestCore(navigationAccount = "navigation-fixture")
+        core = TestCore()
         compose.runOnUiThread {
             model = core.viewModel()
             lifecycle.put("folders", model)

@@ -39,7 +39,7 @@ class LongConversationMessageTest {
 
     @Before fun setup() {
         assumeTrue("Use the isolated screen fixture app", (context.packageName.endsWith(".e2e")))
-        core = TestCore(navigationAccount = "component-fixture")
+        core = TestCore()
         compose.runOnUiThread {
             model = core.viewModel()
             lifecycle.put("long-message", model)

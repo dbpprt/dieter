@@ -15,10 +15,9 @@ extension ClientWorkspaceSlice {
             order: delta.orderChanged ? delta.cardOrder : nil, key: \.id)
         slice.pendingCardIds = delta.pendingCardIds
         slice.loaded = delta.loaded
-        slice.projectReplicas = delta.projectReplicas
         slice.retiredBoards = delta.retiredBoards
-        slice.settings = delta.settings
         slice.boardAttention = delta.boardAttention
+        slice.projectHosts = delta.projectHosts
         return slice
     }
 }

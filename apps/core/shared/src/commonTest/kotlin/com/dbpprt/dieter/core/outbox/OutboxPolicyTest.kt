@@ -163,10 +163,10 @@ class OutboxPolicyTest {
         assertFalse(OutboxPolicy.isSynced(create("2"), mapOf("c_1" to Card(id = "c_1")), emptyMap()), "unaccepted entries never settle")
 
         val sent = send("m", "c_1").copy(server_id = "m_m")
-        val withMessage = mapOf("c_1" to ConversationSnapshot(conversation = Conversation(messages = listOf(UiMessage(id = "m_m")))))
+        val withMessage = mapOf("c_1" to Conversation(messages = listOf(UiMessage(id = "m_m"))))
         assertFalse(OutboxPolicy.isSynced(sent, emptyMap(), emptyMap()))
         assertTrue(OutboxPolicy.isSynced(sent, emptyMap(), withMessage))
-        val queuedOnDaemon = mapOf("c_1" to ConversationSnapshot(conversation = Conversation(queue = listOf(QueuedMessage(id = "m_m")))))
+        val queuedOnDaemon = mapOf("c_1" to Conversation(queue = listOf(QueuedMessage(id = "m_m"))))
         assertTrue(OutboxPolicy.isSynced(sent, emptyMap(), queuedOnDaemon))
     }
 

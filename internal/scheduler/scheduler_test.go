@@ -196,21 +196,17 @@ func TestTickArchivesDoneCardsUsingBoardPolicy(t *testing.T) {
 	}
 }
 
-func TestIdleTicksDoNotAdvanceSyncHighwater(t *testing.T) {
+func TestIdleTicksDoNotRecordChanges(t *testing.T) {
 	manager, data, _, _ := setup(t)
-	before, _, err := data.SyncEvents(0, 1)
+	before, err := data.ChangeCount()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for range 4 {
 		manager.Tick()
 	}
-	after, events, err := data.SyncEvents(before.Sequence, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after != before || len(events) != 0 {
-		t.Fatalf("idle ticks advanced sync: before=%#v after=%#v events=%#v", before, after, events)
+	if after, err := data.ChangeCount(); err != nil || after != before {
+		t.Fatalf("idle ticks recorded changes: before=%d after=%d err=%v", before, after, err)
 	}
 }
 

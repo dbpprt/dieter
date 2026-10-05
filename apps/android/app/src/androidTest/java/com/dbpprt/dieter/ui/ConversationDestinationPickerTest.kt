@@ -36,7 +36,7 @@ class ConversationDestinationPickerTest {
         Board(id = "other", project_id = "box", name = "Another project board"),
     )
     private val state = DieterUiState(connectionPhase = ConnectionPhase.CONNECTED, projects = projects, spaceBoards = boards,
-        projectReplicas = mapOf("vps" to "vps"))
+        projectHosts = mapOf("vps" to "vps"))
 
     @Test fun projectsSearchAndBoardsNavigateWithContext() {
         var draft by mutableStateOf(CaptureDraft(id = "capture"))

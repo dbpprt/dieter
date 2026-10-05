@@ -57,7 +57,7 @@ class ProjectWorkspaceAdministrationEndToEndTest {
         val initialBoard = initial.boards.values.flatten().first()
         val initialProject = initial.projects.first { it.id == initialBoard.project_id }
         val checkout = initialProject.checkouts.single { !it.detached }
-        val compatibleHost = requireNotNull(initial.projectReplicas[initialProject.id])
+        val compatibleHost = requireNotNull(core.choice.checkout(initialProject.id))
         fun model() = ViewModelProvider(composeRule.activity)[DieterViewModel::class.java]
         fun awaitWorkspace(predicate: (WorkspaceView) -> Boolean): WorkspaceView = runBlocking {
             withTimeout(45_000) { core.workspace.state.first(predicate) }
@@ -96,7 +96,7 @@ class ProjectWorkspaceAdministrationEndToEndTest {
             projectId = project.id
             assertEquals("main", project.base_branch)
             assertEquals("git", project.validation_commands.single().executable)
-            assertEquals(compatibleHost, createdState.projectReplicas[project.id])
+            assertEquals(compatibleHost, core.choice.checkout(project.id))
             composeRule.onRoot().saveEvidence("project-created-on-selected-host-e2e.png")
 
             composeRule.runOnIdle { model().selectProject(initialProject.id) }

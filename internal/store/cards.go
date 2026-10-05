@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// Public mutations retain the central Store write lock and journal transaction.
+// Public mutations retain the central Store write lock and change-count transaction.
 // Unexported projection helpers run within their caller's existing lock boundary.
 
 type CreateCardInput struct {
@@ -266,6 +266,16 @@ func (s *Store) listCardsContext(ctx context.Context, includeArchived bool) ([]m
 }
 
 func (s *Store) readCard(path string) (model.Card, error) {
+	item, err := s.readLocalCard(path)
+	if err != nil {
+		return model.Card{}, err
+	}
+	return s.overlayCard(item)
+}
+
+// readLocalCard reads a card file and its owner-only details without the
+// shared overlay: placement, title and runtime may lag the peer store.
+func (s *Store) readLocalCard(path string) (model.Card, error) {
 	var item model.Card
 	body, readErr := readMarkdown(path, &item)
 	if readErr != nil {
@@ -304,7 +314,42 @@ func (s *Store) readCard(path string) (model.Card, error) {
 		}
 	}
 	item.TokenUsage = s.cardTokenUsage(item.ID)
-	return s.overlayCard(item)
+	return item, nil
+}
+
+// OwnedCards returns the live cards and chats this machine runs, read from
+// their local files without the shared overlay. Owner-only details (prompt,
+// workspace, pull request, token usage, agent options) are exact; shared
+// fields come from the peer store instead.
+func (s *Store) OwnedCards(ctx context.Context) ([]model.Card, error) {
+	identity, err := s.PeerIdentity()
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	paths, err := listMarkdown(s.cardDir())
+	if err != nil {
+		return nil, err
+	}
+	result := make([]model.Card, 0, len(paths))
+	for _, path := range paths {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		item, err := s.readLocalCard(path)
+		if errors.Is(err, ErrNotFound) || errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if item.OwnerDaemonID == identity.DaemonID && !item.Archived {
+			result = append(result, item)
+		}
+	}
+	return result, nil
 }
 
 func (s *Store) ListCards(filter CardFilter) ([]model.Card, error) {
@@ -443,7 +488,7 @@ func (s *Store) UpdateCardCache(ref string, input CardCacheInput) (model.Card, e
 	if title == item.Title && provider == item.Provider && providerAccountKey == item.ProviderAccountKey && modelName == item.Model && effort == item.Effort && stringMapsEqual(providerOptions, item.ProviderOptions) && runtime == item.Runtime && summary == item.Summary {
 		return item, nil
 	}
-	if err := write.prepare("store_changed"); err != nil {
+	if err := write.prepare(metadataChange); err != nil {
 		return model.Card{}, err
 	}
 	if item.Title != title {
@@ -658,11 +703,15 @@ func (s *Store) ArchiveDoneCards(now time.Time) ([]model.Card, error) {
 	if err != nil || len(due) == 0 {
 		return due, err
 	}
-	event, err := s.prepareSyncMutation()
+	pending, err := s.prepareSyncMutation(metadataChange)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = s.commitSyncMutation(event) }()
+	// Readers learn about the sweep like any other write.
+	defer func() {
+		_ = s.commitSyncMutation(pending)
+		s.notifyChanges()
+	}()
 	archived := make([]model.Card, 0, len(due))
 	archivedAt := now.UTC().Format(time.RFC3339Nano)
 	for _, card := range due {
@@ -725,7 +774,7 @@ func (s *Store) doneCardsEligibleForArchive(now time.Time, activeCards map[strin
 			continue
 		}
 		delay, enabled := delays[card.BoardID]
-		if !enabled || card.Scope != model.ConversationScopeBoard || card.Lane != model.LaneDone || card.Archived || card.DoneArchiveExempt || activeCards[card.ID] || card.Runtime == "running" || card.Runtime == "starting" {
+		if !enabled || card.Scope != model.ConversationScopeBoard || card.Lane != model.LaneDone || card.Archived || card.DoneArchiveExempt || activeCards[card.ID] || model.RuntimeHoldsTurn(card.Runtime) {
 			continue
 		}
 		phaseChangedAt, parseErr := time.Parse(time.RFC3339Nano, card.PhaseChangedAt)

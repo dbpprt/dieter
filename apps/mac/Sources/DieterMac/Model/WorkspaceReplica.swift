@@ -26,7 +26,8 @@ final class WorkspaceReplica {
             }
         }
     }
-    var projectReplicaEndpointIDs: [String: String] = [:]
+    /// Project ID → the daemon that hosts its work, as the core picks it.
+    var projectHosts: [String: String] = [:]
     var navigationBoards: [String: [Dieter_V1_Board]] = [:] {
         didSet { if navigationBoards != oldValue { commandSearchRevision &+= 1 } }
     }

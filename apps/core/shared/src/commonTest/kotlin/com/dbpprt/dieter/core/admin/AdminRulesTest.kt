@@ -13,9 +13,10 @@ import com.dbpprt.dieter.core.outbox.MachineOutboxSummary
 import com.dbpprt.dieter.core.outbox.OutboxView
 import com.dbpprt.dieter.core.runtime.CoreException
 import com.dbpprt.dieter.core.store.WorkspaceStore
-import com.dbpprt.dieter.core.sync.MachineSnapshot as SyncedMachine
+import com.dbpprt.dieter.core.sync.DirectoryProjection
 import com.dbpprt.dieter.core.testing.MemoryDeviceSettings
 import com.dbpprt.dieter.core.testing.offlineSessions
+import com.dbpprt.dieter.core.testing.unreachableChoice
 import com.dbpprt.dieter.core.workspace.ValidationCommandDraft
 import kotlin.random.Random
 import kotlin.test.Test
@@ -65,7 +66,7 @@ class AdminRulesTest {
     }
 
     @Test
-    fun conflictVersionsReadAsValuesAndSharedRecordsRouteToTheProjectReplica() {
+    fun conflictVersionsReadAsValuesAndSharedRecordsRouteToAMachineWithTheProject() {
         assertEquals("Release train", ConflictVersions.versionText(PeerVersion(value_json = "\"Release train\"".encodeUtf8())))
         assertEquals("{\"name\":\"x\",\"n\":1}", ConflictVersions.versionText(PeerVersion(value_json = "{ \"name\": \"x\", \"n\": 1 }".encodeUtf8())))
         assertEquals("not json", ConflictVersions.versionText(PeerVersion(value_json = "not json".encodeUtf8())))
@@ -73,9 +74,9 @@ class AdminRulesTest {
         assertEquals("Keep deletion", ConflictVersions.keepLabel(PeerVersion(deleted = true)))
         assertEquals("Keep this value", ConflictVersions.keepLabel(PeerVersion()))
 
-        assertEquals(AdminRoute.Replica("p1"), AdminRoute.shared("p1"))
-        assertEquals(AdminRoute.Attached, AdminRoute.shared(""))
-        assertEquals(AdminRoute.Attached, AdminRoute.shared(null))
+        assertEquals(AdminRoute.ForProject("p1"), AdminRoute.shared("p1"))
+        assertEquals(AdminRoute.Anywhere, AdminRoute.shared(""))
+        assertEquals(AdminRoute.Anywhere, AdminRoute.shared(null))
         assertEquals("After 7 days", Administration.archivePolicyTitle("after_7_days"))
         assertEquals("Never", Administration.archivePolicyTitle("never"))
         assertEquals(listOf("Manual", "Pull request", "Push base branch"), Administration.PUBLISH_MODES.map(Administration::publishModeTitle))
@@ -121,19 +122,9 @@ class AdminRulesTest {
     @Test
     fun projectFormsAreCheckedBeforeAnyMachineIsCalled() = runTest {
         val store = WorkspaceStore().apply {
-            applyMachines(
-                listOf(
-                    SyncedMachine(
-                        "d1",
-                        projects = listOf(Project(id = "p", name = "Dieter", checkouts = listOf(Checkout(id = "c1", project_id = "p", daemon_id = "d1")))),
-                        boards = emptyList(),
-                        cards = emptyList(),
-                        chats = emptyList(),
-                    ),
-                ),
-            )
+            applyDirectory(DirectoryProjection(projects = mapOf("p" to Project(id = "p", name = "Dieter", checkouts = listOf(Checkout(id = "c1", project_id = "p", daemon_id = "d1"))))), loaded = true)
         }
-        val admin = Administration(offlineSessions(), store) { null }
+        val admin = Administration(offlineSessions(), store, unreachableChoice(store))
         assertEquals(
             "The project is no longer available.",
             assertFailsWith<CoreException> { admin.saveProject("gone", "Dieter", "", "", "origin", "main", null, null) }.message,

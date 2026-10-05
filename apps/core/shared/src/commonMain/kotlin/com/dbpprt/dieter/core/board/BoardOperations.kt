@@ -14,6 +14,7 @@ import com.dbpprt.dieter.api.v1.PinChatRequest
 import com.dbpprt.dieter.api.v1.RenameCardRequest
 import com.dbpprt.dieter.api.v1.SetCardLabelsRequest
 import com.dbpprt.dieter.api.v1.UpdateCardRequest
+import com.dbpprt.dieter.core.machines.MachineChoice
 import com.dbpprt.dieter.core.runtime.CoreException
 import com.dbpprt.dieter.core.runtime.FailureKind
 import com.dbpprt.dieter.core.runtime.Failures
@@ -21,11 +22,14 @@ import com.dbpprt.dieter.core.session.MachineSessions
 import com.dbpprt.dieter.core.store.CardOverlay
 import com.dbpprt.dieter.core.store.WorkspaceStore
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.seconds
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Card operations in flight and their last failures, for badges and inline errors. */
 data class BoardOperationsView(
@@ -37,12 +41,12 @@ data class BoardOperationsView(
 
 /**
  * Direct card and chat mutations. Each shows its effect immediately as an
- * overlay, applies the daemon's answer through the causal card merge, and
- * rolls back on failure. One operation per card at a time: a second one
- * fails as transient while the first runs. A mutation returns false when
- * there is nothing to change. Confined to the core dispatcher.
+ * overlay until the account view reflects it, and rolls back on failure.
+ * One operation per card at a time: a second one fails as transient while
+ * the first runs. A mutation returns false when there is nothing to change.
+ * Confined to the core dispatcher.
  */
-class BoardOperations(private val sessions: MachineSessions, private val store: WorkspaceStore) {
+class BoardOperations(private val sessions: MachineSessions, private val store: WorkspaceStore, private val choice: MachineChoice) {
     private val mutableView = MutableStateFlow(BoardOperationsView())
     val view: StateFlow<BoardOperationsView> = mutableView.asStateFlow()
 
@@ -52,15 +56,17 @@ class BoardOperations(private val sessions: MachineSessions, private val store: 
         if (Cards.isChat(card)) throw CoreException(FailureKind.PERMANENT, "Chat conversations do not belong to board lanes.")
         // Moving an unstarted card into running starts it, which only its owner can do.
         val starts = lane.equals(Lanes.RUNNING, ignoreCase = true) && card.initial_prompt_sent_at.isEmpty()
-        val daemon = if (starts) owner(card) else replica(card)
+        val daemon = if (starts) owner(card) else placementWriter(card)
         val request = MoveCardRequest(
             card_id = cardId, lane = lane, after_card_id = anchors.afterCardId, before_card_id = anchors.beforeCardId,
             expected_revision = card.placement_revision,
         )
         val move = PendingMove(lane, anchors.afterCardId, anchors.beforeCardId)
+        // The next move of this card checks the placement this one wrote, so it ends once the account view shows it.
         return mutate(
             cardId, CardOperation.MOVING, daemon,
             overlay = FieldOverlay(cardId, apply = { it.copy(lane = lane) }, satisfied = { it.placement_revision != card.placement_revision }),
+            settle = true,
             onStart = { mutableView.update { it.copy(moves = it.moves + (cardId to move)) } },
             onEnd = { mutableView.update { it.copy(moves = it.moves - cardId) } },
         ) { it.MoveCard().execute(request) }
@@ -78,7 +84,7 @@ class BoardOperations(private val sessions: MachineSessions, private val store: 
         val card = card(cardId)
         val ids = labelIds.filter { it.isNotBlank() }.distinct()
         if (ids == card.label_ids) return false
-        return mutate(cardId, CardOperation.LABELING, replica(card), FieldOverlay(cardId, { it.copy(label_ids = ids) }, { it.label_ids == ids })) {
+        return mutate(cardId, CardOperation.LABELING, sharedWriter(card), FieldOverlay(cardId, { it.copy(label_ids = ids) }, { it.label_ids == ids })) {
             it.SetCardLabels().execute(SetCardLabelsRequest(card_id = cardId, label_ids = ids))
         }
     }
@@ -92,7 +98,7 @@ class BoardOperations(private val sessions: MachineSessions, private val store: 
     suspend fun setPinned(cardId: String, pinned: Boolean): Boolean {
         val card = card(cardId)
         if (card.pinned == pinned) return false
-        return mutate(cardId, CardOperation.PINNING, replica(card), FieldOverlay(cardId, { it.copy(pinned = pinned) }, { it.pinned == pinned })) {
+        return mutate(cardId, CardOperation.PINNING, sharedWriter(card), FieldOverlay(cardId, { it.copy(pinned = pinned) }, { it.pinned == pinned })) {
             it.PinChat().execute(PinChatRequest(card_id = cardId, pinned = pinned))
         }
     }
@@ -101,7 +107,7 @@ class BoardOperations(private val sessions: MachineSessions, private val store: 
         val card = card(cardId)
         val trimmed = title.trim()
         if (trimmed.isEmpty() || trimmed == card.title) return false
-        return mutate(cardId, CardOperation.RENAMING, replica(card), FieldOverlay(cardId, { it.copy(title = trimmed) }, { it.title == trimmed })) {
+        return mutate(cardId, CardOperation.RENAMING, sharedWriter(card), FieldOverlay(cardId, { it.copy(title = trimmed) }, { it.title == trimmed })) {
             it.RenameCard().execute(RenameCardRequest(card_id = cardId, title = trimmed))
         }
     }
@@ -133,7 +139,7 @@ class BoardOperations(private val sessions: MachineSessions, private val store: 
     suspend fun archive(cardId: String): Boolean {
         val card = card(cardId)
         if (card.archived) return false
-        return mutate(cardId, CardOperation.ARCHIVING, replica(card), FieldOverlay(cardId, { it.copy(archived = true) }, { it.archived })) {
+        return mutate(cardId, CardOperation.ARCHIVING, sharedWriter(card), FieldOverlay(cardId, { it.copy(archived = true) }, { it.archived })) {
             it.ArchiveCard().execute(ArchiveCardRequest(card_id = cardId, archived = true))
         }
     }
@@ -141,7 +147,7 @@ class BoardOperations(private val sessions: MachineSessions, private val store: 
     /** Restores [card], as listed by [archivedCards] or the chat archive, to the live views. */
     suspend fun restore(card: Card): Boolean {
         if (!card.archived) return false
-        return mutate(card.id, CardOperation.ARCHIVING, replica(card), overlay = null) {
+        return mutate(card.id, CardOperation.ARCHIVING, sharedWriter(card), overlay = null) {
             it.ArchiveCard().execute(ArchiveCardRequest(card_id = card.id, archived = false))
         }
     }
@@ -152,10 +158,8 @@ class BoardOperations(private val sessions: MachineSessions, private val store: 
         return mutate(
             cardId, CardOperation.CANCELLING, owner(card),
             FieldOverlay(cardId, { if (Runtimes.isActive(it.runtime)) it.copy(runtime = "cancelling") else it }, { !Runtimes.isActive(it.runtime) }),
-            confirm = false,
         ) { client ->
             client.CancelCard().execute(GetCardRequest(card_id = cardId))
-            null
         }
     }
 
@@ -187,16 +191,16 @@ class BoardOperations(private val sessions: MachineSessions, private val store: 
         val card = card(cardId)
         if (responseSeq <= card.seen_response_seq || responseSeq != card.response_seq) return false
         if (view.value.operations.containsKey(cardId)) return false
-        return mutate(cardId, CardOperation.READING, owner(card), overlay = null, reportErrors = false) {
+        val read = FieldOverlay(cardId, { it.copy(seen_response_seq = maxOf(it.seen_response_seq, responseSeq)) }, { it.seen_response_seq >= responseSeq })
+        return mutate(cardId, CardOperation.READING, owner(card), read, reportErrors = false) {
             it.MarkConversationRead().execute(MarkConversationReadRequest(card_id = cardId, response_seq = responseSeq))
         }
     }
 
-    /** Archived cards of one board, read on demand from a replica. */
+    /** Archived cards of one board, read on demand from a machine that holds its project. */
     suspend fun archivedCards(boardId: String): List<Card> {
         val board = store.directoryProjection.board(boardId) ?: throw CoreException(FailureKind.PERMANENT, "The board is no longer available.")
-        val daemon = store.directoryProjection.projectReplicas[board.project_id]
-            ?: throw CoreException(FailureKind.TRANSIENT, "The project's machine is unavailable.")
+        val daemon = choice.project(board.project_id) ?: throw CoreException(FailureKind.TRANSIENT, "No machine with this project is reachable.")
         return sessions.call(daemon) { it.ListArchivedCards().execute(BoardRef(board_id = boardId)) }.cards
     }
 
@@ -205,11 +209,11 @@ class BoardOperations(private val sessions: MachineSessions, private val store: 
         operation: CardOperation,
         daemonId: String,
         overlay: FieldOverlay?,
-        confirm: Boolean = true,
+        settle: Boolean = false,
         reportErrors: Boolean = true,
         onStart: () -> Unit = {},
         onEnd: () -> Unit = {},
-        call: suspend (DieterServiceClient) -> Card?,
+        call: suspend (DieterServiceClient) -> Unit,
     ): Boolean {
         // Repeating the change in flight (a double tap) is a no-op; a different change is refused.
         view.value.operations[cardId]?.let { running ->
@@ -220,11 +224,9 @@ class BoardOperations(private val sessions: MachineSessions, private val store: 
         onStart()
         overlay?.let(store::addOverlay)
         try {
-            val result = sessions.call(daemonId, call)
-            result?.let { store.foldCard(it, daemonId) }
-            if (overlay != null) {
-                if (confirm || result == null) store.confirmOverlay(overlay.operationId) else store.rollbackOverlay(overlay.operationId)
-            }
+            sessions.call(daemonId, call)
+            overlay?.let { store.confirmOverlay(it.operationId) }
+            if (settle && overlay != null) withTimeoutOrNull(SETTLE) { store.overlayIds.first { overlay.operationId !in it } }
             return true
         } catch (error: Throwable) {
             overlay?.let { store.rollbackOverlay(it.operationId) }
@@ -247,20 +249,30 @@ class BoardOperations(private val sessions: MachineSessions, private val store: 
     /** Account or gateway changed: the errors belong to the previous one. */
     fun reset() = mutableView.update { it.copy(errors = emptyMap()) }
 
-    private fun card(id: String): Card = store.directoryProjection.item(id)
+    private fun card(id: String): Card = store.shownItem(id)
         ?: throw CoreException(FailureKind.PERMANENT, "The card is no longer available.")
 
-    /** Shared placement and metadata can be written to any replica of the project. */
-    private fun replica(card: Card): String = store.directoryProjection.projectReplicas[card.project_id]
-        ?: card.owner_daemon_id.ifEmpty { null }
-        ?: throw CoreException(FailureKind.TRANSIENT, "The project's machine is unavailable.")
+    /** Shared fields can be written on any reachable machine that holds the card, its owner first. */
+    private fun sharedWriter(card: Card): String = choice.holder("item/${card.id}.identity", choice.owner(card))
+        ?: throw CoreException(FailureKind.TRANSIENT, "No machine that holds this card is reachable.")
+
+    /**
+     * A move checks the placement this client shows, so it goes where every
+     * version of it was observed; until then the machines are still merging.
+     */
+    private fun placementWriter(card: Card): String = choice.observer("item/${card.id}.placement", choice.owner(card))
+        ?: throw CoreException(FailureKind.TRANSIENT, "This card's machines are still merging its place; try again in a moment.")
 
     /** Turns, reads, and edits of the task run on the machine that executes the conversation. */
-    private fun owner(card: Card): String = store.directoryProjection.owner(card) ?: replica(card)
+    private fun owner(card: Card): String = choice.owner(card)
+        ?: throw CoreException(FailureKind.TRANSIENT, "The conversation's machine is unavailable.")
 
     private companion object {
         /** Inline errors kept at once; the oldest goes first. */
         const val MAX_ERRORS = 64
+
+        /** How long a change that must settle waits for the account view to show it. */
+        val SETTLE = 10.seconds
     }
 
     private class FieldOverlay(override val cardId: String, private val apply: (Card) -> Card, private val satisfied: (Card) -> Boolean) : CardOverlay {

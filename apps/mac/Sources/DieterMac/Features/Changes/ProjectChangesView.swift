@@ -73,7 +73,7 @@ struct ProjectChangesView: View {
         .task(id: targetKey) {
             guard active, scenePhase == .active else { model.suspend(); return }
             if injectedModel == nil {
-                // The core reaches the checkout's machine whichever one is attached.
+                // The core reaches the checkout's machine.
                 guard let checkout = store.checkout(forProjectID: store.selectedProjectID) else {
                     model.suspend(); return
                 }

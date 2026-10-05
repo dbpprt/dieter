@@ -209,9 +209,11 @@ func TestBatchedTurnPublishesOnlyPersistedChunksAndRetainsTrailingSession(t *tes
 		if err := emit(harness.Output{Type: "chunk", Chunk: json.RawMessage(`{"type":"finish"}`)}); err != nil {
 			return err
 		}
+		// The finish commit shows the reply as complete while the turn still
+		// holds the card for its trailing state.
 		card, err := service.Store.ResolveCard(request.SessionID)
-		if err != nil || card.Runtime != "running" {
-			return fmt.Errorf("turn became idle before trailing state: runtime=%s error=%v", card.Runtime, err)
+		if err != nil || card.Runtime != model.RuntimeFinishing {
+			return fmt.Errorf("turn did not finish while retaining trailing state: runtime=%s error=%v", card.Runtime, err)
 		}
 		return emit(harness.Output{Type: "session", State: json.RawMessage(`{"type":"resume-session","data":{"session":"batch"}}`)})
 	})
@@ -219,7 +221,10 @@ func TestBatchedTurnPublishesOnlyPersistedChunksAndRetainsTrailingSession(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, _, _ := service.Store.SyncEvents(0, 256)
+	before, err := service.Store.ChangeCount()
+	if err != nil {
+		t.Fatal(err)
+	}
 	updates, err := service.StartCard(card.ID, "stream", "", "", "")
 	if err != nil {
 		t.Fatal(err)
@@ -248,11 +253,11 @@ func TestBatchedTurnPublishesOnlyPersistedChunksAndRetainsTrailingSession(t *tes
 	if err != nil || !done || deltas != 96 || conversation.Status != "idle" || !strings.Contains(string(conversation.Session), "batch") || conversation.Messages[1].Parts[0].Text != visible.String() {
 		t.Fatalf("completed batch turn lost data: deltas=%d done=%v conversation=%+v err=%v", deltas, done, conversation, err)
 	}
-	after, _, err := service.Store.SyncEvents(before.Sequence, 256)
-	if err != nil || after.Sequence-before.Sequence >= 96 {
-		t.Fatalf("token transactions were not reduced: %d %v", after.Sequence-before.Sequence, err)
+	after, err := service.Store.ChangeCount()
+	if err != nil || after-before >= 96 {
+		t.Fatalf("token transactions were not reduced: %d %v", after-before, err)
 	}
-	t.Logf("96 token deltas retained; complete turn used %d sync transactions", after.Sequence-before.Sequence)
+	t.Logf("96 token deltas retained; complete turn used %d store transactions", after-before)
 }
 
 func TestBatchedTurnJournalFailureDoesNotPublishOrReplayTokens(t *testing.T) {

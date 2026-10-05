@@ -55,7 +55,7 @@ class WorkspaceFreshnessIndicatorTest {
         composeRule.setContent {
             DieterTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    InitialWorkspaceSyncState(ConnectionPhase.SYNCING)
+                    InitialWorkspaceSyncState(ConnectionPhase.CONNECTED)
                 }
             }
         }

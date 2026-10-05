@@ -14,8 +14,8 @@ object SliceFolds {
     fun apply(base: WorkspaceSlice, delta: WorkspaceDelta): WorkspaceSlice = base.copy(
         projects = delta.projects, boards = delta.boards,
         cards = Keyed.apply(base.cards, delta.upserted_cards, delta.removed_card_ids, delta.card_order.takeIf { delta.order_changed }, Card::id),
-        pending_card_ids = delta.pending_card_ids, loaded = delta.loaded, project_replicas = delta.project_replicas,
-        retired_boards = delta.retired_boards, settings = delta.settings, board_attention = delta.board_attention,
+        pending_card_ids = delta.pending_card_ids, loaded = delta.loaded,
+        retired_boards = delta.retired_boards, board_attention = delta.board_attention, project_hosts = delta.project_hosts,
     )
 
     fun apply(base: ConversationSlice, delta: ConversationDelta): ConversationSlice = base.copy(

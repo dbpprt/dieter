@@ -461,24 +461,34 @@ func (c *CLI) harnessCommand(args []string) error {
 }
 
 func (c *CLI) rpcWatch(args []string) error {
-	const usage = `Usage: dieter watch state [--interval MS] [--count N]
-       dieter watch sync [--count N]
+	const usage = `Usage: dieter watch changes [--count N]
 
-Stream daemon state or durable sync frames as JSON Lines until interrupted.
-Sync sends workspace metadata, then deltas. Transport-only heartbeats prove
-reachability; observedCursor is diagnostic. Persist cursor only with a complete
-projection (projectionPending=false), never from a heartbeat.
+Stream this machine's change frames as JSON Lines until interrupted, the same
+stream native clients hold for every online machine. Frames name the
+machine's peer identity and account and carry its replica of the account's
+shared records (projects, boards, labels, cards, checkouts and KV, with every
+causal sibling and its rank), then what only it knows: owner-only details of
+the cards it runs and of its checkouts (paths, validation commands), the live
+activity of its conversations and its peer replication issues.
+resetRecords or resetLocal replaces what was received for that half. A frame
+with caughtUp has delivered everything the machine held; heartbeats repeat the
+cursor. Use --machine to watch another machine.
 ` + readRecoveryHelp
 	if groupHelp(args) {
 		fmt.Fprint(c.Out, usage)
 		return nil
 	}
-	set := flags("watch " + args[0])
-	interval := set.Int("interval", 1000, "minimum interval between state updates in milliseconds")
+	if args[0] != "changes" {
+		return fmt.Errorf("unknown watch action %q", args[0])
+	}
+	set := flags("watch changes")
 	count := set.Int("count", 0, "stop after N frames; zero streams until interrupted")
 	help, err := parse(set, args[1:], usage, c.Out)
 	if help || err != nil {
 		return err
+	}
+	if set.NArg() != 0 {
+		return errors.New("watch changes does not accept positional arguments")
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -486,46 +496,22 @@ projection (projectionPending=false), never from a heartbeat.
 	if err != nil {
 		return err
 	}
-	emitted := 0
-	switch args[0] {
-	case "state":
-		stream, err := client.WatchState(rpcCtx, &dieterv1.WatchStateRequest{IntervalMs: int32(*interval)})
+	stream, err := client.WatchChanges(rpcCtx, &dieterv1.ChangesRequest{HeartbeatMs: 5_000})
+	if err != nil {
+		return err
+	}
+	for emitted := 0; ; {
+		value, err := stream.Recv()
 		if err != nil {
+			return streamEnd(err, ctx)
+		}
+		if err := protoJSONLine(c.Out, value); err != nil {
 			return err
 		}
-		for {
-			value, err := stream.Recv()
-			if err != nil {
-				return streamEnd(err, ctx)
-			}
-			if err := protoJSONLine(c.Out, value); err != nil {
-				return err
-			}
-			emitted++
-			if *count > 0 && emitted >= *count {
-				return nil
-			}
+		emitted++
+		if *count > 0 && emitted >= *count {
+			return nil
 		}
-	case "sync":
-		stream, err := client.WatchSync(rpcCtx, &dieterv1.SyncRequest{HeartbeatMs: 5_000})
-		if err != nil {
-			return err
-		}
-		for {
-			value, err := stream.Recv()
-			if err != nil {
-				return streamEnd(err, ctx)
-			}
-			if err := protoJSONLine(c.Out, value); err != nil {
-				return err
-			}
-			emitted++
-			if *count > 0 && emitted >= *count {
-				return nil
-			}
-		}
-	default:
-		return fmt.Errorf("unknown watch action %q", args[0])
 	}
 }
 

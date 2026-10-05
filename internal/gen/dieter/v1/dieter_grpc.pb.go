@@ -40,8 +40,7 @@ const (
 	DieterService_GetMachineInformation_FullMethodName           = "/dieter.v1.DieterService/GetMachineInformation"
 	DieterService_PerformMachineOperation_FullMethodName         = "/dieter.v1.DieterService/PerformMachineOperation"
 	DieterService_GetState_FullMethodName                        = "/dieter.v1.DieterService/GetState"
-	DieterService_WatchState_FullMethodName                      = "/dieter.v1.DieterService/WatchState"
-	DieterService_WatchSync_FullMethodName                       = "/dieter.v1.DieterService/WatchSync"
+	DieterService_WatchChanges_FullMethodName                    = "/dieter.v1.DieterService/WatchChanges"
 	DieterService_GetHarnesses_FullMethodName                    = "/dieter.v1.DieterService/GetHarnesses"
 	DieterService_GetSettings_FullMethodName                     = "/dieter.v1.DieterService/GetSettings"
 	DieterService_GetSettingsOptions_FullMethodName              = "/dieter.v1.DieterService/GetSettingsOptions"
@@ -184,11 +183,12 @@ type DieterServiceClient interface {
 	GetMachineInformation(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*MachineInformation, error)
 	PerformMachineOperation(ctx context.Context, in *MachineOperationRequest, opts ...grpc.CallOption) (*MachineOperationResponse, error)
 	GetState(ctx context.Context, in *GetStateRequest, opts ...grpc.CallOption) (*State, error)
-	WatchState(ctx context.Context, in *WatchStateRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[State], error)
-	// WatchSync is the daemon-wide durable change stream used by native
-	// clients. Views are rendered from the client projection rather than by
-	// opening per-view RPCs.
-	WatchSync(ctx context.Context, in *SyncRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SyncFrame], error)
+	// WatchChanges streams this machine's view to native clients: its replica of
+	// the account's shared records in the peer store's own order, plus the
+	// owner-only details and live activity of the conversations it runs. A
+	// client holds one stream per online machine and merges the shared records
+	// causally; no machine is attached or preferred.
+	WatchChanges(ctx context.Context, in *ChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ChangesFrame], error)
 	GetHarnesses(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HarnessCatalog, error)
 	GetSettings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Settings, error)
 	GetSettingsOptions(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*SettingsOptions, error)
@@ -538,13 +538,13 @@ func (c *dieterServiceClient) GetState(ctx context.Context, in *GetStateRequest,
 	return out, nil
 }
 
-func (c *dieterServiceClient) WatchState(ctx context.Context, in *WatchStateRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[State], error) {
+func (c *dieterServiceClient) WatchChanges(ctx context.Context, in *ChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ChangesFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[1], DieterService_WatchState_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[1], DieterService_WatchChanges_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[WatchStateRequest, State]{ClientStream: stream}
+	x := &grpc.GenericClientStream[ChangesRequest, ChangesFrame]{ClientStream: stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -555,26 +555,7 @@ func (c *dieterServiceClient) WatchState(ctx context.Context, in *WatchStateRequ
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type DieterService_WatchStateClient = grpc.ServerStreamingClient[State]
-
-func (c *dieterServiceClient) WatchSync(ctx context.Context, in *SyncRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SyncFrame], error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[2], DieterService_WatchSync_FullMethodName, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &grpc.GenericClientStream[SyncRequest, SyncFrame]{ClientStream: stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
-	return x, nil
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type DieterService_WatchSyncClient = grpc.ServerStreamingClient[SyncFrame]
+type DieterService_WatchChangesClient = grpc.ServerStreamingClient[ChangesFrame]
 
 func (c *dieterServiceClient) GetHarnesses(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HarnessCatalog, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -958,7 +939,7 @@ func (c *dieterServiceClient) PollConversation(ctx context.Context, in *PollConv
 
 func (c *dieterServiceClient) WatchConversation(ctx context.Context, in *WatchConversationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ConversationUpdate], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[3], DieterService_WatchConversation_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[2], DieterService_WatchConversation_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1227,7 +1208,7 @@ func (c *dieterServiceClient) GetGitOperation(ctx context.Context, in *GitOperat
 
 func (c *dieterServiceClient) WatchGitOperation(ctx context.Context, in *WatchGitOperationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GitOperationFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[4], DieterService_WatchGitOperation_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[3], DieterService_WatchGitOperation_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1336,7 +1317,7 @@ func (c *dieterServiceClient) CreateTerminal(ctx context.Context, in *CreateTerm
 
 func (c *dieterServiceClient) WatchTerminal(ctx context.Context, in *WatchTerminalRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TerminalFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[5], DieterService_WatchTerminal_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[4], DieterService_WatchTerminal_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1425,7 +1406,7 @@ func (c *dieterServiceClient) GetExecution(ctx context.Context, in *ExecutionRef
 
 func (c *dieterServiceClient) WatchExecution(ctx context.Context, in *WatchExecutionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExecutionEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[6], DieterService_WatchExecution_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[5], DieterService_WatchExecution_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1544,7 +1525,7 @@ func (c *dieterServiceClient) ProbeRemoteDesktopPermissions(ctx context.Context,
 
 func (c *dieterServiceClient) StartRemoteDesktop(ctx context.Context, in *StartRemoteDesktopRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RemoteDesktopSignal], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[7], DieterService_StartRemoteDesktop_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[6], DieterService_StartRemoteDesktop_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1751,11 +1732,12 @@ type DieterServiceServer interface {
 	GetMachineInformation(context.Context, *emptypb.Empty) (*MachineInformation, error)
 	PerformMachineOperation(context.Context, *MachineOperationRequest) (*MachineOperationResponse, error)
 	GetState(context.Context, *GetStateRequest) (*State, error)
-	WatchState(*WatchStateRequest, grpc.ServerStreamingServer[State]) error
-	// WatchSync is the daemon-wide durable change stream used by native
-	// clients. Views are rendered from the client projection rather than by
-	// opening per-view RPCs.
-	WatchSync(*SyncRequest, grpc.ServerStreamingServer[SyncFrame]) error
+	// WatchChanges streams this machine's view to native clients: its replica of
+	// the account's shared records in the peer store's own order, plus the
+	// owner-only details and live activity of the conversations it runs. A
+	// client holds one stream per online machine and merges the shared records
+	// causally; no machine is attached or preferred.
+	WatchChanges(*ChangesRequest, grpc.ServerStreamingServer[ChangesFrame]) error
 	GetHarnesses(context.Context, *emptypb.Empty) (*HarnessCatalog, error)
 	GetSettings(context.Context, *emptypb.Empty) (*Settings, error)
 	GetSettingsOptions(context.Context, *emptypb.Empty) (*SettingsOptions, error)
@@ -1956,11 +1938,8 @@ func (UnimplementedDieterServiceServer) PerformMachineOperation(context.Context,
 func (UnimplementedDieterServiceServer) GetState(context.Context, *GetStateRequest) (*State, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetState not implemented")
 }
-func (UnimplementedDieterServiceServer) WatchState(*WatchStateRequest, grpc.ServerStreamingServer[State]) error {
-	return status.Error(codes.Unimplemented, "method WatchState not implemented")
-}
-func (UnimplementedDieterServiceServer) WatchSync(*SyncRequest, grpc.ServerStreamingServer[SyncFrame]) error {
-	return status.Error(codes.Unimplemented, "method WatchSync not implemented")
+func (UnimplementedDieterServiceServer) WatchChanges(*ChangesRequest, grpc.ServerStreamingServer[ChangesFrame]) error {
+	return status.Error(codes.Unimplemented, "method WatchChanges not implemented")
 }
 func (UnimplementedDieterServiceServer) GetHarnesses(context.Context, *emptypb.Empty) (*HarnessCatalog, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetHarnesses not implemented")
@@ -2666,27 +2645,16 @@ func _DieterService_GetState_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DieterService_WatchState_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(WatchStateRequest)
+func _DieterService_WatchChanges_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ChangesRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(DieterServiceServer).WatchState(m, &grpc.GenericServerStream[WatchStateRequest, State]{ServerStream: stream})
+	return srv.(DieterServiceServer).WatchChanges(m, &grpc.GenericServerStream[ChangesRequest, ChangesFrame]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type DieterService_WatchStateServer = grpc.ServerStreamingServer[State]
-
-func _DieterService_WatchSync_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(SyncRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(DieterServiceServer).WatchSync(m, &grpc.GenericServerStream[SyncRequest, SyncFrame]{ServerStream: stream})
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type DieterService_WatchSyncServer = grpc.ServerStreamingServer[SyncFrame]
+type DieterService_WatchChangesServer = grpc.ServerStreamingServer[ChangesFrame]
 
 func _DieterService_GetHarnesses_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(emptypb.Empty)
@@ -5144,13 +5112,8 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 		{
-			StreamName:    "WatchState",
-			Handler:       _DieterService_WatchState_Handler,
-			ServerStreams: true,
-		},
-		{
-			StreamName:    "WatchSync",
-			Handler:       _DieterService_WatchSync_Handler,
+			StreamName:    "WatchChanges",
+			Handler:       _DieterService_WatchChanges_Handler,
 			ServerStreams: true,
 		},
 		{

@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=../../schema.json
 version: 1
-id: sync.background-transcript-sync-integration-test
+id: sync.background-sync-integration-test
 platform: android
 suites:
 - sync
@@ -10,9 +10,9 @@ components:
 fixture: gateway
 timeout: 300s
 native:
-  class: com.dbpprt.dieter.data.BackgroundTranscriptSyncIntegrationTest
+  class: com.dbpprt.dieter.data.BackgroundSyncIntegrationTest
   methods:
-  - transcriptsArriveThroughGlobalSyncWithoutOpeningTheChat
+  - turnsArriveThroughTheMachinesStreamWithoutOpeningTheChat
   - liveSyncKeepsTranscriptsWarmInBackground
 arguments:
   idleSampleMillis: '30000'

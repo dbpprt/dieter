@@ -8,7 +8,7 @@ import Testing
         let suite = "WorkspaceChromeTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         let store = DieterStore(environment: .testing(defaults: defaults), liveEnvironment: false)
-        store.phase = .connected(version: "test")
+        store.phase = .connected
         store.workspaceIsLive = true
         let host = NSHostingController(
             rootView: DieterRootView(navigationDefaults: defaults).environment(store)

@@ -59,7 +59,7 @@ func creationRetryClient(t *testing.T, data *store.Store, runner harness.Runner)
 					t.Errorf("inspect canceled creation-retry turn: card=%v conversation=%v lease=%v", resolveErr, conversationErr, leaseErr)
 					return
 				}
-				if leased || current.Runtime == "running" || conversation.Status == "running" || conversation.ActiveTurn != nil {
+				if leased || model.RuntimeHoldsTurn(current.Runtime) || conversation.Status == "running" || conversation.ActiveTurn != nil {
 					settled = false
 					break
 				}

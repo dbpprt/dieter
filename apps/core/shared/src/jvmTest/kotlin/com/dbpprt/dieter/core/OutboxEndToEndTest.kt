@@ -4,7 +4,7 @@ import com.dbpprt.dieter.api.v1.CreateConversationRequest
 import com.dbpprt.dieter.api.v1.GetConversationRequest
 import com.dbpprt.dieter.api.v1.HarnessSelection
 import com.dbpprt.dieter.api.v1.MessagePart
-import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.connection.SyncState
 import com.dbpprt.dieter.core.outbox.OutboxPolicy
 import com.dbpprt.dieter.core.testing.EndToEnd
 import com.dbpprt.dieter.core.testing.MemorySecureStore
@@ -39,7 +39,7 @@ class OutboxEndToEndTest : EndToEnd() {
         runtime.awaitConnected()
         runtime.awaitLoaded(fixture)
         fixture.daemonOffline()
-        runtime.connection.state.await(describe = { "offline: ${runtime.connection.state.value}" }) { it.phase == ConnectionPhase.NO_MACHINE }
+        runtime.awaitSync(fixture.daemonId, SyncState.OFFLINE)
 
         val attachment = MessagePart(type = "file", filename = "queued.txt", media_type = "text/plain", data_ = "Exact queued attachment bytes".encodeUtf8())
         val request = card(fixture, "Offline card").copy(attachments = listOf(attachment))
@@ -70,8 +70,8 @@ class OutboxEndToEndTest : EndToEnd() {
         runtime.awaitConnected()
         runtime.awaitLoaded(fixture)
         val title = "Exactly once"
-        // Every state the UI could render, including the one where the feed lists the
-        // card before the create reply arrives.
+        // Every state the UI could render, including the one where the machine's
+        // change stream lists the card before the create reply arrives.
         val seen = java.util.concurrent.CopyOnWriteArrayList<Int>()
         val watcher = runtime.scope.launch { runtime.workspace.state.collect { view -> seen += view.allItems.count { it.title == title } } }
         runtime.createConversation(
@@ -92,7 +92,7 @@ class OutboxEndToEndTest : EndToEnd() {
         runtime.awaitConnected()
         runtime.awaitLoaded(fixture)
         fixture.daemonOffline()
-        runtime.connection.state.await { it.phase == ConnectionPhase.NO_MACHINE }
+        runtime.awaitSync(fixture.daemonId, SyncState.OFFLINE)
 
         val chat = runtime.createConversation(
             CreateConversationRequest(project_id = fixture.projectId, title = "Chat", prompt = "first", provider = "mock", model = "mock", effort = "low", defer_start = true, workspace_mode = "project"),
@@ -141,7 +141,7 @@ class OutboxEndToEndTest : EndToEnd() {
         first.awaitConnected()
         first.awaitLoaded(fixture)
         fixture.daemonOffline()
-        first.connection.state.await { it.phase == ConnectionPhase.NO_MACHINE }
+        first.awaitSync(fixture.daemonId, SyncState.OFFLINE)
         val optimistic = first.createConversation(card(fixture, "Survivor"), chat = false)
         val clientId = first.clientId
         first.shutdown()

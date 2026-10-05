@@ -7,14 +7,13 @@ import Testing
     let suiteName = "DieterInitialWorkspaceSelectionTests.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suiteName))
     defer { defaults.removePersistentDomain(forName: suiteName) }
-    defaults.set("fixture-account", forKey: "DieterSharedKV.activeAccount")
     let store = DieterStore(environment: .testing(defaults: defaults), liveEnvironment: false)
 
     var firstProject = Dieter_V1_Project()
-    firstProject.id = "p_first_machine"
+    firstProject.id = "p_listed_first"
     firstProject.name = "Dieter"
     var preferredProject = Dieter_V1_Project()
-    preferredProject.id = "p_preferred_machine"
+    preferredProject.id = "p_sidebar_first"
     preferredProject.name = "Dieter"
     var preferredBoard = Dieter_V1_Board()
     preferredBoard.id = "b_preferred"

@@ -1,6 +1,6 @@
 package com.dbpprt.dieter.core
 
-import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.connection.SyncState
 import com.dbpprt.dieter.core.navigation.FolderScope
 import com.dbpprt.dieter.core.navigation.NavigationLayout
 import com.dbpprt.dieter.core.testing.EndToEnd
@@ -43,7 +43,7 @@ class NavigationEndToEndTest : EndToEnd() {
 
         // The phone renames while its machine is unreachable; the edit drains afterwards.
         fixture.daemonOffline()
-        phone.connection.state.await { it.phase == ConnectionPhase.NO_MACHINE }
+        phone.awaitSync(fixture.daemonId, SyncState.OFFLINE)
         phone.editNavigation { renameFolder(FolderScope.PROJECTS, folder, "Customers") }
         assertEquals("Customers", phone.layout().folders(FolderScope.PROJECTS).single().name, "the edit shows at once")
         assertEquals(1, phone.navigationKv.status.value.pending)

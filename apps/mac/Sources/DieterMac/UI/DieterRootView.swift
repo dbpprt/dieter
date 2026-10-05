@@ -109,7 +109,7 @@ struct DieterRootView: View {
                     case .screens:
                         ScreensView(
                             model: store.screensModel,
-                            machines: store.machines, initialMachineID: store.endpoint.id,
+                            machines: store.machines, initialMachineID: store.localMachine?.id ?? "",
                             entries: store.machineEntries,
                             showInDieter: { [weak store] in
                                 store?.section = .screens
@@ -1159,7 +1159,7 @@ private struct SidebarProjectDestinations: View {
                     selected: store.section == .board && store.selectedBoardID == board.id,
                     badge: activeCount(board.id)
                 ) {
-                    onNavigate?(); Task { await store.openBoard(board.id, projectID: project.id) }
+                    onNavigate?(); store.openBoard(board.id, projectID: project.id)
                 }
                 .accessibilityIdentifier("sidebar.board.\(board.id)")
                 .smokeTarget("sidebar.board.\(board.id)")
@@ -1258,8 +1258,7 @@ private struct ProjectQuickNav: View {
     let dismiss: () -> Void
 
     private var projectMachineOnline: Bool? {
-        guard let machine = store.replica(forProjectID: project.id) else { return nil }
-        return store.machineIsAvailable(machine)
+        store.projectMachine(forProjectID: project.id).map(store.machineIsAvailable)
     }
 
     var body: some View {
@@ -1268,7 +1267,7 @@ private struct ProjectQuickNav: View {
                 ProjectAvatar(name: project.name, online: projectMachineOnline, size: 26)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(project.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                    if let machine = store.replica(forProjectID: project.id) {
+                    if let machine = store.projectMachine(forProjectID: project.id) {
                         Text(
                             "\(machine.name) · \(SharedRules.shared.machinePresence(online: projectMachineOnline == true))"
                         )

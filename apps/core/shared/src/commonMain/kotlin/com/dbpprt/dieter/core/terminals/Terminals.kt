@@ -55,9 +55,12 @@ data class TerminalScope(val daemonId: String, val kind: TerminalScopeKind, val 
             return TerminalScope(daemonId, TerminalScopeKind.PROJECT, project.id, checkout.id)
         }
 
-        /** The machine a new terminal starts on: the one [chosen] for the surface, else the [attached] one. */
-        fun creationMachine(chosen: String?, attached: String?): String =
-            chosen ?: attached ?: throw CoreException(FailureKind.TRANSIENT, "No machine is attached.")
+        /**
+         * The machine a new terminal starts on: the one [chosen] for the
+         * surface, else the first of the [reachable] ones, this device's first.
+         */
+        fun creationMachine(chosen: String?, reachable: List<String>): String =
+            chosen ?: reachable.firstOrNull() ?: throw CoreException(FailureKind.TRANSIENT, "No machine is reachable.")
     }
 }
 
