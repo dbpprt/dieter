@@ -12,7 +12,9 @@ import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.coroutineScope
@@ -23,10 +25,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 private const val TAG = "Screens"
 
 /**
- * The signaling RPCs of a screen session: the daemon's signal stream and its
- * resubscription, the lease heartbeat, trickled local candidates, and
- * closing sessions. [ScreenSession] owns it and decides what each signal
- * means. Confined to the core dispatcher.
+ * The signaling RPCs of a screen session: the daemon's signal stream and its resubscription, the
+ * lease heartbeat, trickled local candidates, and closing sessions. [ScreenSession] owns it and
+ * decides what each signal means. Confined to the core dispatcher.
  */
 internal class ScreenSignaling(
     private val scope: CoroutineScope,
@@ -37,31 +38,31 @@ internal class ScreenSignaling(
     private val localCandidates = ArrayDeque<RemoteDesktopICECandidate>()
 
     /**
-     * Receives [start]'s signals into [handle] while [active]. A dropped
-     * stream resubscribes twice (after 1 s and 2 s), calling [dropped] before
-     * each wait; a stream that lasted 10 s starts the count again. Returns
-     * what ended signaling: a [ScreenTrustException] at once, any other
-     * failure once resubscribing gave up, or null when [active] turned false.
+     * Receives [start]'s signals into [handle] while [active]. A dropped stream resubscribes with
+     * the same nonce and offer, with backoff capped at 5 s, for up to 15 s between received
+     * signals. This stays within the host's detach grace. Permanent failures stop immediately.
      */
     suspend fun receive(
-        route: ScreenRoute,
+        route: suspend () -> ScreenRoute,
         start: StartRemoteDesktopRequest,
         active: () -> Boolean,
-        dropped: () -> Unit,
+        dropped: (Throwable) -> Unit,
         handle: suspend (RemoteDesktopSignal) -> Unit,
     ): Throwable? {
         var retries = 0
+        var interruptedAt: Instant? = null
         while (active()) {
-            val started = clock.now()
             var failure: Throwable
             try {
                 coroutineScope {
-                    val call = route.client.StartRemoteDesktop()
+                    val call = route().client.StartRemoteDesktop()
                     val signals = call.executeIn(this, start)
                     try {
                         for (received in signals) {
                             if (!active()) return@coroutineScope
                             handle(received)
+                            interruptedAt = null
+                            retries = 0
                         }
                     } finally {
                         call.cancel()
@@ -77,24 +78,39 @@ internal class ScreenSignaling(
                 failure = error
             }
             if (!active()) return null
-            if (clock.now() - started >= 10.seconds) retries = 0
-            retries++
-            if (retries > 2) return failure
-            dropped()
-            delay(retries.seconds)
+            if (!ScreenFailures.retryable(failure)) return failure
+            val since = interruptedAt ?: clock.now().also { interruptedAt = it }
+            val remaining = ScreenSession.PEER_GRACE - (clock.now() - since)
+            if (remaining <= Duration.ZERO) return failure
+            dropped(failure)
+            val wait = (1 shl retries.coerceAtMost(3)).coerceAtMost(5).seconds
+            retries = (retries + 1).coerceAtMost(3)
+            delay(minOf(wait, remaining))
         }
         return null
     }
 
     /**
-     * Renews [sessionId]'s lease every 5 s while [active]. A renewal that
-     * fails or times out is reported to [missed]; the next one still runs.
+     * Renews [sessionId]'s lease every 5 s while [active]. A renewal that fails or times out is
+     * reported to [missed]; the next one still runs.
      */
-    suspend fun renewLease(route: ScreenRoute, sessionId: String, active: () -> Boolean, missed: () -> Unit) {
+    suspend fun renewLease(
+        route: () -> ScreenRoute?,
+        sessionId: String,
+        active: () -> Boolean,
+        missed: () -> Unit,
+    ) {
         while (active()) {
             delay(ScreenSession.LEASE_INTERVAL)
             try {
-                withDeadline(Deadlines.CALL) { route.client.SendRemoteDesktopSignal().execute(RemoteDesktopSignal(session_id = sessionId, lease_heartbeat = Unit)) }
+                val current = route() ?: continue
+                withDeadline(Deadlines.CALL) {
+                    current.client
+                        .SendRemoteDesktopSignal()
+                        .execute(
+                            RemoteDesktopSignal(session_id = sessionId, lease_heartbeat = Unit)
+                        )
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
@@ -105,10 +121,18 @@ internal class ScreenSignaling(
         }
     }
 
-    /** A local candidate: held (up to 256) until the session has an identity, then trickled to the daemon. */
-    fun localCandidate(route: ScreenRoute?, sessionId: String, candidate: RemoteDesktopICECandidate) {
+    /**
+     * A local candidate: held (up to 256) until the session has an identity, then trickled to the
+     * daemon.
+     */
+    fun localCandidate(
+        route: ScreenRoute?,
+        sessionId: String,
+        candidate: RemoteDesktopICECandidate,
+    ) {
         if (sessionId.isEmpty()) {
-            if (localCandidates.size < ScreenSession.MAX_CANDIDATES) localCandidates.addLast(candidate)
+            if (localCandidates.size < ScreenSession.MAX_CANDIDATES)
+                localCandidates.addLast(candidate)
         } else {
             send(route, sessionId, candidate)
         }
@@ -122,7 +146,13 @@ internal class ScreenSignaling(
     private fun send(route: ScreenRoute?, sessionId: String, candidate: RemoteDesktopICECandidate) {
         val current = route ?: return
         scope.launch {
-            runCatching { withDeadline(Deadlines.CALL) { current.client.SendRemoteDesktopSignal().execute(RemoteDesktopSignal(session_id = sessionId, candidate = candidate)) } }
+            runCatching {
+                withDeadline(Deadlines.CALL) {
+                    current.client
+                        .SendRemoteDesktopSignal()
+                        .execute(RemoteDesktopSignal(session_id = sessionId, candidate = candidate))
+                }
+            }
                 .onFailure { if (it is CancellationException) throw it }
         }
     }
@@ -132,7 +162,10 @@ internal class ScreenSignaling(
         scope.launch { closeSession(route, sessionId) }
     }
 
-    /** Closes [sessionId], when there is one, and then [route]; the result completes once both are done. */
+    /**
+     * Closes [sessionId], when there is one, and then [route]; the result completes once both are
+     * done.
+     */
     fun close(route: ScreenRoute, sessionId: String): CompletableDeferred<Unit> {
         val done = CompletableDeferred<Unit>()
         scope.launch {
@@ -148,7 +181,11 @@ internal class ScreenSignaling(
 
     /** Asks the daemon to close [sessionId] within 3 s; a failure is ignored. */
     private suspend fun closeSession(route: ScreenRoute, sessionId: String) {
-        withTimeoutOrNull(ScreenSession.CLOSE_TIMEOUT) { runCatching { route.client.CloseRemoteDesktop().execute(RemoteDesktopRef(session_id = sessionId)) } }
+        withTimeoutOrNull(ScreenSession.CLOSE_TIMEOUT) {
+            runCatching {
+                route.client.CloseRemoteDesktop().execute(RemoteDesktopRef(session_id = sessionId))
+            }
+        }
     }
 
     /** Forgets the local candidates held for the stopped session. */

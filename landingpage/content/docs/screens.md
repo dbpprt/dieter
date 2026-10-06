@@ -126,8 +126,24 @@ Take Control and Release Control actions.
 
 Capture is lazy and runs only while an admitted WebRTC session is connected. A
 clean viewer close stops it immediately; an ungraceful signaling or WebRTC
-disconnect gets a five-second reconnect grace, after which the daemon cancels
-and reaps the complete capture process group.
+disconnect gets a twenty-second reconnect grace, after which the daemon cancels
+and reaps the complete capture process group. The renewable session lease lasts
+thirty seconds; receiver feedback renews it only while signaling is authorized.
+
+Android, macOS, and iOS preserve the existing peer for up to fifteen seconds
+of temporary disconnection. Signaling reacquires an authenticated control route,
+verifies the pinned machine identity, and resubscribes with the same session
+nonce and offer. Delays are capped at five seconds, with up to fifteen seconds
+without a received signal. Permanent authorization or identity failures stop
+recovery.
+
+When the peer returns, the client requests a fresh frame. While the view is
+focused, a video stall also requests a fresh frame after ten seconds without a
+new presentation (three seconds when starting); only another twenty seconds
+without a frame triggers session replacement. Refresh probes preserve the
+adapted bitrate; configuration timeouts retry without discarding healthy video.
+A quiet desktop may receive a refresh probe without being disconnected. Failed
+peers are replaced with the existing bounded backoff.
 
 ## TURN configuration
 

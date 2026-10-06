@@ -35,8 +35,8 @@ const (
 	maxInitialCandidates = 64
 	maxSignalHistory     = 96
 	maxSubscribers       = 4
-	defaultSessionLease  = 15 * time.Second
-	defaultDetachGrace   = 5 * time.Second
+	defaultSessionLease  = 30 * time.Second
+	defaultDetachGrace   = 20 * time.Second
 )
 
 var (

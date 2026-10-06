@@ -646,7 +646,13 @@ an existing controlling session; they do not silently take control. Clipboard
 errors are surfaced separately; a broken clipboard channel reopens the screen
 session without replaying the interrupted paste. Transient connection failures
 retry while the screen tab stays open: 250 ms initially, capped at five seconds,
-with no attempt limit. Mac wake and Android resume reopen the authenticated route.
+with no attempt limit. Android, macOS, and iOS first retain a temporarily
+disconnected peer for fifteen seconds and resubscribe signaling with the same
+nonce and offer. The daemon allows twenty seconds of detach grace, bounded also
+by a thirty-second renewable lease; detached feedback cannot extend authorization.
+Video stalls request a refresh on the existing session after ten seconds (three
+at startup), with twenty more seconds allowed for a fresh presentation before
+replacement. Mac wake and Android resume reopen the authenticated route.
 Explicit Disconnect, closing the tab, and permanent permission/identity/policy
 errors stop recovery. Mac inactivity disconnect is optional and disabled by
 default; explicitly configured inactivity limits remain honored.

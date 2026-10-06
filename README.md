@@ -58,7 +58,9 @@ follow-ups from being lost when their provider session closes.
 - **Pick up from your phone.** Android provides Activity, boards, chats, files,
   terminals, and machine tools. iPhone and iPad support is in beta.
 - **Step in when needed.** Queue a follow-up, review a result, or open an
-  authenticated remote screen with explicit input control.
+  authenticated remote screen with explicit input control. Android, macOS, and
+  iOS repair transient screen interruptions within the existing session before
+  replacing it; see [screen recovery](landingpage/content/docs/screens.md#lifecycle).
 
 [See the native apps in action →](https://getdieter.com/docs/tour/)
 
