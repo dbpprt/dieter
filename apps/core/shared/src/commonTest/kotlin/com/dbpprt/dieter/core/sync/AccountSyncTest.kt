@@ -65,6 +65,21 @@ class AccountSyncTest {
     }
 
     @Test
+    fun caughtUpAcknowledgementPublishesChangesFromEarlierFrames() = runTest {
+        val store = WorkspaceStore()
+        val sync = AccountSync(store, backgroundScope, clock, SilentLogger)
+        sync.apply("studio", frame(1))
+        sync.apply(
+            "studio",
+            frame(2, field("item", "c", "summary", """{"runtime":"running"}"""))
+                .copy(caught_up = false),
+        )
+        // The final acknowledgement can carry no changes of its own.
+        sync.apply("studio", frame(2))
+        assertEquals("running", store.state.value.card("c")?.runtime)
+    }
+
+    @Test
     fun anEmptyCompleteViewIsLoadedWithoutAContentChange() = runTest {
         val store = WorkspaceStore()
         val sync = AccountSync(store, backgroundScope, clock, SilentLogger)

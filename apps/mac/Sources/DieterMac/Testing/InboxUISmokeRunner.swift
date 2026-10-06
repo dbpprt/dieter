@@ -103,9 +103,10 @@
                 _ = try await rpc.renameCard(cardID: running.id, title: title)
                 let updated = await NativeUIAccessibility.wait {
                     store.inboxEntries.contains { $0.id == running.id && $0.card.title == title }
-                        && NativeUIAccessibility.elements(in: window).contains { $0.text.contains(title) }
+                        && visible("inbox.title.\(running.id).\(title)", window)
                 }
                 record("remote-update-without-selection", updated && selectedID(store) == nil, &results)
+                capture(window, "00-inbox-remote-update.png", output)
                 _ = try await rpc.renameCard(cardID: running.id, title: running.title)
                 _ = await NativeUIAccessibility.wait {
                     store.inboxEntries.contains { $0.id == running.id && $0.card.title == running.title }

@@ -280,6 +280,7 @@ private struct InboxActivityRow: View {
                     RoundedRectangle(cornerRadius: 2).fill(accent).frame(width: 3)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(entry.row.title)
+                            .smokeTarget("inbox.title.\(entry.id).\(entry.row.title)")
                             .font(.system(size: 13, weight: .semibold)).lineLimit(2)
                             .foregroundStyle(DieterTheme.text)
                             .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
