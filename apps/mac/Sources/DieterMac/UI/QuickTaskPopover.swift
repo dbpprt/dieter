@@ -214,11 +214,11 @@ struct QuickTaskPopover: View {
                     ) {
                         Text("Choose project").tag("")
                         ForEach(store.projects.filter { !$0.archived }, id: \.id) { Text($0.name).tag($0.id) }
-                    }.accessibilityIdentifier("quick-task.project")
+                    }.accessibilityIdentifier("quick-task.project").smokeTarget("quick-task.project")
                     Picker("Board", selection: $draftBoardID) {
                         Text("Choose board").tag("")
                         ForEach(store.boards(for: draftProjectID), id: \.id) { Text($0.name).tag($0.id) }
-                    }.accessibilityIdentifier("quick-task.board")
+                    }.accessibilityIdentifier("quick-task.board").smokeTarget("quick-task.board")
                     LabeledContent("Run on") {
                         if draftProjectID.isEmpty {
                             Text("Choose a project")

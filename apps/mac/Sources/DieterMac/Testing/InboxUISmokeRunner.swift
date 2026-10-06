@@ -281,16 +281,19 @@
             capture(window, "08-inbox-after-archive.png", output)
             let newTaskClicked = await click("inbox.new-task", window)
             let taskReady = await NativeUIAccessibility.wait {
-                NSApp.windows.contains { $0.isVisible && visible("quick-task.content", $0) }
+                NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow?.isVisible == true
             }
             if taskReady,
-                let popover = NSApp.windows.first(where: { $0.isVisible && visible("quick-task.content", $0) })
+                let popover = NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow
             {
                 record(
                     "new-task-opens-composer",
                     newTaskClicked && store.section == .inbox && selectedID(store) == waiting.id
                         && visible("quick-task.project", popover) && visible("quick-task.board", popover)
                         && visible("quick-task.run", popover), &results)
+                let projectChosen = await chooseMenu("quick-task.project", title: "Isolated E2E", window: popover)
+                let boardChosen = await chooseMenu("quick-task.board", title: "Main", window: popover)
+                _ = await click("quick-task.story", popover)
                 let focused = await NativeUIAccessibility.wait {
                     (popover.firstResponder as? NSTextView)?.isEditable == true
                 }
@@ -303,7 +306,10 @@
                     store.navigationCards.values.joined().contains { $0.initialPrompt == story }
                         && store.quickTaskForm.story.isEmpty
                 }
-                record("new-task-saved", entered && createClicked && saved, &results)
+                results["new-task-saved"] =
+                    projectChosen && boardChosen && entered && createClicked && saved
+                    ? "passed"
+                    : "failed: project=\(projectChosen) board=\(boardChosen) entered=\(entered) click=\(createClicked) saved=\(saved)"
             } else {
                 results["new-task-opens-composer"] = "failed: Inbox task composer did not open"
                 results["new-task-saved"] = "failed: Inbox task composer unavailable"
@@ -423,7 +429,8 @@
                 && card.width >= 240 && card.width <= feed.width && card.height >= 60 && card.height <= 104
                 && (key != "default" || abs(feed.width - 340) < 3)
                 && feed.maxX <= detail.minX + 2 && selectedID(store) == cardID && store.section == .inbox
-                && newTask.width > 0 && newTask.height > 0 && feed.contains(newTask)
+                && newTask.width > 0 && newTask.height > 0
+                && newTask.minX >= feed.minX && newTask.maxX <= feed.maxX && window.frame.contains(newTask)
             results["layout-\(key)"] = valid ? "passed" : "failed: feed=\(feed) detail=\(detail) card=\(card)"
             results["geometry-\(key)"] = "feed=\(feed) detail=\(detail) card=\(card)"
         }
