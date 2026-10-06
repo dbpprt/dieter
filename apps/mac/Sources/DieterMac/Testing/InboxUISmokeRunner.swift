@@ -279,6 +279,35 @@
             } catch { results["chat-archive-persisted"] = "failed: \(error)" }
             await replaceSearch("", window: window)
             capture(window, "08-inbox-after-archive.png", output)
+            let newTaskClicked = await click("inbox.new-task", window)
+            let taskReady = await NativeUIAccessibility.wait {
+                NSApp.windows.contains { $0.isVisible && visible("quick-task.content", $0) }
+            }
+            if taskReady,
+                let popover = NSApp.windows.first(where: { $0.isVisible && visible("quick-task.content", $0) })
+            {
+                record(
+                    "new-task-opens-composer",
+                    newTaskClicked && store.section == .inbox && selectedID(store) == waiting.id
+                        && visible("quick-task.project", popover) && visible("quick-task.board", popover)
+                        && visible("quick-task.run", popover), &results)
+                let focused = await NativeUIAccessibility.wait {
+                    (popover.firstResponder as? NSTextView)?.isEditable == true
+                }
+                let story = "Create a task directly from the Mac Inbox."
+                if focused { await NativeUIAccessibility.type(story, in: popover) }
+                let entered = await NativeUIAccessibility.wait { store.quickTaskForm.story == story }
+                capture(popover, "09-inbox-new-task.png", output)
+                let createClicked = await click("quick-task.create", popover)
+                let saved = await NativeUIAccessibility.wait {
+                    store.navigationCards.values.joined().contains { $0.initialPrompt == story }
+                        && store.quickTaskForm.story.isEmpty
+                }
+                record("new-task-saved", entered && createClicked && saved, &results)
+            } else {
+                results["new-task-opens-composer"] = "failed: Inbox task composer did not open"
+                results["new-task-saved"] = "failed: Inbox task composer unavailable"
+            }
             let inventory = NativeUIAccessibility.elements(in: window).map {
                 "\($0.identifier ?? "-") \($0.text) \($0.frame)"
             }.joined(separator: "\n")
@@ -388,11 +417,13 @@
             let feed = NativeUIAccessibility.find("inbox.browser-pane", in: window)?.recordedFrame ?? .zero
             let detail = NativeUIAccessibility.find("inbox.detail-pane", in: window)?.recordedFrame ?? .zero
             let card = NativeUIAccessibility.find("inbox.row.\(cardID)", in: window)?.recordedFrame ?? .zero
+            let newTask = NativeUIAccessibility.find("inbox.new-task", in: window)?.recordedFrame ?? .zero
             let valid =
                 feed.width >= 299 && feed.width <= 421 && detail.width >= 350
                 && card.width >= 240 && card.width <= feed.width && card.height >= 60 && card.height <= 104
                 && (key != "default" || abs(feed.width - 340) < 3)
                 && feed.maxX <= detail.minX + 2 && selectedID(store) == cardID && store.section == .inbox
+                && newTask.width > 0 && newTask.height > 0 && feed.contains(newTask)
             results["layout-\(key)"] = valid ? "passed" : "failed: feed=\(feed) detail=\(detail) card=\(card)"
             results["geometry-\(key)"] = "feed=\(feed) detail=\(detail) card=\(card)"
         }

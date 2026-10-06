@@ -9,6 +9,7 @@ struct InboxFeed: View {
     @State private var projectID = ""
     @State private var hours = 1
     @State private var visibleLimit = 20
+    @State private var newTaskPresented = false
 
     var body: some View {
         let entries = store.inboxEntries
@@ -83,7 +84,25 @@ struct InboxFeed: View {
         -> some View
     {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Inbox").font(.system(size: 19, weight: .semibold))
+            HStack {
+                Text("Inbox").font(.system(size: 19, weight: .semibold))
+                Spacer(minLength: 8)
+                Button {
+                    newTaskPresented = true
+                } label: {
+                    Label("New task", systemImage: "plus")
+                }
+                .buttonStyle(DieterGlassButtonStyle(prominent: true))
+                .fixedSize()
+                .help("Create a task in any project")
+                .accessibilityIdentifier("inbox.new-task").smokeTarget("inbox.new-task")
+                .popover(isPresented: $newTaskPresented, arrowEdge: .top) {
+                    QuickTaskPopover(
+                        isPresented: $newTaskPresented, draft: store.quickTaskForm, chooseDestination: true
+                    )
+                    .environment(store)
+                }
+            }
             HStack(spacing: 5) {
                 Text("\(entries.filter(\.running).count) running").foregroundStyle(DieterTheme.subtle)
                 Text("·").foregroundStyle(DieterTheme.tertiary)
