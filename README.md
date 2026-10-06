@@ -67,13 +67,14 @@ follow-ups from being lost when their provider session closes.
 ## Quick start
 
 You need a configured agent account on the host and access to a Dieter gateway.
-Use your own gateway origin below; [self-hosting is documented](https://getdieter.com/docs/gateway/).
+Setup defaults to `https://gateway.getdieter.com` (an allowed account is required).
+For your own gateway, pass `--gateway https://YOUR-GATEWAY`; [self-hosting is documented](https://getdieter.com/docs/gateway/).
 
 On **Apple Silicon macOS**:
 
 ```sh
 brew install dbpprt/tap/dieter
-dieter setup --gateway https://dieter.example.com
+dieter setup
 dieter project open ~/Development/my-project
 
 brew install --cask dbpprt/tap/dieter-app
@@ -103,7 +104,7 @@ On **Linux amd64/arm64**, install Node.js 22.19+, npm, Git, and
 
 ```sh
 curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
-dieter setup --gateway https://dieter.example.com
+dieter setup
 dieter project open ~/Development/my-project
 dieter doctor
 ```

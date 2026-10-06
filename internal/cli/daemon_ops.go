@@ -403,6 +403,8 @@ Authorize this machine with GitHub and start the platform-managed daemon service
 On macOS, setup also guides and verifies Screen Recording and Accessibility
 permissions used by remote desktop. Project registration is separate; use
 "dieter project open PATH" explicitly after setup.
+The default gateway is https://gateway.getdieter.com; use --gateway for self-hosting.
+Retrying incomplete enrollment updates the gateway while preserving the machine key.
 `
 	set := flags("setup")
 	gatewayURL := set.String("gateway", "https://gateway.getdieter.com", "gateway origin")
@@ -439,6 +441,8 @@ permissions used by remote desktop. Project registration is separate; use
 	fmt.Fprintln(c.Out, "\n2. Daemon service")
 	if *noStart {
 		fmt.Fprintln(c.Out, serviceStartHint())
+	} else if err := setupServicePreflight(c.Store.Root); err != nil {
+		return err
 	} else if runtime.GOOS == "linux" {
 		if err := installAndStartPlatformService(c.Store.Root, c.Out); err != nil {
 			return err
@@ -611,7 +615,24 @@ func restartHomebrewService(output io.Writer) (bool, error) {
 	return true, nil
 }
 
+func setupServicePreflight(root string) error {
+	status, err := dieterdaemon.LoadRuntimeStatus(root)
+	if err == nil && dieterdaemon.RuntimeStatusCurrent(status, time.Now().UTC()) && !status.ServiceManaged && daemonHealth(status.ListenAddress) {
+		return fmt.Errorf("foreground Dieter daemon (pid %d) is already running; stop it in its terminal with Ctrl-C, then rerun `dieter setup` so the managed service can load the enrollment", status.PID)
+	}
+	return nil
+}
+
+func setupDaemonReady(status dieterdaemon.RuntimeStatus, identity *dieterdaemon.Identity) bool {
+	return status.ServiceManaged && status.Enrolled && status.DaemonID == identity.ID &&
+		status.GatewayURL == identity.GatewayURL && status.GatewayState == dieterdaemon.GatewayConnected
+}
+
 func waitForDaemon(root string, timeout time.Duration) error {
+	identity, err := dieterdaemon.LoadIdentity(root)
+	if err != nil {
+		return err
+	}
 	deadline := time.Now().Add(timeout)
 	var last dieterdaemon.RuntimeStatus
 	for time.Now().Before(deadline) {
@@ -620,13 +641,16 @@ func waitForDaemon(root string, timeout time.Duration) error {
 			last = status
 		}
 		if err == nil && dieterdaemon.RuntimeStatusCurrent(status, time.Now().UTC()) && daemonHealth(status.ListenAddress) {
-			if !status.Enrolled || status.GatewayState == dieterdaemon.GatewayConnected {
+			if setupDaemonReady(status, identity) {
 				return nil
 			}
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
 	if last.GatewayState != "" && daemonHealth(last.ListenAddress) {
+		if !last.ServiceManaged || !last.Enrolled || last.DaemonID != identity.ID || last.GatewayURL != identity.GatewayURL {
+			return errors.New("daemon local API is healthy, but the managed service has not loaded the expected enrollment; stop any foreground daemon and rerun `dieter setup`")
+		}
 		if last.GatewayLastError != "" {
 			return fmt.Errorf("daemon local API is healthy, but the gateway is %s: %s", last.GatewayState, last.GatewayLastError)
 		}

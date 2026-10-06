@@ -50,11 +50,18 @@ uses the local daemon enrollment automatically and never stores a separate CLI
 login. An explicit global `--gateway` must match that enrollment:
 
 ```sh
-dieter setup --gateway https://dieter.example.com
+dieter setup
 dieter machine list --format jsonl
 dieter --machine <machine-id> status
 dieter --machine <machine-id> project list --format jsonl
 ```
+
+Setup defaults to `https://gateway.getdieter.com` (requires an allowed account).
+For self-hosting, use `dieter setup --gateway https://YOUR-GATEWAY`.
+An incomplete enrollment retry updates the origin and name while preserving the
+machine key. Completed enrollments retain their identity. Before managed-service
+setup, stop any foreground daemon in its terminal with Ctrl-C. Setup must report
+a connected gateway and a managed service before treating onboarding as complete.
 
 Remote commands prefer the daemon's authenticated direct TLS route, then try
 a data-only WebRTC route when supported, with bounded gateway relay fallback.

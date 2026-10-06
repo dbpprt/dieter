@@ -18,10 +18,11 @@ On Apple Silicon macOS:
 
 ```sh
 brew install dbpprt/tap/dieter
-dieter setup --gateway https://dieter.example.com
+dieter setup
 ```
 
-Replace `https://dieter.example.com` with **your gateway origin**. Sign in with
+The default gateway is `https://gateway.getdieter.com` and requires an allowed
+account. For self-hosting, use `dieter setup --gateway https://YOUR-GATEWAY`. Sign in with
 GitHub, then check and approve the machine name and enrollment code in the
 browser. Setup starts the managed service and guides supported host permissions.
 
