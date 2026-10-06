@@ -519,6 +519,10 @@ viewer cannot invalidate another viewer’s references. All renditions still use
 one native capture stream per physical display, with at most four encoders.
 Each viewer adapts independently and can change displays or disconnect without
 closing another session. Only one client controls mouse and keyboard at a time.
+macOS wakes the display before capture and keeps it awake while capture renditions
+are active, without unlocking the console or changing sleep/security preferences.
+A missing capture display gets bounded retries after wake (21 attempts, 100 ms apart).
+Keep-awake ownership ends on failed startup or completed teardown of the last capture.
 The first control-capable client receives control; other clients use Take Control
 (or `dieter screen control take SESSION`). Release Control leaves the video open.
 Control handoff is part of the current contract; every viewer uses revocable grants.

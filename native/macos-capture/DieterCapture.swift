@@ -120,6 +120,8 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     // serializes start/reconfigure/stop and shared-display membership.
     private let stateQueue: DispatchQueue
     private let captureSession: CaptureSessionOwner
+    private let displayActivity: RemoteDisplayActivity
+    private let shareableDisplays: () async throws -> [SCDisplay]
     private let outputQueue = DispatchQueue(
         label: "com.dbpprt.dieter.capture.output", qos: .userInteractive)
     private let stopSemaphore = DispatchSemaphore(value: 0)
@@ -194,8 +196,16 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     private let syntheticQualityCycle =
         ProcessInfo.processInfo.environment["DIETER_TEST_CAPTURE_QUALITY_CYCLE"] == "1"
 
-    init(options: CaptureOptions) {
+    init(
+        options: CaptureOptions,
+        displayActivity: RemoteDisplayActivity = RemoteDisplayActivity(),
+        shareableDisplays: @escaping () async throws -> [SCDisplay] = {
+            try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true).displays
+        }
+    ) {
         self.options = options
+        self.displayActivity = displayActivity
+        self.shareableDisplays = shareableDisplays
         let queue = DispatchQueue(label: "com.dbpprt.dieter.capture.state", qos: .userInteractive)
         stateQueue = queue
         captureSession = CaptureSessionOwner(stateQueue: queue)
@@ -214,11 +224,15 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             await configurationGate.release()
         } catch {
             await configurationGate.release()
+            stop(reason: error.localizedDescription)
+            await stopAndWait()
             throw error
         }
     }
 
     private func startCapture() async throws {
+        try Task.checkCancellation()
+        if !options.synthetic { try displayActivity.beginCapture() }
         signal(SIGPIPE, SIG_IGN)
         _ = fcntl(STDOUT_FILENO, F_SETFL, fcntl(STDOUT_FILENO, F_GETFL) | O_NONBLOCK)
         if !options.multiplex {
@@ -295,9 +309,10 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             emitState()
             return
         }
-        let content = try await SCShareableContent.excludingDesktopWindows(
-            false, onScreenWindowsOnly: true)
-        guard let display = selectedDisplay(content.displays) else { throw CaptureError.noDisplay }
+        let display = try await discoverCaptureDisplay(isStopped: { self.isStopped }) {
+            let displays = try await self.shareableDisplays()
+            return self.selectedDisplay(displays)
+        }
         let mode = CGDisplayCopyDisplayMode(display.displayID)
         let size = scaledSize(
             width: mode?.pixelWidth ?? display.width, height: mode?.pixelHeight ?? display.height)
@@ -570,6 +585,7 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
                 }
                 try? await stream?.stopCapture()
                 await self.captureSession.detachShared(streamID: self.options.streamID)
+                self.displayActivity.endCapture()
                 self.stopSemaphore.signal()
                 self.stoppedGroup.leave()
             }

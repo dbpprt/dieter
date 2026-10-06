@@ -8,6 +8,9 @@ import ScreenCaptureKit
         try testPrivacyLease()
         if ProcessInfo.processInfo.environment["DIETER_TEST_PRIVACY_PHYSICAL"] == "1" { try await testPrivacyDesktop() }
         try testRemoteDisplayActivity()
+        try testDisplaySleepAssertions()
+        try await testCaptureDisplayDiscovery()
+        try await testCaptureDisplayStartupCleanup()
         try testDisplayModeLeases()
         let damageBounds = CGRect(x: 0, y: 0, width: 100, height: 100)
         precondition(captureChangedFraction(rects: [], bounds: damageBounds) == 0)
@@ -170,25 +173,214 @@ import ScreenCaptureKit
 
 private func testRemoteDisplayActivity() throws {
     var calls = 0
-    let activity = RemoteDisplayActivity { name, userType, assertionID in
+    let activity = RemoteDisplayActivity(declare: { name, userType, assertionID in
         calls += 1
         precondition(name as String == "Dieter remote desktop connection")
         precondition(userType == kIOPMUserActiveRemote)
         precondition(assertionID.pointee == IOPMAssertionID(calls - 1))
         assertionID.pointee = IOPMAssertionID(calls)
         return kIOReturnSuccess
-    }
+    })
     try activity.wake()
     try activity.wake()
     precondition(calls == 2, "Remote activity must reuse its IOKit assertion")
 
-    let failing = RemoteDisplayActivity { _, _, _ in kIOReturnError }
+    let failing = RemoteDisplayActivity(declare: { _, _, _ in kIOReturnError })
     do {
         try failing.wake()
         preconditionFailure("A failed display wake was accepted")
     } catch {
         precondition(error.localizedDescription.contains("Unable to wake the macOS display"))
     }
+}
+
+private final class DisplayAssertionTestDriver {
+    var held = Set<IOPMAssertionID>()
+    var actions: [String] = []
+    var failCreate = false
+    var failWake = false
+    var failRelease = false
+    private var nextID = IOPMAssertionID(100)
+
+    func activity() -> RemoteDisplayActivity {
+        RemoteDisplayActivity(
+            create: { id in
+                self.actions.append("create")
+                if self.failCreate { return kIOReturnError }
+                self.nextID += 1
+                id.pointee = self.nextID
+                self.held.insert(self.nextID)
+                return kIOReturnSuccess
+            },
+            release: { id in
+                self.actions.append("release")
+                if self.failRelease { return kIOReturnError }
+                precondition(self.held.remove(id) != nil, "Assertion was released twice")
+                return kIOReturnSuccess
+            },
+            declare: { _, type, _ in
+                precondition(type == kIOPMUserActiveRemote)
+                self.actions.append("wake")
+                return self.failWake ? kIOReturnError : kIOReturnSuccess
+            })
+    }
+}
+
+private func testDisplaySleepAssertions() throws {
+    let driver = DisplayAssertionTestDriver()
+    let first = driver.activity(), second = driver.activity()
+    try first.beginCapture()
+    precondition(driver.actions == ["create", "wake"], "Keep-awake must precede wake")
+    try first.beginCapture()
+    precondition(driver.held.count == 1, "Repeated startup leaked an assertion")
+    try second.beginCapture()
+    precondition(driver.held.count == 2)
+    first.endCapture()
+    first.endCapture()
+    precondition(driver.held.count == 1, "One rendition released another's keep-awake")
+    second.endCapture()
+    precondition(driver.held.isEmpty)
+
+    driver.failCreate = true
+    driver.actions.removeAll()
+    do { try first.beginCapture(); preconditionFailure("Failed keep-awake was accepted") } catch {}
+    precondition(driver.actions == ["create"] && driver.held.isEmpty)
+    driver.failCreate = false
+    driver.failWake = true
+    driver.actions.removeAll()
+    do { try first.beginCapture(); preconditionFailure("Failed wake was accepted") } catch {}
+    precondition(driver.actions == ["create", "wake", "release"] && driver.held.isEmpty)
+
+    driver.failWake = false
+    try first.beginCapture()
+    driver.failRelease = true
+    first.endCapture()
+    precondition(driver.held.count == 1)
+    driver.failRelease = false
+    first.endCapture()
+    precondition(driver.held.isEmpty, "Failed release lost retryable ownership")
+
+    var abandoned: RemoteDisplayActivity? = driver.activity()
+    try abandoned?.beginCapture()
+    abandoned = nil
+    precondition(driver.held.isEmpty, "Deinit leaked keep-awake")
+    print("Display activity: acquisition order, independent owners, idempotent cleanup and failure rollback passed")
+}
+
+private enum DisplayDiscoveryTestError: Error { case permission }
+
+private func testCaptureDisplayDiscovery() async throws {
+    var queries = 0, sleeps = 0
+    let selected: Int = try await discoverCaptureDisplay(
+        isStopped: { false },
+        query: {
+            queries += 1
+            let displays = queries < 3 ? [1] : [1, 42]
+            return displays.first { $0 == 42 }
+        },
+        sleep: { delay in
+            precondition(delay == 100_000_000)
+            sleeps += 1
+        })
+    precondition(selected == 42 && queries == 3 && sleeps == 2, "Wake retry changed the selected display")
+
+    queries = 0; sleeps = 0
+    do {
+        let _: Int = try await discoverCaptureDisplay(
+            isStopped: { false },
+            query: {
+                queries += 1; return nil
+            }, sleep: { _ in sleeps += 1 })
+        preconditionFailure("An absent display was accepted")
+    } catch {
+        precondition(error.localizedDescription == CaptureError.noDisplay.localizedDescription)
+    }
+    precondition(queries == 21 && sleeps == 20, "Missing-display retries must remain bounded")
+
+    queries = 0
+    do {
+        let _: Int = try await discoverCaptureDisplay(
+            isStopped: { false },
+            query: {
+                queries += 1; throw DisplayDiscoveryTestError.permission
+            },
+            sleep: { _ in preconditionFailure("OS errors must not be retried") })
+        preconditionFailure("A permission failure was accepted")
+    } catch DisplayDiscoveryTestError.permission {}
+    precondition(queries == 1)
+
+    var stopped = false
+    queries = 0
+    do {
+        let _: Int = try await discoverCaptureDisplay(
+            isStopped: { stopped },
+            query: {
+                queries += 1; stopped = true; return 1
+            },
+            sleep: { _ in preconditionFailure("Stopped capture retried") })
+        preconditionFailure("Stopped capture selected a display")
+    } catch {
+        precondition(error.localizedDescription == CaptureError.stopped.localizedDescription)
+    }
+    precondition(queries == 1)
+
+    let cancelled = Task<Int, Error> {
+        try await discoverCaptureDisplay(
+            isStopped: { false },
+            query: {
+                withUnsafeCurrentTask { $0?.cancel() }; return 1
+            },
+            sleep: { _ in preconditionFailure("Cancelled capture retried") })
+    }
+    do { _ = try await cancelled.value; preconditionFailure("Cancellation was ignored") } catch is CancellationError {}
+    print("Display discovery: wake races, bounded retries, explicit IDs, terminal OS errors and cancellation passed")
+}
+
+private final class WeakCaptureRunner { weak var value: CaptureRunner? }
+
+private func testCaptureDisplayStartupCleanup() async throws {
+    let driver = DisplayAssertionTestDriver()
+    var options = CaptureOptions()
+    options.multiplex = true
+    let failed = CaptureRunner(
+        options: options, displayActivity: driver.activity(),
+        shareableDisplays: {
+            driver.actions.append("query")
+            throw DisplayDiscoveryTestError.permission
+        })
+    do {
+        try await failed.start()
+        preconditionFailure("Failed startup was accepted")
+    } catch DisplayDiscoveryTestError.permission {}
+    precondition(driver.actions == ["create", "wake", "query", "release"])
+    precondition(driver.held.isEmpty, "Failed startup leaked keep-awake")
+    await failed.stopAndWait()
+
+    driver.actions.removeAll()
+    let weakRunner = WeakCaptureRunner()
+    let stopped = CaptureRunner(
+        options: options, displayActivity: driver.activity(),
+        shareableDisplays: {
+            weakRunner.value?.stop()
+            return []
+        })
+    weakRunner.value = stopped
+    do { try await stopped.start(); preconditionFailure("Stopped startup was accepted") } catch {
+        precondition(error.localizedDescription == CaptureError.stopped.localizedDescription)
+    }
+    precondition(driver.held.isEmpty, "Stop during display discovery leaked keep-awake")
+
+    driver.actions.removeAll()
+    options.synthetic = true
+    options.codec = "H265"  // Invalid 4K HEVC configuration fails before touching an encoder.
+    let synthetic = CaptureRunner(
+        options: options, displayActivity: driver.activity(),
+        shareableDisplays: {
+            preconditionFailure("Synthetic capture queried the desktop")
+        })
+    do { try await synthetic.start(); preconditionFailure("Invalid HEVC dimensions were accepted") } catch {}
+    precondition(driver.actions.isEmpty, "Synthetic capture changed the host's power state")
+    print("Capture startup: failed starts, stop during discovery and synthetic power isolation passed")
 }
 
 private func testDisplayModeLeases() throws {

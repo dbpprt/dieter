@@ -61,6 +61,8 @@ follow-ups from being lost when their provider session closes.
   authenticated remote screen with explicit input control. Android, macOS, and
   iOS repair transient screen interruptions within the existing session before
   replacing it; see [screen recovery](landingpage/content/docs/screens.md#lifecycle).
+  macOS wakes the display before capture and keeps it awake until capture ends,
+  without unlocking the console or changing system sleep/security preferences.
 
 [See the native apps in action →](https://getdieter.com/docs/tour/)
 
