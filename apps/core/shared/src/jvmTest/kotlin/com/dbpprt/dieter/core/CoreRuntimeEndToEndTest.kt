@@ -2,6 +2,12 @@ package com.dbpprt.dieter.core
 
 import com.dbpprt.dieter.api.v1.ChangesRequest
 import com.dbpprt.dieter.api.v1.CreateConversationRequest
+import com.dbpprt.dieter.api.v1.MachineOperationAction
+import com.dbpprt.dieter.api.v1.MachineOperationRequest
+import com.dbpprt.dieter.client.v1.SessionSlice
+import com.dbpprt.dieter.client.v1.Slice
+import com.dbpprt.dieter.client.v1.Update
+import com.dbpprt.dieter.core.client.ClientApi
 import com.dbpprt.dieter.core.connection.ConnectionPhase
 import com.dbpprt.dieter.core.connection.SyncState
 import com.dbpprt.dieter.core.routing.RouteKind
@@ -23,6 +29,7 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
@@ -31,8 +38,49 @@ import okio.Path.Companion.toOkioPath
 
 /** Drives the whole runtime against a disposable gateway and daemons. */
 class CoreRuntimeEndToEndTest : EndToEnd() {
-    @AfterTest
-    fun tearDown() = tearDownRuntimes()
+    @AfterTest fun tearDown() = tearDownRuntimes()
+
+    @Test
+    fun privacyChangesFromAnotherClientReachTheSidebarWithoutTelemetry() = e2e {
+        val fixture = fixture()
+        val runtime = runtime(fixture)
+        runtime.awaitConnected()
+        runtime.awaitLoaded(fixture)
+        runtime.awaitSync(fixture.daemonId, SyncState.LIVE)
+        val slices = MutableStateFlow<SessionSlice?>(null)
+        val watch =
+            ClientApi(runtime).observe(Slice.SLICE_SESSION, "") {
+                slices.value = Update.ADAPTER.decode(it.encode()).session
+            }
+        suspend fun privacy(action: MachineOperationAction) =
+            runtime.onMachine(fixture.daemonId) {
+                it.PerformMachineOperation().execute(MachineOperationRequest(action = action))
+            }
+        privacy(MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_ON)
+        slices.await(15.seconds, describe = { "privacy sidebar: ${slices.value}" }) {
+            it?.machines?.any { machine ->
+                machine.id == fixture.daemonId && machine.privacy_active && !machine.privacy_stale
+            } == true
+        }
+        fixture.daemonOffline()
+        slices.await(15.seconds) {
+            it?.machines?.any { machine ->
+                machine.id == fixture.daemonId && machine.privacy_active && machine.privacy_stale
+            } == true
+        }
+        fixture.daemonOnline()
+        runtime.awaitSync(fixture.daemonId, SyncState.LIVE, 45.seconds)
+        privacy(MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_OFF)
+        slices.await(15.seconds) {
+            it?.machines?.any { machine ->
+                machine.id == fixture.daemonId &&
+                    !machine.privacy_active &&
+                    !machine.privacy_warning &&
+                    !machine.privacy_stale
+            } == true
+        }
+        watch.close()
+    }
 
     @Test
     fun connectsOverTheRelayAndStreamsEveryCompatibleMachine() = e2e {
@@ -49,7 +97,10 @@ class CoreRuntimeEndToEndTest : EndToEnd() {
         assertTrue(machines.online.any { it.id == fixture.daemonId })
         val incompatible = assertNotNull(machines.machine(fixture.incompatibleDaemonId))
         assertFalse(incompatible.compatible && incompatible.online(machines.evaluatedAt))
-        assertEquals(SyncState.INCOMPATIBLE, runtime.connection.syncs.value[fixture.incompatibleDaemonId]?.state)
+        assertEquals(
+            SyncState.INCOMPATIBLE,
+            runtime.connection.syncs.value[fixture.incompatibleDaemonId]?.state,
+        )
 
         val health = runtime.onMachine(fixture.daemonId) { it.Health().execute(Unit) }
         assertEquals("ok", health.status, "health: $health")
@@ -62,12 +113,29 @@ class CoreRuntimeEndToEndTest : EndToEnd() {
         runtime.awaitLoaded(fixture)
         runtime.awaitSync(fixture.daemonId, SyncState.LIVE)
         // Another client creates a chat directly on the machine; this runtime only listens.
-        val created = runtime.onMachine(fixture.daemonId) {
-            it.CreateChat().execute(CreateConversationRequest(project_id = fixture.projectId, title = "Made elsewhere", prompt = "p", defer_start = true, workspace_mode = "project"))
-        }
-        val view = runtime.workspace.state.await(describe = { "chat ${created.id}" }) { it.card(created.id) != null }
+        val created =
+            runtime.onMachine(fixture.daemonId) {
+                it.CreateChat()
+                    .execute(
+                        CreateConversationRequest(
+                            project_id = fixture.projectId,
+                            title = "Made elsewhere",
+                            prompt = "p",
+                            defer_start = true,
+                            workspace_mode = "project",
+                        )
+                    )
+            }
+        val view =
+            runtime.workspace.state.await(describe = { "chat ${created.id}" }) {
+                it.card(created.id) != null
+            }
         assertEquals("Made elsewhere", view.card(created.id)?.title)
-        assertEquals("p", view.card(created.id)?.initial_prompt, "the owner's details arrive with it")
+        assertEquals(
+            "p",
+            view.card(created.id)?.initial_prompt,
+            "the owner's details arrive with it",
+        )
     }
 
     @Test
@@ -82,25 +150,69 @@ class CoreRuntimeEndToEndTest : EndToEnd() {
         // A project only the second machine holds joins the same view, streamed from that machine.
         val repository = Files.createTempDirectory("dieter-second-project").toFile().canonicalFile
         assertEquals(0, ProcessBuilder("git", "init", "-q", repository.path).start().waitFor())
-        val created = assertNotNull(runtime.admin.createProject(fixture.secondDaemonId, repository.path, name = "Second machine").project)
-        val both = runtime.workspace.state.await(describe = { "both projects: ${runtime.workspace.state.value.projects.map { it.name }}" }) {
-            it.project(created.id)?.checkouts?.isNotEmpty() == true && it.project(fixture.projectId) != null
-        }
-        assertEquals(fixture.secondDaemonId, both.project(created.id)!!.checkouts.single().daemon_id)
-        assertEquals(repository.path, both.project(created.id)!!.checkouts.single().path, "its owner streams the checkout's path")
-        assertEquals(setOf(fixture.daemonId, fixture.secondDaemonId), runtime.sessions.routes.value.keys)
+        val created =
+            assertNotNull(
+                runtime.admin
+                    .createProject(fixture.secondDaemonId, repository.path, name = "Second machine")
+                    .project
+            )
+        val both =
+            runtime.workspace.state.await(
+                describe = {
+                    "both projects: ${runtime.workspace.state.value.projects.map { it.name }}"
+                }
+            ) {
+                it.project(created.id)?.checkouts?.isNotEmpty() == true &&
+                    it.project(fixture.projectId) != null
+            }
+        assertEquals(
+            fixture.secondDaemonId,
+            both.project(created.id)!!.checkouts.single().daemon_id,
+        )
+        assertEquals(
+            repository.path,
+            both.project(created.id)!!.checkouts.single().path,
+            "its owner streams the checkout's path",
+        )
+        assertEquals(
+            setOf(fixture.daemonId, fixture.secondDaemonId),
+            runtime.sessions.routes.value.keys,
+        )
 
-        val chat = runtime.onMachine(fixture.daemonId) {
-            it.CreateChat().execute(CreateConversationRequest(project_id = fixture.projectId, title = "On the first machine", prompt = "p", defer_start = true, workspace_mode = "project"))
-        }
+        val chat =
+            runtime.onMachine(fixture.daemonId) {
+                it.CreateChat()
+                    .execute(
+                        CreateConversationRequest(
+                            project_id = fixture.projectId,
+                            title = "On the first machine",
+                            prompt = "p",
+                            defer_start = true,
+                            workspace_mode = "project",
+                        )
+                    )
+            }
         val shown = runtime.workspace.state.await { it.card(chat.id) != null }.card(chat.id)!!
-        assertNull(runtime.staleness(shown, runtime.connection.syncs.value, runtime.connection.machines.value))
+        assertNull(
+            runtime.staleness(
+                shown,
+                runtime.connection.syncs.value,
+                runtime.connection.machines.value,
+            )
+        )
 
         // One machine going offline only makes its own cards stale.
         fixture.daemonOffline()
         runtime.awaitSync(fixture.daemonId, SyncState.OFFLINE)
         val name = runtime.connection.machines.value.machine(fixture.daemonId)!!.name
-        assertEquals("$name is offline", runtime.staleness(shown, runtime.connection.syncs.value, runtime.connection.machines.value))
+        assertEquals(
+            "$name is offline",
+            runtime.staleness(
+                shown,
+                runtime.connection.syncs.value,
+                runtime.connection.machines.value,
+            ),
+        )
         assertEquals(SyncState.LIVE, runtime.connection.syncs.value[fixture.secondDaemonId]?.state)
         assertNotNull(runtime.workspace.state.value.card(chat.id), "its cached view stays")
         assertEquals(ConnectionPhase.CONNECTED, runtime.connection.state.value.phase)
@@ -115,9 +227,19 @@ class CoreRuntimeEndToEndTest : EndToEnd() {
         val runtime = runtime(fixture)
         runtime.awaitLoaded(fixture)
         runtime.awaitSync(fixture.daemonId, SyncState.LIVE)
-        val chat = runtime.onMachine(fixture.daemonId) {
-            it.CreateChat().execute(CreateConversationRequest(project_id = fixture.projectId, title = "Open me", prompt = "p", defer_start = true, workspace_mode = "project"))
-        }
+        val chat =
+            runtime.onMachine(fixture.daemonId) {
+                it.CreateChat()
+                    .execute(
+                        CreateConversationRequest(
+                            project_id = fixture.projectId,
+                            title = "Open me",
+                            prompt = "p",
+                            defer_start = true,
+                            workspace_mode = "project",
+                        )
+                    )
+            }
         runtime.workspace.state.await { it.card(chat.id) != null }
         val phases = mutableListOf<ConnectionPhase>()
         val states = mutableListOf<SyncState?>()
@@ -139,12 +261,14 @@ class CoreRuntimeEndToEndTest : EndToEnd() {
         val fixture = fixture()
         // A phone slightly behind the gateway, and one far ahead of it.
         for (skew in listOf((-250).milliseconds, 10.minutes)) {
-            val clock = object : Clock {
-                override fun now() = Clock.System.now() + skew
-            }
+            val clock =
+                object : Clock {
+                    override fun now() = Clock.System.now() + skew
+                }
             val runtime = runtime(fixture, jvmTestPlatform(clock = clock))
             runtime.awaitConnected()
-            // The relayed daemon heartbeats every few seconds; each heartbeat pushes a freshly stamped report.
+            // The relayed daemon heartbeats every few seconds; each heartbeat pushes a freshly
+            // stamped report.
             val reports = mutableListOf<Pair<String, Boolean>>()
             withTimeoutOrNull(20.seconds) {
                 runtime.connection.machines.first { directory ->
@@ -153,7 +277,10 @@ class CoreRuntimeEndToEndTest : EndToEnd() {
                     reports.map { it.first }.distinct().size >= 3
                 }
             }
-            assertTrue(reports.map { it.first }.distinct().size >= 3, "skew $skew saw no fresh heartbeats: $reports")
+            assertTrue(
+                reports.map { it.first }.distinct().size >= 3,
+                "skew $skew saw no fresh heartbeats: $reports",
+            )
             assertTrue(reports.all { it.second }, "skew $skew flapped: $reports")
             assertEquals(ConnectionPhase.CONNECTED, runtime.connection.state.value.phase)
         }
@@ -164,21 +291,30 @@ class CoreRuntimeEndToEndTest : EndToEnd() {
         val fixture = fixture()
         val runtime = runtime(fixture)
         runtime.awaitConnected()
-        val streams = List(12) {
-            launch {
-                runCatching {
-                    runtime.onMachine(fixture.daemonId) { client ->
-                        coroutineScope {
-                            val call = client.WatchChanges()
-                            val frames = call.executeIn(this, ChangesRequest(heartbeat_ms = 1000))
-                            try { for (frame in frames) Unit } finally { call.cancel() }
+        val streams =
+            List(12) {
+                launch {
+                    runCatching {
+                        runtime.onMachine(fixture.daemonId) { client ->
+                            coroutineScope {
+                                val call = client.WatchChanges()
+                                val frames =
+                                    call.executeIn(this, ChangesRequest(heartbeat_ms = 1000))
+                                try {
+                                    for (frame in frames) Unit
+                                } finally {
+                                    call.cancel()
+                                }
+                            }
                         }
                     }
                 }
             }
-        }
         delay(1000)
-        val health = withTimeout(5.seconds) { runtime.onMachine(fixture.daemonId) { it.Health().execute(Unit) } }
+        val health =
+            withTimeout(5.seconds) {
+                runtime.onMachine(fixture.daemonId) { it.Health().execute(Unit) }
+            }
         assertEquals("ok", health.status)
         streams.forEach { it.cancel() }
     }
@@ -190,7 +326,11 @@ class CoreRuntimeEndToEndTest : EndToEnd() {
         runtime.awaitConnected()
         runtime.awaitLoaded(fixture)
         assertEquals(RouteKind.LOCAL, runtime.sessions.routes.value[fixture.daemonId]?.kind)
-        assertEquals(fixture.daemonId, runtime.choice.local(), "a loopback route is this device's machine")
+        assertEquals(
+            fixture.daemonId,
+            runtime.choice.local(),
+            "a loopback route is this device's machine",
+        )
     }
 
     @Test
@@ -209,18 +349,26 @@ class CoreRuntimeEndToEndTest : EndToEnd() {
         val secrets = MemorySecureStore()
         val first = runtime(fixture, jvmTestPlatform(directory, secrets))
         first.awaitLoaded(fixture)
-        val updated = assertNotNull(first.accountSync.updatedAt.value[fixture.daemonId]).toEpochMilliseconds()
+        val updated =
+            assertNotNull(first.accountSync.updatedAt.value[fixture.daemonId]).toEpochMilliseconds()
         first.shutdown()
         runtimes -= first
 
         fixture.daemonOffline()
-        // A restarted process that does not connect (a widget render after process death) shows the cached view and when it last changed.
+        // A restarted process that does not connect (a widget render after process death) shows the
+        // cached view and when it last changed.
         val second = runtime(fixture, jvmTestPlatform(directory, secrets), active = false)
         val cached = second.workspace.state.await(describe = { "cached view" }) { it.loaded }
         assertNotNull(cached.project(fixture.projectId))
         assertNotNull(cached.board(fixture.boardId))
-        assertEquals(updated, second.accountSync.updatedAt.value[fixture.daemonId]?.toEpochMilliseconds())
-        assertEquals(ConnectionPhase.DISCONNECTED, second.connection.state.await { it.gateway != null }.phase)
+        assertEquals(
+            updated,
+            second.accountSync.updatedAt.value[fixture.daemonId]?.toEpochMilliseconds(),
+        )
+        assertEquals(
+            ConnectionPhase.DISCONNECTED,
+            second.connection.state.await { it.gateway != null }.phase,
+        )
     }
 
     @Test
@@ -239,9 +387,12 @@ class CoreRuntimeEndToEndTest : EndToEnd() {
     fun aRevokedSessionAsksForSignIn() = e2e {
         val fixture = fixture()
         val runtime = runtime(fixture, token = "isolated_revoked")
-        val state = runtime.connection.state.await(describe = { "auth required: ${runtime.connection.state.value}" }) {
-            it.phase == ConnectionPhase.AUTH_REQUIRED
-        }
+        val state =
+            runtime.connection.state.await(
+                describe = { "auth required: ${runtime.connection.state.value}" }
+            ) {
+                it.phase == ConnectionPhase.AUTH_REQUIRED
+            }
         assertNotNull(state.error)
     }
 
@@ -256,7 +407,9 @@ class CoreRuntimeEndToEndTest : EndToEnd() {
     fun anInvalidReleaseIsToldToUpdate() = e2e {
         val fixture = fixture()
         val runtime = runtime(fixture, clientVersion = "not-a-release")
-        runtime.connection.state.await(describe = { "update required: ${runtime.connection.state.value}" }) {
+        runtime.connection.state.await(
+            describe = { "update required: ${runtime.connection.state.value}" }
+        ) {
             it.phase == ConnectionPhase.UPDATE_REQUIRED
         }
     }
@@ -267,6 +420,11 @@ class CoreRuntimeEndToEndTest : EndToEnd() {
         val runtime = runtime(fixture, active = false)
         assertTrue(runtime.connection.refreshForWidget(30.seconds))
         runtime.awaitLoaded(fixture)
-        runtime.connection.state.await(20.seconds, describe = { "released: ${runtime.connection.state.value}" }) { it.phase == ConnectionPhase.DISCONNECTED }
+        runtime.connection.state.await(
+            20.seconds,
+            describe = { "released: ${runtime.connection.state.value}" },
+        ) {
+            it.phase == ConnectionPhase.DISCONNECTED
+        }
     }
 }

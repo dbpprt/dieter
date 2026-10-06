@@ -67,6 +67,32 @@ older but compatible release remains routable; Update Required does not.
 
 {{< screenshot src="macos-machines.png" width="1380" height="870" alt="Build Mac machine details showing live route, CPU, memory, and GPU values over a multi-machine board" caption="Inspect the host from the Mac sidebar. These are capture-time values from an isolated fixture, not performance claims." >}}
 
+## macOS privacy mode
+
+Open a Mac's machine details and choose **Actions → Lock Local Screen…**.
+Physical displays go black and standard local keyboard, mouse and trackpad
+input is suppressed while remote control and desktop agents continue working.
+**Unlock Local Screen…** restores the local desktop. A small shield beside the
+machine in the Mac sidebar shows privacy is on. Offline status is marked last
+known; a warning shield means protection is degraded.
+
+```sh
+dieter --machine MACHINE_ID machine privacy status
+dieter --machine MACHINE_ID machine privacy on --key UNIQUE_LOCK_ID
+dieter --machine MACHINE_ID machine privacy off --key UNIQUE_UNLOCK_ID
+```
+
+Protection belongs to the host. It continues when viewers disconnect and across
+a daemon restart, and clears when the Mac reboots. Omit `--machine` to control
+the local daemon. Accessibility permission and compatible display transfer
+tables are required; unsupported configurations report a reason.
+
+This keeps an already logged-in graphical session private. It does not replace
+macOS authentication or FileVault, and cannot prevent hardware/system shortcuts,
+secure-input bypasses, helper failure or permission revocation. Normal macOS
+login protections still apply after reboot. Terminal agents do not require an
+unlocked graphical session.
+
 ## Optional direct TLS route
 
 Same-device clients discover the authenticated loopback route automatically.

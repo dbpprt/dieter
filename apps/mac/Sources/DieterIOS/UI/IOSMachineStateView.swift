@@ -231,6 +231,8 @@
 
         private func operationSymbol(_ action: Dieter_V1_MachineOperationAction) -> String {
             switch action {
+            case .privacyOn: "lock.shield"
+            case .privacyOff: "lock.open"
             case .updateDaemon: "arrow.down.circle"
             case .restart: "arrow.clockwise.circle"
             case .shutdown: "power"

@@ -6181,6 +6181,27 @@ public nonisolated struct ClientMachineEntry: @unchecked Sendable {
     set {_uniqueStorage()._staleSinceMillis = newValue}
   }
 
+  /// Shared-core wording and freshness for the owner-only privacy snapshot.
+  public var privacyLabel: String {
+    get {_storage._privacyLabel}
+    set {_uniqueStorage()._privacyLabel = newValue}
+  }
+
+  public var privacyActive: Bool {
+    get {_storage._privacyActive}
+    set {_uniqueStorage()._privacyActive = newValue}
+  }
+
+  public var privacyStale: Bool {
+    get {_storage._privacyStale}
+    set {_uniqueStorage()._privacyStale = newValue}
+  }
+
+  public var privacyWarning: Bool {
+    get {_storage._privacyWarning}
+    set {_uniqueStorage()._privacyWarning = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -21440,7 +21461,7 @@ nonisolated extension ClientGatewayEntry: SwiftProtobuf.Message, SwiftProtobuf._
 
 nonisolated extension ClientMachineEntry: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MachineEntry"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}online\0\u{2}\u{2}route\0\u{2}\u{2}platform\0\u{3}release_version\0\u{1}compatible\0\u{3}last_seen_at\0\u{3}minimum_release_version\0\u{4}\u{2}remote_desktop_ready\0\u{3}remote_desktop_reason\0\u{2}\u{3}local\0\u{1}detail\0\u{3}show_last_seen\0\u{1}available\0\u{3}unavailable_message\0\u{3}screen_status\0\u{3}can_share_screen\0\u{1}presence\0\u{3}display_name\0\u{1}tone\0\u{3}sync_state\0\u{3}sync_label\0\u{3}stale_since_millis\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}name\0\u{1}online\0\u{2}\u{2}route\0\u{2}\u{2}platform\0\u{3}release_version\0\u{1}compatible\0\u{3}last_seen_at\0\u{3}minimum_release_version\0\u{4}\u{2}remote_desktop_ready\0\u{3}remote_desktop_reason\0\u{2}\u{3}local\0\u{1}detail\0\u{3}show_last_seen\0\u{1}available\0\u{3}unavailable_message\0\u{3}screen_status\0\u{3}can_share_screen\0\u{1}presence\0\u{3}display_name\0\u{1}tone\0\u{3}sync_state\0\u{3}sync_label\0\u{3}stale_since_millis\0\u{3}privacy_label\0\u{3}privacy_active\0\u{3}privacy_stale\0\u{3}privacy_warning\0")
 
   fileprivate class _StorageClass {
     var _id: String = String()
@@ -21467,6 +21488,10 @@ nonisolated extension ClientMachineEntry: SwiftProtobuf.Message, SwiftProtobuf._
     var _syncState: ClientMachineSyncState = .connecting
     var _syncLabel: String = String()
     var _staleSinceMillis: Int64 = 0
+    var _privacyLabel: String = String()
+    var _privacyActive: Bool = false
+    var _privacyStale: Bool = false
+    var _privacyWarning: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -21501,6 +21526,10 @@ nonisolated extension ClientMachineEntry: SwiftProtobuf.Message, SwiftProtobuf._
       _syncState = source._syncState
       _syncLabel = source._syncLabel
       _staleSinceMillis = source._staleSinceMillis
+      _privacyLabel = source._privacyLabel
+      _privacyActive = source._privacyActive
+      _privacyStale = source._privacyStale
+      _privacyWarning = source._privacyWarning
     }
   }
 
@@ -21543,6 +21572,10 @@ nonisolated extension ClientMachineEntry: SwiftProtobuf.Message, SwiftProtobuf._
         case 27: try { try decoder.decodeSingularEnumField(value: &_storage._syncState) }()
         case 28: try { try decoder.decodeSingularStringField(value: &_storage._syncLabel) }()
         case 29: try { try decoder.decodeSingularInt64Field(value: &_storage._staleSinceMillis) }()
+        case 30: try { try decoder.decodeSingularStringField(value: &_storage._privacyLabel) }()
+        case 31: try { try decoder.decodeSingularBoolField(value: &_storage._privacyActive) }()
+        case 32: try { try decoder.decodeSingularBoolField(value: &_storage._privacyStale) }()
+        case 33: try { try decoder.decodeSingularBoolField(value: &_storage._privacyWarning) }()
         default: break
         }
       }
@@ -21623,6 +21656,18 @@ nonisolated extension ClientMachineEntry: SwiftProtobuf.Message, SwiftProtobuf._
       if _storage._staleSinceMillis != 0 {
         try visitor.visitSingularInt64Field(value: _storage._staleSinceMillis, fieldNumber: 29)
       }
+      if !_storage._privacyLabel.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._privacyLabel, fieldNumber: 30)
+      }
+      if _storage._privacyActive != false {
+        try visitor.visitSingularBoolField(value: _storage._privacyActive, fieldNumber: 31)
+      }
+      if _storage._privacyStale != false {
+        try visitor.visitSingularBoolField(value: _storage._privacyStale, fieldNumber: 32)
+      }
+      if _storage._privacyWarning != false {
+        try visitor.visitSingularBoolField(value: _storage._privacyWarning, fieldNumber: 33)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -21656,6 +21701,10 @@ nonisolated extension ClientMachineEntry: SwiftProtobuf.Message, SwiftProtobuf._
         if _storage._syncState != rhs_storage._syncState {return false}
         if _storage._syncLabel != rhs_storage._syncLabel {return false}
         if _storage._staleSinceMillis != rhs_storage._staleSinceMillis {return false}
+        if _storage._privacyLabel != rhs_storage._privacyLabel {return false}
+        if _storage._privacyActive != rhs_storage._privacyActive {return false}
+        if _storage._privacyStale != rhs_storage._privacyStale {return false}
+        if _storage._privacyWarning != rhs_storage._privacyWarning {return false}
         return true
       }
       if !storagesAreEqual {return false}

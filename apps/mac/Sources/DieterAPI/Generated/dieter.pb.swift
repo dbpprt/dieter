@@ -157,6 +157,8 @@ public nonisolated enum Dieter_V1_MachineOperationAction: SwiftProtobuf.Enum, Sw
   case restart // = 1
   case shutdown // = 2
   case updateDaemon // = 3
+  case privacyOn // = 4
+  case privacyOff // = 5
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -169,6 +171,8 @@ public nonisolated enum Dieter_V1_MachineOperationAction: SwiftProtobuf.Enum, Sw
     case 1: self = .restart
     case 2: self = .shutdown
     case 3: self = .updateDaemon
+    case 4: self = .privacyOn
+    case 5: self = .privacyOff
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -179,6 +183,8 @@ public nonisolated enum Dieter_V1_MachineOperationAction: SwiftProtobuf.Enum, Sw
     case .restart: return 1
     case .shutdown: return 2
     case .updateDaemon: return 3
+    case .privacyOn: return 4
+    case .privacyOff: return 5
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -189,6 +195,8 @@ public nonisolated enum Dieter_V1_MachineOperationAction: SwiftProtobuf.Enum, Sw
     .restart,
     .shutdown,
     .updateDaemon,
+    .privacyOn,
+    .privacyOff,
   ]
 
 }
@@ -658,6 +666,15 @@ public nonisolated struct Dieter_V1_MachineInformation: @unchecked Sendable {
     set {_uniqueStorage()._operationCapabilities = newValue}
   }
 
+  public var privacy: Dieter_V1_MachinePrivacy {
+    get {_storage._privacy ?? Dieter_V1_MachinePrivacy()}
+    set {_uniqueStorage()._privacy = newValue}
+  }
+  /// Returns true if `privacy` has been explicitly set.
+  public var hasPrivacy: Bool {_storage._privacy != nil}
+  /// Clears the value of `privacy`. Subsequent reads from it will return its default value.
+  public mutating func clearPrivacy() {_uniqueStorage()._privacy = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -825,6 +842,66 @@ public nonisolated struct Dieter_V1_MachineProcessGPU: Sendable {
   public init() {}
 
   fileprivate var _memoryBytes: UInt64? = nil
+}
+
+/// Owner-only, current-boot physical display/input protection. It is independent
+/// of viewer sessions and is never replicated as an account setting.
+public nonisolated struct Dieter_V1_MachinePrivacy: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var supported: Bool = false
+
+  public var requested: Bool = false
+
+  public var state: Dieter_V1_MachinePrivacy.State = .off
+
+  public var reason: String = String()
+
+  public var displayCount: UInt32 = 0
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public nonisolated enum State: SwiftProtobuf.Enum, Swift.CaseIterable {
+    public typealias RawValue = Int
+    case off // = 0
+    case on // = 1
+    case degraded // = 2
+    case UNRECOGNIZED(Int)
+
+    public init() {
+      self = .off
+    }
+
+    public init?(rawValue: Int) {
+      switch rawValue {
+      case 0: self = .off
+      case 1: self = .on
+      case 2: self = .degraded
+      default: self = .UNRECOGNIZED(rawValue)
+      }
+    }
+
+    public var rawValue: Int {
+      switch self {
+      case .off: return 0
+      case .on: return 1
+      case .degraded: return 2
+      case .UNRECOGNIZED(let i): return i
+      }
+    }
+
+    // The compiler won't synthesize support with the UNRECOGNIZED case.
+    public static let allCases: [Dieter_V1_MachinePrivacy.State] = [
+      .off,
+      .on,
+      .degraded,
+    ]
+
+  }
+
+  public init() {}
 }
 
 public nonisolated struct Dieter_V1_MachineOperationRequest: Sendable {
@@ -1095,6 +1172,16 @@ public nonisolated struct Dieter_V1_ChangesFrame: @unchecked Sendable {
   public var hasPeerSync: Bool {_storage._peerSync != nil}
   /// Clears the value of `peerSync`. Subsequent reads from it will return its default value.
   public mutating func clearPeerSync() {_uniqueStorage()._peerSync = nil}
+
+  /// Present on initial/reset and whenever this owner's privacy state changes.
+  public var privacy: Dieter_V1_MachinePrivacy {
+    get {_storage._privacy ?? Dieter_V1_MachinePrivacy()}
+    set {_uniqueStorage()._privacy = newValue}
+  }
+  /// Returns true if `privacy` has been explicitly set.
+  public var hasPrivacy: Bool {_storage._privacy != nil}
+  /// Clears the value of `privacy`. Subsequent reads from it will return its default value.
+  public mutating func clearPrivacy() {_uniqueStorage()._privacy = nil}
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -8273,7 +8360,7 @@ nonisolated extension Dieter_V1_GPUMemoryKind: SwiftProtobuf._ProtoNameProviding
 }
 
 nonisolated extension Dieter_V1_MachineOperationAction: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0MACHINE_OPERATION_ACTION_UNSPECIFIED\0\u{1}MACHINE_OPERATION_ACTION_RESTART\0\u{1}MACHINE_OPERATION_ACTION_SHUTDOWN\0\u{1}MACHINE_OPERATION_ACTION_UPDATE_DAEMON\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0MACHINE_OPERATION_ACTION_UNSPECIFIED\0\u{1}MACHINE_OPERATION_ACTION_RESTART\0\u{1}MACHINE_OPERATION_ACTION_SHUTDOWN\0\u{1}MACHINE_OPERATION_ACTION_UPDATE_DAEMON\0\u{1}MACHINE_OPERATION_ACTION_PRIVACY_ON\0\u{1}MACHINE_OPERATION_ACTION_PRIVACY_OFF\0")
 }
 
 nonisolated extension Dieter_V1_ExecutionStream: SwiftProtobuf._ProtoNameProviding {
@@ -8396,7 +8483,7 @@ nonisolated extension Dieter_V1_RuntimeStatus: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension Dieter_V1_MachineInformation: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MachineInformation"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}hostname\0\u{3}os_name\0\u{3}os_version\0\u{1}architecture\0\u{3}hardware_model\0\u{1}processor\0\u{3}uptime_seconds\0\u{3}collected_at\0\u{3}cpu_usage_percent\0\u{3}logical_cpu_count\0\u{3}load_1\0\u{3}load_5\0\u{3}load_15\0\u{3}memory_total_bytes\0\u{3}memory_used_bytes\0\u{3}memory_cached_bytes\0\u{3}swap_used_bytes\0\u{3}disk_total_bytes\0\u{3}disk_free_bytes\0\u{3}network_receive_bytes_per_second\0\u{3}network_send_bytes_per_second\0\u{3}temperature_celsius\0\u{1}processes\0\u{3}active_agent_count\0\u{3}supports_restart\0\u{3}supports_shutdown\0\u{3}cpu_core_usage_percent\0\u{3}daemon_build\0\u{1}gpu\0\u{3}operation_capabilities\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}hostname\0\u{3}os_name\0\u{3}os_version\0\u{1}architecture\0\u{3}hardware_model\0\u{1}processor\0\u{3}uptime_seconds\0\u{3}collected_at\0\u{3}cpu_usage_percent\0\u{3}logical_cpu_count\0\u{3}load_1\0\u{3}load_5\0\u{3}load_15\0\u{3}memory_total_bytes\0\u{3}memory_used_bytes\0\u{3}memory_cached_bytes\0\u{3}swap_used_bytes\0\u{3}disk_total_bytes\0\u{3}disk_free_bytes\0\u{3}network_receive_bytes_per_second\0\u{3}network_send_bytes_per_second\0\u{3}temperature_celsius\0\u{1}processes\0\u{3}active_agent_count\0\u{3}supports_restart\0\u{3}supports_shutdown\0\u{3}cpu_core_usage_percent\0\u{3}daemon_build\0\u{1}gpu\0\u{3}operation_capabilities\0\u{1}privacy\0")
 
   fileprivate class _StorageClass {
     var _hostname: String = String()
@@ -8429,6 +8516,7 @@ nonisolated extension Dieter_V1_MachineInformation: SwiftProtobuf.Message, Swift
     var _daemonBuild: Dieter_V1_BuildInformation? = nil
     var _gpu: Dieter_V1_GPUTelemetry? = nil
     var _operationCapabilities: [Dieter_V1_MachineOperationCapability] = []
+    var _privacy: Dieter_V1_MachinePrivacy? = nil
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -8469,6 +8557,7 @@ nonisolated extension Dieter_V1_MachineInformation: SwiftProtobuf.Message, Swift
       _daemonBuild = source._daemonBuild
       _gpu = source._gpu
       _operationCapabilities = source._operationCapabilities
+      _privacy = source._privacy
     }
   }
 
@@ -8517,6 +8606,7 @@ nonisolated extension Dieter_V1_MachineInformation: SwiftProtobuf.Message, Swift
         case 28: try { try decoder.decodeSingularMessageField(value: &_storage._daemonBuild) }()
         case 29: try { try decoder.decodeSingularMessageField(value: &_storage._gpu) }()
         case 30: try { try decoder.decodeRepeatedMessageField(value: &_storage._operationCapabilities) }()
+        case 31: try { try decoder.decodeSingularMessageField(value: &_storage._privacy) }()
         default: break
         }
       }
@@ -8619,6 +8709,9 @@ nonisolated extension Dieter_V1_MachineInformation: SwiftProtobuf.Message, Swift
       if !_storage._operationCapabilities.isEmpty {
         try visitor.visitRepeatedMessageField(value: _storage._operationCapabilities, fieldNumber: 30)
       }
+      try { if let v = _storage._privacy {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 31)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -8658,6 +8751,7 @@ nonisolated extension Dieter_V1_MachineInformation: SwiftProtobuf.Message, Swift
         if _storage._daemonBuild != rhs_storage._daemonBuild {return false}
         if _storage._gpu != rhs_storage._gpu {return false}
         if _storage._operationCapabilities != rhs_storage._operationCapabilities {return false}
+        if _storage._privacy != rhs_storage._privacy {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -8933,6 +9027,60 @@ nonisolated extension Dieter_V1_MachineProcessGPU: SwiftProtobuf.Message, SwiftP
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
+}
+
+nonisolated extension Dieter_V1_MachinePrivacy: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".MachinePrivacy"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}supported\0\u{1}requested\0\u{1}state\0\u{1}reason\0\u{3}display_count\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.supported) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.requested) }()
+      case 3: try { try decoder.decodeSingularEnumField(value: &self.state) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.reason) }()
+      case 5: try { try decoder.decodeSingularUInt32Field(value: &self.displayCount) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.supported != false {
+      try visitor.visitSingularBoolField(value: self.supported, fieldNumber: 1)
+    }
+    if self.requested != false {
+      try visitor.visitSingularBoolField(value: self.requested, fieldNumber: 2)
+    }
+    if self.state != .off {
+      try visitor.visitSingularEnumField(value: self.state, fieldNumber: 3)
+    }
+    if !self.reason.isEmpty {
+      try visitor.visitSingularStringField(value: self.reason, fieldNumber: 4)
+    }
+    if self.displayCount != 0 {
+      try visitor.visitSingularUInt32Field(value: self.displayCount, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_MachinePrivacy, rhs: Dieter_V1_MachinePrivacy) -> Bool {
+    if lhs.supported != rhs.supported {return false}
+    if lhs.requested != rhs.requested {return false}
+    if lhs.state != rhs.state {return false}
+    if lhs.reason != rhs.reason {return false}
+    if lhs.displayCount != rhs.displayCount {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_MachinePrivacy.State: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0STATE_OFF\0\u{1}STATE_ON\0\u{1}STATE_DEGRADED\0")
 }
 
 nonisolated extension Dieter_V1_MachineOperationRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
@@ -9275,7 +9423,7 @@ nonisolated extension Dieter_V1_ChangesRequest: SwiftProtobuf.Message, SwiftProt
 
 nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ChangesFrame"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{1}cursor\0\u{3}reset_records\0\u{3}reset_local\0\u{3}caught_up\0\u{1}heartbeat\0\u{1}records\0\u{3}owned_cards\0\u{3}removed_owned_card_ids\0\u{1}activities\0\u{3}removed_activity_ids\0\u{3}peer_sync\0\u{1}account\0\u{3}owned_checkouts\0\u{3}removed_owned_checkout_ids\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{1}cursor\0\u{3}reset_records\0\u{3}reset_local\0\u{3}caught_up\0\u{1}heartbeat\0\u{1}records\0\u{3}owned_cards\0\u{3}removed_owned_card_ids\0\u{1}activities\0\u{3}removed_activity_ids\0\u{3}peer_sync\0\u{1}account\0\u{3}owned_checkouts\0\u{3}removed_owned_checkout_ids\0\u{1}privacy\0")
 
   fileprivate class _StorageClass {
     var _daemonID: String = String()
@@ -9293,6 +9441,7 @@ nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtob
     var _activities: [Dieter_V1_Conversation] = []
     var _removedActivityIds: [String] = []
     var _peerSync: Dieter_V1_PeerSyncStatus? = nil
+    var _privacy: Dieter_V1_MachinePrivacy? = nil
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -9318,6 +9467,7 @@ nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtob
       _activities = source._activities
       _removedActivityIds = source._removedActivityIds
       _peerSync = source._peerSync
+      _privacy = source._privacy
     }
   }
 
@@ -9351,6 +9501,7 @@ nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtob
         case 13: try { try decoder.decodeSingularStringField(value: &_storage._account) }()
         case 14: try { try decoder.decodeRepeatedMessageField(value: &_storage._ownedCheckouts) }()
         case 15: try { try decoder.decodeRepeatedStringField(value: &_storage._removedOwnedCheckoutIds) }()
+        case 16: try { try decoder.decodeSingularMessageField(value: &_storage._privacy) }()
         default: break
         }
       }
@@ -9408,6 +9559,9 @@ nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtob
       if !_storage._removedOwnedCheckoutIds.isEmpty {
         try visitor.visitRepeatedStringField(value: _storage._removedOwnedCheckoutIds, fieldNumber: 15)
       }
+      try { if let v = _storage._privacy {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 16)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -9432,6 +9586,7 @@ nonisolated extension Dieter_V1_ChangesFrame: SwiftProtobuf.Message, SwiftProtob
         if _storage._activities != rhs_storage._activities {return false}
         if _storage._removedActivityIds != rhs_storage._removedActivityIds {return false}
         if _storage._peerSync != rhs_storage._peerSync {return false}
+        if _storage._privacy != rhs_storage._privacy {return false}
         return true
       }
       if !storagesAreEqual {return false}

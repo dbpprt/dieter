@@ -643,6 +643,16 @@ struct AppSidebar: View {
                                     Text(machineDetail(machine))
                                         .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary)
                                 }
+                                if let entry = store.machineEntry(machine), entry.privacyActive || entry.privacyWarning
+                                {
+                                    Image(systemName: entry.privacyWarning ? "exclamationmark.shield" : "lock.shield")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(entry.privacyWarning ? DieterTheme.amber : DieterTheme.subtle)
+                                        .opacity(entry.privacyStale ? 0.45 : 1)
+                                        .help(entry.privacyLabel)
+                                        .accessibilityLabel(entry.privacyLabel)
+                                        .accessibilityIdentifier("machine.privacy.\(machine.id)")
+                                }
                                 Spacer()
                             }
                             .padding(.horizontal, 8).frame(height: 32)
@@ -654,6 +664,7 @@ struct AppSidebar: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityElement(children: .combine)
+                        .accessibilityLabel(machineAccessibilityLabel(machine))
                         .accessibilityIdentifier("machine.\(machine.daemonID ?? machine.id)")
 
                     }
@@ -707,6 +718,13 @@ struct AppSidebar: View {
         } else {
             store.createFolder(.projects, name: name)
         }
+    }
+
+    private func machineAccessibilityLabel(_ machine: MachineEndpoint) -> String {
+        let entry = store.machineEntry(machine)
+        let privacy = entry.flatMap { $0.privacyActive || $0.privacyWarning ? $0.privacyLabel : nil }
+        return [machine.name, machineDetail(machine), privacy].compactMap { $0 }.filter { !$0.isEmpty }.joined(
+            separator: ", ")
     }
 
     private func machineDetail(_ machine: MachineEndpoint) -> String {

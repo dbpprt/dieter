@@ -895,6 +895,31 @@ ordinary authenticated TLS/gRPC connection, not unencrypted protobuf RPCs.
 A close is transport-only. Existing agent turns, terminals and remote executions
 continue; callers resume eligible watches using their existing cursors.
 
+### macOS local privacy
+
+```sh
+dieter [--machine ID|NAME] machine privacy status
+dieter [--machine ID|NAME] machine privacy on --key UNIQUE_ID
+dieter [--machine ID|NAME] machine privacy off --key DIFFERENT_ID
+```
+
+The authenticated owner daemon blanks physical display output and suppresses
+physical session input. Agents and remote captures retain desktop pixels.
+Protection stays on across viewer/CLI disconnects and daemon restarts; an
+explicit off or host reboot clears it. `status` emits requested/effective state,
+support, display count and failure reason. The owner change stream also carries
+privacy state so the native sidebar updates without telemetry polling.
+
+Requires macOS Accessibility permission and displays supporting verified transfer
+tables. This is session privacy, not an authentication lock or a guarantee against
+hardware/system shortcuts, secure-input bypasses, permission loss or helper crashes.
+Never use it to unlock the macOS login screen or FileVault. For an uncertain
+operation, inspect `status` before retrying; `--key` can replay identical input
+only on the same daemon, within its bounded receipt retention. Local, verified
+direct TLS and gateway relay target selection behave like other commands.
+Never change privacy on an operator's host merely to test it; use isolated
+fixtures and the owned native privacy qualification.
+
 ### Shared projects and peer storage
 
 One project can have checkouts on many machines. Use `project attach --name NAME

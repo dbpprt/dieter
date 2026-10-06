@@ -64,7 +64,15 @@ func (api *grpcAPI) GetMachineInformation(ctx context.Context, _ *emptypb.Empty)
 			supportsShutdown = available
 		}
 	}
-	return &dieterv1.MachineInformation{
+	privacy := api.server.privacyState(ctx)
+	for _, action := range []dieterv1.MachineOperationAction{dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_ON, dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_OFF} {
+		available := privacy.Supported
+		if action == dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_OFF && privacy.Requested {
+			available = true
+		}
+		operationCapabilities = append(operationCapabilities, &dieterv1.MachineOperationCapability{Action: action, Supported: privacy.Supported || privacy.Requested, Authorized: available, UnavailableReason: privacy.Reason})
+	}
+	return &dieterv1.MachineInformation{Privacy: privacy,
 		Hostname: snapshot.Hostname, OsName: snapshot.OSName, OsVersion: snapshot.OSVersion,
 		Architecture: snapshot.Architecture, HardwareModel: snapshot.HardwareModel, Processor: snapshot.Processor,
 		UptimeSeconds: snapshot.UptimeSeconds, CollectedAt: snapshot.CollectedAt,
@@ -200,6 +208,9 @@ func (api *grpcAPI) machineProcessDescriptors() []machine.ProcessDescriptor {
 }
 
 func (api *grpcAPI) PerformMachineOperation(ctx context.Context, request *dieterv1.MachineOperationRequest) (*dieterv1.MachineOperationResponse, error) {
+	if request.GetAction() == dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_ON || request.GetAction() == dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_OFF {
+		return api.performPrivacyOperation(ctx, request)
+	}
 	var operation machine.Operation
 	var confirmation, message string
 	switch request.GetAction() {

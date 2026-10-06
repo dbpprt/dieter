@@ -237,6 +237,7 @@ message MachineInformation {
   BuildInformation daemon_build = 28;
   GPUTelemetry gpu = 29;
   repeated MachineOperationCapability operation_capabilities = 30;
+  MachinePrivacy privacy = 31;
 }
 
 message BuildInformation {
@@ -309,6 +310,23 @@ enum MachineOperationAction {
   MACHINE_OPERATION_ACTION_RESTART = 1;
   MACHINE_OPERATION_ACTION_SHUTDOWN = 2;
   MACHINE_OPERATION_ACTION_UPDATE_DAEMON = 3;
+  MACHINE_OPERATION_ACTION_PRIVACY_ON = 4;
+  MACHINE_OPERATION_ACTION_PRIVACY_OFF = 5;
+}
+
+// Owner-only, current-boot physical display/input protection. It is independent
+// of viewer sessions and is never replicated as an account setting.
+message MachinePrivacy {
+  enum State {
+    STATE_OFF = 0;
+    STATE_ON = 1;
+    STATE_DEGRADED = 2;
+  }
+  bool supported = 1;
+  bool requested = 2;
+  State state = 3;
+  string reason = 4;
+  uint32 display_count = 5;
 }
 
 message MachineOperationRequest {
@@ -413,6 +431,8 @@ message ChangesFrame {
   repeated string removed_activity_ids = 11;
   // Present when this machine's peer replication diagnostics changed.
   PeerSyncStatus peer_sync = 12;
+  // Present on initial/reset and whenever this owner's privacy state changes.
+  MachinePrivacy privacy = 16;
 }
 
 message PeerSyncStatus { repeated PeerSyncDiagnostic issues = 1; }

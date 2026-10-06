@@ -187,7 +187,7 @@ Global options:
   --version                Print the version
 
 Commands:
-  machine      List, route, rename, revoke, inspect, or control machines
+  machine      List, route, rename, revoke, inspect, control, or privately lock machines
   status       Show target daemon health, runtime, route, and state counts
   harness      List target daemon harnesses, models, and options
   quota        Show, summarize, refresh, and reset provider-account quotas

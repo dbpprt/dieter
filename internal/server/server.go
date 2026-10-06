@@ -17,6 +17,7 @@ import (
 	"github.com/dbpprt/dieter/internal/attachments"
 	"github.com/dbpprt/dieter/internal/changeset"
 	"github.com/dbpprt/dieter/internal/controlrtc"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/gen/dieter/v1/dieterv1connect"
 	"github.com/dbpprt/dieter/internal/gitops"
 	"github.com/dbpprt/dieter/internal/harness"
@@ -33,6 +34,11 @@ import (
 )
 
 type Server struct {
+	privacyMu               sync.Mutex
+	privacyDriver           remotedesktop.PrivacyDriver
+	privacyBootID           func(context.Context) (string, error)
+	privacySnapshot         *dieterv1.MachinePrivacy
+	privacyReadAt           time.Time
 	kvWatches               atomic.Int32
 	changeStreams           atomic.Int32
 	local                   *localChanges
@@ -66,6 +72,8 @@ type Server struct {
 // without weakening the authenticated RPC or its validation. An isolated
 // catalog can retain release choices without running provider discovery.
 type Options struct {
+	PrivacyDriver       remotedesktop.PrivacyDriver
+	PrivacyBootID       func(context.Context) (string, error)
 	ControlRTC          *controlrtc.Manager
 	Runner              harness.Runner
 	HarnessCatalog      func(context.Context, bool) []harness.Adapter
@@ -87,6 +95,12 @@ func NewWithOptions(data *store.Store, logger *slog.Logger, options Options) *Se
 	application := newServer(data, logger, options.Runner)
 	application.harnessCatalog = options.HarnessCatalog
 	application.controlRTC = options.ControlRTC
+	if options.PrivacyDriver != nil {
+		application.privacyDriver = options.PrivacyDriver
+	}
+	if options.PrivacyBootID != nil {
+		application.privacyBootID = options.PrivacyBootID
+	}
 	if options.RemoteDesktop != nil {
 		application.remoteDesktop = options.RemoteDesktop
 	}
@@ -124,6 +138,8 @@ func newServer(data *store.Store, logger *slog.Logger, runner harness.Runner) *S
 		},
 		machineDelay: 750 * time.Millisecond, machineOperations: map[string]acceptedMachineOperation{},
 	}
+	privacy := remotedesktop.NewNativePrivacy(data.Root, "", false)
+	s.privacyDriver, s.privacyBootID = privacy, privacy.BootID
 	s.changesets = changeset.New(s.workspaces)
 	s.local = newLocalChanges(s)
 	service.BackgroundProcesses = s.backgroundProcess
@@ -366,6 +382,7 @@ func run(ctx context.Context, addr string, data *store.Store, application *Serve
 			}
 		}
 	}()
+	application.restorePrivacy(ctx)
 	application.schedules.Start(ctx)
 	httpServer := &http.Server{Addr: addr, Handler: application.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 1 << 20}
 	logger.Info("Dieter daemon is ready", "url", fmt.Sprintf("http://%s", addr), "store", data.Root)

@@ -65,7 +65,7 @@ func daemonCLIForTest(t *testing.T) (*CLI, *bytes.Buffer, *store.Store) {
 	if err := data.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	application := server.NewWithRunner(data, slog.New(slog.NewTextHandler(io.Discard, nil)), &fakeRunner{})
+	application := server.NewWithOptions(data, slog.New(slog.NewTextHandler(io.Discard, nil)), server.Options{Runner: &fakeRunner{}, PrivacyDriver: &cliPrivacyFixture{}, PrivacyBootID: func(context.Context) (string, error) { return "cli-boot", nil }})
 	host := httptest.NewServer(application.Handler())
 	t.Cleanup(host.Close)
 	if _, err := dieterdaemon.NewStatusWriter(root, dieterdaemon.RuntimeStatus{
@@ -351,6 +351,7 @@ func TestDaemonCLIControlsLocalDaemonEndToEnd(t *testing.T) {
 	if !strings.Contains(updated, filepath.Base(relocated)) {
 		t.Fatalf("relocated project response=%s", updated)
 	}
+	assertPrivacyCLI(t, client, output)
 	runDaemonCLI(t, client, output, "machine", "info")
 	statusJSON := runDaemonCLI(t, client, output, "status", "--format", "json")
 	if !strings.Contains(statusJSON, `"route": "local"`) {
@@ -460,6 +461,8 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		defer control.Close()
 	}
 	remoteServer := server.NewWithOptions(remoteStore, logger, server.Options{
+		PrivacyDriver: &cliPrivacyFixture{},
+		PrivacyBootID: func(context.Context) (string, error) { return "cli-boot", nil },
 		ControlRTC:    control,
 		RemoteDesktop: screenManager,
 		Runner:        &fakeRunner{},
@@ -598,6 +601,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		}
 		return
 	}
+	assertPrivacyCLI(t, first, &firstOutput)
 	firstOutput.Reset()
 	if err := first.Run([]string{"machine", "info"}); err != nil || !strings.Contains(firstOutput.String(), `"daemonBuild"`) || !strings.Contains(firstOutput.String(), `"gpu"`) {
 		t.Fatalf("direct machine info output=%q err=%v", firstOutput.String(), err)
@@ -683,6 +687,7 @@ func testDaemonRoutes(t *testing.T, withRTC bool) {
 		t.Fatalf("route=%#v want %s", second.transport, expectedRoute)
 	}
 	assertChangesCLI(t, second, &secondOutput)
+	assertPrivacyCLI(t, second, &secondOutput)
 	secondOutput.Reset()
 	if err := second.Run([]string{"machine", "info"}); err != nil || !strings.Contains(secondOutput.String(), `"daemonBuild"`) || !strings.Contains(secondOutput.String(), `"gpu"`) {
 		t.Fatalf("relay machine info output=%q err=%v", secondOutput.String(), err)
@@ -863,5 +868,43 @@ func assertChangesCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
 	cursor := frame.GetCursor()
 	if !frame.ResetRecords || !frame.ResetLocal || frame.Heartbeat || cursor.GetRecordsEpoch() == "" || cursor.GetLocalEpoch() == "" || len(frame.Records) == 0 {
 		t.Fatalf("CLI did not start a resumable change stream: %+v", &frame)
+	}
+}
+
+type cliPrivacyFixture struct{ enabled bool }
+
+func (f *cliPrivacyFixture) Snapshot(context.Context) (*dieterv1.MachinePrivacy, error) {
+	state := dieterv1.MachinePrivacy_STATE_OFF
+	if f.enabled {
+		state = dieterv1.MachinePrivacy_STATE_ON
+	}
+	return &dieterv1.MachinePrivacy{Supported: true, Requested: f.enabled, State: state, DisplayCount: 1}, nil
+}
+func (f *cliPrivacyFixture) Set(ctx context.Context, enabled bool) (*dieterv1.MachinePrivacy, error) {
+	f.enabled = enabled
+	return f.Snapshot(ctx)
+}
+func assertPrivacyCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
+	t.Helper()
+	runDaemonCLI(t, client, output, "machine", "privacy", "on", "--key", "privacy-test-on-"+client.transport.route)
+	locked := &dieterv1.MachinePrivacy{}
+	value := runDaemonCLI(t, client, output, "machine", "privacy", "status")
+	if err := protojson.Unmarshal([]byte(value), locked); err != nil || locked.GetState() != dieterv1.MachinePrivacy_STATE_ON || !locked.GetRequested() {
+		t.Fatalf("privacy state=%s error=%v", value, err)
+	}
+	runDaemonCLI(t, client, output, "machine", "privacy", "off", "--key", "privacy-test-off-"+client.transport.route)
+	unlocked := &dieterv1.MachinePrivacy{}
+	value = runDaemonCLI(t, client, output, "machine", "privacy", "status")
+	if err := protojson.Unmarshal([]byte(value), unlocked); err != nil || unlocked.GetState() != dieterv1.MachinePrivacy_STATE_OFF || unlocked.GetRequested() {
+		t.Fatalf("unlocked state=%s error=%v", value, err)
+	}
+}
+
+func TestPrivacyCLIControlsOnlyTheIsolatedDaemon(t *testing.T) {
+	client, output, _ := daemonCLIForTest(t)
+	runDaemonCLI(t, client, output, "machine", "privacy", "status")
+	assertPrivacyCLI(t, client, output)
+	if err := client.Run([]string{"machine", "privacy", "status", "--key", "invalid"}); err == nil {
+		t.Fatal("status accepted a mutation key")
 	}
 }

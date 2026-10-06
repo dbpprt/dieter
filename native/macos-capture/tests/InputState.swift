@@ -1,9 +1,12 @@
 import CoreGraphics
 import Foundation
 import IOKit.pwr_mgt
+import ScreenCaptureKit
 
 @main struct InputStateTest {
     static func main() async throws {
+        try testPrivacyLease()
+        if ProcessInfo.processInfo.environment["DIETER_TEST_PRIVACY_PHYSICAL"] == "1" { try await testPrivacyDesktop() }
         try testRemoteDisplayActivity()
         try testDisplayModeLeases()
         let damageBounds = CGRect(x: 0, y: 0, width: 100, height: 100)
@@ -225,4 +228,111 @@ private actor CommandTestGate {
     }
     func release() { continuation?.resume(); continuation = nil }
     func finish() { finished = true }
+}
+
+private final class FailingPrivacyDriver: PrivacyDesktopDriver {
+    var failing = false
+    var held = false
+    func availability() -> PrivacySnapshot { .init(supported: true, displayCount: 2) }
+    func acquire() throws { held = true }
+    func maintain() throws { if failing { throw CaptureError.invalidArgument("lost protection") } }
+    func release() throws { if failing { throw CaptureError.invalidArgument("restore failed") }; held = false }
+}
+private func testPrivacyLease() throws {
+    let driver = FailingPrivacyDriver(), lease = PrivacyLease(driver: FailingPrivacyDriver())
+    precondition(lease.snapshot().state == 0)
+    let active = PrivacyLease(driver: driver)
+    let enabled = try active.set(true)
+    precondition(enabled.state == 1)
+    precondition(driver.held)
+    driver.failing = true
+    active.audit()
+    precondition(active.snapshot().state == 2 && active.snapshot().requested)
+    do { _ = try active.set(false); preconditionFailure("failed restore reported unlocked") } catch {}
+    precondition(active.snapshot().state == 2 && active.snapshot().requested && driver.held)
+    driver.failing = false
+    active.audit()
+    precondition(active.snapshot().state == 1)
+    let disabled = try active.set(false)
+    precondition(disabled.state == 0)
+    precondition(!driver.held)
+    let physical = CGEvent(source: CGEventSource(stateID: .hidSystemState))!
+    let remote = CGEvent(source: CGEventSource(stateID: .privateState))!
+    precondition(SystemPrivacyDesktopDriver.isPhysical(physical))
+    precondition(!SystemPrivacyDesktopDriver.isPhysical(remote))
+    print("Privacy lease: degraded protection, retryable restoration and physical input classification passed")
+}
+
+private final class PrivacyInputObservation {
+    var physical = 0
+    var remote = 0
+}
+
+@MainActor private func testPrivacyDesktop() async throws {
+    let driver = SystemPrivacyDesktopDriver()
+    let original = try Dictionary(
+        uniqueKeysWithValues: SystemPrivacyDesktopDriver.displays().map { ($0, try PrivacyGammaTable.read($0)) })
+    let seen = PrivacyInputObservation()
+    let reference = Unmanaged.passUnretained(seen).toOpaque()
+    guard
+        let observer = CGEvent.tapCreate(
+            tap: .cgAnnotatedSessionEventTap, place: .tailAppendEventTap, options: .listenOnly,
+            eventsOfInterest: CGEventMask(1) << CGEventType.mouseMoved.rawValue,
+            callback: { _, _, event, reference in
+                let seen = Unmanaged<PrivacyInputObservation>.fromOpaque(reference!).takeUnretainedValue()
+                if event.getIntegerValueField(.eventSourceUserData) == 901 { seen.physical += 1 }
+                if event.getIntegerValueField(.eventSourceUserData) == 902 { seen.remote += 1 }
+                return Unmanaged.passUnretained(event)
+            }, userInfo: reference)
+    else { throw CaptureError.invalidArgument("privacy test observer unavailable") }
+    let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, observer, 0)
+    CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+    defer { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
+    do {
+        try driver.acquire()
+        try driver.maintain()
+        for display in original.keys {
+            guard try PrivacyGammaTable.read(display).black else {
+                throw CaptureError.invalidArgument("display output is not black")
+            }
+        }
+        let position = CGEvent(source: nil)!.location
+        for (state, marker) in [(CGEventSourceStateID.hidSystemState, Int64(901)), (.privateState, Int64(902))] {
+            let event = CGEvent(
+                mouseEventSource: CGEventSource(stateID: state), mouseType: .mouseMoved, mouseCursorPosition: position,
+                mouseButton: .left)!
+            event.setIntegerValueField(.eventSourceUserData, value: marker)
+            event.post(tap: .cgSessionEventTap)
+        }
+        try await Task.sleep(nanoseconds: 300_000_000)
+        guard seen.physical == 0, seen.remote == 1 else {
+            throw CaptureError.invalidArgument("privacy event filter: physical=\(seen.physical), remote=\(seen.remote)")
+        }
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        guard let display = content.displays.first else {
+            throw CaptureError.invalidArgument("privacy capture needs a display")
+        }
+        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let configuration = SCStreamConfiguration(); configuration.width = 640; configuration.height = 360;
+        configuration.showsCursor = false
+        let capture = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+        let bytes = Array(capture.dataProvider!.data! as Data)
+        let rgb = bytes.enumerated().filter { $0.offset % 4 != 3 }.map(\.element)
+        guard rgb.filter({ $0 > 20 }).count > rgb.count / 10 else {
+            throw CaptureError.invalidArgument("privacy obscured desktop captures")
+        }
+    } catch {
+        try driver.release()
+        throw error
+    }
+    try driver.release()
+    for (display, previous) in original {
+        let restored = try PrivacyGammaTable.read(display)
+        guard restored.red == previous.red, restored.green == previous.green, restored.blue == previous.blue else {
+            throw CaptureError.invalidArgument("privacy did not restore original display tables")
+        }
+    }
+    print(
+        "Privacy desktop: black output tables, unfiltered capture pixels, physical-source suppression, remote input and exact restoration passed"
+    )
 }

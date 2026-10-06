@@ -240,3 +240,21 @@ when both directions finish. Retained shared records and replay receipts use
 paged SQLite access, so historical count does not exhaust a lifetime write quota.
 Tombstones remain available to protect against stale offline replicas. See
 [peer storage and retention](landingpage/content/docs/architecture.md#shared-identity-local-execution).
+
+### macOS local privacy
+
+Use **Lock Local Screen…** in a Mac machine's Actions menu to blank its physical
+outputs and suppress local keyboard/mouse input while agents and remote control
+continue. Unlock explicitly or reboot to clear it. A small shield in the Mac
+sidebar shows the live state; stale and degraded protection are identified.
+
+```sh
+dieter --machine MACHINE_ID machine privacy status
+dieter --machine MACHINE_ID machine privacy on --key UNIQUE_LOCK_ID
+dieter --machine MACHINE_ID machine privacy off --key UNIQUE_UNLOCK_ID
+```
+
+Omit `--machine` for the local daemon. Requires Accessibility permission and
+compatible display transfer tables. This protects the logged-in desktop; macOS
+login/FileVault and hardware/system shortcuts remain separate. See
+[privacy implementation and verification](native/macos-capture/privacy-mode-research.md).

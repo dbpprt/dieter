@@ -174,6 +174,7 @@ Actions:
   gateway                                    Show the connected gateway build
   watch [--count N]                          Stream gateway presence as JSON Lines
   show [MACHINE]                             Show gateway presence and route
+  privacy <status|on|off> [--key ID]          Control macOS local display/input privacy
   info [MACHINE]                             Show live host telemetry (local by default)
   rename --name NAME [MACHINE]               Rename an enrolled machine
   revoke --confirm MACHINE_ID [MACHINE]       Revoke an enrolled machine
@@ -216,6 +217,9 @@ func (c *CLI) gatewayMachine(ctx context.Context, reference string) (*gatewayTra
 }
 
 func (c *CLI) machineCommand(args []string) error {
+	if len(args) > 0 && args[0] == "privacy" {
+		return c.machinePrivacyCommand(args[1:])
+	}
 	if len(args) > 0 && args[0] == "connection" {
 		return c.controlConnectionCommand(args[1:])
 	}
@@ -523,4 +527,59 @@ func streamEnd(err error, ctx context.Context) error {
 		return nil
 	}
 	return err
+}
+
+// Privacy uses the same authenticated daemon routes as every machine operation.
+func (c *CLI) machinePrivacyCommand(args []string) error {
+	const group = "Usage: dieter [--machine ID|NAME] machine privacy <status|on|off> [--key ID]\n\nBlack out local displays and block physical input while agents and remote control continue.\nRequires macOS Accessibility permission. Stays on across disconnects and daemon restarts;\nunlock explicitly or reboot to clear. This is session privacy, not an authentication lock.\n"
+	if groupHelp(args) {
+		fmt.Fprint(c.Out, group)
+		return nil
+	}
+	action := args[0]
+	if action != "status" && action != "on" && action != "off" {
+		return fmt.Errorf("unknown privacy action %q", action)
+	}
+	options := " [--key ID]"
+	if action == "status" {
+		options = ""
+	}
+	usage := fmt.Sprintf("Usage: dieter [--machine ID|NAME] machine privacy %s%s\n\n%s", action, options, group[strings.Index(group, "Black out"):])
+	set := flags("machine privacy " + action)
+	key := new(string)
+	if action != "status" {
+		key = set.String("key", "", "idempotency key; reuse only for the same operation on the same daemon")
+	}
+	help, err := parse(set, args[1:], usage, c.Out)
+	if help || err != nil {
+		return err
+	}
+	if set.NArg() != 0 {
+		return errors.New("privacy does not accept positional arguments; use global --machine")
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	if action == "status" {
+		value, err := client.GetMachineInformation(rpcCtx, &emptypb.Empty{})
+		if err != nil {
+			return err
+		}
+		if value.GetPrivacy() == nil {
+			return errors.New("daemon did not report privacy state")
+		}
+		return protoJSONOut(c.Out, value.GetPrivacy())
+	}
+	wire := dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_ON
+	if action == "off" {
+		wire = dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_OFF
+	}
+	value, err := client.PerformMachineOperation(rpcCtx, &dieterv1.MachineOperationRequest{Action: wire, IdempotencyKey: *key})
+	if err != nil {
+		return err
+	}
+	return protoJSONOut(c.Out, value)
 }

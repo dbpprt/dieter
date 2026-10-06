@@ -11,6 +11,8 @@ private func machineBytes(_ value: UInt64) -> String {
 /// The SF Symbol of a machine operation's menu item.
 private func operationSymbol(_ action: Dieter_V1_MachineOperationAction) -> String {
     switch action {
+    case .privacyOn: "lock.shield"
+    case .privacyOff: "lock.open"
     case .updateDaemon: "arrow.down.circle"
     case .restart: "arrow.clockwise.circle"
     case .shutdown: "power"
@@ -68,6 +70,8 @@ struct MachinePopover: View {
                     pendingAction = nil
                     Task { await store.fleet.performMachineOperation(action) }
                 }
+                .accessibilityIdentifier("machine.confirm-operation")
+                .smokeTarget("machine.confirm-operation")
             }
             Button("Cancel", role: .cancel) { pendingAction = nil }
         } message: {
@@ -81,6 +85,8 @@ struct MachinePopover: View {
             )
         ) {
             Button("OK") { store.fleet.machineOperationMessage = nil }
+                .accessibilityIdentifier("machine.operation-ok")
+                .smokeTarget("machine.operation-ok")
         } message: {
             Text(store.fleet.machineOperationMessage ?? "")
         }
@@ -143,6 +149,16 @@ struct MachinePopover: View {
                     .padding(.horizontal, 9).padding(.vertical, 4)
                     .background((machine.online ? DieterTheme.eyes : DieterTheme.tertiary).opacity(0.10), in: Capsule())
                 }
+                if let entry = store.machineEntry(machine), information?.osName == "macOS", !entry.privacyLabel.isEmpty
+                {
+                    Label(
+                        entry.privacyLabel, systemImage: entry.privacyWarning ? "exclamationmark.shield" : "lock.shield"
+                    )
+                    .font(.system(size: 12))
+                    .foregroundStyle(entry.privacyWarning ? DieterTheme.amber : DieterTheme.subtle)
+                    .opacity(entry.privacyStale ? 0.55 : 1)
+                    .accessibilityIdentifier("machine.privacy-status")
+                }
                 Text(machineSubtitle(machine))
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(DieterTheme.tertiary)
@@ -184,6 +200,8 @@ struct MachinePopover: View {
             .fixedSize()
             .disabled(store.fleet.machineOperationInFlight)
             .help("Machine operations")
+            .accessibilityIdentifier("machine.actions")
+            .smokeTarget("machine.actions")
 
             Button {
                 store.fleet.dismissMachinePopover()
@@ -198,6 +216,8 @@ struct MachinePopover: View {
 
     private func operationIdentifier(_ action: Dieter_V1_MachineOperationAction) -> String {
         switch action {
+        case .privacyOn: "machine.privacy-on"
+        case .privacyOff: "machine.privacy-off"
         case .updateDaemon: "machine.update-daemon"
         case .restart: "machine.restart"
         case .shutdown: "machine.shutdown"

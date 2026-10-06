@@ -277,6 +277,8 @@ object MachineOperations {
     /** The operations a machine's actions menu offers, in menu order. */
     val ACTIONS: List<MachineOperationAction> =
         listOf(
+            MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_ON,
+            MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_OFF,
             MachineOperationAction.MACHINE_OPERATION_ACTION_UPDATE_DAEMON,
             MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART,
             MachineOperationAction.MACHINE_OPERATION_ACTION_SHUTDOWN,
@@ -286,17 +288,42 @@ object MachineOperations {
     fun availability(info: MachineInformation?): List<OperationAvailability> =
         if (info == null) emptyList()
         else
-            ACTIONS.map {
-                OperationAvailability(
-                    it,
-                    available(info, it),
-                    unavailableReason(info, it).orEmpty(),
-                )
-            }
+            ACTIONS.filter { action ->
+                    when (action) {
+                        MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_ON ->
+                            info.os_name == "macOS" && info.privacy?.requested != true
+                        MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_OFF ->
+                            info.privacy?.requested == true
+                        else -> true
+                    }
+                }
+                .map {
+                    OperationAvailability(
+                        it,
+                        available(info, it),
+                        unavailableReason(info, it).orEmpty(),
+                    )
+                }
 
     /** How an operation reads in the actions menu and its confirmation. */
     fun copy(action: MachineOperationAction): OperationCopy =
         when (action) {
+            MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_ON ->
+                OperationCopy(
+                    "Lock local screen",
+                    "Lock",
+                    "Lock Local Screen…",
+                    "Black out physical displays and block local input while remote control and agents keep working. Stays on until you unlock or reboot this Mac.",
+                    false,
+                )
+            MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_OFF ->
+                OperationCopy(
+                    "Unlock local screen",
+                    "Unlock",
+                    "Unlock Local Screen…",
+                    "Restore physical displays and allow local keyboard, mouse, and trackpad input.",
+                    false,
+                )
             MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART ->
                 OperationCopy(
                     title = "Restart machine",

@@ -1385,6 +1385,12 @@ message MachineEntry {
   // When its view was last current, for a stale or offline machine; 0 when
   // unknown or current.
   int64 stale_since_millis = 29;
+  // Shared-core wording and freshness for the owner-only privacy snapshot.
+  string privacy_label = 30;
+  bool privacy_active = 31;
+  bool privacy_stale = 32;
+  bool privacy_warning = 33;
+
 }
 
 // How current one machine's part of the account view is.

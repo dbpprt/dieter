@@ -1377,6 +1377,19 @@ func hardwareEncoderAvailable(_ codec: CMVideoCodecType = kCMVideoCodecType_H264
     private struct DieterCapture {
         static func main() async {
             do {
+                if CommandLine.arguments.contains("--privacy-capabilities") {
+                    PrivacyService.capabilities(dryRun: CommandLine.arguments.contains("--dry-run"))
+                    return
+                }
+                if CommandLine.arguments.contains("--privacy-service") {
+                    guard let index = CommandLine.arguments.firstIndex(of: "--privacy-directory"),
+                        index + 1 < CommandLine.arguments.count
+                    else { throw CaptureError.invalidArgument("privacy directory") }
+                    try PrivacyService.run(
+                        directory: CommandLine.arguments[index + 1], dryRun: CommandLine.arguments.contains("--dry-run")
+                    )
+                    return
+                }
                 if CommandLine.arguments.contains("--display-service") {
                     let dryRun = CommandLine.arguments.contains("--dry-run")
                     await Task.detached { DisplayModeService.run(dryRun: dryRun) }.value

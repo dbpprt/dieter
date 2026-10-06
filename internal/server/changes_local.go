@@ -69,6 +69,7 @@ type localEntry struct {
 	checkout *dieterv1.Checkout
 	activity *dieterv1.Conversation
 	peerSync *dieterv1.PeerSyncStatus
+	privacy  *dieterv1.MachinePrivacy
 }
 
 type localChange struct {
@@ -165,6 +166,7 @@ func (l *localChanges) refresh(ctx context.Context) error {
 	} else if !entry.removed {
 		next[peerSyncKey] = entry.peerSync
 	}
+	next["machine-privacy"] = l.server.privacyState(ctx)
 	if err := l.apply(next); err != nil {
 		return err
 	}
@@ -200,6 +202,8 @@ func (l *localChanges) apply(next map[string]proto.Message) error {
 			entry.activity = value
 		case *dieterv1.PeerSyncStatus:
 			entry.peerSync = value
+		case *dieterv1.MachinePrivacy:
+			entry.privacy = value
 		}
 		l.entries[key] = entry
 		changed = true
