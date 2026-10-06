@@ -26,6 +26,8 @@ native:
     - "inbox.chat-context-archive-retains-other-detail"
     - "inbox.close-retains-inbox"
     - "inbox.connection-fixture"
+    - "inbox.remote-update-without-selection"
+    - "inbox.remote-read-without-selection"
     - "inbox.feed-native-resize"
     - "inbox.finish-moves-review-to-done"
     - "inbox.finish-preserves-recent-order"

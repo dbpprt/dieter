@@ -95,6 +95,54 @@
                     "archived-excluded", fixture != nil && !visible("inbox.row.\(fixture?.id ?? "")", window), &results)
             } catch { results["archived-excluded"] = "failed: \(error)" }
 
+            // Another client's mutations must reach the rendered feed before
+            // any conversation is selected. These RPCs bypass app overlays.
+            do {
+                let rpc = try requireFixture(await store.fixtureRPC())
+                let title = "Inbox running: changed on another client"
+                _ = try await rpc.renameCard(cardID: running.id, title: title)
+                let updated = await NativeUIAccessibility.wait {
+                    store.inboxEntries.contains { $0.id == running.id && $0.card.title == title }
+                        && NativeUIAccessibility.elements(in: window).contains { $0.text.contains(title) }
+                }
+                record("remote-update-without-selection", updated && selectedID(store) == nil, &results)
+                _ = try await rpc.renameCard(cardID: running.id, title: running.title)
+                _ = await NativeUIAccessibility.wait {
+                    store.inboxEntries.contains { $0.id == running.id && $0.card.title == running.title }
+                }
+            } catch {
+                results["remote-update-without-selection"] = "failed: \(error)"
+            }
+            do {
+                let rpc = try requireFixture(await store.fixtureRPC())
+                let reply = try await rpc.createCard(
+                    .with {
+                        $0.projectID = waiting.projectID; $0.boardID = waiting.boardID
+                        $0.lane = "running"; $0.title = "Unopened sync reply"
+                        $0.prompt = "Reply to the Inbox sync check."
+                        $0.provider = "mock"; $0.model = "mock"; $0.workspaceMode = "project"
+                    })
+                let arrived = await NativeUIAccessibility.wait(timeout: 30) {
+                    store.inboxEntries.contains {
+                        $0.id == reply.id && $0.kind == .unread && $0.card.runtime == "idle"
+                    }
+                }
+                guard arrived, let unread = store.inboxEntries.first(where: { $0.id == reply.id }) else {
+                    throw NSError(domain: "InboxSyncReplyMissing", code: 1)
+                }
+                _ = try await rpc.markConversationRead(cardID: reply.id, responseSeq: unread.card.responseSeq)
+                let read = await NativeUIAccessibility.wait {
+                    store.inboxEntries.contains {
+                        $0.id == reply.id && !$0.needsYou && $0.card.seenResponseSeq == unread.card.responseSeq
+                    }
+                }
+                record("remote-read-without-selection", read && selectedID(store) == nil, &results)
+                _ = try await rpc.archiveCard(cardID: reply.id)
+                _ = await NativeUIAccessibility.wait { !store.inboxEntries.contains { $0.id == reply.id } }
+            } catch {
+                results["remote-read-without-selection"] = "failed: \(error)"
+            }
+
             let selected = await select(waiting, store: store, window: window)
             record("card-conversation-retains-inbox", selected, &results)
             guard selected else { capture(window, "01-selection-failed.png", output); return }
@@ -332,6 +380,10 @@
             return clicked && ready && store.section == .inbox
         }
         private static func selectedID(_ store: DieterStore) -> String? { store.selectedChatID ?? store.selectedCardID }
+        private static func requireFixture(_ rpc: SmokeFixtureClient?) throws -> SmokeFixtureClient {
+            guard let rpc else { throw NSError(domain: "InboxSyncFixture", code: 1) }
+            return rpc
+        }
         private static func visible(_ id: String, _ window: NSWindow) -> Bool {
             guard let frame = NativeUIAccessibility.find(id, in: window)?.recordedFrame else { return false }
             return frame.width > 0 && frame.height > 0

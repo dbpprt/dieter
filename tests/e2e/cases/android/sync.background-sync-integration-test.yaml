@@ -12,6 +12,7 @@ timeout: 300s
 native:
   class: com.dbpprt.dieter.data.BackgroundSyncIntegrationTest
   methods:
+    - everyModeSyncsTheInboxWithoutOpeningAConversation
     - turnsArriveThroughTheMachinesStreamWithoutOpeningTheChat
     - liveSyncKeepsTranscriptsWarmInBackground
 arguments:

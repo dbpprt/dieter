@@ -19,12 +19,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 
 /**
- * The account view from every machine's change stream: one replica per
- * machine, joined per register and projected. No machine is special; any
- * order of frames from any number of machines converges to the same view.
- * Each machine's applied view is persisted, so a cold start renders at once
- * and resumes every stream where it left off. The view goes to [store].
- * Confined to the core dispatcher.
+ * The account view from every machine's change stream: one replica per machine, joined per register
+ * and projected. No machine is special; any order of frames from any number of machines converges
+ * to the same view. Each machine's applied view is persisted, so a cold start renders at once and
+ * resumes every stream where it left off. The view goes to [store]. Confined to the core
+ * dispatcher.
  */
 class AccountSync(
     private val store: WorkspaceStore,
@@ -69,11 +68,16 @@ class AccountSync(
         val updated = HashMap<String, Instant>()
         for (name in storage?.names().orEmpty()) {
             val machineId = decodeMachineId(name) ?: continue
-            val frame = runCatching { storage?.read(name)?.let(ChangesFrame.ADAPTER::decode) }
-                .onFailure { logger.warn(TAG, "discarding an unreadable cached view of $machineId", it) }
-                .getOrNull() ?: continue
+            val frame =
+                runCatching { storage?.read(name)?.let(ChangesFrame.ADAPTER::decode) }
+                    .onFailure {
+                        logger.warn(TAG, "discarding an unreadable cached view of $machineId", it)
+                    }
+                    .getOrNull() ?: continue
             replicas[machineId] = MachineReplica(machineId, frame)
-            storage?.read(updatedName(machineId))?.decodeToString()?.trim()?.toLongOrNull()?.let { updated[machineId] = Instant.fromEpochMilliseconds(it) }
+            storage?.read(updatedName(machineId))?.decodeToString()?.trim()?.toLongOrNull()?.let {
+                updated[machineId] = Instant.fromEpochMilliseconds(it)
+            }
         }
         records.update(replicas.values, replicas.values.flatMap { it.recordKeys }.toSet())
         mutableUpdatedAt.value = updated
@@ -88,7 +92,7 @@ class AccountSync(
     /** Machines that observed every version of the register [key]. */
     fun observers(key: String): List<String> = records[key]?.observers.orEmpty()
 
-    /** Applies one frame of [machineId]'s stream; the view follows once the dispatcher is free. */
+    /** Applies a frame, publishing a complete view before its stream may report Live. */
     fun apply(machineId: String, frame: ChangesFrame): ReplicaChange {
         val replica = replicas.getOrPut(machineId) { MachineReplica(machineId) }
         val before = replica.cursor
@@ -99,6 +103,15 @@ class AccountSync(
             scheduleProjection()
         }
         if (change.any || replica.cursor != before) schedulePersist(machineId)
+        // Live is also the readiness barrier for widgets and Smart background
+        // windows. They must inspect the state this cursor covers, rather than
+        // the previous projection while scheduleProjection is still queued.
+        if (
+            frame.caught_up &&
+                !replica.replaying &&
+                (projectJob != null || mutableLoaded.value != replicas.values.any { it.hasView })
+        )
+            publish()
         return change
     }
 
@@ -119,8 +132,8 @@ class AccountSync(
     }
 
     /**
-     * Replays every machine's stream from the beginning, e.g. for a clean
-     * sync. Each machine's view stays shown until its replay caught up.
+     * Replays every machine's stream from the beginning, e.g. for a clean sync. Each machine's view
+     * stays shown until its replay caught up.
      */
     fun rewind() {
         for ((machineId, replica) in replicas) {
@@ -129,7 +142,9 @@ class AccountSync(
         }
     }
 
-    /** Projects now instead of waiting for the dispatcher, e.g. before reading the view in a test. */
+    /**
+     * Projects now instead of waiting for the dispatcher, e.g. before reading the view in a test.
+     */
     fun publish() {
         projectJob?.cancel()
         projectJob = null
@@ -148,8 +163,14 @@ class AccountSync(
             if (!replica.hasView) continue
             runCatching {
                 target.write(fileName(machineId), ChangesFrame.ADAPTER.encode(replica.snapshot()))
-                mutableUpdatedAt.value[machineId]?.let { target.write(updatedName(machineId), it.toEpochMilliseconds().toString().encodeToByteArray()) }
-            }.onFailure { logger.warn(TAG, "could not persist the view of $machineId", it) }
+                mutableUpdatedAt.value[machineId]?.let {
+                    target.write(
+                        updatedName(machineId),
+                        it.toEpochMilliseconds().toString().encodeToByteArray(),
+                    )
+                }
+            }
+                .onFailure { logger.warn(TAG, "could not persist the view of $machineId", it) }
             unsaved.remove(machineId)
         }
     }
@@ -180,15 +201,23 @@ class AccountSync(
         /** Cached machine views are named with [PREFIX] in the gateway's storage. */
         fun isCache(name: String): Boolean = name.startsWith(PREFIX)
 
-        /** The file [machineId]'s cached view is kept in, a [MachineReplica.snapshot]; tools that seed a view write it there. */
+        /**
+         * The file [machineId]'s cached view is kept in, a [MachineReplica.snapshot]; tools that
+         * seed a view write it there.
+         */
         fun cacheName(machineId: String): String = fileName(machineId)
 
         // Daemon IDs are URL-safe; keep the names readable and reversible.
         private fun fileName(machineId: String) = "$PREFIX${machineId.replace("/", "%2F")}.pb"
 
-        private fun updatedName(machineId: String) = "$PREFIX${machineId.replace("/", "%2F")}.updated"
+        private fun updatedName(machineId: String) =
+            "$PREFIX${machineId.replace("/", "%2F")}.updated"
 
         private fun decodeMachineId(name: String): String? =
-            name.takeIf { it.startsWith(PREFIX) && it.endsWith(".pb") }?.removePrefix(PREFIX)?.removeSuffix(".pb")?.replace("%2F", "/")
+            name
+                .takeIf { it.startsWith(PREFIX) && it.endsWith(".pb") }
+                ?.removePrefix(PREFIX)
+                ?.removeSuffix(".pb")
+                ?.replace("%2F", "/")
     }
 }

@@ -63,6 +63,30 @@
             try await service.createCard(request: .init(message: request), options: Self.bounded)
         }
 
+        func renameCard(cardID: String, title: String) async throws -> Dieter_V1_Card {
+            try await service.renameCard(
+                request: .init(
+                    message: .with {
+                        $0.cardID = cardID; $0.title = title
+                    }), options: Self.bounded)
+        }
+
+        func markConversationRead(cardID: String, responseSeq: Int64) async throws -> Dieter_V1_Card {
+            try await service.markConversationRead(
+                request: .init(
+                    message: .with {
+                        $0.cardID = cardID; $0.responseSeq = responseSeq
+                    }), options: Self.bounded)
+        }
+
+        func archiveCard(cardID: String) async throws -> Dieter_V1_Card {
+            try await service.archiveCard(
+                request: .init(
+                    message: .with {
+                        $0.cardID = cardID; $0.archived = true
+                    }), options: Self.bounded)
+        }
+
         func workspace(cardID: String) async throws -> Dieter_V1_Workspace {
             try await service.getWorkspace(request: .init(message: .with { $0.cardID = cardID }), options: Self.bounded)
         }
