@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -163,6 +164,15 @@ func (s *nativeRendition) SetEventHandler(f func(SourceEvent)) {
 	s.mux.mu.Lock()
 	s.callback = f
 	s.mux.mu.Unlock()
+}
+func (s *nativeRendition) WakeDisplay(ctx context.Context) error {
+	if runtime.GOOS != "darwin" || s.template.synthetic {
+		return nil
+	}
+	if _, err := s.mux.process(ctx, s.template); err != nil {
+		return err
+	}
+	return s.command(ctx, nativeCommand{Kind: "wake_display"}, true)
 }
 func (s *nativeRendition) command(ctx context.Context, command nativeCommand, wait bool) error {
 	s.mux.mu.Lock()

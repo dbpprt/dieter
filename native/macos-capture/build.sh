@@ -13,6 +13,7 @@ xcrun swiftc \
   -framework CoreMedia \
   -framework CoreVideo \
   -framework Foundation \
+  -framework IOKit \
   -framework ScreenCaptureKit \
   -framework VideoToolbox \
   "$SCRIPT_DIR"/*.swift \

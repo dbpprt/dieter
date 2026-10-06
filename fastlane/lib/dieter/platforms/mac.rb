@@ -60,7 +60,7 @@ module Dieter
       binary = File.join(@context.private_dir, "input-state")
       @context.command(["bash", "native/macos-capture/build.sh", helper], timeout: 300)
       sources = Dir.glob(File.join(@root, "native/macos-capture/*.swift")).sort
-      @context.command(["xcrun", "swiftc", "-parse-as-library", "-O", "-D", "DIETER_CAPTURE_TEST", "-framework", "AppKit", "-framework", "ScreenCaptureKit", "-framework", "VideoToolbox", *sources, "apps/mac/Sources/DieterTransport/RemoteDesktopKeyMap.swift", "apps/mac/Sources/DieterTransport/ScreenClipboardContent.swift", "native/macos-capture/tests/InputState.swift", "-o", binary], timeout: 300)
+      @context.command(["xcrun", "swiftc", "-parse-as-library", "-O", "-D", "DIETER_CAPTURE_TEST", "-framework", "AppKit", "-framework", "IOKit", "-framework", "ScreenCaptureKit", "-framework", "VideoToolbox", *sources, "apps/mac/Sources/DieterTransport/RemoteDesktopKeyMap.swift", "apps/mac/Sources/DieterTransport/ScreenClipboardContent.swift", "native/macos-capture/tests/InputState.swift", "-o", binary], timeout: 300)
       @context.command([binary], timeout: 120, log: File.join(@context.output, "input-state.log"))
       @context.command(["go", "test", "-race", "./internal/remotedesktop"], environment: {"DIETER_TEST_CAPTURE_HELPER" => helper}, timeout: 1200, log: File.join(@context.output, "capture-tests.log"))
     end

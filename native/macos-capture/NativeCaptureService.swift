@@ -42,6 +42,7 @@ final class NativeCaptureService: @unchecked Sendable {
     private var retiring = Set<UInt64>()
     private var stopped = false
     private let liveness = NativeDaemonLiveness()
+    private let displayActivity = RemoteDisplayActivity()
     private var delayedTestHeartbeat = false
     private let done = DispatchSemaphore(value: 0)
     private var signals: [DispatchSourceSignal] = []
@@ -141,6 +142,13 @@ final class NativeCaptureService: @unchecked Sendable {
                         }
                     } else {
                         reply(command, nil)
+                    }
+                } else if command.kind == "wake_display" {
+                    do {
+                        if !options.synthetic { try displayActivity.wake() }
+                        reply(command, nil)
+                    } catch {
+                        reply(command, error.localizedDescription)
                     }
                 } else if command.kind == "stop" {
                     reply(command, nil); stop()

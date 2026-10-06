@@ -1,8 +1,10 @@
 import CoreGraphics
 import Foundation
+import IOKit.pwr_mgt
 
 @main struct InputStateTest {
     static func main() async throws {
+        try testRemoteDisplayActivity()
         try testDisplayModeLeases()
         let damageBounds = CGRect(x: 0, y: 0, width: 100, height: 100)
         precondition(captureChangedFraction(rects: [], bounds: damageBounds) == 0)
@@ -160,6 +162,29 @@ import Foundation
         print(
             "Native input state: physical key zero, independent Shift sides, drag bounds, release and display generation passed"
         )
+    }
+}
+
+private func testRemoteDisplayActivity() throws {
+    var calls = 0
+    let activity = RemoteDisplayActivity { name, userType, assertionID in
+        calls += 1
+        precondition(name as String == "Dieter remote desktop connection")
+        precondition(userType == kIOPMUserActiveRemote)
+        precondition(assertionID.pointee == IOPMAssertionID(calls - 1))
+        assertionID.pointee = IOPMAssertionID(calls)
+        return kIOReturnSuccess
+    }
+    try activity.wake()
+    try activity.wake()
+    precondition(calls == 2, "Remote activity must reuse its IOKit assertion")
+
+    let failing = RemoteDisplayActivity { _, _, _ in kIOReturnError }
+    do {
+        try failing.wake()
+        preconditionFailure("A failed display wake was accepted")
+    } catch {
+        precondition(error.localizedDescription.contains("Unable to wake the macOS display"))
     }
 }
 
