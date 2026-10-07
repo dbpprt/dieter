@@ -119,6 +119,15 @@ dieter doctor
 | Android 8+               | [Download the APK](https://github.com/dbpprt/dieter/releases/latest/download/Dieter-Android.apk) |
 | iOS 18+, iPhone and iPad | [Beta and source-build guide](apps/ios/README.md)                                                |
 
+Gateway relay traffic uses four independently authenticated connections for
+health/control, peer replication, commands, and subscriptions. A busy watch or
+stalled peer does not consume the other traffic classes' admission or byte
+budgets. `dieter machine route MACHINE` reports each relay channel's connectivity,
+active calls, limit, buffered bytes, rejected calls, and last response time.
+“Board and settings sync between … is delayed” refers to shared projects, boards,
+card placement, labels, and portable settings; repository files and conversation
+transcripts remain on their owner machine.
+
 The daemon supports headless Linux hosts. Screen hosting needs an active desktop
 and [platform dependencies](landingpage/content/docs/installation.md#linux).
 [Full installation guide →](https://getdieter.com/docs/installation/)

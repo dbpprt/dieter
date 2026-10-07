@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -103,7 +104,7 @@ func TestDaemonHandshakeRejectsWrongKeyAndReplayedProof(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			stream := newSecurityLinkStream(t)
-			stream.recv <- &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, ReleaseVersion: "0.4.1-dev", DaemonId: credential.GetDaemonId()}
+			stream.recv <- &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, ReleaseVersion: "0.4.1-dev", DaemonId: credential.GetDaemonId(), SessionId: strings.Repeat("a", 64), Generation: credential.GetGeneration()}
 			result := make(chan daemonHandshake, 1)
 			go func() { result <- hub.authenticateLink(stream, time.Second) }()
 			challenge := <-stream.sent
@@ -123,7 +124,7 @@ func TestDaemonHandshakeRejectsRemovedAccount(t *testing.T) {
 	service, _, credential := newEnrolledSecurityService(t)
 	service.hub.config.AllowedUserIDs = map[int64]struct{}{1235: {}}
 	stream := newSecurityLinkStream(t)
-	stream.recv <- &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, ReleaseVersion: "0.4.1-dev", DaemonId: credential.GetDaemonId()}
+	stream.recv <- &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, ReleaseVersion: "0.4.1-dev", DaemonId: credential.GetDaemonId(), SessionId: strings.Repeat("a", 64), Generation: credential.GetGeneration()}
 	if err := service.hub.Connect(stream); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("removed account opened a tunnel: %v", err)
 	}
@@ -147,7 +148,7 @@ func TestDaemonRevocationClosesTransportEvenWhenSendIsBlocked(t *testing.T) {
 	stream.sent = make(chan *gatewayv1.DaemonLinkFrame, 1)
 	result := make(chan error, 1)
 	go func() { result <- service.hub.Connect(stream) }()
-	stream.recv <- &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, ReleaseVersion: "0.4.1-dev", DaemonId: credential.GetDaemonId()}
+	stream.recv <- &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, ReleaseVersion: "0.4.1-dev", DaemonId: credential.GetDaemonId(), SessionId: strings.Repeat("a", 64), Generation: credential.GetGeneration()}
 	challenge := <-stream.sent
 	stream.recv <- &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_PONG, DaemonId: credential.GetDaemonId(), RequestId: challenge.GetRequestId(), Payload: linkauth.Sign(private, service.config.PublicURL.String(), credential.GetDaemonId(), challenge.GetPayload())}
 	if ack := <-stream.sent; ack.GetKind() != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK {
@@ -156,7 +157,7 @@ func TestDaemonRevocationClosesTransportEvenWhenSendIsBlocked(t *testing.T) {
 	// Leave the simulated peer's receive window full while the gateway opens
 	// an RPC. Its Send and Recv are now both blocked on the transport.
 	stream.sent <- &gatewayv1.DaemonLinkFrame{}
-	relay, err := service.hub.Open(t.Context(), credential.GetDaemonId(), &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC})
+	relay, err := service.hub.Open(t.Context(), credential.GetDaemonId(), &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_OPEN_RPC, Method: "/dieter.v1.DieterService/Health"})
 	if err != nil {
 		t.Fatal(err)
 	}

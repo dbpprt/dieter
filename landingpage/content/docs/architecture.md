@@ -51,6 +51,30 @@ Watches resume from the last delivered sequence or complete sync projection.
 Transient recovery does not replay domain mutations, process starts, or stdin.
 Canceling a relay RPC cancels that transport operation, not an agent turn.
 
+Gateway relay uses four separate connections and flow-control windows. Every
+connection proves possession of the enrolled daemon key, and joins the same
+process session and enrollment generation. Traffic classes affect resources,
+never authorization.
+
+| Relay traffic | Concurrent RPCs per daemon | Examples                                                        |
+| ------------- | -------------------------: | --------------------------------------------------------------- |
+| Control       |                          4 | Health and runtime status                                       |
+| Replication   |                          4 | Peer reads and merges                                           |
+| Command       |                         16 | Board edits, messages, and other ordinary RPCs                  |
+| Subscription  |                         64 | Every declared server stream, including KV and screen signaling |
+
+Large payloads travel in 64 KiB fragments, scheduled fairly between streams.
+Logical messages remain bounded to 16 MiB; each daemon channel has a 64 MiB
+allocation budget, backed by independent account (128 MiB) and gateway (256 MiB)
+budgets for that traffic class. These bounds include queued relay responses and
+incomplete payload assemblies. Unconsumed responses fail only their RPC. A writer
+stalled for ten seconds resets its connection. Enrollment revocation closes all
+four connections. The gateway retains no shared project or conversation data.
+
+`dieter machine route MACHINE` reports channel connectivity, active calls, limits,
+buffered bytes, rejections, response freshness, and writer stalls. Heartbeat
+presence can remain online while one channel is unavailable.
+
 ## Durability and bounds
 
 All daemon metadata lives centrally under `DIETER_HOME`, default `~/.dieter`.
@@ -75,6 +99,18 @@ proves reachability, not that workspace data has been applied. Persist a cursor
 only with its complete projection; `projectionPending=true` is not a checkpoint.
 If a retained projection no longer matches, the client must process an explicit
 reset.
+
+Peer exchanges run independently, with at most four active exchanges and a
+40-second deadline per attempt. A failed peer backs off independently from
+15 seconds to two minutes; healthy peers retain their normal cadence. Only
+account/discovery failures back off the whole discovery loop. Checkpoints still
+advance only after durable merges.
+
+“Board and settings sync between … is delayed” means recent transport failure
+between the named replicas. It covers shared project/board metadata, card
+placement, labels, navigation, and portable settings. A record rejection remains
+visible until resolved; a recovered transport clears its warning. Repository
+files and owner transcripts are outside this replication contract.
 
 ## Screens and terminals
 

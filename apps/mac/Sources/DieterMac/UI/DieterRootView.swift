@@ -42,7 +42,7 @@ struct DieterRootView: View {
     }
 
     private var usesPaneTitlebar: Bool {
-        store.section == .inbox || store.section == .board || store.section == .chats
+        [.inbox, .board, .chats, .files, .changes].contains(store.section)
     }
 
     var body: some View {

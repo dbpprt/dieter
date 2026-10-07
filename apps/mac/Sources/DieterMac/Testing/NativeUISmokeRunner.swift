@@ -371,9 +371,9 @@
                     projectContextClosed && projectContextDismissed
                     ? "passed" : "failed: project settings did not dismiss before Quick Task"
 
-                // Board/Chats now own their pane headers. Exercise the global
-                // titlebar action on a destination that still exposes it.
-                store.section = .files
+                // Board, Chats, Files, and Changes own their pane headers. Exercise
+                // the global titlebar action on a destination that still exposes it.
+                store.section = .schedules
                 let globalReady = await waitForBoardControl("sidebar.quick-task", in: window)
                 recordNavigationTargetFailure(
                     "sidebar.quick-task", section: store.section, window: window,

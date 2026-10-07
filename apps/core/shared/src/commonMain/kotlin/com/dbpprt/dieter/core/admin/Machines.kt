@@ -525,9 +525,9 @@ object PeerSyncHealth {
             .map { issue ->
                 val peer = peers[issue.peer_id]?.first
                 if (issue.record_id.isNotEmpty() || issue.record_kind.isNotEmpty()) {
-                    "Shared updates between $reporterName and ${peer ?: "another machine"} are blocked by a rejected record."
+                    "Board and settings sync between $reporterName and ${peer ?: "another machine"} is blocked by a rejected record."
                 } else {
-                    "Shared updates between $reporterName and ${peer ?: "another machine"} are delayed."
+                    "Board and settings sync between $reporterName and ${peer ?: "another machine"} is delayed."
                 }
             }
             .distinct()

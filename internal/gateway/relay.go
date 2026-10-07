@@ -11,11 +11,14 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/relaypolicy"
 	"github.com/dbpprt/dieter/internal/rpcraw"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type relayHandler struct {
@@ -50,7 +53,7 @@ func (r *relayHandler) handle(_ any, stream grpc.ServerStream) error {
 	if len(authorization) != 1 || len(daemonIDs) != 1 {
 		return status.Error(codes.Unauthenticated, "gateway session and daemon ID are required")
 	}
-	ctx, cancel, err := r.auth.AuthenticateSession(ctx, authorization[0])
+	ctx, cancel, err := r.auth.authenticateLane(ctx, authorization[0], relaypolicy.Method(method))
 	if err != nil {
 		return err
 	}
@@ -140,14 +143,13 @@ func (r *relayHandler) relayAuthenticated(stream grpc.ServerStream, method, daem
 			if err := stream.SendMsg(&rpcraw.Message{Data: frame.GetPayload()}); err != nil {
 				return err
 			}
-		case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_END:
-			stream.SetTrailer(frameMetadata(frame.GetMetadata()))
-			if frame.GetStatusCode() != int32(codes.OK) {
-				return status.Error(codes.Code(frame.GetStatusCode()), frame.GetStatusMessage())
-			}
-			return nil
-		case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RPC_ERROR:
-			return status.Error(codes.Code(frame.GetStatusCode()), frame.GetStatusMessage())
+		case gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_END, gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RPC_ERROR:
+			trailers := frameMetadata(frame.GetMetadata())
+			err := relayFrameStatus(frame, trailers)
+			// gRPC emits this reserved trailer from the returned status itself.
+			delete(trailers, "grpc-status-details-bin")
+			stream.SetTrailer(trailers)
+			return err
 		}
 	}
 }
@@ -166,7 +168,28 @@ func frameMetadata(values map[string]string) metadata.MD {
 		if key == "" || key == "authorization" || key == "cookie" || strings.HasPrefix(key, "x-dieter-") {
 			continue
 		}
+		if strings.HasSuffix(key, "-bin") {
+			raw, err := base64.StdEncoding.DecodeString(value)
+			if err != nil {
+				continue
+			}
+			value = string(raw)
+		}
 		result.Set(key, value)
 	}
 	return result
+}
+
+func relayFrameStatus(frame *gatewayv1.DaemonLinkFrame, trailers metadata.MD) error {
+	code, message := frame.GetStatusCode(), frame.GetStatusMessage()
+	if code == int32(codes.OK) {
+		return nil
+	}
+	if values := trailers.Get("grpc-status-details-bin"); len(values) == 1 && len(values[0]) <= relaypolicy.ChunkBytes/2 {
+		value := &statuspb.Status{}
+		if proto.Unmarshal([]byte(values[0]), value) == nil && value.Code == code && value.Message == message {
+			return status.FromProto(value).Err()
+		}
+	}
+	return status.Error(codes.Code(code), message)
 }
