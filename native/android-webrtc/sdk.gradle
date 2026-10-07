@@ -1,0 +1,52 @@
+// Shared audited WebRTC artifact and Java surface extension, used by both Android hosts.
+import java.security.MessageDigest
+
+def nativeSource = project.projectDir.toPath()
+while (nativeSource != null && !nativeSource.resolve('native/android-webrtc/build_sdk.py').toFile().isFile()) {
+    nativeSource = nativeSource.parent
+}
+if (nativeSource == null) throw new GradleException('Cannot locate native/android-webrtc')
+def extensionSource = nativeSource.resolve('native/android-webrtc').toFile()
+def sdkArtifact = configurations.create('screenWebRTCArtifact') { transitive = false }
+dependencies.add(sdkArtifact.name, 'io.github.webrtc-sdk:android:150.7871.01')
+def annotations = configurations.create('screenWebRTCAnnotations') { transitive = false }
+dependencies.add(annotations.name, 'androidx.annotation:annotation-jvm:1.10.0')
+def expected = '0a1627b1a48c2bc17d9a40d62fc47bd45166f44a311e95917f147c402de379b0'
+def stamp = layout.buildDirectory.file('screen-webrtc/verified.sha256')
+def verify = tasks.register('verifyScreenWebRTC') {
+    inputs.files(sdkArtifact)
+    inputs.property('sha256', expected)
+    outputs.file(stamp)
+    doLast {
+        def digest = MessageDigest.getInstance('SHA-256')
+        sdkArtifact.singleFile.withInputStream { input ->
+            byte[] buffer = new byte[65536]
+            int count
+            while ((count = input.read(buffer)) > 0) digest.update(buffer, 0, count)
+        }
+        def actual = digest.digest().encodeHex().toString()
+        if (actual != expected) throw new GradleException('WebRTC adapter artifact changed; revalidate its contract before updating the pin')
+        stamp.get().asFile.with { parentFile.mkdirs(); text = actual + '\n' }
+    }
+}
+def patched = layout.buildDirectory.file('screen-webrtc/dieter-webrtc.aar')
+def build = tasks.register('buildScreenWebRTC') {
+    dependsOn(verify)
+    def compiler = new File(System.getProperty('java.home'), 'bin/javac')
+    inputs.dir(extensionSource)
+    inputs.files(sdkArtifact, annotations, androidComponents.sdkComponents.bootClasspath)
+    inputs.file(compiler)
+    inputs.property('javaVersion', System.getProperty('java.version'))
+    outputs.file(patched)
+    outputs.file(layout.buildDirectory.file('screen-webrtc/dieter-webrtc.json'))
+    doLast {
+        def process = new ProcessBuilder('python3', new File(extensionSource, 'build_sdk.py').absolutePath,
+            '--aar', sdkArtifact.singleFile.absolutePath,
+            '--android-jar', androidComponents.sdkComponents.bootClasspath.get().first().asFile.absolutePath,
+            '--annotation', annotations.singleFile.absolutePath,
+            '--javac', compiler.absolutePath, '--output', patched.get().asFile.absolutePath).inheritIO().start()
+        if (process.waitFor() != 0) throw new GradleException('Failed to build the pinned WebRTC Java extension')
+    }
+}
+dependencies.add('implementation', files(patched).builtBy(build))
+tasks.named('preBuild') { dependsOn(build) }

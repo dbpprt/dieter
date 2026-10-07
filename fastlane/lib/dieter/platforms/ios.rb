@@ -114,6 +114,7 @@ module Dieter
             configuration: configuration.capitalize,
             destination: physical ? "generic/platform=iOS" : "generic/platform=iOS Simulator",
             derived_data_path: @derived,
+            package_authorization_provider: "netrc",
             build_for_testing: true,
             skip_build: true,
             skip_detect_devices: true,

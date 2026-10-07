@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Dieter · mobile design port</title>
+    <style>
+      *{box-sizing:border-box}body{margin:0;background:#f5f5f5;color:#202020;font:16px system-ui;line-height:1.5}header,main{max-width:1600px;margin:auto;padding:32px}h1{font-size:36px;margin:0 0 12px}h2{font-size:25px}.grid{display:grid;grid-template-columns:1fr 1fr 1.7fr;gap:20px}figure{margin:0;background:white;padding:12px;border-radius:16px;border:1px solid #ddd}img{display:block;width:100%;height:540px;object-fit:contain}figcaption{padding:12px 4px;font-weight:600}a{color:#285489}p{max-width:950px}.status{background:#fff;padding:16px;border-radius:12px}nav{display:flex;gap:12px 24px;flex-wrap:wrap}section{padding:12px 0 24px;scroll-margin-top:16px}.compare{height:auto;max-height:740px}@media(max-width:800px){header,main{padding:20px}.grid{grid-template-columns:1fr}img{height:560px}}
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Dieter · Android design → shared Compose</h1>
+      <p>
+        48 actual native screenshots from passing Android, iPhone and iPad journeys. Shared cards
+        and functionality follow the shipping Android design; Android uses Material navigation and
+        iOS uses native SwiftUI Liquid Glass.
+      </p>
+      <nav>
+        <a href="legacy-android/index.html">17 legacy Android references</a
+        ><a href="../DESIGN_PORT.md">Port inventory</a
+        ><a href="../VERIFICATION.md">Qualification and limits</a
+        ><a href="../screenshots/provenance.json">Capture provenance</a>
+      </nav>
+      <p class="status">
+        All three 16-view journeys and owned device cleanup passed on 7 October 2026. Sample history
+        is seeded; new tasks and follow-up replies run through a real isolated daemon and mock
+        harness. This is an opt-in migration spike; production cutover requirements are recorded in
+        verification.
+      </p>
+      <nav>
+        <a href="#inbox">Inbox</a><a href="#projects">Projects</a><a href="#board">Board</a
+        ><a href="#task">Task</a><a href="#subagents">Subagents</a><a href="#new-task">New Task</a
+        ><a href="#conversation">Conversation</a><a href="#review">Review</a
+        ><a href="#chats">Chats</a><a href="#tools">Tools</a><a href="#machines">Machines</a
+        ><a href="#files">Files</a><a href="#file-preview">File Preview</a
+        ><a href="#schedules">Schedules</a><a href="#settings-dark">Settings Dark</a
+        ><a href="#board-dark">Board Dark</a>
+      </nav>
+    </header>
+    <main>
+      <section>
+        <h2>Legacy cards → Android Material → iOS Glass</h2>
+        <a href="board-comparison.png"
+          ><img
+            class="compare"
+            src="board-comparison.png"
+            alt="Legacy Android, Compose Android and Compose iPhone board comparison"
+        /></a>
+        <p>
+          Full native captures are resized proportionally. Captions are outside the app images; no
+          UI content is cropped, repainted or synthesized.
+        </p>
+        <nav>
+          <a href="board-dark-comparison.png">Dark boards</a
+          ><a href="new-task-comparison.png">Task creation</a
+          ><a href="android-port.png">Android contact sheet</a
+          ><a href="iphone-port.png">iPhone contact sheet</a
+          ><a href="ipad-port.png">iPad contact sheet</a>
+        </nav>
+      </section>
+      <section id="inbox">
+        <h2>Inbox</h2>
+        <div class="grid">
+          <figure>
+            <a href="../screenshots/android-inbox.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/android-inbox.png"
+                alt="Android · Material: inbox"
+            /></a>
+            <figcaption>Android · Material</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/iphone-inbox.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/iphone-inbox.png"
+                alt="iPhone · Liquid Glass: inbox"
+            /></a>
+            <figcaption>iPhone · Liquid Glass</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/ipad-inbox.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/ipad-inbox.png"
+                alt="iPad · Liquid Glass: inbox"
+            /></a>
+            <figcaption>iPad · Liquid Glass</figcaption>
+          </figure>
+        </div>
+      </section>
+      <section id="projects">
+        <h2>Projects</h2>
+        <div class="grid">
+          <figure>
+            <a href="../screenshots/android-projects.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/android-projects.png"
+                alt="Android · Material: projects"
+            /></a>
+            <figcaption>Android · Material</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/iphone-projects.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/iphone-projects.png"
+                alt="iPhone · Liquid Glass: projects"
+            /></a>
+            <figcaption>iPhone · Liquid Glass</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/ipad-projects.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/ipad-projects.png"
+                alt="iPad · Liquid Glass: projects"
+            /></a>
+            <figcaption>iPad · Liquid Glass</figcaption>
+          </figure>
+        </div>
+      </section>
+      <section id="board">
+        <h2>Board</h2>
+        <div class="grid">
+          <figure>
+            <a href="../screenshots/android-board.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/android-board.png"
+                alt="Android · Material: board"
+            /></a>
+            <figcaption>Android · Material</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/iphone-board.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/iphone-board.png"
+                alt="iPhone · Liquid Glass: board"
+            /></a>
+            <figcaption>iPhone · Liquid Glass</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/ipad-board.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/ipad-board.png"
+                alt="iPad · Liquid Glass: board"
+            /></a>
+            <figcaption>iPad · Liquid Glass</figcaption>
+          </figure>
+        </div>
+      </section>
+      <section id="task">
+        <h2>Task</h2>
+        <div class="grid">
+          <figure>
+            <a href="../screenshots/android-task.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/android-task.png"
+                alt="Android · Material: task"
+            /></a>
+            <figcaption>Android · Material</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/iphone-task.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/iphone-task.png"
+                alt="iPhone · Liquid Glass: task"
+            /></a>
+            <figcaption>iPhone · Liquid Glass</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/ipad-task.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/ipad-task.png"
+                alt="iPad · Liquid Glass: task"
+            /></a>
+            <figcaption>iPad · Liquid Glass</figcaption>
+          </figure>
+        </div>
+      </section>
+      <section id="subagents">
+        <h2>Subagents</h2>
+        <div class="grid">
+          <figure>
+            <a href="../screenshots/android-subagents.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/android-subagents.png"
+                alt="Android · Material: subagents"
+            /></a>
+            <figcaption>Android · Material</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/iphone-subagents.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/iphone-subagents.png"
+                alt="iPhone · Liquid Glass: subagents"
+            /></a>
+            <figcaption>iPhone · Liquid Glass</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/ipad-subagents.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/ipad-subagents.png"
+                alt="iPad · Liquid Glass: subagents"
+            /></a>
+            <figcaption>iPad · Liquid Glass</figcaption>
+          </figure>
+        </div>
+      </section>
+      <section id="new-task">
+        <h2>New Task</h2>
+        <div class="grid">
+          <figure>
+            <a href="../screenshots/android-new-task.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/android-new-task.png"
+                alt="Android · Material: new-task"
+            /></a>
+            <figcaption>Android · Material</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/iphone-new-task.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/iphone-new-task.png"
+                alt="iPhone · Liquid Glass: new-task"
+            /></a>
+            <figcaption>iPhone · Liquid Glass</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/ipad-new-task.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/ipad-new-task.png"
+                alt="iPad · Liquid Glass: new-task"
+            /></a>
+            <figcaption>iPad · Liquid Glass</figcaption>
+          </figure>
+        </div>
+      </section>
+      <section id="conversation">
+        <h2>Conversation</h2>
+        <div class="grid">
+          <figure>
+            <a href="../screenshots/android-conversation.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/android-conversation.png"
+                alt="Android · Material: conversation"
+            /></a>
+            <figcaption>Android · Material</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/iphone-conversation.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/iphone-conversation.png"
+                alt="iPhone · Liquid Glass: conversation"
+            /></a>
+            <figcaption>iPhone · Liquid Glass</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/ipad-conversation.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/ipad-conversation.png"
+                alt="iPad · Liquid Glass: conversation"
+            /></a>
+            <figcaption>iPad · Liquid Glass</figcaption>
+          </figure>
+        </div>
+      </section>
+      <section id="review">
+        <h2>Review</h2>
+        <div class="grid">
+          <figure>
+            <a href="../screenshots/android-review.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/android-review.png"
+                alt="Android · Material: review"
+            /></a>
+            <figcaption>Android · Material</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/iphone-review.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/iphone-review.png"
+                alt="iPhone · Liquid Glass: review"
+            /></a>
+            <figcaption>iPhone · Liquid Glass</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/ipad-review.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/ipad-review.png"
+                alt="iPad · Liquid Glass: review"
+            /></a>
+            <figcaption>iPad · Liquid Glass</figcaption>
+          </figure>
+        </div>
+      </section>
+      <section id="chats">
+        <h2>Chats</h2>
+        <div class="grid">
+          <figure>
+            <a href="../screenshots/android-chats.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/android-chats.png"
+                alt="Android · Material: chats"
+            /></a>
+            <figcaption>Android · Material</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/iphone-chats.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/iphone-chats.png"
+                alt="iPhone · Liquid Glass: chats"
+            /></a>
+            <figcaption>iPhone · Liquid Glass</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/ipad-chats.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/ipad-chats.png"
+                alt="iPad · Liquid Glass: chats"
+            /></a>
+            <figcaption>iPad · Liquid Glass</figcaption>
+          </figure>
+        </div>
+      </section>
+      <section id="tools">
+        <h2>Tools</h2>
+        <div class="grid">
+          <figure>
+            <a href="../screenshots/android-tools.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/android-tools.png"
+                alt="Android · Material: tools"
+            /></a>
+            <figcaption>Android · Material</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/iphone-tools.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/iphone-tools.png"
+                alt="iPhone · Liquid Glass: tools"
+            /></a>
+            <figcaption>iPhone · Liquid Glass</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/ipad-tools.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/ipad-tools.png"
+                alt="iPad · Liquid Glass: tools"
+            /></a>
+            <figcaption>iPad · Liquid Glass</figcaption>
+          </figure>
+        </div>
+      </section>
+      <section id="machines">
+        <h2>Machines</h2>
+        <div class="grid">
+          <figure>
+            <a href="../screenshots/android-machines.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/android-machines.png"
+                alt="Android · Material: machines"
+            /></a>
+            <figcaption>Android · Material</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/iphone-machines.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/iphone-machines.png"
+                alt="iPhone · Liquid Glass: machines"
+            /></a>
+            <figcaption>iPhone · Liquid Glass</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/ipad-machines.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/ipad-machines.png"
+                alt="iPad · Liquid Glass: machines"
+            /></a>
+            <figcaption>iPad · Liquid Glass</figcaption>
+          </figure>
+        </div>
+      </section>
+      <section id="files">
+        <h2>Files</h2>
+        <div class="grid">
+          <figure>
+            <a href="../screenshots/android-files.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/android-files.png"
+                alt="Android · Material: files"
+            /></a>
+            <figcaption>Android · Material</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/iphone-files.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/iphone-files.png"
+                alt="iPhone · Liquid Glass: files"
+            /></a>
+            <figcaption>iPhone · Liquid Glass</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/ipad-files.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/ipad-files.png"
+                alt="iPad · Liquid Glass: files"
+            /></a>
+            <figcaption>iPad · Liquid Glass</figcaption>
+          </figure>
+        </div>
+      </section>
+      <section id="file-preview">
+        <h2>File Preview</h2>
+        <div class="grid">
+          <figure>
+            <a href="../screenshots/android-file-preview.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/android-file-preview.png"
+                alt="Android · Material: file-preview"
+            /></a>
+            <figcaption>Android · Material</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/iphone-file-preview.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/iphone-file-preview.png"
+                alt="iPhone · Liquid Glass: file-preview"
+            /></a>
+            <figcaption>iPhone · Liquid Glass</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/ipad-file-preview.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/ipad-file-preview.png"
+                alt="iPad · Liquid Glass: file-preview"
+            /></a>
+            <figcaption>iPad · Liquid Glass</figcaption>
+          </figure>
+        </div>
+      </section>
+      <section id="schedules">
+        <h2>Schedules</h2>
+        <div class="grid">
+          <figure>
+            <a href="../screenshots/android-schedules.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/android-schedules.png"
+                alt="Android · Material: schedules"
+            /></a>
+            <figcaption>Android · Material</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/iphone-schedules.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/iphone-schedules.png"
+                alt="iPhone · Liquid Glass: schedules"
+            /></a>
+            <figcaption>iPhone · Liquid Glass</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/ipad-schedules.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/ipad-schedules.png"
+                alt="iPad · Liquid Glass: schedules"
+            /></a>
+            <figcaption>iPad · Liquid Glass</figcaption>
+          </figure>
+        </div>
+      </section>
+      <section id="settings-dark">
+        <h2>Settings Dark</h2>
+        <div class="grid">
+          <figure>
+            <a href="../screenshots/android-settings-dark.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/android-settings-dark.png"
+                alt="Android · Material: settings-dark"
+            /></a>
+            <figcaption>Android · Material</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/iphone-settings-dark.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/iphone-settings-dark.png"
+                alt="iPhone · Liquid Glass: settings-dark"
+            /></a>
+            <figcaption>iPhone · Liquid Glass</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/ipad-settings-dark.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/ipad-settings-dark.png"
+                alt="iPad · Liquid Glass: settings-dark"
+            /></a>
+            <figcaption>iPad · Liquid Glass</figcaption>
+          </figure>
+        </div>
+      </section>
+      <section id="board-dark">
+        <h2>Board Dark</h2>
+        <div class="grid">
+          <figure>
+            <a href="../screenshots/android-board-dark.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/android-board-dark.png"
+                alt="Android · Material: board-dark"
+            /></a>
+            <figcaption>Android · Material</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/iphone-board-dark.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/iphone-board-dark.png"
+                alt="iPhone · Liquid Glass: board-dark"
+            /></a>
+            <figcaption>iPhone · Liquid Glass</figcaption>
+          </figure>
+          <figure>
+            <a href="../screenshots/ipad-board-dark.png"
+              ><img
+                loading="lazy"
+                src="../screenshots/ipad-board-dark.png"
+                alt="iPad · Liquid Glass: board-dark"
+            /></a>
+            <figcaption>iPad · Liquid Glass</figcaption>
+          </figure>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

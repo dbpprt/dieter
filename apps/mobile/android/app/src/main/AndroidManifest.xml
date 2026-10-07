@@ -5,5 +5,6 @@
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         <intent-filter><action android:name="android.intent.action.VIEW" /><category android:name="android.intent.category.DEFAULT" /><category android:name="android.intent.category.BROWSABLE" /><data android:scheme="dieter-compose" android:host="oauth" /></intent-filter>
         </activity>
+    <provider android:name="com.dbpprt.dieter.screens.ScreenClipboardProvider" android:authorities="${applicationId}.clipboard" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/clipboard_paths" /></provider>
     </application>
 </manifest>

@@ -8,7 +8,8 @@ struct DieterComposeSpikeApp: App {
     @Environment(\.scenePhase) private var scenePhase
     var body: some Scene {
         WindowGroup {
-            SpikeRoot(host: host).tint(Color(red: 0.94, green: 0.40, blue: 0.29))
+            SpikeRoot(host: host)
+                .preferredColorScheme(host.appearance == "dark" ? .dark : host.appearance == "light" ? .light : nil)
                 .task {
                     #if DEBUG
                         let environment = ProcessInfo.processInfo.environment
@@ -24,60 +25,51 @@ struct DieterComposeSpikeApp: App {
         }
     }
 }
-
 private struct ComposeContent: UIViewControllerRepresentable {
     let host: ComposeHost
     func makeUIViewController(context: Context) -> UIViewController { host.controller }
     func updateUIViewController(_ controller: UIViewController, context: Context) {}
 }
-
 private struct SpikeRoot: View {
     let host: ComposeHost
-    @State private var tab = 0
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    private let paper = Color(red: 0.969, green: 0.973, blue: 0.953)
     var body: some View {
         ComposeContent(host: host)
-            .background(paper)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                HStack {
-                    Text("dieter").font(.system(size: 25, weight: .bold, design: .rounded))
-                    Spacer()
-                    Button(action: host.reconnect) { Image(systemName: "arrow.clockwise").frame(width: 44, height: 44) }
-                        .accessibilityLabel("Reconnect").modifier(GlassControl(reduceTransparency: reduceTransparency))
-                    Button(action: host.newTask) {
-                        Image(systemName: "plus").font(.title3.weight(.semibold)).frame(width: 44, height: 44)
-                    }
-                    .accessibilityLabel("New task").modifier(GlassControl(reduceTransparency: reduceTransparency))
-                }
-                .padding(.horizontal, 22).padding(.vertical, 10).background(paper)
-            }
+            .background(Color(uiColor: .systemBackground))
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                HStack(spacing: 4) {
-                    tabButton(0, "Board", "square.grid.2x2")
-                    tabButton(1, "Chats", "bubble.left.and.bubble.right")
-                    tabButton(2, "Machines", "desktopcomputer")
+                if host.chromeVisible {
+                    HStack(spacing: 8) {
+                        HStack(spacing: 2) {
+                            tabButton(0, "Inbox", "tray")
+                            tabButton(1, "Projects", "square.split.2x2")
+                            tabButton(2, "Chats", "bubble.left.and.bubble.right")
+                            tabButton(3, "Tools", "square.grid.2x2")
+                        }
+                        .padding(6).modifier(GlassBar(reduceTransparency: reduceTransparency))
+                        Button(action: host.newTask) {
+                            Image(systemName: "plus").font(.title3.weight(.semibold)).frame(width: 52, height: 52)
+                        }
+                        .accessibilityLabel("New task").accessibilityIdentifier("native-new-task")
+                        .modifier(GlassControl(reduceTransparency: reduceTransparency))
+                    }
+                    .frame(maxWidth: 560).padding(.horizontal, 16).padding(.bottom, 8).padding(.top, 8)
                 }
-                .frame(maxWidth: 440)
-                .padding(7).modifier(GlassBar(reduceTransparency: reduceTransparency))
-                .padding(.horizontal, 28).padding(.bottom, 10).padding(.top, 8)
             }
-            // Compose applies imePadding to its form and composer. Keeping the
-            // host's frame stable prevents SwiftUI from avoiding the keyboard a
-            // second time and leaves native chrome beneath the keyboard.
             .ignoresSafeArea(.keyboard, edges: .bottom)
+            .tint(.primary)
     }
     private func tabButton(_ index: Int, _ title: String, _ icon: String) -> some View {
         Button {
-            tab = index; host.selectTab(index)
+            host.selectTab(index)
         } label: {
-            VStack(spacing: 4) {
-                Image(systemName: icon).font(.system(size: 20)); Text(title).font(.system(size: 11, weight: .semibold))
+            VStack(spacing: 3) {
+                Image(systemName: icon).font(.system(size: 20))
+                Text(title).font(.system(size: 10, weight: .semibold))
             }
-            .frame(maxWidth: .infinity).frame(height: 48)
-            .foregroundStyle(tab == index ? Color(red: 0.94, green: 0.40, blue: 0.29) : .secondary)
-            .background(tab == index ? Color.primary.opacity(0.06) : .clear, in: Capsule())
-        }.accessibilityLabel(title).accessibilityAddTraits(tab == index ? [.isSelected] : [])
+            .frame(maxWidth: .infinity).frame(height: 46)
+            .foregroundStyle(host.selectedTab == index ? .primary : .secondary)
+            .background(host.selectedTab == index ? Color.primary.opacity(0.08) : .clear, in: Capsule())
+        }.accessibilityLabel(title).accessibilityAddTraits(host.selectedTab == index ? [.isSelected] : [])
     }
 }
 private struct GlassControl: ViewModifier {

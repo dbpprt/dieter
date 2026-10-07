@@ -193,7 +193,24 @@ module Dieter
           check: false
         )
       end
-      %w[board task new-task conversation review machines].each do |screen|
+      %w[
+        inbox
+        projects
+        board
+        task
+        subagents
+        new-task
+        conversation
+        review
+        chats
+        tools
+        machines
+        files
+        file-preview
+        schedules
+        settings-dark
+        board-dark
+      ].each do |screen|
         path = File.join(context.output, "compose-screenshots", "android-#{screen}.png")
         raise PipelineError, "Missing Android screenshot: #{screen}" unless File.size?(path)
       end
@@ -251,6 +268,7 @@ module Dieter
             configuration: "Debug",
             destination: "generic/platform=iOS Simulator",
             derived_data_path: @derived,
+            package_authorization_provider: "netrc",
             build_for_testing: true,
             skip_build: true,
             skip_detect_devices: true,
@@ -259,7 +277,7 @@ module Dieter
             output_directory: @context.private_dir,
             buildlog_path: @context.private_dir,
             xcargs:
-              "-jobs 2 ARCHS=arm64 CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES DIETER_RELEASE_VERSION=#{@context.environment.fetch("DIETER_RELEASE_VERSION")}"
+              "-jobs 2 -skipPackagePluginValidation ARCHS=arm64 CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES DIETER_RELEASE_VERSION=#{@context.environment.fetch("DIETER_RELEASE_VERSION")}"
           },
           timeout: 2400,
           log: File.join(@context.output, "ios-build.log")

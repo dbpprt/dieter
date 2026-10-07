@@ -5,25 +5,32 @@ experiment builds the **same Compose screens on Android and iOS**, using the
 existing Go daemon/gateway and KMP client, with a small native host on each OS.
 The shipping Android, iOS and macOS clients remain the reference for feature parity.
 
-The shared slice includes board/lane browsing, search within a lane, task creation
-(Todo or immediate start), a live conversation with tool groups and delivery
-receipts, follow-up messages, Stop/Start, history loading, moving a task to Review,
-standalone chat browsing, machine status, reconnect and gateway sign-in. A wide
-viewport presents the board and conversation side by side.
+The design port follows the shipping Android app: **Inbox / Projects / Chats /
+Tools**, compact task cards, project folders, agent controls, transcript tools,
+files, Git review and schedules. Both platforms use the same commands and state
+from `apps/core`; native code supplies credentials, transport, attachments,
+terminal emulation, screen video/input and iOS navigation chrome.
 
 ## Platform design
 
-- **iOS:** a real SwiftUI `glassEffect(.regular.interactive())` navigation bar and
-  controls on iOS 26+, around `ComposeUIViewController`. It uses SF Symbols,
-  native safe areas and the system keyboard. iOS 18–25 uses system material;
-  Reduce Transparency uses an opaque background. The transcript and task cards
-  stay opaque for readability. Glass belongs on navigation and controls, not
-  every content surface. Compose owns keyboard insets; the SwiftUI host ignores
-  keyboard safe-area changes so both layers do not shrink the content.
-- **Android:** Compose Material 3 controls, bottom navigation, edge-to-edge
-  insets, system keyboard, a warm neutral canvas and Dieter's coral accent.
-- **Tablet:** the common layout chooses a board/conversation split at 700 dp.
-  The breakpoint is a view decision; task state, routing and wording stay in the core.
+- **Android:** Material 3, the legacy Sora display font, 12 dp card corners and
+  the exact eight legacy palettes. Monochrome is the default. Cards keep labels,
+  age, summary, machine/branch badges, agent status, token footer and Start actions.
+- **iOS:** system typography, grouped surfaces and rounded filled fields; native
+  SF Symbol tabs and New controls use SwiftUI `glassEffect` on iOS 26+. iOS 18–25
+  uses system material; Reduce Transparency uses an opaque surface. Content
+  cards remain legible. Compose owns keyboard insets and the SwiftUI host ignores
+  keyboard safe-area changes.
+- **Adaptive layouts:** an Android navigation rail from 840 dp, conversation splits from
+  600 dp, and parallel board lanes when the board itself has at least 700 dp.
+  Compact layouts use scrollable lane tabs. The same content and commands run
+  on iPhone, iPad and Android.
+
+[Design audit and port inventory](DESIGN_PORT.md) maps the legacy surfaces to the
+shared implementation. [Legacy captures](design/legacy-android/index.html)
+record the actual old Android UI. The [comparison gallery](design/index.html)
+shows the running shared apps; [verification](VERIFICATION.md) records native
+results and remaining qualification requirements.
 
 ## Code boundaries
 
@@ -46,11 +53,14 @@ byte contract; a production integration can replace that encode/decode round
 trip with a Kotlin-only typed bridge without changing the shared UI.
 
 `apps/mobile/android` is a separate APK (`com.dbpprt.dieter.compose.spike`),
-compiling the existing Android credential-store source. The iOS app has its own
+compiling the existing credential, control-channel, clipboard, GPU screen and
+terminal sources through explicit source-copy tasks. Its AndroidViewModel retains
+the shared session, forms and drafts across Activity recreation; system bars
+follow the selected appearance and palette. The iOS app has its own
 bundle ID and Keychain service. Its small `DieterComposeHost` SwiftPM graph
 compiles the **existing** Keychain, platform service, gRPC, resolver and daemon
-certificate-pinning sources. It avoids loading either shipping mobile UI and
-omits WebRTC until screen/terminal integration is migrated.
+certificate-pinning sources. It reuses WebRTC, Metal video/input views, SwiftTerm and system pickers while
+keeping the shipping mobile screens in their original apps.
 
 Compose dependencies are opt-in with `-Pdieter.composeSpike=true`.
 The experiment pins Compose Multiplatform 1.12.1 and the repository's Kotlin
@@ -97,39 +107,29 @@ in that gateway's native redirect configuration. The production gateway's
 existing allowlist is deliberately not changed by the experiment. Debug fixture
 session injection is confined to these separate spike apps.
 
-## Migration decision and remaining scope
+## Implementation and qualification scope
 
-Use this approach to port Android's existing Compose surfaces into common code
-one feature at a time, rather than maintain two implementations of each mobile
-screen. Keep the existing KMP core authoritative throughout. Native capabilities
-should be injected into shared screens through small platform interfaces.
+| Surface                                                                      | Shared implementation                           | Native boundary                                       |
+| ---------------------------------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------- |
+| Inbox, projects, folders, chats, boards, card actions                        | `WorkspaceScreens`, `BoardScreens`              | Navigation chrome                                     |
+| Task creation, agent/model/effort/options, attachments                       | `CreationScreen`                                | Photo/document pickers                                |
+| Transcript, Markdown/tables/code, tools, plans, subagents, queues and drafts | `ConversationScreen`, `RichText`                | Attachment previews                                   |
+| Files/editing/history, Git diffs/operations/merge                            | `ToolScreens`, `ReviewScreen`, `WorkspaceTools` | Binary previews                                       |
+| Schedules/editor/history, projects/checkouts/boards/labels/archive           | `ManagementScreens`, `AdministrationScreens`    | Existing core administration                          |
+| Machine telemetry/actions, quotas, gateways, appearance                      | `ToolScreens`, `MobileTheme`                    | Existing core operations                              |
+| Persistent terminals                                                         | Shared controls and bounded core output         | Termux on Android, SwiftTerm on iOS                   |
+| Screen sharing                                                               | Shared controls and core session state          | Existing GPU/Metal renderers, WebRTC and native input |
 
-| Surface/capability                                        | Spike                    | Production migration                                          |
-| --------------------------------------------------------- | ------------------------ | ------------------------------------------------------------- |
-| Board, task form, transcript, machine list                | Shared Compose           | Bring across the richer Android controls and tests            |
-| Task state, delivery, sync, routing, credential policy    | Existing core            | Reuse unchanged                                               |
-| iOS navigation glass                                      | Native SwiftUI           | Add native navigation transitions and scroll-edge integration |
-| Credentials and gRPC                                      | Reused native adapters   | Reuse unchanged                                               |
-| Remote screen / WebRTC / video decoders                   | Not integrated           | Embed existing Android and UIKit media views                  |
-| Terminal renderer                                         | Not integrated           | Embed Termux and SwiftTerm via platform view factories        |
-| Files, diffs, schedules, agent pickers                    | Not integrated           | Port Android layouts over existing core surfaces              |
-| Photos, files, clipboard and share extension              | Not integrated           | Keep platform pickers/extensions; hand parts to the core      |
-| Background sync, notifications, widgets, updates          | Not integrated           | Preserve platform services                                    |
-| Rich Markdown, selection and attachments                  | Basic text/tool timeline | Port a common renderer and retain native viewers              |
-| Dark appearance, navigation gestures, accessibility audit | Not qualified            | Finish before replacing the shipping UI                       |
+This opt-in spike preserves both shipping apps. A compiled action is not a
+production qualification: [verification](VERIFICATION.md) records which native
+journeys actually passed. Full screen/media hardware checks, complete shipping
+catalogs, VoiceOver/TalkBack, physical devices, interactive OAuth and release
+performance remain cutover requirements. Background notifications, widgets,
+share extensions and app updating remain in the shipping apps; the spike does
+not replace those platform services. Dragging supports lane moves; production
+reordering/autoscroll polish remains outside the qualified journey.
 
-This is a runnable architecture and end-to-end UX spike, not a feature-complete
-replacement or a production release gate. Production cutover should wait for the
-existing Android/iOS catalogs, VoiceOver/TalkBack, larger text, dark appearance,
-keyboard and rotation checks, direct TLS/relay recovery, signing and physical
-phone checks to pass against the shared UI. No compatibility branches or new
-version numbering are introduced.
-
-See [verification](VERIFICATION.md) and [screenshots](screenshots/README.md) for
-this worktree's actual results and image provenance.
-
-The original apps remain in `apps/android` and `apps/ios`; the Compose hosts are
-in `apps/mobile/android` and `apps/mobile/ios`. Both sets have CI gates.
-See [CI and preview delivery](PIPELINES.md) for affected checks, downloadable
-Android/iOS simulator previews and local commands. Compose has no TestFlight
-publishing yet.
+The original hosts remain in `apps/android` and `apps/ios` (iOS Swift sources in
+`apps/mac/Sources/DieterIOS`). Shared Compose lives in `apps/core/mobile`; the new
+hosts are `apps/mobile/android` and `apps/mobile/ios`. Both sets have CI gates.
+See [CI and preview delivery](PIPELINES.md). Compose has no TestFlight publishing.

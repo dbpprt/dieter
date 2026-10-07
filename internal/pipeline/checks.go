@@ -226,13 +226,22 @@ func planChecks(paths []string, packages []string, base string) CheckPlan {
 	composePipeline := any(func(p string) bool {
 		return slices.Contains([]string{"fastlane/lib/dieter/compose_spike.rb", "fastlane/lib/dieter/compose_ci.rb"}, p)
 	})
-	composeShared := any(func(p string) bool { return strings.HasPrefix(p, "apps/core/mobile/") })
+	composeShared := any(func(p string) bool {
+		return strings.HasPrefix(p, "apps/core/mobile/") || slices.Contains([]string{
+			"apps/android/app/src/main/java/com/dbpprt/dieter/settings/DieterPalette.kt",
+			"apps/android/app/src/main/java/com/dbpprt/dieter/ui/BoardCardDrag.kt",
+		}, p)
+	})
 	composeFixture := any(func(p string) bool {
 		return prefixAny(p, "internal/harness/runtime/") || slices.Contains([]string{"config/harnesses.yaml", "fastlane/lib/dieter/fixtures/gateway.rb"}, p)
 	})
 	composeCore := kmp || composeShared || composePipeline || composeFixture
 	composeAndroid := composeCore || brand || any(func(p string) bool {
-		return prefixAny(p, "apps/mobile/android/", "apps/android/app/src/main/java/com/dbpprt/dieter/data/") || p == "fastlane/lib/dieter/platforms/emulator.rb"
+		return prefixAny(p, "apps/mobile/android/", "apps/android/app/src/main/java/com/dbpprt/dieter/data/", "apps/android/app/src/main/java/com/dbpprt/dieter/screens/", "apps/android/app/src/main/java/com/dbpprt/dieter/sharedcore/", "apps/android/app/src/main/java/org/webrtc/", "native/android-webrtc/") || slices.Contains([]string{
+			"apps/android/app/src/main/java/com/dbpprt/dieter/ui/RemoteTerminalView.kt",
+			"apps/android/app/src/main/java/com/dbpprt/dieter/ui/ComposerAttachments.kt",
+			"fastlane/lib/dieter/platforms/emulator.rb",
+		}, p)
 	})
 	composeIOS := composeCore || shared || bridge || brand || any(func(p string) bool {
 		return prefixAny(p, "apps/mobile/ios/", "apps/mac/Sources/DieterComposeHost/") || p == "fastlane/lib/dieter/platforms/ios.rb"

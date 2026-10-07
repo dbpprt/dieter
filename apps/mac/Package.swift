@@ -16,23 +16,51 @@ let package =
             .package(url: "https://github.com/apple/swift-certificates.git", from: "1.14.0"),
             .package(url: "https://github.com/grpc/grpc-swift-2.git", from: "2.3.0"),
             .package(path: "Vendor/grpc-swift-nio-transport"),
+            .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.38.0"),
+            .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.19.0"),
         ],
         targets: [
             .binaryTarget(name: "DieterShared", path: "Frameworks/DieterComposeSpike.xcframework"),
+            .binaryTarget(
+                name: "WebRTC",
+                url: "https://github.com/stasel/WebRTC/releases/download/151.0.1/WebRTC-M151.xcframework.zip",
+                checksum: "6f3f5693383ce65763190c46ca9f2c4325c34b83681acb9db30f01488e15f1e0"),
+            .target(
+                name: "DieterAPI", dependencies: [.product(name: "SwiftProtobuf", package: "swift-protobuf")],
+                path: "Sources/DieterAPI/Generated",
+                exclude: ["gateway.grpc.swift", "dieter.grpc.swift", ".inputs.sha256"],
+                sources: ["dieter.pb.swift", "gateway.pb.swift", "client_client.pb.swift"]),
             .target(
                 name: "DieterTransport",
                 dependencies: [
+                    "WebRTC", "DieterAPI",
                     .product(name: "X509", package: "swift-certificates"),
                     .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
-                ], sources: ["DaemonCertificatePinning.swift", "DieterTransportTarget.swift"]),
+                ],
+                sources: [
+                    "DaemonCertificatePinning.swift", "DieterTransportTarget.swift", "ControlRTCBridge.swift",
+                    "RemoteDesktopKeyMap.swift", "ScreenClipboardContent.swift",
+                ]),
             .target(
                 name: "SharedCore",
                 dependencies: [
-                    "DieterShared", "DieterTransport",
+                    "DieterShared", "DieterTransport", "DieterAPI", "WebRTC",
                     .product(name: "GRPCCore", package: "grpc-swift-2"),
                     .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
-                ], sources: ["CoreRpcBridge.swift", "CorePlatformServices.swift", "CoreKeychainSecureStore.swift"]),
-            .target(name: "DieterComposeHost", dependencies: ["SharedCore", "DieterShared"]),
+                ],
+                sources: [
+                    "CoreRpcBridge.swift", "CorePlatformServices.swift", "CoreKeychainSecureStore.swift",
+                    "CoreControlChannels.swift", "Screens/CoreScreenMedia.swift", "Screens/IOSScreenVideoView.swift",
+                    "Screens/IOSScreenInputView.swift", "Screens/ScreenCursorState.swift", "DieterTaskSleep.swift",
+                    "Screens/CoreUIPasteboardClipboard.swift", "Screens/RemoteDesktopDecoderFactory.swift",
+                    "Screens/RemoteDesktopHEVCDecoder.swift", "Screens/RemoteDesktopReferenceDependencies.swift",
+                ]),
+            .target(
+                name: "DieterComposeHost",
+                dependencies: [
+                    "SharedCore", "DieterShared", "DieterAPI", "WebRTC",
+                    .product(name: "SwiftTerm", package: "SwiftTerm"),
+                ]),
         ]
     )
     : ProcessInfo.processInfo.environment["DIETER_SWIFT_TEST_SCOPE"] == "ios-policy"

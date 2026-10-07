@@ -21,35 +21,29 @@ import androidx.compose.material.icons.materialIcon
 import androidx.compose.material.icons.materialPath
 import androidx.compose.ui.graphics.vector.ImageVector
 
-public val Icons.Outlined.StopCircle: ImageVector
+public val Icons.Outlined.RadioButtonUnchecked: ImageVector
     get() {
-        if (_stopCircle != null) {
-            return _stopCircle!!
+        if (_radioButtonUnchecked != null) {
+            return _radioButtonUnchecked!!
         }
-        _stopCircle =
-            materialIcon(name = "Outlined.StopCircle") {
+        _radioButtonUnchecked =
+            materialIcon(name = "Outlined.RadioButtonUnchecked") {
                 materialPath {
                     moveTo(12.0f, 2.0f)
                     curveTo(6.48f, 2.0f, 2.0f, 6.48f, 2.0f, 12.0f)
-                    curveToRelative(0.0f, 5.52f, 4.48f, 10.0f, 10.0f, 10.0f)
+                    reflectiveCurveToRelative(4.48f, 10.0f, 10.0f, 10.0f)
                     reflectiveCurveToRelative(10.0f, -4.48f, 10.0f, -10.0f)
-                    curveTo(22.0f, 6.48f, 17.52f, 2.0f, 12.0f, 2.0f)
+                    reflectiveCurveTo(17.52f, 2.0f, 12.0f, 2.0f)
                     close()
                     moveTo(12.0f, 20.0f)
                     curveToRelative(-4.42f, 0.0f, -8.0f, -3.58f, -8.0f, -8.0f)
                     reflectiveCurveToRelative(3.58f, -8.0f, 8.0f, -8.0f)
                     reflectiveCurveToRelative(8.0f, 3.58f, 8.0f, 8.0f)
-                    reflectiveCurveTo(16.42f, 20.0f, 12.0f, 20.0f)
-                    close()
-                    moveTo(16.0f, 16.0f)
-                    horizontalLineTo(8.0f)
-                    verticalLineTo(8.0f)
-                    horizontalLineToRelative(8.0f)
-                    verticalLineTo(16.0f)
+                    reflectiveCurveToRelative(-3.58f, 8.0f, -8.0f, 8.0f)
                     close()
                 }
             }
-        return _stopCircle!!
+        return _radioButtonUnchecked!!
     }
 
-private var _stopCircle: ImageVector? = null
+private var _radioButtonUnchecked: ImageVector? = null

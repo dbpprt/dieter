@@ -4,85 +4,61 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import com.dbpprt.dieter.client.v1.*
-import com.dbpprt.dieter.core.*
-import com.dbpprt.dieter.core.client.ClientApi
-import com.dbpprt.dieter.core.platform.*
-import com.dbpprt.dieter.data.DieterCredentialStore
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.view.WindowCompat
+import androidx.lifecycle.ViewModelProvider
 import com.dbpprt.dieter.mobile.*
-import kotlinx.coroutines.*
-import okio.FileSystem
-import okio.Path.Companion.toOkioPath
-import org.bouncycastle.jce.provider.BouncyCastleProvider
-import org.bouncycastle.jsse.provider.BouncyCastleJsseProvider
 
 class SpikeActivity : ComponentActivity() {
-    private lateinit var runtime: CoreRuntime
-    private lateinit var store: MobileStore
+    private lateinit var session: SpikeSession
+    private val store
+        get() = session.store
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val credentials = DieterCredentialStore(applicationContext)
-        val preferences = getSharedPreferences("spike", MODE_PRIVATE)
-        val crypto = BouncyCastleProvider()
-        runtime =
-            CoreRuntime(
-                Platform(
-                    transport =
-                        OkHttpRpcTransport(
-                            providers = DirectTlsProviders(crypto, BouncyCastleJsseProvider(crypto))
-                        ),
-                    secureStore =
-                        object : SecureStore {
-                            override fun read(key: String) = credentials.get(key)
-
-                            override fun write(key: String, value: String) =
-                                credentials.set(key, value)
-
-                            override fun delete(key: String) = credentials.set(key, null)
-                        },
-                    settings =
-                        object : DeviceSettings {
-                            override fun string(key: String) = preferences.getString(key, null)
-
-                            override fun putString(key: String, value: String?) {
-                                preferences.edit().putString(key, value).apply()
-                            }
-                        },
-                    http = OkHttpAuthHttp(),
-                    fileSystem = FileSystem.SYSTEM,
-                    stateDirectory = noBackupFilesDir.resolve("compose-core").toOkioPath(),
-                ),
-                RuntimeConfig(
-                    BuildConfig.VERSION_NAME,
-                    "dieter-compose://oauth/callback",
-                    false,
-                    "compose-android",
-                ),
-            )
-        store = MobileStore(RuntimeMobileCore(ClientApi(runtime)))
-        runtime.start()
-        // Isolated fixture injection exists only in this separately identified Debug spike.
+        session = ViewModelProvider(this)[SpikeSession::class.java]
         if (BuildConfig.DEBUG) {
             val url = intent.getStringExtra("fixture_url")
             val token = intent.getStringExtra("fixture_token")
-            if (url != null && token != null)
-                store.action {
-                    store.core.dispatch(
-                        Command(adopt_session = AdoptSession(url, token, "Isolated Compose spike"))
-                    )
-                    store.agentSelection =
-                        com.dbpprt.dieter.api.v1.HarnessSelection("mock", "mock", "low")
-                }
+            if (url != null && token != null) session.adoptFixture(url, token)
         }
         intent.data?.let { store.completeSignIn(it.toString()) }
         setContent {
-            Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+            val palette by store.palette.collectAsState()
+            val appearance by store.appearance.collectAsState()
+            val dark =
+                when (appearance) {
+                    "dark" -> true
+                    "light" -> false
+                    else -> isSystemInDarkTheme()
+                }
+            val background =
+                Color(if (dark) palette.tokens.darkBackground else palette.tokens.light)
+            SideEffect {
+                val barColor = background.toArgb()
+                val style =
+                    if (dark) SystemBarStyle.dark(barColor)
+                    else SystemBarStyle.light(barColor, barColor)
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                // Activity recreation can leave the decor's light window background
+                // beneath transparent system bars. Paint it with the active palette.
+                window.decorView.setBackgroundColor(barColor)
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
+                }
+            }
+            Box(Modifier.fillMaxSize().background(background).safeDrawingPadding()) {
                 MobileApp(
                     store,
                     openUrl = { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it))) },
@@ -98,17 +74,11 @@ class SpikeActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (::runtime.isInitialized) runtime.scope.launch { runtime.setActive(true) }
+        if (::session.isInitialized) store.setForeground(true)
     }
 
     override fun onStop() {
-        if (::runtime.isInitialized) runtime.scope.launch { runtime.setActive(false) }
+        if (::session.isInitialized) store.setForeground(false)
         super.onStop()
-    }
-
-    override fun onDestroy() {
-        store.close()
-        CoroutineScope(Dispatchers.Default).launch { runtime.shutdown() }
-        super.onDestroy()
     }
 }

@@ -1,0 +1,96 @@
+{
+  "captured": "2026-10-07",
+  "app": "com.dbpprt.dieter.e2e",
+  "source_commit": "f5fc6c7382a718fbeeaeb556fc643371f1b9c249",
+  "target": "Dieter_Compose_API_35 / emulator-5560",
+  "images": {
+    "inbox-dark": "tmp/mobile-design-audit-retry/activity.activity-screen-test/captures/activity-evidence/activity-dark.png",
+    "inbox-large-text": "tmp/mobile-design-audit-retry/activity.activity-screen-test/captures/activity-evidence/activity-light-large-text.png",
+    "board-dark": "tmp/mobile-design-audit-retry/component.board-machine-design-test/captures/board-design/board-dark.png",
+    "board-light": "tmp/mobile-design-audit-retry/component.board-machine-design-test/captures/board-design/board-light.png",
+    "projects": "tmp/mobile-design-tools-audit/workspace.project-overview-visual-test/captures/projects-redesign.png",
+    "creation": "tmp/mobile-design-tools-audit/conversation.conversation-creation-preferences-end-to-end-test/captures/creation-preferences-card-selected.png",
+    "agent-options": "tmp/mobile-design-tools-audit/conversation.conversation-creation-preferences-end-to-end-test/captures/quick-task-after-options.png",
+    "subagent": "tmp/mobile-design-tools-audit/conversation.subagent-status-card-end-to-end-test/captures/subagent-card-expanded.png",
+    "schedule-editor": "tmp/mobile-design-tools-audit/schedules.schedule-editor-end-to-end-test/captures/schedule-editor-e2e.png",
+    "workspace-diff": "tmp/mobile-design-tools-audit/workspace.workspace-changes-end-to-end-test/captures/workspace-diff-e2e.png",
+    "project-changes": "tmp/mobile-design-tools-audit/workspace.workspace-changes-end-to-end-test/captures/project-changes-staged-e2e.png",
+    "commit-sheet": "tmp/mobile-design-tools-audit/workspace.workspace-changes-end-to-end-test/captures/workspace-commit-sheet-e2e.png",
+    "merge-sheet": "tmp/mobile-design-tools-audit/workspace.workspace-changes-end-to-end-test/captures/workspace-merge-sheet-e2e.png",
+    "tablet-board": "tmp/mobile-design-audit-retry/component.tablet-workspace-test/captures/tablet-board.png",
+    "tablet-detail": "tmp/mobile-design-audit-retry/component.tablet-workspace-test/captures/tablet-board-detail.png",
+    "tablet-inbox": "tmp/mobile-design-audit-retry/component.tablet-workspace-test/captures/tablet-inbox.png",
+    "checkouts": "tmp/mobile-design-audit-retry/component.board-machine-design-test/captures/board-design/project-checkouts-dark.png"
+  },
+  "capture_method": "Native instrumented cases: focused shipping Compose component/root captures and isolated app journeys; originals copied unchanged",
+  "image_metadata": {
+    "inbox-dark": {
+      "sha256": "b8061fef1d1d5074dfe92ba500cb51580cc44867908d9eaf814cf3701f4005ce",
+      "pixels": [720, 1280]
+    },
+    "inbox-large-text": {
+      "sha256": "2dc551a75f2760867408e503e3100e0618cbc447223adc663d54b2dab130991b",
+      "pixels": [720, 1280]
+    },
+    "board-dark": {
+      "sha256": "8ba910423503c9c1abf77de1ee3b1050b3533cf163d9d8713bfa6af2e5b968c9",
+      "pixels": [720, 1280]
+    },
+    "board-light": {
+      "sha256": "1a22aec43d93e007b47961c8d2ec4e4d4c002431ba82ec0e34b9faae9a287a5b",
+      "pixels": [720, 1280]
+    },
+    "projects": {
+      "sha256": "a123013c7548905c47df195abc8073b6501898cef79307b98e74742b9f310a48",
+      "pixels": [720, 1280]
+    },
+    "creation": {
+      "sha256": "196ae58ccf746352a840227e7dacdeabad515d560779a88af97d227ef45ddf80",
+      "pixels": [720, 1280]
+    },
+    "agent-options": {
+      "sha256": "ef31912671851653a4b4203c281e7aca2a54e6b64f7714e738a5381639da4a87",
+      "pixels": [720, 1280]
+    },
+    "subagent": {
+      "sha256": "af1c859c3d17a5ec2f641bfef9e22c0be1f4a53cd1f3d21082e553dcf49bfbf3",
+      "pixels": [720, 1280]
+    },
+    "schedule-editor": {
+      "sha256": "5f09c64781ad5b56e68af8b70d41259f40445fa06d2c72c63f4b1556b2974d45",
+      "pixels": [720, 1280]
+    },
+    "workspace-diff": {
+      "sha256": "7523faa753070d0a9b3c219bbe016cc2631bd16b93140b09cd28b26cdc8934db",
+      "pixels": [720, 1280]
+    },
+    "project-changes": {
+      "sha256": "eb29837e3860a5bb28856bef2bb6f06e4cf91cd0374f7d092e94d5e146a287a3",
+      "pixels": [720, 1280]
+    },
+    "commit-sheet": {
+      "sha256": "148da320ce603209d7f8589dc1d9868f42b0206138884ab7d1240656ee5c59de",
+      "pixels": [720, 1280]
+    },
+    "merge-sheet": {
+      "sha256": "00250e6aed7557ec68a2d2d3838b4445d892dd9a313e77d16a7a268e73f90cc2",
+      "pixels": [720, 1280]
+    },
+    "tablet-board": {
+      "sha256": "de59b97c7597466ae08427edaf8422c81ac79f99dcd66c4254269165e6003639",
+      "pixels": [720, 450]
+    },
+    "tablet-detail": {
+      "sha256": "f299dba21dc5525fee2f25eceb1df7b959b39e46dc957646f4cbf4fca6857a7c",
+      "pixels": [720, 450]
+    },
+    "tablet-inbox": {
+      "sha256": "03101b4fd03c89baf173f0ab6961490e42601c6c02a8b1d42843d4998c8afc1f",
+      "pixels": [720, 450]
+    },
+    "checkouts": {
+      "sha256": "aa7c92de01864a63c8621081b8649eb1de4709b11753efa87639b55046e4712e",
+      "pixels": [720, 1280]
+    }
+  }
+}

@@ -72,6 +72,21 @@ class MobileJourneyTest : EndToEnd() {
                     message.parts.any { part -> part.text.contains("Continue in the same task") }
                 }
             }
+            first.navigate(MobileTab.FILES)
+            first.files.await { it.entries.any { entry -> entry.name == "README.md" } }
+            first.core.dispatch(
+                Command(
+                    files =
+                        FilesCommand(
+                            scope = MobileStore.FILES_SCOPE,
+                            open_ = FilesPath("README.md"),
+                        )
+                )
+            )
+            first.files.await { it.document?.content?.contains("# Isolated E2E") == true }
+            first.navigate(MobileTab.SCHEDULES)
+            first.schedules.await { it.loaded }
+            assertTrue(first.schedules.value.error.isEmpty())
         } finally {
             first.close()
             second.close()
@@ -141,5 +156,159 @@ class MobileJourneyTest : EndToEnd() {
         store.close()
         callbacks.getValue("second")(Update(conversation = ConversationSlice(card_id = "late")))
         assertEquals("second", store.conversation.value.card_id)
+    }
+
+    @Test
+    fun terminalDeltasSurviveConflatedUiSnapshots() = runBlocking {
+        val observers = mutableMapOf<Slice, (Update) -> Unit>()
+        val fake =
+            object : MobileCore {
+                override suspend fun dispatch(command: Command) = Result(done = Done())
+
+                override fun observe(
+                    slice: Slice,
+                    scope: String,
+                    receive: (Update) -> Unit,
+                ): com.dbpprt.dieter.core.client.ClientSubscription {
+                    observers[slice] = receive
+                    return com.dbpprt.dieter.core.client.ClientSubscription {}
+                }
+            }
+        val store = MobileStore(fake, Dispatchers.Unconfined)
+        try {
+            val entry =
+                OverviewTerminal(
+                    id = "machine|shell",
+                    terminal = com.dbpprt.dieter.api.v1.Terminal(id = "shell"),
+                )
+            val publish = observers.getValue(Slice.SLICE_TERMINAL_OVERVIEW)
+            for ((index, text) in listOf("first", " second", " third").withIndex()) {
+                publish(
+                    Update(
+                        terminal_overview =
+                            TerminalOverviewSlice(
+                                entries = listOf(entry),
+                                selected_id = entry.id,
+                                terminals =
+                                    TerminalsSlice(
+                                        output =
+                                            listOf(
+                                                TerminalOutput(
+                                                    "shell",
+                                                    index == 0,
+                                                    okio.ByteString.of(*text.encodeToByteArray()),
+                                                )
+                                            )
+                                    ),
+                            )
+                    )
+                )
+            }
+            assertEquals(
+                "first second third",
+                store.terminalScreens.value.getValue(entry.id).accessibilityText(),
+            )
+            publish(
+                Update(
+                    terminal_overview =
+                        TerminalOverviewSlice(
+                            entries = listOf(entry),
+                            selected_id = entry.id,
+                            terminals =
+                                TerminalsSlice(
+                                    output =
+                                        listOf(
+                                            TerminalOutput(
+                                                "shell",
+                                                true,
+                                                okio.ByteString.of(*"reset".encodeToByteArray()),
+                                            )
+                                        )
+                                ),
+                        )
+                )
+            )
+            assertEquals(
+                "reset",
+                store.terminalScreens.value.getValue(entry.id).accessibilityText(),
+            )
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
+    fun cancelledPreviewCannotReplaceNewerInput() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val fake =
+            object : MobileCore {
+                override suspend fun dispatch(command: Command): Result {
+                    val request = command.creation_preview ?: return Result(done = Done())
+                    if (request.intent?.prompt == "first") {
+                        started.complete(Unit)
+                        withContext(NonCancellable) { release.await() }
+                    }
+                    return Result(creation_preview = CreationPreview(intent = request.intent))
+                }
+
+                override fun observe(slice: Slice, scope: String, receive: (Update) -> Unit) =
+                    com.dbpprt.dieter.core.client.ClientSubscription {}
+            }
+        val store = MobileStore(fake, Dispatchers.Unconfined)
+        try {
+            store.preview(CreationIntent(prompt = "first"))
+            withTimeout(5000) { started.await() }
+            store.preview(CreationIntent(prompt = "second"))
+            withTimeout(5000) { store.creationPreview.await { it.intent?.prompt == "second" } }
+            release.complete(Unit)
+            yield()
+            assertEquals("second", store.creationIntent.value.prompt)
+            assertEquals("second", store.creationPreview.value.intent?.prompt)
+        } finally {
+            release.complete(Unit)
+            store.close()
+        }
+    }
+
+    @Test
+    fun backgroundFlushPersistsDraftBeforeDebounce() = runBlocking {
+        val sent = mutableListOf<Command>()
+        val callbacks = mutableMapOf<String, (Update) -> Unit>()
+        val fake =
+            object : MobileCore {
+                override suspend fun dispatch(command: Command): Result {
+                    sent += command
+                    return Result(done = Done())
+                }
+
+                override fun observe(
+                    slice: Slice,
+                    scope: String,
+                    receive: (Update) -> Unit,
+                ): com.dbpprt.dieter.core.client.ClientSubscription {
+                    callbacks[scope] = receive
+                    return com.dbpprt.dieter.core.client.ClientSubscription {}
+                }
+            }
+        val store = MobileStore(fake, Dispatchers.Unconfined)
+        try {
+            store.openCard("card")
+            callbacks.getValue("card")(
+                Update(conversation = ConversationSlice(card_id = "card", daemon_id = "owner"))
+            )
+            store.saveDraft("card", "Keep this draft")
+            store.flushDrafts()
+            assertEquals(
+                SetDraftText("owner", "card", "Keep this draft"),
+                sent.single { it.set_draft_text != null }.set_draft_text,
+            )
+            store.syncFileBuffer("file", "original")
+            store.editFileBuffer("file", "original", "my edits")
+            store.syncFileBuffer("file", "external change")
+            assertEquals(MobileFileBuffer("original", "my edits"), store.fileBuffers.value["file"])
+        } finally {
+            store.close()
+        }
     }
 }

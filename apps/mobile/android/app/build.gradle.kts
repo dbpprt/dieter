@@ -3,6 +3,24 @@ plugins {
     alias(coreLibs.plugins.compose.compiler)
 }
 
+val reuseNativeAdapters =
+    tasks.register<Sync>("reuseNativeAdapters") {
+        from("../../../android/app/src/main/java") {
+            include(
+                "com/dbpprt/dieter/data/**",
+                "com/dbpprt/dieter/screens/AndroidScreenMedia.kt",
+                "com/dbpprt/dieter/screens/ScreenCanvasView.kt",
+                "com/dbpprt/dieter/screens/ScreenCanvasHost.kt",
+                "com/dbpprt/dieter/screens/ScreenInputConnection.kt",
+                "com/dbpprt/dieter/screens/ScreenDecoderFactory.kt",
+                "com/dbpprt/dieter/screens/AndroidClipboard.kt",
+                "com/dbpprt/dieter/screens/ScreenClipboardProvider.kt",
+                "com/dbpprt/dieter/sharedcore/ControlRTCBridge.kt",
+            )
+        }
+        into(layout.buildDirectory.dir("generated/nativeAdapters"))
+    }
+
 android {
     namespace = "com.dbpprt.dieter.spike"
     compileSdk = 37
@@ -24,7 +42,11 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    sourceSets["main"].kotlin.srcDir("../../../android/app/src/main/java/com/dbpprt/dieter/data")
+    sourceSets["main"]
+        .kotlin
+        .srcDir(layout.buildDirectory.dir("generated/nativeAdapters").get().asFile)
+    sourceSets["main"].java.srcDir("../../../android/app/src/main/java/org/webrtc")
+    packaging.jniLibs.excludes += setOf("**/libtermux.so")
 }
 
 dependencies {
@@ -38,3 +60,7 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4:1.12.1")
 }
+
+apply(from = rootProject.file("../../../native/android-webrtc/sdk.gradle"))
+
+tasks.named("preBuild") { dependsOn(reuseNativeAdapters) }

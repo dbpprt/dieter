@@ -23,7 +23,7 @@ func TestAffectedCheckOwnership(t *testing.T) {
 		{"scripts/new_tool.py", []string{"core"}, false},
 		{"apps/android/app/src/test/java/Test.kt", []string{"android"}, false},
 		{"apps/android/app/src/main/java/Conversation.kt", []string{"android"}, true},
-		{"native/android-webrtc/build_sdk.py", []string{"android"}, true},
+		{"native/android-webrtc/build_sdk.py", []string{"android", "compose_android"}, true},
 		{"apps/mac/Tests/DieterMacTests/Test.swift", []string{"macos"}, false},
 		{"apps/mac/Sources/DieterMac/UI/BoardView.swift", []string{"macos"}, true},
 		{"apps/ios/DieterIOSApp/DieterIOSApp.swift", []string{"ios"}, true},
@@ -61,6 +61,20 @@ func TestAffectedCheckOwnership(t *testing.T) {
 }
 
 func TestComposeChecksTrackReusedDependenciesWithoutReplacingShippingChecks(t *testing.T) {
+	for _, path := range []string{"apps/android/app/src/main/java/com/dbpprt/dieter/settings/DieterPalette.kt", "apps/android/app/src/main/java/com/dbpprt/dieter/ui/BoardCardDrag.kt"} {
+		plan := planChecks([]string{path}, nil, "base")
+		for _, component := range []string{"android", "compose_core", "compose_android", "compose_ios"} {
+			if !plan.CI[component] {
+				t.Fatalf("%s omitted %s", path, component)
+			}
+		}
+	}
+	for _, path := range []string{"native/android-webrtc/sdk.gradle", "apps/android/app/src/main/java/com/dbpprt/dieter/screens/ScreenCanvasHost.kt", "apps/android/app/src/main/java/com/dbpprt/dieter/ui/RemoteTerminalView.kt", "apps/android/app/src/main/java/com/dbpprt/dieter/ui/ComposerAttachments.kt"} {
+		plan := planChecks([]string{path}, nil, "base")
+		if !plan.CI["android"] || !plan.CI["compose_android"] {
+			t.Fatalf("%s missed Android host: %v", path, plan.CI)
+		}
+	}
 	for _, path := range []string{"apps/core/shared/src/commonMain/kotlin/CoreRuntime.kt", "api/proto/dieter/v1/dieter.proto", "tools/fixtures/gateway/compose_fixture.go"} {
 		plan := planChecks([]string{path}, nil, "base")
 		for _, component := range []string{"kmp", "android", "ios", "macos", "compose_core", "compose_android", "compose_ios"} {
