@@ -100,7 +100,10 @@ module Dieter
         "core-apple" => "kmp",
         "mac" => "macos",
         "ios" => "ios",
-        "android" => "android"
+        "android" => "android",
+        "compose-core" => "compose_core",
+        "compose-android" => "compose_android",
+        "compose-ios" => "compose_ios"
       }
       unless mapping.values.uniq.all? { |name| %w[true false].include?(selections[name]) }
         raise PipelineError, "Check selection outputs are missing or invalid"

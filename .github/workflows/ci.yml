@@ -5,7 +5,7 @@ on:
   pull_request:
   workflow_dispatch:
   schedule:
-    - cron: '17 4 * * 1'
+    - cron: "17 4 * * 1"
 permissions:
   contents: read
 concurrency:
@@ -30,3 +30,11 @@ jobs:
     with:
       channel: dev
     secrets: inherit
+  compose-previews:
+    name: Deliver Compose previews
+    needs: qualification
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (needs.qualification.outputs.compose_android_preview != '' || needs.qualification.outputs.compose_ios_preview != '')
+    uses: ./.github/workflows/compose-mobile-deliver.yml
+    with:
+      android_artifact: ${{ needs.qualification.outputs.compose_android_preview }}
+      ios_artifact: ${{ needs.qualification.outputs.compose_ios_preview }}

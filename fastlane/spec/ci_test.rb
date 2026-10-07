@@ -116,12 +116,23 @@ class CIOptionsTest < Minitest::Test
   end
 
   def test_required_gate_refuses_skipped_selected_checks_and_accepts_unselected_components
-    selections = %w[core macos ios android kmp].to_h { |name| [name, "false"] }
+    selections =
+      %w[core macos ios android kmp compose_core compose_android compose_ios].to_h do |name|
+        [name, "false"]
+      end
     selections["ios"] = "true"
     results = { "changes" => { "result" => "success", "outputs" => selections } }
-    %w[portable core core-apple mac ios android].each do |name|
-      results[name] = { "result" => "skipped" }
-    end
+    %w[
+      portable
+      core
+      core-apple
+      mac
+      ios
+      android
+      compose-core
+      compose-android
+      compose-ios
+    ].each { |name| results[name] = { "result" => "skipped" } }
     assert_raises(Dieter::PipelineError) { Dieter::CI.qualify_jobs(results, full: false) }
     results["ios"]["result"] = "success"
     Dieter::CI.qualify_jobs(results, full: false)
@@ -131,6 +142,36 @@ class CIOptionsTest < Minitest::Test
     assert_raises(Dieter::PipelineError) { Dieter::CI.qualify_jobs(results, full: true) }
     results["changes"]["result"] = "failure"
     assert_raises(Dieter::PipelineError) { Dieter::CI.qualify_jobs(results, full: false) }
+  end
+
+  def test_selected_compose_gates_cannot_be_missing_skipped_cancelled_or_failed
+    selections =
+      %w[core macos ios android kmp compose_core compose_android compose_ios].to_h do |name|
+        [name, "true"]
+      end
+    results = { "changes" => { "result" => "success", "outputs" => selections } }
+    %w[
+      portable
+      core
+      core-apple
+      mac
+      ios
+      android
+      compose-core
+      compose-android
+      compose-ios
+    ].each { |name| results[name] = { "result" => "success" } }
+    Dieter::CI.qualify_jobs(results, full: true)
+    %w[compose-core compose-android compose-ios].each do |name|
+      %w[skipped failure cancelled].each do |status|
+        assert_raises(Dieter::PipelineError) do
+          Dieter::CI.qualify_jobs(results.merge(name => { "result" => status }), full: false)
+        end
+      end
+      assert_raises(Dieter::PipelineError) do
+        Dieter::CI.qualify_jobs(results.except(name), full: true)
+      end
+    end
   end
 
   def test_setup_accepts_values_from_the_pinned_fastlane_cli_parser

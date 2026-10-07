@@ -28,14 +28,19 @@ func TestAffectedCheckOwnership(t *testing.T) {
 		{"apps/mac/Sources/DieterMac/UI/BoardView.swift", []string{"macos"}, true},
 		{"apps/ios/DieterIOSApp/DieterIOSApp.swift", []string{"ios"}, true},
 		{"apps/mac/Sources/DieterIOS/UI/Root.swift", []string{"ios"}, true},
-		{"apps/mac/Sources/DieterTransport/ControlRTCBridge.swift", []string{"macos", "ios"}, true},
+		{"apps/mac/Sources/DieterTransport/ControlRTCBridge.swift", []string{"macos", "ios", "compose_ios"}, true},
 		{"apps/mac/MarkdownPreview/src/chart.js", []string{"core", "macos"}, true},
-		{"fastlane/lib/dieter/platforms/ios.rb", []string{"core", "ios"}, true},
+		{"fastlane/lib/dieter/platforms/ios.rb", []string{"core", "ios", "compose_ios"}, true},
 		{"fastlane/lib/dieter/platforms/android.rb", []string{"core", "android"}, true},
 		{"fastlane/lib/dieter/distribution/apple.rb", []string{"core"}, false},
 		{"tests/e2e/cases/android/machines.telemetry.yaml", []string{"core", "android"}, true},
 		{"tests/e2e/cases/ios/ios.credentials.yaml", []string{"core", "ios"}, true},
 		{"internal/pipeline/result_test.go", []string{"core"}, false},
+		{"apps/mobile/README.md", nil, false},
+		{"apps/mobile/android/app/src/main/kotlin/SpikeActivity.kt", []string{"compose_android"}, true},
+		{"apps/mobile/ios/App/DieterComposeSpikeApp.swift", []string{"compose_ios"}, true},
+		{"apps/mac/Sources/DieterComposeHost/ComposeHost.swift", []string{"compose_ios"}, true},
+		{"apps/core/mobile/src/commonMain/kotlin/MobileApp.kt", []string{"compose_core", "compose_android", "compose_ios"}, true},
 	} {
 		t.Run(test.path, func(t *testing.T) {
 			plan := planChecks([]string{test.path}, nil, "base")
@@ -52,6 +57,35 @@ func TestAffectedCheckOwnership(t *testing.T) {
 				t.Fatal("documentation selected compilers")
 			}
 		})
+	}
+}
+
+func TestComposeChecksTrackReusedDependenciesWithoutReplacingShippingChecks(t *testing.T) {
+	for _, path := range []string{"apps/core/shared/src/commonMain/kotlin/CoreRuntime.kt", "api/proto/dieter/v1/dieter.proto", "tools/fixtures/gateway/compose_fixture.go"} {
+		plan := planChecks([]string{path}, nil, "base")
+		for _, component := range []string{"kmp", "android", "ios", "macos", "compose_core", "compose_android", "compose_ios"} {
+			if !plan.CI[component] {
+				t.Fatalf("%s omitted %s", path, component)
+			}
+		}
+	}
+	plan := planChecks([]string{"apps/android/app/src/main/java/com/dbpprt/dieter/data/AndroidCredentials.kt"}, nil, "base")
+	if !plan.CI["android"] || !plan.CI["compose_android"] || plan.CI["compose_ios"] {
+		t.Fatalf("shared Android credentials scope = %v", plan.CI)
+	}
+	plan = planChecks([]string{".github/workflows/compose-mobile-deliver.yml"}, nil, "base")
+	for _, component := range []string{"core", "compose_core", "compose_android", "compose_ios"} {
+		if !plan.CI[component] {
+			t.Fatalf("workflow omitted %s", component)
+		}
+	}
+	for _, path := range []string{"fastlane/lib/dieter/fixtures/gateway.rb", "internal/harness/runtime/bridge.js", ".github/actions/pipeline-setup/action.yml"} {
+		plan := planChecks([]string{path}, nil, "base")
+		for _, component := range []string{"compose_core", "compose_android", "compose_ios"} {
+			if !plan.CI[component] {
+				t.Fatalf("%s omitted %s", path, component)
+			}
+		}
 	}
 }
 func TestSharedCoreCheckParity(t *testing.T) {
