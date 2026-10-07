@@ -153,8 +153,12 @@ first release with isolated relay connections must set
 older daemons do not implement the current link contract. Native clients continue
 to use the same DieterService API and receive the route diagnostics as additional
 fields. New daemons require the gateway to acknowledge their exact connection
-class and process session before opening auxiliary connections. Activate the
-qualified gateway policy before updating daemon machines. A deployment must
-qualify the retained release bytes and follow the
-existing protected activation and rollback procedure. Updating source locally
+class and process session before opening auxiliary connections. Stage a compatible
+daemon for authenticated deployment readiness before gateway activation; its local
+API remains available while it waits for the new gateway acknowledgement. Admit
+other daemon updates before raising the gateway floor, or update them through
+their host-local CLI afterward. An outdated daemon cannot receive an update
+through a relay that rejects its release. A deployment must qualify the retained
+release bytes and follow the existing protected activation and rollback procedure.
+Updating source locally
 does not change running gateway or daemon services.
