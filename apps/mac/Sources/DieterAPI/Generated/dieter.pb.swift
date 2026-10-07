@@ -159,6 +159,10 @@ public nonisolated enum Dieter_V1_MachineOperationAction: SwiftProtobuf.Enum, Sw
   case updateDaemon // = 3
   case privacyOn // = 4
   case privacyOff // = 5
+
+  /// Register the optional privileged input helper; macOS administrator approval
+  /// and Input Monitoring must be completed on the target Mac.
+  case privacySetup // = 6
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -173,6 +177,7 @@ public nonisolated enum Dieter_V1_MachineOperationAction: SwiftProtobuf.Enum, Sw
     case 3: self = .updateDaemon
     case 4: self = .privacyOn
     case 5: self = .privacyOff
+    case 6: self = .privacySetup
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -185,6 +190,7 @@ public nonisolated enum Dieter_V1_MachineOperationAction: SwiftProtobuf.Enum, Sw
     case .updateDaemon: return 3
     case .privacyOn: return 4
     case .privacyOff: return 5
+    case .privacySetup: return 6
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -197,6 +203,7 @@ public nonisolated enum Dieter_V1_MachineOperationAction: SwiftProtobuf.Enum, Sw
     .updateDaemon,
     .privacyOn,
     .privacyOff,
+    .privacySetup,
   ]
 
 }
@@ -860,6 +867,10 @@ public nonisolated struct Dieter_V1_MachinePrivacy: Sendable {
   public var reason: String = String()
 
   public var displayCount: UInt32 = 0
+
+  public var inputDeviceCount: UInt32 = 0
+
+  public var helperSetupRequired: Bool = false
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -8360,7 +8371,7 @@ nonisolated extension Dieter_V1_GPUMemoryKind: SwiftProtobuf._ProtoNameProviding
 }
 
 nonisolated extension Dieter_V1_MachineOperationAction: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0MACHINE_OPERATION_ACTION_UNSPECIFIED\0\u{1}MACHINE_OPERATION_ACTION_RESTART\0\u{1}MACHINE_OPERATION_ACTION_SHUTDOWN\0\u{1}MACHINE_OPERATION_ACTION_UPDATE_DAEMON\0\u{1}MACHINE_OPERATION_ACTION_PRIVACY_ON\0\u{1}MACHINE_OPERATION_ACTION_PRIVACY_OFF\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0MACHINE_OPERATION_ACTION_UNSPECIFIED\0\u{1}MACHINE_OPERATION_ACTION_RESTART\0\u{1}MACHINE_OPERATION_ACTION_SHUTDOWN\0\u{1}MACHINE_OPERATION_ACTION_UPDATE_DAEMON\0\u{1}MACHINE_OPERATION_ACTION_PRIVACY_ON\0\u{1}MACHINE_OPERATION_ACTION_PRIVACY_OFF\0\u{1}MACHINE_OPERATION_ACTION_PRIVACY_SETUP\0")
 }
 
 nonisolated extension Dieter_V1_ExecutionStream: SwiftProtobuf._ProtoNameProviding {
@@ -9031,7 +9042,7 @@ nonisolated extension Dieter_V1_MachineProcessGPU: SwiftProtobuf.Message, SwiftP
 
 nonisolated extension Dieter_V1_MachinePrivacy: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".MachinePrivacy"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}supported\0\u{1}requested\0\u{1}state\0\u{1}reason\0\u{3}display_count\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}supported\0\u{1}requested\0\u{1}state\0\u{1}reason\0\u{3}display_count\0\u{3}input_device_count\0\u{3}helper_setup_required\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -9044,6 +9055,8 @@ nonisolated extension Dieter_V1_MachinePrivacy: SwiftProtobuf.Message, SwiftProt
       case 3: try { try decoder.decodeSingularEnumField(value: &self.state) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.reason) }()
       case 5: try { try decoder.decodeSingularUInt32Field(value: &self.displayCount) }()
+      case 6: try { try decoder.decodeSingularUInt32Field(value: &self.inputDeviceCount) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.helperSetupRequired) }()
       default: break
       }
     }
@@ -9065,6 +9078,12 @@ nonisolated extension Dieter_V1_MachinePrivacy: SwiftProtobuf.Message, SwiftProt
     if self.displayCount != 0 {
       try visitor.visitSingularUInt32Field(value: self.displayCount, fieldNumber: 5)
     }
+    if self.inputDeviceCount != 0 {
+      try visitor.visitSingularUInt32Field(value: self.inputDeviceCount, fieldNumber: 6)
+    }
+    if self.helperSetupRequired != false {
+      try visitor.visitSingularBoolField(value: self.helperSetupRequired, fieldNumber: 7)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -9074,6 +9093,8 @@ nonisolated extension Dieter_V1_MachinePrivacy: SwiftProtobuf.Message, SwiftProt
     if lhs.state != rhs.state {return false}
     if lhs.reason != rhs.reason {return false}
     if lhs.displayCount != rhs.displayCount {return false}
+    if lhs.inputDeviceCount != rhs.inputDeviceCount {return false}
+    if lhs.helperSetupRequired != rhs.helperSetupRequired {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

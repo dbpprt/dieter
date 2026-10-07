@@ -2,7 +2,9 @@ package serviceruntime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +41,156 @@ func fixturePair(t *testing.T, version string) string {
 		}
 	}
 	return dir
+}
+
+func TestDaemonBundleStagesAtomicallyAndRollsBack(t *testing.T) {
+	r := fixtureRuntime(t)
+	r.SourceExecutablePrefix = "DieterDaemon.app/Contents/MacOS"
+	r.Bundles = []string{"DieterDaemon.app"}
+	source := t.TempDir()
+	path := filepath.Join(source, r.SourceExecutablePrefix)
+	if err := os.MkdirAll(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range executables {
+		if err := os.WriteFile(filepath.Join(path, name), []byte("A:"+name), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	metadata := filepath.Join(source, "DieterDaemon.app/Contents/Info.plist")
+	if err := os.WriteFile(metadata, []byte("metadata-A"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Stage(t.Context(), source); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Stage(t.Context(), source); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(r.path("pending")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("identical bundle staged another activation")
+	}
+	resolved, err := r.SourceDirectory(filepath.Join(path, "dieter"))
+	if err != nil || resolved != source {
+		t.Fatalf("release root: %q %v", resolved, err)
+	}
+	if _, err := r.SourceDirectory(filepath.Join(source, "dieter")); err == nil {
+		t.Fatal("accepted executable outside daemon bundle")
+	}
+	if err := os.WriteFile(metadata, []byte("metadata-B"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Stage(t.Context(), source); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(r.path("bin/DieterDaemon.app/Contents/Info.plist"))
+	if err != nil || string(raw) != "metadata-A" {
+		t.Fatalf("running bundle overwritten: %q %v", raw, err)
+	}
+	if _, err := os.Stat(r.DaemonExecutable()); err != nil {
+		t.Fatal(err)
+	}
+	if inner, err := os.ReadFile(r.path("bin/DieterDaemon.app/Contents/MacOS/dieter")); err != nil || string(inner) != "A:dieter" {
+		t.Fatal("bundle is missing the canonical daemon executable")
+	}
+	service, reexec, err := r.Start(t.Context())
+	if err != nil || !reexec {
+		t.Fatalf("activation: %v %v", reexec, err)
+	}
+	service.Close()
+	service, reexec, err = r.Start(t.Context()) // Crash before readiness rolls the whole bundle back.
+	if err != nil || !reexec {
+		t.Fatalf("rollback: %v %v", reexec, err)
+	}
+	service.Close()
+	raw, err = os.ReadFile(r.path("bin/DieterDaemon.app/Contents/Info.plist"))
+	if err != nil || string(raw) != "metadata-A" {
+		t.Fatalf("bundle did not roll back: %q %v", raw, err)
+	}
+	if err := os.Symlink(filepath.Join(path, "dieter-capture"), filepath.Join(path, "link")); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Stage(t.Context(), source); err == nil {
+		t.Fatal("accepted a link in daemon bundle")
+	}
+}
+
+func TestBundledRuntimeAdoptsPreBundleActivation(t *testing.T) {
+	for _, acknowledge := range []bool{true, false} {
+		t.Run(fmt.Sprint("acknowledge-", acknowledge), func(t *testing.T) {
+			legacy := fixtureRuntime(t)
+			if err := legacy.Stage(t.Context(), fixturePair(t, "A")); err != nil {
+				t.Fatal(err)
+			}
+			current := legacy
+			current.SourceExecutablePrefix = "DieterDaemon.app/Contents/MacOS"
+			current.Bundles = []string{"DieterDaemon.app"}
+			source := t.TempDir()
+			pair := filepath.Join(source, current.SourceExecutablePrefix)
+			if err := os.MkdirAll(pair, 0755); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range executables {
+				if err := os.WriteFile(filepath.Join(pair, name), []byte("B:"+name), 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := current.Stage(t.Context(), source); err != nil {
+				t.Fatal(err)
+			}
+			assertPair(t, legacy, "A")
+			// The existing service activates the new release using its old pair-only journal.
+			service, reexec, err := legacy.Start(t.Context())
+			if err != nil || !reexec {
+				t.Fatalf("legacy activation: %v %v", reexec, err)
+			}
+			token := service.token
+			service.Close()
+			raw, err := os.ReadFile(current.path("activation.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var journal activation
+			if err := json.Unmarshal(raw, &journal); err != nil {
+				t.Fatal(err)
+			}
+			journal.Format = 0
+			if err := writeJSON(current.path("activation.json"), journal); err != nil {
+				t.Fatal(err)
+			}
+			if acknowledge {
+				t.Setenv(activationEnv, token)
+			} else {
+				t.Setenv(activationEnv, "")
+			}
+			service, reexec, err = current.Start(t.Context())
+			if err != nil || reexec == acknowledge {
+				t.Fatalf("bundled takeover: %v %v", reexec, err)
+			}
+			defer service.Close()
+			if acknowledge {
+				assertPair(t, current, "B")
+				if err := service.Ready(); err != nil {
+					t.Fatal(err)
+				}
+				if err := current.verify(t.Context(), current.path("bin")); err != nil {
+					t.Fatal(err)
+				}
+				// Copies at the stable service path must match the signed bundle exactly.
+				if err := os.WriteFile(filepath.Join(current.path("bin"), current.SourceExecutablePrefix, "dieter"), []byte("other"), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := current.verify(t.Context(), current.path("bin")); err == nil {
+					t.Fatal("accepted different daemon bytes in the bundle")
+				}
+			} else {
+				assertPair(t, current, "A")
+				if _, err := os.Stat(current.path("bin/DieterDaemon.app")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("failed upgrade did not restore unbundled installation")
+				}
+			}
+		})
+	}
 }
 
 func TestRuntimeHardensExistingRoot(t *testing.T) {

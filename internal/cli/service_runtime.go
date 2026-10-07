@@ -36,7 +36,12 @@ func stageServiceRuntime(args []string, output io.Writer) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	return (serviceruntime.Runtime{Root: *root}).Stage(ctx, filepath.Dir(executable))
+	runtime := serviceruntime.PlatformRuntime(*root)
+	source, err := runtime.SourceDirectory(executable)
+	if err != nil {
+		return err
+	}
+	return runtime.Stage(ctx, source)
 }
 
 // prepareHarnessRuntime is run from the signed candidate service binary after

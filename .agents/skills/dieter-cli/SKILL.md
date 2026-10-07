@@ -899,6 +899,7 @@ continue; callers resume eligible watches using their existing cursors.
 
 ```sh
 dieter [--machine ID|NAME] machine privacy status
+dieter [--machine ID|NAME] machine privacy setup --key UNIQUE_SETUP_ID
 dieter [--machine ID|NAME] machine privacy on --key UNIQUE_ID
 dieter [--machine ID|NAME] machine privacy off --key DIFFERENT_ID
 ```
@@ -910,9 +911,16 @@ explicit off or host reboot clears it. `status` emits requested/effective state,
 support, display count and failure reason. The owner change stream also carries
 privacy state so the native sidebar updates without telemetry polling.
 
-Requires macOS Accessibility permission and displays supporting verified transfer
-tables. This is session privacy, not an authentication lock or a guarantee against
-hardware/system shortcuts, secure-input bypasses, permission loss or helper crashes.
+Requires the complete macOS daemon package, Accessibility permission and displays
+supporting verified transfer tables. `setup` registers the daemon bundle’s built-in privileged input service. Complete administrator approval in Login Items & Extensions
+and grant Input Monitoring on the target Mac; setup never enables privacy itself.
+The daemon remains unprivileged. The helper exclusively opens matched keyboard,
+pointer, consumer-control and digitizer HID devices, including hot-plug additions.
+Status includes `inputDeviceCount` and `helperSetupRequired`. Failed device access
+or a restarted helper produces degraded protection. A best-effort Lock Screen
+shortcut is requested on lost protection; it is not verified authentication.
+This remains session privacy, not an authentication lock or a guarantee against
+power/reboot, every device/gesture pathway, permission loss or helper crashes.
 Never use it to unlock the macOS login screen or FileVault. For an uncertain
 operation, inspect `status` before retrying; `--key` can replay identical input
 only on the same daemon, within its bounded receipt retention. Local, verified

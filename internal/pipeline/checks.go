@@ -272,7 +272,7 @@ func planChecks(paths []string, packages []string, base string) CheckPlan {
 		add("daemon", "linux_capture_test", nil)
 	}
 	screens := schema || any(func(p string) bool {
-		return prefixAny(p, "internal/remotedesktop/", "native/macos-capture/", "tools/fixtures/screens/") || strings.Contains(p, "RemoteDesktop") || strings.Contains(p, "Features/Screens/") || p == "apps/mac/Sources/DieterTransport/ScreenClipboardContent.swift"
+		return prefixAny(p, "internal/remotedesktop/", "native/macos-capture/", "native/macos-daemon/", "tools/fixtures/screens/") || strings.Contains(p, "RemoteDesktop") || strings.Contains(p, "Features/Screens/") || p == "apps/mac/Sources/DieterTransport/ScreenClipboardContent.swift"
 	})
 	if screens {
 		add("mac", "screens_native_test", nil)

@@ -15,9 +15,51 @@ import (
 )
 
 type fakePrivacy struct {
-	value   *dieterv1.MachinePrivacy
-	calls   int
-	failure error
+	value      *dieterv1.MachinePrivacy
+	calls      int
+	failure    error
+	setupCalls int
+}
+
+func (f *fakePrivacy) Setup(ctx context.Context) (*dieterv1.MachinePrivacy, error) {
+	f.setupCalls++
+	if f.failure != nil {
+		return nil, f.failure
+	}
+	return f.Snapshot(ctx)
+}
+
+func TestPrivacySetupIsIdempotentAndNeverEnablesProtection(t *testing.T) {
+	s, driver := privacyFixture(t)
+	api := &grpcAPI{server: s}
+	request := &dieterv1.MachineOperationRequest{Action: dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_SETUP, IdempotencyKey: "setup"}
+	for range 2 {
+		if response, err := api.PerformMachineOperation(t.Context(), request); err != nil || !response.GetAccepted() {
+			t.Fatalf("setup=%v error=%v", response, err)
+		}
+	}
+	if driver.setupCalls != 1 || driver.calls != 0 {
+		t.Fatalf("setup=%d privacy=%d", driver.setupCalls, driver.calls)
+	}
+	stored, err := s.store.MachinePrivacyRequest()
+	if err != nil || stored.Enabled {
+		t.Fatalf("setup enabled privacy: %v %v", stored, err)
+	}
+	request.IdempotencyKey = "failed-setup"
+	driver.failure = errors.New("registration denied")
+	if _, err := api.PerformMachineOperation(t.Context(), request); status.Code(err) != codes.FailedPrecondition {
+		t.Fatal(err)
+	}
+	setupCalls := driver.setupCalls
+	driver.failure = nil
+	driver.value = &dieterv1.MachinePrivacy{Requested: true, State: dieterv1.MachinePrivacy_STATE_DEGRADED}
+	request.IdempotencyKey = "degraded-setup"
+	if _, err := api.PerformMachineOperation(t.Context(), request); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("setup changed a degraded privacy lease: %v", err)
+	}
+	if driver.setupCalls != setupCalls {
+		t.Fatalf("setup ran while privacy was requested: %d", driver.setupCalls)
+	}
 }
 
 func (f *fakePrivacy) Snapshot(context.Context) (*dieterv1.MachinePrivacy, error) {
@@ -100,6 +142,22 @@ func TestPrivacyRestoresOnlySameBootAndNeverInConstructor(t *testing.T) {
 	s.privacyReadAt = time.Time{}
 	if s.privacyState(t.Context()).Requested {
 		t.Fatal("reboot retained request")
+	}
+}
+func TestPrivacyRecoveryAdoptsDegradedOwnerWithoutReacquiring(t *testing.T) {
+	s, driver := privacyFixture(t)
+	if err := s.store.SetMachinePrivacyRequest(store.MachinePrivacyRequest{BootID: "boot-one", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	driver.value = &dieterv1.MachinePrivacy{Requested: true, State: dieterv1.MachinePrivacy_STATE_DEGRADED, Reason: "privileged helper restarted"}
+	s.restorePrivacy(t.Context())
+	value := s.privacyState(t.Context())
+	if driver.calls != 0 || value.GetState() != dieterv1.MachinePrivacy_STATE_DEGRADED || value.GetReason() != driver.value.GetReason() {
+		t.Fatalf("recovery reacquired protection: calls=%d state=%v", driver.calls, value)
+	}
+	_, err := (&grpcAPI{server: s}).PerformMachineOperation(t.Context(), &dieterv1.MachineOperationRequest{Action: dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_ON})
+	if err != nil || driver.calls != 1 || driver.value.GetState() != dieterv1.MachinePrivacy_STATE_ON {
+		t.Fatalf("explicit recovery: calls=%d state=%v error=%v", driver.calls, driver.value, err)
 	}
 }
 func TestPrivacyUncertainMutationRetainsIntent(t *testing.T) {

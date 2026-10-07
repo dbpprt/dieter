@@ -1,11 +1,15 @@
 import CoreGraphics
+import Carbon
+import Darwin
 import Foundation
 import IOKit.pwr_mgt
 import ScreenCaptureKit
 
 @main struct InputStateTest {
     static func main() async throws {
+        try testPrivacyServiceAdmission()
         try testPrivacyLease()
+        try testPrivacyHIDMonitor()
         if ProcessInfo.processInfo.environment["DIETER_TEST_PRIVACY_PHYSICAL"] == "1" { try await testPrivacyDesktop() }
         try testRemoteDisplayActivity()
         try testDisplayModeLeases()
@@ -168,6 +172,54 @@ import ScreenCaptureKit
     }
 }
 
+private func testPrivacyServiceAdmission() throws {
+    let handled = try PrivacyHIDService.handle(["--capabilities", "--synthetic", "true"])
+    precondition(!handled)
+    for arguments in [
+        ["--privacy-hid-service", "--display-service"],
+        ["--privacy-hid-register", "--privacy-directory", "/tmp/untrusted"],
+        ["--privacy-hid-unknown"],
+    ] {
+        do {
+            _ = try PrivacyHIDService.handle(arguments)
+            preconditionFailure("Internal privacy mode accepted untrusted arguments")
+        } catch is PrivacyHIDError {}
+    }
+    if geteuid() != 0 {
+        do {
+            _ = try PrivacyHIDService.handle(["--privacy-hid-service"])
+            preconditionFailure("Unprivileged capture entered the root input service")
+        } catch is PrivacyHIDError {}
+    }
+    print("Privacy service admission: exact internal mode and root boundary passed")
+}
+
+private func testPrivacyHIDMonitor() throws {
+    var root = PrivacyHIDStatus(available: true, active: true, deviceCount: 3, generation: "first")
+    var actions = [String](), locks = 0
+    let monitor = PrivacyHIDMonitor(
+        exchange: { action in
+            actions.append(action)
+            return root
+        }, requestLock: { locks += 1 })
+    try monitor.acquire(); try monitor.audit()
+    precondition(monitor.deviceCount == 3 && locks == 0)
+    root.active = false
+    for _ in 0..<2 { do { try monitor.audit(); preconditionFailure("lost protection reported healthy") } catch {} }
+    precondition(locks == 1 && !actions.dropFirst().contains("on"))
+    root.active = true; root.generation = "replacement"
+    do { try monitor.audit(); preconditionFailure("replacement service adopted silently") } catch {}
+    precondition(locks == 1)
+    try monitor.acquire(); try monitor.audit()
+    root.available = false
+    do { try monitor.release(); preconditionFailure("failed restoration reported unlocked") } catch {}
+    root.available = true; root.active = false
+    try monitor.release()
+    precondition(monitor.deviceCount == 0)
+    print(
+        "Privacy monitor: lost protection requests lock once, rejects restarted helpers and permits explicit recovery")
+}
+
 private func testRemoteDisplayActivity() throws {
     var calls = 0
     let activity = RemoteDisplayActivity { name, userType, assertionID in
@@ -269,7 +321,70 @@ private final class PrivacyInputObservation {
 }
 
 @MainActor private func testPrivacyDesktop() async throws {
-    let driver = SystemPrivacyDesktopDriver()
+    // Talk through the exact approved capture binary. The test executable has
+    // no privileged authentication exemption and cannot control the root helper.
+    let helper = ProcessInfo.processInfo.environment["DIETER_TEST_PRIVACY_HELPER"] ?? ""
+    guard helper.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: helper) else {
+        throw CaptureError.invalidArgument("DIETER_TEST_PRIVACY_HELPER must name the exact approved capture binary")
+    }
+    let directory = FileManager.default.currentDirectoryPath + "/tmp/privacy-physical-" + UUID().uuidString.prefix(8)
+    try FileManager.default.createDirectory(
+        atPath: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    defer { try? FileManager.default.removeItem(atPath: directory) }
+    let owner = Process(); owner.executableURL = URL(fileURLWithPath: helper)
+    owner.arguments = ["--privacy-service", "--privacy-directory", directory]
+    func exchange(_ action: String) throws -> PrivacySnapshot {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw PrivacyHIDError("privacy test socket") }
+        defer { close(fd) }
+        var noSignal: Int32 = 1
+        _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
+        var timeout = timeval(tv_sec: 2, tv_usec: 0)
+        _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        _ = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        var address = sockaddr_un(); address.sun_family = sa_family_t(AF_UNIX)
+        let bytes = Array((directory + "/control.sock").utf8) + [0]
+        guard bytes.count <= MemoryLayout.size(ofValue: address.sun_path) else {
+            throw PrivacyHIDError("privacy test socket path")
+        }
+        withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: bytes) }
+        guard
+            withUnsafePointer(
+                to: &address,
+                {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                        connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+                    }
+                }) == 0
+        else { throw PrivacyHIDError("privacy test connection") }
+        let request = Data(("{\"action\":\"" + action + "\"}\n").utf8)
+        guard request.withUnsafeBytes({ write(fd, $0.baseAddress, $0.count) }) == request.count else {
+            throw PrivacyHIDError("privacy test request")
+        }
+        var data = Data(), buffer = [UInt8](repeating: 0, count: 1024)
+        while data.count < 8192 && !data.contains(10) {
+            let count = read(fd, &buffer, buffer.count)
+            guard count > 0 else { throw PrivacyHIDError("privacy test reply") }
+            data.append(contentsOf: buffer.prefix(count))
+        }
+        guard let end = data.firstIndex(of: 10) else { throw PrivacyHIDError("privacy test response limit") }
+        let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let value = try decoder.decode(PrivacySnapshot.self, from: data.prefix(upTo: end))
+        if let error = value.error { throw PrivacyHIDError(error) }
+        return value
+    }
+    func restore() async throws {
+        let value = try exchange("off")
+        guard !value.requested && value.state == 0 else {
+            throw PrivacyHIDError("privacy restoration was not confirmed")
+        }
+        let deadline = Date().addingTimeInterval(5)
+        while owner.isRunning && Date() < deadline {
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        guard !owner.isRunning else { throw PrivacyHIDError("privacy test owner did not exit after unlock") }
+        guard owner.terminationStatus == 0 else { throw PrivacyHIDError("privacy test owner did not close cleanly") }
+    }
     let original = try Dictionary(
         uniqueKeysWithValues: SystemPrivacyDesktopDriver.displays().map { ($0, try PrivacyGammaTable.read($0)) })
     let seen = PrivacyInputObservation()
@@ -288,9 +403,16 @@ private final class PrivacyInputObservation {
     let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, observer, 0)
     CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
     defer { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
+    try owner.run()
     do {
-        try driver.acquire()
-        try driver.maintain()
+        let deadline = Date().addingTimeInterval(5)
+        while !FileManager.default.fileExists(atPath: directory + "/control.sock") && Date() < deadline {
+            try await Task.sleep(nanoseconds: 25_000_000)
+        }
+        let active = try exchange("on")
+        guard active.supported && active.state == 1 && active.inputDeviceCount > 0 else {
+            throw PrivacyHIDError("Privileged protection did not confirm any input devices")
+        }
         for display in original.keys {
             guard try PrivacyGammaTable.read(display).black else {
                 throw CaptureError.invalidArgument("display output is not black")
@@ -308,6 +430,16 @@ private final class PrivacyInputObservation {
         guard seen.physical == 0, seen.remote == 1 else {
             throw CaptureError.invalidArgument("privacy event filter: physical=\(seen.physical), remote=\(seen.remote)")
         }
+        guard !IsSecureEventInputEnabled(), EnableSecureEventInput() == noErr else {
+            throw PrivacyHIDError("Owned test could not enter Secure Event Input")
+        }
+        do {
+            let secure = try exchange("status")
+            guard secure.state == 1 && secure.inputDeviceCount == active.inputDeviceCount else {
+                throw PrivacyHIDError("Device protection was lost during Secure Event Input")
+            }
+        } catch { _ = DisableSecureEventInput(); throw error }
+        guard DisableSecureEventInput() == noErr else { throw PrivacyHIDError("Secure Event Input cleanup failed") }
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let display = content.displays.first else {
             throw CaptureError.invalidArgument("privacy capture needs a display")
@@ -322,10 +454,10 @@ private final class PrivacyInputObservation {
             throw CaptureError.invalidArgument("privacy obscured desktop captures")
         }
     } catch {
-        try driver.release()
+        try await restore()
         throw error
     }
-    try driver.release()
+    try await restore()
     for (display, previous) in original {
         let restored = try PrivacyGammaTable.read(display)
         guard restored.red == previous.red, restored.green == previous.green, restored.blue == previous.blue else {

@@ -31,6 +31,12 @@ type Runtime struct {
 	// Executables defaults to the signed daemon/helper pair. Platform runtimes
 	// may supply an explicit list when their verification policy differs.
 	Executables []string
+	// SourceExecutablePrefix locates the executable pair in the macOS package.
+	// The managed runtime retains its established real bin/dieter path.
+	SourceExecutablePrefix string
+	// Signed app bundles travel with their daemon/helper release and participate
+	// in the same atomic activation and rollback. No links are permitted.
+	Bundles []string
 	// Verify is injectable for isolated filesystem tests. Production always
 	// uses Developer ID verification; there is no unsigned-install CLI flag.
 	Verify func(context.Context, string) error
@@ -44,6 +50,7 @@ func (r Runtime) executableNames() []string {
 }
 
 type activation struct {
+	Format int    `json:"format,omitempty"`
 	Token  string `json:"token"`
 	Before string `json:"before"`
 	After  string `json:"after"`
@@ -55,6 +62,24 @@ func HomebrewRoot(prefix string) string {
 }
 
 func (r Runtime) path(name string) string { return filepath.Join(r.Root, name) }
+
+// DaemonExecutable is a real executable at the managed activation path.
+func (r Runtime) DaemonExecutable() string {
+	return r.path("bin/dieter")
+}
+
+// SourceDirectory resolves the release root from its canonical executable.
+func (r Runtime) SourceDirectory(executable string) (string, error) {
+	dir := filepath.Dir(executable)
+	if r.SourceExecutablePrefix == "" {
+		return dir, nil
+	}
+	suffix := string(filepath.Separator) + r.SourceExecutablePrefix
+	if !strings.HasSuffix(dir, suffix) {
+		return "", errors.New("macOS service staging requires the complete DieterDaemon.app release")
+	}
+	return strings.TrimSuffix(dir, suffix), nil
+}
 
 func (r Runtime) verify(ctx context.Context, dir string) error {
 	if err := realDir(dir); err != nil {
@@ -73,10 +98,41 @@ func (r Runtime) verify(ctx context.Context, dir string) error {
 			return fmt.Errorf("%s must be a regular executable", name)
 		}
 	}
+	for _, name := range r.Bundles {
+		if err := realDir(filepath.Join(dir, name)); err != nil {
+			return err
+		}
+	}
+	if r.SourceExecutablePrefix != "" {
+		outer, err := hashExecutables(dir, r.executableNames())
+		if err != nil {
+			return err
+		}
+		inner, err := hashExecutables(filepath.Join(dir, r.SourceExecutablePrefix), r.executableNames())
+		if err != nil {
+			return err
+		}
+		if outer != inner {
+			return errors.New("daemon runtime executables differ from their signed bundle")
+		}
+	}
 	return verify(ctx, dir)
 }
 
 func VerifySignedPair(ctx context.Context, dir string) error {
+	if err := verifySignedExecutables(ctx, dir); err != nil {
+		return err
+	}
+	requirement := fmt.Sprintf(`identifier "com.dbpprt.dieter.capture" and anchor apple generic and certificate leaf[subject.OU] = %q`, TeamID)
+	checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	if output, err := exec.CommandContext(checkCtx, "/usr/bin/codesign", "--verify", "--deep", "--strict", "-R", "="+requirement, filepath.Join(dir, "DieterDaemon.app")).CombinedOutput(); err != nil {
+		return fmt.Errorf("verify signed daemon bundle: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func verifySignedExecutables(ctx context.Context, dir string) error {
 	for _, name := range executables {
 		identifier := "com.dbpprt.dieter.daemon"
 		if name == "dieter-capture" {
@@ -91,6 +147,33 @@ func VerifySignedPair(ctx context.Context, dir string) error {
 		}
 	}
 	return nil
+}
+
+// Only an activation rollback may restore the earlier signed, unbundled layout.
+// New staged releases always require the complete daemon bundle.
+func (r Runtime) verifyRollback(ctx context.Context, dir string) error {
+	if len(r.Bundles) == 0 {
+		return r.verify(ctx, dir)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, r.Bundles[0])); !errors.Is(err, os.ErrNotExist) {
+		return r.verify(ctx, dir)
+	}
+	if err := realDir(dir); err != nil {
+		return err
+	}
+	for _, name := range r.executableNames() {
+		info, err := os.Lstat(filepath.Join(dir, name))
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
+			return fmt.Errorf("%s must be a regular executable", name)
+		}
+	}
+	if r.Verify != nil {
+		return r.Verify(ctx, dir)
+	}
+	return verifySignedExecutables(ctx, dir)
 }
 
 // Stage never modifies an existing bin directory, including while the service
@@ -113,7 +196,12 @@ func (r Runtime) Stage(ctx context.Context, source string) error {
 	}
 	defer os.RemoveAll(tmp)
 	for _, name := range r.executableNames() {
-		if err := copyExecutable(filepath.Join(source, name), filepath.Join(tmp, name)); err != nil {
+		if err := copyExecutable(filepath.Join(source, r.SourceExecutablePrefix, name), filepath.Join(tmp, name)); err != nil {
+			return err
+		}
+	}
+	for _, name := range r.Bundles {
+		if err := copyBundle(filepath.Join(source, name), filepath.Join(tmp, name)); err != nil {
 			return err
 		}
 	}
@@ -206,7 +294,14 @@ func (r Runtime) Start(ctx context.Context) (service *Service, reexec bool, err 
 		if err = json.Unmarshal(raw, &state); err != nil {
 			return nil, false, err
 		}
-		current, hashErr := r.releaseHash(r.path("bin"))
+		if state.Format < 0 || state.Format > 1 {
+			return nil, false, errors.New("unsupported service activation format")
+		}
+		journalHash := r.releaseHash
+		if state.Format == 0 {
+			journalHash = func(dir string) (string, error) { return hashExecutables(dir, r.executableNames()) }
+		}
+		current, hashErr := journalHash(r.path("bin"))
 		if hashErr != nil {
 			return nil, false, hashErr
 		}
@@ -217,10 +312,10 @@ func (r Runtime) Start(ctx context.Context) (service *Service, reexec bool, err 
 		// A service that never reached readiness (including a crash immediately
 		// after exchange) is rolled back on its next launchd restart.
 		if current == state.After {
-			if err = r.verify(ctx, r.path("candidate")); err != nil {
+			if err = r.verifyRollback(ctx, r.path("candidate")); err != nil {
 				return nil, false, err
 			}
-			previous, hashErr := r.releaseHash(r.path("candidate"))
+			previous, hashErr := journalHash(r.path("candidate"))
 			if hashErr != nil || previous != state.Before {
 				return nil, false, errors.New("rollback pair does not match activation journal")
 			}
@@ -282,6 +377,7 @@ func (r Runtime) Start(ctx context.Context) (service *Service, reexec bool, err 
 		return nil, false, err
 	}
 	state.Token = hex.EncodeToString(token[:])
+	state.Format = 1
 	if err = writeJSON(r.path("activation.json"), state); err != nil {
 		return nil, false, err
 	}
@@ -342,7 +438,7 @@ func (s *Service) Exec(args []string) error {
 		}
 	}
 	env = append(env, activationEnv+"="+s.token, fmt.Sprintf("%s=%d", lockEnv, s.lock.Fd()))
-	return execProcess(s.runtime.path("bin/dieter"), args, env)
+	return execProcess(s.runtime.DaemonExecutable(), args, env)
 }
 
 func (r Runtime) prepare() error {
@@ -424,7 +520,80 @@ func pairHash(dir string) (string, error) {
 }
 
 func (r Runtime) releaseHash(dir string) (string, error) {
-	return hashExecutables(dir, r.executableNames())
+	base, err := hashExecutables(dir, r.executableNames())
+	if err != nil || len(r.Bundles) == 0 {
+		return base, err
+	}
+	// A pre-bundle installation can be staged or restored, but never qualifies
+	// as a new runtime. Its signed executable pair is its complete identity.
+	if _, err := os.Lstat(filepath.Join(dir, r.Bundles[0])); errors.Is(err, os.ErrNotExist) {
+		return base, nil
+	}
+	h := sha256.New()
+	io.WriteString(h, base)
+	for _, name := range r.Bundles {
+		if err := walkBundle(filepath.Join(dir, name), func(path, relative string, info os.FileInfo) error {
+			fmt.Fprintf(h, "%s/%s:%o:", name, relative, info.Mode().Perm())
+			if info.IsDir() {
+				io.WriteString(h, "directory:")
+				return nil
+			}
+			fmt.Fprintf(h, "%d:", info.Size())
+			file, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+			_, err = io.Copy(h, file)
+			return err
+		}); err != nil {
+			return "", err
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func walkBundle(root string, visit func(string, string, os.FileInfo) error) error {
+	if err := realDir(root); err != nil {
+		return err
+	}
+	count := 0
+	var total int64
+	return filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		count++
+		total += info.Size()
+		if count > 256 || total > 512<<20 || (!info.IsDir() && !info.Mode().IsRegular()) {
+			return errors.New("invalid daemon bundle")
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		return visit(path, relative, info)
+	})
+}
+
+func copyBundle(source, target string) error {
+	return walkBundle(source, func(path, relative string, info os.FileInfo) error {
+		destination := filepath.Join(target, relative)
+		if info.IsDir() {
+			return os.Mkdir(destination, info.Mode().Perm())
+		}
+		input, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer input.Close()
+		output, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.Copy(output, input)
+		return errors.Join(copyErr, output.Sync(), output.Close())
+	})
 }
 
 func hashExecutables(dir string, names []string) (string, error) {

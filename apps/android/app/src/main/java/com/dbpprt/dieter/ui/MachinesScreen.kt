@@ -115,6 +115,7 @@ private val MachineOperationAction.icon: ImageVector
         when (this) {
             MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_ON -> Icons.Outlined.Lock
             MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_OFF -> Icons.Outlined.LockOpen
+            MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_SETUP -> Icons.Outlined.Lock
             MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART -> Icons.Outlined.RestartAlt
             MachineOperationAction.MACHINE_OPERATION_ACTION_SHUTDOWN ->
                 Icons.Outlined.PowerSettingsNew
@@ -126,6 +127,7 @@ private val MachineOperationAction.tag: String
         when (this) {
             MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_ON -> "privacy-on"
             MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_OFF -> "privacy-off"
+            MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_SETUP -> "privacy-setup"
             MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART -> "restart"
             MachineOperationAction.MACHINE_OPERATION_ACTION_SHUTDOWN -> "shutdown"
             else -> "update"

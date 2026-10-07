@@ -13,6 +13,7 @@ private func operationSymbol(_ action: Dieter_V1_MachineOperationAction) -> Stri
     switch action {
     case .privacyOn: "lock.shield"
     case .privacyOff: "lock.open"
+    case .privacySetup: "shield.lefthalf.filled"
     case .updateDaemon: "arrow.down.circle"
     case .restart: "arrow.clockwise.circle"
     case .shutdown: "power"
@@ -218,6 +219,7 @@ struct MachinePopover: View {
         switch action {
         case .privacyOn: "machine.privacy-on"
         case .privacyOff: "machine.privacy-off"
+        case .privacySetup: "machine.privacy-setup"
         case .updateDaemon: "machine.update-daemon"
         case .restart: "machine.restart"
         case .shutdown: "machine.shutdown"

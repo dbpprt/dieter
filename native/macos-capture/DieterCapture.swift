@@ -1377,6 +1377,14 @@ func hardwareEncoderAvailable(_ codec: CMVideoCodecType = kCMVideoCodecType_H264
     private struct DieterCapture {
         static func main() async {
             do {
+                if try PrivacyHIDService.handle(Array(CommandLine.arguments.dropFirst())) { return }
+                guard geteuid() != 0 else {
+                    throw PrivacyHIDError("The capture and desktop owner must run as the login user")
+                }
+                if CommandLine.arguments.contains("--privacy-setup") {
+                    try PrivacyService.setup(dryRun: CommandLine.arguments.contains("--dry-run"))
+                    return
+                }
                 if CommandLine.arguments.contains("--privacy-capabilities") {
                     PrivacyService.capabilities(dryRun: CommandLine.arguments.contains("--dry-run"))
                     return

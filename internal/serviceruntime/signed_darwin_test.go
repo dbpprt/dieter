@@ -20,12 +20,12 @@ func TestVerifySignedReference(t *testing.T) {
 	if source == "" {
 		t.Skip("no signed reference supplied")
 	}
-	r := fixtureRuntime(t)
-	r.Verify = nil
+	fixture := fixtureRuntime(t)
+	r := PlatformRuntime(fixture.Root)
 	if err := r.Stage(context.Background(), source); err != nil {
 		t.Fatal(err)
 	}
-	file, err := os.OpenFile(r.path("bin/dieter"), os.O_WRONLY, 0)
+	file, err := os.OpenFile(r.DaemonExecutable(), os.O_WRONLY, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestSignedServiceRuntimeSmoke(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := Runtime{Root: filepath.Join(root, "service")}
+	r := PlatformRuntime(filepath.Join(root, "service"))
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	if err := r.Stage(ctx, source); err != nil {
@@ -69,7 +69,7 @@ func TestSignedServiceRuntimeSmoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer log.Close()
-	command := exec.Command(r.path("bin/dieter"), "--store", home, "daemon", "start", "--service", "--runtime", r.Root, "--addr", address)
+	command := exec.Command(r.DaemonExecutable(), "--store", home, "daemon", "start", "--service", "--runtime", r.Root, "--addr", address)
 	for _, entry := range os.Environ() {
 		if !strings.HasPrefix(entry, "DIETER_") {
 			command.Env = append(command.Env, entry)
@@ -95,7 +95,7 @@ func TestSignedServiceRuntimeSmoke(t *testing.T) {
 		}
 	}()
 	for {
-		probe := exec.CommandContext(ctx, r.path("bin/dieter"), "--store", home, "screen", "permissions")
+		probe := exec.CommandContext(ctx, r.DaemonExecutable(), "--store", home, "screen", "permissions")
 		raw, err := probe.Output()
 		if err == nil {
 			var value struct {
@@ -105,7 +105,7 @@ func TestSignedServiceRuntimeSmoke(t *testing.T) {
 			if err := json.Unmarshal(raw, &value); err != nil {
 				t.Fatal(err)
 			}
-			if value.DaemonExecutable != r.path("bin/dieter") || !value.CaptureVerified || !value.ControlVerified {
+			if value.DaemonExecutable != r.DaemonExecutable() || !value.CaptureVerified || !value.ControlVerified {
 				t.Fatalf("signed service probe: %s", raw)
 			}
 			break
@@ -116,14 +116,14 @@ func TestSignedServiceRuntimeSmoke(t *testing.T) {
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
-	before, err := pairHash(r.path("bin"))
+	before, err := r.releaseHash(r.path("bin"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := r.Stage(ctx, source); err != nil {
 		t.Fatal(err)
 	}
-	after, err := pairHash(r.path("bin"))
+	after, err := r.releaseHash(r.path("bin"))
 	if err != nil || before != after {
 		t.Fatal("repeat signed installation changed the running pair")
 	}

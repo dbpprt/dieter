@@ -14,6 +14,7 @@ import (
 	"github.com/dbpprt/dieter/internal/buildinfo"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/machine"
+	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -65,6 +66,8 @@ func (api *grpcAPI) GetMachineInformation(ctx context.Context, _ *emptypb.Empty)
 		}
 	}
 	privacy := api.server.privacyState(ctx)
+	_, setupSupported := api.server.privacyDriver.(remotedesktop.PrivacySetupDriver)
+	operationCapabilities = append(operationCapabilities, &dieterv1.MachineOperationCapability{Action: dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_SETUP, Supported: setupSupported && snapshot.OSName == "macOS", Authorized: setupSupported && snapshot.OSName == "macOS" && privacy.HelperSetupRequired, UnavailableReason: privacy.Reason})
 	for _, action := range []dieterv1.MachineOperationAction{dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_ON, dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_OFF} {
 		available := privacy.Supported
 		if action == dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_OFF && privacy.Requested {
@@ -208,7 +211,7 @@ func (api *grpcAPI) machineProcessDescriptors() []machine.ProcessDescriptor {
 }
 
 func (api *grpcAPI) PerformMachineOperation(ctx context.Context, request *dieterv1.MachineOperationRequest) (*dieterv1.MachineOperationResponse, error) {
-	if request.GetAction() == dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_ON || request.GetAction() == dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_OFF {
+	if request.GetAction() == dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_ON || request.GetAction() == dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_OFF || request.GetAction() == dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_SETUP {
 		return api.performPrivacyOperation(ctx, request)
 	}
 	var operation machine.Operation

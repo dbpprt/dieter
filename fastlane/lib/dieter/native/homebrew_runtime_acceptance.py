@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Verify permission retention across two signed releases in an isolated LaunchAgent."""
+
 import argparse
 import hashlib
 import json
@@ -17,8 +18,9 @@ TEAM = "DS6N5L85E7"
 
 
 def run(argv, *, timeout=45, check=True):
-    result = subprocess.run([str(arg) for arg in argv], text=True,
-                            capture_output=True, timeout=timeout)
+    result = subprocess.run(
+        [str(arg) for arg in argv], text=True, capture_output=True, timeout=timeout
+    )
     if check and result.returncode:
         raise RuntimeError(f"{argv[0]} failed: {result.stdout}\n{result.stderr}")
     return result
@@ -34,18 +36,32 @@ def digest(path):
 
 def verify_release(directory):
     hashes = {}
-    for name, identifier in (("dieter", "com.dbpprt.dieter.daemon"),
-                             ("dieter-capture", "com.dbpprt.dieter.capture")):
-        binary = directory / name
+    for name, identifier in (
+        ("dieter", "com.dbpprt.dieter.daemon"),
+        ("dieter-capture", "com.dbpprt.dieter.capture"),
+    ):
+        binary = directory / "DieterDaemon.app/Contents/MacOS" / name
         if binary.is_symlink() or not binary.is_file():
             raise RuntimeError(f"Expected regular executable: {binary}")
-        requirement = (f'identifier "{identifier}" and anchor apple generic and '
-                       'certificate 1[field.1.2.840.113635.100.6.2.6] exists and '
-                       'certificate leaf[field.1.2.840.113635.100.6.1.13] exists and '
-                       f'certificate leaf[subject.OU] = "{TEAM}"')
+        requirement = (
+            f'identifier "{identifier}" and anchor apple generic and '
+            "certificate 1[field.1.2.840.113635.100.6.2.6] exists and "
+            "certificate leaf[field.1.2.840.113635.100.6.1.13] exists and "
+            f'certificate leaf[subject.OU] = "{TEAM}"'
+        )
         run(["/usr/bin/codesign", "--verify", "--strict", "-R", "=" + requirement, binary])
-        hashes[name] = digest(binary)
-    run([directory / "dieter", "screen", "permissions", "--help"])
+        hashes["DieterDaemon.app/Contents/MacOS/" + name] = digest(binary)
+    bundle = directory / "DieterDaemon.app"
+    if bundle.is_symlink() or not bundle.is_dir():
+        raise RuntimeError("Expected a regular signed daemon bundle")
+    requirement = f'identifier "com.dbpprt.dieter.capture" and anchor apple generic and certificate leaf[subject.OU] = "{TEAM}"'
+    run(["/usr/bin/codesign", "--verify", "--deep", "--strict", "-R", "=" + requirement, bundle])
+    for path in bundle.rglob("*"):
+        if path.is_symlink():
+            raise RuntimeError("Daemon bundle contains a symlink")
+        if path.is_file():
+            hashes[str(path.relative_to(directory))] = digest(path)
+    run([directory / "DieterDaemon.app/Contents/MacOS/dieter", "screen", "permissions", "--help"])
     return hashes
 
 
@@ -53,14 +69,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--release-a", required=True, type=Path)
     parser.add_argument("--release-b", required=True, type=Path)
-    parser.add_argument("--evidence", required=True, type=Path,
-                        help="new directory, retained after the test")
+    parser.add_argument(
+        "--evidence", required=True, type=Path, help="new directory, retained after the test"
+    )
     args = parser.parse_args()
     if sys.platform != "darwin":
         parser.error("requires a disposable logged-in macOS account/VM")
     a, b = args.release_a.resolve(), args.release_b.resolve()
     hashes_a, hashes_b = verify_release(a), verify_release(b)
-    if hashes_a["dieter"] == hashes_b["dieter"]:
+    if (
+        hashes_a["DieterDaemon.app/Contents/MacOS/dieter"]
+        == hashes_b["DieterDaemon.app/Contents/MacOS/dieter"]
+    ):
         parser.error("A and B must contain differently built signed daemons")
     evidence = args.evidence.resolve()
     evidence.mkdir(parents=True, exist_ok=False)
@@ -73,23 +93,59 @@ def main():
         listener.bind(("127.0.0.1", 0))
         address = f"127.0.0.1:{listener.getsockname()[1]}"
     executable = runtime / "bin/dieter"
-    arguments = [str(executable), "--store", str(home), "daemon", "start",
-                 "--service", "--runtime", str(runtime), "--addr", address]
-    plist.write_bytes(plistlib.dumps({
-        "Label": label, "ProgramArguments": arguments, "RunAtLoad": True,
-        "KeepAlive": True, "ThrottleInterval": 3, "ProcessType": "Background",
-        "EnvironmentVariables": {"HOME": str(Path.home()), "DIETER_HOME": str(home),
-                                 "DIETER_REMOTE_DESKTOP_SOURCE": "screen",
-                                 "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"},
-        "StandardOutPath": str(evidence / "service.log"),
-        "StandardErrorPath": str(evidence / "service.log"),
-    }))
-    report = {"releaseA": hashes_a, "releaseB": hashes_b, "label": label,
-              "daemonPath": str(executable), "passed": False}
+    arguments = [
+        str(executable),
+        "--store",
+        str(home),
+        "daemon",
+        "start",
+        "--service",
+        "--runtime",
+        str(runtime),
+        "--addr",
+        address,
+    ]
+    plist.write_bytes(
+        plistlib.dumps(
+            {
+                "Label": label,
+                "ProgramArguments": arguments,
+                "RunAtLoad": True,
+                "KeepAlive": True,
+                "ThrottleInterval": 3,
+                "ProcessType": "Background",
+                "EnvironmentVariables": {
+                    "HOME": str(Path.home()),
+                    "DIETER_HOME": str(home),
+                    "DIETER_REMOTE_DESKTOP_SOURCE": "screen",
+                    "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+                },
+                "StandardOutPath": str(evidence / "service.log"),
+                "StandardErrorPath": str(evidence / "service.log"),
+            }
+        )
+    )
+    report = {
+        "releaseA": hashes_a,
+        "releaseB": hashes_b,
+        "label": label,
+        "daemonPath": str(executable),
+        "passed": False,
+    }
     loaded = False
 
     def cli(*command):
-        return run([b / "dieter", "--store", home, "--timeout", "30s", *command], check=False)
+        return run(
+            [
+                b / "DieterDaemon.app/Contents/MacOS/dieter",
+                "--store",
+                home,
+                "--timeout",
+                "30s",
+                *command,
+            ],
+            check=False,
+        )
 
     def wait_ready(expected_version):
         deadline = time.monotonic() + 45
@@ -100,7 +156,9 @@ def main():
                 if status.get("apiHealthy") and status.get("version") == expected_version:
                     return status
             time.sleep(0.25)
-        raise RuntimeError("fixture did not become healthy with the expected release; inspect service.log")
+        raise RuntimeError(
+            "fixture did not become healthy with the expected release; inspect service.log"
+        )
 
     def start():
         nonlocal loaded
@@ -124,15 +182,20 @@ def main():
         return value if value.get("captureVerified") and value.get("controlVerified") else None
 
     try:
-        run([a / "dieter", "__service-stage", "--root", runtime], timeout=90)
-        version_a = run([a / "dieter", "version"]).stdout.strip()
-        version_b = run([b / "dieter", "version"]).stdout.strip()
+        run(
+            [a / "DieterDaemon.app/Contents/MacOS/dieter", "__service-stage", "--root", runtime],
+            timeout=90,
+        )
+        version_a = run([a / "DieterDaemon.app/Contents/MacOS/dieter", "version"]).stdout.strip()
+        version_b = run([b / "DieterDaemon.app/Contents/MacOS/dieter", "version"]).stdout.strip()
         start()
         report["initialStatus"] = wait_ready(version_a)
         initial = probe("a-before-grant.json")
         if initial is None:
             print(f"Grant Screen Recording and Accessibility to:\n{executable}", flush=True)
-            print("Only change the isolated fixture's entry. The harness never edits TCC.", flush=True)
+            print(
+                "Only change the isolated fixture's entry. The harness never edits TCC.", flush=True
+            )
             input("After granting access, press Return to restart this fixture and verify: ")
             stop()
             start()
@@ -142,8 +205,11 @@ def main():
             raise RuntimeError("release A does not have both required permissions")
         report["releaseAProbe"] = initial
         running_a = wait_ready(version_a)
-        run([b / "dieter", "__service-stage", "--root", runtime], timeout=90)
-        if digest(executable) != hashes_a["dieter"]:
+        run(
+            [b / "DieterDaemon.app/Contents/MacOS/dieter", "__service-stage", "--root", runtime],
+            timeout=90,
+        )
+        if digest(executable) != hashes_a["DieterDaemon.app/Contents/MacOS/dieter"]:
             raise RuntimeError("staging B changed the active A executable")
         report["stagedStatus"] = wait_ready(version_a)
         if report["stagedStatus"]["pid"] != running_a["pid"]:
@@ -156,7 +222,9 @@ def main():
                 raise RuntimeError(f"release B was not activated: {name}")
         upgraded = probe("b-without-new-grant.json")
         if upgraded is None:
-            raise RuntimeError("permissions did not survive the signed upgrade; do not grant again for this test")
+            raise RuntimeError(
+                "permissions did not survive the signed upgrade; do not grant again for this test"
+            )
         report["releaseBProbe"] = upgraded
         stop()
         start()

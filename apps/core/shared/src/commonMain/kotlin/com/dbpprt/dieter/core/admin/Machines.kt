@@ -277,6 +277,7 @@ object MachineOperations {
     /** The operations a machine's actions menu offers, in menu order. */
     val ACTIONS: List<MachineOperationAction> =
         listOf(
+            MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_SETUP,
             MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_ON,
             MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_OFF,
             MachineOperationAction.MACHINE_OPERATION_ACTION_UPDATE_DAEMON,
@@ -290,6 +291,8 @@ object MachineOperations {
         else
             ACTIONS.filter { action ->
                     when (action) {
+                        MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_SETUP ->
+                            info.os_name == "macOS" && info.privacy?.helper_setup_required == true
                         MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_ON ->
                             info.os_name == "macOS" && info.privacy?.requested != true
                         MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_OFF ->
@@ -308,6 +311,14 @@ object MachineOperations {
     /** How an operation reads in the actions menu and its confirmation. */
     fun copy(action: MachineOperationAction): OperationCopy =
         when (action) {
+            MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_SETUP ->
+                OperationCopy(
+                    "Set up privacy mode",
+                    "Set Up",
+                    "Set Up Privacy Mode…",
+                    "Set up privacy mode on this Mac. An administrator must approve Dieter Daemon in System Settings and grant Input Monitoring before you can lock the local screen.",
+                    false,
+                )
             MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_ON ->
                 OperationCopy(
                     "Lock local screen",

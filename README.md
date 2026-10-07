@@ -250,11 +250,19 @@ sidebar shows the live state; stale and degraded protection are identified.
 
 ```sh
 dieter --machine MACHINE_ID machine privacy status
+dieter --machine MACHINE_ID machine privacy setup
 dieter --machine MACHINE_ID machine privacy on --key UNIQUE_LOCK_ID
 dieter --machine MACHINE_ID machine privacy off --key UNIQUE_UNLOCK_ID
 ```
 
-Omit `--machine` for the local daemon. Requires Accessibility permission and
-compatible display transfer tables. This protects the logged-in desktop; macOS
-login/FileVault and hardware/system shortcuts remain separate. See
+Omit `--machine` for the local daemon. **Set Up Privacy Mode…** registers the
+daemon’s built-in privacy service; an administrator must approve it in Login Items
+& Extensions and grant
+Input Monitoring on the target Mac. The main daemon stays unprivileged. Requires
+Accessibility permission and compatible display transfer tables. Protection
+exclusively claims matched HID input devices, with a secondary session filter.
+Status includes the protected input-device count and whether setup is required.
+This protects the logged-in desktop; macOS login/FileVault and forced power/reboot
+remain separate. Lost protection is degraded; a requested Lock Screen shortcut
+does not establish a verified authentication lock. See
 [privacy implementation and verification](native/macos-capture/privacy-mode-research.md).

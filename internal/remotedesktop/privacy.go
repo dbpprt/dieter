@@ -25,6 +25,10 @@ type PrivacyDriver interface {
 	Set(context.Context, bool) (*dieterv1.MachinePrivacy, error)
 }
 
+type PrivacySetupDriver interface {
+	Setup(context.Context) (*dieterv1.MachinePrivacy, error)
+}
+
 type privacyOperationError struct{ message string }
 
 func (e *privacyOperationError) Error() string { return e.message }
@@ -96,12 +100,14 @@ func (n *NativePrivacy) exchange(ctx context.Context, action string) (*dieterv1.
 
 func decodePrivacy(raw []byte) (*dieterv1.MachinePrivacy, error) {
 	var value struct {
-		Supported    bool   `json:"supported"`
-		Requested    bool   `json:"requested"`
-		State        int32  `json:"state"`
-		Reason       string `json:"reason"`
-		DisplayCount uint32 `json:"display_count"`
-		Error        string `json:"error"`
+		Supported           bool   `json:"supported"`
+		Requested           bool   `json:"requested"`
+		State               int32  `json:"state"`
+		Reason              string `json:"reason"`
+		DisplayCount        uint32 `json:"display_count"`
+		InputDeviceCount    uint32 `json:"input_device_count"`
+		HelperSetupRequired bool   `json:"helper_setup_required"`
+		Error               string `json:"error"`
 	}
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return nil, err
@@ -112,10 +118,32 @@ func decodePrivacy(raw []byte) (*dieterv1.MachinePrivacy, error) {
 	if value.Error != "" {
 		return nil, &privacyOperationError{value.Error}
 	}
-	if value.State < 0 || value.State > 2 || value.DisplayCount > 32 || len(value.Reason) > 1024 || (value.State == 1 && (!value.Supported || !value.Requested)) || (value.State == 2 && !value.Requested) {
+	if value.State < 0 || value.State > 2 || value.DisplayCount > 32 || value.InputDeviceCount > 128 || len(value.Reason) > 1024 || (value.State == 1 && (!value.Supported || !value.Requested)) || (value.State == 2 && !value.Requested) {
 		return nil, errors.New("invalid native privacy state")
 	}
-	return &dieterv1.MachinePrivacy{Supported: value.Supported, Requested: value.Requested, State: dieterv1.MachinePrivacy_State(value.State), Reason: value.Reason, DisplayCount: value.DisplayCount}, nil
+	return &dieterv1.MachinePrivacy{Supported: value.Supported, Requested: value.Requested, State: dieterv1.MachinePrivacy_State(value.State), Reason: value.Reason, DisplayCount: value.DisplayCount, InputDeviceCount: value.InputDeviceCount, HelperSetupRequired: value.HelperSetupRequired}, nil
+}
+
+func (n *NativePrivacy) Setup(ctx context.Context) (*dieterv1.MachinePrivacy, error) {
+	if runtime.GOOS != "darwin" && !n.synthetic {
+		return nil, errors.New("Privacy helper requires macOS")
+	}
+	helper, err := resolveCaptureHelper(n.helper)
+	if err != nil {
+		return nil, err
+	}
+	args := []string{"--privacy-setup"}
+	if n.synthetic {
+		args = append(args, "--dry-run")
+	}
+	command := exec.CommandContext(ctx, helper, args...)
+	configureCaptureCommand(command)
+	output, diagnostic := &boundedPrivacyOutput{}, &boundedPrivacyOutput{}
+	command.Stdout, command.Stderr = output, diagnostic
+	if err := command.Run(); err != nil {
+		return nil, fmt.Errorf("privacy setup: %w", nativeCaptureFailure(err, strings.TrimSpace(string(diagnostic.data))))
+	}
+	return decodePrivacy(output.data)
 }
 
 func (n *NativePrivacy) Snapshot(ctx context.Context) (*dieterv1.MachinePrivacy, error) {

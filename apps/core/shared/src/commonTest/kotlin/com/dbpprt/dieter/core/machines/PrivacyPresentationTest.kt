@@ -82,4 +82,27 @@ class PrivacyPresentationTest {
                 .contains("reboot")
         )
     }
+
+    @Test
+    fun setupAppearsOnlyWhenTheOwnerRequiresLocalApproval() {
+        val info =
+            MachineInformation(
+                os_name = "macOS",
+                privacy = MachinePrivacy(helper_setup_required = true),
+            )
+        assertTrue(
+            MachineOperations.availability(info).any {
+                it.action == MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_SETUP
+            }
+        )
+        assertFalse(
+            MachineOperations.availability(info.copy(privacy = MachinePrivacy(supported = true)))
+                .any { it.action == MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_SETUP }
+        )
+        assertTrue(
+            MachineOperations.copy(MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_SETUP)
+                .explanation
+                .contains("administrator")
+        )
+    }
 }

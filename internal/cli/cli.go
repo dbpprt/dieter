@@ -432,8 +432,8 @@ its current address. Status reports the selected network endpoint.
 		if err != nil {
 			return err
 		}
-		if executable != filepath.Join(*runtimePath, "bin", "dieter") {
-			return errors.New("--runtime must be started directly from its fixed bin/dieter executable")
+		if executable != serviceruntime.PlatformRuntime(*runtimePath).DaemonExecutable() {
+			return errors.New("--runtime must be started directly from its fixed daemon executable")
 		}
 		startupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		var reexec bool

@@ -147,6 +147,13 @@
                 fixtureEndpoint: NativeTestSupport.argument("--dieter-endpoint")),
                 store.fleet.selectedMachineID == machine.id
             {
+                let setupAction = await performPrivacyThroughUI(
+                    .privacySetup, store: store, window: window, output: output)
+                results["privacy-setup"] = setupAction ? "passed" : "failed: native setup action was not accepted"
+                _ = await waitUntil(timeout: 10) {
+                    store.fleet.machineOperations[machine.id]?.contains { $0.action == .privacyOn && $0.available }
+                        == true
+                }
                 let lockAction = await performPrivacyThroughUI(.privacyOn, store: store, window: window, output: output)
                 let closed = NativeUIAccessibility.press("machine.close", in: window)
                 let locked = await waitUntil(timeout: 10) {
@@ -208,7 +215,9 @@
         private static func performPrivacyThroughUI(
             _ action: Dieter_V1_MachineOperationAction, store: DieterStore, window: NSWindow, output: URL
         ) async -> Bool {
-            let menuTitle = action == .privacyOn ? "Lock Local Screen…" : "Unlock Local Screen…"
+            let menuTitle =
+                action == .privacySetup
+                ? "Set Up Privacy Mode…" : (action == .privacyOn ? "Lock Local Screen…" : "Unlock Local Screen…")
             let tracker = NativeContentMenuTracker()
             defer { tracker.stop(); tracker.menu?.cancelTrackingWithoutAnimation() }
             let ready = await NativeUIAccessibility.waitForInteractiveTarget(
@@ -238,7 +247,9 @@
             else { return false }
             let accepted = await waitUntil(timeout: 10) {
                 store.fleet.machineOperationMessage?.contains(
-                    action == .privacyOn ? "Privacy mode is on" : "Privacy mode is off") == true
+                    action == .privacySetup
+                        ? "Privacy helper setup requested"
+                        : (action == .privacyOn ? "Privacy mode is on" : "Privacy mode is off")) == true
             }
             let alert = await waitUntil(timeout: 5) {
                 NativeUIAccessibility.find("machine.operation-ok", in: window.attachedSheet ?? window) != nil

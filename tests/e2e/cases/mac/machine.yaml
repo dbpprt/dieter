@@ -19,6 +19,7 @@ native:
     - "machine.host-controls"
     - "machine.machine-rpc"
     - "machine.power-control"
+    - "machine.privacy-setup"
     - "machine.privacy-lock"
     - "machine.privacy-unlock"
     - "machine.privacy-render"
