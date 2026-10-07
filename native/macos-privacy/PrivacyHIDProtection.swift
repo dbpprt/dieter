@@ -68,7 +68,7 @@ final class SystemPrivacyHIDDriver: PrivacyHIDDriver {
             throw PrivacyHIDError("Privacy input protection requires the approved privileged helper")
         }
         guard IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted else {
-            throw PrivacyHIDError("Grant Input Monitoring to Dieter Daemon on this Mac")
+            throw PrivacyHIDError("Grant Input Monitoring to Dieter Privacy Helper on this Mac")
         }
     }
 

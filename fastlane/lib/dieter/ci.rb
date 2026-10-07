@@ -324,6 +324,7 @@ module Dieter
         context.command(%w[bash apps/mac/scripts/format-swift.sh --check], timeout: 300)
         context.command(%w[bash apps/mac/scripts/sync-proto.sh --check], timeout: 300)
         adapter = Mac.new(context)
+        adapter.privacy_native_test
         adapter.unit({ "filter" => "DieterMacTests|SharedCoreTests" })
         adapter.build({})
         adapter.core_test

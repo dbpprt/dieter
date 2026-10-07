@@ -21,12 +21,15 @@ class InstallerTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.source = self.root / "source"
         self.source.mkdir()
-        self.bundle = self.source / "DieterDaemon.app/Contents/MacOS"
+        self.bundle = self.source / "DieterPrivacyHelper.app/Contents/MacOS"
         self.bundle.mkdir(parents=True)
         for name in ("dieter", "dieter-capture"):
-            path = self.bundle / name
+            path = self.source / name
             path.write_text("#!/bin/sh\nexit 0\n")
             path.chmod(0o755)
+        helper = self.bundle / "dieter-privacy"
+        helper.write_text("#!/bin/sh\nexit 0\n")
+        helper.chmod(0o755)
         (self.source / "LICENSE").write_text("Test license\n")
         self.output = self.root / "dist/dieter.pkg"
 
@@ -79,8 +82,8 @@ class InstallerTests(unittest.TestCase):
             with self.subTest(version=version), self.assertRaises(RuntimeError):
                 release_number(version)
         self.assertEqual(release_number("v1.2.3"), "1.2.3")
-        (self.bundle / "dieter").unlink()
-        (self.bundle / "dieter").symlink_to(self.bundle / "dieter-capture")
+        (self.source / "dieter").unlink()
+        (self.source / "dieter").symlink_to(self.source / "dieter-capture")
         with (
             patch("fastlane.lib.dieter.native.installer.run") as command,
             self.assertRaises(RuntimeError),
@@ -109,8 +112,9 @@ class InstallerTests(unittest.TestCase):
             {
                 "LICENSE",
                 "INSTALL.txt",
-                "DieterDaemon.app/Contents/MacOS/dieter",
-                "DieterDaemon.app/Contents/MacOS/dieter-capture",
+                "dieter",
+                "dieter-capture",
+                "DieterPrivacyHelper.app/Contents/MacOS/dieter-privacy",
             },
         )
         bom = subprocess.run(
@@ -123,11 +127,12 @@ class InstallerTests(unittest.TestCase):
                 ".",
                 "./LICENSE",
                 "./INSTALL.txt",
-                "./DieterDaemon.app",
-                "./DieterDaemon.app/Contents",
-                "./DieterDaemon.app/Contents/MacOS",
-                "./DieterDaemon.app/Contents/MacOS/dieter",
-                "./DieterDaemon.app/Contents/MacOS/dieter-capture",
+                "./DieterPrivacyHelper.app",
+                "./DieterPrivacyHelper.app/Contents",
+                "./DieterPrivacyHelper.app/Contents/MacOS",
+                "./dieter",
+                "./dieter-capture",
+                "./DieterPrivacyHelper.app/Contents/MacOS/dieter-privacy",
             },
         )
         self.assertEqual({path.name for path in (expanded / "Scripts").iterdir()}, {"preinstall"})

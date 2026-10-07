@@ -465,6 +465,13 @@ measurements, unavailable hardware and cleanup failures still fail gates.
 
 ## Specialized screen measurements
 
+`just pipeline check component:mac operation:privacy_native_test` verifies the
+standalone macOS daemon/capture pair and separate signed `DieterPrivacyHelper.app`
+with isolated state and synthetic pixels. It owns the Apple compiler lease and
+does not register a privileged service or change the operator's desktop. Local
+administrator approval and Input Monitoring remain required for physical input
+qualification; see [macOS privacy](../native/macos-capture/privacy-mode-research.md).
+
 `just pipeline screens_qualify manifest:PATH
 profile:android-device output:tmp/screen-qualification-UNIQUE` composes the same
 Mac and Android adapters for an explicit measurement/recovery manifest. Physical

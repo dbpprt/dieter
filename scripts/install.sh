@@ -140,12 +140,12 @@ fi
 temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/dieter-install.XXXXXX")"
 install_temp=""
 capture_temp=""
-daemon_bundle_temp=""
+privacy_install_temp=""
 cleanup() {
     rm -rf "$temporary_directory"
     [ -z "$install_temp" ] || rm -f "$install_temp"
     [ -z "$capture_temp" ] || rm -f "$capture_temp"
-    [ -z "$daemon_bundle_temp" ] || rm -rf "$daemon_bundle_temp"
+    [ -z "$privacy_install_temp" ] || rm -rf "$privacy_install_temp"
 }
 trap cleanup EXIT INT TERM
 
@@ -188,7 +188,7 @@ fi
 tar -tzf "$archive" | while IFS= read -r entry; do
     case "$entry" in
         "$asset" | "$asset/" | "$asset/dieter" | "$asset/dieter-capture" | "$asset/LICENSE" | "$asset/VERSION" | "$asset/install.sh") ;;
-        "$asset/DieterDaemon.app" | "$asset/DieterDaemon.app/" | "$asset/DieterDaemon.app/Contents" | "$asset/DieterDaemon.app/Contents/" | "$asset/DieterDaemon.app/Contents/Info.plist" | "$asset/DieterDaemon.app/Contents/MacOS" | "$asset/DieterDaemon.app/Contents/MacOS/" | "$asset/DieterDaemon.app/Contents/MacOS/dieter" | "$asset/DieterDaemon.app/Contents/MacOS/dieter-capture" | "$asset/DieterDaemon.app/Contents/Library" | "$asset/DieterDaemon.app/Contents/Library/" | "$asset/DieterDaemon.app/Contents/Library/LaunchDaemons" | "$asset/DieterDaemon.app/Contents/Library/LaunchDaemons/" | "$asset/DieterDaemon.app/Contents/Library/LaunchDaemons/com.dbpprt.dieter.privacy.plist" | "$asset/DieterDaemon.app/Contents/_CodeSignature" | "$asset/DieterDaemon.app/Contents/_CodeSignature/" | "$asset/DieterDaemon.app/Contents/_CodeSignature/CodeResources")
+        "$asset/DieterPrivacyHelper.app" | "$asset/DieterPrivacyHelper.app/" | "$asset/DieterPrivacyHelper.app/Contents" | "$asset/DieterPrivacyHelper.app/Contents/" | "$asset/DieterPrivacyHelper.app/Contents/Info.plist" | "$asset/DieterPrivacyHelper.app/Contents/MacOS" | "$asset/DieterPrivacyHelper.app/Contents/MacOS/" | "$asset/DieterPrivacyHelper.app/Contents/MacOS/dieter-privacy" | "$asset/DieterPrivacyHelper.app/Contents/Library" | "$asset/DieterPrivacyHelper.app/Contents/Library/" | "$asset/DieterPrivacyHelper.app/Contents/Library/LaunchDaemons" | "$asset/DieterPrivacyHelper.app/Contents/Library/LaunchDaemons/" | "$asset/DieterPrivacyHelper.app/Contents/Library/LaunchDaemons/com.dbpprt.dieter.privacy.plist" | "$asset/DieterPrivacyHelper.app/Contents/_CodeSignature" | "$asset/DieterPrivacyHelper.app/Contents/_CodeSignature/" | "$asset/DieterPrivacyHelper.app/Contents/_CodeSignature/CodeResources")
             [ "$operating_system" = "darwin" ] || {
                 echo "Unexpected macOS helper in this release." >&2
                 exit 1
@@ -203,26 +203,38 @@ done
 tar -xzf "$archive" -C "$temporary_directory"
 mkdir -p "$install_directory"
 if [ "$operating_system" = "darwin" ]; then
-    daemon_source="${temporary_directory}/${asset}/DieterDaemon.app"
-    for daemon_directory in "$daemon_source" "$daemon_source/Contents" "$daemon_source/Contents/MacOS" "$daemon_source/Contents/Library" "$daemon_source/Contents/Library/LaunchDaemons" "$daemon_source/Contents/_CodeSignature"; do
-        test -d "$daemon_directory" && test ! -L "$daemon_directory"
+    release_source="${temporary_directory}/${asset}"
+    privacy_source="$release_source/DieterPrivacyHelper.app"
+    for privacy_directory in "$privacy_source" "$privacy_source/Contents" "$privacy_source/Contents/MacOS" "$privacy_source/Contents/Library" "$privacy_source/Contents/Library/LaunchDaemons" "$privacy_source/Contents/_CodeSignature"; do
+        test -d "$privacy_directory" && test ! -L "$privacy_directory"
     done
-    for daemon_file in "$daemon_source/Contents/Info.plist" "$daemon_source/Contents/MacOS/dieter" "$daemon_source/Contents/MacOS/dieter-capture" "$daemon_source/Contents/Library/LaunchDaemons/com.dbpprt.dieter.privacy.plist" "$daemon_source/Contents/_CodeSignature/CodeResources"; do
-        test -f "$daemon_file" && test ! -L "$daemon_file"
+    for privacy_file in "$privacy_source/Contents/Info.plist" "$privacy_source/Contents/MacOS/dieter-privacy" "$privacy_source/Contents/Library/LaunchDaemons/com.dbpprt.dieter.privacy.plist" "$privacy_source/Contents/_CodeSignature/CodeResources"; do
+        test -f "$privacy_file" && test ! -L "$privacy_file"
     done
-    test -x "$daemon_source/Contents/MacOS/dieter" && test -x "$daemon_source/Contents/MacOS/dieter-capture"
-    codesign --verify --deep --strict -R '=identifier "com.dbpprt.dieter.capture" and anchor apple generic and certificate leaf[subject.OU] = "DS6N5L85E7"' "$daemon_source"
-    for daemon_target in "$install_directory/DieterDaemon.app" "$install_directory/dieter" "$install_directory/dieter-capture"; do
-        if [ -e "$daemon_target" ] || [ -L "$daemon_target" ]; then
+    test -x "$privacy_source/Contents/MacOS/dieter-privacy"
+    codesign --verify --deep --strict -R '=identifier "com.dbpprt.dieter.privacy" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = "DS6N5L85E7"' "$privacy_source"
+    for executable in dieter dieter-capture; do
+        test -f "$release_source/$executable" && test ! -L "$release_source/$executable" && test -x "$release_source/$executable"
+        if [ "$executable" = "dieter" ]; then
+            executable_identifier="com.dbpprt.dieter.daemon"
+        else
+            executable_identifier="com.dbpprt.dieter.capture"
+        fi
+        codesign --verify --strict -R "=identifier \"$executable_identifier\" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = \"DS6N5L85E7\"" "$release_source/$executable"
+    done
+    for install_target in "$install_directory/DieterPrivacyHelper.app" "$install_directory/dieter" "$install_directory/dieter-capture"; do
+        if [ -e "$install_target" ] || [ -L "$install_target" ]; then
             echo "Dieter is already installed here. Use the managed Homebrew updater or an empty install directory." >&2
             exit 1
         fi
     done
-    daemon_bundle_temp="$(mktemp -d "${install_directory}/.dieter-daemon.XXXXXX")"
-    cp -R "$daemon_source" "$daemon_bundle_temp/DieterDaemon.app"
-    mv "$daemon_bundle_temp/DieterDaemon.app" "$install_directory/DieterDaemon.app"
-    ln -s "DieterDaemon.app/Contents/MacOS/dieter" "$install_directory/dieter"
-    ln -s "DieterDaemon.app/Contents/MacOS/dieter-capture" "$install_directory/dieter-capture"
+    privacy_install_temp="$(mktemp -d "${install_directory}/.dieter-install.XXXXXX")"
+    cp -R "$privacy_source" "$privacy_install_temp/DieterPrivacyHelper.app"
+    install -m 0755 "$release_source/dieter" "$privacy_install_temp/dieter"
+    install -m 0755 "$release_source/dieter-capture" "$privacy_install_temp/dieter-capture"
+    mv "$privacy_install_temp/DieterPrivacyHelper.app" "$install_directory/DieterPrivacyHelper.app"
+    mv "$privacy_install_temp/dieter" "$install_directory/dieter"
+    mv "$privacy_install_temp/dieter-capture" "$install_directory/dieter-capture"
 else
     test -f "${temporary_directory}/${asset}/dieter"
     test ! -L "${temporary_directory}/${asset}/dieter"

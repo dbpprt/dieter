@@ -277,6 +277,10 @@ dieter card create --project <project-id> --board <board-id> \
 
 `dieter setup` enrolls and starts the local daemon but never discovers or
 registers the current Git working tree, and it does not accept project paths.
+On macOS, normal setup also registers the signed background privacy helper
+through the running daemon and guides local approval and Input Monitoring.
+Privacy remains off. `--no-open` and `--no-start` defer helper registration to
+`dieter machine privacy setup`; setup is local-only and rejects `--machine`.
 Register each project explicitly with `dieter project open PATH` after setup.
 
 `card create` and `chat create` use the running local daemon when global
@@ -916,7 +920,9 @@ support, display count and failure reason. The owner change stream also carries
 privacy state so the native sidebar updates without telemetry polling.
 
 Requires the complete macOS daemon package, Accessibility permission and displays
-supporting verified transfer tables. `setup` registers the daemon bundle’s built-in privileged input service. Complete administrator approval in Login Items & Extensions
+supporting verified transfer tables. `setup` registers the separate signed `DieterPrivacyHelper.app` input service.
+The Go daemon and native capture helper remain standalone executables, installed
+beside that background bundle. Complete administrator approval in Login Items & Extensions
 and grant Input Monitoring on the target Mac; setup never enables privacy itself.
 The daemon remains unprivileged. The helper exclusively opens matched keyboard,
 pointer, consumer-control and digitizer HID devices, including hot-plug additions.

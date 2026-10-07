@@ -316,7 +316,7 @@ object MachineOperations {
                     "Set up privacy mode",
                     "Set Up",
                     "Set Up Privacy Mode…",
-                    "Set up privacy mode on this Mac. An administrator must approve Dieter Daemon in System Settings and grant Input Monitoring before you can lock the local screen.",
+                    "Set up privacy mode on this Mac. An administrator must approve Dieter Privacy Helper in System Settings and grant Input Monitoring before you can lock the local screen.",
                     false,
                 )
             MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_ON ->

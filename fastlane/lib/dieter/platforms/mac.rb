@@ -130,6 +130,106 @@ module Dieter
         timeout: 300
       )
       @context.command([binary], timeout: 120, log: File.join(@context.output, "input-state.log"))
+      privacy_hid_tests
+      @context.command(
+        %w[go test -race ./internal/remotedesktop],
+        environment: {
+          "DIETER_TEST_CAPTURE_HELPER" => helper
+        },
+        timeout: 1200,
+        log: File.join(@context.output, "capture-tests.log")
+      )
+    end
+
+    # This package/IPC gate uses synthetic pixels and isolated state. It needs
+    # a compiler lease, but never owns or changes the operator's desktop.
+    def privacy_native_test
+      unless RUBY_PLATFORM.include?("darwin")
+        raise Unavailable, "Native privacy packaging requires macOS"
+      end
+      @context.lease("apple-build")
+      stage = File.join(@context.private_dir, "privacy-package")
+      FileUtils.mkdir_p(stage)
+      @context.command(
+        ["go", "build", "-o", File.join(stage, "dieter"), "./cmd/dieter"],
+        timeout: 600
+      )
+      @context.command(
+        [
+          "codesign",
+          "--force",
+          "--identifier",
+          "com.dbpprt.dieter.daemon",
+          "--sign",
+          "-",
+          File.join(stage, "dieter")
+        ],
+        timeout: 120
+      )
+      helper = File.join(stage, "dieter-capture")
+      @context.command(["bash", "native/macos-capture/build.sh", helper], timeout: 300)
+      @context.command(
+        ["codesign", "--force", "--identifier", "com.dbpprt.dieter.capture", "--sign", "-", helper],
+        timeout: 120
+      )
+      @context.command(["bash", "native/macos-privacy/package.sh", stage], timeout: 300)
+      privacy_hid_tests
+      @context.command(
+        %w[
+          go
+          test
+          -race
+          ./internal/serviceruntime
+          -run
+          ^TestNativePrivacyPackageSmoke$
+          -count=1
+          -v
+        ],
+        environment: {
+          "DIETER_TEST_PRIVACY_PACKAGE" => stage
+        },
+        timeout: 300,
+        log: File.join(@context.output, "privacy-package.log")
+      )
+      @context.command(
+        %w[go test -race ./internal/remotedesktop -run Privacy -count=1 -v],
+        environment: {
+          "DIETER_TEST_CAPTURE_HELPER" => helper
+        },
+        timeout: 300,
+        log: File.join(@context.output, "privacy-capture.log")
+      )
+      release_stage = File.join(@context.private_dir, "privacy-release-package")
+      FileUtils.mkdir_p(release_stage)
+      %w[dieter dieter-capture].each { |name| FileUtils.cp(File.join(stage, name), release_stage) }
+      @context.command(
+        ["bash", "native/macos-privacy/package.sh", release_stage],
+        environment: {
+          "DIETER_PRIVACY_RELEASE" => "1"
+        },
+        timeout: 300
+      )
+      @context.command(
+        %w[
+          go
+          test
+          -race
+          ./internal/serviceruntime
+          -run
+          ^TestNativePrivacyPackageSmoke$
+          -count=1
+          -v
+        ],
+        environment: {
+          "DIETER_TEST_PRIVACY_PACKAGE" => release_stage,
+          "DIETER_TEST_PRIVACY_RELEASE" => "1"
+        },
+        timeout: 300,
+        log: File.join(@context.output, "privacy-release-package.log")
+      )
+    end
+
+    def privacy_hid_tests
       hid_binary = File.join(@context.private_dir, "privacy-hid-tests")
       @context.command(
         [
@@ -143,8 +243,14 @@ module Dieter
           "IOKit",
           "-framework",
           "Security",
-          "native/macos-capture/PrivacyHIDProtection.swift",
+          "-framework",
+          "ServiceManagement",
+          "-framework",
+          "SystemConfiguration",
+          "native/macos-privacy/PrivacyHIDProtection.swift",
+          "native/macos-privacy/PrivacyHIDService.swift",
           "native/macos-capture/PrivacyHIDProtocol.swift",
+          "native/macos-capture/PrivacyHelperPackage.swift",
           "native/macos-capture/tests/PrivacyHIDProtectionTests.swift",
           "-o",
           hid_binary
@@ -155,14 +261,6 @@ module Dieter
         [hid_binary],
         timeout: 120,
         log: File.join(@context.output, "privacy-hid-tests.log")
-      )
-      @context.command(
-        %w[go test -race ./internal/remotedesktop],
-        environment: {
-          "DIETER_TEST_CAPTURE_HELPER" => helper
-        },
-        timeout: 1200,
-        log: File.join(@context.output, "capture-tests.log")
       )
     end
 

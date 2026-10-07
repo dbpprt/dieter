@@ -94,7 +94,7 @@ func (api *grpcAPI) performPrivacyOperation(ctx context.Context, request *dieter
 			return nil, status.Error(codes.FailedPrecondition, err.Error())
 		}
 		s.privacySnapshot = nil
-		response := &dieterv1.MachineOperationResponse{Accepted: true, OperationId: key, Message: "Privacy helper setup requested. On the target Mac, approve Dieter Daemon in System Settings > General > Login Items & Extensions and grant Input Monitoring. Privacy stays off until you lock the local screen."}
+		response := &dieterv1.MachineOperationResponse{Accepted: true, OperationId: key, Message: "Privacy helper setup requested. On the target Mac, approve Dieter Privacy Helper in System Settings > General > Login Items & Extensions and grant Input Monitoring. Privacy stays off until you lock the local screen."}
 		s.machineOperations[key] = acceptedMachineOperation{action: request.GetAction(), response: response}
 		s.machineOperationOrder = append(s.machineOperationOrder, key)
 		for len(s.machineOperationOrder) > 32 {

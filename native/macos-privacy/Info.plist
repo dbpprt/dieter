@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>com.dbpprt.dieter.capture</string>
-<key>CFBundleExecutable</key><string>dieter-capture</string>
-<key>CFBundleName</key><string>Dieter Daemon</string>
-<key>CFBundleDisplayName</key><string>Dieter Daemon</string>
+<key>CFBundleIdentifier</key><string>com.dbpprt.dieter.privacy</string>
+<key>CFBundleExecutable</key><string>dieter-privacy</string>
+<key>CFBundleName</key><string>Dieter Privacy Helper</string>
+<key>CFBundleDisplayName</key><string>Dieter Privacy Helper</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>CFBundleShortVersionString</key><string>1.0</string>

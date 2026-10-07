@@ -249,9 +249,10 @@ module Dieter
       ) do |keychain, identity|
         {
           "dieter" => "com.dbpprt.dieter.daemon",
-          "dieter-capture" => "com.dbpprt.dieter.capture"
+          "dieter-capture" => "com.dbpprt.dieter.capture",
+          "DieterPrivacyHelper.app/Contents/MacOS/dieter-privacy" => "com.dbpprt.dieter.privacy"
         }.each do |name, identifier|
-          path = File.join(stage, "DieterDaemon.app/Contents/MacOS", name)
+          path = File.join(stage, name)
           @context.command(
             [
               "codesign",
@@ -271,7 +272,7 @@ module Dieter
           )
           @context.command(["codesign", "--verify", "--strict", path], timeout: 120)
         end
-        daemon_bundle = File.join(stage, "DieterDaemon.app")
+        privacy_bundle = File.join(stage, "DieterPrivacyHelper.app")
         @context.command(
           [
             "codesign",
@@ -283,12 +284,12 @@ module Dieter
             keychain,
             "--sign",
             identity,
-            daemon_bundle
+            privacy_bundle
           ],
           timeout: 120
         )
         @context.command(
-          ["codesign", "--verify", "--deep", "--strict", daemon_bundle],
+          ["codesign", "--verify", "--deep", "--strict", privacy_bundle],
           timeout: 120
         )
       end

@@ -40,7 +40,7 @@ def verify_release(directory):
         ("dieter", "com.dbpprt.dieter.daemon"),
         ("dieter-capture", "com.dbpprt.dieter.capture"),
     ):
-        binary = directory / "DieterDaemon.app/Contents/MacOS" / name
+        binary = directory / name
         if binary.is_symlink() or not binary.is_file():
             raise RuntimeError(f"Expected regular executable: {binary}")
         requirement = (
@@ -50,18 +50,18 @@ def verify_release(directory):
             f'certificate leaf[subject.OU] = "{TEAM}"'
         )
         run(["/usr/bin/codesign", "--verify", "--strict", "-R", "=" + requirement, binary])
-        hashes["DieterDaemon.app/Contents/MacOS/" + name] = digest(binary)
-    bundle = directory / "DieterDaemon.app"
+        hashes[name] = digest(binary)
+    bundle = directory / "DieterPrivacyHelper.app"
     if bundle.is_symlink() or not bundle.is_dir():
-        raise RuntimeError("Expected a regular signed daemon bundle")
-    requirement = f'identifier "com.dbpprt.dieter.capture" and anchor apple generic and certificate leaf[subject.OU] = "{TEAM}"'
+        raise RuntimeError("Expected a regular signed privacy helper bundle")
+    requirement = f'identifier "com.dbpprt.dieter.privacy" and anchor apple generic and certificate leaf[subject.OU] = "{TEAM}"'
     run(["/usr/bin/codesign", "--verify", "--deep", "--strict", "-R", "=" + requirement, bundle])
     for path in bundle.rglob("*"):
         if path.is_symlink():
-            raise RuntimeError("Daemon bundle contains a symlink")
+            raise RuntimeError("Privacy helper bundle contains a symlink")
         if path.is_file():
             hashes[str(path.relative_to(directory))] = digest(path)
-    run([directory / "DieterDaemon.app/Contents/MacOS/dieter", "screen", "permissions", "--help"])
+    run([directory / "dieter", "screen", "permissions", "--help"])
     return hashes
 
 
@@ -77,10 +77,7 @@ def main():
         parser.error("requires a disposable logged-in macOS account/VM")
     a, b = args.release_a.resolve(), args.release_b.resolve()
     hashes_a, hashes_b = verify_release(a), verify_release(b)
-    if (
-        hashes_a["DieterDaemon.app/Contents/MacOS/dieter"]
-        == hashes_b["DieterDaemon.app/Contents/MacOS/dieter"]
-    ):
+    if hashes_a["dieter"] == hashes_b["dieter"]:
         parser.error("A and B must contain differently built signed daemons")
     evidence = args.evidence.resolve()
     evidence.mkdir(parents=True, exist_ok=False)
@@ -137,7 +134,7 @@ def main():
     def cli(*command):
         return run(
             [
-                b / "DieterDaemon.app/Contents/MacOS/dieter",
+                b / "dieter",
                 "--store",
                 home,
                 "--timeout",
@@ -183,11 +180,11 @@ def main():
 
     try:
         run(
-            [a / "DieterDaemon.app/Contents/MacOS/dieter", "__service-stage", "--root", runtime],
+            [a / "dieter", "__service-stage", "--root", runtime],
             timeout=90,
         )
-        version_a = run([a / "DieterDaemon.app/Contents/MacOS/dieter", "version"]).stdout.strip()
-        version_b = run([b / "DieterDaemon.app/Contents/MacOS/dieter", "version"]).stdout.strip()
+        version_a = run([a / "dieter", "version"]).stdout.strip()
+        version_b = run([b / "dieter", "version"]).stdout.strip()
         start()
         report["initialStatus"] = wait_ready(version_a)
         initial = probe("a-before-grant.json")
@@ -206,10 +203,10 @@ def main():
         report["releaseAProbe"] = initial
         running_a = wait_ready(version_a)
         run(
-            [b / "DieterDaemon.app/Contents/MacOS/dieter", "__service-stage", "--root", runtime],
+            [b / "dieter", "__service-stage", "--root", runtime],
             timeout=90,
         )
-        if digest(executable) != hashes_a["DieterDaemon.app/Contents/MacOS/dieter"]:
+        if digest(executable) != hashes_a["dieter"]:
             raise RuntimeError("staging B changed the active A executable")
         report["stagedStatus"] = wait_ready(version_a)
         if report["stagedStatus"]["pid"] != running_a["pid"]:

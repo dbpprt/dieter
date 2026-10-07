@@ -20,6 +20,7 @@ func stageServiceRuntime(args []string, output io.Writer) error {
 	flags := flag.NewFlagSet("service runtime staging", flag.ContinueOnError)
 	flags.SetOutput(output)
 	root := flags.String("root", "", "absolute Homebrew service runtime directory")
+	bundlePrefix := flags.String("bundle-prefix", "", "companion bundle directory relative to the standalone binaries")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -37,11 +38,8 @@ func stageServiceRuntime(args []string, output io.Writer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	runtime := serviceruntime.PlatformRuntime(*root)
-	source, err := runtime.SourceDirectory(executable)
-	if err != nil {
-		return err
-	}
-	return runtime.Stage(ctx, source)
+	runtime.SourceBundlePrefix = *bundlePrefix
+	return runtime.Stage(ctx, filepath.Dir(executable))
 }
 
 // prepareHarnessRuntime is run from the signed candidate service binary after

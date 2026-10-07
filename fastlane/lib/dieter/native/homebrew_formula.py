@@ -26,15 +26,15 @@ def render(version: str, sha256: str) -> str:
   depends_on "tmux"
 
   def install
-    libexec.install "DieterDaemon.app"
-    bin.install_symlink libexec/"DieterDaemon.app/Contents/MacOS/dieter"
-    bin.install_symlink libexec/"DieterDaemon.app/Contents/MacOS/dieter-capture"
+    bin.install "dieter", "dieter-capture"
+    libexec.install "DieterPrivacyHelper.app"
   end
 
   post_install_steps do
     mkdir_p "dieter/service", base: :var
-    run "libexec/DieterDaemon.app/Contents/MacOS/dieter", base: :prefix,
-        args: ["__service-stage", "--root", "{{var}}/dieter/service"],
+    run "bin/dieter", base: :prefix,
+        args: ["__service-stage", "--root", "{{var}}/dieter/service",
+               "--bundle-prefix", "../libexec"],
         writable_paths: ["dieter/service"], writable_base: :var
   end
 
@@ -52,7 +52,12 @@ def render(version: str, sha256: str) -> str:
   def caveats
     <<~EOS
       Complete GitHub authorization and start the service:
-        dieter setup /path/to/git-project
+        dieter setup
+
+      Setup also registers the background privacy helper. Approve Dieter Privacy
+      Helper in Login Items & Extensions and grant Input Monitoring when prompted.
+      Privacy stays off until explicitly enabled. Register projects separately:
+        dieter project open /path/to/git-project
 
       Upgrades stage a signed release without changing the running service.
       Activate the staged release and refresh the service definition with:

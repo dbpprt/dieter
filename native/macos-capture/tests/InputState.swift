@@ -7,7 +7,6 @@ import ScreenCaptureKit
 
 @main struct InputStateTest {
     static func main() async throws {
-        try testPrivacyServiceAdmission()
         try testPrivacyLease()
         try testPrivacyHIDMonitor()
         if ProcessInfo.processInfo.environment["DIETER_TEST_PRIVACY_PHYSICAL"] == "1" { try await testPrivacyDesktop() }
@@ -170,28 +169,6 @@ import ScreenCaptureKit
             "Native input state: physical key zero, independent Shift sides, drag bounds, release and display generation passed"
         )
     }
-}
-
-private func testPrivacyServiceAdmission() throws {
-    let handled = try PrivacyHIDService.handle(["--capabilities", "--synthetic", "true"])
-    precondition(!handled)
-    for arguments in [
-        ["--privacy-hid-service", "--display-service"],
-        ["--privacy-hid-register", "--privacy-directory", "/tmp/untrusted"],
-        ["--privacy-hid-unknown"],
-    ] {
-        do {
-            _ = try PrivacyHIDService.handle(arguments)
-            preconditionFailure("Internal privacy mode accepted untrusted arguments")
-        } catch is PrivacyHIDError {}
-    }
-    if geteuid() != 0 {
-        do {
-            _ = try PrivacyHIDService.handle(["--privacy-hid-service"])
-            preconditionFailure("Unprivileged capture entered the root input service")
-        } catch is PrivacyHIDError {}
-    }
-    print("Privacy service admission: exact internal mode and root boundary passed")
 }
 
 private func testPrivacyHIDMonitor() throws {

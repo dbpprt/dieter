@@ -84,6 +84,15 @@ func TestSharedCoreCheckParity(t *testing.T) {
 	}
 }
 
+func TestPrivacyPackagingSelectsItsIsolatedNativeGate(t *testing.T) {
+	for _, path := range []string{"native/macos-privacy/package.sh", "native/macos-privacy/PrivacyHIDService.swift", "native/macos-capture/PrivacyService.swift", "internal/serviceruntime/runtime.go"} {
+		plan := planChecks([]string{path}, nil, "base")
+		if !checkExists(plan, "mac", "privacy_native_test") {
+			t.Fatalf("%s omitted privacy package qualification: %v", path, plan.Checks)
+		}
+	}
+}
+
 func TestOrchestrationContractsDoNotRequireLocalNativeCompilation(t *testing.T) {
 	for _, path := range []string{"fastlane/lib/dieter/pipeline/process.rb", "fastlane/lib/dieter/pipeline/evidence.rb", "fastlane/lib/dieter/ci.rb", "fastlane/lib/dieter/config.rb"} {
 		plan := planChecks([]string{path}, nil, "")

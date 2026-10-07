@@ -208,7 +208,7 @@ Commands:
   watch        Stream this machine's change frames as JSON Lines
   storage      Print the target daemon's central storage path
   doctor       Check local Linux/macOS runtime and service prerequisites
-  setup        Authorize, enroll, and install this local daemon service
+  setup        Authorize, enroll, and install the daemon and macOS privacy helper
   daemon       Start, enroll, recover, inspect, or manage this local daemon service
   serve        Alias for "dieter daemon start"
   version      Print the version

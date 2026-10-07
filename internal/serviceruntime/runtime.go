@@ -31,12 +31,13 @@ type Runtime struct {
 	// Executables defaults to the signed daemon/helper pair. Platform runtimes
 	// may supply an explicit list when their verification policy differs.
 	Executables []string
-	// SourceExecutablePrefix locates the executable pair in the macOS package.
-	// The managed runtime retains its established real bin/dieter path.
-	SourceExecutablePrefix string
 	// Signed app bundles travel with their daemon/helper release and participate
 	// in the same atomic activation and rollback. No links are permitted.
 	Bundles []string
+	// SourceBundlePrefix is relative to the standalone source executable pair.
+	// Homebrew stores its companion bundle in ../libexec; release archives keep
+	// it beside the pair. Activated runtime paths are identical in both cases.
+	SourceBundlePrefix string
 	// Verify is injectable for isolated filesystem tests. Production always
 	// uses Developer ID verification; there is no unsigned-install CLI flag.
 	Verify func(context.Context, string) error
@@ -68,19 +69,6 @@ func (r Runtime) DaemonExecutable() string {
 	return r.path("bin/dieter")
 }
 
-// SourceDirectory resolves the release root from its canonical executable.
-func (r Runtime) SourceDirectory(executable string) (string, error) {
-	dir := filepath.Dir(executable)
-	if r.SourceExecutablePrefix == "" {
-		return dir, nil
-	}
-	suffix := string(filepath.Separator) + r.SourceExecutablePrefix
-	if !strings.HasSuffix(dir, suffix) {
-		return "", errors.New("macOS service staging requires the complete DieterDaemon.app release")
-	}
-	return strings.TrimSuffix(dir, suffix), nil
-}
-
 func (r Runtime) verify(ctx context.Context, dir string) error {
 	if err := realDir(dir); err != nil {
 		return err
@@ -103,19 +91,6 @@ func (r Runtime) verify(ctx context.Context, dir string) error {
 			return err
 		}
 	}
-	if r.SourceExecutablePrefix != "" {
-		outer, err := hashExecutables(dir, r.executableNames())
-		if err != nil {
-			return err
-		}
-		inner, err := hashExecutables(filepath.Join(dir, r.SourceExecutablePrefix), r.executableNames())
-		if err != nil {
-			return err
-		}
-		if outer != inner {
-			return errors.New("daemon runtime executables differ from their signed bundle")
-		}
-	}
 	return verify(ctx, dir)
 }
 
@@ -123,11 +98,11 @@ func VerifySignedPair(ctx context.Context, dir string) error {
 	if err := verifySignedExecutables(ctx, dir); err != nil {
 		return err
 	}
-	requirement := fmt.Sprintf(`identifier "com.dbpprt.dieter.capture" and anchor apple generic and certificate leaf[subject.OU] = %q`, TeamID)
+	requirement := fmt.Sprintf(`identifier "com.dbpprt.dieter.privacy" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = %q`, TeamID)
 	checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	if output, err := exec.CommandContext(checkCtx, "/usr/bin/codesign", "--verify", "--deep", "--strict", "-R", "="+requirement, filepath.Join(dir, "DieterDaemon.app")).CombinedOutput(); err != nil {
-		return fmt.Errorf("verify signed daemon bundle: %w: %s", err, strings.TrimSpace(string(output)))
+	if output, err := exec.CommandContext(checkCtx, "/usr/bin/codesign", "--verify", "--deep", "--strict", "-R", "="+requirement, filepath.Join(dir, "DieterPrivacyHelper.app")).CombinedOutput(); err != nil {
+		return fmt.Errorf("verify signed privacy helper bundle: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
@@ -150,7 +125,7 @@ func verifySignedExecutables(ctx context.Context, dir string) error {
 }
 
 // Only an activation rollback may restore the earlier signed, unbundled layout.
-// New staged releases always require the complete daemon bundle.
+// New staged macOS releases always require the privacy helper bundle.
 func (r Runtime) verifyRollback(ctx context.Context, dir string) error {
 	if len(r.Bundles) == 0 {
 		return r.verify(ctx, dir)
@@ -196,12 +171,12 @@ func (r Runtime) Stage(ctx context.Context, source string) error {
 	}
 	defer os.RemoveAll(tmp)
 	for _, name := range r.executableNames() {
-		if err := copyExecutable(filepath.Join(source, r.SourceExecutablePrefix, name), filepath.Join(tmp, name)); err != nil {
+		if err := copyExecutable(filepath.Join(source, name), filepath.Join(tmp, name)); err != nil {
 			return err
 		}
 	}
 	for _, name := range r.Bundles {
-		if err := copyBundle(filepath.Join(source, name), filepath.Join(tmp, name)); err != nil {
+		if err := copyBundle(filepath.Join(source, r.SourceBundlePrefix, name), filepath.Join(tmp, name)); err != nil {
 			return err
 		}
 	}
@@ -566,7 +541,7 @@ func walkBundle(root string, visit func(string, string, os.FileInfo) error) erro
 		count++
 		total += info.Size()
 		if count > 256 || total > 512<<20 || (!info.IsDir() && !info.Mode().IsRegular()) {
-			return errors.New("invalid daemon bundle")
+			return errors.New("invalid service bundle")
 		}
 		relative, err := filepath.Rel(root, path)
 		if err != nil {

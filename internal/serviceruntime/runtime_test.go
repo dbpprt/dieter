@@ -43,24 +43,50 @@ func fixturePair(t *testing.T, version string) string {
 	return dir
 }
 
-func TestDaemonBundleStagesAtomicallyAndRollsBack(t *testing.T) {
-	r := fixtureRuntime(t)
-	r.SourceExecutablePrefix = "DieterDaemon.app/Contents/MacOS"
-	r.Bundles = []string{"DieterDaemon.app"}
-	source := t.TempDir()
-	path := filepath.Join(source, r.SourceExecutablePrefix)
+func fixturePrivacyRelease(t *testing.T, version string) string {
+	t.Helper()
+	source := fixturePair(t, version)
+	path := filepath.Join(source, "DieterPrivacyHelper.app/Contents/MacOS")
 	if err := os.MkdirAll(path, 0755); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range executables {
-		if err := os.WriteFile(filepath.Join(path, name), []byte("A:"+name), 0755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	metadata := filepath.Join(source, "DieterDaemon.app/Contents/Info.plist")
-	if err := os.WriteFile(metadata, []byte("metadata-A"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(path, "dieter-privacy"), []byte(version+":privacy"), 0755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(source, "DieterPrivacyHelper.app/Contents/Info.plist"), []byte("metadata-"+version), 0644); err != nil {
+		t.Fatal(err)
+	}
+	return source
+}
+
+func fixturePrivacyRuntime(t *testing.T) Runtime {
+	t.Helper()
+	r := fixtureRuntime(t)
+	pairVerify := r.Verify
+	r.Bundles = []string{"DieterPrivacyHelper.app"}
+	r.Verify = func(ctx context.Context, dir string) error {
+		if err := pairVerify(ctx, dir); err != nil {
+			return err
+		}
+		helper := filepath.Join(dir, "DieterPrivacyHelper.app/Contents/MacOS/dieter-privacy")
+		if _, err := os.Stat(filepath.Dir(helper)); errors.Is(err, os.ErrNotExist) {
+			return nil
+		} // pre-helper rollback
+		raw, err := os.ReadFile(helper)
+		if err != nil {
+			return err
+		}
+		if strings.HasPrefix(string(raw), "INVALID") {
+			return errors.New("invalid helper signature fixture")
+		}
+		return nil
+	}
+	return r
+}
+
+func TestPrivacyHelperStagesWithStandaloneDaemonAndRollsBack(t *testing.T) {
+	r := fixturePrivacyRuntime(t)
+	source := fixturePrivacyRelease(t, "A")
 	if err := r.Stage(t.Context(), source); err != nil {
 		t.Fatal(err)
 	}
@@ -68,78 +94,64 @@ func TestDaemonBundleStagesAtomicallyAndRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(r.path("pending")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("identical bundle staged another activation")
+		t.Fatal("identical helper staged another activation")
 	}
-	resolved, err := r.SourceDirectory(filepath.Join(path, "dieter"))
-	if err != nil || resolved != source {
-		t.Fatalf("release root: %q %v", resolved, err)
+	assertPair(t, r, "A")
+	for _, name := range executables {
+		if _, err := os.Stat(filepath.Join(r.path("bin/DieterPrivacyHelper.app/Contents/MacOS"), name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatal("Go daemon or capture executable was bundled")
+		}
 	}
-	if _, err := r.SourceDirectory(filepath.Join(source, "dieter")); err == nil {
-		t.Fatal("accepted executable outside daemon bundle")
-	}
+	metadata := filepath.Join(source, "DieterPrivacyHelper.app/Contents/Info.plist")
 	if err := os.WriteFile(metadata, []byte("metadata-B"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.Stage(t.Context(), source); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(r.path("bin/DieterDaemon.app/Contents/Info.plist"))
-	if err != nil || string(raw) != "metadata-A" {
-		t.Fatalf("running bundle overwritten: %q %v", raw, err)
+	assertMetadata := func(expected string) {
+		t.Helper()
+		raw, err := os.ReadFile(r.path("bin/DieterPrivacyHelper.app/Contents/Info.plist"))
+		if err != nil || string(raw) != expected {
+			t.Fatalf("helper metadata: %q %v", raw, err)
+		}
 	}
-	if _, err := os.Stat(r.DaemonExecutable()); err != nil {
-		t.Fatal(err)
-	}
-	if inner, err := os.ReadFile(r.path("bin/DieterDaemon.app/Contents/MacOS/dieter")); err != nil || string(inner) != "A:dieter" {
-		t.Fatal("bundle is missing the canonical daemon executable")
-	}
+	assertMetadata("metadata-A")
 	service, reexec, err := r.Start(t.Context())
 	if err != nil || !reexec {
 		t.Fatalf("activation: %v %v", reexec, err)
 	}
 	service.Close()
-	service, reexec, err = r.Start(t.Context()) // Crash before readiness rolls the whole bundle back.
+	assertMetadata("metadata-B")
+	service, reexec, err = r.Start(t.Context()) // Crash before readiness restores the entire release.
 	if err != nil || !reexec {
 		t.Fatalf("rollback: %v %v", reexec, err)
 	}
 	service.Close()
-	raw, err = os.ReadFile(r.path("bin/DieterDaemon.app/Contents/Info.plist"))
-	if err != nil || string(raw) != "metadata-A" {
-		t.Fatalf("bundle did not roll back: %q %v", raw, err)
-	}
-	if err := os.Symlink(filepath.Join(path, "dieter-capture"), filepath.Join(path, "link")); err != nil {
+	assertMetadata("metadata-A")
+	path := filepath.Join(source, "DieterPrivacyHelper.app/Contents/MacOS")
+	if err := os.Symlink(filepath.Join(path, "dieter-privacy"), filepath.Join(path, "link")); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.Stage(t.Context(), source); err == nil {
-		t.Fatal("accepted a link in daemon bundle")
+		t.Fatal("accepted a link in privacy helper bundle")
 	}
 }
 
-func TestBundledRuntimeAdoptsPreBundleActivation(t *testing.T) {
+func TestPrivacyRuntimeAdoptsPreHelperActivation(t *testing.T) {
 	for _, acknowledge := range []bool{true, false} {
 		t.Run(fmt.Sprint("acknowledge-", acknowledge), func(t *testing.T) {
 			legacy := fixtureRuntime(t)
 			if err := legacy.Stage(t.Context(), fixturePair(t, "A")); err != nil {
 				t.Fatal(err)
 			}
-			current := legacy
-			current.SourceExecutablePrefix = "DieterDaemon.app/Contents/MacOS"
-			current.Bundles = []string{"DieterDaemon.app"}
-			source := t.TempDir()
-			pair := filepath.Join(source, current.SourceExecutablePrefix)
-			if err := os.MkdirAll(pair, 0755); err != nil {
-				t.Fatal(err)
-			}
-			for _, name := range executables {
-				if err := os.WriteFile(filepath.Join(pair, name), []byte("B:"+name), 0755); err != nil {
-					t.Fatal(err)
-				}
-			}
+			current := fixturePrivacyRuntime(t)
+			current.Root = legacy.Root
+			source := fixturePrivacyRelease(t, "B")
 			if err := current.Stage(t.Context(), source); err != nil {
 				t.Fatal(err)
 			}
 			assertPair(t, legacy, "A")
-			// The existing service activates the new release using its old pair-only journal.
 			service, reexec, err := legacy.Start(t.Context())
 			if err != nil || !reexec {
 				t.Fatalf("legacy activation: %v %v", reexec, err)
@@ -165,7 +177,7 @@ func TestBundledRuntimeAdoptsPreBundleActivation(t *testing.T) {
 			}
 			service, reexec, err = current.Start(t.Context())
 			if err != nil || reexec == acknowledge {
-				t.Fatalf("bundled takeover: %v %v", reexec, err)
+				t.Fatalf("helper takeover: %v %v", reexec, err)
 			}
 			defer service.Close()
 			if acknowledge {
@@ -176,20 +188,75 @@ func TestBundledRuntimeAdoptsPreBundleActivation(t *testing.T) {
 				if err := current.verify(t.Context(), current.path("bin")); err != nil {
 					t.Fatal(err)
 				}
-				// Copies at the stable service path must match the signed bundle exactly.
-				if err := os.WriteFile(filepath.Join(current.path("bin"), current.SourceExecutablePrefix, "dieter"), []byte("other"), 0755); err != nil {
+				if err := os.WriteFile(current.path("bin/DieterPrivacyHelper.app/Contents/MacOS/dieter-privacy"), []byte("INVALID"), 0755); err != nil {
 					t.Fatal(err)
 				}
 				if err := current.verify(t.Context(), current.path("bin")); err == nil {
-					t.Fatal("accepted different daemon bytes in the bundle")
+					t.Fatal("accepted corrupted privacy helper")
 				}
 			} else {
 				assertPair(t, current, "A")
-				if _, err := os.Stat(current.path("bin/DieterDaemon.app")); !errors.Is(err, os.ErrNotExist) {
-					t.Fatal("failed upgrade did not restore unbundled installation")
+				if _, err := os.Stat(current.path("bin/DieterPrivacyHelper.app")); !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("failed upgrade did not restore original standalone installation")
 				}
 			}
 		})
+	}
+}
+
+func TestPrivacyRuntimeRejectsMissingOrInvalidHelperBeforeActivation(t *testing.T) {
+	r := fixturePrivacyRuntime(t)
+	if err := r.Stage(t.Context(), fixturePair(t, "A")); err == nil {
+		t.Fatal("accepted incomplete release")
+	}
+	source := fixturePrivacyRelease(t, "A")
+	if err := r.Stage(t.Context(), source); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "DieterPrivacyHelper.app/Contents/MacOS/dieter-privacy"), []byte("INVALID"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Stage(t.Context(), source); err == nil {
+		t.Fatal("accepted invalid helper")
+	}
+	assertPair(t, r, "A")
+	if _, err := os.Stat(r.path("pending")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("failed staging left a pending release")
+	}
+}
+
+func TestHomebrewPrivacyResourceStagesBesideStandaloneBinaries(t *testing.T) {
+	source := fixturePrivacyRelease(t, "A")
+	prefix := t.TempDir()
+	bin := filepath.Join(prefix, "bin")
+	libexec := filepath.Join(prefix, "libexec")
+	for _, path := range []string{bin, libexec} {
+		if err := os.Mkdir(path, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range executables {
+		if err := copyExecutable(filepath.Join(source, name), filepath.Join(bin, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := copyBundle(filepath.Join(source, "DieterPrivacyHelper.app"), filepath.Join(libexec, "DieterPrivacyHelper.app")); err != nil {
+		t.Fatal(err)
+	}
+	r := fixturePrivacyRuntime(t)
+	r.SourceBundlePrefix = "../libexec"
+	if err := r.Stage(t.Context(), bin); err != nil {
+		t.Fatal(err)
+	}
+	assertPair(t, r, "A")
+	if raw, err := os.ReadFile(r.path("bin/DieterPrivacyHelper.app/Contents/MacOS/dieter-privacy")); err != nil || string(raw) != "A:privacy" {
+		t.Fatalf("Homebrew privacy resource: %q %v", raw, err)
+	}
+	if err := r.Stage(t.Context(), bin); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(r.path("pending")); !os.IsNotExist(err) {
+		t.Fatal("Homebrew reinstall staged a new activation")
 	}
 }
 

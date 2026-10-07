@@ -24,6 +24,8 @@ private final class TestHIDDriver: PrivacyHIDDriver {
             try authenticationClient(CommandLine.arguments[2])
             return
         }
+        try testPrivacyServiceAdmission()
+        try testPrivacyHelperLocation()
         try testCallerAuthentication()
         let driver = TestHIDDriver()
         let lease = PrivacyHIDLease(driver: driver)
@@ -127,4 +129,52 @@ private final class TestHIDDriver: PrivacyHIDDriver {
         var reply: UInt8 = 0
         precondition(read(client, &reply, 1) == 1 && reply == 1)
     }
+}
+
+private func testPrivacyServiceAdmission() throws {
+    let handled = try PrivacyHIDService.handle(["--capabilities", "--synthetic", "true"])
+    precondition(!handled)
+    for arguments in [
+        ["--privacy-hid-service", "--display-service"],
+        ["--privacy-hid-register", "--privacy-directory", "/tmp/untrusted"],
+        ["--privacy-hid-unknown"],
+    ] {
+        do {
+            _ = try PrivacyHIDService.handle(arguments)
+            preconditionFailure("Internal privacy mode accepted untrusted arguments")
+        } catch is PrivacyHIDError {}
+    }
+    if geteuid() != 0 {
+        do {
+            _ = try PrivacyHIDService.handle(["--privacy-hid-service"])
+            preconditionFailure("Unprivileged helper entered the root input service")
+        } catch is PrivacyHIDError {}
+    }
+    print("Privacy service admission: exact internal mode and root boundary passed")
+}
+
+private func testPrivacyHelperLocation() throws {
+    let files = FileManager.default
+    let root = files.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent(UUID().uuidString)
+    try files.createDirectory(at: root, withIntermediateDirectories: false)
+    defer { try? files.removeItem(at: root) }
+    let capture = root.appendingPathComponent("bin/dieter-capture")
+    let adjacent = root.appendingPathComponent("bin/DieterPrivacyHelper.app")
+    let resource = root.appendingPathComponent("libexec/DieterPrivacyHelper.app")
+    precondition(PrivacyHelperPackage.bundle(for: capture).path == adjacent.path)
+    for bundle in [resource, adjacent] {
+        let main = bundle.appendingPathComponent("Contents/MacOS/dieter-privacy")
+        try files.createDirectory(at: main.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data().write(to: main)
+        try files.setAttributes([.posixPermissions: 0o755], ofItemAtPath: main.path)
+        // Foundation adds a directory marker once a bundle exists. Compare the
+        // canonical filesystem location, independent of that URL metadata.
+        precondition(PrivacyHelperPackage.bundle(for: capture).path == bundle.path)
+    }
+    let alias = root.appendingPathComponent("alias/dieter-capture")
+    try files.createDirectory(at: alias.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data().write(to: capture)
+    try files.createSymbolicLink(at: alias, withDestinationURL: capture)
+    precondition(PrivacyHelperPackage.bundle(for: alias).path == adjacent.path)
+    print("Privacy helper discovery: standalone, Homebrew resource and canonical symlink paths passed")
 }

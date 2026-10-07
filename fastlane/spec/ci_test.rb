@@ -10,55 +10,107 @@ class CIOptionsTest < Minitest::Test
     previous = ENV["CI_CHANGE_BASE"]
     ENV["CI_CHANGE_BASE"] = "a" * 40
     context = Struct.new(:root, :environment, :output).new("/isolated", {}, "/evidence")
-    requests = [{"component" => "portable", "operation" => "go_test", "packages" => ["./internal/pipeline"]},
-                {"component" => "portable", "operation" => "contracts"},
-                {"component" => "mac", "operation" => "e2e"}]
+    requests = [
+      {
+        "component" => "portable",
+        "operation" => "go_test",
+        "packages" => ["./internal/pipeline"]
+      },
+      { "component" => "portable", "operation" => "contracts" },
+      { "component" => "mac", "operation" => "e2e" }
+    ]
     contract = Object.new
     contract.define_singleton_method(:call) do |operation, values|
-      raise "wrong selection" unless operation == "affected-checks" && values == {base: "a" * 40, kind: "local"}
-      {"checks" => requests}
+      unless operation == "affected-checks" && values == { base: "a" * 40, kind: "local" }
+        raise "wrong selection"
+      end
+      { "checks" => requests }
     end
     executed = []
-    executor = lambda { |_context, component, operation, options, packages:| executed << [component, operation, options, packages] }
+    executor =
+      lambda do |_context, component, operation, options, packages:|
+        executed << [component, operation, options, packages]
+      end
     Dieter::SourceIdentity.stub(:version, "0.4.413") do
       Dieter::Contract.stub(:new, ->(*) { contract }) do
         Dieter::Atomic.stub(:json, nil) do
-          Dieter::Checks.stub(:perform, executor) { Dieter::CI.check(context, "portable", full: false) }
+          Dieter::Checks.stub(:perform, executor) do
+            Dieter::CI.check(context, "portable", full: false)
+          end
         end
       end
     end
-    assert_equal [["portable", "go_test", {}, ["./internal/pipeline"]], ["portable", "contracts", {}, []]], executed
+    assert_equal [
+                   ["portable", "go_test", {}, ["./internal/pipeline"]],
+                   ["portable", "contracts", {}, []]
+                 ],
+                 executed
   ensure
     previous ? ENV["CI_CHANGE_BASE"] = previous : ENV.delete("CI_CHANGE_BASE")
   end
 
   def test_dev_release_cannot_pass_with_skipped_candidates_publication_or_delivery
-    results = %w[reserve candidates coordinate distribute].to_h { |name| [name, {"result" => "success"}] }
+    results =
+      %w[reserve candidates coordinate distribute].to_h { |name| [name, { "result" => "success" }] }
     Dieter::CI.qualify_release(results, channel: "dev")
     results.each_key do |name|
       %w[skipped failure cancelled].each do |status|
-        bad = results.merge(name => {"result" => status})
+        bad = results.merge(name => { "result" => status })
         assert_raises(Dieter::PipelineError) { Dieter::CI.qualify_release(bad, channel: "dev") }
       end
     end
-    assert_raises(Dieter::PipelineError) { Dieter::CI.qualify_release(results.except("candidates"), channel: "dev") }
+    assert_raises(Dieter::PipelineError) do
+      Dieter::CI.qualify_release(results.except("candidates"), channel: "dev")
+    end
     results["distribute"]["result"] = "skipped"
     Dieter::CI.qualify_release(results, channel: "draft")
     assert_raises(Dieter::PipelineError) { Dieter::CI.qualify_release(results, channel: "stable") }
   end
 
+  def test_mac_ci_requires_privacy_package_qualification_in_routine_and_full_runs
+    [false, true].each do |full|
+      context = Struct.new(:root, :environment, :output).new("/isolated", {}, "/evidence")
+      context.define_singleton_method(:command) { |*, **| }
+      calls = []
+      adapter = Object.new
+      %i[privacy_native_test core_test].each do |name|
+        adapter.define_singleton_method(name) { calls << name }
+      end
+      %i[unit build].each { |name| adapter.define_singleton_method(name) { |_| calls << name } }
+      Dieter::SourceIdentity.stub(:version, "0.4.413") do
+        Dieter::Mac.stub(:new, ->(*) { adapter }) do
+          Dieter::CI.check(context, "mac", full: full)
+          assert_includes calls, :privacy_native_test
+          adapter.define_singleton_method(:privacy_native_test) do
+            raise Dieter::PipelineError, "invalid helper package"
+          end
+          assert_raises(Dieter::PipelineError) { Dieter::CI.check(context, "mac", full: full) }
+        end
+      end
+    end
+  end
+
   def test_release_call_chain_can_read_producer_checkpoints_and_recover_completed_claim_owners
     jobs = {
-      "ci" => %w[release], "release" => %w[candidates coordinate distribute],
-      "component-candidate" => %w[candidate], "release-coordinate" => %w[publish],
-      "release-distribute" => %w[testflight], "ios-testflight" => %w[distribute],
-      "release-promote" => %w[promote], "release-retention" => %w[retention],
+      "ci" => %w[release],
+      "release" => %w[candidates coordinate distribute],
+      "component-candidate" => %w[candidate],
+      "release-coordinate" => %w[publish],
+      "release-distribute" => %w[testflight],
+      "ios-testflight" => %w[distribute],
+      "release-promote" => %w[promote],
+      "release-retention" => %w[retention],
       "gateway-deploy" => %w[prepare]
     }
     jobs.each do |workflow, names|
-      data = YAML.safe_load(File.read(File.join(Dieter::Runtime::ROOT, ".github/workflows/#{workflow}.yml")))
+      data =
+        YAML.safe_load(
+          File.read(File.join(Dieter::Runtime::ROOT, ".github/workflows/#{workflow}.yml"))
+        )
       names.each do |name|
-        assert_equal "read", data.fetch("jobs").fetch(name).fetch("permissions").fetch("actions"), "#{workflow}/#{name} needs Actions metadata for checkpoint and claim recovery"
+        assert_equal "read",
+                     data.fetch("jobs").fetch(name).fetch("permissions").fetch("actions"),
+                     "#{workflow}/#{name} needs Actions metadata for checkpoint and claim recovery"
       end
     end
   end
@@ -66,8 +118,10 @@ class CIOptionsTest < Minitest::Test
   def test_required_gate_refuses_skipped_selected_checks_and_accepts_unselected_components
     selections = %w[core macos ios android kmp].to_h { |name| [name, "false"] }
     selections["ios"] = "true"
-    results = {"changes" => {"result" => "success", "outputs" => selections}}
-    %w[portable core core-apple mac ios android].each { |name| results[name] = {"result" => "skipped"} }
+    results = { "changes" => { "result" => "success", "outputs" => selections } }
+    %w[portable core core-apple mac ios android].each do |name|
+      results[name] = { "result" => "skipped" }
+    end
     assert_raises(Dieter::PipelineError) { Dieter::CI.qualify_jobs(results, full: false) }
     results["ios"]["result"] = "success"
     Dieter::CI.qualify_jobs(results, full: false)

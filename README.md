@@ -83,8 +83,11 @@ open -a Dieter
 ```
 
 Sign in to the same gateway in the app, open your project, and create a task.
-`setup` enrolls the machine and starts its service. `project open` separately
-registers an existing Git working tree.
+`setup` enrolls the machine, starts its Homebrew service, and registers the
+background privacy helper. Approve **Dieter Privacy Helper** in Login Items &
+Extensions and grant Input Monitoring when prompted; privacy remains off until
+enabled. The daemon and capture helper remain standalone executables.
+`project open` separately registers an existing Git working tree.
 
 The standard gateway is `https://gateway.getdieter.com`, with STUN/TURN at
 `turn.getdieter.com`. Access requires an allowed account. Existing installations
@@ -258,9 +261,12 @@ dieter --machine MACHINE_ID machine privacy off --key UNIQUE_UNLOCK_ID
 ```
 
 Omit `--machine` for the local daemon. **Set Up Privacy Mode…** registers the
-daemon’s built-in privacy service; an administrator must approve it in Login Items
+separate signed background privacy helper; an administrator must approve it in Login Items
 & Extensions and grant
-Input Monitoring on the target Mac. The main daemon stays unprivileged. Requires
+Input Monitoring on the target Mac. The Go daemon and capture helper remain standalone executables; only
+`DieterPrivacyHelper.app` contains the privileged input service. The main daemon
+stays unprivileged. Normal `dieter setup` handles helper registration on macOS;
+`--no-open` and `--no-start` defer it to `dieter machine privacy setup`. Requires
 Accessibility permission and compatible display transfer tables. Protection
 exclusively claims matched HID input devices, with a secondary session filter.
 Status includes the protected input-device count and whether setup is required.

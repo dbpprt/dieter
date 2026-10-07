@@ -109,28 +109,26 @@ final class SystemPrivacyDesktopDriver: PrivacyDesktopDriver {
     private var disabledAt: [TimeInterval] = []
     private lazy var input = PrivacyHIDMonitor(requestLock: { [weak self] in self?.requestAuthenticationLock() })
 
-    static var daemonBundle: URL {
-        if Bundle.main.bundleIdentifier == "com.dbpprt.dieter.capture" { return Bundle.main.bundleURL }
-        return URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent()
-            .appendingPathComponent("DieterDaemon.app")
+    static var privacyBundle: URL {
+        PrivacyHelperPackage.bundle(for: URL(fileURLWithPath: CommandLine.arguments[0]))
     }
 
-    static var daemonBundleInstalled: Bool {
+    static var privacyBundleInstalled: Bool {
         FileManager.default.isExecutableFile(
-            atPath: daemonBundle.appendingPathComponent("Contents/MacOS/dieter-capture").path)
+            atPath: privacyBundle.appendingPathComponent("Contents/MacOS/dieter-privacy").path)
     }
 
     static func setup() throws -> PrivacySnapshot {
-        let executable = daemonBundle.appendingPathComponent("Contents/MacOS/dieter-capture")
-        guard daemonBundleInstalled else {
-            throw PrivacyHIDError("Install the complete Dieter Daemon package to set up privacy mode")
+        let executable = privacyBundle.appendingPathComponent("Contents/MacOS/dieter-privacy")
+        guard privacyBundleInstalled else {
+            throw PrivacyHIDError("Install DieterPrivacyHelper.app beside the daemon to set up privacy mode")
         }
         let process = Process(); process.executableURL = executable; process.arguments = ["--privacy-hid-register"]
         let pipe = Pipe(); process.standardOutput = pipe
         try process.run()
         let data = pipe.fileHandleForReading.readDataToEndOfFile(); process.waitUntilExit()
         guard process.terminationStatus == 0 else {
-            throw PrivacyHIDError("macOS could not register the daemon's privacy service")
+            throw PrivacyHIDError("macOS could not register the privacy helper")
         }
         let status = try JSONDecoder().decode(PrivacyHIDStatus.self, from: data)
         return .init(supported: false, reason: status.reason, helperSetupRequired: true)
@@ -160,13 +158,13 @@ final class SystemPrivacyDesktopDriver: PrivacyDesktopDriver {
             guard input.available else {
                 return .init(
                     reason: input.reason, displayCount: displays.count, inputDeviceCount: input.deviceCount,
-                    helperSetupRequired: Self.daemonBundleInstalled)
+                    helperSetupRequired: Self.privacyBundleInstalled)
             }
             return .init(supported: true, displayCount: displays.count, inputDeviceCount: input.deviceCount)
         } catch {
             return .init(
                 reason: String(error.localizedDescription.prefix(1024)),
-                helperSetupRequired: Self.daemonBundleInstalled)
+                helperSetupRequired: Self.privacyBundleInstalled)
         }
     }
     static func isPhysical(_ event: CGEvent) -> Bool {

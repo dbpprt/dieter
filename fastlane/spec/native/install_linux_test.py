@@ -84,7 +84,7 @@ cp "$DIETER_TEST_ASSETS/${url##*/}" "$destination"
             capture.write_text("#!/bin/sh\necho capture fixture\n", encoding="utf-8")
             capture.chmod(0o755)
         if system == "darwin":
-            bundle = package / "DieterDaemon.app/Contents"
+            bundle = package / "DieterPrivacyHelper.app/Contents"
             for name in (
                 "Info.plist",
                 "Library/LaunchDaemons/com.dbpprt.dieter.privacy.plist",
@@ -95,9 +95,9 @@ cp "$DIETER_TEST_ASSETS/${url##*/}" "$destination"
                 path.write_text("fixture\n")
                 path.chmod(0o644)
             (bundle / "MacOS").mkdir()
-            shutil.move(daemon, bundle / "MacOS/dieter")
-            if include_capture:
-                shutil.move(capture, bundle / "MacOS/dieter-capture")
+            helper = bundle / "MacOS/dieter-privacy"
+            helper.write_text("#!/bin/sh\nexit 0\n")
+            helper.chmod(0o755)
         (package / "LICENSE").write_text("fixture\n", encoding="utf-8")
         (package / "VERSION").write_text("1.2.3\n", encoding="utf-8")
         archive = self.assets / f"{package.name}.tar.gz"
@@ -197,20 +197,21 @@ cp "$DIETER_TEST_ASSETS/${url##*/}" "$destination"
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertTrue((self.install / "dieter").is_file())
         self.assertTrue((self.install / "dieter-capture").is_file())
-        self.assertTrue((self.install / "DieterDaemon.app/Contents/MacOS/dieter-capture").is_file())
-        self.assertTrue((self.install / "dieter").is_symlink())
-        self.assertEqual(
-            (self.install / "dieter").resolve(),
-            (self.install / "DieterDaemon.app/Contents/MacOS/dieter").resolve(),
+        self.assertTrue(
+            (self.install / "DieterPrivacyHelper.app/Contents/MacOS/dieter-privacy").is_file()
         )
-        self.assertFalse((self.install / "DieterPrivacy.app").exists())
+        self.assertFalse((self.install / "dieter").is_symlink())
+        self.assertFalse((self.install / "dieter-capture").is_symlink())
+        self.assertFalse((self.install / "DieterDaemon.app").exists())
+        bundled = self.install / "DieterPrivacyHelper.app/Contents/MacOS"
+        self.assertEqual({path.name for path in bundled.iterdir()}, {"dieter-privacy"})
         self.assertIn("portable macOS install", result.stdout)
         urls = (self.temporary / "curl.log").read_text(encoding="utf-8")
         self.assertIn("/releases/download/v1.2.3/dieter-darwin-arm64.tar.gz", urls)
         self.assertFalse((self.temporary / "daemon.log").exists())
 
-    def test_mac_install_does_not_overwrite_an_existing_daemon_bundle(self):
-        existing = self.install / "DieterDaemon.app"
+    def test_mac_install_does_not_overwrite_an_existing_privacy_bundle(self):
+        existing = self.install / "DieterPrivacyHelper.app"
         existing.mkdir(parents=True)
         marker = existing / "operator-helper"
         marker.write_text("preserve")

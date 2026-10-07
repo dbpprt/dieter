@@ -400,8 +400,11 @@ func (c *CLI) setup(args []string) error {
 	const usage = `Usage: dieter setup [--gateway URL] [--name NAME] [--no-open] [--no-start]
 
 Authorize this machine with GitHub and start the platform-managed daemon service.
-On macOS, setup also guides and verifies Screen Recording and Accessibility
-permissions used by remote desktop. Project registration is separate; use
+On macOS, setup also registers the signed background privacy helper and guides
+Screen Recording, Accessibility, Login Items approval and Input Monitoring.
+Privacy stays off until explicitly enabled. --no-open and --no-start skip privacy
+helper registration; use "dieter machine privacy setup" later on this Mac.
+Project registration is separate; use
 "dieter project open PATH" explicitly after setup.
 `
 	set := flags("setup")
@@ -416,6 +419,9 @@ permissions used by remote desktop. Project registration is separate; use
 	}
 	if set.NArg() != 0 {
 		return errors.New("setup does not accept project paths; register a project explicitly with `dieter project open PATH`")
+	}
+	if strings.TrimSpace(c.Machine) != "" {
+		return errors.New("setup is local-only; omit --machine")
 	}
 
 	identity, identityErr := dieterdaemon.LoadIdentity(c.Store.Root)
@@ -469,9 +475,52 @@ permissions used by remote desktop. Project registration is separate; use
 	} else if err := c.ensureRemoteDesktopPermissions(false, *noOpen); err != nil {
 		return err
 	}
+	if runtime.GOOS == "darwin" {
+		fmt.Fprintln(c.Out, "\n4. Privacy input helper")
+		if err := c.setupPrivacyHelper(*noOpen || *noStart); err != nil {
+			return err
+		}
+	}
 
 	fmt.Fprintln(c.Out)
 	return c.daemonStatus(nil)
+}
+
+func (c *CLI) setupPrivacyHelper(skip bool) error {
+	if skip {
+		fmt.Fprintln(c.Out, "Skipped helper registration; run `dieter machine privacy setup` on this Mac when ready to approve it.")
+		return nil
+	}
+	ctx, cancel := c.commandContext()
+	defer cancel()
+	client, rpcCtx, err := c.rpc(ctx)
+	if err != nil {
+		return err
+	}
+	information, err := client.GetMachineInformation(rpcCtx, &emptypb.Empty{})
+	if err != nil {
+		return err
+	}
+	privacy := information.GetPrivacy()
+	if privacy.GetRequested() {
+		fmt.Fprintln(c.Out, "Privacy is already requested; its helper registration is preserved.")
+		return nil
+	}
+	if privacy.GetSupported() && !privacy.GetHelperSetupRequired() {
+		fmt.Fprintln(c.Out, "Privacy input helper is already available. Privacy remains off.")
+		return nil
+	}
+	response, err := client.PerformMachineOperation(rpcCtx, &dieterv1.MachineOperationRequest{
+		Action: dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_SETUP,
+	})
+	if err != nil {
+		return fmt.Errorf("privacy helper setup: %w", err)
+	}
+	if !response.GetAccepted() {
+		return errors.New("daemon did not accept privacy helper setup")
+	}
+	fmt.Fprintln(c.Out, response.GetMessage())
+	return nil
 }
 
 func (c *CLI) remoteDesktopCapabilities() (*dieterv1.RemoteDesktopCapabilities, error) {

@@ -57,6 +57,25 @@ func TestSignedServiceRuntimeSmoke(t *testing.T) {
 	if err := r.Stage(ctx, source); err != nil {
 		t.Fatal(err)
 	}
+	// Exercise the real Homebrew post-install command with release signatures.
+	brewPrefix := filepath.Join(root, "brew")
+	bin, libexec := filepath.Join(brewPrefix, "bin"), filepath.Join(brewPrefix, "libexec")
+	for _, directory := range []string{bin, libexec} {
+		if err := os.MkdirAll(directory, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range executables {
+		if err := copyExecutable(filepath.Join(source, name), filepath.Join(bin, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := copyBundle(filepath.Join(source, "DieterPrivacyHelper.app"), filepath.Join(libexec, "DieterPrivacyHelper.app")); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.CommandContext(ctx, filepath.Join(bin, "dieter"), "__service-stage", "--root", r.Root, "--bundle-prefix", "../libexec").CombinedOutput(); err != nil {
+		t.Fatalf("Homebrew post-install: %s %v", output, err)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

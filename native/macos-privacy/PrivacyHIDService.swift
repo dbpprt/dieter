@@ -39,10 +39,10 @@ enum PrivacyHIDService {
     }
 
     private static func appService() throws -> SMAppService {
-        guard Bundle.main.bundleIdentifier == "com.dbpprt.dieter.capture",
-            Bundle.main.executableURL?.lastPathComponent == "dieter-capture"
+        guard Bundle.main.bundleIdentifier == "com.dbpprt.dieter.privacy",
+            Bundle.main.executableURL?.lastPathComponent == "dieter-privacy"
         else {
-            throw PrivacyHIDError("Install the complete Dieter Daemon bundle to set up privacy mode")
+            throw PrivacyHIDError("Install DieterPrivacyHelper.app beside the daemon to set up privacy mode")
         }
         return SMAppService.daemon(plistName: "com.dbpprt.dieter.privacy.plist")
     }
@@ -64,20 +64,20 @@ enum PrivacyHIDService {
         value.reason =
             value.available
             ? ""
-            : "Approve Dieter Daemon in System Settings > General > Login Items & Extensions, then grant Input Monitoring"
+            : "Approve Dieter Privacy Helper in System Settings > General > Login Items & Extensions, then grant Input Monitoring"
         return value
     }
 
     #if DIETER_PRIVACY_DEVELOPMENT
-        private static func ownCodeHash() throws -> String {
-            var code: SecCode?, staticCode: SecStaticCode?, information: CFDictionary?
+        private static func developmentCaptureHash() throws -> String {
+            var code: SecCode?, staticCode: SecStaticCode?
             guard SecCodeCopySelf([], &code) == errSecSuccess, let code,
                 SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
-                SecCodeCopySigningInformation(staticCode, [], &information) == errSecSuccess,
-                let information, let hash = (information as NSDictionary)[kSecCodeInfoUnique] as? Data,
-                hash.count == 20
-            else { throw PrivacyHIDError("Cannot verify this development daemon's capture identity") }
-            return hash.map { String(format: "%02x", $0) }.joined()
+                SecStaticCodeCheckValidity(staticCode, [], nil) == errSecSuccess,
+                let hash = Bundle.main.object(forInfoDictionaryKey: "DieterDevelopmentCaptureHash") as? String,
+                hash.count == 40, hash.allSatisfy({ $0.isHexDigit })
+            else { throw PrivacyHIDError("Cannot verify this development helper's capture identity") }
+            return hash
         }
     #endif
 
@@ -101,7 +101,7 @@ enum PrivacyHIDService {
         // There are no development authentication overrides in release builds.
         var developmentHash: String?
         #if DIETER_PRIVACY_DEVELOPMENT
-            developmentHash = try? ownCodeHash()
+            developmentHash = try developmentCaptureHash()
         #endif
         let trustedHash = developmentHash
         DispatchQueue.global().async {

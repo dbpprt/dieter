@@ -90,11 +90,11 @@ module Dieter
         )
         if os == "darwin"
           @context.command(
-            ["bash", "native/macos-daemon/package.sh", stage],
+            ["bash", "native/macos-privacy/package.sh", stage],
             environment: {
               "DIETER_PRIVACY_RELEASE" => "1"
             },
-            timeout: 120
+            timeout: 300
           )
           raise PipelineError, "Apple signing adapter is required" unless block_given?
           yield(stage)
@@ -102,14 +102,7 @@ module Dieter
       end
       host_os = @context.command(%w[go env GOHOSTOS], timeout: 30).strip
       host_arch = @context.command(%w[go env GOHOSTARCH], timeout: 30).strip
-      executable_dir =
-        (
-          if os == "darwin" && @component == "daemon"
-            File.join(stage, "DieterDaemon.app/Contents/MacOS")
-          else
-            stage
-          end
-        )
+      executable_dir = stage
       if os == host_os && arch == host_arch
         actual =
           @context.command([File.join(executable_dir, @name), "--version"], timeout: 30).strip

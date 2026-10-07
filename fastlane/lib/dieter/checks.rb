@@ -68,9 +68,12 @@ module Dieter
               .fetch("checks")
               .partition do |request|
                 request["operation"] == "e2e" ||
-                  %w[screens_native_test screens_test screens_hevc_test].include?(
-                    request["operation"]
-                  )
+                  %w[
+                    privacy_native_test
+                    screens_native_test
+                    screens_test
+                    screens_hevc_test
+                  ].include?(request["operation"])
               end
         end
         Atomic.json(File.join(context.output, "affected-checks.json"), plan)
@@ -127,6 +130,8 @@ module Dieter
         Core.new(context).apple_test(options)
       when %w[mac core_test]
         Mac.new(context).core_test(options)
+      when %w[mac privacy_native_test]
+        Mac.new(context).privacy_native_test
       when %w[mac screens_native_test]
         Mac.new(context).screens_native_test
       when %w[mac screens_test]

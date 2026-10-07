@@ -41,16 +41,34 @@ daemons to adopt the existing owner. A native owner lock serializes launches.
 An explicit unlock restores displays before releasing the event tap and exits
 the helper. An unused off helper has a bounded idle lifetime.
 
-`DieterDaemon.app` contains the main Go daemon and its existing native capture
-executable. Privacy HID code is compiled into the capture executable; there is
-no separate privacy app or binary. Public `SMAppService` registers the bundle’s
-LaunchDaemon in a restricted `--privacy-hid-service` mode of that same executable;
-approval belongs to macOS. The root process only accepts status/on/off over a
-launchd-owned transient Unix socket. Audit-token code validation requires the
-capture identifier and our signing team. Development builds trust only their
-exact capture CDHash; the development branch is excluded from release builds.
-Clients cannot supply a file path, program, shell command or persistent root
-state. The main daemon and capture process retain login-user privileges.
+The Go daemon (`dieter`) and native capture executable (`dieter-capture`) remain
+standalone files. A separate signed, background-only `DieterPrivacyHelper.app`
+contains only the small `dieter-privacy` executable and its LaunchDaemon plist.
+Public `SMAppService` registers that bundle's LaunchDaemon; macOS owns approval.
+Capture locates the bundle beside its canonical executable, or in Homebrew's
+adjacent `libexec` directory, and invokes it only for setup. The privileged binary is built from HID lease, IPC authentication and
+service code, without screen-capture, encoder or Go daemon code.
+
+The root process accepts only status/on/off over a launchd-owned transient Unix
+socket. Audit-token validation requires the standalone capture identifier and
+our signing team. Development bundles seal the exact capture CDHash in their
+signed Info.plist; release builds exclude that lookup and its metadata. Clients
+cannot supply a path, executable, shell command or persistent root state. The
+main daemon and capture process retain login-user privileges.
+
+Every release ships all three components together. Homebrew, the portable
+installer and the versioned macOS installer preserve the standalone binary
+layout. Homebrew keeps its original `bin.install "dieter", "dieter-capture"`
+layout and ships the helper in `libexec`. Post-install stages that signed resource
+with the executable pair; normal `dieter setup` registers its background service
+through the running daemon and guides macOS approval. `--no-open` and
+`--no-start` defer registration to `dieter machine privacy setup`. Setup never
+enables privacy or changes an existing privacy request.
+The managed service keeps its real `bin/dieter` path; signatures are
+verified independently for the daemon, capture executable and privacy bundle.
+The helper, service definition and standalone executable pair activate and roll
+back together. Missing, linked or invalid helpers cannot be staged as a new
+release; an unacknowledged upgrade restores the previous installation.
 
 The root input lease belongs to the acquiring login UID. It survives transport
 and user-helper disconnects; another login cannot release it. Its state is
@@ -119,6 +137,7 @@ results from synthetic fixtures.
 ## Reproducible checks
 
 ```sh
+mise exec -- just pipeline check component:mac operation:privacy_native_test
 mise exec -- just pipeline check component:mac operation:screens_native_test
 DIETER_TEST_PRIVACY_PHYSICAL=1 mise exec -- just pipeline check component:mac operation:screens_native_test
 mise exec -- just pipeline core_test
@@ -126,7 +145,7 @@ mise exec -- just pipeline mac e2e cases:mac.machine
 ```
 
 Set `DIETER_TEST_PRIVACY_HELPER` to the absolute path of the exact capture binary
-approved with its development daemon bundle for the opt-in desktop test. It
+paired with its approved development privacy helper bundle for the opt-in desktop test. It
 controls the real capture-service socket and privileged service, without giving
 the test executable a root authentication exemption. Complete local administrator
 approval and Input Monitoring before this required opt-in run.
@@ -165,28 +184,31 @@ The privileged desktop opt-in remains unqualified until the task-owned helper
 is approved in macOS and receives Input Monitoring permission. Software and UI
 fixture results must not be presented as proof of physical shortcut suppression.
 
-On 2026-10-07, privacy was integrated into the existing daemon capture executable
-and the complete `DieterDaemon.app` package. The standalone privacy application
-and executable were removed. The Homebrew service keeps its existing real
-`bin/dieter` path; staged copies must match the bundle's signed executables
-exactly. The bundle, service definition and executable pair activate and roll
-back together. Tests cover adoption of a pre-bundle activation journal and
-restoration of the previous installation after a failed startup.
+The previous integrated-daemon package was superseded by the standalone layout
+above. Its earlier setup registration and software test results do not qualify
+this new helper binary or its macOS permissions. The headless
+`privacy_native_test` gate verifies both development and release-mode packages,
+ad-hoc signatures, HID admission and live caller authentication, synthetic capture
+privacy ownership, and an isolated standalone daemon/CLI round trip. It never
+registers the global privileged service, changes TCC, or suppresses operator
+input. Administrator approval, Input Monitoring and the physical desktop opt-in
+remain separate required host checks.
 
-The final integrated native gate passed admission, lease, restart, live caller
-authentication and capture integration checks. The updated portable installer
-suite passed 84 tests with the existing Linux lifecycle skip on macOS; the
-pipeline contracts passed 145 tests / 701 assertions. Shared-core tests passed,
-as did service runtime / machine race tests, focused privacy API tests and Go
-vet. Three server cases timed out under concurrent test load and passed on a
-focused rerun. A release-mode capture build and bundled signature verification
-passed; the development identity lookup is absent from the release executable.
+On 2026-10-07, the final standalone/Homebrew layout passed the native package
+gate with both development and release-mode helper builds. It verified helper
+discovery beside the executable and in Homebrew's `libexec`, canonical symlinks,
+live caller authentication, helper isolation, signed resource staging, and a real
+standalone daemon/CLI round trip using synthetic capture. The isolated setup
+registrar verified the registration action and approval-pending status with
+privacy off. CLI onboarding tests also covered deferred registration, repeated
+setup, existing privacy requests and registration failures.
 
-The task-owned development bundle is
-`tmp/privacy-daemon-current/DieterDaemon.app`. Real setup registration succeeded
-and System Settings displayed `DieterDaemon` awaiting administrator approval.
-The earlier task-owned standalone helper was unregistered. No privileged
-physical-input qualification or privileged ON operation has completed yet:
-Login Items approval and Input Monitoring remain required before the desktop
-opt-in can qualify this integration. Its results must not be inferred from the
-isolated UI or software tests.
+The packaging support suite passed 84 tests with the existing Linux lifecycle
+skip on macOS. Pipeline contracts passed 146 tests / 707 assertions; the relevant
+Go race tests and Go vet passed. The shared core passed 709 tests with no skips.
+Local native packages used verified ad-hoc signatures, including a check that
+production verification rejects those signatures. The Developer ID signing and
+notarization pipeline was updated; its credentialed release run was not performed
+locally. No global service registration, macOS permission changes or physical
+privacy operation was performed for this standalone layout. Administrator
+approval, Input Monitoring and physical-input qualification remain required.
