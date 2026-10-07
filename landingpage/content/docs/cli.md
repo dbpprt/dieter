@@ -40,36 +40,37 @@ Quota commands are account-wide and reject `--machine`.
 
 ## Command map
 
-| Group | Use it for |
-| --- | --- |
-| `setup`, `doctor`, `daemon` | Enrollment, prerequisites, permissions, service state, logs, and Linux user units |
-| `machine` | Directory, routes, live telemetry, contract/release versions, updates, power, and connection signaling |
-| `harness`, `quota` | Host model catalogs and account quota windows |
-| `project`, `board` | Shared project identities, local checkouts, board settings, labels, host mappings, retention |
-| `card`, `chat` | Durable conversations, follow-ups, queues, read receipts, presentation, archives |
-| `workspace` | Uncommitted changes, revisions, Git and SCM operations |
-| `file` | Directory listings, file reads, revision-checked saves |
-| `terminal` | Daemon-owned interactive PTYs |
-| `remote` | Exact-argv processes, resumable output, explicit input and cancellation |
-| `screen` | Capabilities, session signaling, control, quality, clipboard, diagnostics |
-| `schedule` | Templates, previews, occurrence history, and dispatch |
-| `settings`, `prompt` | Portable settings and scoped prompt configuration |
-| `peer`, `kv` | Peer synchronization, portable records, revisions, ordering, and subscriptions |
-| `watch`, `status`, `storage`, `version` | Bounded observation, counts, paths, and build identity |
+| Group                                   | Use it for                                                                                             |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `setup`, `doctor`, `daemon`             | Enrollment, prerequisites, permissions, service state, logs, and Linux user units                      |
+| `machine`                               | Directory, routes, live telemetry, contract/release versions, updates, power, and connection signaling |
+| `harness`, `quota`                      | Host model catalogs and account quota windows                                                          |
+| `project`, `board`                      | Shared project identities, local checkouts, board settings, labels, host mappings, retention           |
+| `card`, `chat`                          | Durable conversations, follow-ups, queues, read receipts, presentation, archives                       |
+| `workspace`                             | Uncommitted changes, revisions, Git and SCM operations                                                 |
+| `file`                                  | Directory listings, file reads, revision-checked saves                                                 |
+| `terminal`                              | Daemon-owned interactive PTYs                                                                          |
+| `remote`                                | Exact-argv processes, resumable output, explicit input and cancellation                                |
+| `screen`                                | Capabilities, session signaling, control, quality, clipboard, diagnostics                              |
+| `schedule`                              | Templates, previews, occurrence history, and dispatch                                                  |
+| `settings`, `prompt`                    | Portable settings and scoped prompt configuration                                                      |
+| `peer`, `kv`                            | Peer synchronization, portable records, revisions, ordering, and subscriptions                         |
+| `watch`, `status`, `storage`, `version` | Bounded observation, counts, paths, and build identity                                                 |
 
 ## Common recipes
 
 ### Set up and inspect
 
 ```sh
-dieter setup --gateway https://dieter.example.com
+dieter setup
 dieter project open ~/Development/my-project
 dieter doctor
 dieter daemon status
 dieter daemon logs --follow
 ```
 
-Use your real gateway origin. Run `daemon start` or `serve` for foreground
+Setup defaults to `https://gateway.getdieter.com`; for self-hosting, pass
+`--gateway https://YOUR-GATEWAY`. Run `daemon start` or `serve` for foreground
 operation only when a daemon is not already running.
 
 ### Create and follow a task

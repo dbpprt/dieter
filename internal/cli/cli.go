@@ -730,6 +730,8 @@ func (c *CLI) daemonEnroll(args []string) error {
 	const usage = `Usage: dieter daemon enroll [--gateway URL] [--name NAME] [--no-open]
 
 Enroll this machine with the GitHub account configured by the Dieter gateway.
+Retry incomplete enrollment with --gateway to correct the origin without changing
+the machine key. Completed enrollments retain their identity.
 Gateway URLs require HTTPS; HTTP is allowed only on literal loopback addresses.
 `
 	set := flags("daemon enroll")
@@ -750,9 +752,10 @@ Gateway URLs require HTTPS; HTTP is allowed only on literal loopback addresses.
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
+	fmt.Fprintf(c.Out, "Enrollment gateway: %s\n", identity.GatewayURL)
 	enrollment, err := dieterdaemon.BeginEnrollment(ctx, identity)
 	if err != nil {
-		return err
+		return fmt.Errorf("begin enrollment at %s: %w", identity.GatewayURL, err)
 	}
 	fmt.Fprintf(c.Out, "Authorize this daemon with GitHub:\n%s\n\nCode: %s\n", enrollment.GetVerificationUrl(), enrollment.GetUserCode())
 	if !*noOpen {

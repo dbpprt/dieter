@@ -29,13 +29,19 @@ Install the daemon with Homebrew:
 
 ```sh
 brew install dbpprt/tap/dieter
-dieter setup --gateway https://dieter.example.com
+dieter setup
 dieter project open ~/Development/my-project
 ```
 
-Use your actual gateway origin and an existing Git checkout. Setup enrolls the
-machine, starts the Homebrew service, and guides the daemon's Screen Recording
+Setup defaults to `https://gateway.getdieter.com` (an allowed account is required).
+For self-hosting, pass `--gateway https://YOUR-GATEWAY`. Use an existing Git
+checkout. Setup enrolls the machine, starts the Homebrew service, and guides the daemon's Screen Recording
 and Accessibility grants. Unsupported screen hosting does not prevent agent work.
+
+Verify enrollment and the background service with `dieter daemon status`: the
+service should be `homebrew (started)` and the gateway `connected`. If setup finds
+a foreground daemon, stop it in its terminal with Ctrl-C and rerun `dieter setup`.
+See [setup recovery](/docs/troubleshooting/#setup-fails-or-the-service-does-not-start).
 
 Install the native app separately:
 
@@ -57,7 +63,7 @@ Use a systemd user session. Install Node.js 22.19+, npm, Git, and
 
 ```sh
 curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
-dieter setup --gateway https://dieter.example.com
+dieter setup
 dieter project open ~/Development/my-project
 dieter doctor
 ```
