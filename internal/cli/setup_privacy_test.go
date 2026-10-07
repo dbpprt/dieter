@@ -78,7 +78,12 @@ func privacyOnboardingCLI(t *testing.T, driver *onboardingPrivacyFixture) (*CLI,
 	})
 	host := httptest.NewServer(application.Handler())
 	t.Cleanup(host.Close)
-	if _, err := dieterdaemon.NewStatusWriter(data.Root, dieterdaemon.RuntimeStatus{PID: os.Getpid(), State: "running", ListenAddress: strings.TrimPrefix(host.URL, "http://")}); err != nil {
+	if _, err := dieterdaemon.NewStatusWriter(data.Root, dieterdaemon.RuntimeStatus{
+		PID: os.Getpid(), State: "running", ListenAddress: strings.TrimPrefix(host.URL, "http://"),
+		// Homebrew onboarding talks to the enrolled, connected managed service.
+		ServiceManaged: true, Enrolled: true, DaemonID: "d_fixture", GatewayURL: "https://gateway.example",
+		GatewayState: dieterdaemon.GatewayConnected,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	output := &bytes.Buffer{}
@@ -162,8 +167,9 @@ func TestSetupHomebrewOnboardingInstallsPrivacyHelperThroughDaemon(t *testing.T)
 				if err != nil || !strings.Contains(string(raw), "services restart dieter") {
 					t.Fatalf("Homebrew workflow: %s %v", raw, err)
 				}
-			} else if _, err := os.Stat(log); !os.IsNotExist(err) {
-				t.Fatal("--no-start invoked Homebrew")
+			} else if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "services restart") {
+				// Status may still query the managed service; --no-start must not restart it.
+				t.Fatalf("--no-start restarted the Homebrew service: %s", raw)
 			}
 		})
 	}

@@ -214,6 +214,15 @@ module Dieter
           log: File.join(context.output, "harness-tests.log")
         )
       when %w[portable site_build]
+        # Hosted runners lack Hugo; local hosts get it from mise.
+        hugo =
+          ENV
+            .fetch("PATH", "")
+            .split(File::PATH_SEPARATOR)
+            .any? { |directory| File.executable?(File.join(directory, "hugo")) }
+        if !hugo && ENV["GITHUB_ACTIONS"] == "true"
+          context.command(%w[just site install-ci], timeout: 300)
+        end
         context.command(%w[just site build], timeout: 300)
       else
         raise PipelineError, "Unknown typed check #{component}/#{operation}"
