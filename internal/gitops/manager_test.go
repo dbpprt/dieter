@@ -434,6 +434,70 @@ func TestProjectCheckoutStageCommitAndDiscardAreProjectScoped(t *testing.T) {
 	}
 }
 
+func TestProjectCheckoutDiscardsAFolder(t *testing.T) {
+	repository := testRepository(t)
+	folder := filepath.Join(repository, "pkg")
+	if err := os.MkdirAll(filepath.Join(folder, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(repository, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("pkg/tracked.txt", "base\n")
+	write("pkg/gone.txt", "base\n")
+	write("pkg/.gitignore", "*.log\n")
+	runGit(t, repository, "add", "pkg")
+	runGit(t, repository, "commit", "-m", "pkg")
+	write("pkg/tracked.txt", "edited\n")
+	if err := os.Remove(filepath.Join(folder, "gone.txt")); err != nil {
+		t.Fatal(err)
+	}
+	write("pkg/nested/new.txt", "untracked\n")
+	write("pkg/staged.txt", "staged\n")
+	runGit(t, repository, "add", "pkg/staged.txt")
+	write("pkg/keep.log", "ignored\n")
+	write("README.md", "outside\n")
+
+	data := store.New(filepath.Join(t.TempDir(), "dieter-home"))
+	if err := data.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	project, err := data.CreateProject(store.CreateProjectInput{Name: "Fixture", Path: repository, BaseBranch: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := gitops.New(data, workspace.New(data, nil), nil)
+	changes, err := manager.Changesets.GetProject(context.Background(), project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	discard, err := manager.Start(context.Background(), gitops.Request{
+		ProjectID: project.ID, Kind: "discard_changes", ExpectedRevision: changes.Revision, Parameters: map[string]string{"path": "pkg"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if discard = waitOperation(t, manager, discard.ID); discard.Status != model.GitOperationSucceeded {
+		t.Fatalf("folder discard failed: %#v", discard)
+	}
+	for name, want := range map[string]string{"pkg/tracked.txt": "base\n", "pkg/gone.txt": "base\n", "pkg/keep.log": "ignored\n", "README.md": "outside\n"} {
+		if got, err := os.ReadFile(filepath.Join(repository, name)); err != nil || string(got) != want {
+			t.Fatalf("%s = %q, %v; want %q", name, got, err, want)
+		}
+	}
+	for _, name := range []string{"pkg/nested/new.txt", "pkg/staged.txt"} {
+		if _, err := os.Stat(filepath.Join(repository, name)); !os.IsNotExist(err) {
+			t.Fatalf("folder discard left %s: %v", name, err)
+		}
+	}
+	if status := runGit(t, repository, "status", "--porcelain"); strings.TrimSpace(status) != "M README.md" {
+		t.Fatalf("status after folder discard = %q", status)
+	}
+}
+
 func TestProjectCheckoutCanPushItsCurrentBranch(t *testing.T) {
 	repository := testRepository(t)
 	remote := filepath.Join(t.TempDir(), "remote.git")
