@@ -30,7 +30,7 @@ class MobileJourneyTest : EndToEnd() {
             first.agentSelection = com.dbpprt.dieter.api.v1.HarnessSelection("mock", "mock", "low")
             val localId =
                 first.create("Shared mobile spike", "Explain this durable conversation", run = true)
-            first.openCard(localId)
+            first.openConversation(localId)
             val cardId =
                 first.outbox.await { localId in it.resolutions }.resolutions.getValue(localId)
             runtime.awaitSynced(cardId)
@@ -64,15 +64,15 @@ class MobileJourneyTest : EndToEnd() {
             second.workspace.await {
                 it.cards.any { card -> card.id == cardId && card.lane == "review" }
             }
-            first.back()
+            first.pop()
             assertTrue(first.selectedCard.value.isEmpty())
-            first.openCard(cardId)
+            first.openConversation(cardId)
             first.conversation.await {
                 it.messages.any { message ->
                     message.parts.any { part -> part.text.contains("Continue in the same task") }
                 }
             }
-            first.navigate(MobileTab.FILES)
+            first.push(MobileRoute.Tool(ToolPage.FILES))
             first.files.await { it.entries.any { entry -> entry.name == "README.md" } }
             first.core.dispatch(
                 Command(
@@ -84,7 +84,7 @@ class MobileJourneyTest : EndToEnd() {
                 )
             )
             first.files.await { it.document?.content?.contains("# Isolated E2E") == true }
-            first.navigate(MobileTab.SCHEDULES)
+            first.push(MobileRoute.Tool(ToolPage.SCHEDULES))
             first.schedules.await { it.loaded }
             assertTrue(first.schedules.value.error.isEmpty())
         } finally {
@@ -108,14 +108,14 @@ class MobileJourneyTest : EndToEnd() {
             }
         val store = MobileStore(fake, Dispatchers.Unconfined)
         try {
-            store.openCard("first")
+            store.openConversation("first")
             val release = CompletableDeferred<Unit>()
             store.action { release.await() }
             store.move("review")
             store.stop()
             store.start()
             store.loadEarlier()
-            store.openCard("second")
+            store.openConversation("second")
             release.complete(Unit)
             yield()
             assertEquals("first", sent.single { it.move_card != null }.move_card?.card_id)
@@ -147,9 +147,9 @@ class MobileJourneyTest : EndToEnd() {
                 }
             }
         val store = MobileStore(fake, Dispatchers.Unconfined)
-        store.openCard("first")
+        store.openConversation("first")
         val old = callbacks.getValue("first")
-        store.openCard("second")
+        store.openConversation("second")
         callbacks.getValue("second")(Update(conversation = ConversationSlice(card_id = "second")))
         old(Update(conversation = ConversationSlice(card_id = "first")))
         assertEquals("second", store.conversation.value.card_id)
@@ -293,7 +293,7 @@ class MobileJourneyTest : EndToEnd() {
             }
         val store = MobileStore(fake, Dispatchers.Unconfined)
         try {
-            store.openCard("card")
+            store.openConversation("card")
             callbacks.getValue("card")(
                 Update(conversation = ConversationSlice(card_id = "card", daemon_id = "owner"))
             )
@@ -307,6 +307,54 @@ class MobileJourneyTest : EndToEnd() {
             store.editFileBuffer("file", "original", "my edits")
             store.syncFileBuffer("file", "external change")
             assertEquals(MobileFileBuffer("original", "my edits"), store.fileBuffers.value["file"])
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
+    fun navigationStacksBindTheVisibleRoutes() = runBlocking {
+        val sent = mutableListOf<Command>()
+        val fake =
+            object : MobileCore {
+                override suspend fun dispatch(command: Command): Result {
+                    sent += command
+                    return Result(done = Done())
+                }
+
+                override fun observe(slice: Slice, scope: String, receive: (Update) -> Unit) =
+                    com.dbpprt.dieter.core.client.ClientSubscription {}
+            }
+        val store = MobileStore(fake, Dispatchers.Unconfined)
+        try {
+            store.selectTab(MobileTab.PROJECTS)
+            store.push(MobileRoute.Board("board"))
+            assertEquals("board", store.selectedBoard.value)
+            store.openConversation("card")
+            assertEquals("card", store.selectedCard.value)
+            store.push(MobileRoute.Pane("card", CardPane.CHANGES))
+            assertEquals("Changes", store.detailTab.value)
+            assertEquals("card", store.selectedCard.value)
+            // A native back gesture reports the remaining depth.
+            store.popTo(MobileTab.PROJECTS, 3)
+            assertEquals("Conversation", store.detailTab.value)
+            // Opening another card from the list replaces the open conversation.
+            store.openConversation("other")
+            assertEquals(3, store.routes.value.stack.size)
+            assertEquals("other", store.selectedCard.value)
+            // Other tabs keep their own stacks.
+            store.selectTab(MobileTab.INBOX)
+            assertTrue(store.selectedCard.value.isEmpty())
+            store.selectTab(MobileTab.PROJECTS)
+            assertEquals("other", store.selectedCard.value)
+            // Selecting the current tab again returns to its root.
+            store.selectTab(MobileTab.PROJECTS)
+            assertEquals(1, store.routes.value.stack.size)
+            assertTrue(store.selectedCard.value.isEmpty())
+            store.newConversation(chat = true)
+            assertEquals(MobileRoute.NewTask(true), store.routes.value.modal)
+            assertTrue(store.handleBack())
+            assertNull(store.routes.value.modal)
         } finally {
             store.close()
         }

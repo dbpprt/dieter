@@ -69,6 +69,80 @@ final class ComposeNativeViews: NSObject, @preconcurrency MobileNativeViews {
         while let next = controller?.presentedViewController { controller = next }
         return controller
     }
+    // MARK: Menus, alerts, sheets and toasts for the shared screens.
+
+    private var menuAnchor: MenuAnchorButton?
+
+    func showMenu(sections: [NativeMenuSection], view: UIView, x: Double, y: Double, width: Double, height: Double) {
+        menuAnchor?.removeFromSuperview()
+        let button = MenuAnchorButton(frame: CGRect(x: x, y: y, width: max(width, 1), height: max(height, 1)))
+        button.menu = RouteChrome.menu(sections)
+        button.showsMenuAsPrimaryAction = true
+        button.backgroundColor = .clear
+        button.accessibilityElementsHidden = true
+        view.addSubview(button)
+        menuAnchor = button
+        button.performPrimaryAction()
+    }
+
+    func confirm(
+        title: String, message: String, confirm: String, destructive: Bool, view: UIView, result: any NativeChoice
+    ) {
+        let alert = UIAlertController(title: title, message: message.isEmpty ? nil : message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in result.chose(confirmed: false) })
+        let action = UIAlertAction(title: confirm, style: destructive ? .destructive : .default) { _ in
+            result.chose(confirmed: true)
+        }
+        alert.addAction(action)
+        alert.preferredAction = destructive ? nil : action
+        Self.presenter(for: view)?.present(alert, animated: true)
+    }
+
+    func prompt(
+        title: String, message: String, value: String, placeholder: String, confirm: String, view: UIView,
+        result: any NativeText
+    ) {
+        let alert = UIAlertController(title: title, message: message.isEmpty ? nil : message, preferredStyle: .alert)
+        alert.addTextField { field in
+            field.text = value
+            field.placeholder = placeholder
+            field.clearButtonMode = .whileEditing
+            field.autocapitalizationType = .sentences
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in result.entered(text: nil) })
+        let action = UIAlertAction(title: confirm, style: .default) { [weak alert] _ in
+            let text = alert?.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            result.entered(text: text.isEmpty ? nil : text)
+        }
+        alert.addAction(action)
+        alert.preferredAction = action
+        Self.presenter(for: view)?.present(alert, animated: true)
+    }
+
+    func presentSheet(content: UIViewController, medium: Bool, from: UIView, dismissed: any NativeChoice)
+        -> any NativeSheet
+    {
+        let navigator = UINavigationController(rootViewController: content)
+        content.navigationItem.largeTitleDisplayMode = .never
+        if let sheet = navigator.sheetPresentationController {
+            sheet.detents = medium ? [.medium(), .large()] : [.large()]
+            sheet.prefersGrabberVisible = medium
+            sheet.prefersScrollingExpandsWhenScrolledToEdge = true
+        }
+        let handle = SheetHandle(navigator: navigator, item: content.navigationItem, dismissed: dismissed)
+        navigator.presentationController?.delegate = handle
+        Self.presenter(for: from)?.present(navigator, animated: true)
+        return handle
+    }
+
+    func showToast(message: String) { Toast.show(message) }
+
+    static func presenter(for view: UIView) -> UIViewController? {
+        var controller = view.window?.rootViewController
+        while let next = controller?.presentedViewController, !next.isBeingDismissed { controller = next }
+        return controller
+    }
+
     func terminal(input: any MobileTerminalInput) -> any MobileTerminalSurface { ComposeTerminal(input: input) }
     func screen(scope: String, input: any MobileScreenInput) -> any MobileScreenSurface {
         ComposeScreen(scope: scope, input: input, media: media)
@@ -278,6 +352,109 @@ private final class ScreenInputSink: NSObject, SharedTouchScreenSink, Sendable {
             } catch {
                 receiver.failed(message: "Could not attach photos. Choose up to 4 images, 5 MB each and 6 MB total.")
             }
+        }
+    }
+}
+
+/// Presents a UIMenu programmatically from an invisible anchor, then removes itself.
+@MainActor private final class MenuAnchorButton: UIButton {
+    override func contextMenuInteraction(
+        _ interaction: UIContextMenuInteraction, willEndFor configuration: UIContextMenuConfiguration,
+        animator: (any UIContextMenuInteractionAnimating)?
+    ) {
+        super.contextMenuInteraction(interaction, willEndFor: configuration, animator: animator)
+        if let animator {
+            animator.addCompletion { [weak self] in self?.removeFromSuperview() }
+        } else {
+            removeFromSuperview()
+        }
+    }
+}
+
+@MainActor
+private final class SheetHandle: NSObject, @preconcurrency NativeSheet, UIAdaptivePresentationControllerDelegate {
+    private weak var navigator: UINavigationController?
+    private let dismissed: any NativeChoice
+    private var closed = false
+    let routeChrome = RouteChrome()
+    var chrome: any NativeChromeSink { routeChrome }
+
+    init(navigator: UINavigationController, item: UINavigationItem, dismissed: any NativeChoice) {
+        self.navigator = navigator
+        self.dismissed = dismissed
+        super.init()
+        routeChrome.item = item
+        routeChrome.bar = { [weak navigator] in navigator?.navigationBar }
+    }
+
+    func close() {
+        guard !closed else { return }
+        closed = true
+        navigator?.dismiss(animated: true)
+    }
+
+    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        guard !closed else { return }
+        closed = true
+        dismissed.chose(confirmed: false)
+    }
+}
+
+/// A transient Liquid Glass capsule for errors that need no decision.
+@MainActor enum Toast {
+    private static weak var current: UIView?
+
+    static func show(_ message: String) {
+        guard
+            let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+                .flatMap(\.windows).first(where: \.isKeyWindow)
+        else { return }
+        current?.removeFromSuperview()
+        let label = UILabel()
+        label.text = message
+        label.numberOfLines = 3
+        label.font = .preferredFont(forTextStyle: .subheadline)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = .label
+        label.textAlignment = .center
+        let container: UIVisualEffectView
+        if #available(iOS 26.0, *) {
+            container = UIVisualEffectView(effect: UIGlassEffect())
+        } else {
+            container = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+        }
+        container.layer.cornerRadius = 22
+        container.layer.cornerCurve = .continuous
+        container.clipsToBounds = true
+        container.accessibilityIdentifier = "toast"
+        // A transient notice must never block the navigation bar beneath it.
+        container.isUserInteractionEnabled = false
+        label.translatesAutoresizingMaskIntoConstraints = false
+        container.contentView.addSubview(label)
+        container.translatesAutoresizingMaskIntoConstraints = false
+        window.addSubview(container)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: container.contentView.leadingAnchor, constant: 18),
+            label.trailingAnchor.constraint(equalTo: container.contentView.trailingAnchor, constant: -18),
+            label.topAnchor.constraint(equalTo: container.contentView.topAnchor, constant: 12),
+            label.bottomAnchor.constraint(equalTo: container.contentView.bottomAnchor, constant: -12),
+            container.centerXAnchor.constraint(equalTo: window.centerXAnchor),
+            container.widthAnchor.constraint(lessThanOrEqualTo: window.widthAnchor, constant: -40),
+            container.topAnchor.constraint(equalTo: window.safeAreaLayoutGuide.topAnchor, constant: 6),
+        ])
+        current = container
+        container.alpha = 0
+        container.transform = CGAffineTransform(translationX: 0, y: -16).scaledBy(x: 0.96, y: 0.96)
+        UIAccessibility.post(notification: .announcement, argument: message)
+        UIView.animate(withDuration: 0.35, delay: 0, usingSpringWithDamping: 0.8, initialSpringVelocity: 0) {
+            container.alpha = 1
+            container.transform = .identity
+        }
+        UIView.animate(withDuration: 0.25, delay: 3.6, options: [.allowUserInteraction]) {
+            container.alpha = 0
+            container.transform = CGAffineTransform(translationX: 0, y: -10)
+        } completion: { _ in
+            container.removeFromSuperview()
         }
     }
 }

@@ -5,7 +5,8 @@ final class ComposeSpikeUITests: XCTestCase {
 
     override func tearDown() {
         if let app = application {
-            if testRun?.hasSucceeded == false {
+            // `hasSucceeded` is not final during tearDown; failures already recorded are.
+            if (testRun?.totalFailureCount ?? 0) > 0 {
                 let hierarchy = XCTAttachment(string: String(app.debugDescription.prefix(16000)))
                 hierarchy.name = "accessibility-hierarchy"
                 hierarchy.lifetime = .keepAlways
@@ -27,183 +28,213 @@ final class ComposeSpikeUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(element(app, containing: "Design the mobile workspace").waitForExistence(timeout: 40))
         capture("ios-inbox")
-        app.buttons["Projects"].tap()
-        XCTAssertTrue(element(app, containing: "Isolated E2E").waitForExistence(timeout: 20))
-        if !element(app, containing: "Main").exists { element(app, containing: "Isolated E2E").tap() }
-        XCTAssertTrue(element(app, containing: "Main").waitForExistence(timeout: 20))
+
+        tab(app, "Projects")
+        XCTAssertTrue(app.staticTexts["Main"].waitForExistence(timeout: 20))
         capture("ios-projects")
-        element(app, containing: "Main").tap()
-        assertRunningLane(app, landscape: landscape)
-        if landscape { XCTAssertGreaterThan(app.frame.width, app.frame.height) }
+        press(app.staticTexts["Main"])
         let seededTask = element(app, containing: "Design the mobile workspace")
         XCTAssertTrue(seededTask.waitForExistence(timeout: 40))
+        XCTAssertTrue(element(app, identifier: "lane-1").waitForExistence(timeout: 10), "Lane selector is visible")
         capture("ios-board")
-        seededTask.tap()
-        XCTAssertTrue(
-            app.staticTexts.matching(
-                NSPredicate(format: "label CONTAINS %@", "Your board stays within reach")
-            ).firstMatch.waitForExistence(timeout: 20))
+        // In-content "…" buttons open a native UIMenu.
+        let cardMenu = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "card-menu-")
+        ).firstMatch
+        XCTAssertTrue(cardMenu.waitForExistence(timeout: 10))
+        press(cardMenu)
+        XCTAssertTrue(app.buttons["Move to"].waitForExistence(timeout: 5), "Card actions open as a native menu")
+        capture("ios-card-menu")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        Thread.sleep(forTimeInterval: 0.6)
+        press(seededTask)
+        XCTAssertTrue(element(app, containing: "Your board stays within reach").waitForExistence(timeout: 20))
         if landscape {
-            XCTAssertTrue(app.staticTexts["Main"].isHittable, "Tablet keeps the board beside its conversation")
+            XCTAssertTrue(element(app, identifier: "lane-1").exists, "Tablet keeps the board beside its conversation")
         }
         capture("ios-task")
-        element(app, containing: "Subagents 1").tap()
+
+        // Native UIMenu from the conversation's bar button.
+        app.buttons["chrome-conversation-menu"].firstMatch.tap()
+        let subagents = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Subagents")).firstMatch
+        XCTAssertTrue(subagents.waitForExistence(timeout: 10))
+        subagents.tap()
         XCTAssertTrue(element(app, containing: "Layout scout").waitForExistence(timeout: 20))
-        element(app, containing: "Layout scout").tap()
         capture("ios-subagents")
-        app.buttons["Conversation"].tap()
-        app.buttons["Back to board"].tap()
-        app.buttons["native-new-task"].tap()
-        let title = app.textViews.matching(NSPredicate(format: "label CONTAINS %@", "Task title")).firstMatch
+        back(app)
+        XCTAssertTrue(element(app, containing: "Your board stays within reach").waitForExistence(timeout: 20))
+        if !landscape { back(app) }
+
+        app.buttons["chrome-new-task"].firstMatch.tap()
+        let title = element(app, identifier: "task-title")
         XCTAssertTrue(title.waitForExistence(timeout: 10))
-        title.tap(); title.typeText("A shared mobile conversation")
-        // The iPad system keyboard has a button with the same label. Scope
-        // this assertion and action to the creation screen's header.
-        let creationSurface = app.scrollViews.containing(.staticText, identifier: "New card").firstMatch
-        let hideKeyboard = creationSurface.buttons["Hide keyboard"]
-        XCTAssertTrue(waitForHittable(hideKeyboard), "Task header stays visible while editing the title")
-        hideKeyboard.tap()
-        let prompt = app.textViews.matching(NSPredicate(format: "label CONTAINS %@", "What should we do?")).firstMatch
-        XCTAssertTrue(prompt.waitForExistence(timeout: 10))
-        prompt.tap(); prompt.typeText("Explain how this task stays in one durable conversation.")
+        press(title)
+        title.typeText("A shared mobile conversation")
+        XCTAssertTrue(waitForValue(title, containing: "A shared mobile conversation"), "The title holds the typed text")
+        let prompt = element(app, identifier: "task-prompt")
+        press(prompt)
+        let request = "Explain how this task stays in one durable conversation."
+        prompt.typeText(request)
+        // Compose applies typed text asynchronously; Start enables once the form holds it.
+        XCTAssertTrue(waitForValue(prompt, containing: request), "The prompt holds the typed text")
+        let start = app.buttons["chrome-start-working"].firstMatch
+        XCTAssertTrue(waitForHittable(start), "Start stays reachable while typing")
+        XCTAssertTrue(waitFor { start.isEnabled }, "Start enables once the form is complete")
         capture("ios-new-task")
-        XCTAssertTrue(waitForHittable(hideKeyboard), "Task header stays visible while editing the prompt")
-        hideKeyboard.tap()
-        // The full legacy form includes agent, workspace and label sections.
-        // Scroll its gutter so a multiline field cannot consume the gesture.
-        let form = app.scrollViews.firstMatch
-        for _ in 0..<8 {
-            if app.buttons["Start working"].exists && app.buttons["Start working"].isHittable { break }
-            let start = form.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.82))
-            let end = form.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.2))
-            start.press(forDuration: 0.05, thenDragTo: end)
-        }
-        XCTAssertTrue(app.buttons["Start working"].waitForExistence(timeout: 10))
-        app.buttons["Start working"].tap()
-        let reply = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Mock harness received:"))
-            .firstMatch
+        start.tap()
+        let reply = element(app, containing: "Mock harness received:")
         // A mock turn on a loaded CI runner can take over 30 s to answer.
         XCTAssertTrue(reply.waitForExistence(timeout: 90))
         capture("ios-conversation")
-        // The placeholder-based label changes on focus; the shared test tag
-        // identifies this editor before and after the keyboard appears.
-        let composer = app.textViews["message-input"]
+
+        let composer = element(app, identifier: "message-input")
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
-        composer.tap()
+        press(composer)
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
-        XCTAssertTrue(keyboard.keys.firstMatch.waitForExistence(timeout: 10), "The software keyboard is available")
-        let visibleComposer = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in
-                composer.exists && composer.isHittable && composer.frame.maxY <= keyboard.frame.minY + 1
-            }, object: composer)
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [visibleComposer], timeout: 10), .completed,
+        XCTAssertTrue(
+            waitFor { self.hasFrame(composer) && composer.frame.maxY <= keyboard.frame.minY + 1 },
             "Composer stays visible above the system keyboard")
         let followUp = "Keep the same task and add the next step."
         composer.typeText(followUp)
-        // Compose applies typed text asynchronously; sending earlier submits a
-        // prefix and leaves the rest focused in the composer.
-        let typed = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in (composer.value as? String)?.contains(followUp) == true }, object: composer
-        )
-        XCTAssertEqual(XCTWaiter.wait(for: [typed], timeout: 10), .completed, "The composer holds the whole message")
-        app.buttons["Send message"].tap()
-        if landscape {
-            keyboard.buttons["Hide keyboard"].tap()
-            // iPadOS can retain its shortcut bar after hiding the software
-            // keyboard. Wait for the typing keys to disappear.
-            let hidden = XCTNSPredicateExpectation(
-                predicate: NSPredicate { _, _ in
-                    !keyboard.exists || keyboard.frame.height < 1 || keyboard.keys.count == 0
-                }, object: keyboard)
-            XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 10), .completed, "The system keyboard hides")
-        }
-        // Match the complete selectable reply across accessibility traits after
-        // keyboard dismissal, then wait for native hit-testing to settle.
-        let followUpReply = app.descendants(matching: .any).matching(
-            NSPredicate(format: "label == %@", "Mock harness received: \(followUp)")
-        ).firstMatch
+        // Sending before Compose applies every keystroke would submit a prefix.
+        XCTAssertTrue(waitForValue(composer, containing: followUp), "The composer holds the whole message")
+        let send = element(app, identifier: "send-message")
+        press(send)
+        let followUpReply = element(app, containing: "Mock harness received: \(followUp)")
         XCTAssertTrue(
             followUpReply.waitForExistence(timeout: 90), "The follow-up reply appears in the same conversation")
-        XCTAssertTrue(waitForHittable(followUpReply), "The follow-up reply is visible")
-        let transcript = app.descendants(matching: .any).matching(identifier: "conversation-timeline").firstMatch
+        XCTAssertTrue(waitFor { self.isAbove(followUpReply, composer, in: app) }, "The follow-up reply is visible")
+        // Reading earlier messages detaches the transcript; "Jump to latest" resumes following.
+        let transcript = element(app, identifier: "conversation-timeline")
         XCTAssertTrue(transcript.waitForExistence(timeout: 10))
         transcript.swipeDown()
-        let jumpToLatest = app.buttons["Jump to latest"]
-        XCTAssertTrue(waitForHittable(jumpToLatest), "Reading earlier messages detaches from the latest reply")
-        jumpToLatest.tap()
-        XCTAssertTrue(waitForHittable(followUpReply), "Jumping to latest resumes following the reply")
-        let review = app.buttons["Review"]
-        XCTAssertTrue(review.waitForExistence(timeout: 60)); review.tap()
-        app.buttons["Back to board"].tap()
-        if !landscape {
-            element(app, containing: "Review  ").tap()
-        } else {
-            XCTAssertTrue(app.otherElements["board-lane-review"].exists)
+        let jumpToLatest = element(app, containing: "Jump to latest")
+        let detached = jumpToLatest.waitForExistence(timeout: 10)
+        // On the tablet this short transcript can fit on screen, leaving nothing to scroll.
+        if !landscape { XCTAssertTrue(detached, "Reading earlier messages detaches from the reply") }
+        if detached {
+            press(jumpToLatest)
+            XCTAssertTrue(
+                waitFor { self.isAbove(followUpReply, composer, in: app) },
+                "Jumping to latest resumes following the reply")
         }
+        let review = element(app, identifier: "move-review")
+        XCTAssertTrue(review.waitForExistence(timeout: 60))
+        press(review)
+        if !landscape { back(app) }
+        let reviewLane = element(app, identifier: "lane-2")
+        XCTAssertTrue(reviewLane.waitForExistence(timeout: 20))
+        press(reviewLane)
         XCTAssertTrue(element(app, containing: "A shared mobile conversation").waitForExistence(timeout: 30))
         capture("ios-review")
-        app.buttons["Chats"].tap()
+
+        tab(app, "Chats")
         XCTAssertTrue(element(app, containing: "Mobile release checklist").waitForExistence(timeout: 20))
         capture("ios-chats")
-        app.buttons["Tools"].tap()
-        XCTAssertTrue(element(app, containing: "Machines").waitForExistence(timeout: 10))
+        tab(app, "Tools")
+        XCTAssertTrue(element(app, identifier: "tool-machines").waitForExistence(timeout: 10))
         capture("ios-tools")
-        element(app, containing: "Machines").tap()
+        press(element(app, identifier: "tool-machines"))
         XCTAssertTrue(element(app, containing: "Isolated E2E machine").waitForExistence(timeout: 20))
         capture("ios-machines")
-        app.buttons["Back"].tap()
-        element(app, containing: "Files").tap()
+        // On iPad each tool replaces the detail column beside the Tools list.
+        if !landscape { back(app) }
+        press(element(app, identifier: "tool-files"))
         XCTAssertTrue(element(app, containing: "README.md").waitForExistence(timeout: 20))
         capture("ios-files")
-        element(app, containing: "README.md").tap()
-        XCTAssertTrue(app.buttons["Preview Markdown"].waitForExistence(timeout: 20))
-        app.buttons["Preview Markdown"].tap()
-        XCTAssertTrue(element(app, containing: "One durable conversation").waitForExistence(timeout: 10))
+        press(element(app, containing: "README.md"))
+        XCTAssertTrue(element(app, containing: "One durable conversation").waitForExistence(timeout: 20))
         capture("ios-file-preview")
-        app.buttons["Back to files"].tap()
-        app.buttons["Back"].tap()
-        element(app, containing: "Schedules").tap()
+        back(app)
+        if !landscape { back(app) }
+        press(element(app, identifier: "tool-schedules"))
         XCTAssertTrue(element(app, containing: "Daily workspace review").waitForExistence(timeout: 20))
         capture("ios-schedules")
-        app.buttons["Back"].tap()
-        element(app, containing: "Settings").tap()
-        XCTAssertTrue(element(app, containing: "Appearance").waitForExistence(timeout: 10))
-        app.buttons["System"].tap()
-        app.buttons["Dark"].tap()
+        if !landscape { back(app) }
+        let settings = element(app, identifier: "tool-settings")
+        // Settings is the last tool row; bring it above the tab bar on phones.
+        if !waitFor(timeout: 3, { self.hasFrame(settings) && settings.frame.maxY < app.frame.maxY - 120 }) {
+            app.swipeUp()
+        }
+        press(settings)
+        XCTAssertTrue(element(app, identifier: "appearance-2").waitForExistence(timeout: 10))
+        press(element(app, identifier: "appearance-2"))
         capture("ios-settings-dark")
-        app.buttons["Projects"].tap()
-        XCTAssertTrue(element(app, containing: "Main").waitForExistence(timeout: 20))
-        element(app, containing: "Main").tap()
-        assertRunningLane(app, landscape: landscape)
+        tab(app, "Projects")
+        XCTAssertTrue(app.staticTexts["Main"].waitForExistence(timeout: 20))
+        press(app.staticTexts["Main"])
+        XCTAssertTrue(element(app, identifier: "lane-1").waitForExistence(timeout: 20))
         capture("ios-board-dark")
         app.terminate()
     }
+
     private func element(_ app: XCUIApplication, containing text: String) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
     }
-    private func waitForHittable(_ element: XCUIElement) -> Bool {
-        let hittable = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in element.exists && element.isHittable }, object: element)
-        return XCTWaiter.wait(for: [hittable], timeout: 10) == .completed
+
+    private func element(_ app: XCUIApplication, identifier: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
-    private func assertRunningLane(_ app: XCUIApplication, landscape: Bool) {
-        if landscape {
-            XCTAssertTrue(app.staticTexts["Running"].waitForExistence(timeout: 20))
-            let lane = app.otherElements["board-lane-running"]
-            XCTAssertTrue(lane.waitForExistence(timeout: 20))
-            XCTAssertEqual(lane.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "card-")).count, 3)
-        } else {
-            XCTAssertTrue(element(app, containing: "Running  3").waitForExistence(timeout: 20))
-        }
+
+    /// Selects a tab from the tab bar or, on iPad, the sidebar, whose rows are not buttons.
+    private func tab(_ app: XCUIApplication, _ title: String) {
+        let bar = app.tabBars.buttons[title]
+        if hasFrame(bar) && bar.isHittable { return bar.tap() }
+        let types = [XCUIElement.ElementType.button, .cell, .other].map(\.rawValue)
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@ AND elementType IN %@", title, types)).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "\(title) is reachable from the tab bar or sidebar")
+        row.tap()
     }
+
+    /// The native back button of the innermost navigation bar; on iPad, the detail column's.
+    private func back(_ app: XCUIApplication) {
+        let buttons = app.navigationBars.buttons.matching(identifier: "BackButton").allElementsBoundByIndex
+        let button = buttons.filter({ hasFrame($0) && $0.isHittable }).max(by: { $0.frame.minX < $1.frame.minX })
+        XCTAssertNotNil(button, "A back button is visible")
+        button?.tap()
+        Thread.sleep(forTimeInterval: 0.5)
+    }
+
+    /// `isHittable` records a failure for elements without an activation point; check the frame first.
+    private func hasFrame(_ element: XCUIElement) -> Bool {
+        element.exists && !element.frame.isEmpty
+    }
+
+    private func waitFor(timeout: TimeInterval = 10, _ condition: @escaping () -> Bool) -> Bool {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in condition() }, object: nil)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func waitForHittable(_ element: XCUIElement, timeout: TimeInterval = 10) -> Bool {
+        waitFor(timeout: timeout) { self.hasFrame(element) && element.isHittable }
+    }
+
+    /// Taps a Compose element where it is drawn. On iOS 26 XCTest's hit-test check can
+    /// resolve a nested Compose control to its container, although touches reach it.
+    private func press(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(waitFor { self.hasFrame(element) }, "\(element) is on screen", file: file, line: line)
+        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    }
+
+    /// Inside the window and fully above [bottom], e.g. a reply clear of the composer.
+    private func isAbove(_ element: XCUIElement, _ bottom: XCUIElement, in app: XCUIApplication) -> Bool {
+        hasFrame(element) && hasFrame(bottom) && element.frame.minY >= app.frame.minY
+            && element.frame.maxY <= bottom.frame.minY + 1
+    }
+
+    private func waitForValue(_ element: XCUIElement, containing text: String) -> Bool {
+        waitFor { (element.value as? String)?.contains(text) == true }
+    }
+
     private func capture(_ name: String) {
-        // Allow the Compose frame and SwiftUI appearance/chrome to be presented
-        // after the accessibility assertion that selected this view.
-        Thread.sleep(forTimeInterval: 0.35)
+        // Allow the Compose frame and native chrome to be presented after the
+        // accessibility assertion that selected this view.
+        Thread.sleep(forTimeInterval: 0.5)
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        attachment.name = name; attachment.lifetime = .keepAlways
+        attachment.name = name
+        attachment.lifetime = .keepAlways
         add(attachment)
     }
 }

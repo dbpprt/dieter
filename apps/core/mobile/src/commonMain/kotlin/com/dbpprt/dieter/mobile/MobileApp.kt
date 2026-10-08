@@ -2,70 +2,38 @@
 
 package com.dbpprt.dieter.mobile
 
-import androidx.compose.foundation.*
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.dbpprt.dieter.client.v1.*
-import com.dbpprt.dieter.mobile.icons.*
+import com.dbpprt.dieter.client.v1.SessionSlice
 
-internal val primaryTabs =
-    listOf(MobileTab.INBOX, MobileTab.PROJECTS, MobileTab.CHATS, MobileTab.TOOLS)
+/** Platform hook for system back (Android predictive back). No-op elsewhere. */
+@Composable internal expect fun SystemBackHandler(enabled: Boolean, onBack: () -> Unit)
 
-internal fun MobileTab.title() =
-    when (this) {
-        MobileTab.BOARD -> "Board"
-        MobileTab.INBOX -> "Inbox"
-        MobileTab.PROJECTS -> "Projects"
-        MobileTab.CHATS -> "Chats"
-        MobileTab.TOOLS -> "Tools"
-        MobileTab.MACHINES -> "Machines"
-        MobileTab.FILES -> "Files"
-        MobileTab.SCHEDULES -> "Schedules"
-        MobileTab.TERMINALS -> "Terminal"
-        MobileTab.SCREENS -> "Screens"
-        MobileTab.USAGE -> "Usage"
-        MobileTab.SETTINGS -> "Settings"
-        MobileTab.PROJECT_CHANGES -> "Changes"
-    }
-
-internal fun MobileTab.icon(): ImageVector =
-    when (this) {
-        MobileTab.INBOX -> Icons.Outlined.Inbox
-        MobileTab.PROJECTS,
-        MobileTab.BOARD -> Icons.Outlined.ViewKanban
-        MobileTab.CHATS -> Icons.Outlined.ChatBubbleOutline
-        MobileTab.TOOLS -> Icons.Outlined.GridView
-        MobileTab.MACHINES -> Icons.Outlined.Computer
-        MobileTab.FILES -> Icons.Outlined.Folder
-        MobileTab.SCHEDULES -> Icons.Outlined.CalendarMonth
-        MobileTab.TERMINALS -> Icons.Outlined.Terminal
-        MobileTab.SCREENS -> Icons.Outlined.DesktopWindows
-        MobileTab.USAGE -> Icons.Outlined.DataUsage
-        MobileTab.SETTINGS -> Icons.Outlined.Settings
-        MobileTab.PROJECT_CHANGES -> Icons.Outlined.CompareArrows
-    }
-
-/** All destinations use the same core and screens. Apple supplies native glass chrome. */
+/**
+ * The Material host used on Android and in JVM tests. iOS hosts each route natively. [onWindow]
+ * receives the theme's darkness and background ARGB so the host can style its window.
+ */
 @Composable
-fun MobileApp(store: MobileStore, apple: Boolean = false, openUrl: (String) -> Unit = {}) {
-    val tab by store.tab.collectAsState()
-    val selected by store.selectedCard.collectAsState()
-    val creating by store.creating.collectAsState()
-    val workspace by store.workspace.collectAsState()
-    val selectedBoard by store.selectedBoard.collectAsState()
-    val session by store.session.collectAsState()
-    val error by store.error.collectAsState()
+fun MobileApp(
+    store: MobileStore,
+    openUrl: (String) -> Unit = {},
+    onWindow: (dark: Boolean, background: Int) -> Unit = { _, _ -> },
+) {
     val signInUrl by store.signInUrl.collectAsState()
     LaunchedEffect(signInUrl) {
         if (signInUrl.isNotEmpty()) {
@@ -73,94 +41,85 @@ fun MobileApp(store: MobileStore, apple: Boolean = false, openUrl: (String) -> U
             store.signInUrl.value = ""
         }
     }
-    LaunchedEffect(workspace.boards.map { it.id }) {
-        if (workspace.boards.isNotEmpty() && workspace.boards.none { it.id == selectedBoard })
-            store.chooseBoard(workspace.boards.first().id)
+    MobileTheme(store, apple = false) {
+        val dark = store.isDark()
+        val background = palette.background.toArgb()
+        SideEffect { onWindow(dark, background) }
+        CompositionLocalProvider(LocalMobileStore provides store) {
+            Surface(Modifier.fillMaxSize(), color = palette.background) {
+                MaterialShell(store, openUrl)
+            }
+        }
     }
-    MobileTheme(store, apple) {
-        Surface(Modifier.fillMaxSize(), color = colors.background) {
-            BoxWithConstraints {
-                val wide = maxWidth >= 840.dp
-                val split =
-                    maxWidth >= 600.dp &&
-                        (tab in listOf(MobileTab.INBOX, MobileTab.CHATS) ||
-                            (tab == MobileTab.BOARD && selected.isNotEmpty()))
-                Row(Modifier.fillMaxSize()) {
-                    if (wide && !apple)
-                        NavigationRail(containerColor = colors.surface) {
-                            Spacer(Modifier.height(12.dp))
-                            primaryTabs.forEach { item ->
-                                NavigationRailItem(
-                                    selected =
-                                        tab == item ||
-                                            (item == MobileTab.PROJECTS && tab == MobileTab.BOARD),
-                                    onClick = { store.navigate(item) },
-                                    icon = { Icon(item.icon(), item.title()) },
-                                    label = { Text(item.title()) },
-                                )
-                            }
-                            Spacer(Modifier.weight(1f))
-                            IconButton(onClick = { store.navigate(MobileTab.SETTINGS) }) {
-                                Icon(Icons.Outlined.Settings, "Settings")
-                            }
-                        }
-                    Column(Modifier.weight(1f)) {
-                        session.notice?.let { notice ->
-                            Notice(notice.title, notice.detail, store::retry)
-                        }
-                        if (error.isNotEmpty())
-                            Notice(
-                                "Action unavailable",
-                                error,
-                                { store.error.value = "" },
-                                "Dismiss",
-                                danger = true,
-                            )
-                        Box(Modifier.weight(1f)) {
-                            when {
-                                session.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED &&
-                                    !workspace.loaded -> SignInScreen(store)
-                                creating -> CreationScreen(store)
-                                selected.isNotEmpty() && !split ->
-                                    ConversationScreen(store, openUrl)
-                                split ->
-                                    Row(Modifier.fillMaxSize()) {
-                                        Box(
-                                            Modifier.width(if (wide) 360.dp else 280.dp)
-                                                .fillMaxHeight()
-                                        ) {
-                                            MainDestination(store, openUrl)
-                                        }
-                                        VerticalDivider(color = colors.outlineVariant)
-                                        Box(Modifier.weight(1f)) {
-                                            if (selected.isNotEmpty())
-                                                ConversationScreen(store, openUrl)
-                                            else
-                                                Empty(
-                                                    "Choose a conversation",
-                                                    "Your project and conversations stay within reach.",
-                                                )
-                                        }
-                                    }
-                                else -> MainDestination(store, openUrl)
-                            }
-                        }
-                        if (!apple && !wide && !creating && selected.isEmpty())
-                            NavigationBar(containerColor = colors.surface, tonalElevation = 0.dp) {
-                                primaryTabs.forEach { item ->
-                                    NavigationBarItem(
-                                        selected =
-                                            tab == item ||
-                                                (item == MobileTab.PROJECTS &&
-                                                    tab == MobileTab.BOARD),
-                                        onClick = { store.navigate(item) },
-                                        icon = { Icon(item.icon(), null) },
-                                        label = { Text(item.title()) },
-                                        modifier = Modifier.testTag("nav-${item.name.lowercase()}"),
-                                    )
-                                }
-                            }
-                    }
+}
+
+@Composable
+private fun MaterialShell(store: MobileStore, openUrl: (String) -> Unit) {
+    val session by store.session.collectAsState()
+    val workspace by store.workspace.collectAsState()
+    val navigation by store.routes.collectAsState()
+    val error by store.error.collectAsState()
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(error) {
+        if (error.isNotEmpty()) {
+            snackbar.showSnackbar(error, withDismissAction = true)
+            store.error.value = ""
+        }
+    }
+    SystemBackHandler(
+        navigation.modal != null || navigation.stack.size > 1 || navigation.tab != MobileTab.INBOX
+    ) {
+        store.handleBack()
+    }
+    if (session.phase == SessionSlice.Phase.PHASE_AUTH_REQUIRED && !workspace.loaded) {
+        SignInScreen(store)
+        return
+    }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val rail = maxWidth >= 600.dp
+        val twoPane = maxWidth >= 840.dp
+        val immersive = !twoPane && navigation.top.immersive
+        Row(Modifier.fillMaxSize()) {
+            if (rail) NavigationRailBar(store, navigation)
+            Column(Modifier.weight(1f)) {
+                val bottomInsets =
+                    if (rail || immersive) WindowInsets.navigationBars else WindowInsets(0, 0, 0, 0)
+                CompositionLocalProvider(
+                    LocalScreenInsets provides
+                        WindowInsets.statusBars
+                            .union(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                            .union(bottomInsets),
+                    LocalRailCreates provides rail,
+                ) {
+                    Box(Modifier.weight(1f)) { TabStack(store, navigation, twoPane, openUrl) }
+                }
+                AnimatedVisibility(
+                    !rail && !immersive,
+                    enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                    exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+                ) {
+                    BottomBar(store, navigation)
+                }
+            }
+        }
+        SnackbarHost(
+            snackbar,
+            Modifier.align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = if (!rail && !immersive) 80.dp else 16.dp),
+        )
+        val modal = navigation.modal
+        AnimatedVisibility(
+            modal != null,
+            enter = slideInVertically { it / 8 } + fadeIn(tween(220)),
+            exit = slideOutVertically { it / 8 } + fadeOut(tween(180)),
+        ) {
+            val shown = remember(modal) { modal } ?: return@AnimatedVisibility
+            CompositionLocalProvider(
+                LocalScreenInsets provides WindowInsets.safeDrawing.exclude(WindowInsets.ime)
+            ) {
+                Surface(Modifier.fillMaxSize(), color = palette.background) {
+                    RouteContent(store, shown, openUrl)
                 }
             }
         }
@@ -168,129 +127,281 @@ fun MobileApp(store: MobileStore, apple: Boolean = false, openUrl: (String) -> U
 }
 
 @Composable
-private fun MainDestination(store: MobileStore, openUrl: (String) -> Unit) {
-    val tab by store.tab.collectAsState()
-    when (tab) {
-        MobileTab.BOARD -> BoardScreen(store)
-        MobileTab.INBOX -> InboxScreen(store)
-        MobileTab.PROJECTS -> ProjectsScreen(store)
-        MobileTab.CHATS -> ChatsScreen(store)
-        MobileTab.TOOLS -> ToolsScreen(store)
-        MobileTab.MACHINES -> MachinesScreen(store)
-        MobileTab.FILES -> FilesScreen(store)
-        MobileTab.SCHEDULES -> SchedulesScreen(store)
-        MobileTab.USAGE -> UsageScreen(store)
-        MobileTab.SETTINGS -> SettingsScreen(store)
-        MobileTab.PROJECT_CHANGES -> ProjectChangesScreen(store)
-        MobileTab.TERMINALS -> TerminalsScreen(store)
-        MobileTab.SCREENS -> ScreensScreen(store)
-    }
-}
-
-@Composable
-internal fun PageHeader(
-    title: String,
-    subtitle: String = "",
-    back: (() -> Unit)? = null,
-    actions: @Composable RowScope.() -> Unit = {},
-) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (back != null) IconButton(onClick = back) { Icon(Icons.Outlined.ArrowBack, "Back") }
-        Column(Modifier.weight(1f)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
+private fun BottomBar(store: MobileStore, navigation: MobileNavigation) {
+    val activity by store.activity.collectAsState()
+    NavigationBar(containerColor = colors.surfaceContainer) {
+        MobileTab.entries.forEach { tab ->
+            NavigationBarItem(
+                selected = navigation.tab == tab,
+                onClick = { store.selectTab(tab) },
+                icon = {
+                    val attention =
+                        if (tab == MobileTab.INBOX) activity.summary?.attention ?: 0 else 0
+                    BadgedBox(badge = { if (attention > 0) Badge { Text("$attention") } }) {
+                        Icon(tab.glyph, null, size = 24.dp)
+                    }
+                },
+                label = { Text(tab.title) },
+                modifier = Modifier.testTag("nav-${tab.name.lowercase()}"),
             )
-            if (subtitle.isNotEmpty())
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.onSurfaceVariant,
+        }
+    }
+}
+
+@Composable
+private fun NavigationRailBar(store: MobileStore, navigation: MobileNavigation) {
+    NavigationRail(
+        containerColor = colors.surfaceContainer,
+        header = {
+            FloatingActionButton(
+                onClick = { store.newConversation(navigation.tab == MobileTab.CHATS) },
+                modifier = Modifier.padding(top = 8.dp).testTag("rail-new"),
+                containerColor = colors.primaryContainer,
+            ) {
+                Icon(
+                    Glyph.COMPOSE,
+                    if (navigation.tab == MobileTab.CHATS) "New chat" else "New task",
+                    size = 24.dp,
                 )
-        }
-        actions()
-    }
-}
-
-@Composable
-internal fun Notice(
-    title: String,
-    detail: String,
-    action: () -> Unit,
-    actionLabel: String = "Retry",
-    danger: Boolean = false,
-) {
-    Surface(color = if (danger) colors.errorContainer else colors.surfaceContainerHigh) {
-        Row(
-            Modifier.fillMaxWidth().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(title, fontWeight = FontWeight.SemiBold)
-                Text(detail, style = MaterialTheme.typography.bodySmall)
             }
-            TextButton(onClick = action) { Text(actionLabel) }
+        },
+        windowInsets =
+            WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical + WindowInsetsSides.Start),
+    ) {
+        Spacer(Modifier.height(12.dp))
+        MobileTab.entries.forEach { tab ->
+            NavigationRailItem(
+                selected = navigation.tab == tab,
+                onClick = { store.selectTab(tab) },
+                icon = { Icon(tab.glyph, null, size = 24.dp) },
+                label = { Text(tab.title) },
+                modifier = Modifier.testTag("nav-${tab.name.lowercase()}"),
+            )
         }
     }
 }
 
+/** One tab's stack: single pane with shared-axis motion, or list beside detail when wide. */
 @Composable
-internal fun Empty(title: String, detail: String) {
-    Column(
-        Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Icon(Icons.Outlined.Forum, null, Modifier.size(30.dp), tint = colors.onSurfaceVariant)
-        Spacer(Modifier.height(14.dp))
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(6.dp))
-        Text(detail, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
+private fun TabStack(
+    store: MobileStore,
+    navigation: MobileNavigation,
+    twoPane: Boolean,
+    openUrl: (String) -> Unit,
+) {
+    val holder = rememberSaveableStateHolder()
+    val stack = navigation.stack
+    val listIndex = stack.indexOfLast { it.list }
+    if (twoPane && listIndex >= 0) {
+        val list = stack[listIndex]
+        val details = stack.drop(listIndex + 1)
+        val detail = details.lastOrNull()
+        Row(Modifier.fillMaxSize()) {
+            Box(Modifier.width(400.dp).fillMaxHeight()) {
+                CompositionLocalProvider(
+                    LocalBackAction provides if (listIndex > 0) store::pop else null
+                ) {
+                    holder.SaveableStateProvider(list.key) { RouteContent(store, list, openUrl) }
+                }
+            }
+            VerticalDivider(color = colors.outlineVariant)
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                CompositionLocalProvider(
+                    LocalBackAction provides if (details.size > 1) store::pop else null
+                ) {
+                    AnimatedContent(
+                        detail,
+                        transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
+                    ) { shown ->
+                        if (shown == null)
+                            Box(
+                                Modifier.fillMaxSize().background(palette.background),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                val empty = navigation.tab.emptyDetail
+                                EmptyState(empty.glyph, empty.title, empty.message)
+                            }
+                        else
+                            holder.SaveableStateProvider(shown.key) {
+                                RouteContent(store, shown, openUrl)
+                            }
+                    }
+                }
+            }
+        }
+        return
+    }
+    val depth = stack.size
+    AnimatedContent(
+        targetState = navigation.tab to stack.last(),
+        transitionSpec = {
+            val sameTab = initialState.first == targetState.first
+            if (!sameTab) fadeIn(tween(160)) togetherWith fadeOut(tween(90))
+            else {
+                val forward =
+                    depthOf(store, targetState.second) >= depthOf(store, initialState.second)
+                (slideInHorizontally(tween(300)) { if (forward) it / 6 else -it / 6 } +
+                    fadeIn(tween(220))) togetherWith
+                    (slideOutHorizontally(tween(300)) { if (forward) -it / 6 else it / 6 } +
+                        fadeOut(tween(160)))
+            }
+        },
+        label = "route",
+    ) { (_, route) ->
+        CompositionLocalProvider(LocalBackAction provides if (depth > 1) store::pop else null) {
+            holder.SaveableStateProvider(route.key) { RouteContent(store, route, openUrl) }
+        }
+    }
+}
+
+private fun depthOf(store: MobileStore, route: MobileRoute): Int =
+    store.routes.value.stack.indexOf(route).let { if (it < 0) Int.MAX_VALUE / 2 else it }
+
+/** Shared by the Android host and every native iOS route controller. */
+@Composable
+internal fun RouteContent(store: MobileStore, route: MobileRoute, openUrl: (String) -> Unit) {
+    // A route opened for a new task keeps its local ID; screens follow the server ID once known.
+    val outbox by store.outbox.collectAsState()
+    fun card(id: String) = outbox.resolutions[id] ?: id
+    when (route) {
+        is MobileRoute.Root ->
+            when (route.tab) {
+                MobileTab.INBOX -> InboxScreen(store)
+                MobileTab.PROJECTS -> ProjectsScreen(store)
+                MobileTab.CHATS -> ChatsScreen(store)
+                MobileTab.TOOLS -> ToolsScreen(store)
+            }
+        is MobileRoute.Project -> ProjectScreen(store, route.projectId)
+        is MobileRoute.Board -> BoardScreen(store, route.boardId)
+        is MobileRoute.Conversation -> ConversationScreen(store, card(route.cardId), openUrl)
+        is MobileRoute.Pane -> CardPaneScreen(store, card(route.cardId), route.pane, openUrl)
+        is MobileRoute.Tool -> ToolScreen(store, route.page)
+        is MobileRoute.NewTask -> CreationScreen(store, route.chat)
+        is MobileRoute.FilePath ->
+            FilesScreen(store, inConversation = route.cardId.isNotEmpty(), route = route)
+        is MobileRoute.Machine -> MachineScreen(store, route.machineId)
+        is MobileRoute.TerminalSession ->
+            TerminalSessionScreen(store, route.terminalId, card(route.cardId))
+        is MobileRoute.ScreenSession -> NativeScreen(store, route.machineId)
+    }
+}
+
+@Composable
+internal fun ToolScreen(store: MobileStore, page: ToolPage) {
+    when (page) {
+        ToolPage.MACHINES -> MachinesScreen(store)
+        ToolPage.TERMINALS -> TerminalsScreen(store)
+        ToolPage.SCREENS -> ScreensScreen(store)
+        ToolPage.FILES -> FilesScreen(store)
+        ToolPage.CHANGES -> ProjectChangesScreen(store)
+        ToolPage.SCHEDULES -> SchedulesScreen(store)
+        ToolPage.USAGE -> UsageScreen(store)
+        ToolPage.SETTINGS -> SettingsScreen(store)
     }
 }
 
 @Composable
 private fun ToolsScreen(store: MobileStore) {
-    Column {
-        PageHeader("Tools", "Your machines and project workspace")
+    val session by store.session.collectAsState()
+    val workspace by store.workspace.collectAsState()
+    val quotas by store.quotas.collectAsState()
+    val selectedProject by store.selectedProject.collectAsState()
+    val project = workspace.projects.firstOrNull { it.id == store.currentProjectId() }
+    val online = session.machines.count { it.online }
+    Screen(ScreenChrome("Tools", large = true)) {
         LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier.fillMaxSize().testTag("tools-list"),
+            state = listState,
+            contentPadding = padding,
         ) {
-            items(
-                listOf(
-                        MobileTab.MACHINES,
-                        MobileTab.TERMINALS,
-                        MobileTab.FILES,
-                        MobileTab.SCHEDULES,
-                        MobileTab.SCREENS,
-                        MobileTab.USAGE,
-                        MobileTab.SETTINGS,
+            titleHeader()
+            item { ConnectionNotice(store) }
+            item { SectionHeader("Machines") }
+            item {
+                Group(listOf(ToolPage.MACHINES, ToolPage.TERMINALS, ToolPage.SCREENS)) {
+                    page,
+                    position ->
+                    ListRow(
+                        page.title,
+                        Modifier.testTag("tool-${page.name.lowercase()}"),
+                        position = position,
+                        glyph = page.glyph,
+                        tile = page.color,
+                        value =
+                            when (page) {
+                                ToolPage.MACHINES ->
+                                    if (session.machines.isEmpty()) ""
+                                    else "$online of ${session.machines.size} online"
+                                else -> null
+                            },
+                        accessory = Accessory.CHEVRON,
+                        onClick = {
+                            store.showFrom(
+                                MobileRoute.Root(MobileTab.TOOLS),
+                                MobileRoute.Tool(page),
+                            )
+                        },
                     )
-                    .chunked(2)
-            ) { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    row.forEach { tool ->
-                        Surface(
-                            onClick = { store.navigate(tool) },
-                            color = colors.surfaceContainerHigh,
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Column(
-                                Modifier.padding(16.dp).heightIn(min = 64.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp),
-                            ) {
-                                Icon(tool.icon(), null)
-                                Text(tool.title(), style = MaterialTheme.typography.labelLarge)
-                            }
-                        }
-                    }
-                    if (row.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+            item {
+                SectionHeader(
+                    "Workspace",
+                    trailing = {
+                        if (project != null)
+                            Text(
+                                project.name,
+                                style = type.footnote,
+                                color = palette.secondaryLabel,
+                            )
+                    },
+                )
+            }
+            item {
+                Group(listOf(ToolPage.FILES, ToolPage.CHANGES, ToolPage.SCHEDULES)) { page, position
+                    ->
+                    ListRow(
+                        page.title,
+                        Modifier.testTag("tool-${page.name.lowercase()}"),
+                        position = position,
+                        glyph = page.glyph,
+                        tile = page.color,
+                        accessory = Accessory.CHEVRON,
+                        onClick = {
+                            store.showFrom(
+                                MobileRoute.Root(MobileTab.TOOLS),
+                                MobileRoute.Tool(
+                                    page,
+                                    selectedProject.ifEmpty { project?.id.orEmpty() },
+                                ),
+                            )
+                        },
+                    )
+                }
+            }
+            item { SectionHeader("Account") }
+            item {
+                Group(listOf(ToolPage.USAGE, ToolPage.SETTINGS)) { page, position ->
+                    val lowest =
+                        quotas.group_rows
+                            .filter { it.lowest_remaining >= 0 }
+                            .minOfOrNull { it.lowest_remaining }
+                    ListRow(
+                        page.title,
+                        Modifier.testTag("tool-${page.name.lowercase()}"),
+                        position = position,
+                        glyph = page.glyph,
+                        tile = page.color,
+                        value =
+                            if (page == ToolPage.USAGE && lowest != null) "$lowest% left" else null,
+                        accessory = Accessory.CHEVRON,
+                        onClick = {
+                            store.showFrom(
+                                MobileRoute.Root(MobileTab.TOOLS),
+                                MobileRoute.Tool(page),
+                            )
+                        },
+                    )
                 }
             }
         }
@@ -301,22 +412,77 @@ private fun ToolsScreen(store: MobileStore) {
 private fun SignInScreen(store: MobileStore) {
     var gateway by remember { mutableStateOf("https://") }
     val busy by store.busy.collectAsState()
-    Column(
-        Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(24.dp),
-        verticalArrangement = Arrangement.Center,
+    val error by store.error.collectAsState()
+    Box(
+        Modifier.fillMaxSize().background(palette.background).safeDrawingPadding().imePadding(),
+        contentAlignment = Alignment.Center,
     ) {
-        Text("Connect to Dieter", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(12.dp))
-        Text("Sign in to see your projects and enrolled machines.", color = colors.onSurfaceVariant)
-        Spacer(Modifier.height(24.dp))
-        MobileTextField(
-            gateway,
-            { gateway = it },
-            Modifier.fillMaxWidth(),
-            label = { Text("Gateway address") },
-            singleLine = true,
+        Column(
+            Modifier.widthIn(max = 440.dp)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                Modifier.size(72.dp)
+                    .background(
+                        palette.accent,
+                        androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Glyph.SPARKLES, null, tint = palette.onAccent, size = 36.dp)
+            }
+            Spacer(Modifier.height(24.dp))
+            Text(
+                "Welcome to Dieter",
+                style = type.title1,
+                color = palette.label,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Sign in to your gateway to see your projects, conversations and machines.",
+                style = type.body,
+                color = palette.secondaryLabel,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(32.dp))
+            MobileTextField(
+                gateway,
+                { gateway = it },
+                Modifier.fillMaxWidth().testTag("gateway-address"),
+                label = { Text("Gateway address") },
+                singleLine = true,
+            )
+            if (error.isNotEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                Text(error, style = type.footnote, color = palette.destructive)
+            }
+            Spacer(Modifier.height(20.dp))
+            DButton(
+                "Sign in",
+                { store.signIn(gateway) },
+                Modifier.fillMaxWidth().testTag("sign-in"),
+                large = true,
+                loading = busy,
+                enabled = gateway.length > "https://".length,
+            )
+        }
+    }
+}
+
+/** Sign-in screen hosted directly by the iOS app before a session exists. */
+@Composable internal fun SignInContent(store: MobileStore) = SignInScreen(store)
+
+@Composable
+internal fun Placeholder(text: String) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(
+            text,
+            style = type.body.copy(fontWeight = FontWeight.Medium),
+            color = palette.secondaryLabel,
         )
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = { store.signIn(gateway) }, enabled = !busy) { Text("Sign in") }
     }
 }

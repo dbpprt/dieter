@@ -9,6 +9,7 @@ import com.dbpprt.dieter.client.v1.*
 import com.dbpprt.dieter.core.terminals.*
 import platform.Foundation.NSData
 import platform.UIKit.UIView
+import platform.UIKit.UIViewController
 
 interface MobileTerminalInput {
     fun send(data: NSData)
@@ -52,6 +53,60 @@ interface MobileNativeViews {
     fun terminal(input: MobileTerminalInput): MobileTerminalSurface
 
     fun screen(scope: String, input: MobileScreenInput): MobileScreenSurface
+
+    /** Shows a UIMenu anchored to a rectangle (points) in [view]. */
+    fun showMenu(
+        sections: List<NativeMenuSection>,
+        view: UIView,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+    )
+
+    fun confirm(
+        title: String,
+        message: String,
+        confirm: String,
+        destructive: Boolean,
+        view: UIView,
+        result: NativeChoice,
+    )
+
+    fun prompt(
+        title: String,
+        message: String,
+        value: String,
+        placeholder: String,
+        confirm: String,
+        view: UIView,
+        result: NativeText,
+    )
+
+    /** Presents [content] in a sheet; the returned handle owns its navigation item. */
+    fun presentSheet(
+        content: UIViewController,
+        medium: Boolean,
+        from: UIView,
+        dismissed: NativeChoice,
+    ): NativeSheet
+
+    fun showToast(message: String)
+}
+
+interface NativeChoice {
+    fun chose(confirmed: Boolean)
+}
+
+interface NativeText {
+    /** Null when cancelled. */
+    fun entered(text: String?)
+}
+
+interface NativeSheet {
+    val chrome: NativeChromeSink
+
+    fun close()
 }
 
 internal object AppleNativeViews {

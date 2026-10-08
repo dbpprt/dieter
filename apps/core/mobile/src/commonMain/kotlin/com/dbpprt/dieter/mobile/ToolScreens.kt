@@ -1,722 +1,1030 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 
 package com.dbpprt.dieter.mobile
 
-import androidx.compose.foundation.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.*
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dbpprt.dieter.client.v1.*
 import com.dbpprt.dieter.core.files.FilePaths
-import com.dbpprt.dieter.mobile.icons.*
 import com.dbpprt.dieter.settings.DieterPalette
 
-@Composable
-internal fun ProjectSelector(store: MobileStore) {
-    val workspace by store.workspace.collectAsState()
-    val selected by store.selectedProject.collectAsState()
-    val checkout by store.selectedCheckout.collectAsState()
-    val defaults by store.creationDefaults.collectAsState()
-    val project =
-        workspace.projects.firstOrNull { it.id == selected.ifEmpty { store.currentProjectId() } }
-    Row(Modifier.padding(horizontal = 16.dp)) {
-        ChoiceChip(
-            workspace.projects
-                .firstOrNull { it.id == selected.ifEmpty { store.currentProjectId() } }
-                ?.name ?: "Choose project",
-            workspace.projects.map { it.id to it.name },
-        ) { id ->
-            store.selectedProject.value = id
-            store.selectedCheckout.value = ""
-            store.navigate(store.tab.value)
-        }
-    }
-    if (store.tab.value in listOf(MobileTab.FILES, MobileTab.PROJECT_CHANGES))
-        Row(Modifier.padding(horizontal = 16.dp)) {
-            ChoiceChip(
-                project
-                    ?.checkouts
-                    ?.firstOrNull {
-                        it.id == checkout.ifEmpty { defaults.checkouts[project?.id].orEmpty() }
-                    }
-                    ?.name ?: "Choose a checkout",
-                project?.checkouts.orEmpty().map { it.id to it.name },
-            ) {
-                store.selectedCheckout.value = it
-                if (store.tab.value == MobileTab.PROJECT_CHANGES) store.bindProjectChanges()
-                else store.bindFiles()
-            }
-        }
+/** "Project" and "Checkout" menus for project-scoped tools. */
+internal fun projectScopeMenu(store: MobileStore, rebind: () -> Unit): List<ChromeAction> {
+    val workspace = store.workspace.value
+    val current = store.currentProjectId()
+    val project = workspace.projects.firstOrNull { it.id == current }
+    val checkout =
+        store.selectedCheckout.value
+            .ifEmpty { store.creationDefaults.value.checkouts[current].orEmpty() }
+            .ifEmpty { project?.checkouts?.singleOrNull()?.id.orEmpty() }
+    val machines = store.session.value.machines
+    return listOfNotNull(
+        ChromeAction(
+            "scope-project",
+            "Project",
+            Glyph.FOLDER,
+            subtitle = project?.name.orEmpty(),
+            menu =
+                listOf(
+                    MenuSection(
+                        workspace.projects.map { item ->
+                            ChromeAction(
+                                "scope-project-${item.id}",
+                                item.name,
+                                checked = item.id == current,
+                            ) {
+                                store.selectedProject.value = item.id
+                                store.selectedCheckout.value = ""
+                                rebind()
+                            }
+                        }
+                    )
+                ),
+        ),
+        if ((project?.checkouts?.size ?: 0) > 1)
+            ChromeAction(
+                "scope-checkout",
+                "Checkout",
+                Glyph.MACHINE,
+                menu =
+                    listOf(
+                        MenuSection(
+                            project!!.checkouts.map { item ->
+                                ChromeAction(
+                                    "scope-checkout-${item.id}",
+                                    (machines.firstOrNull { it.id == item.daemon_id }?.display_name
+                                        ?: item.name) + " · " + item.name,
+                                    checked = item.id == checkout,
+                                ) {
+                                    store.selectedCheckout.value = item.id
+                                    rebind()
+                                }
+                            }
+                        )
+                    ),
+            )
+        else null,
+    )
 }
 
+// ---------------------------------------------------------------------------------------------
+// Files
+// ---------------------------------------------------------------------------------------------
+
+private fun String.trimSlashes() = trim('/').trim()
+
 @Composable
-internal fun FilesScreen(store: MobileStore, inConversation: Boolean = false) {
+internal fun FilesScreen(
+    store: MobileStore,
+    inConversation: Boolean = false,
+    route: MobileRoute.FilePath? = null,
+) {
+    if (route?.file == true) {
+        DocumentScreen(store, route)
+        return
+    }
     val view by store.files.collectAsState()
-    val previewAttachment = rememberAttachmentViewer { store.error.value = it }
-    var create by remember { mutableStateOf(false) }
-    var name by remember { mutableStateOf("") }
-    var directory by remember { mutableStateOf(false) }
-    var entryActions by remember { mutableStateOf<com.dbpprt.dieter.api.v1.FileEntry?>(null) }
-    var moving by remember { mutableStateOf(false) }
-    var deleting by remember { mutableStateOf(false) }
-    var destination by remember { mutableStateOf("") }
-    var pending by remember { mutableStateOf<FilesCommand?>(null) }
-    var markdown by remember { mutableStateOf(false) }
+    val conversation by store.conversation.collectAsState()
+    val workspace by store.workspace.collectAsState()
+    var create by remember { mutableStateOf<Boolean?>(null) }
+    var moving by remember { mutableStateOf<com.dbpprt.dieter.api.v1.FileEntry?>(null) }
+    var deleting by remember { mutableStateOf<com.dbpprt.dieter.api.v1.FileEntry?>(null) }
     val buffers by store.fileBuffers.collectAsState()
-    val document = view.document
+    val path = route?.path.orEmpty()
+    val ready = route == null || view.directory.trimSlashes() == path.trimSlashes()
+    val cardId = if (inConversation) store.selectedCard.value else ""
+    val title = path.trimSlashes().substringAfterLast('/').ifEmpty { "Files" }
+    val subtitle =
+        if (inConversation) conversation.card?.title.orEmpty()
+        else workspace.projects.firstOrNull { it.id == store.currentProjectId() }?.name.orEmpty()
+    val chrome =
+        ScreenChrome(
+            title,
+            subtitle = subtitle,
+            actions =
+                listOf(
+                    ChromeAction(
+                        "files-menu",
+                        "File actions",
+                        Glyph.MORE_HORIZONTAL,
+                        menu =
+                            listOfNotNull(
+                                MenuSection(
+                                    listOf(
+                                        ChromeAction("new-file", "New file", Glyph.FILE) {
+                                            create = false
+                                        },
+                                        ChromeAction("new-folder", "New folder", Glyph.FOLDER_ADD) {
+                                            create = true
+                                        },
+                                    )
+                                ),
+                                MenuSection(
+                                    listOf(
+                                        ChromeAction(
+                                            "hidden",
+                                            "Show hidden files",
+                                            Glyph.EYE,
+                                            checked = view.show_hidden,
+                                        ) {
+                                            store.filesCommand(
+                                                FilesCommand(
+                                                    show_hidden = Toggle(!view.show_hidden)
+                                                )
+                                            )
+                                        },
+                                        ChromeAction("refresh-files", "Refresh", Glyph.REFRESH) {
+                                            store.filesCommand(FilesCommand(load = FilesPath(path)))
+                                        },
+                                    )
+                                ),
+                                if (!inConversation && route == null)
+                                    MenuSection(projectScopeMenu(store) { store.bindFiles() })
+                                else null,
+                            ),
+                    )
+                ),
+        )
+    Screen(chrome) {
+        LazyColumn(
+            Modifier.fillMaxSize().testTag("files-list"),
+            state = listState,
+            contentPadding = padding,
+        ) {
+            if (view.listing_error.isNotEmpty())
+                item("error") {
+                    Banner(
+                        "Files unavailable",
+                        view.listing_error,
+                        Modifier.padding(horizontal = ScreenMargin, vertical = 8.dp),
+                        tone = Tone.DANGER,
+                        actionLabel = "Retry",
+                        onAction = { store.filesCommand(FilesCommand(load = FilesPath(path))) },
+                    )
+                }
+            if (!ready || (view.listing_loading && view.entries.isEmpty()))
+                item("loading") {
+                    Box(
+                        Modifier.fillMaxWidth().padding(48.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Spinner(Modifier.size(26.dp))
+                    }
+                }
+            else {
+                item("top") { Spacer(Modifier.height(8.dp)) }
+                val entries = view.entries
+                if (entries.isEmpty() && view.listing_error.isEmpty())
+                    item("empty") {
+                        EmptyState(
+                            Glyph.FOLDER,
+                            "Empty folder",
+                            "Create a file or folder from the menu.",
+                            Modifier.padding(top = 40.dp),
+                        )
+                    }
+                itemsIndexed(entries, key = { _, entry -> entry.path }) { index, entry ->
+                    val folder = entry.kind == "directory"
+                    val menu = rememberMenuState()
+                    val edited =
+                        buffers.entries.any {
+                            it.key.endsWith(entry.path) && it.value.text != it.value.original
+                        }
+                    val sections =
+                        listOf(
+                            MenuSection(
+                                listOf(
+                                    ChromeAction(
+                                        "move-${entry.path}",
+                                        "Rename or move…",
+                                        Glyph.RENAME,
+                                    ) {
+                                        moving = entry
+                                    },
+                                    ChromeAction(
+                                        "delete-${entry.path}",
+                                        "Delete",
+                                        Glyph.TRASH,
+                                        destructive = true,
+                                    ) {
+                                        deleting = entry
+                                    },
+                                )
+                            )
+                        )
+                    MenuAnchor(menu) {
+                        ListRow(
+                            entry.name,
+                            Modifier.testTag("file-${entry.name}"),
+                            position = Position.of(index, entries.size),
+                            subtitle =
+                                if (folder) null
+                                else formatBytes(entry.size) + if (edited) " · Edited" else "",
+                            glyph = if (folder) Glyph.FOLDER else Glyph.FILE,
+                            glyphTint = if (folder) Color(0xFF1E9BF0) else palette.secondaryLabel,
+                            accessory = if (folder) Accessory.CHEVRON else Accessory.NONE,
+                            onClick = {
+                                store.push(MobileRoute.FilePath(entry.path, !folder, cardId))
+                            },
+                            onLongClick = { menu.show(sections) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+    create?.let { directory ->
+        PromptDialog(
+            if (directory) "New folder" else "New file",
+            "",
+            "Create",
+            { name ->
+                store.filesCommand(
+                    FilesCommand(
+                        create =
+                            FilesCreate(
+                                if (path.isEmpty()) name else "${path.trimSlashes()}/$name",
+                                directory,
+                            )
+                    )
+                )
+                create = null
+            },
+            { create = null },
+            placeholder = if (directory) "Folder name" else "File name",
+        )
+    }
+    moving?.let { entry ->
+        PromptDialog(
+            "Rename or move",
+            entry.path,
+            "Move",
+            { destination ->
+                if (FilePaths.normalize(destination).isSuccess)
+                    store.filesCommand(FilesCommand(move = FilesMove(entry.path, destination)))
+                moving = null
+            },
+            { moving = null },
+            message = "Path relative to the workspace.",
+        )
+    }
+    deleting?.let { entry ->
+        ConfirmDialog(
+            "Delete ${entry.name}?",
+            if (entry.kind == "directory") "This deletes the folder and its contents."
+            else "This deletes the file from the workspace.",
+            "Delete",
+            {
+                store.filesCommand(
+                    FilesCommand(delete = FilesDelete(entry.path, entry.kind == "directory"))
+                )
+                deleting = null
+            },
+            { deleting = null },
+            destructive = true,
+        )
+    }
+}
+
+private fun formatBytes(size: Long): String =
+    when {
+        size < 1024 -> "$size bytes"
+        size < 1024 * 1024 -> "${(size / 102.4).toInt() / 10.0} KB"
+        else -> "${(size / 104857.6).toInt() / 10.0} MB"
+    }
+
+@Composable
+private fun DocumentScreen(store: MobileStore, route: MobileRoute.FilePath) {
+    val view by store.files.collectAsState()
+    val buffers by store.fileBuffers.collectAsState()
+    val previewAttachment = rememberAttachmentViewer { store.error.value = it }
+    var markdown by remember(route.path) { mutableStateOf(route.path.endsWith(".md", true)) }
+    var deleting by remember { mutableStateOf(false) }
+    var moving by remember { mutableStateOf(false) }
+    val document =
+        view.document.takeIf { view.selected_path.trimSlashes() == route.path.trimSlashes() }
     val buffer = buffers[view.document_key]
     val text = buffer?.text ?: document?.content.orEmpty()
     val dirty = buffer != null && buffer.text != buffer.original
-    fun send(command: FilesCommand) =
-        store.command(Command(files = command.copy(scope = MobileStore.FILES_SCOPE)))
-    fun leave(command: FilesCommand) {
-        if (dirty) pending = command else send(command)
-    }
+    val isMarkdown = document != null && FilePaths.renderer(document) == FilePaths.Renderer.MARKDOWN
     LaunchedEffect(view.document_key, document?.revision) {
         document?.let { store.syncFileBuffer(view.document_key, it.content) }
     }
-    Column(Modifier.fillMaxSize()) {
-        if (!inConversation) {
-            PageHeader(
-                "Files",
-                view.directory.ifEmpty { "Project workspace" },
-                back = { store.navigate(MobileTab.TOOLS) },
-            ) {
-                IconButton(onClick = { send(FilesCommand(load = FilesPath())) }) {
-                    Icon(Icons.Outlined.Refresh, "Refresh files")
-                }
-                IconButton(onClick = { create = true }) {
-                    Icon(Icons.Outlined.Add, "New file or folder")
-                }
-            }
-            ProjectSelector(store)
-        }
-        if (view.listing_error.isNotEmpty())
-            Notice(
-                "Files unavailable",
-                view.listing_error,
-                { send(FilesCommand(load = FilesPath())) },
-            )
-        if (view.selected_path.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { leave(FilesCommand(close = Step())) }) {
-                    Icon(Icons.Outlined.ArrowBack, "Back to files")
-                }
-                Text(
-                    document?.name ?: view.selected_path,
-                    Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleSmall,
+    fun save() {
+        val key = view.document_key
+        val saved = text
+        store.action {
+            store.core
+                .dispatch(
+                    Command(
+                        files =
+                            FilesCommand(scope = MobileStore.FILES_SCOPE, save = FilesText(saved))
+                    )
                 )
-                if (document != null && FilePaths.renderer(document) == FilePaths.Renderer.MARKDOWN)
-                    IconButton(onClick = { markdown = !markdown }) {
-                        Icon(
-                            if (markdown) Icons.Outlined.Edit else Icons.Outlined.Visibility,
-                            if (markdown) "Edit Markdown" else "Preview Markdown",
-                        )
-                    }
-                TextButton(
-                    onClick = {
-                        val key = view.document_key
-                        val saved = text
-                        store.action {
-                            val result =
-                                store.core.dispatch(
-                                    Command(
-                                        files =
-                                            FilesCommand(
-                                                scope = MobileStore.FILES_SCOPE,
-                                                save = FilesText(saved),
-                                            )
-                                    )
-                                )
-                            result.file_document?.let { store.savedFileBuffer(key, it.content) }
-                        }
-                    },
-                    enabled = document != null && !document.binary && !view.saving && dirty,
-                ) {
-                    Text(if (view.saving) "Saving…" else "Save")
+                .file_document
+                ?.let {
+                    store.savedFileBuffer(key, it.content)
                 }
-            }
+        }
+    }
+    val chrome =
+        ScreenChrome(
+            route.path.substringAfterLast('/'),
+            subtitle = if (dirty) "Edited" else route.path.substringBeforeLast('/', ""),
+            confirm =
+                if (document != null && !document.binary && (dirty || view.saving))
+                    ChromeAction(
+                        "save-file",
+                        if (view.saving) "Saving…" else "Save",
+                        null,
+                        enabled = dirty && !view.saving,
+                    ) {
+                        save()
+                    }
+                else null,
+            actions =
+                listOf(
+                    ChromeAction(
+                        "document-menu",
+                        "Document actions",
+                        Glyph.MORE_HORIZONTAL,
+                        menu =
+                            listOfNotNull(
+                                if (isMarkdown)
+                                    MenuSection(
+                                        listOf(
+                                            ChromeAction(
+                                                "preview-markdown",
+                                                "Preview",
+                                                Glyph.EYE,
+                                                checked = markdown,
+                                            ) {
+                                                markdown = true
+                                            },
+                                            ChromeAction(
+                                                "edit-markdown",
+                                                "Edit",
+                                                Glyph.EDIT,
+                                                checked = !markdown,
+                                            ) {
+                                                markdown = false
+                                            },
+                                        )
+                                    )
+                                else null,
+                                MenuSection(
+                                    listOfNotNull(
+                                        if (dirty)
+                                            ChromeAction("discard", "Discard edits", Glyph.UNDO) {
+                                                store.discardFileBuffer(view.document_key)
+                                            }
+                                        else null,
+                                        if (view.conflict)
+                                            ChromeAction(
+                                                "reload",
+                                                "Reload from disk",
+                                                Glyph.REFRESH,
+                                            ) {
+                                                store.filesCommand(FilesCommand(reload = Step()))
+                                            }
+                                        else null,
+                                        ChromeAction(
+                                            "rename-file",
+                                            "Rename or move…",
+                                            Glyph.RENAME,
+                                        ) {
+                                            moving = true
+                                        },
+                                        ChromeAction(
+                                            "delete-file",
+                                            "Delete",
+                                            Glyph.TRASH,
+                                            destructive = true,
+                                        ) {
+                                            deleting = true
+                                        },
+                                    )
+                                ),
+                            ),
+                    )
+                ),
+        )
+    Screen(chrome) {
+        Column(Modifier.fillMaxSize().imePadding().padding(top = padding.calculateTopPadding())) {
             if (view.conflict)
-                Notice(
+                Banner(
                     "File changed on disk",
-                    "Your edits are kept. Reload the current revision before saving again.",
-                    { leave(FilesCommand(reload = Step())) },
-                    "Reload",
-                    true,
+                    "Your edits are kept. Reload the current version before saving again.",
+                    Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
+                    tone = Tone.WARNING,
+                    actionLabel = "Reload",
+                    onAction = { store.filesCommand(FilesCommand(reload = Step())) },
                 )
             if (view.document_error.isNotEmpty())
-                Text(view.document_error, color = colors.error, modifier = Modifier.padding(16.dp))
-            if (view.document_loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-            if (document?.binary == true)
-                Column(Modifier.padding(24.dp)) {
-                    Text(document.mime_type.ifEmpty { "Binary file" })
-                    Text("${document.size} bytes")
-                    Button(
-                        onClick = {
-                            previewAttachment(
-                                com.dbpprt.dieter.core.composition.Attachments.part(
-                                    document.name,
-                                    document.mime_type,
-                                    com.dbpprt.dieter.core.files.FilePaths.bytes(document),
-                                )
-                            )
-                        }
-                    ) {
-                        Text("Open preview")
+                Banner(
+                    "Unable to open file",
+                    view.document_error,
+                    Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
+                    tone = Tone.DANGER,
+                )
+            when {
+                document == null ->
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Spinner(Modifier.size(26.dp))
                     }
-                }
-            else if (markdown)
-                Column(
-                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)
-                ) {
-                    RichText(text, {})
-                }
-            else
-                MobileTextField(
-                    text,
-                    { store.editFileBuffer(view.document_key, document?.content.orEmpty(), it) },
-                    Modifier.fillMaxSize().padding(12.dp),
-                    textStyle =
-                        MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                )
-        } else {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(
-                    onClick = { send(FilesCommand(back = Step())) },
-                    enabled = view.can_go_back,
-                ) {
-                    Icon(Icons.Outlined.ArrowBack, "Previous folder")
-                }
-                IconButton(
-                    onClick = { send(FilesCommand(forward = Step())) },
-                    enabled = view.can_go_forward,
-                ) {
-                    Icon(Icons.Outlined.ArrowForward, "Next folder")
-                }
-                IconButton(onClick = { send(FilesCommand(parent = Step())) }) {
-                    Icon(Icons.Outlined.ArrowUpward, "Parent folder")
-                }
-                Text(
-                    view.directory.ifEmpty { "/" },
-                    Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                )
-                IconButton(
-                    onClick = { send(FilesCommand(show_hidden = Toggle(!view.show_hidden))) }
-                ) {
-                    Icon(
-                        if (view.show_hidden) Icons.Outlined.Visibility
-                        else Icons.Outlined.VisibilityOff,
-                        "Toggle hidden files",
-                    )
-                }
-            }
-            if (view.listing_loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-            LazyColumn {
-                items(view.entries, key = { it.path }) { entry ->
-                    ListItem(
-                        headlineContent = { Text(entry.name) },
-                        leadingContent = {
-                            Icon(
-                                if (entry.kind == "directory") Icons.Outlined.Folder
-                                else Icons.Outlined.Description,
-                                null,
-                            )
-                        },
-                        supportingContent = {
-                            Text(if (entry.kind == "directory") "Folder" else "${entry.size} bytes")
-                        },
-                        trailingContent = {
-                            IconButton(
-                                onClick = {
-                                    entryActions = entry
-                                    destination = entry.path
-                                }
-                            ) {
-                                Icon(Icons.Outlined.MoreHoriz, "Actions for ${entry.name}")
-                            }
-                        },
-                        modifier =
-                            Modifier.clickable {
-                                send(
-                                    if (entry.kind == "directory")
-                                        FilesCommand(navigate = FilesPath(entry.path))
-                                    else FilesCommand(open_ = FilesPath(entry.path))
+                document.binary ->
+                    EmptyState(
+                        Glyph.FILE_PLAIN,
+                        document.name,
+                        "${document.mime_type.ifEmpty { "Binary file" }} · ${formatBytes(document.size)}",
+                        Modifier.padding(top = 60.dp),
+                    ) {
+                        DButton(
+                            "Open preview",
+                            {
+                                previewAttachment(
+                                    com.dbpprt.dieter.core.composition.Attachments.part(
+                                        document.name,
+                                        document.mime_type,
+                                        FilePaths.bytes(document),
+                                    )
                                 )
                             },
+                            glyph = Glyph.EYE,
+                        )
+                    }
+                markdown && isMarkdown ->
+                    Column(
+                        Modifier.fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 20.dp, vertical = 12.dp)
+                            .padding(bottom = padding.calculateBottomPadding())
+                    ) {
+                        RichText(text)
+                    }
+                else ->
+                    BasicTextField(
+                        text,
+                        { store.editFileBuffer(view.document_key, document.content, it) },
+                        Modifier.fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                            .padding(bottom = padding.calculateBottomPadding())
+                            .testTag("file-editor")
+                            .semantics { contentDescription = "File contents" },
+                        textStyle = type.mono.copy(color = palette.label),
+                        cursorBrush = SolidColor(if (apple) palette.info else colors.primary),
                     )
-                }
             }
         }
     }
-    if (create)
-        AlertDialog(
-            onDismissRequest = { create = false },
-            title = { Text("New file or folder") },
-            text = {
-                Column {
-                    MobileTextField(name, { name = it }, label = { Text("Name") })
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(directory, { directory = it })
-                        Text("Folder")
-                    }
-                }
+    if (deleting)
+        ConfirmDialog(
+            "Delete ${route.path.substringAfterLast('/')}?",
+            "This deletes the file from the workspace.",
+            "Delete",
+            {
+                store.filesCommand(FilesCommand(delete = FilesDelete(route.path, false)))
+                deleting = false
+                store.pop()
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        send(FilesCommand(create = FilesCreate(name, directory)))
-                        create = false
-                    },
-                    enabled = name.isNotBlank(),
-                ) {
-                    Text("Create")
-                }
-            },
-            dismissButton = { TextButton(onClick = { create = false }) { Text("Cancel") } },
+            { deleting = false },
+            destructive = true,
         )
-    entryActions?.let { entry ->
-        if (!moving && !deleting)
-            AlertDialog(
-                onDismissRequest = { entryActions = null },
-                title = { Text(entry.name) },
-                text = {
-                    Column {
-                        TextButton(onClick = { moving = true }) { Text("Rename or move") }
-                        TextButton(onClick = { deleting = true }) {
-                            Text("Delete", color = colors.error)
-                        }
-                    }
-                },
-                confirmButton = { TextButton(onClick = { entryActions = null }) { Text("Close") } },
-            )
-        if (moving)
-            AlertDialog(
-                onDismissRequest = { moving = false },
-                title = { Text("Rename or move") },
-                text = {
-                    MobileTextField(
-                        destination,
-                        { destination = it },
-                        label = { Text("Path relative to workspace") },
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            send(FilesCommand(move = FilesMove(entry.path, destination)))
-                            moving = false
-                            entryActions = null
-                        },
-                        enabled = FilePaths.normalize(destination).isSuccess,
-                    ) {
-                        Text("Move")
-                    }
-                },
-                dismissButton = { TextButton(onClick = { moving = false }) { Text("Cancel") } },
-            )
-        if (deleting)
-            AlertDialog(
-                onDismissRequest = { deleting = false },
-                title = { Text("Delete ${entry.name}?") },
-                text = {
-                    Text(
-                        if (entry.kind == "directory") "This deletes the folder and its contents."
-                        else "This deletes the file from the workspace."
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            send(
-                                FilesCommand(
-                                    delete = FilesDelete(entry.path, entry.kind == "directory")
-                                )
-                            )
-                            deleting = false
-                            entryActions = null
-                        }
-                    ) {
-                        Text("Delete", color = colors.error)
-                    }
-                },
-                dismissButton = { TextButton(onClick = { deleting = false }) { Text("Cancel") } },
-            )
-    }
-    pending?.let { next ->
-        AlertDialog(
-            onDismissRequest = { pending = null },
-            title = { Text("Discard unsaved edits?") },
-            text = { Text("Your changes to ${document?.name.orEmpty()} have not been saved.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        store.discardFileBuffer(view.document_key)
-                        send(next)
-                        pending = null
-                    }
-                ) {
-                    Text("Discard edits")
+    if (moving)
+        PromptDialog(
+            "Rename or move",
+            route.path,
+            "Move",
+            { destination ->
+                if (FilePaths.normalize(destination).isSuccess) {
+                    store.filesCommand(FilesCommand(move = FilesMove(route.path, destination)))
+                    store.pop()
                 }
+                moving = false
             },
-            dismissButton = { TextButton(onClick = { pending = null }) { Text("Keep editing") } },
+            { moving = false },
         )
-    }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Machines
+// ---------------------------------------------------------------------------------------------
+
+internal fun machineGlyph(platform: String): Glyph =
+    when {
+        platform.contains("linux", true) -> Glyph.SERVER
+        else -> Glyph.MACHINE
+    }
 
 @Composable
 internal fun MachinesScreen(store: MobileStore) {
     val session by store.session.collectAsState()
+    val online = session.machines.count { it.online }
+    Screen(
+        ScreenChrome(
+            "Machines",
+            subtitle =
+                if (session.machines.isEmpty()) ""
+                else "$online of ${session.machines.size} online",
+            actions =
+                listOf(
+                    ChromeAction("reconnect", "Reconnect", Glyph.REFRESH, onClick = store::retry)
+                ),
+        )
+    ) {
+        LazyColumn(
+            Modifier.fillMaxSize().testTag("machines-list"),
+            state = listState,
+            contentPadding = padding,
+        ) {
+            item { ConnectionNotice(store) }
+            item { Spacer(Modifier.height(8.dp)) }
+            if (session.machines.isEmpty())
+                item {
+                    EmptyState(
+                        Glyph.MACHINE,
+                        "No machines",
+                        "Enroll a computer with the Dieter daemon to run agents on it.",
+                        Modifier.padding(top = 40.dp),
+                    )
+                }
+            itemsIndexed(session.machines, key = { _, machine -> machine.id }) { index, machine ->
+                ListRow(
+                    machine.display_name,
+                    Modifier.testTag("machine-${machine.id}"),
+                    position = Position.of(index, session.machines.size),
+                    subtitle =
+                        listOf(machine.presence, machine.detail)
+                            .filter { it.isNotBlank() }
+                            .distinct()
+                            .joinToString(" · "),
+                    glyph = machineGlyph(machine.platform),
+                    tile = if (machine.online) Color(0xFF0A84FF) else Color(0xFF8E8E93),
+                    accessory = Accessory.CHEVRON,
+                    trailing = {
+                        Box(
+                            Modifier.size(9.dp)
+                                .background(
+                                    if (machine.online) palette.success else palette.tertiaryLabel,
+                                    CircleShape,
+                                )
+                        )
+                    },
+                    onClick = { store.push(MobileRoute.Machine(machine.id)) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun MachineScreen(store: MobileStore, machineId: String) {
+    val session by store.session.collectAsState()
     val telemetry by store.telemetry.collectAsState()
-    var selected by rememberSaveable { mutableStateOf("") }
     var operation by remember { mutableStateOf<MachineOperationState?>(null) }
     var rename by remember { mutableStateOf(false) }
-    var name by remember { mutableStateOf("") }
-    val machine = session.machines.firstOrNull { it.id == selected }
-    val readings = telemetry.machines[selected]
-    Column {
-        PageHeader(
-            if (machine != null) machine.display_name else "Machines",
-            session.phase_label,
-            back = {
-                if (machine != null) {
-                    selected = ""
-                    store.command(Command(telemetry = TelemetryCommand(select = TelemetrySelect())))
-                } else store.navigate(MobileTab.TOOLS)
-            },
-        ) {
-            if (machine != null)
-                IconButton(
-                    onClick = {
-                        name = machine.display_name
-                        rename = true
-                    }
-                ) {
-                    Icon(Icons.Outlined.Edit, "Rename machine")
-                }
-            else IconButton(onClick = store::retry) { Icon(Icons.Outlined.Refresh, "Reconnect") }
-        }
+    val machine = session.machines.firstOrNull { it.id == machineId }
+    val readings = telemetry.machines[machineId]
+    val information = readings?.information
+    Screen(
+        ScreenChrome(
+            machine?.display_name ?: "Machine",
+            subtitle = machine?.presence.orEmpty(),
+            actions =
+                listOf(ChromeAction("rename-machine", "Rename", Glyph.RENAME) { rename = true }),
+        )
+    ) {
         LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier.fillMaxSize().testTag("machine-detail"),
+            state = listState,
+            contentPadding = padding,
         ) {
-            if (machine == null)
-                items(session.machines, key = { it.id }) { item ->
-                    Surface(
-                        onClick = {
-                            selected = item.id
-                            store.command(
-                                Command(
-                                    telemetry =
-                                        TelemetryCommand(select = TelemetrySelect(item.id, true))
-                                )
-                            )
-                        },
-                        shape = RoundedCornerShape(14.dp),
-                        color = colors.surfaceContainerHigh,
-                    ) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(Icons.Outlined.Computer, null)
-                            Spacer(Modifier.width(12.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    item.display_name,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                Text(
-                                    item.detail,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = colors.onSurfaceVariant,
-                                )
-                                Text(
-                                    item.presence +
-                                        if (item.route.isNotEmpty()) " · ${item.route}" else "",
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                            }
-                            Icon(Icons.Outlined.ChevronRight, null)
-                        }
-                    }
+            if (machine == null) {
+                item { Placeholder("This machine is no longer enrolled.") }
+                return@LazyColumn
+            }
+            item {
+                SectionHeader("Connection")
+                Group(
+                    listOfNotNull(
+                        "Status" to
+                            machine.presence.ifEmpty {
+                                if (machine.online) "Online" else "Offline"
+                            },
+                        machine.route.takeIf { it.isNotEmpty() }?.let { "Route" to it },
+                        "Dieter" to machine.release_version,
+                        machine.privacy_label
+                            .takeIf { it.isNotEmpty() }
+                            ?.let {
+                                val state =
+                                    when {
+                                        machine.privacy_warning -> "Degraded"
+                                        machine.privacy_active -> "On"
+                                        else -> "Off"
+                                    }
+                                "Privacy mode" to
+                                    if (machine.privacy_stale) "$state (last known)" else state
+                            },
+                        machine.sync_label.takeIf { it.isNotEmpty() }?.let { "Sync" to it },
+                    )
+                ) { (title, value), position ->
+                    ListRow(title, position = position, value = value)
                 }
-            else {
+                // The shared wording explains what an active or degraded privacy mode means.
+                if (machine.privacy_active || machine.privacy_warning)
+                    SectionFooter(machine.privacy_label)
+            }
+            if (information != null) {
                 item {
-                    FormSection("Connection") {
-                        Text(machine.detail)
-                        Text(machine.route, style = MaterialTheme.typography.bodySmall)
-                        Text(
-                            "Dieter ${machine.release_version}",
-                            style = MaterialTheme.typography.bodySmall,
+                    SectionHeader("System")
+                    Group(
+                        listOfNotNull(
+                            "System" to
+                                listOf(information.os_name, information.os_version)
+                                    .filter { it.isNotEmpty() }
+                                    .joinToString(" "),
+                            information.hardware_model
+                                .takeIf { it.isNotEmpty() }
+                                ?.let { "Model" to it },
+                            information.processor
+                                .takeIf { it.isNotEmpty() }
+                                ?.let { "Processor" to it },
+                            "Cores" to "${information.logical_cpu_count}",
+                            "Active agents" to "${information.active_agent_count}",
                         )
-                        if (machine.privacy_label.isNotEmpty())
-                            Text(machine.privacy_label, style = MaterialTheme.typography.bodySmall)
+                    ) { (title, value), position ->
+                        ListRow(title, position = position, value = value)
                     }
                 }
-                readings?.information?.let { information ->
-                    item {
-                        FormSection("System") {
-                            Text(
-                                listOf(
-                                        information.os_name,
-                                        information.os_version,
-                                        information.architecture,
-                                    )
-                                    .joinToString(" · ")
+                item {
+                    SectionHeader("Load")
+                    Column(
+                        Modifier.fillMaxWidth()
+                            .padding(horizontal = ScreenMargin)
+                            .clip(groupShape(Position.SINGLE))
+                            .background(palette.cell)
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        Gauge(
+                            "CPU",
+                            "${information.cpu_usage_percent.toInt()}%",
+                            (information.cpu_usage_percent / 100).toFloat(),
+                        )
+                        if (information.memory_total_bytes > 0)
+                            Gauge(
+                                "Memory",
+                                "${gigabytes(information.memory_used_bytes)} of ${gigabytes(information.memory_total_bytes)} GB",
+                                information.memory_used_bytes.toFloat() /
+                                    information.memory_total_bytes,
                             )
-                            Text(information.hardware_model)
-                            Text(information.processor, style = MaterialTheme.typography.bodySmall)
+                        Row {
                             Text(
-                                "${information.logical_cpu_count} cores · ${information.active_agent_count} active agents",
-                                style = MaterialTheme.typography.bodySmall,
+                                "Free storage",
+                                Modifier.weight(1f),
+                                style = type.subheadline,
+                                color = palette.secondaryLabel,
+                            )
+                            Text(
+                                "${gigabytes(information.disk_free_bytes)} GB",
+                                style = type.subheadline,
+                                color = palette.label,
+                            )
+                        }
+                        Row {
+                            Text(
+                                "Network",
+                                Modifier.weight(1f),
+                                style = type.subheadline,
+                                color = palette.secondaryLabel,
+                            )
+                            Text(
+                                "↓ ${formatBytes(information.network_receive_bytes_per_second.toLong())}/s  ↑ ${formatBytes(information.network_send_bytes_per_second.toLong())}/s",
+                                style = type.subheadline,
+                                color = palette.label,
                             )
                         }
                     }
+                }
+            }
+            readings
+                ?.operations
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { operations ->
                     item {
-                        FormSection("CPU") {
-                            Text(
-                                "${information.cpu_usage_percent.toInt()}%",
-                                style = MaterialTheme.typography.headlineMedium,
-                            )
-                            LinearProgressIndicator(
-                                progress = {
-                                    (information.cpu_usage_percent / 100).toFloat().coerceIn(0f, 1f)
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    }
-                    item {
-                        FormSection("Memory") {
-                            Text(
-                                "${information.memory_used_bytes / 1_073_741_824L} / ${information.memory_total_bytes / 1_073_741_824L} GB"
-                            )
-                            if (information.memory_total_bytes > 0)
-                                LinearProgressIndicator(
-                                    progress = {
-                                        information.memory_used_bytes.toFloat() /
-                                            information.memory_total_bytes
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
+                        SectionHeader("Actions")
+                        Group(operations) { state, position ->
+                            val copy =
+                                com.dbpprt.dieter.core.client.rules.MachineExports.operationCopy(
+                                    state.action.value
                                 )
-                        }
-                    }
-                    item {
-                        FormSection("Storage") {
-                            Text("${information.disk_free_bytes / 1_073_741_824L} GB free")
-                            Text(
-                                "${information.network_receive_bytes_per_second.toInt()} B/s down · ${information.network_send_bytes_per_second.toInt()} B/s up",
-                                style = MaterialTheme.typography.bodySmall,
+                            ListRow(
+                                copy.menu_title,
+                                position = position,
+                                subtitle =
+                                    state.unavailable_reason.takeIf {
+                                        !state.available && it.isNotEmpty()
+                                    },
+                                destructive = copy.destructive,
+                                enabled = state.available && !telemetry.operation_pending,
+                                onClick = { operation = state },
                             )
                         }
+                        if (telemetry.operation_result.isNotEmpty())
+                            SectionFooter(telemetry.operation_result)
                     }
-                    items(information.processes.take(30), key = { it.pid }) { process ->
-                        ListItem(
-                            headlineContent = { Text(process.name) },
-                            supportingContent = { Text("PID ${process.pid}") },
+                }
+            if (readings?.loading == true && information == null)
+                item {
+                    Box(
+                        Modifier.fillMaxWidth().padding(32.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Spinner(Modifier.size(24.dp))
+                    }
+                }
+            readings
+                ?.error
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { failure ->
+                    item {
+                        Banner(
+                            "Telemetry unavailable",
+                            failure,
+                            Modifier.padding(horizontal = ScreenMargin, vertical = 12.dp),
+                            tone = Tone.WARNING,
+                            actionLabel = "Retry",
+                            onAction = {
+                                store.command(
+                                    Command(
+                                        telemetry =
+                                            TelemetryCommand(
+                                                select = TelemetrySelect(machineId, true)
+                                            )
+                                    )
+                                )
+                            },
                         )
                     }
                 }
-                readings?.operations?.let { operations ->
-                    item {
-                        FormSection("Machine actions") {
-                            operations.forEach { state ->
-                                val copy =
-                                    com.dbpprt.dieter.core.client.rules.MachineExports
-                                        .operationCopy(state.action.value)
-                                TextButton(
-                                    onClick = { operation = state },
-                                    enabled = state.available && !telemetry.operation_pending,
-                                ) {
-                                    Text(copy.menu_title)
-                                }
-                                if (!state.available && state.unavailable_reason.isNotEmpty())
-                                    Text(
-                                        state.unavailable_reason,
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
-                            }
-                            if (telemetry.operation_pending)
-                                LinearProgressIndicator(Modifier.fillMaxWidth())
-                            if (telemetry.operation_result.isNotEmpty())
-                                Text(telemetry.operation_result)
-                        }
-                    }
+            val processes = information?.processes.orEmpty().take(30)
+            if (processes.isNotEmpty()) {
+                item { SectionHeader("Top processes") }
+                itemsIndexed(processes, key = { _, process -> process.pid }) { index, process ->
+                    ListRow(
+                        process.name,
+                        position = Position.of(index, processes.size),
+                        value = "PID ${process.pid}",
+                    )
                 }
-                if (readings?.loading == true)
-                    item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
-                readings
-                    ?.error
-                    ?.takeIf { it.isNotEmpty() }
-                    ?.let { failure ->
-                        item {
-                            Notice(
-                                "Telemetry unavailable",
-                                failure,
-                                {
-                                    store.command(
-                                        Command(
-                                            telemetry =
-                                                TelemetryCommand(
-                                                    select = TelemetrySelect(selected, true)
-                                                )
-                                        )
-                                    )
-                                },
-                            )
-                        }
-                    }
             }
         }
     }
     operation?.let { state ->
         val copy =
             com.dbpprt.dieter.core.client.rules.MachineExports.operationCopy(state.action.value)
-        AlertDialog(
-            onDismissRequest = { operation = null },
-            title = { Text(copy.title) },
-            text = { Text(copy.explanation) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        store.command(
-                            Command(
-                                telemetry =
-                                    TelemetryCommand(perform = TelemetryOperation(state.action))
-                            )
-                        )
-                        operation = null
-                    }
-                ) {
-                    Text(
-                        copy.button,
-                        color = if (copy.destructive) colors.error else colors.primary,
+        ConfirmDialog(
+            copy.title,
+            copy.explanation,
+            copy.button,
+            {
+                store.command(
+                    Command(
+                        telemetry = TelemetryCommand(perform = TelemetryOperation(state.action))
                     )
-                }
+                )
+                operation = null
             },
-            dismissButton = { TextButton(onClick = { operation = null }) { Text("Cancel") } },
+            { operation = null },
+            destructive = copy.destructive,
         )
     }
     if (rename && machine != null)
-        AlertDialog(
-            onDismissRequest = { rename = false },
-            title = { Text("Rename machine") },
-            text = { MobileTextField(name, { name = it }, label = { Text("Machine name") }) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        store.command(Command(rename_machine = RenameMachine(selected, name)))
-                        rename = false
-                    },
-                    enabled = name.isNotBlank(),
-                ) {
-                    Text("Save")
-                }
+        PromptDialog(
+            "Rename machine",
+            machine.display_name,
+            "Save",
+            {
+                store.command(Command(rename_machine = RenameMachine(machineId, it)))
+                rename = false
             },
-            dismissButton = { TextButton(onClick = { rename = false }) { Text("Cancel") } },
+            { rename = false },
+            placeholder = "Machine name",
         )
 }
+
+private fun gigabytes(bytes: Long) =
+    ((bytes / 107_374_182.4).toInt() / 10.0).let {
+        if (it >= 100) it.toInt().toString() else it.toString()
+    }
+
+@Composable
+private fun Gauge(title: String, value: String, fraction: Float) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row {
+            Text(
+                title,
+                Modifier.weight(1f),
+                style = type.subheadline,
+                color = palette.secondaryLabel,
+            )
+            Text(
+                value,
+                style = type.subheadline.copy(fontWeight = FontWeight.SemiBold),
+                color = palette.label,
+            )
+        }
+        ProgressBar(fraction, color = if (fraction > .85f) palette.warning else palette.info)
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Usage
+// ---------------------------------------------------------------------------------------------
 
 @Composable
 internal fun UsageScreen(store: MobileStore) {
     val view by store.quotas.collectAsState()
     var reset by remember { mutableStateOf<QuotaAccountRow?>(null) }
-    Column {
-        PageHeader("Usage", "Provider accounts", back = { store.navigate(MobileTab.TOOLS) }) {
-            IconButton(
-                onClick = {
-                    store.command(Command(quotas = QuotasCommand(load = QuotasLoad(true))))
-                }
-            ) {
-                Icon(Icons.Outlined.Refresh, "Refresh usage")
-            }
-        }
-        if (view.error.isNotEmpty())
-            Notice(
-                "Usage unavailable",
-                view.error,
-                { store.command(Command(quotas = QuotasCommand(load = QuotasLoad()))) },
-            )
-        if (view.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+    Screen(
+        ScreenChrome(
+            "Usage",
+            subtitle = "Provider accounts",
+            actions =
+                listOf(
+                    ChromeAction("refresh-usage", "Refresh", Glyph.REFRESH) {
+                        store.command(Command(quotas = QuotasCommand(load = QuotasLoad(true))))
+                    }
+                ),
+        )
+    ) {
         LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier.fillMaxSize().testTag("usage"),
+            state = listState,
+            contentPadding = padding,
         ) {
-            view.group_rows.forEach { group ->
+            if (view.error.isNotEmpty())
                 item {
-                    Text(
-                        group.provider_name + " · " + group.summary,
-                        style = MaterialTheme.typography.titleMedium,
+                    Banner(
+                        "Usage unavailable",
+                        view.error,
+                        Modifier.padding(horizontal = ScreenMargin, vertical = 8.dp),
+                        tone = Tone.WARNING,
+                        actionLabel = "Retry",
+                        onAction = {
+                            store.command(Command(quotas = QuotasCommand(load = QuotasLoad())))
+                        },
                     )
                 }
-                items(group.accounts, key = { it.account_key }) { account ->
-                    FormSection(account.identity) {
-                        Text(
-                            account.subtitle,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.onSurfaceVariant,
-                        )
+            if (view.loading && view.group_rows.isEmpty())
+                item {
+                    Box(
+                        Modifier.fillMaxWidth().padding(40.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Spinner(Modifier.size(24.dp))
+                    }
+                }
+            view.group_rows.forEach { group ->
+                item("group-${group.provider}") {
+                    SectionHeader(
+                        group.provider_name,
+                        prominent = true,
+                        trailing = {
+                            Text(
+                                group.summary,
+                                style = type.footnote,
+                                color = palette.secondaryLabel,
+                            )
+                        },
+                    )
+                }
+                itemsIndexed(
+                    group.accounts,
+                    key = { _, account -> "${group.provider}-${account.account_key}" },
+                ) { _, account ->
+                    ContentCard(Modifier.padding(horizontal = ScreenMargin, vertical = 5.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    account.identity.ifEmpty { account.label },
+                                    style = type.headline,
+                                    color = palette.label,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                if (account.subtitle.isNotEmpty())
+                                    Text(
+                                        account.subtitle,
+                                        style = type.footnote,
+                                        color = palette.secondaryLabel,
+                                    )
+                            }
+                            if (account.remaining >= 0)
+                                Text(
+                                    "${account.remaining}%",
+                                    style = type.title2,
+                                    color =
+                                        if (account.remaining < 20)
+                                            palette.warning.readableOn(palette.cell)
+                                        else palette.label,
+                                )
+                        }
                         if (account.remaining >= 0) {
-                            Text("${account.remaining}% remaining")
-                            LinearProgressIndicator(
-                                progress = { account.remaining / 100f },
-                                modifier = Modifier.fillMaxWidth(),
+                            Spacer(Modifier.height(10.dp))
+                            ProgressBar(
+                                account.remaining / 100f,
+                                color =
+                                    if (account.remaining < 20) palette.warning
+                                    else palette.success,
                             )
                         }
-                        Text(
-                            account.status.ifEmpty { account.unavailable },
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                        account.windows.forEach { window ->
-                            Text(
-                                window.name +
-                                    " · " +
-                                    (if (window.remaining >= 0) "${window.remaining}% remaining"
-                                    else "Not reported") +
-                                    if (window.resets_at.isNotEmpty())
-                                        " · Resets ${window.resets_at}"
-                                    else "",
-                                style = MaterialTheme.typography.bodySmall,
-                            )
+                        account.status
+                            .ifEmpty { account.unavailable }
+                            .takeIf { it.isNotEmpty() }
+                            ?.let {
+                                Spacer(Modifier.height(8.dp))
+                                Text(it, style = type.footnote, color = palette.secondaryLabel)
+                            }
+                        if (account.windows.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            account.windows.forEach { window ->
+                                Row(Modifier.padding(vertical = 3.dp)) {
+                                    Text(
+                                        window.name,
+                                        Modifier.weight(1f),
+                                        style = type.subheadline,
+                                        color = palette.label,
+                                    )
+                                    Text(
+                                        listOfNotNull(
+                                                if (window.remaining >= 0)
+                                                    "${window.remaining}% left"
+                                                else "Not reported",
+                                                window.resets_at
+                                                    .takeIf { it.isNotEmpty() }
+                                                    ?.let { "resets $it" },
+                                            )
+                                            .joinToString(" · "),
+                                        style = type.subheadline,
+                                        color = palette.secondaryLabel,
+                                    )
+                                }
+                            }
                         }
                         account.details
                             .filter { !it.monetary }
                             .forEach {
                                 Text(
                                     "${it.label} · ${it.text}",
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = type.footnote,
+                                    color = palette.secondaryLabel,
                                 )
                             }
                         account.machines.forEach {
                             Text(
                                 "${it.name} · ${it.state}",
-                                style = MaterialTheme.typography.bodySmall,
+                                style = type.footnote,
+                                color = palette.secondaryLabel,
                             )
                         }
-                        if (account.can_reset)
-                            TextButton(
-                                onClick = { reset = account },
-                                enabled = account.account_key !in view.mutating,
-                            ) {
-                                Text("Use reset credit…")
-                            }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Include in summary", Modifier.weight(1f))
-                            Switch(
+                        Spacer(Modifier.height(8.dp))
+                        Hairline()
+                        Row(
+                            Modifier.padding(top = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "Include in summary",
+                                Modifier.weight(1f),
+                                style = type.subheadline,
+                                color = palette.label,
+                            )
+                            DSwitch(
                                 account.included,
                                 {
                                     store.command(
@@ -736,346 +1044,473 @@ internal fun UsageScreen(store: MobileStore) {
                                 enabled = account.account_key !in view.mutating,
                             )
                         }
+                        if (account.can_reset)
+                            DButton(
+                                "Use reset credit…",
+                                { reset = account },
+                                Modifier.padding(top = 8.dp),
+                                kind = ButtonKind.TONAL,
+                                enabled = account.account_key !in view.mutating,
+                            )
                     }
                 }
             }
-            if (!view.loading && view.group_rows.isEmpty())
+            if (!view.loading && view.group_rows.isEmpty() && view.error.isEmpty())
                 item {
-                    Box(Modifier.height(200.dp)) {
-                        Empty(
-                            "No provider usage",
-                            "Accounts report their usage through an enrolled machine.",
-                        )
-                    }
+                    EmptyState(
+                        Glyph.USAGE,
+                        "No provider usage",
+                        "Accounts report usage through an enrolled machine.",
+                        Modifier.padding(top = 40.dp),
+                    )
                 }
         }
     }
     reset?.let { account ->
-        AlertDialog(
-            onDismissRequest = { reset = null },
-            title = { Text("Use a reset credit?") },
-            text = { Text("This spends one reset credit for ${account.identity}.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        store.command(
-                            Command(
-                                quotas =
-                                    QuotasCommand(consume_reset = QuotaAccount(account.account_key))
-                            )
-                        )
-                        reset = null
-                    }
-                ) {
-                    Text("Use reset credit")
-                }
+        ConfirmDialog(
+            "Use a reset credit?",
+            "This spends one reset credit for ${account.identity}.",
+            "Use credit",
+            {
+                store.command(
+                    Command(
+                        quotas = QuotasCommand(consume_reset = QuotaAccount(account.account_key))
+                    )
+                )
+                reset = null
             },
-            dismissButton = { TextButton(onClick = { reset = null }) { Text("Cancel") } },
+            { reset = null },
         )
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------------------------
+
 @Composable
 internal fun SettingsScreen(store: MobileStore) {
     val session by store.session.collectAsState()
-    val palette by store.palette.collectAsState()
+    val selectedPalette by store.palette.collectAsState()
     val appearance by store.appearance.collectAsState()
+    val dynamic by store.dynamicColor.collectAsState()
     val outbox by store.outbox.collectAsState()
-    var category by rememberSaveable { mutableStateOf("Display") }
     var signOut by remember { mutableStateOf(false) }
-    var gatewayEditor by remember { mutableStateOf(false) }
-    var gatewayName by remember { mutableStateOf("") }
-    var gatewayUrl by remember { mutableStateOf("") }
+    var gatewayEditor by remember { mutableStateOf<GatewayEntry?>(null) }
+    var addGateway by remember { mutableStateOf(false) }
     var removingGateway by remember { mutableStateOf<GatewayEntry?>(null) }
-    Column {
-        PageHeader("Settings", back = { store.navigate(MobileTab.TOOLS) })
-        TabRow(if (category == "Display") 0 else 1) {
-            listOf("Display", "Connections").forEach { title ->
-                Tab(category == title, { category = title }, text = { Text(title) })
-            }
-        }
+    Screen(ScreenChrome("Settings")) {
         LazyColumn(
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier.fillMaxSize().testTag("settings"),
+            state = listState,
+            contentPadding = padding,
         ) {
-            if (category == "Display") {
-                item {
-                    FormSection("Appearance") {
-                        ChoiceChip(
-                            appearance.replaceFirstChar(Char::uppercase),
-                            listOf("system" to "System", "light" to "Light", "dark" to "Dark"),
-                            onSelect = store::setAppearance,
-                        )
-                    }
-                }
-                item {
-                    FormSection("Color palette") {
-                        FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            DieterPalette.entries.forEach { item ->
-                                FilterChip(
-                                    palette == item,
-                                    { store.setPalette(item) },
-                                    label = { Text(item.displayName) },
+            item("appearance") {
+                SectionHeader("Appearance")
+                Column(
+                    Modifier.fillMaxWidth()
+                        .padding(horizontal = ScreenMargin)
+                        .clip(groupShape(Position.SINGLE))
+                        .background(palette.cell)
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    val modes = listOf("system" to "System", "light" to "Light", "dark" to "Dark")
+                    Segmented(
+                        modes.map { it.second },
+                        modes.indexOfFirst { it.first == appearance }.coerceAtLeast(0),
+                        { store.setAppearance(modes[it].first) },
+                        testTagPrefix = "appearance",
+                    )
+                    if (!apple && platformSupportsDynamicColor)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Dynamic color", style = type.body, color = palette.label)
+                                Text(
+                                    "Use colors from your wallpaper",
+                                    style = type.footnote,
+                                    color = palette.secondaryLabel,
                                 )
                             }
+                            DSwitch(dynamic, store::setDynamicColor)
                         }
+                    if (apple || !dynamic)
+                        FlowRow(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            maxItemsInEachRow = 4,
+                        ) {
+                            DieterPalette.entries.forEach { item ->
+                                PaletteSwatch(item, item == selectedPalette, Modifier.weight(1f)) {
+                                    store.setPalette(item)
+                                }
+                            }
+                        }
+                }
+            }
+            item("conversation") {
+                SectionHeader("Conversations")
+                ListRow(
+                    "Show reasoning",
+                    position = Position.SINGLE,
+                    subtitle = "Display the agent’s thinking between replies",
+                    glyph = Glyph.BRAIN,
+                    tile = Color(0xFFAF52DE),
+                    trailing = {
+                        DSwitch(
+                            session.show_reasoning,
+                            { store.command(Command(set_show_reasoning = SetShowReasoning(it))) },
+                        )
+                    },
+                )
+            }
+            item("connection") {
+                SectionHeader("Connection")
+                val disconnected = session.phase == SessionSlice.Phase.PHASE_DISCONNECTED
+                Group(listOfNotNull(0, 1, if (disconnected) null else 2)) { index, position ->
+                    when (index) {
+                        0 ->
+                            ListRow(
+                                session.phase_label.ifEmpty { "Status" },
+                                position = position,
+                                subtitle = session.gateway_origin,
+                                glyph = Glyph.GLOBE,
+                                tile =
+                                    if (session.phase == SessionSlice.Phase.PHASE_CONNECTED)
+                                        Color(0xFF30B158)
+                                    else Color(0xFFFF9F0A),
+                                subtitleMaxLines = 1,
+                            )
+                        1 ->
+                            ListRow(
+                                if (disconnected) "Connect" else "Reconnect",
+                                position = position,
+                                glyph = Glyph.SYNC,
+                                onClick = {
+                                    if (disconnected)
+                                        store.command(Command(set_connected = SetConnected(true)))
+                                    else store.retry()
+                                },
+                            )
+                        else ->
+                            ListRow(
+                                "Disconnect",
+                                position = position,
+                                glyph = Glyph.OFFLINE,
+                                destructive = true,
+                                onClick = {
+                                    store.command(Command(set_connected = SetConnected(false)))
+                                },
+                            )
                     }
                 }
-                item {
-                    FormSection("Conversation") {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Show reasoning", Modifier.weight(1f))
-                            Switch(
-                                session.show_reasoning,
-                                {
-                                    store.command(
-                                        Command(set_show_reasoning = SetShowReasoning(it))
+                if (session.error.isNotEmpty()) SectionFooter(session.error)
+            }
+            item("gateways") {
+                SectionHeader("Gateways")
+                val gateways = session.gateways
+                Group(gateways + listOf<GatewayEntry?>(null)) { gateway, position ->
+                    if (gateway == null)
+                        ListRow(
+                            "Add gateway…",
+                            position = position,
+                            glyph = Glyph.ADD,
+                            onClick = { addGateway = true },
+                        )
+                    else {
+                        val menu = rememberMenuState()
+                        MenuAnchor(menu) {
+                            ListRow(
+                                gateway.name.ifEmpty { gateway.origin },
+                                position = position,
+                                subtitle = gateway.origin.takeIf { gateway.name.isNotEmpty() },
+                                accessory = if (gateway.active) Accessory.CHECK else Accessory.NONE,
+                                onClick = {
+                                    if (!gateway.active)
+                                        store.command(
+                                            Command(select_gateway = SelectGateway(gateway.origin))
+                                        )
+                                },
+                                onLongClick = {
+                                    menu.show(
+                                        listOf(
+                                            MenuSection(
+                                                listOf(
+                                                    ChromeAction(
+                                                        "edit-gateway",
+                                                        "Edit…",
+                                                        Glyph.EDIT,
+                                                    ) {
+                                                        gatewayEditor = gateway
+                                                    },
+                                                    ChromeAction(
+                                                        "remove-gateway",
+                                                        "Remove",
+                                                        Glyph.TRASH,
+                                                        destructive = true,
+                                                        enabled = gateways.size > 1,
+                                                    ) {
+                                                        removingGateway = gateway
+                                                    },
+                                                )
+                                            )
+                                        )
                                     )
                                 },
                             )
                         }
                     }
                 }
-            } else {
-                item {
-                    FormSection("Dieter connection") {
-                        Text(session.gateway_origin)
-                        Text(session.phase_label)
-                        Text(session.error, style = MaterialTheme.typography.bodySmall)
-                        Row {
-                            TextButton(onClick = store::retry) { Text("Reconnect") }
-                            TextButton(
-                                onClick = {
-                                    store.command(
-                                        Command(
-                                            set_connected =
-                                                SetConnected(
-                                                    session.phase ==
-                                                        SessionSlice.Phase.PHASE_DISCONNECTED
+            }
+            if (outbox.machines.isNotEmpty() || outbox.failed_operations.isNotEmpty())
+                item("pending") {
+                    SectionHeader("Pending changes")
+                    val machines = outbox.machines
+                    Group(machines) { machine, position ->
+                        ListRow(
+                            machine.title,
+                            position = position,
+                            subtitle = machine.detail,
+                            glyph = Glyph.SYNC,
+                            trailing =
+                                if (machine.retry_title.isNotEmpty())
+                                    ({
+                                        DButton(
+                                            machine.retry_title,
+                                            {
+                                                store.command(
+                                                    Command(
+                                                        retry_pending =
+                                                            RetryPending(
+                                                                daemon_id = machine.daemon_id
+                                                            )
+                                                    )
                                                 )
+                                            },
+                                            kind = ButtonKind.PLAIN,
                                         )
-                                    )
-                                }
-                            ) {
-                                Text(
-                                    if (session.phase == SessionSlice.Phase.PHASE_DISCONNECTED)
-                                        "Connect"
-                                    else "Disconnect"
-                                )
-                            }
-                        }
+                                    })
+                                else null,
+                        )
                     }
-                }
-                items(session.gateways, key = { it.origin }) { gateway ->
-                    ListItem(
-                        headlineContent = { Text(gateway.name.ifEmpty { gateway.origin }) },
-                        supportingContent = { Text(gateway.origin) },
-                        trailingContent = {
-                            if (gateway.active) Icon(Icons.Outlined.Check, "Active gateway")
-                        },
-                        modifier =
-                            Modifier.clickable {
-                                store.command(
-                                    Command(select_gateway = SelectGateway(gateway.origin))
-                                )
-                            },
-                    )
-                }
-                item {
-                    Row {
-                        TextButton(
-                            onClick = {
-                                gatewayName = ""
-                                gatewayUrl = ""
-                                gatewayEditor = true
-                            }
-                        ) {
-                            Text("Add gateway")
-                        }
-                        TextButton(
-                            onClick = {
-                                gatewayName =
-                                    session.gateways.firstOrNull { it.active }?.name.orEmpty()
-                                gatewayUrl = session.gateway_origin
-                                gatewayEditor = true
-                            }
-                        ) {
-                            Text("Edit active gateway")
-                        }
-                        TextButton(
-                            onClick = {
-                                removingGateway = session.gateways.firstOrNull { it.active }
-                            },
-                            enabled = session.gateways.size > 1,
-                        ) {
-                            Text("Remove active gateway")
-                        }
-                    }
-                }
-                outbox.machines.forEach { machine ->
-                    item {
-                        FormSection(machine.title) {
-                            Text(machine.detail, style = MaterialTheme.typography.bodySmall)
-                            if (machine.retry_title.isNotEmpty())
-                                TextButton(
-                                    onClick = {
-                                        store.command(
-                                            Command(
-                                                retry_pending =
-                                                    RetryPending(daemon_id = machine.daemon_id)
+                    if (outbox.failed_operations.isNotEmpty()) Spacer(Modifier.height(12.dp))
+                    Group(outbox.failed_operations) { failure, position ->
+                        ListRow(
+                            failure.label,
+                            position = position,
+                            subtitle = failure.failure,
+                            glyph = Glyph.ERROR,
+                            glyphTint = palette.destructive,
+                            trailing = {
+                                Row {
+                                    DButton(
+                                        "Retry",
+                                        {
+                                            store.command(
+                                                Command(retry_pending = RetryPending(failure.id))
                                             )
-                                        )
-                                    }
-                                ) {
-                                    Text(machine.retry_title)
-                                }
-                        }
-                    }
-                }
-                items(outbox.failed_operations, key = { it.id }) { failure ->
-                    FormSection(failure.label) {
-                        Text(failure.failure, color = colors.error)
-                        Row {
-                            TextButton(
-                                onClick = {
-                                    store.command(Command(retry_pending = RetryPending(failure.id)))
-                                }
-                            ) {
-                                Text("Retry")
-                            }
-                            TextButton(
-                                onClick = {
-                                    store.command(
-                                        Command(discard_pending = DiscardPending(failure.id))
+                                        },
+                                        kind = ButtonKind.PLAIN,
+                                    )
+                                    DButton(
+                                        "Discard",
+                                        {
+                                            store.command(
+                                                Command(
+                                                    discard_pending = DiscardPending(failure.id)
+                                                )
+                                            )
+                                        },
+                                        kind = ButtonKind.PLAIN,
                                     )
                                 }
-                            ) {
-                                Text("Discard")
-                            }
-                        }
+                            },
+                        )
                     }
                 }
-                item { OutlinedButton(onClick = { signOut = true }) { Text("Sign out") } }
+            item("account") {
+                SectionHeader("Account")
+                ListRow(
+                    "Sign out",
+                    Modifier.testTag("sign-out"),
+                    position = Position.SINGLE,
+                    destructive = true,
+                    glyph = Glyph.SIGN_OUT,
+                    onClick = { signOut = true },
+                )
+                SectionFooter(
+                    "Signing out clears this device’s cached workspace, unsent work and drafts."
+                )
             }
         }
     }
-    if (gatewayEditor)
-        AlertDialog(
-            onDismissRequest = { gatewayEditor = false },
-            title = { Text("Gateway") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MobileTextField(gatewayName, { gatewayName = it }, label = { Text("Name") })
-                    MobileTextField(
-                        gatewayUrl,
-                        { gatewayUrl = it },
-                        label = { Text("Gateway URL") },
-                        singleLine = true,
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        store.action {
-                            store.core.dispatch(
-                                Command(use_gateway = UseGateway(gatewayUrl, gatewayName))
-                            )
-                            gatewayEditor = false
-                        }
-                    },
-                    enabled = gatewayUrl.isNotBlank(),
-                ) {
-                    Text("Save")
-                }
-            },
-            dismissButton = { TextButton(onClick = { gatewayEditor = false }) { Text("Cancel") } },
-        )
+    if (addGateway || gatewayEditor != null)
+        GatewayEditor(store, gatewayEditor) {
+            addGateway = false
+            gatewayEditor = null
+        }
     removingGateway?.let { gateway ->
-        AlertDialog(
-            onDismissRequest = { removingGateway = null },
-            title = { Text("Remove gateway?") },
-            text = { Text(gateway.origin) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        store.command(Command(remove_gateway = RemoveGateway(gateway.origin)))
-                        removingGateway = null
-                    }
-                ) {
-                    Text("Remove")
-                }
+        ConfirmDialog(
+            "Remove gateway?",
+            gateway.origin,
+            "Remove",
+            {
+                store.command(Command(remove_gateway = RemoveGateway(gateway.origin)))
+                removingGateway = null
             },
-            dismissButton = { TextButton(onClick = { removingGateway = null }) { Text("Cancel") } },
+            { removingGateway = null },
+            destructive = true,
         )
     }
     if (signOut)
-        AlertDialog(
-            onDismissRequest = { signOut = false },
-            title = { Text("Sign out of Dieter?") },
-            text = {
-                Text(
-                    "This clears this device’s cached workspace, unsent work, and drafts for this account."
-                )
+        ConfirmDialog(
+            "Sign out of Dieter?",
+            "This clears this device’s cached workspace, unsent work and drafts for this account.",
+            "Sign out",
+            {
+                store.command(Command(sign_out = SignOut()))
+                signOut = false
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        store.command(Command(sign_out = SignOut()))
-                        signOut = false
-                    }
-                ) {
-                    Text("Sign out")
-                }
-            },
-            dismissButton = { TextButton(onClick = { signOut = false }) { Text("Cancel") } },
+            { signOut = false },
+            destructive = true,
         )
 }
 
 @Composable
+private fun PaletteSwatch(
+    item: DieterPalette,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    val tokens = item.tokens
+    Column(
+        modifier
+            .clip(RoundedCornerShape(14.dp))
+            .pressable(onClick = onClick)
+            .padding(vertical = 4.dp)
+            .testTag("palette-${item.slug}"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier.size(48.dp)
+                .clip(CircleShape)
+                .border(
+                    if (selected) 2.5.dp else 0.dp,
+                    if (selected) palette.label else Color.Transparent,
+                    CircleShape,
+                )
+                .padding(if (selected) 4.dp else 0.dp)
+                .clip(CircleShape)
+                .background(
+                    androidx.compose.ui.graphics.Brush.linearGradient(
+                        listOf(Color(tokens.shellStart), Color(tokens.shellEnd))
+                    )
+                )
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            item.displayName.substringBefore(' '),
+            style = type.caption,
+            color = if (selected) palette.label else palette.secondaryLabel,
+            maxLines = 1,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
+private fun GatewayEditor(store: MobileStore, gateway: GatewayEntry?, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf(gateway?.name.orEmpty()) }
+    var url by remember { mutableStateOf(gateway?.origin ?: "https://") }
+    Sheet(
+        if (gateway == null) "Add Gateway" else "Edit Gateway",
+        onDismiss,
+        size = SheetSize.MEDIUM,
+        confirm =
+            ChromeAction("save-gateway", "Save", Glyph.CHECK, enabled = url.length > 8) {
+                store.action {
+                    store.core.dispatch(Command(use_gateway = UseGateway(url, name)))
+                    onDismiss()
+                }
+            },
+    ) {
+        Column(
+            Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            MobileTextField(
+                name,
+                { name = it },
+                Modifier.fillMaxWidth(),
+                label = { Text("Name") },
+                placeholder = { Text("Name") },
+                singleLine = true,
+            )
+            MobileTextField(
+                url,
+                { url = it },
+                Modifier.fillMaxWidth(),
+                label = { Text("Gateway URL") },
+                placeholder = { Text("https://") },
+                singleLine = true,
+            )
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Screens
+// ---------------------------------------------------------------------------------------------
+
+@Composable
 internal fun ScreensScreen(store: MobileStore) {
     val session by store.session.collectAsState()
-    val selected by store.selectedScreen.collectAsState()
-    if (selected.isNotEmpty()) {
-        NativeScreen(store, Modifier.fillMaxSize())
-        return
-    }
-    Column {
-        PageHeader(
-            "Screens",
-            "Share an enrolled machine’s screen",
-            back = { store.navigate(MobileTab.TOOLS) },
-        )
-        LazyColumn {
-            items(session.machines, key = { it.id }) { machine ->
-                ListItem(
-                    headlineContent = { Text(machine.display_name) },
-                    supportingContent = { Text(machine.screen_status) },
-                    leadingContent = { Icon(Icons.Outlined.DesktopWindows, null) },
-                    modifier =
-                        Modifier.clickable(enabled = machine.can_share_screen) {
-                            store.openNativeScreen(machine.id)
-                        },
+    Screen(ScreenChrome("Screens", subtitle = "View and control a machine’s display")) {
+        LazyColumn(
+            Modifier.fillMaxSize().testTag("screens-list"),
+            state = listState,
+            contentPadding = padding,
+        ) {
+            item { Spacer(Modifier.height(8.dp)) }
+            if (session.machines.isEmpty())
+                item {
+                    EmptyState(
+                        Glyph.SCREENS,
+                        "No machines",
+                        "Enrolled machines that share their screen appear here.",
+                        Modifier.padding(top = 40.dp),
+                    )
+                }
+            itemsIndexed(session.machines, key = { _, machine -> machine.id }) { index, machine ->
+                ListRow(
+                    machine.display_name,
+                    Modifier.testTag("screen-${machine.id}"),
+                    position = Position.of(index, session.machines.size),
+                    subtitle = machine.screen_status.ifEmpty { machine.remote_desktop_reason },
+                    glyph = Glyph.SCREENS,
+                    tile = if (machine.can_share_screen) Color(0xFF5E5CE6) else Color(0xFF8E8E93),
+                    accessory = Accessory.CHEVRON,
+                    enabled = machine.can_share_screen,
+                    onClick = { store.push(MobileRoute.ScreenSession(machine.id)) },
                 )
             }
         }
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Terminals
+// ---------------------------------------------------------------------------------------------
 
 @Composable
 internal fun TerminalsScreen(store: MobileStore, inConversation: Boolean = false) {
     val view by store.terminals.collectAsState()
     val local by store.cardTerminals.collectAsState()
-    val selected by store.visibleTerminal.collectAsState()
-    val acceptsInput by store.terminalAcceptsInput.collectAsState()
+    val conversation by store.conversation.collectAsState()
     var create by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf<com.dbpprt.dieter.api.v1.Terminal?>(null) }
-    var closing by remember { mutableStateOf<com.dbpprt.dieter.api.v1.Terminal?>(null) }
-    var name by remember { mutableStateOf("") }
-    var shell by remember { mutableStateOf("") }
+    val cardId = if (inConversation) store.selectedCard.value else ""
     val entries =
         if (inConversation)
             local.terminals.map { terminal ->
@@ -1086,195 +1521,237 @@ internal fun TerminalsScreen(store: MobileStore, inConversation: Boolean = false
                 )
             }
         else view.entries
-    fun send(value: TerminalsCommand) =
-        store.command(Command(terminals = value.copy(scope = MobileStore.TERMINAL_SCOPE)))
-    Column {
-        PageHeader(
-            "Terminal",
-            if (inConversation) local.status else view.status,
-            back = if (inConversation) null else ({ store.navigate(MobileTab.TOOLS) }),
+    Screen(
+        ScreenChrome(
+            "Terminals",
+            subtitle = if (inConversation) conversation.card?.title.orEmpty() else view.status,
+            actions =
+                listOf(ChromeAction("new-terminal", "New terminal", Glyph.ADD) { create = true }),
+        )
+    ) {
+        LazyColumn(
+            Modifier.fillMaxSize().testTag("terminals-list"),
+            state = listState,
+            contentPadding = padding,
         ) {
-            IconButton(
-                onClick = {
-                    name = ""
-                    shell = ""
-                    create = true
+            if (local.error.isNotEmpty() && inConversation)
+                item {
+                    Banner(
+                        "Terminals unavailable",
+                        local.error,
+                        Modifier.padding(horizontal = ScreenMargin, vertical = 8.dp),
+                        tone = Tone.DANGER,
+                    )
                 }
-            ) {
-                Icon(Icons.Outlined.Add, "New terminal")
+            item { Spacer(Modifier.height(8.dp)) }
+            if (entries.isEmpty())
+                item {
+                    EmptyState(
+                        Glyph.TERMINAL,
+                        "No terminals",
+                        "Persistent shells keep running on the machine when this app disconnects.",
+                        Modifier.padding(top = 40.dp),
+                    ) {
+                        DButton("New terminal", { create = true }, glyph = Glyph.ADD)
+                    }
+                }
+            itemsIndexed(entries, key = { _, entry -> entry.id }) { index, entry ->
+                ListRow(
+                    entry.terminal?.name.orEmpty().ifEmpty { "Terminal" },
+                    Modifier.testTag("terminal-${entry.id}"),
+                    position = Position.of(index, entries.size),
+                    subtitle =
+                        listOf(entry.machine_name, entry.row?.status.orEmpty())
+                            .filter { it.isNotBlank() }
+                            .joinToString(" · "),
+                    glyph = Glyph.TERMINAL,
+                    tile = Color(0xFF3A3A3C),
+                    accessory = Accessory.CHEVRON,
+                    onClick = { store.push(MobileRoute.TerminalSession(entry.id, cardId)) },
+                )
             }
         }
-        DisposableEffect(store) {
-            store.command(
-                Command(
-                    terminals =
-                        TerminalsCommand(scope = MobileStore.TERMINAL_SCOPE, active = Toggle(true))
-                )
-            )
-            onDispose {
+    }
+    if (create && !inConversation) TerminalEditor(store) { create = false }
+    if (create && inConversation)
+        PromptDialog(
+            "New terminal",
+            "",
+            "Create",
+            { name ->
                 store.command(
                     Command(
                         terminals =
                             TerminalsCommand(
                                 scope = MobileStore.TERMINAL_SCOPE,
-                                active = Toggle(false),
+                                create = CreateTerminal(name = name),
                             )
                     )
                 )
-            }
-        }
-        if (local.error.isNotEmpty())
-            Text(local.error, Modifier.padding(12.dp), color = colors.error)
-        if (selected.isNotEmpty()) {
-            NativeTerminal(store, Modifier.weight(1f))
-            Row(Modifier.horizontalScroll(rememberScrollState())) {
-                listOf(
-                        "Esc" to TerminalKey.TERMINAL_KEY_ESCAPE,
-                        "Tab" to TerminalKey.TERMINAL_KEY_TAB,
-                        "↑" to TerminalKey.TERMINAL_KEY_UP,
-                        "↓" to TerminalKey.TERMINAL_KEY_DOWN,
-                        "←" to TerminalKey.TERMINAL_KEY_LEFT,
-                        "→" to TerminalKey.TERMINAL_KEY_RIGHT,
+                create = false
+            },
+            { create = false },
+            placeholder = "Terminal name",
+        )
+}
+
+@Composable
+internal fun TerminalSessionScreen(store: MobileStore, terminalId: String, cardId: String) {
+    val view by store.terminals.collectAsState()
+    val local by store.cardTerminals.collectAsState()
+    val selected by store.visibleTerminal.collectAsState()
+    val acceptsInput by store.terminalAcceptsInput.collectAsState()
+    var rename by remember { mutableStateOf(false) }
+    var closing by remember { mutableStateOf(false) }
+    val entry =
+        if (cardId.isNotEmpty())
+            local.terminals
+                .firstOrNull { it.id == terminalId }
+                ?.let {
+                    OverviewTerminal(
+                        id = it.id,
+                        terminal = it,
+                        row = local.rows.firstOrNull { row -> row.id == it.id },
                     )
-                    .forEach { (label, key) ->
-                        TextButton(
-                            onClick = {
-                                store.terminalKeys.tryEmit(key)
-                            },
-                            enabled = acceptsInput,
-                        ) {
-                            Text(label)
-                        }
-                    }
-                TextButton(
-                    onClick = { store.terminalInput(byteArrayOf(3)) },
-                    enabled = acceptsInput,
-                ) {
-                    Text("Ctrl C")
                 }
-            }
-        }
-        LazyColumn(Modifier.heightIn(max = 240.dp)) {
-            items(entries, key = { it.id }) { entry ->
-                ListItem(
-                    headlineContent = { Text(entry.terminal?.name.orEmpty()) },
-                    supportingContent = {
-                        Text(
-                            listOf(entry.machine_name, entry.row?.status.orEmpty())
-                                .filter { it.isNotBlank() }
-                                .joinToString(" · ")
-                        )
-                    },
-                    leadingContent = { Icon(Icons.Outlined.Terminal, null) },
-                    trailingContent = {
-                        if (entry.id == selected)
-                            Row {
-                                IconButton(
-                                    onClick = {
-                                        editing = entry.terminal
-                                        name = entry.terminal?.name.orEmpty()
-                                    }
-                                ) {
-                                    Icon(Icons.Outlined.Edit, "Rename terminal")
-                                }
-                                IconButton(onClick = { closing = entry.terminal }) {
-                                    Icon(Icons.Outlined.Close, "Close terminal")
-                                }
-                            }
-                    },
-                    modifier =
-                        Modifier.clickable {
-                            if (inConversation)
-                                send(TerminalsCommand(select = TerminalId(entry.id)))
-                            else
-                                store.command(
-                                    Command(
-                                        terminal_overview =
-                                            TerminalOverviewCommand(
-                                                scope = MobileStore.TERMINAL_SCOPE,
-                                                select = TerminalId(entry.id),
-                                            )
+        else view.entries.firstOrNull { it.id == terminalId }
+    fun send(value: TerminalsCommand) =
+        store.command(Command(terminals = value.copy(scope = MobileStore.TERMINAL_SCOPE)))
+    DisposableEffect(store) {
+        send(TerminalsCommand(active = Toggle(true)))
+        onDispose { send(TerminalsCommand(active = Toggle(false))) }
+    }
+    Screen(
+        ScreenChrome(
+            entry?.terminal?.name.orEmpty().ifEmpty { "Terminal" },
+            subtitle =
+                listOf(entry?.machine_name.orEmpty(), entry?.row?.status.orEmpty())
+                    .filter { it.isNotBlank() }
+                    .joinToString(" · "),
+            actions =
+                listOf(
+                    ChromeAction(
+                        "terminal-menu",
+                        "Terminal actions",
+                        Glyph.MORE_HORIZONTAL,
+                        menu =
+                            listOf(
+                                MenuSection(
+                                    listOf(
+                                        ChromeAction("rename-terminal", "Rename…", Glyph.RENAME) {
+                                            rename = true
+                                        },
+                                        ChromeAction(
+                                            "close-terminal",
+                                            "Close terminal",
+                                            Glyph.TRASH,
+                                            destructive = true,
+                                        ) {
+                                            closing = true
+                                        },
                                     )
                                 )
-                        },
+                            ),
+                    )
+                ),
+        )
+    ) {
+        Column(
+            Modifier.fillMaxSize()
+                .background(Color(0xFF0A0A0A))
+                .padding(top = padding.calculateTopPadding())
+                .imePadding()
+        ) {
+            if (selected == terminalId)
+                NativeTerminal(store, Modifier.weight(1f).fillMaxWidth().testTag("terminal-view"))
+            else
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Spinner(Modifier.size(24.dp), color = Color.White)
+                }
+            TerminalKeys(
+                store,
+                acceptsInput,
+                Modifier.padding(
+                    bottom =
+                        if (
+                            (WindowInsets.ime.getBottom(
+                                androidx.compose.ui.platform.LocalDensity.current
+                            ) > 0)
+                        )
+                            4.dp
+                        else padding.calculateBottomPadding()
+                ),
+            )
+        }
+    }
+    if (rename)
+        PromptDialog(
+            "Rename terminal",
+            entry?.terminal?.name.orEmpty(),
+            "Save",
+            {
+                send(TerminalsCommand(rename = TerminalRename(terminalId, it)))
+                rename = false
+            },
+            { rename = false },
+        )
+    if (closing)
+        ConfirmDialog(
+            "Close terminal?",
+            entry?.row?.close_message?.ifEmpty { null }
+                ?: "This ends the shell and clears its scrollback.",
+            "Close",
+            {
+                send(TerminalsCommand(close = TerminalId(terminalId)))
+                closing = false
+                store.pop()
+            },
+            { closing = false },
+            destructive = true,
+        )
+}
+
+@Composable
+private fun TerminalKeys(store: MobileStore, enabled: Boolean, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .background(Color(0xFF1C1C1E))
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        val keys =
+            listOf(
+                "esc" to { store.terminalKeys.tryEmit(TerminalKey.TERMINAL_KEY_ESCAPE) },
+                "tab" to { store.terminalKeys.tryEmit(TerminalKey.TERMINAL_KEY_TAB) },
+                "ctrl C" to
+                    {
+                        store.terminalInput(byteArrayOf(3))
+                        true
+                    },
+                "↑" to { store.terminalKeys.tryEmit(TerminalKey.TERMINAL_KEY_UP) },
+                "↓" to { store.terminalKeys.tryEmit(TerminalKey.TERMINAL_KEY_DOWN) },
+                "←" to { store.terminalKeys.tryEmit(TerminalKey.TERMINAL_KEY_LEFT) },
+                "→" to { store.terminalKeys.tryEmit(TerminalKey.TERMINAL_KEY_RIGHT) },
+            )
+        keys.forEach { (label, action) ->
+            Box(
+                Modifier.height(34.dp)
+                    .widthIn(min = 44.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF3A3A3C))
+                    .pressable(enabled = enabled, onClick = { action() })
+                    .padding(horizontal = 10.dp)
+                    .semantics { contentDescription = "Send $label" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    label,
+                    style = type.footnote.copy(fontWeight = FontWeight.Medium),
+                    color = if (enabled) Color.White else Color(0xFF8E8E93),
                 )
             }
         }
-        if (entries.isEmpty())
-            Box(Modifier.weight(1f)) {
-                Empty(
-                    "No terminals",
-                    "Persistent shells stay on the machine when this app disconnects.",
-                )
-            }
-    }
-    if (create && !inConversation) TerminalEditor(store) { create = false }
-    if (create && inConversation)
-        AlertDialog(
-            onDismissRequest = { create = false },
-            title = { Text("New terminal") },
-            text = {
-                Column {
-                    MobileTextField(name, { name = it }, label = { Text("Terminal name") })
-                    MobileTextField(
-                        shell,
-                        { shell = it },
-                        label = { Text("Shell (default if empty)") },
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        send(TerminalsCommand(create = CreateTerminal(name = name, shell = shell)))
-                        create = false
-                    }
-                ) {
-                    Text("Create")
-                }
-            },
-            dismissButton = { TextButton(onClick = { create = false }) { Text("Cancel") } },
-        )
-    editing?.let { terminal ->
-        AlertDialog(
-            onDismissRequest = { editing = null },
-            title = { Text("Rename terminal") },
-            text = { MobileTextField(name, { name = it }, label = { Text("Terminal name") }) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        send(TerminalsCommand(rename = TerminalRename(terminal.id, name)))
-                        editing = null
-                    },
-                    enabled = name.isNotBlank(),
-                ) {
-                    Text("Save")
-                }
-            },
-            dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancel") } },
-        )
-    }
-    closing?.let { terminal ->
-        AlertDialog(
-            onDismissRequest = { closing = null },
-            title = { Text("Close ${terminal.name}?") },
-            text = {
-                Text(
-                    entries.firstOrNull { it.terminal?.id == terminal.id }?.row?.close_message
-                        ?: "This ends the shell and clears its scrollback."
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        send(TerminalsCommand(close = TerminalId(terminal.id)))
-                        closing = null
-                    }
-                ) {
-                    Text("Close terminal")
-                }
-            },
-            dismissButton = { TextButton(onClick = { closing = null }) { Text("Cancel") } },
-        )
     }
 }

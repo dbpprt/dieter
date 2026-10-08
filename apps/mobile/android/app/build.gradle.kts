@@ -21,6 +21,24 @@ val reuseNativeAdapters =
         into(layout.buildDirectory.dir("generated/nativeAdapters"))
     }
 
+// The shipping monochrome launcher icon, without copying its artwork.
+val reuseLauncherIcon =
+    tasks.register<Sync>("reuseLauncherIcon") {
+        from("../../../android/app/src/main/res") {
+            include(
+                "drawable-nodpi/ic_dieter_foreground_monochrome.png",
+                "drawable-nodpi/ic_dieter_monochrome.png",
+                "drawable/ic_dieter_foreground_monochrome_layer.xml",
+                "drawable/ic_dieter_monochrome_layer.xml",
+                "mipmap-anydpi-v26/ic_launcher_monochrome.xml",
+                "mipmap-anydpi-v26/ic_launcher_monochrome_round.xml",
+                "mipmap-anydpi-v33/ic_launcher_monochrome.xml",
+                "mipmap-anydpi-v33/ic_launcher_monochrome_round.xml",
+            )
+        }
+        into(layout.buildDirectory.dir("generated/launcherIcon"))
+    }
+
 android {
     namespace = "com.dbpprt.dieter.spike"
     compileSdk = 37
@@ -46,6 +64,7 @@ android {
         .kotlin
         .srcDir(layout.buildDirectory.dir("generated/nativeAdapters").get().asFile)
     sourceSets["main"].java.srcDir("../../../android/app/src/main/java/org/webrtc")
+    sourceSets["main"].res.srcDir(layout.buildDirectory.dir("generated/launcherIcon").get().asFile)
     packaging.jniLibs.excludes += setOf("**/libtermux.so")
 }
 
@@ -63,4 +82,4 @@ dependencies {
 
 apply(from = rootProject.file("../../../native/android-webrtc/sdk.gradle"))
 
-tasks.named("preBuild") { dependsOn(reuseNativeAdapters) }
+tasks.named("preBuild") { dependsOn(reuseNativeAdapters, reuseLauncherIcon) }

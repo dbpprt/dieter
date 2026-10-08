@@ -1,26 +1,30 @@
 # Native screenshots of the Compose design port
 
-These 48 images capture the actual running apps on 7 October 2026. Each platform
-passed the complete 16-view journey and owned-device cleanup against an isolated
-authenticated gateway, daemon and mock harness. New task creation and both live
-replies run through that daemon; the existing transcript/subagent is seeded data.
+These 48 images capture the actual running apps on 8 October 2026, after the
+shared screens moved into each platform's native navigation. Each platform passed
+the complete 16-view journey against its own isolated authenticated gateway,
+daemon and mock harness. New task creation and both live replies run through that
+daemon; the existing transcript/subagent is seeded data.
 
 Open the [comparison gallery](../design/index.html) to compare every view across
 Android, iPhone and landscape iPad. The [legacy gallery](../design/legacy-android/index.html)
 contains 17 original Android reference captures from 11 selected audit cases.
 
-| Platform              | Native target                                       | Pixels      | Passing evidence                                                    |
-| --------------------- | --------------------------------------------------- | ----------- | ------------------------------------------------------------------- |
-| Android · Material    | AOSP API 35 / Dieter_Compose_API_35 / emulator-5560 | 720 × 1280  | `tmp/app-pipelines/9bbc763c-5eec-4ad2-abb8-0fbc1d02b98c`            |
-| iPhone · Liquid Glass | iPhone 17 Pro / iOS 26.5                            | 1206 × 2622 | `tmp/app-pipelines/1a42816f-6dfb-4664-a7fc-b30ab46df1ff/ios-iphone` |
-| iPad · Liquid Glass   | iPad Air 11-inch (M3) / iOS 26.5 / landscape        | 2360 × 1640 | `tmp/app-pipelines/1a42816f-6dfb-4664-a7fc-b30ab46df1ff/ios-ipad`   |
+| Platform             | Native target                                    | Pixels      | Passing evidence                                                         |
+| -------------------- | ------------------------------------------------ | ----------- | ------------------------------------------------------------------------ |
+| Android · Material 3 | AOSP API 35 / Dieter_AOSP_API_35 / emulator-5554 | 720 × 1280  | `tmp/app-pipelines/99f6fd02-42e9-4dbb-9678-af5f2b59b6c6`; cleanup passed |
+| iPhone · UIKit       | iPhone 17 Pro / iOS 27.0                         | 1206 × 2622 | Local XCUITest run; not pipeline-qualified                               |
+| iPad · UIKit         | iPad Pro 11-inch (M5) / iOS 27.0 / landscape     | 2420 × 1668 | Local XCUITest run; not pipeline-qualified                               |
 
-iOS uses native SwiftUI SF Symbol tabs and `glassEffect` controls around the
-shared content, with system typography and grouped fields. Android uses the
-legacy Monochrome palette, Sora headings and Material controls. The last two
-captures verify each host's dark appearance. Android additionally verifies form
-and follow-up draft retention across Activity recreation; iPad verifies landscape
-and the board remaining visible beside a conversation.
+On iOS, UIKit draws the tab bar or iPad sidebar, navigation bars, bar buttons,
+menus and sheets; Compose draws the content with system colors, type and SF
+Symbols. iPad shows the sidebar, list and detail as three columns. Android uses
+Material 3 app bars, the extended New task FAB, navigation bar and the Monochrome
+palette with Sora titles. The last two captures verify each host's dark
+appearance. Android additionally verifies form and follow-up draft retention
+across Activity recreation; iPad verifies landscape and the board remaining
+visible beside a conversation. [Verification](../VERIFICATION.md) explains why the
+iOS runs are not pipeline-qualified.
 
 | View          | Android                                                | iPhone                                               | iPad                                             |
 | ------------- | ------------------------------------------------------ | ---------------------------------------------------- | ------------------------------------------------ |
@@ -50,6 +54,7 @@ is cropped, repainted or synthesized. Native capture
 settling waits allow the rendered frame to catch up with its semantic assertion.
 
 [Provenance](provenance.json) records original evidence paths, image SHA-256,
-dimensions, native simulator IDs/timestamps and source digests. See
+dimensions, native simulator IDs/timestamps and source changes made after
+capture. See
 [verification](../VERIFICATION.md) for the qualified scope and production cutover
 requirements. These screenshots do not qualify every action in every screen.

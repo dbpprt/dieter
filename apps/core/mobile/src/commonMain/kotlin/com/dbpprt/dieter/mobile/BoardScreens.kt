@@ -1,30 +1,27 @@
 @file:OptIn(
     androidx.compose.material3.ExperimentalMaterial3Api::class,
-    androidx.compose.foundation.ExperimentalFoundationApi::class,
+    androidx.compose.foundation.layout.ExperimentalLayoutApi::class,
 )
 
 package com.dbpprt.dieter.mobile
 
-import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -33,295 +30,525 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
 import com.dbpprt.dieter.client.v1.*
 import com.dbpprt.dieter.core.activity.Activity
-import com.dbpprt.dieter.core.board.BoardCardState
 import com.dbpprt.dieter.core.board.CardAges
 import com.dbpprt.dieter.core.board.CardPolicy
 import com.dbpprt.dieter.core.board.Cards
 import com.dbpprt.dieter.core.presentation.TokenCounts
 import com.dbpprt.dieter.core.presentation.TokenUsagePresentation
 import com.dbpprt.dieter.core.workspace.WorkspaceBadge
-import com.dbpprt.dieter.mobile.icons.*
 import com.dbpprt.dieter.ui.BoardCardDragState
 import kotlin.time.Clock
+import kotlinx.coroutines.launch
 
 @Composable
-internal fun BoardScreen(store: MobileStore) {
+internal fun BoardScreen(store: MobileStore, boardId: String) {
     val workspace by store.workspace.collectAsState()
     val view by store.board.collectAsState()
-    val selected by store.selectedBoard.collectAsState()
+    val selectedBoard by store.selectedBoard.collectAsState()
     val target by store.boardFilter.collectAsState()
     val session by store.session.collectAsState()
-    val board = workspace.boards.firstOrNull { it.id == selected }
+    val selectedCard by store.selectedCard.collectAsState()
+    val board = workspace.boards.firstOrNull { it.id == boardId }
     val project = workspace.projects.firstOrNull { it.id == board?.project_id }
-    var lane by rememberSaveable(selected) { mutableStateOf("running") }
-    var picker by remember { mutableStateOf(false) }
-    var actions by remember { mutableStateOf<Card?>(null) }
-    var actionMode by remember { mutableStateOf("") }
     var settings by remember { mutableStateOf(false) }
     var archived by remember { mutableStateOf(false) }
-    val drag = remember(selected) { BoardCardDragState() }
-    Column(Modifier.fillMaxSize()) {
-        PageHeader(
+    var editing by remember { mutableStateOf<Card?>(null) }
+    val ready = selectedBoard == boardId && workspace.loaded
+    val lanes = if (ready) view.lanes else emptyList()
+    val chrome =
+        ScreenChrome(
             board?.name ?: "Board",
-            "${project?.name.orEmpty()} · ${view.total} cards",
-            back = { store.navigate(MobileTab.PROJECTS) },
-        ) {
-            IconButton(onClick = { archived = true }) {
-                Icon(Icons.Outlined.Archive, "Archived cards")
-            }
-            IconButton(onClick = { settings = true }) {
-                Icon(Icons.Outlined.Settings, "Board settings")
-            }
-            IconButton(onClick = { picker = true }) {
-                Icon(Icons.Outlined.KeyboardArrowDown, "Switch board")
-            }
-            IconButton(onClick = { store.newConversation() }) {
-                Icon(Icons.Outlined.Add, "New task")
-            }
-        }
-        MobileTextField(
-            target.query,
-            { store.filterBoard(target.copy(query = it)) },
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-            placeholder = { Text("Search cards") },
-            leadingIcon = { Icon(Icons.Outlined.Search, null) },
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp),
+            subtitle =
+                listOfNotNull(project?.name, if (ready) "${view.total} cards" else null)
+                    .joinToString(" · "),
+            actions =
+                listOf(
+                    boardMenu(store, board, view, target, session) { action ->
+                        when (action) {
+                            "settings" -> settings = true
+                            "archived" -> archived = true
+                        }
+                    }
+                ),
+            primary = newTaskAction(store),
         )
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            FilterChip(
-                target.label_id.isEmpty(),
-                { store.filterBoard(target.copy(label_id = "")) },
-                label = { Text("All cards · ${view.total}") },
+    Screen(chrome) {
+        Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
+            SearchField(
+                target.query,
+                { store.filterBoard(target.copy(query = it)) },
+                "Search cards",
+                Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
+                testTag = "board-search",
             )
-            board?.labels.orEmpty().forEach { label ->
-                FilterChip(
-                    target.label_id == label.id,
-                    { store.filterBoard(target.copy(label_id = label.id)) },
-                    label = { Text("${label.name} · ${view.label_counts[label.id] ?: 0}") },
-                    leadingIcon = {
-                        Box(Modifier.size(7.dp).background(labelColor(label.color), CircleShape))
-                    },
-                )
-            }
-            ChoiceChip(
-                view.state_title.ifEmpty { "All states" },
-                view.state_options.map { it.state.name to it.title },
-            ) { key ->
-                view.state_options
-                    .firstOrNull { it.state.name == key }
-                    ?.let { store.filterBoard(target.copy(state = it.state)) }
-            }
-            if (view.machine_ids.size > 1 || target.machine_id.isNotEmpty())
-                ChoiceChip(
-                    session.machines.firstOrNull { it.id == target.machine_id }?.display_name
-                        ?: "All machines",
-                    listOf("" to "All machines") +
-                        view.machine_ids.map { id ->
-                            id to (session.machines.firstOrNull { it.id == id }?.display_name ?: id)
-                        },
+            val labels = board?.labels.orEmpty()
+            val stateActive = target.state != BoardStateFilter.BOARD_STATE_FILTER_ALL
+            if (labels.isNotEmpty() || stateActive || target.machine_id.isNotEmpty())
+                Row(
+                    Modifier.fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = ScreenMargin, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    store.filterBoard(target.copy(machine_id = it))
-                }
-        }
-        BoxWithConstraints(Modifier.weight(1f)) {
-            val parallel = maxWidth >= 700.dp
-            val visible = view.lanes.firstOrNull { it.lane_id == lane } ?: view.lanes.firstOrNull()
-            Column {
-                if (!parallel && view.lanes.isNotEmpty())
-                    PrimaryScrollableTabRow(
-                        selectedTabIndex = view.lanes.indexOf(visible).coerceAtLeast(0),
-                        edgePadding = 12.dp,
-                        containerColor = colors.background,
-                    ) {
-                        view.lanes.forEach { item ->
-                            Tab(
-                                item == visible,
-                                { lane = item.lane_id },
-                                modifier =
-                                    Modifier.onGloballyPositioned {
-                                        drag.registerLane(item.lane_id, it.boundsInRoot())
-                                    },
-                                text = {
-                                    Text("${item.name}  ${item.card_ids.size}", fontSize = 13.sp)
-                                },
-                            )
-                        }
-                    }
-                if (!workspace.loaded)
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
-                else if (parallel)
-                    Row(
-                        Modifier.horizontalScroll(rememberScrollState()).padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        view.lanes.forEach { item ->
-                            Column(
-                                Modifier.width(280.dp)
-                                    .fillMaxHeight()
-                                    .onGloballyPositioned {
-                                        drag.registerLane(item.lane_id, it.boundsInRoot())
-                                    }
-                                    .background(
-                                        if (drag.targetLaneId == item.lane_id)
-                                            colors.primaryContainer
-                                        else Color.Transparent,
-                                        RoundedCornerShape(12.dp),
-                                    )
-                            ) {
-                                LaneHeader(store, item, selected)
-                                LaneCards(
-                                    store,
-                                    item,
-                                    workspace.cards,
-                                    board,
-                                    drag,
-                                    actions = { card, mode ->
-                                        actions = card
-                                        actionMode = mode
-                                    },
+                    if (stateActive)
+                        FilterPill(
+                            view.state_title,
+                            true,
+                            {
+                                store.filterBoard(
+                                    target.copy(state = BoardStateFilter.BOARD_STATE_FILTER_ALL)
                                 )
-                            }
-                        }
-                    }
-                else if (visible == null || visible.card_ids.isEmpty())
-                    Empty("No cards in this lane", "Create a card or change the filters.")
-                else
-                    Column {
-                        LaneHeader(store, visible, selected)
-                        LaneCards(
-                            store,
-                            visible,
-                            workspace.cards,
-                            board,
-                            drag,
-                            actions = { card, mode ->
-                                actions = card
-                                actionMode = mode
                             },
+                            glyph = Glyph.CLOSE,
+                        )
+                    if (target.machine_id.isNotEmpty())
+                        FilterPill(
+                            session.machines
+                                .firstOrNull { it.id == target.machine_id }
+                                ?.display_name ?: "Machine",
+                            true,
+                            { store.filterBoard(target.copy(machine_id = "")) },
+                            glyph = Glyph.CLOSE,
+                        )
+                    if (labels.isNotEmpty())
+                        FilterPill(
+                            "All labels",
+                            target.label_id.isEmpty(),
+                            { store.filterBoard(target.copy(label_id = "")) },
+                        )
+                    labels.forEach { label ->
+                        FilterPill(
+                            "${label.name} ${view.label_counts[label.id] ?: 0}",
+                            target.label_id == label.id,
+                            {
+                                store.filterBoard(
+                                    target.copy(
+                                        label_id = if (target.label_id == label.id) "" else label.id
+                                    )
+                                )
+                            },
+                            Modifier.testTag("label-filter-${label.id}"),
+                            dot = labelColor(label.color),
                         )
                     }
-            }
-        }
-    }
-    if (picker)
-        ModalBottomSheet(onDismissRequest = { picker = false }) {
-            Column(
-                Modifier.fillMaxWidth().padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text("Switch board", style = MaterialTheme.typography.titleLarge)
-                workspace.boards.forEach { item ->
-                    ListItem(
-                        headlineContent = { Text(item.name) },
-                        supportingContent = {
-                            Text(
-                                workspace.projects
-                                    .firstOrNull { it.id == item.project_id }
-                                    ?.name
-                                    .orEmpty()
-                            )
-                        },
-                        modifier =
-                            Modifier.clickable {
-                                store.chooseBoard(item.id)
-                                picker = false
-                            },
-                    )
+                }
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    !ready ->
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Spinner(Modifier.size(28.dp))
+                        }
+                    lanes.isEmpty() ->
+                        EmptyState(Glyph.BOARD, "No lanes", "This board has no lanes to show.")
+                    maxWidth >= 700.dp ->
+                        ParallelLanes(
+                            store,
+                            lanes,
+                            workspace.cards,
+                            board,
+                            selectedCard,
+                            session,
+                            padding.calculateBottomPadding(),
+                        ) {
+                            editing = it
+                        }
+                    else ->
+                        PagedLanes(
+                            store,
+                            boardId,
+                            lanes,
+                            workspace.cards,
+                            board,
+                            selectedCard,
+                            session,
+                            padding.calculateBottomPadding(),
+                        ) {
+                            editing = it
+                        }
                 }
             }
         }
-    actions?.let {
-        CardActions(store, it, initialMode = actionMode, onDismiss = { actions = null })
     }
-    if (settings) BoardSettings(store) { settings = false }
-    if (archived) ArchivedCards(store, selected) { archived = false }
+    if (settings) BoardSettings(store, boardId) { settings = false }
+    if (archived) ArchivedCards(store, boardId) { archived = false }
+    editing?.let { card -> CardEditSheet(store, card) { editing = null } }
+}
+
+private fun boardMenu(
+    store: MobileStore,
+    board: Board?,
+    view: BoardViewSlice,
+    target: BoardViewTarget,
+    session: SessionSlice,
+    open: (String) -> Unit,
+): ChromeAction {
+    val workspace = store.workspace.value
+    val switch =
+        workspace.projects.mapNotNull { project ->
+            val boards = workspace.boards.filter { it.project_id == project.id }
+            if (boards.isEmpty()) null
+            else
+                MenuSection(
+                    boards.map { item ->
+                        ChromeAction(
+                            "switch-${item.id}",
+                            item.name,
+                            checked = item.id == board?.id,
+                        ) {
+                            store.replaceTop(MobileRoute.Board(item.id))
+                        }
+                    },
+                    title = project.name,
+                )
+        }
+    val states =
+        view.state_options.map { option ->
+            ChromeAction(
+                "state-${option.state.name}",
+                option.title,
+                checked = option.state == target.state,
+            ) {
+                store.filterBoard(target.copy(state = option.state))
+            }
+        }
+    val machines =
+        if (view.machine_ids.size > 1 || target.machine_id.isNotEmpty())
+            listOf(
+                ChromeAction("machine-all", "All machines", checked = target.machine_id.isEmpty()) {
+                    store.filterBoard(target.copy(machine_id = ""))
+                }
+            ) +
+                view.machine_ids.map { id ->
+                    ChromeAction(
+                        "machine-$id",
+                        session.machines.firstOrNull { it.id == id }?.display_name ?: id,
+                        checked = target.machine_id == id,
+                    ) {
+                        store.filterBoard(target.copy(machine_id = id))
+                    }
+                }
+        else emptyList()
+    return ChromeAction(
+        "board-menu",
+        "Board options",
+        Glyph.MORE_HORIZONTAL,
+        menu =
+            listOfNotNull(
+                MenuSection(
+                    listOf(
+                        ChromeAction("board-switch", "Switch board", Glyph.BOARD, menu = switch),
+                        ChromeAction(
+                            "board-state",
+                            "Show",
+                            Glyph.FILTER,
+                            menu = listOf(MenuSection(states)),
+                        ),
+                    ) +
+                        if (machines.isNotEmpty())
+                            listOf(
+                                ChromeAction(
+                                    "board-machines",
+                                    "Machine",
+                                    Glyph.MACHINE,
+                                    menu = listOf(MenuSection(machines)),
+                                )
+                            )
+                        else emptyList()
+                ),
+                MenuSection(
+                    listOf(
+                        ChromeAction("board-archived", "Archived cards", Glyph.ARCHIVE) {
+                            open("archived")
+                        },
+                        ChromeAction("board-settings", "Board settings", Glyph.SETTINGS) {
+                            open("settings")
+                        },
+                    )
+                ),
+            ),
+    )
 }
 
 @Composable
-private fun LaneHeader(store: MobileStore, lane: BoardLaneView, boardId: String) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(lane.name, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-        Text(
-            "${lane.card_ids.size}",
-            style = MaterialTheme.typography.labelMedium,
-            color = colors.onSurfaceVariant,
-        )
-        IconButton(
-            onClick = {
-                store.command(
-                    Command(
-                        set_lane_descending =
-                            SetLaneDescending(
-                                board_id = boardId,
-                                lane_id = lane.lane_id,
-                                descending = !lane.descending,
-                            )
-                    )
+private fun PagedLanes(
+    store: MobileStore,
+    boardId: String,
+    lanes: List<BoardLaneView>,
+    cards: List<Card>,
+    board: Board?,
+    selected: String,
+    session: SessionSlice,
+    bottom: androidx.compose.ui.unit.Dp,
+    edit: (Card) -> Unit,
+) {
+    val initial = lanes.indexOfFirst { it.lane_id == "running" }.coerceAtLeast(0)
+    val pager = rememberPagerState(initialPage = initial) { lanes.size }
+    val scope = rememberCoroutineScope()
+    Column(Modifier.fillMaxSize()) {
+        if (apple) {
+            if (lanes.size <= 4)
+                Segmented(
+                    lanes.map {
+                        if (it.card_ids.isEmpty()) it.name else "${it.name} ${it.card_ids.size}"
+                    },
+                    pager.currentPage.coerceIn(0, lanes.size - 1),
+                    { scope.launch { pager.animateScrollToPage(it) } },
+                    Modifier.padding(horizontal = ScreenMargin, vertical = 8.dp),
+                    testTagPrefix = "lane",
                 )
+            else
+                Row(
+                    Modifier.fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = ScreenMargin, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    lanes.forEachIndexed { index, lane ->
+                        FilterPill(
+                            if (lane.card_ids.isEmpty()) lane.name
+                            else "${lane.name} ${lane.card_ids.size}",
+                            index == pager.currentPage,
+                            { scope.launch { pager.animateScrollToPage(index) } },
+                            Modifier.testTag("lane-$index"),
+                        )
+                    }
+                }
+        } else {
+            val tabs: @Composable () -> Unit = {
+                lanes.forEachIndexed { index, lane ->
+                    Tab(
+                        selected = index == pager.currentPage,
+                        onClick = { scope.launch { pager.animateScrollToPage(index) } },
+                        modifier = Modifier.testTag("lane-$index"),
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(lane.name, maxLines = 1)
+                                if (lane.card_ids.isNotEmpty()) {
+                                    Spacer(Modifier.width(6.dp))
+                                    Badge(
+                                        containerColor =
+                                            if (index == pager.currentPage) colors.primary
+                                            else colors.surfaceContainerHighest,
+                                        contentColor =
+                                            if (index == pager.currentPage) colors.onPrimary
+                                            else colors.onSurfaceVariant,
+                                    ) {
+                                        Text("${lane.card_ids.size}")
+                                    }
+                                }
+                            }
+                        },
+                    )
+                }
             }
-        ) {
-            Icon(
-                if (lane.descending) Icons.Outlined.ArrowDownward else Icons.Outlined.ArrowUpward,
-                "Sort ${lane.name}",
-                Modifier.size(18.dp),
-            )
+            // Fixed tabs only while every lane name and count fit; narrow panes scroll instead.
+            val measurer = rememberTextMeasurer()
+            val tabStyle = MaterialTheme.typography.titleSmall
+            val density = LocalDensity.current
+            val widest =
+                remember(lanes.map { it.name }, tabStyle, density) {
+                    with(density) {
+                        lanes.maxOfOrNull { measurer.measure(it.name, tabStyle).size.width.toDp() }
+                            ?: 0.dp
+                    }
+                }
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                // Name, badge and the tab's own 16 dp side padding.
+                if (lanes.size <= 4 && widest + 56.dp <= maxWidth / lanes.size)
+                    PrimaryTabRow(
+                        pager.currentPage.coerceIn(0, lanes.size - 1),
+                        containerColor = palette.background,
+                    ) {
+                        tabs()
+                    }
+                else
+                    PrimaryScrollableTabRow(
+                        pager.currentPage.coerceIn(0, lanes.size - 1),
+                        containerColor = palette.background,
+                        edgePadding = 12.dp,
+                    ) {
+                        tabs()
+                    }
+            }
+        }
+        HorizontalPager(
+            pager,
+            Modifier.weight(1f).fillMaxWidth(),
+            key = { lanes.getOrNull(it)?.lane_id ?: it },
+            beyondViewportPageCount = 1,
+        ) { page ->
+            val lane = lanes[page]
+            LaneList(store, boardId, lane, cards, board, selected, session, bottom, null, edit)
         }
     }
 }
 
 @Composable
-private fun LaneCards(
+private fun LaneList(
     store: MobileStore,
+    boardId: String,
     lane: BoardLaneView,
     cards: List<Card>,
     board: Board?,
-    drag: BoardCardDragState,
-    actions: (Card, String) -> Unit,
+    selected: String,
+    session: SessionSlice,
+    bottom: androidx.compose.ui.unit.Dp,
+    drag: BoardCardDragState?,
+    edit: (Card) -> Unit,
 ) {
-    val session by store.session.collectAsState()
-    val selected by store.selectedCard.collectAsState()
     LazyColumn(
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxSize().testTag("board-lane-${lane.lane_id}"),
+        Modifier.fillMaxSize().testTag("board-lane-${lane.lane_id}"),
+        contentPadding =
+            PaddingValues(
+                start = ScreenMargin,
+                end = ScreenMargin,
+                top = 4.dp,
+                bottom = bottom + 16.dp,
+            ),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        items(lane.card_ids, key = { it }) { id ->
-            cards
-                .firstOrNull { it.id == id }
-                ?.let { card ->
-                    SwipeWorkCard(
-                        store,
-                        card,
-                        board,
-                        selected == id,
-                        session.machines.firstOrNull { it.id == card.owner_daemon_id }?.display_name
-                            ?: "Unassigned",
-                        drag,
-                        { mode -> actions(card, mode) },
+        item("lane-header") {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 4.dp, top = 2.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "${lane.card_ids.size} ${if (lane.card_ids.size == 1) "card" else "cards"}",
+                    Modifier.weight(1f).semantics {
+                        contentDescription = "${lane.name}, ${lane.card_ids.size} cards"
+                    },
+                    style = type.footnote.copy(fontWeight = FontWeight.Medium),
+                    color = palette.secondaryLabel,
+                )
+                Row(
+                    Modifier.clip(CircleShape)
+                        .pressable(
+                            onClick = {
+                                store.command(
+                                    Command(
+                                        set_lane_descending =
+                                            SetLaneDescending(
+                                                board_id = boardId,
+                                                lane_id = lane.lane_id,
+                                                descending = !lane.descending,
+                                            )
+                                    )
+                                )
+                            }
+                        )
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .testTag("sort-${lane.lane_id}"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Glyph.SORT, null, tint = palette.secondaryLabel, size = 14.dp)
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        if (lane.descending) "Newest first" else "Oldest first",
+                        style = type.footnote,
+                        color = palette.secondaryLabel,
                     )
                 }
+            }
+        }
+        if (lane.card_ids.isEmpty())
+            item("empty") {
+                EmptyState(
+                    Glyph.BOARD,
+                    "No ${lane.name.lowercase()} cards",
+                    "Cards you move here appear in this lane.",
+                    Modifier.padding(top = 24.dp),
+                )
+            }
+        items(lane.card_ids, key = { it }) { id ->
+            val card = cards.firstOrNull { it.id == id } ?: return@items
+            WorkCard(
+                store,
+                card,
+                board,
+                selected = selected == id,
+                machine =
+                    session.machines.firstOrNull { it.id == card.owner_daemon_id }?.display_name
+                        ?: "Unassigned",
+                drag = drag,
+                onEdit = edit,
+            )
         }
     }
 }
 
-/** Same 12 dp card, compact labels, age, machine/branch badges and footer as Android. */
+@Composable
+private fun ParallelLanes(
+    store: MobileStore,
+    lanes: List<BoardLaneView>,
+    cards: List<Card>,
+    board: Board?,
+    selected: String,
+    session: SessionSlice,
+    bottom: androidx.compose.ui.unit.Dp,
+    edit: (Card) -> Unit,
+) {
+    val drag = remember(board?.id) { BoardCardDragState() }
+    Row(
+        Modifier.fillMaxSize()
+            .horizontalScroll(rememberScrollState())
+            .padding(start = ScreenMargin, top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        lanes.forEach { lane ->
+            val target = drag.targetLaneId == lane.lane_id
+            Column(
+                Modifier.width(300.dp)
+                    .fillMaxHeight()
+                    .onGloballyPositioned { drag.registerLane(lane.lane_id, it.boundsInRoot()) }
+                    .clip(RoundedCornerShape(if (apple) 26.dp else 24.dp))
+                    .background(
+                        if (target) palette.accentContainer
+                        else palette.fill.copy(alpha = palette.fill.alpha * .6f)
+                    )
+            ) {
+                Row(
+                    Modifier.fillMaxWidth()
+                        .padding(start = 18.dp, end = 12.dp, top = 14.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        lane.name,
+                        Modifier.weight(1f),
+                        style = type.headline,
+                        color = palette.label,
+                    )
+                    Text(
+                        "${lane.card_ids.size}",
+                        style = type.subheadline,
+                        color = palette.secondaryLabel,
+                    )
+                }
+                LaneList(
+                    store,
+                    board?.id.orEmpty(),
+                    lane,
+                    cards,
+                    board,
+                    selected,
+                    session,
+                    bottom,
+                    drag,
+                    edit,
+                )
+            }
+        }
+        Spacer(Modifier.width(2.dp))
+    }
+}
+
+/** A task card: labels, title, summary, workspace badges, agent status and actions. */
 @Composable
 internal fun WorkCard(
     store: MobileStore,
@@ -330,446 +557,231 @@ internal fun WorkCard(
     selected: Boolean = false,
     machine: String,
     modifier: Modifier = Modifier,
-    onActions: () -> Unit,
-    onOpen: () -> Unit = { store.openCard(card.id) },
+    drag: BoardCardDragState? = null,
+    onEdit: (Card) -> Unit = {},
 ) {
     val outbox by store.outbox.collectAsState()
+    val view by store.board.collectAsState()
+    val flags = view.cards[card.id]
     val pending = card.id in outbox.pending_card_ids
-    val state = BoardCardState.of(card, board, operation = null, pending = pending)
-    val shape = RoundedCornerShape(12.dp)
     val age = CardAges.compact(card, Clock.System.now())
     val badge = WorkspaceBadge.of(card)
-    Surface(
-        shape = shape,
-        color = if (selected) colors.primaryContainer else colors.surfaceContainerHigh,
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .combinedClickable(onClick = onOpen, onLongClick = onActions)
-                .testTag("card-${card.id}"),
-        border = if (selected) BorderStroke(1.dp, colors.primary) else null,
-    ) {
-        Column(
-            Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp),
-        ) {
-            val labels = board?.labels.orEmpty().filter { it.id in card.label_ids }
-            if (labels.isNotEmpty())
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    labels.take(3).forEach { label -> LabelPill(label.name, label.color) }
-                    if (labels.size > 3)
-                        Text("+${labels.size - 3}", style = MaterialTheme.typography.labelSmall)
-                }
-            Row(verticalAlignment = Alignment.Top) {
-                Text(
-                    Activity.title(card),
-                    Modifier.weight(1f),
-                    fontSize = 15.sp,
-                    lineHeight = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+    val menu = rememberMenuState()
+    var bounds by remember { mutableStateOf(Rect.Zero) }
+    val sections = { cardMenuSections(store, card, onEdit = onEdit) }
+    val labels = board?.labels.orEmpty().filter { it.id in card.label_ids }
+    val tone =
+        when (flags?.tone) {
+            RuntimeTone.RUNTIME_TONE_ACTIVE -> palette.info
+            RuntimeTone.RUNTIME_TONE_ATTENTION -> palette.warning
+            RuntimeTone.RUNTIME_TONE_FAILED -> palette.destructive
+            RuntimeTone.RUNTIME_TONE_DONE -> palette.success
+            else -> palette.secondaryLabel
+        }
+    MenuAnchor(menu, modifier) {
+        ContentCard(
+            Modifier.onGloballyPositioned { bounds = it.boundsInRoot() }
+                .then(
+                    if (drag != null)
+                        Modifier.pointerInput(card.id) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { point -> drag.start(card, bounds.topLeft + point) },
+                                onDrag = { change, amount ->
+                                    change.consume()
+                                    drag.moveTo(drag.pointerInRoot + amount)
+                                },
+                                onDragCancel = drag::reset,
+                                onDragEnd = {
+                                    drag.finish()?.let { drop ->
+                                        store.command(
+                                            Command(move_card = MoveCard(drop.cardId, drop.laneId))
+                                        )
+                                    }
+                                },
+                            )
+                        }
+                    else Modifier
                 )
-                if (age.isNotEmpty())
+                .testTag("card-${card.id}"),
+            selected = selected,
+            onClick = { store.openConversation(card.id) },
+            onLongClick = if (drag == null) ({ menu.show(sections()) }) else null,
+            contentPadding = PaddingValues(start = 16.dp, end = 8.dp, top = 14.dp, bottom = 10.dp),
+        ) {
+            Column(Modifier.padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (labels.isNotEmpty())
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        labels.take(3).forEach { label -> LabelPill(label.name, label.color) }
+                        if (labels.size > 3)
+                            Text(
+                                "+${labels.size - 3}",
+                                style = type.caption,
+                                color = palette.secondaryLabel,
+                            )
+                    }
+                Row(verticalAlignment = Alignment.Top) {
                     Text(
-                        age,
-                        fontSize = 11.sp,
-                        color = colors.onSurfaceVariant,
-                        modifier =
+                        Activity.title(card),
+                        Modifier.weight(1f),
+                        style = type.headline,
+                        color = palette.label,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (age.isNotEmpty())
+                        Text(
+                            age,
                             Modifier.padding(start = 10.dp, top = 2.dp).semantics {
                                 contentDescription = "Last activity $age"
                             },
-                    )
-            }
-            if (card.summary.isNotBlank())
-                Text(
-                    card.summary,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    color = colors.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                CompactBadge(machine, Icons.Outlined.Computer, "Machine $machine")
-                badge?.let {
-                    CompactBadge(
-                        it.title,
-                        Icons.Outlined.AccountTree,
-                        it.accessibilityLabel,
-                        danger = it.conflicted,
-                    )
+                            style = type.footnote,
+                            color = palette.secondaryLabel,
+                        )
                 }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                if (card.summary.isNotBlank())
                     Text(
-                        Cards.agent(card),
-                        color = colors.onSurfaceVariant,
-                        fontSize = 11.sp,
-                        maxLines = 1,
+                        card.summary,
+                        style = type.subheadline,
+                        color = palette.secondaryLabel,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    card.token_usage
-                        ?.let(::TokenUsagePresentation)
-                        ?.takeIf { it.reported }
-                        ?.let { usage ->
-                            Text(
-                                usage.label(),
-                                color = colors.onSurfaceVariant,
-                                fontSize = 10.sp,
-                                modifier =
-                                    Modifier.semantics {
-                                        contentDescription = TokenCounts.detail(usage.usage)
-                                    },
-                            )
-                        }
-                }
-                if (state.canStart)
-                    FilledTonalButton(
-                        onClick = { store.command(Command(start_card = StartCard(card.id))) },
-                        contentPadding = PaddingValues(horizontal = 12.dp),
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    ) {
-                        Icon(Icons.Outlined.PlayArrow, null, Modifier.size(16.dp))
-                        Text("Start", fontSize = 12.sp)
-                    }
-                else
-                    state.badge?.let {
-                        Text(
-                            it,
-                            color = colors.secondary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                    modifier = Modifier.padding(top = 2.dp),
+                ) {
+                    if (store.session.value.machines.size > 1)
+                        MetaPill(machine, Glyph.MACHINE, accessibility = "Machine $machine")
+                    badge?.let {
+                        MetaPill(
+                            it.title,
+                            Glyph.BRANCH,
+                            tint =
+                                if (it.conflicted) palette.destructive else palette.secondaryLabel,
+                            accessibility = it.accessibilityLabel,
                         )
                     }
-                IconButton(onClick = onActions, Modifier.size(36.dp)) {
-                    Icon(Icons.Outlined.MoreHoriz, "Card actions", Modifier.size(18.dp))
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun SwipeWorkCard(
-    store: MobileStore,
-    card: Card,
-    board: Board?,
-    selected: Boolean,
-    machine: String,
-    drag: BoardCardDragState,
-    actions: (String) -> Unit,
-) {
-    var offset by remember(card.id) { mutableFloatStateOf(0f) }
-    var bounds by remember { mutableStateOf(Rect.Zero) }
-    val reveal = with(LocalDensity.current) { 240.dp.toPx() }
-    Box(Modifier.clip(RoundedCornerShape(12.dp)).background(colors.surface)) {
-        Row(Modifier.matchParentSize(), horizontalArrangement = Arrangement.End) {
-            listOf(
-                    "Edit" to Icons.Outlined.Edit,
-                    "Move" to Icons.Outlined.SwapHoriz,
-                    "Archive" to Icons.Outlined.Archive,
-                )
-                .forEach { (label, icon) ->
-                    Surface(
-                        onClick = { actions(label + " card") },
-                        modifier = Modifier.width(80.dp).fillMaxHeight(),
-                        color = colors.primaryContainer,
-                    ) {
-                        Column(
-                            Modifier.fillMaxHeight(),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Icon(icon, null)
-                            Text(label, style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
-        }
-        WorkCard(
-            store,
-            card,
-            board,
-            selected,
-            machine,
-            Modifier.onGloballyPositioned { bounds = it.boundsInRoot() }
-                .pointerInput(card.id) {
-                    detectDragGesturesAfterLongPress(
-                        onDragStart = { point -> drag.start(card, bounds.topLeft + point) },
-                        onDrag = { change, amount ->
-                            change.consume()
-                            drag.moveTo(drag.pointerInRoot + amount)
-                        },
-                        onDragCancel = drag::reset,
-                        onDragEnd = {
-                            drag.finish()?.let { drop ->
-                                store.command(
-                                    Command(move_card = MoveCard(drop.cardId, drop.laneId))
-                                )
+            Row(
+                Modifier.fillMaxWidth().padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    val status =
+                        flags
+                            ?.takeIf {
+                                it.tone != RuntimeTone.RUNTIME_TONE_IDLE || it.badge.isNotEmpty()
                             }
-                        },
+                            ?.runtime_label
+                            ?.ifEmpty { flags.badge }
+                            .orEmpty()
+                            .ifEmpty { if (pending) "Syncing…" else "" }
+                    if (status.isNotEmpty())
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (flags?.tone == RuntimeTone.RUNTIME_TONE_ACTIVE)
+                                LiveDot(tone, size = 8.dp)
+                            else Box(Modifier.size(7.dp).background(tone, CircleShape))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                status,
+                                style = type.footnote.copy(fontWeight = FontWeight.Medium),
+                                color = tone.readableOn(palette.cell),
+                                maxLines = 1,
+                            )
+                        }
+                    Text(
+                        listOfNotNull(
+                                Cards.agent(card),
+                                card.token_usage
+                                    ?.let(::TokenUsagePresentation)
+                                    ?.takeIf { it.reported }
+                                    ?.label(),
+                            )
+                            .joinToString(" · "),
+                        style = type.footnote,
+                        color = palette.secondaryLabel,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier =
+                            Modifier.semantics {
+                                card.token_usage
+                                    ?.let(::TokenUsagePresentation)
+                                    ?.takeIf { it.reported }
+                                    ?.let { contentDescription = TokenCounts.detail(it.usage) }
+                            },
                     )
                 }
-                .offset { IntOffset(offset.toInt(), 0) }
-                .draggable(
-                    rememberDraggableState { offset = (offset + it).coerceIn(-reveal, 0f) },
-                    Orientation.Horizontal,
-                    onDragStopped = { offset = if (offset < -reveal / 2) -reveal else 0f },
-                ),
-            { actions("") },
-        )
-    }
-}
-
-@Composable
-internal fun CompactBadge(
-    title: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    accessibility: String = title,
-    danger: Boolean = false,
-) {
-    val tint = if (danger) colors.error else colors.onSurfaceVariant
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = colors.surface,
-        modifier = Modifier.widthIn(max = 180.dp).semantics { contentDescription = accessibility },
-    ) {
-        Row(
-            Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(icon, null, Modifier.size(13.dp), tint = tint)
-            Text(
-                title,
-                fontSize = 11.sp,
-                lineHeight = 14.sp,
-                color = tint,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-@Composable
-internal fun labelColor(value: String): Color = runCatching {
-    Color(("FF" + value.removePrefix("#")).toLong(16))
-}
-    .getOrDefault(colors.primary)
-
-@Composable
-internal fun LabelPill(name: String, color: String) {
-    val tint = labelColor(color)
-    val contrast =
-        (maxOf(tint.luminance(), colors.surfaceContainerHigh.luminance()) + .05f) /
-            (minOf(tint.luminance(), colors.surfaceContainerHigh.luminance()) + .05f)
-    val foreground = if (contrast >= 3) tint else colors.onSurface
-    Row(
-        Modifier.clip(RoundedCornerShape(5.dp))
-            .background(tint.copy(alpha = .18f))
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(7.dp).background(tint, CircleShape))
-        Spacer(Modifier.width(5.dp))
-        Text(name, color = foreground, fontSize = 11.sp, maxLines = 1)
-    }
-}
-
-@Composable
-internal fun ChoiceChip(
-    title: String,
-    options: List<Pair<String, String>>,
-    enabled: Boolean = true,
-    onSelect: (String) -> Unit,
-) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        if (LocalApplePresentation.current)
-            TextButton(onClick = { open = true }, enabled = enabled) {
-                Text(title)
-                Icon(Icons.Outlined.KeyboardArrowDown, null, Modifier.size(16.dp))
-            }
-        else
-            AssistChip(
-                onClick = { open = true },
-                enabled = enabled,
-                label = { Text(title) },
-                trailingIcon = {
-                    Icon(Icons.Outlined.KeyboardArrowDown, null, Modifier.size(16.dp))
-                },
-            )
-        DropdownMenu(open, { open = false }) {
-            options.forEach { (key, label) ->
-                DropdownMenuItem(
-                    text = { Text(label) },
-                    onClick = {
-                        onSelect(key)
-                        open = false
-                    },
+                if (
+                    flags?.can_start == true ||
+                        (flags == null &&
+                            card.lane == "todo" &&
+                            card.initial_prompt_sent_at.isEmpty())
                 )
+                    DButton(
+                        if (flags?.starting == true) "Starting…" else "Start",
+                        { store.command(Command(start_card = StartCard(card.id))) },
+                        Modifier.padding(start = 8.dp).testTag("start-${card.id}"),
+                        kind = ButtonKind.PROMINENT,
+                        glyph = Glyph.PLAY,
+                        enabled = flags?.starting != true,
+                    )
+                MenuButton(sections(), "Card actions", Modifier.testTag("card-menu-${card.id}"))
             }
         }
     }
 }
 
+/** Edits a card's title, and its task while it has not been sent. */
 @Composable
-internal fun CardActions(
-    store: MobileStore,
-    card: Card,
-    initialMode: String = "",
-    onDismiss: () -> Unit,
-) {
-    val workspace by store.workspace.collectAsState()
-    val current = workspace.cards.firstOrNull { it.id == card.id } ?: card
-    val board = workspace.boards.firstOrNull { it.id == current.board_id }
-    var mode by remember(card.id) { mutableStateOf(initialMode) }
+internal fun CardEditSheet(store: MobileStore, card: Card, onDismiss: () -> Unit) {
     var title by remember(card.id) { mutableStateOf(card.title) }
     var prompt by remember(card.id) { mutableStateOf(card.initial_prompt) }
     val editable = CardPolicy.canEditDraft(card)
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    val valid =
+        if (editable) CardPolicy.draftProblem(card, title, prompt, null) == null
+        else title.isNotBlank()
+    Sheet(
+        "Edit card",
+        onDismiss,
+        confirm =
+            ChromeAction("save-card", "Save", Glyph.CHECK, enabled = valid) {
+                store.command(
+                    if (editable)
+                        Command(
+                            update_card_draft =
+                                UpdateCardDraft(card_id = card.id, title = title, prompt = prompt)
+                        )
+                    else Command(rename_card = RenameCard(card.id, title))
+                )
+                onDismiss()
+            },
+    ) {
         Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text(
-                if (mode.isEmpty()) Activity.title(card) else mode,
-                style = MaterialTheme.typography.titleLarge,
+            MobileTextField(
+                title,
+                { title = it },
+                Modifier.fillMaxWidth().testTag("edit-title"),
+                label = { Text("Title") },
+                singleLine = true,
             )
-            when (mode) {
-                "Edit card" -> {
-                    MobileTextField(
-                        title,
-                        { title = it },
-                        label = { Text("Card title") },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    MobileTextField(
-                        prompt,
-                        { prompt = it },
-                        label = { Text("Agent task") },
-                        readOnly = !editable,
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 4,
-                    )
-                    if (!editable)
-                        Text(
-                            "The task has already been sent to the agent.",
-                            color = colors.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    Button(
-                        onClick = {
-                            store.command(
-                                if (editable)
-                                    Command(
-                                        update_card_draft =
-                                            UpdateCardDraft(
-                                                card_id = card.id,
-                                                title = title,
-                                                prompt = prompt,
-                                            )
-                                    )
-                                else Command(rename_card = RenameCard(card.id, title))
-                            )
-                            onDismiss()
-                        },
-                        enabled =
-                            if (editable) CardPolicy.draftProblem(card, title, prompt, null) == null
-                            else title.isNotBlank(),
-                    ) {
-                        Text("Save")
-                    }
-                }
-                "Move card" ->
-                    board?.lanes.orEmpty().forEach { lane ->
-                        ListItem(
-                            headlineContent = { Text(lane.name) },
-                            trailingContent = { if (lane.id == card.lane) Text("Current") },
-                            modifier =
-                                Modifier.clickable(enabled = lane.id != card.lane) {
-                                    store.command(Command(move_card = MoveCard(card.id, lane.id)))
-                                    onDismiss()
-                                },
-                        )
-                    }
-                "Labels" ->
-                    board?.labels.orEmpty().forEach { label ->
-                        Row(
-                            Modifier.fillMaxWidth().clickable {
-                                store.command(
-                                    Command(
-                                        set_card_labels =
-                                            SetCardLabels(
-                                                card.id,
-                                                if (label.id in current.label_ids)
-                                                    current.label_ids - label.id
-                                                else current.label_ids + label.id,
-                                            )
-                                    )
-                                )
-                            },
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(label.id in current.label_ids, null)
-                            LabelPill(label.name, label.color)
-                        }
-                    }
-                "Archive card" -> {
-                    Text("Archive this conversation? You can restore it from the archive.")
-                    Button(
-                        onClick = {
-                            store.command(Command(archive_card = ArchiveCard(card.id)))
-                            if (store.selectedCard.value == card.id) store.back()
-                            onDismiss()
-                        }
-                    ) {
-                        Text("Archive")
-                    }
-                }
-                else -> {
-                    listOf("Edit card", "Move card", "Labels", "Archive card")
-                        .filter { card.scope != "chat" || it !in listOf("Move card", "Labels") }
-                        .forEach { label ->
-                            TextButton(
-                                onClick = { mode = label },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Text(label)
-                            }
-                        }
-                    if (card.scope == "chat")
-                        TextButton(
-                            onClick = {
-                                store.command(
-                                    Command(set_card_pinned = SetCardPinned(card.id, !card.pinned))
-                                )
-                                onDismiss()
-                            }
-                        ) {
-                            Text(if (card.pinned) "Unpin" else "Pin")
-                        }
-                    TextButton(
-                        onClick = {
-                            store.action {
-                                val fork =
-                                    store.core.dispatch(Command(fork_card = ForkCard(card.id))).card
-                                        ?: return@action
-                                store.openCard(fork.id)
-                                onDismiss()
-                            }
-                        }
-                    ) {
-                        Text("Fork conversation")
-                    }
-                }
-            }
+            MobileTextField(
+                prompt,
+                { prompt = it },
+                Modifier.fillMaxWidth().heightIn(min = 140.dp).testTag("edit-prompt"),
+                label = { Text("Task") },
+                readOnly = !editable,
+                minLines = 5,
+                supportingText =
+                    if (!editable) ({ Text("This task was already sent to the agent.") }) else null,
+            )
         }
     }
 }

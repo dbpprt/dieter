@@ -28,30 +28,28 @@ class ComposeSpikeTest {
             capture("android-inbox")
             compose.onNodeWithTag("nav-projects").performClick()
             waitForText("Isolated E2E")
-            if (compose.onAllNodesWithText("Main").fetchSemanticsNodes().isEmpty()) {
-                compose.onNodeWithText("Isolated E2E").performClick()
-            }
             waitForText("Main")
             capture("android-projects")
             compose.onNodeWithText("Main").performClick()
-            waitForText("Running  3")
+            waitForTag("lane-1")
+            waitForText("Design the mobile workspace")
             capture("android-board")
-            compose
-                .onNode(hasScrollToIndexAction())
-                .performScrollToNode(hasText("Design the mobile workspace"))
             compose.onNodeWithText("Design the mobile workspace").performClick()
             waitForText("Your board stays within reach", substring = true)
             capture("android-task")
-            compose.onNodeWithText("Subagents 1").performClick()
+            compose.onNodeWithTag("chrome-conversation-menu").performClick()
+            compose.onNodeWithTag("menu-pane-subagents").performClick()
             waitForText("Layout scout")
-            compose.onNodeWithText("Layout scout").performClick()
             capture("android-subagents")
-            compose.onNodeWithText("Conversation", substring = false).performClick()
-            compose.onNodeWithContentDescription("Back to board").performClick()
-            compose.onNodeWithContentDescription("New task").performClick()
-            compose.onNodeWithText("Task title").performTextInput("A shared mobile conversation")
+            compose.onNodeWithTag("chrome-back").performClick()
+            waitForText("Your board stays within reach", substring = true)
+            compose.onNodeWithTag("chrome-back").performClick()
+            waitForTag("chrome-new-task")
+            compose.onNodeWithTag("chrome-new-task").performClick()
+            waitForTag("task-title")
+            compose.onNodeWithTag("task-title").performTextInput("A shared mobile conversation")
             compose
-                .onNodeWithText("What should we do?")
+                .onNodeWithTag("task-prompt")
                 .performTextInput("Explain how this task stays in one durable conversation.")
             scenario.recreate()
             waitForText("A shared mobile conversation")
@@ -59,82 +57,79 @@ class ComposeSpikeTest {
                 .onNodeWithText("Explain how this task stays in one durable conversation.")
                 .assertExists()
             capture("android-new-task")
-            compose.onNodeWithText("Start working").performScrollTo().performClick()
+            compose.onNodeWithTag("chrome-start-working").performClick()
             waitForText("Mock harness received:", substring = true)
             capture("android-conversation")
             compose
-                .onNodeWithText("Keep the conversation going…")
+                .onNodeWithTag("message-input")
                 .performTextInput("Keep the same task and add the next step.")
             scenario.recreate()
             waitForText("Keep the same task and add the next step.")
-            compose.onNodeWithContentDescription("Send message").performClick()
+            compose.onNodeWithTag("send-message").performClick()
             waitForText("Mock harness received: Keep the same task", substring = true)
-            compose.waitUntil(60000) {
-                compose
-                    .onAllNodesWithText("Review", useUnmergedTree = true)
-                    .fetchSemanticsNodes()
-                    .isNotEmpty()
-            }
-            compose.onNodeWithText("Review").performClick()
-            compose.onNodeWithContentDescription("Back to board").performClick()
-            compose.onNodeWithText("Review  2").performClick()
+            waitForTag("move-review")
+            compose.onNodeWithTag("move-review").performClick()
+            compose.onNodeWithTag("chrome-back").performClick()
+            waitForTag("lane-2")
+            compose.onNodeWithTag("lane-2").performClick()
             waitForText("A shared mobile conversation")
             capture("android-review")
             compose.onNodeWithTag("nav-chats").performClick()
             waitForText("Mobile release checklist")
             capture("android-chats")
             compose.onNodeWithTag("nav-tools").performClick()
-            waitForText("Machines")
+            waitForTag("tool-machines")
             capture("android-tools")
-            compose.onNodeWithText("Machines").performClick()
-            waitForDescription("Reconnect")
+            compose.onNodeWithTag("tool-machines").performClick()
+            waitForText("Isolated E2E machine")
             capture("android-machines")
-            compose.onNodeWithContentDescription("Back").performClick()
-            compose.onNodeWithText("Files").performClick()
+            compose.onNodeWithTag("chrome-back").performClick()
+            waitForTag("tool-files")
+            compose.onNodeWithTag("tool-files").performClick()
             waitForText("README.md")
             capture("android-files")
             compose.onNodeWithText("README.md").performClick()
-            waitForText("# Mobile workspace", substring = true)
-            compose.onNodeWithContentDescription("Preview Markdown").performClick()
             waitForText("One durable conversation", substring = true)
             capture("android-file-preview")
-            compose.onNodeWithContentDescription("Back to files").performClick()
-            compose.onNodeWithContentDescription("Back").performClick()
-            compose.onNodeWithText("Schedules").performClick()
+            compose.onNodeWithTag("chrome-back").performClick()
+            waitForText("README.md")
+            compose.onNodeWithTag("chrome-back").performClick()
+            waitForTag("tool-schedules")
+            compose.onNodeWithTag("tool-schedules").performClick()
             waitForText("Daily workspace review")
             capture("android-schedules")
-            compose.onNodeWithContentDescription("Back").performClick()
-            compose.onNodeWithText("Settings").performClick()
-            waitForText("Appearance")
-            compose.onNodeWithText("System").performClick()
-            compose.onNodeWithText("Dark").performClick()
+            compose.onNodeWithTag("chrome-back").performClick()
+            compose.onNodeWithTag("tools-list").performScrollToNode(hasTestTag("tool-settings"))
+            compose.onNodeWithTag("tool-settings").performClick()
+            waitForTag("appearance-2")
+            compose.onNodeWithTag("appearance-2").performClick()
             capture("android-settings-dark")
             compose.onNodeWithTag("nav-projects").performClick()
             waitForText("Main")
             compose.onNodeWithText("Main").performClick()
-            waitForText("Running  3")
+            waitForTag("lane-1")
             capture("android-board-dark")
         }
     }
 
-    private fun waitForText(text: String, substring: Boolean = false) {
+    private fun waitForText(text: String, substring: Boolean = false) =
+        waitFor("text $text") {
+            compose
+                .onAllNodesWithText(text, substring = substring)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+
+    private fun waitForTag(tag: String) =
+        waitFor("tag $tag") { compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() }
+
+    private fun waitFor(description: String, condition: () -> Boolean) {
         try {
-            compose.waitUntil(60000) {
-                compose
-                    .onAllNodesWithText(text, substring = substring)
-                    .fetchSemanticsNodes()
-                    .isNotEmpty()
-            }
+            compose.waitUntil(60000) { condition() }
         } catch (failure: Throwable) {
             capture("android-failure")
             compose.onRoot().printToLog("ComposeSpikeFailure")
-            throw failure
-        }
-    }
-
-    private fun waitForDescription(value: String) {
-        compose.waitUntil(60000) {
-            compose.onAllNodesWithContentDescription(value).fetchSemanticsNodes().isNotEmpty()
+            throw AssertionError("Timed out waiting for $description", failure)
         }
     }
 

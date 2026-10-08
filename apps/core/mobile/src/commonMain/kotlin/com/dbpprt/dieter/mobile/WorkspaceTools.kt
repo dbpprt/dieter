@@ -1,13 +1,16 @@
 package com.dbpprt.dieter.mobile
 
-import androidx.compose.foundation.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.*
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.dbpprt.dieter.client.v1.*
 import com.dbpprt.dieter.core.workspace.GitOperations
@@ -15,6 +18,7 @@ import com.dbpprt.dieter.core.workspace.GitOperations
 @Composable
 internal fun ProjectChangesScreen(store: MobileStore) {
     val view by store.projectChanges.collectAsState()
+    val workspace by store.workspace.collectAsState()
     var operation by remember { mutableStateOf<String?>(null) }
     fun send(value: ProjectChangesCommand) =
         store.command(
@@ -24,122 +28,157 @@ internal fun ProjectChangesScreen(store: MobileStore) {
         send(ProjectChangesCommand(active = Toggle(true)))
         onDispose { send(ProjectChangesCommand(active = Toggle(false))) }
     }
-    Column {
-        PageHeader(
-            "Project changes",
-            view.changes?.branch.orEmpty(),
-            back = { store.navigate(MobileTab.PROJECTS) },
-        )
-        ProjectSelector(store)
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            AssistChip(
-                onClick = { send(ProjectChangesCommand(refresh = Step())) },
-                label = { Text("Refresh") },
-            )
-            view.allowed.forEach { kind ->
-                AssistChip(
-                    onClick = { operation = kind },
-                    label = { Text(GitOperations.title(kind)) },
-                    enabled = !view.mutations_disabled,
-                )
-            }
-            FilterChip(
-                view.split,
-                { send(ProjectChangesCommand(layout = ReviewLayout(!view.split))) },
-                label = { Text("Split diff") },
-            )
-        }
-        listOf(view.refresh_error, view.diff_error, view.operation_error)
-            .filter { it.isNotEmpty() }
-            .forEach {
-                Notice(
-                    "Changes unavailable",
-                    it,
-                    { send(ProjectChangesCommand(refresh = Step())) },
-                    danger = true,
-                )
-            }
-        if (view.busy || view.diff_loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-        LazyColumn(
-            contentPadding = PaddingValues(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (view.notice.isNotEmpty()) item { Text(view.notice) }
-            items(view.changes?.files.orEmpty(), key = { it.path }) { file ->
-                FormSection(file.path) {
-                    Text(
-                        "+${file.additions} −${file.deletions}",
-                        style = MaterialTheme.typography.labelSmall,
+    val project = workspace.projects.firstOrNull { it.id == store.currentProjectId() }
+    val files = view.changes?.files.orEmpty()
+    val selected = view.selection?.path.orEmpty()
+    val chrome =
+        ScreenChrome(
+            "Changes",
+            subtitle =
+                listOfNotNull(project?.name, view.changes?.branch?.takeIf { it.isNotEmpty() })
+                    .joinToString(" · "),
+            actions =
+                listOf(
+                    ChromeAction(
+                        "changes-menu",
+                        "Git actions",
+                        Glyph.MORE_HORIZONTAL,
+                        menu =
+                            listOfNotNull(
+                                if (view.allowed.isNotEmpty())
+                                    MenuSection(
+                                        view.allowed
+                                            .filter { it != "stage" && it != "unstage" }
+                                            .map { kind ->
+                                                ChromeAction(
+                                                    "git-$kind",
+                                                    GitOperations.title(kind),
+                                                    gitGlyph(kind),
+                                                    enabled = !view.mutations_disabled,
+                                                ) {
+                                                    operation = kind
+                                                }
+                                            }
+                                    )
+                                else null,
+                                MenuSection(
+                                    listOf(
+                                        ChromeAction(
+                                            "split",
+                                            "Side-by-side diff",
+                                            Glyph.CHANGES,
+                                            checked = view.split,
+                                        ) {
+                                            send(
+                                                ProjectChangesCommand(
+                                                    layout = ReviewLayout(!view.split)
+                                                )
+                                            )
+                                        },
+                                        ChromeAction("refresh-changes", "Refresh", Glyph.REFRESH) {
+                                            send(ProjectChangesCommand(refresh = Step()))
+                                        },
+                                    )
+                                ),
+                                MenuSection(projectScopeMenu(store) { store.bindProjectChanges() }),
+                            ),
                     )
-                    Row {
-                        if (file.unstaged)
-                            TextButton(
-                                onClick = {
-                                    send(
-                                        ProjectChangesCommand(
-                                            select = ProjectChangeSelect(file.path, false)
-                                        )
-                                    )
-                                }
-                            ) {
-                                Text("Unstaged diff")
-                            }
-                        if (file.staged)
-                            TextButton(
-                                onClick = {
-                                    send(
-                                        ProjectChangesCommand(
-                                            select = ProjectChangeSelect(file.path, true)
-                                        )
-                                    )
-                                }
-                            ) {
-                                Text("Staged diff")
-                            }
+                ),
+        )
+    Screen(chrome) {
+        LazyColumn(
+            Modifier.fillMaxSize().testTag("project-changes"),
+            state = listState,
+            contentPadding = padding,
+        ) {
+            item { Spacer(Modifier.height(4.dp)) }
+            listOf(view.refresh_error, view.diff_error, view.operation_error)
+                .filter { it.isNotEmpty() }
+                .forEach { failure ->
+                    item {
+                        Banner(
+                            "Changes unavailable",
+                            failure,
+                            Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
+                            tone = Tone.DANGER,
+                            actionLabel = "Retry",
+                            onAction = { send(ProjectChangesCommand(refresh = Step())) },
+                        )
+                    }
+                }
+            if (view.notice.isNotEmpty())
+                item {
+                    Banner(
+                        "Note",
+                        view.notice,
+                        Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
+                    )
+                }
+            if (view.changes == null && (view.refreshing || view.busy))
+                item {
+                    Box(
+                        Modifier.fillMaxWidth().padding(40.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Spinner(Modifier.size(24.dp))
+                    }
+                }
+            if (files.isNotEmpty()) {
+                item {
+                    SectionHeader("${files.size} changed file${if (files.size == 1) "" else "s"}")
+                }
+                changedFiles(
+                    files,
+                    selected,
+                    view.display_rows,
+                    view,
+                    onSelect = { path ->
+                        val file = files.firstOrNull { it.path == path }
+                        send(
+                            ProjectChangesCommand(
+                                select = ProjectChangeSelect(path, staged = file?.unstaged != true)
+                            )
+                        )
+                    },
+                    onComment = null,
+                    onMore = { send(ProjectChangesCommand(load_more_diff = Step())) },
+                    trailing = { file ->
                         if (file.unstaged && "stage" in view.allowed)
-                            TextButton(
-                                onClick = {
+                            DButton(
+                                "Stage",
+                                {
                                     send(
                                         ProjectChangesCommand(
                                             run = GitOperationForm(kind = "stage", path = file.path)
                                         )
                                     )
-                                }
-                            ) {
-                                Text("Stage")
-                            }
-                        if (file.staged && "unstage" in view.allowed)
-                            TextButton(
-                                onClick = {
+                                },
+                                kind = ButtonKind.PLAIN,
+                            )
+                        else if (file.staged && "unstage" in view.allowed)
+                            DButton(
+                                "Unstage",
+                                {
                                     send(
                                         ProjectChangesCommand(
                                             run =
                                                 GitOperationForm(kind = "unstage", path = file.path)
                                         )
                                     )
-                                }
-                            ) {
-                                Text("Unstage")
-                            }
-                    }
-                }
+                                },
+                                kind = ButtonKind.PLAIN,
+                            )
+                    },
+                )
             }
-            itemsIndexed(view.display_rows) { _, row -> DiffRowView(row) }
-            if (view.diff_more)
+            if (!view.refreshing && view.changes != null && files.isEmpty())
                 item {
-                    TextButton(onClick = { send(ProjectChangesCommand(load_more_diff = Step())) }) {
-                        Text("Load the rest of this diff")
-                    }
-                }
-            if (view.diff_note.isNotEmpty()) item { Text(view.diff_note) }
-            if (!view.refreshing && view.changes != null && view.changes!!.files.isEmpty())
-                item {
-                    Box(Modifier.height(180.dp)) {
-                        Empty("Working tree clean", "No uncommitted changes in this checkout.")
-                    }
+                    EmptyState(
+                        Glyph.TASK_DONE,
+                        "Working tree clean",
+                        "This checkout has no uncommitted changes.",
+                        Modifier.padding(top = 40.dp),
+                    )
                 }
         }
     }
@@ -154,9 +193,10 @@ internal fun ProjectChangesScreen(store: MobileStore) {
 @Composable
 internal fun ProcessesScreen(store: MobileStore) {
     val view by store.processes.collectAsState()
+    val conversation by store.conversation.collectAsState()
+    var confirm by remember { mutableStateOf(false) }
     fun send(value: ProcessesCommand) =
         store.command(Command(processes = value.copy(scope = MobileStore.PROCESSES_SCOPE)))
-    var confirm by remember { mutableStateOf(false) }
     DisposableEffect(store) {
         onDispose {
             send(
@@ -166,72 +206,130 @@ internal fun ProcessesScreen(store: MobileStore) {
             )
         }
     }
-    Column {
-        PageHeader("Processes", "${view.running} running")
-        if (view.error.isNotEmpty())
-            Text(view.error, color = colors.error, modifier = Modifier.padding(12.dp))
-        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(12.dp)) {
-            items(view.processes, key = { it.id }) { process ->
-                ListItem(
-                    headlineContent = {
-                        Text(process.name.ifEmpty { process.argv.firstOrNull().orEmpty() })
-                    },
-                    supportingContent = {
-                        Text(process.status + " · " + process.argv.joinToString(" "))
-                    },
-                    modifier =
-                        Modifier.clickable {
-                            send(ProcessesCommand(select = ProcessId(process.id)))
-                        },
-                )
-            }
-            if (view.selected_id.isNotEmpty())
+    Screen(
+        ScreenChrome(
+            "Processes",
+            subtitle =
+                listOf(conversation.card?.title.orEmpty(), "${view.running} running")
+                    .filter { it.isNotEmpty() }
+                    .joinToString(" · "),
+        )
+    ) {
+        LazyColumn(
+            Modifier.fillMaxSize().testTag("processes"),
+            state = listState,
+            contentPadding = padding,
+        ) {
+            if (view.error.isNotEmpty())
                 item {
-                    FormSection("Output") {
-                        if (view.output_truncated)
-                            Text(
-                                "Earlier output was truncated",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        SelectionContainer {
-                            Text(
-                                view.stdout.utf8() + view.stderr.utf8(),
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace,
-                            )
-                        }
-                        if (view.can_stop)
-                            OutlinedButton(onClick = { confirm = true }) { Text("Stop process") }
+                    Banner(
+                        "Processes unavailable",
+                        view.error,
+                        Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
+                        tone = Tone.DANGER,
+                    )
+                }
+            item { Spacer(Modifier.height(8.dp)) }
+            if (view.loading && view.processes.isEmpty())
+                item {
+                    Box(
+                        Modifier.fillMaxWidth().padding(40.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Spinner(Modifier.size(24.dp))
                     }
                 }
             if (!view.loading && view.processes.isEmpty())
                 item {
-                    Box(Modifier.height(200.dp)) {
-                        Empty(
-                            "No background processes",
-                            "Processes started for this conversation appear here.",
-                        )
-                    }
+                    EmptyState(
+                        Glyph.PROCESSES,
+                        "No background processes",
+                        "Dev servers, builds and tests the agent starts appear here.",
+                        Modifier.padding(top = 40.dp),
+                    )
                 }
+            view.processes.forEachIndexed { index, process ->
+                val running = process.status == "running"
+                item("process-${process.id}") {
+                    ListRow(
+                        process.name.ifEmpty { process.argv.firstOrNull().orEmpty() },
+                        position = Position.of(index, view.processes.size),
+                        subtitle = process.argv.joinToString(" "),
+                        subtitleMaxLines = 1,
+                        leading = {
+                            if (running) LiveDot(palette.success, size = 10.dp)
+                            else
+                                Icon(
+                                    Glyph.TERMINAL,
+                                    null,
+                                    tint = palette.secondaryLabel,
+                                    size = 18.dp,
+                                )
+                        },
+                        value = process.status,
+                        selected = process.id == view.selected_id,
+                        onClick = {
+                            send(
+                                ProcessesCommand(
+                                    select =
+                                        ProcessId(
+                                            if (process.id == view.selected_id) "" else process.id
+                                        )
+                                )
+                            )
+                        },
+                    )
+                }
+                if (process.id == view.selected_id)
+                    item("output-${process.id}") {
+                        Column(
+                            Modifier.fillMaxWidth()
+                                .padding(horizontal = ScreenMargin, vertical = 6.dp)
+                        ) {
+                            if (view.output_truncated)
+                                Text(
+                                    "Earlier output was truncated.",
+                                    Modifier.padding(bottom = 4.dp),
+                                    style = type.footnote,
+                                    color = palette.secondaryLabel,
+                                )
+                            SelectionContainer {
+                                Text(
+                                    (view.stdout.utf8() + view.stderr.utf8()).ifEmpty {
+                                        "No output yet."
+                                    },
+                                    Modifier.fillMaxWidth()
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(androidx.compose.ui.graphics.Color(0xFF111113))
+                                        .padding(12.dp),
+                                    style = type.monoSmall,
+                                    color = androidx.compose.ui.graphics.Color(0xFFE5E5EA),
+                                )
+                            }
+                            if (view.can_stop)
+                                DButton(
+                                    "Stop process",
+                                    { confirm = true },
+                                    Modifier.padding(top = 8.dp),
+                                    kind = ButtonKind.DESTRUCTIVE,
+                                    glyph = Glyph.STOP,
+                                    loading = view.stopping,
+                                )
+                        }
+                    }
+            }
         }
     }
     if (confirm)
-        AlertDialog(
-            onDismissRequest = { confirm = false },
-            title = { Text("Stop this process?") },
-            text = {
-                Text("The conversation remains active. Only this selected process is stopped.")
+        ConfirmDialog(
+            "Stop this process?",
+            "The conversation keeps running. Only this process stops.",
+            "Stop",
+            {
+                send(ProcessesCommand(stop = Step()))
+                confirm = false
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        send(ProcessesCommand(stop = Step()))
-                        confirm = false
-                    }
-                ) {
-                    Text("Stop")
-                }
-            },
-            dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel") } },
+            { confirm = false },
+            destructive = true,
         )
 }
