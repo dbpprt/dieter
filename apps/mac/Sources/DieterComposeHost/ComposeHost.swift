@@ -538,7 +538,7 @@ final class RouteChrome: NSObject, @preconcurrency NativeChromeSink {
     static func menu(_ sections: [NativeMenuSection]) -> UIMenu {
         UIMenu(
             children: sections.map { section in
-                let children = section.actions.map(element)
+                let children = section.actions.map(Self.element)
                 if section.inline_ || section.title.isEmpty {
                     return UIMenu(title: section.title, options: .displayInline, children: children)
                 }
@@ -552,18 +552,18 @@ final class RouteChrome: NSObject, @preconcurrency NativeChromeSink {
                 title: action.title, subtitle: action.subtitle.isEmpty ? nil : action.subtitle,
                 image: symbol(action.symbol),
                 children: action.sections.map { section in
-                    UIMenu(title: section.title, options: .displayInline, children: section.actions.map(element))
+                    UIMenu(title: section.title, options: .displayInline, children: section.actions.map(Self.element))
                 })
         }
         var attributes: UIMenuElement.Attributes = []
         if action.destructive { attributes.insert(.destructive) }
         if !action.enabled { attributes.insert(.disabled) }
-        let element = UIAction(
+        let leaf = UIAction(
             title: action.title, subtitle: action.subtitle.isEmpty ? nil : action.subtitle,
             image: symbol(action.symbol), identifier: UIAction.Identifier(action.identifier), attributes: attributes,
             state: action.checked ? .on : .off
         ) { _ in action.perform() }
-        element.accessibilityIdentifier = "menu-\(action.identifier)"
-        return element
+        leaf.accessibilityIdentifier = "menu-\(action.identifier)"
+        return leaf
     }
 }
