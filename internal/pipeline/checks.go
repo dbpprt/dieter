@@ -32,7 +32,7 @@ type goPackage struct {
 }
 
 var macSmokeSuites = []string{"core", "board", "conversation", "machine", "sidebar", "terminal", "island", "workspace", "inbox"}
-var ciComponents = []string{"core", "macos", "ios", "android", "kmp"}
+var ciComponents = []string{"core", "macos", "ios", "android", "kmp", "compose_core", "compose_android", "compose_ios"}
 var iosRoots = []string{"apps/ios/", "apps/mac/Sources/DieterIOS/", "apps/mac/Tests/DieterIOSTests/"}
 var swiftSharedRoots = []string{"apps/mac/Sources/DieterTransport/", "apps/mac/Sources/DieterAPI/", "apps/mac/Vendor/"}
 
@@ -45,12 +45,12 @@ func codePaths(paths []string) []string {
 	})
 }
 func kotlinAndroidSource(path string) bool {
-	return strings.HasPrefix(path, "apps/core/") && !prefixAny(path, "apps/core/testing/", "apps/core/apple/") && !strings.HasSuffix(coreSourceSet(path), "Test") && !strings.HasPrefix(coreSourceSet(path), "apple")
+	return strings.HasPrefix(path, "apps/core/") && !prefixAny(path, "apps/core/testing/", "apps/core/apple/", "apps/core/mobile/") && !strings.HasSuffix(coreSourceSet(path), "Test") && !strings.HasPrefix(coreSourceSet(path), "apple")
 }
 func macChecks(paths []string) []string {
 	selected := map[string]bool{}
 	for _, path := range paths {
-		if !strings.HasPrefix(path, "apps/mac/") || prefixAny(path, append(iosRoots, "apps/mac/Tests/")...) {
+		if !strings.HasPrefix(path, "apps/mac/") || prefixAny(path, append(iosRoots, "apps/mac/Tests/", "apps/mac/Sources/DieterComposeHost/")...) {
 			continue
 		}
 		relative := strings.TrimPrefix(path, "apps/mac/Sources/DieterMac/")
@@ -182,7 +182,7 @@ func planChecks(paths []string, packages []string, base string) CheckPlan {
 			}
 		}
 		plan.Checks = append(plan.Checks, request)
-		ci := map[string]string{"mac": "macos", "ios": "ios", "android": "android", "core": "kmp"}[component]
+		ci := map[string]string{"mac": "macos", "ios": "ios", "android": "android", "core": "kmp", "compose-core": "compose_core", "compose-android": "compose_android", "compose-ios": "compose_ios"}[component]
 		if ci == "" {
 			ci = "core"
 		}
@@ -198,13 +198,15 @@ func planChecks(paths []string, packages []string, base string) CheckPlan {
 	shared := any(func(p string) bool {
 		return prefixAny(p, swiftSharedRoots...) || slices.Contains([]string{"apps/mac/Package.swift", "apps/mac/Package.resolved"}, p)
 	})
-	kmp := schema || fixture || any(func(p string) bool { return prefixAny(p, "apps/core/") || p == "fastlane/lib/dieter/platforms/core.rb" })
+	kmp := schema || fixture || any(func(p string) bool {
+		return strings.HasPrefix(p, "apps/core/") && !strings.HasPrefix(p, "apps/core/mobile/") || p == "fastlane/lib/dieter/platforms/core.rb"
+	})
 	bridge := any(func(p string) bool {
 		return prefixAny(p, "apps/mac/Sources/SharedCore/", "apps/mac/Tests/SharedCoreTests/") || p == "fastlane/lib/dieter/platforms/framework.rb"
 	})
 	framework := any(func(p string) bool { return p == "fastlane/lib/dieter/platforms/framework.rb" })
 	mac := schema || fixture || brand || kmp || bridge || any(func(p string) bool {
-		return strings.HasPrefix(p, "apps/mac/") && !prefixAny(p, iosRoots...) || prefixAny(p, "fastlane/lib/dieter/native/mac_") || p == "fastlane/lib/dieter/platforms/mac.rb"
+		return strings.HasPrefix(p, "apps/mac/") && !prefixAny(p, iosRoots...) && !strings.HasPrefix(p, "apps/mac/Sources/DieterComposeHost/") || prefixAny(p, "fastlane/lib/dieter/native/mac_") || p == "fastlane/lib/dieter/platforms/mac.rb"
 	})
 	ios := schema || fixture || brand || kmp || shared || framework || any(func(p string) bool {
 		return prefixAny(p, iosRoots...) || prefixAny(p, "apps/mac/Sources/SharedCore/", "fastlane/lib/dieter/native/ios_development") || p == "fastlane/lib/dieter/platforms/ios.rb" || p == "fastlane/lib/dieter/fixtures/device_route.rb"
@@ -219,12 +221,35 @@ func planChecks(paths []string, packages []string, base string) CheckPlan {
 		return prefixAny(p, "fastlane/lib/dieter/pipeline/") || slices.Contains([]string{"fastlane/Fastfile", "fastlane/lib/dieter/runtime.rb", "fastlane/lib/dieter/ci.rb", "fastlane/lib/dieter/config.rb", "fastlane/lib/dieter/operations.rb", "fastlane/lib/dieter/screens.rb", "fastlane/config.json", "fastlane/config.schema.json", "Gemfile", "Gemfile.lock", ".ruby-version", "justfile"}, p)
 	})
 	selector := any(func(p string) bool {
-		return prefixAny(p, "internal/pipeline/check", ".github/workflows/ci.yml") || p == "justfile"
+		return prefixAny(p, "internal/pipeline/check", ".github/workflows/ci.yml", ".github/workflows/qualification.yml", ".github/actions/pipeline-setup/") || p == "justfile"
+	})
+	composePipeline := any(func(p string) bool {
+		return slices.Contains([]string{"fastlane/lib/dieter/compose_spike.rb", "fastlane/lib/dieter/compose_ci.rb"}, p)
+	})
+	composeShared := any(func(p string) bool {
+		return strings.HasPrefix(p, "apps/core/mobile/") || slices.Contains([]string{
+			"apps/android/app/src/main/java/com/dbpprt/dieter/settings/DieterPalette.kt",
+			"apps/android/app/src/main/java/com/dbpprt/dieter/ui/BoardCardDrag.kt",
+		}, p)
+	})
+	composeFixture := any(func(p string) bool {
+		return prefixAny(p, "internal/harness/runtime/") || slices.Contains([]string{"config/harnesses.yaml", "fastlane/lib/dieter/fixtures/gateway.rb"}, p)
+	})
+	composeCore := kmp || composeShared || composePipeline || composeFixture
+	composeAndroid := composeCore || brand || any(func(p string) bool {
+		return prefixAny(p, "apps/mobile/android/", "apps/android/app/src/main/java/com/dbpprt/dieter/data/", "apps/android/app/src/main/java/com/dbpprt/dieter/screens/", "apps/android/app/src/main/java/com/dbpprt/dieter/sharedcore/", "apps/android/app/src/main/java/org/webrtc/", "native/android-webrtc/") || slices.Contains([]string{
+			"apps/android/app/src/main/java/com/dbpprt/dieter/ui/RemoteTerminalView.kt",
+			"apps/android/app/src/main/java/com/dbpprt/dieter/ui/ComposerAttachments.kt",
+			"fastlane/lib/dieter/platforms/emulator.rb",
+		}, p)
+	})
+	composeIOS := composeCore || shared || bridge || brand || any(func(p string) bool {
+		return prefixAny(p, "apps/mobile/ios/", "apps/mac/Sources/DieterComposeHost/") || p == "fastlane/lib/dieter/platforms/ios.rb"
 	})
 	catalog := any(func(p string) bool { return prefixAny(p, "tests/e2e/", "internal/pipeline/") })
 	// Orchestration contracts can be verified without compiling every native
 	// client locally. CI still selects all components for these shared changes.
-	if catalog || orchestration || any(func(p string) bool {
+	if catalog || orchestration || composePipeline || any(func(p string) bool {
 		return prefixAny(p, "fastlane/spec/", "fastlane/lib/dieter/distribution/", "fastlane/release-policy.json", "fastlane/local.example.json")
 	}) {
 		add("portable", "contracts", nil)
@@ -338,6 +363,17 @@ func planChecks(paths []string, packages []string, base string) CheckPlan {
 		}
 		add("android", "e2e", options)
 	}
+	if composeCore {
+		add("compose-core", "test_unit", nil)
+	}
+	if composeAndroid {
+		add("compose-android", "build", nil)
+		add("compose-android", "e2e", map[string]string{"profile": "android-emulator"})
+	}
+	if composeIOS {
+		add("compose-ios", "build", nil)
+		add("compose-ios", "e2e", map[string]string{"profiles": "ios-iphone,ios-ipad"})
+	}
 	if screens || any(func(p string) bool {
 		return prefixAny(p, "native/android-webrtc/", "apps/android/app/src/main/java/org/webrtc/") || strings.HasPrefix(p, "apps/android/") && (strings.Contains(p, "/screens/") || strings.HasSuffix(p, "/ScreensScreen.kt"))
 	}) {
@@ -347,9 +383,14 @@ func planChecks(paths []string, packages []string, base string) CheckPlan {
 		add("portable", "site_build", nil)
 	}
 	if goChanged(code) || any(func(p string) bool {
-		return !prefixAny(p, "apps/mac/", "apps/ios/", "apps/android/", "apps/core/", "native/android-webrtc/")
+		return !prefixAny(p, "apps/mac/", "apps/ios/", "apps/android/", "apps/core/", "apps/mobile/", "native/android-webrtc/")
 	}) {
 		plan.CI["core"] = len(code) > 0
+	}
+	if any(func(p string) bool { return strings.HasPrefix(p, ".github/workflows/compose-mobile-") }) {
+		for _, component := range []string{"compose_core", "compose_android", "compose_ios"} {
+			plan.CI[component] = true
+		}
 	}
 	if selector || orchestration {
 		for _, component := range ciComponents {

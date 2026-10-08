@@ -17,8 +17,17 @@ module Dieter
   class IOS
     UUID = /\A[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\z/
 
-    def initialize(context, actions: nil)
+    def initialize(
+      context,
+      actions: nil,
+      project: "apps/ios/DieterIOS.xcodeproj",
+      scheme: "DieterIOSE2E",
+      screenshots: false,
+      fixture_suite: "ios"
+    )
       @context, @root, @actions = context, context.root, actions
+      @project, @scheme, @screenshots = project, scheme, screenshots
+      @fixture_suite = fixture_suite
       @contract = Contract.new(context)
       @derived = File.join(@root, "apps/ios/.build/DerivedData")
       @products = File.join(@derived, "Build/Products")
@@ -100,11 +109,12 @@ module Dieter
           @context,
           "run_tests",
           {
-            project: "apps/ios/DieterIOS.xcodeproj",
-            scheme: "DieterIOSE2E",
+            project: @project,
+            scheme: @scheme,
             configuration: configuration.capitalize,
             destination: physical ? "generic/platform=iOS" : "generic/platform=iOS Simulator",
             derived_data_path: @derived,
+            package_authorization_provider: "netrc",
             build_for_testing: true,
             skip_build: true,
             skip_detect_devices: true,
@@ -121,23 +131,31 @@ module Dieter
       end
       candidates = Dir.glob(File.join(@products, "*#{sdk}*.xctestrun"))
       raise PipelineError, "Expected one build-for-testing plan" unless candidates.length == 1
+      record_products(configuration: configuration, sdk: sdk, xctestrun: candidates.first)
+      candidates.first
+    end
+
+    def record_products(configuration:, sdk:, xctestrun:)
       source = @context.command(%w[git rev-parse HEAD], timeout: 30).strip
       ArtifactSet.new(
-        component: "ios",
+        component: product_component,
         source: source,
         configuration: configuration,
         toolchain: {
-          "input_sha256" => BuildInputs.digest(@context),
+          "input_sha256" => BuildInputs.digest(@context, paths: build_input_paths),
           "sdk" => sdk,
           "xcode" => @context.command(%w[xcodebuild -version], timeout: 30)
         },
         products: {
-          "xctestrun" => candidates.first,
+          "xctestrun" => xctestrun,
           "test-products" => @products
         }
       ).write(File.join(@context.output, "artifacts.json"))
-      candidates.first
     end
+
+    def product_component = "ios"
+    def build_input_paths = BuildInputs::IOS
+    def simulator_bundle_id = "com.dbpprt.dieter.ios.e2e"
 
     def admit(target, plan)
       raise Unavailable, "iOS tests require macOS/Xcode" unless RUBY_PLATFORM.include?("darwin")
@@ -284,7 +302,13 @@ module Dieter
         if test_case.fetch("fixture") == "gateway"
           offline = File.join(state, "offline")
           fixture =
-            GatewayFixture.new(@context, "ios", state, evidence: dir, offline_trigger: offline)
+            GatewayFixture.new(
+              @context,
+              @fixture_suite,
+              state,
+              evidence: dir,
+              offline_trigger: offline
+            )
           values = fixture.start
           %w[TOKEN DAEMON INCOMPATIBLE_DAEMON PROJECT BOARD].each do |key|
             value = values.fetch("DIETER_ISOLATED_#{key}")
@@ -365,8 +389,8 @@ module Dieter
             @context,
             "run_tests",
             {
-              project: "apps/ios/DieterIOS.xcodeproj",
-              scheme: "DieterIOSE2E",
+              project: @project,
+              scheme: @scheme,
               derived_data_path: @derived,
               xctestrun: spec,
               destination: destination,
@@ -420,7 +444,7 @@ module Dieter
               "reason" => "XCTest process failed despite passing result fragments"
             )
           end
-          unless result["status"] == "passed"
+          if @screenshots || result["status"] != "passed"
             @context.command(
               [
                 "xcrun",
@@ -429,7 +453,7 @@ module Dieter
                 "attachments",
                 "--path",
                 bundle,
-                "--only-failures",
+                *(@screenshots ? [] : ["--only-failures"]),
                 "--output-path",
                 File.join(dir, "attachments")
               ],
@@ -474,19 +498,20 @@ module Dieter
       manifest =
         ArtifactSet.load(
           @prepared_manifest,
-          component: "ios",
+          component: product_component,
           source: @context.command(%w[git rev-parse HEAD], timeout: 30).strip
         ).manifest
       toolchain = manifest.fetch("toolchain")
       unless manifest["configuration"] == "debug" && toolchain["sdk"] == "iphonesimulator" &&
-               toolchain["input_sha256"] == BuildInputs.digest(@context) &&
+               toolchain["input_sha256"] ==
+                 BuildInputs.digest(@context, paths: build_input_paths) &&
                toolchain["xcode"] == @context.command(%w[xcodebuild -version], timeout: 30)
         raise PipelineError, "Prepared iOS inputs or toolchain changed"
       end
       product = manifest.fetch("products").find { |entry| entry["kind"] == "test-products" }
       raise PipelineError, "Prepared iOS test products are missing" unless product
       @products = product.fetch("path")
-      @bundle_id = "com.dbpprt.dieter.ios.e2e"
+      @bundle_id = simulator_bundle_id
       puts "Reusing verified iOS test products for #{target.fetch("name")}"
     end
 

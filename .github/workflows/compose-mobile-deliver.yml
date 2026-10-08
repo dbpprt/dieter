@@ -1,0 +1,60 @@
+name: Compose preview delivery
+on:
+  workflow_call:
+    inputs:
+      android_artifact:
+        description: Exact qualified Android staging artifact in this workflow run
+        type: string
+        default: ""
+      ios_artifact:
+        description: Exact qualified iOS simulator staging artifact in this workflow run
+        type: string
+        default: ""
+permissions:
+  contents: read
+jobs:
+  deliver:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (inputs.android_artifact != '' || inputs.ios_artifact != '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/pipeline-setup
+        with:
+          component: report
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: inputs.android_artifact != ''
+        with:
+          name: ${{ inputs.android_artifact }}
+          path: tmp/compose-delivery/android
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: inputs.ios_artifact != ''
+        with:
+          name: ${{ inputs.ios_artifact }}
+          path: tmp/compose-delivery/ios
+      - name: Verify qualified Android preview bytes
+        if: inputs.android_artifact != ''
+        run: just pipeline compose_ci action:verify component:android artifact:tmp/compose-delivery/android/manifest.json
+      - name: Verify qualified iOS simulator preview bytes
+        if: inputs.ios_artifact != ''
+        run: just pipeline compose_ci action:verify component:ios artifact:tmp/compose-delivery/ios/manifest.json
+      - name: Deliver Android preview
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: inputs.android_artifact != ''
+        with:
+          name: compose-android-preview-${{ github.sha }}-${{ github.run_attempt }}
+          path: tmp/compose-delivery/android/
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error
+      - name: Deliver iOS simulator preview
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: inputs.ios_artifact != ''
+        with:
+          name: compose-ios-simulator-preview-${{ github.sha }}-${{ github.run_attempt }}
+          path: tmp/compose-delivery/ios/
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error

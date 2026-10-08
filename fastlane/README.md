@@ -483,6 +483,15 @@ source changes during a run fail its report. This never promotes codec defaults.
 
 ## CI and release policy
 
+The separate Compose hosts in `apps/mobile/android` and `apps/mobile/ios` have
+additional affected-change gates alongside the original apps: shared JVM
+journeys, Android app/test compilation, and the iOS journey on both layouts using
+one verified build. After main qualification, a separate read-only delivery job
+retains the exact Debug APK and arm64 simulator app for 14 days. Compose does not
+publish to TestFlight or join the shipping candidate matrix. See
+[Compose CI and preview delivery](../apps/mobile/PIPELINES.md) for commands,
+artifact names, qualification scope and signing limits.
+
 CI calls the same lanes through pinned reusable workflows. `qualification.yml`
 selects affected PR/main components and requires all components on scheduled and
 manual full runs. Routine iOS checks run portable policies and `ios.connecting`
