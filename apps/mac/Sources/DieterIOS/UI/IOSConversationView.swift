@@ -1202,12 +1202,18 @@
         var body: some View {
             Picker("Provider", selection: Binding(get: { controls.selection.provider }, set: { choose(.provider($0)) }))
             {
+                if !controls.providers.contains(where: { $0.id == controls.selection.provider }) {
+                    Text(controls.providerLabel).tag(controls.selection.provider).disabled(true)
+                }
                 ForEach(controls.providers, id: \.id) { Text($0.name).tag($0.id) }
             }
             .disabled(!controls.providerEnabled)
             .accessibilityIdentifier("\(identifierPrefix).provider")
             .accessibilityValue(controls.providerLabel)
             Picker("Model", selection: Binding(get: { controls.selection.model }, set: { choose(.model($0)) })) {
+                if !controls.models.contains(where: { $0.id == controls.selection.model }) {
+                    Text(controls.modelLabel).tag(controls.selection.model).disabled(true)
+                }
                 ForEach(controls.models, id: \.id) { Text($0.name).tag($0.id) }
             }
             .disabled(!controls.modelEnabled)

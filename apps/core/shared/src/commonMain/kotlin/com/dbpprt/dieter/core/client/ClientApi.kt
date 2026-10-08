@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import okio.ByteString
 
@@ -693,7 +694,11 @@ class ClientApi(private val runtime: CoreRuntime, private val screenHost: Screen
                                 ::Triple,
                             )
                         combine(
-                                session.view,
+                                session.view.onEach { view ->
+                                    // Existing conversations need their owner's catalog too;
+                                    // opening a creation form must not be a prerequisite.
+                                    view.daemonId?.let { runtime.metadata.ensure(it) }
+                                },
                                 runtime.outbox.view,
                                 runtime.board.view,
                                 runtime.workspace.state,

@@ -647,6 +647,18 @@ final class RemoteNodeUITests: XCTestCase {
             "Run task should remain visible and enabled after entering the task.\n\(app.debugDescription)")
         tap(app, "ios.create.run")
         assistantTextExists(app, "Mock harness received: Verify this request came from iOS", timeout: 150)
+        // Start a fresh client and open the existing task. A creation preview
+        // loads its machine catalog and would hide a missing conversation load.
+        app.terminate()
+        app.launch()
+        waitForBoard(app, project: project, board: board)
+        openBoard(app, board: board)
+        let existingTask = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'ios.task.' AND label CONTAINS %@", "iOS remote smoke task")
+        ).firstMatch
+        XCTAssertTrue(existingTask.waitForExistence(timeout: 30), "The existing task must survive relaunch")
+        existingTask.tap()
+        assistantTextExists(app, "Mock harness received: Verify this request came from iOS", timeout: 30)
         // The reply can arrive before the agent catalog enables this toolbar
         // action. Require its native readiness and observe the sheet opening.
         let modelSettingsSheet = element(app, "ios.conversation.model-settings.sheet")
@@ -654,7 +666,16 @@ final class RemoteNodeUITests: XCTestCase {
         XCTAssertTrue(
             modelSettingsSheet.waitForExistence(timeout: 10),
             "Model settings must open after its toolbar action.\n\(app.debugDescription)")
-        XCTAssertTrue(element(app, "ios.conversation.model").exists)
+        for identifier in ["ios.conversation.provider", "ios.conversation.model"] {
+            let picker = element(app, identifier)
+            let named = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Mock"), object: picker)
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [named], timeout: 20), .completed,
+                "An existing conversation must show its selected agent in \(identifier).\n\(app.debugDescription)")
+        }
+        XCTAssertTrue(
+            element(app, "ios.conversation.effort").exists,
+            "The conversation's model catalog supplies reasoning choices")
         screenshot(app, "03-next-message-settings")
         tap(app, "ios.conversation.model-settings.done")
         screenshot(app, "03-live-remote-conversation")
