@@ -1,7 +1,67 @@
 import AppKit
 import SwiftUI
 import Testing
+import WebKit
 @testable import DieterMac
+
+@MainActor private final class ConversationBrowserNavigationAction: WKNavigationAction {
+    let destination: URL
+    let kind: WKNavigationType
+
+    init(destination: URL, kind: WKNavigationType) {
+        self.destination = destination
+        self.kind = kind
+        super.init()
+    }
+
+    override var request: URLRequest { URLRequest(url: destination) }
+    override var navigationType: WKNavigationType { kind }
+    override var targetFrame: WKFrameInfo? { nil }
+}
+
+@Test @MainActor func conversationBrowserOnlyLaunchesExternalNavigationForClickedLinks() throws {
+    let destination = try #require(URL(string: "https://example.com/docs"))
+    for kind in [WKNavigationType.other, .linkActivated] {
+        let browser = ConversationBrowserModel()
+        var opened: [URL] = []
+        browser.shouldOpenExternally = { $0 == destination }
+        browser.openExternally = { opened.append($0) }
+        let action = ConversationBrowserNavigationAction(destination: destination, kind: kind)
+        var policy: WKNavigationActionPolicy?
+        browser.webView(browser.webView, decidePolicyFor: action) { policy = $0 }
+        #expect(policy == .cancel)
+        #expect(opened == (kind == .linkActivated ? [destination] : []))
+
+        opened = []
+        #expect(
+            browser.webView(
+                browser.webView, createWebViewWith: WKWebViewConfiguration(),
+                for: action, windowFeatures: WKWindowFeatures()) == nil)
+        #expect(opened == (kind == .linkActivated ? [destination] : []))
+    }
+}
+
+@Test @MainActor func mountingConversationBrowserNeverLaunchesAnExternalURL() throws {
+    let browser = ConversationBrowserModel()
+    let destination = try #require(URL(string: "https://example.com/docs"))
+    var opened: [URL] = []
+    browser.shouldOpenExternally = { $0 == destination }
+    browser.openExternally = { opened.append($0) }
+
+    browser.open(destination)
+    browser.open(destination)
+    #expect(opened.isEmpty)
+    #expect(browser.currentURL == destination)
+    #expect(browser.failure != nil)
+    #expect(!browser.loading)
+
+    browser.reveal(destination)
+    #expect(opened == [destination], "An explicit navigation still opens the configured browser")
+    browser.open(destination)
+    #expect(opened == [destination], "Remounting after that click must not open it again")
+    browser.openAddress(destination.absoluteString)
+    #expect(opened == [destination, destination])
+}
 
 @Test @MainActor func emptyConversationBrowserPinsItsAddressBarToTheTop() async throws {
     let browser = ConversationBrowserModel()

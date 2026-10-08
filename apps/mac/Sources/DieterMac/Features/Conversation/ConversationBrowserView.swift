@@ -129,10 +129,18 @@ final class ConversationBrowserModel: NSObject, WKNavigationDelegate, WKUIDelega
     @ObservationIgnored private var requestedURL: URL?
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     @ObservationIgnored var openExternally: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
+    @ObservationIgnored var shouldOpenExternally: @MainActor (URL) -> Bool = {
+        ExternalBrowserRules.matches($0, entries: ExternalBrowserRules.entries())
+    }
 
-    private func routeExternally(_ url: URL) -> Bool {
-        guard ExternalBrowserRules.matches(url, entries: ExternalBrowserRules.entries()) else { return false }
-        openExternally(url)
+    private func routeExternally(_ url: URL, userInitiated: Bool, showsFallback: Bool = true) -> Bool {
+        guard shouldOpenExternally(url) else { return false }
+        if userInitiated {
+            openExternally(url)
+        } else if showsFallback {
+            currentURL = url
+            failure = "Open this address using the default browser button."
+        }
         return true
     }
 
@@ -186,6 +194,7 @@ final class ConversationBrowserModel: NSObject, WKNavigationDelegate, WKUIDelega
     /// Explicit navigation must win even after the page navigated internally.
     /// Ordinary view remounts still use open(), preserving the tab's history.
     func reveal(_ url: URL) {
+        if accepts(url), routeExternally(url, userInitiated: true) { return }
         if currentURL != url || failure != nil { requestedURL = nil }
         open(url)
     }
@@ -198,15 +207,18 @@ final class ConversationBrowserModel: NSObject, WKNavigationDelegate, WKUIDelega
                 "This address is unavailable. Remote localhost forwarding is not supported; use a reachable HTTP or HTTPS address."
             return
         }
-        if routeExternally(url) { return }
         requestedURL = url
         currentURL = url
+        // Mounting a retained browser tab is passive, including when the
+        // user's external-browser preferences changed while it was hidden.
+        if routeExternally(url, userInitiated: false) { return }
         webView.load(URLRequest(url: url))
     }
 
     func reload() {
         failure = nil
         if let url = currentURL ?? requestedURL, accepts(url) {
+            if routeExternally(url, userInitiated: true) { return }
             if webView.url == url { webView.reload() } else { webView.load(URLRequest(url: url)) }
         }
     }
@@ -261,7 +273,10 @@ final class ConversationBrowserModel: NSObject, WKNavigationDelegate, WKUIDelega
             decisionHandler(.cancel)
             return
         }
-        if routeExternally(destination) {
+        if routeExternally(
+            destination, userInitiated: navigationAction.navigationType == .linkActivated,
+            showsFallback: navigationAction.targetFrame?.isMainFrame != false)
+        {
             decisionHandler(.cancel)
             return
         }
@@ -278,7 +293,7 @@ final class ConversationBrowserModel: NSObject, WKNavigationDelegate, WKUIDelega
         for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
         if let destination = navigationAction.request.url, accepts(destination),
-            !routeExternally(destination)
+            !routeExternally(destination, userInitiated: navigationAction.navigationType == .linkActivated)
         {
             webView.load(navigationAction.request)
         }
