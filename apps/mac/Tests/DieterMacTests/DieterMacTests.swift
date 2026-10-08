@@ -243,6 +243,46 @@ private actor ScheduleRPCStub: DieterScheduleRPC {
     #expect(BoardLabelDragPayload("board-label||l_123") == nil)
 }
 
+/// Label segments sit in the title-bar strip, which the window server drags
+/// unless the window is immovable while the pointer is over a segment.
+@MainActor @Test func labelDragSourceHoldsTheWindowStillAndForwardsClicks() throws {
+    let source = BoardLabelDragSourceView(frame: NSRect(x: 0, y: 0, width: 60, height: 26))
+    var selections = 0
+    source.select = { selections += 1 }
+    #expect(!source.mouseDownCanMoveWindow)
+    #expect(source.acceptsFirstMouse(for: nil))
+
+    let window = NSWindow(
+        contentRect: NSRect(x: -3_000, y: -3_000, width: 200, height: 100), styleMask: [.titled],
+        backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    defer { window.close() }
+    window.contentView?.addSubview(source)
+    func hover(_ type: NSEvent.EventType) throws -> NSEvent {
+        try #require(
+            NSEvent.enterExitEvent(
+                with: type, location: NSPoint(x: 30, y: 13), modifierFlags: [], timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
+    }
+    source.mouseEntered(with: try hover(.mouseEntered))
+    #expect(!window.isMovable)
+    source.mouseExited(with: try hover(.mouseExited))
+    #expect(window.isMovable)
+    source.mouseEntered(with: try hover(.mouseEntered))
+    source.removeFromSuperview()
+    #expect(window.isMovable)
+
+    func press(_ type: NSEvent.EventType) throws -> NSEvent {
+        try #require(
+            NSEvent.mouseEvent(
+                with: type, location: NSPoint(x: 30, y: 13), modifierFlags: [], timestamp: 0, windowNumber: 0,
+                context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+    }
+    var pending = [try press(.leftMouseUp)]
+    source.follow(try press(.leftMouseDown)) { pending.popLast() }
+    #expect(selections == 1)
+}
+
 @Test func shiftReturnCreatesANewlineAndPlainReturnSends() {
     #expect(ComposerReturnPolicy.sendsMessage(shiftPressed: false))
     #expect(!ComposerReturnPolicy.sendsMessage(shiftPressed: true))

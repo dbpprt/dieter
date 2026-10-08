@@ -348,15 +348,123 @@ struct BoardLabelSegment: View {
                     Text("\(count)").foregroundStyle(DieterTheme.tertiary).monospacedDigit()
                 }
             }
-            .draggable(BoardLabelDragPayload(labelID: label.id, boardID: boardID).encoded) {
-                BoardLabelDragPreview(label: label)
-            }
         }
         .buttonStyle(DieterSegmentStyle(selected: selected))
-        .help("Click to filter · Drag onto a card to assign")
+        .overlay {
+            BoardLabelDragSource(
+                payload: BoardLabelDragPayload(labelID: label.id, boardID: boardID).encoded,
+                help: "Click to filter · Drag onto a card to assign",
+                preview: { [label] in BoardLabelDragPreview(label: label) },
+                select: select)
+        }
         .accessibilityLabel("\(label.name), \(count) cards")
         .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityHint("Click to filter. Drag onto a card to assign this label.")
+    }
+}
+
+/// The top bar sits in the window's title-bar strip, which the window server
+/// drags as part of the title bar: a press that moves never reaches the app.
+/// While the pointer is over a label segment this layer makes the window
+/// immovable, so the press arrives here; it then starts the label drag itself
+/// or forwards a click to the segment.
+struct BoardLabelDragSource<Preview: View>: NSViewRepresentable {
+    let payload: String
+    let help: String
+    let preview: () -> Preview
+    let select: () -> Void
+
+    func makeNSView(context: Context) -> BoardLabelDragSourceView { BoardLabelDragSourceView() }
+
+    func updateNSView(_ view: BoardLabelDragSourceView, context: Context) {
+        view.payload = payload
+        view.toolTip = help
+        view.select = select
+        let preview = preview
+        view.renderPreview = { scale in
+            let renderer = ImageRenderer(content: preview())
+            renderer.scale = scale
+            return renderer.nsImage
+        }
+    }
+}
+
+final class BoardLabelDragSourceView: NSView, NSDraggingSource {
+    var payload = ""
+    var select: () -> Void = {}
+    var renderPreview: (CGFloat) -> NSImage? = { _ in nil }
+    private var hoverArea: NSTrackingArea?
+    /// The window's movability before the pointer entered, restored on exit.
+    private var heldMovable: Bool?
+
+    override var mouseDownCanMoveWindow: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(
+            rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+        addTrackingArea(area)
+        hoverArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        guard let window, heldMovable == nil else { return }
+        heldMovable = window.isMovable
+        window.isMovable = false
+    }
+
+    override func mouseExited(with event: NSEvent) { releaseWindow() }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        releaseWindow()
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    private func releaseWindow() {
+        if let heldMovable { window?.isMovable = heldMovable }
+        heldMovable = nil
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        follow(event) { [weak self] in self?.window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) }
+    }
+
+    /// Follows one press: moving past the threshold starts the label drag, and
+    /// a release inside the segment selects it.
+    func follow(_ press: NSEvent, next: () -> NSEvent?) {
+        while let event = next() {
+            if event.type == .leftMouseUp {
+                if bounds.contains(convert(event.locationInWindow, from: nil)) { select() }
+                return
+            }
+            let from = press.locationInWindow, to = event.locationInWindow
+            if hypot(to.x - from.x, to.y - from.y) >= 3 {
+                beginLabelDrag(from: press)
+                return
+            }
+        }
+    }
+
+    private func beginLabelDrag(from press: NSEvent) {
+        let item = NSPasteboardItem()
+        item.setString(payload, forType: .string)
+        let draggingItem = NSDraggingItem(pasteboardWriter: item)
+        let image = renderPreview(window?.backingScaleFactor ?? 2) ?? NSImage(size: bounds.size)
+        let anchor = convert(press.locationInWindow, from: nil)
+        draggingItem.setDraggingFrame(
+            NSRect(
+                x: anchor.x - image.size.width / 2, y: anchor.y - image.size.height / 2,
+                width: image.size.width, height: image.size.height),
+            contents: image)
+        beginDraggingSession(with: [draggingItem], event: press, source: self)
+    }
+
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext)
+        -> NSDragOperation
+    {
+        context == .withinApplication ? [.copy, .move, .generic] : []
     }
 }
 

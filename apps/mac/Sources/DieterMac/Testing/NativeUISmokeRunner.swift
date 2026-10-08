@@ -325,14 +325,14 @@
                     NativeUIAccessibility.find("board.settings.name", in: window) != nil
                 }
                 try? await DieterTaskSleep.milliseconds(400)
-                let routingClicked = NativeUIAccessibility.selectSegment(
-                    1, identifier: "board.settings.sections", in: window)
+                let routingClicked = NativeUIAccessibility.click(
+                    "board.settings.sections", in: window, horizontalFraction: 0.75)
                 let routingVisible = await waitUntil(timeout: 5) {
                     NativeUIAccessibility.find("board.hostnames", in: window) != nil
                 }
                 try? await DieterTaskSleep.milliseconds(300)
-                let generalClicked = NativeUIAccessibility.selectSegment(
-                    0, identifier: "board.settings.sections", in: window)
+                let generalClicked = NativeUIAccessibility.click(
+                    "board.settings.sections", in: window, horizontalFraction: 0.25)
                 let returned = await waitUntil(timeout: 5) {
                     NativeUIAccessibility.find("board.settings.name", in: window) != nil
                 }
@@ -1974,8 +1974,8 @@
                 UserDefaults.standard.set(260.0, forKey: filePaneWidthKey)
                 _ = await waitUntil(timeout: 5) { abs((defaultRich?.bounds.width ?? 0) - originalEditorWidth) < 2 }
 
-                let selectedSource = NativeUIAccessibility.selectSegment(
-                    1, identifier: "files.markdown.layout", in: window)
+                let selectedSource = NativeUIAccessibility.click(
+                    "files.markdown.layout", in: window, horizontalFraction: 0.75)
                 let sourceReady = await waitUntil(timeout: 5) {
                     guard let controller = markdownSplitController(in: window.contentView) else { return false }
                     return controller.layout == .source && controller.splitViewItems[1].isCollapsed
@@ -2009,21 +2009,22 @@
                 results["files-markdown-source-undo"] =
                     edited && undone && redone ? "passed" : "failed: native Source undo/redo lost the shared draft"
                 window.makeFirstResponder(nil)
-                let selectedEdit = NativeUIAccessibility.selectSegment(
-                    0, identifier: "files.markdown.layout", in: window)
+                let selectedEdit = NativeUIAccessibility.click(
+                    "files.markdown.layout", in: window, horizontalFraction: 0.25)
                 let richRestored = await waitUntil(timeout: 5) {
                     controller.layout == .preview && controller.splitViewItems[0].isCollapsed
                         && nativeRichTextView(in: window.contentView) === defaultRich
                         && defaultRich?.string == expected && store.filesModel.fileEditorSession.isDirty
                 }
-                let sourceAgain = NativeUIAccessibility.selectSegment(
-                    1, identifier: "files.markdown.layout", in: window)
+                let sourceAgain = NativeUIAccessibility.click(
+                    "files.markdown.layout", in: window, horizontalFraction: 0.75)
                 let sourceRetained = await waitUntil(timeout: 5) {
                     controller.layout == .source
                         && nativeTextViews(in: controller.sourceHost).contains { $0 === editor }
                         && editor.string == expected && editor.undoManager?.canUndo == true
                 }
-                let editAgain = NativeUIAccessibility.selectSegment(0, identifier: "files.markdown.layout", in: window)
+                let editAgain = NativeUIAccessibility.click(
+                    "files.markdown.layout", in: window, horizontalFraction: 0.25)
                 let editRetained = await waitUntil(timeout: 5) {
                     defaultRich?.isEditable == true && defaultRich?.string == expected && controller.layout == .preview
                 }

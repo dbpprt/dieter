@@ -304,13 +304,11 @@ struct MenuBarContent: View {
             Divider().overlay(DieterTheme.border)
             HStack(spacing: 10) {
                 MenuBarActionButton(
-                    title: store.phase.isConnected ? "Disconnect" : "Connect",
-                    tint: store.phase.isConnected ? DieterTheme.coral : DieterTheme.text,
-                    background: DieterTheme.tileHover,
+                    title: store.phase.isConnected ? "Disconnect" : "Connect", destructive: store.phase.isConnected
                 ) {
                     if store.phase.isConnected { store.disconnect() } else { Task { await store.connect() } }
                 }
-                MenuBarActionButton(title: "Open Dieter", tint: .white, background: DieterTheme.primary) {
+                MenuBarActionButton(title: "Open Dieter", prominent: true) {
                     openWindow(id: "workspace")
                     NSApp.activate(ignoringOtherApps: true)
                 }
@@ -531,20 +529,14 @@ private struct MenuBarChip: View {
 
 private struct MenuBarActionButton: View {
     let title: String
-    let tint: Color
-    let background: Color
+    var prominent = false
+    var destructive = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(maxWidth: .infinity)
-                .frame(height: 34)
-                .background(background, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .contentShape(Rectangle())
+            Text(title).frame(maxWidth: .infinity)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(DieterBarButtonStyle(prominent: prominent, destructive: destructive))
     }
 }

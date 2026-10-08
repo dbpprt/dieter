@@ -63,7 +63,7 @@ struct NewConversationSheet: View {
                             } label: {
                                 Label("Attach files…", systemImage: "paperclip")
                             }
-                            .buttonStyle(.bordered).controlSize(.small)
+                            .buttonStyle(DieterBarButtonStyle(size: 26))
                             .help("Attach files, or drop files and paste images into the task")
                             .accessibilityIdentifier("new-card.attach")
                             .smokeTarget("new-card.attach")
@@ -81,7 +81,8 @@ struct NewConversationSheet: View {
                         LabeledContent("Run on") {
                             ProjectCheckoutMenu(
                                 projectID: project.id,
-                                accessibilityIdentifier: "new-card.machine"
+                                accessibilityIdentifier: "new-card.machine",
+                                size: 28
                             )
                         }
                     }
@@ -100,7 +101,7 @@ struct NewConversationSheet: View {
                         .labelsHidden()
                         .accessibilityIdentifier("new-card.workspace-mode")
                         Button("Options…") { workspacePickerPresented = true }
-                            .controlSize(.small)
+                            .buttonStyle(DieterBarButtonStyle(size: 26))
                             .accessibilityIdentifier("new-card.workspace")
                             .smokeTarget("new-card.workspace")
                             .help("Configure the branch, base and publishing options")
@@ -133,18 +134,19 @@ struct NewConversationSheet: View {
                         LabeledContent("Labels") {
                             DieterFlowLayout(horizontalSpacing: 8, verticalSpacing: 8) {
                                 ForEach(labels, id: \.id) { label in
+                                    let tint = Color(hex: label.color) ?? .accentColor
+                                    let selected = form.intent.labelIds.contains(label.id)
                                     Toggle(
                                         isOn: Binding(
                                             get: { form.intent.labelIds.contains(label.id) },
                                             set: { form.setLabel(label.id, selected: $0) })
                                     ) {
                                         HStack(spacing: 5) {
-                                            Circle().fill(Color(hex: label.color) ?? .accentColor)
-                                                .frame(width: 6, height: 6)
+                                            Circle().fill(selected ? Color.white : tint).frame(width: 6, height: 6)
                                             Text(label.name)
                                         }
                                     }
-                                    .toggleStyle(.button).controlSize(.small)
+                                    .toggleStyle(DieterChipToggleStyle(tint: tint, size: 24))
                                     .accessibilityIdentifier("new-card.label.\(label.id)")
                                 }
                             }
@@ -170,14 +172,14 @@ struct NewConversationSheet: View {
                 Spacer(minLength: 8)
                 if submitting { ProgressView().controlSize(.small) }
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(DieterGlassButtonStyle())
+                    .buttonStyle(DieterBarButtonStyle())
                     .keyboardShortcut(.cancelAction)
                     .disabled(submitting)
                     .accessibilityIdentifier("new-card.cancel")
                 Button(preview.defersStart ? "Save to \(selectedLane?.name ?? "board")" : "Start task") {
                     Task { await submit() }
                 }
-                .buttonStyle(DieterGlassButtonStyle(prominent: true))
+                .buttonStyle(DieterBarButtonStyle(prominent: true))
                 .keyboardShortcut(.return, modifiers: .command)
                 .help("\(preview.defersStart ? "Save card" : "Start task") (⌘Return)")
                 .disabled(!canSubmit)
@@ -232,7 +234,7 @@ struct NewConversationSheet: View {
             .scrollContentBackground(.hidden)
             .padding(6)
             .frame(height: 96)
-            .background(.background, in: RoundedRectangle(cornerRadius: 6))
+            .dieterInset(radius: 6)
             .overlay(alignment: .topLeading) {
                 if form.intent.prompt.isEmpty {
                     Text("Describe the outcome, context, and anything the agent should know…")
@@ -243,11 +245,8 @@ struct NewConversationSheet: View {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(
-                        attachmentDropTargeted || focusedField == .prompt
-                            ? Color.accentColor : Color(nsColor: .separatorColor),
-                        lineWidth: attachmentDropTargeted || focusedField == .prompt ? 1.5 : 1
-                    )
+                    .strokeBorder(Color.accentColor, lineWidth: 1.5)
+                    .opacity(attachmentDropTargeted || focusedField == .prompt ? 1 : 0)
                     .allowsHitTesting(false)
             }
             .accessibilityLabel("Initial task")

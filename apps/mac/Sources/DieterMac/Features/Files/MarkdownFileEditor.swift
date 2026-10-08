@@ -13,6 +13,8 @@ enum MarkdownFileEditorMode: String, CaseIterable {
     var symbol: String {
         self == .edit ? "square.and.pencil" : layout.symbol
     }
+    /// The mode picker's fixed width; its two segments split it evenly.
+    static let pickerWidth: CGFloat = 200
 }
 
 /// Rich text and source share one document buffer. Retaining both native hosts
@@ -48,24 +50,21 @@ struct MarkdownFileEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Picker("Markdown mode", selection: $mode) {
-                    ForEach(MarkdownFileEditorMode.allCases, id: \.self) { option in
-                        Label(option.title, systemImage: option.symbol).tag(option)
-                    }
+                DieterSegmentedPicker(
+                    title: "Markdown mode", selection: $mode, options: MarkdownFileEditorMode.allCases,
+                    fillsWidth: true
+                ) { option in
+                    Label(option.title, systemImage: option.symbol)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
+                .frame(width: MarkdownFileEditorMode.pickerWidth)
                 .accessibilityIdentifier("files.markdown.layout")
                 .smokeTarget("files.markdown.layout")
                 .smokeTarget("files.markdown.layout.\(documentKey)")
                 Spacer(minLength: 0)
             }
-            .controlSize(.small)
             .padding(.horizontal, 12)
             .frame(height: 38)
-            .background(DieterTheme.sidebar)
-            .overlay(alignment: .bottom) { Divider() }
+            .overlay(alignment: .bottom) { Rectangle().fill(DieterTheme.hairline).frame(height: 1) }
             MarkdownEditorSplitView(
                 source: AnyView(sourcePane.environment(\.colorScheme, colorScheme)),
                 preview: AnyView(richTextPane.environment(\.colorScheme, colorScheme)), layout: layout,

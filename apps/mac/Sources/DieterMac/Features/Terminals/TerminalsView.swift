@@ -123,38 +123,37 @@ struct TerminalsView: View {
 
     private var terminalTabs: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                ForEach(visibleEntries) { entry in
-                    TerminalTab(
-                        terminal: entry.terminal,
-                        row: entry.row,
-                        machineID: entry.machineID,
-                        machineName: entry.machineName,
-                        selected: entry.id == selectedEntryID,
-                        select: {
-                            if model.terminalScopeCardID == nil {
-                                Task { await store.terminalOverview.selectTerminalOverviewEntry(entry.id) }
-                            } else {
-                                model.selectTerminal(entry.terminal.id)
-                            }
-                        },
-                        close: { closeCandidate = entry }
-                    )
+            HStack(spacing: 8) {
+                DieterSegmentTrack {
+                    ForEach(visibleEntries) { entry in
+                        TerminalTab(
+                            terminal: entry.terminal,
+                            row: entry.row,
+                            machineID: entry.machineID,
+                            machineName: entry.machineName,
+                            selected: entry.id == selectedEntryID,
+                            select: {
+                                if model.terminalScopeCardID == nil {
+                                    Task { await store.terminalOverview.selectTerminalOverviewEntry(entry.id) }
+                                } else {
+                                    model.selectTerminal(entry.terminal.id)
+                                }
+                            },
+                            close: { closeCandidate = entry }
+                        )
+                    }
                 }
                 Button {
                     model.createTerminalPresented = true
                 } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 10, weight: .semibold))
-                        .frame(width: 38, height: 38)
+                    Image(systemName: "plus").font(.system(size: 10, weight: .semibold))
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(DieterTheme.tertiary)
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 26))
                 .help("New terminal")
             }
+            .padding(.horizontal, 10)
         }
-        .padding(.horizontal, 6)
-        .frame(height: 42)
+        .frame(height: 44)
     }
 
     private var selectedEntryID: String? {
@@ -214,12 +213,11 @@ struct TerminalsView: View {
                                 machineID: model.target.endpointID, machineName: model.machineName, terminal: terminal)
                     }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .frame(width: 22, height: 18)
+                    DieterMenuLabel(symbol: "ellipsis", size: 24)
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
+                .dieterMenuChrome(.circle)
+                .help("Terminal actions")
+                .accessibilityLabel("Terminal actions")
             }
             .font(.system(size: 10, design: .monospaced))
             .foregroundStyle(DieterTheme.tertiary)
@@ -265,57 +263,50 @@ private struct TerminalTab: View {
     let selected: Bool
     let select: () -> Void
     let close: () -> Void
-    @State private var hovering = false
+    @State private var closeHovering = false
 
     var body: some View {
-        HStack(spacing: 7) {
-            Button(action: select) {
-                HStack(spacing: 7) {
-                    Circle()
-                        .fill(row.running ? DieterTheme.running : DieterTheme.tertiary)
-                        .frame(width: 6, height: 6)
-                    Text(terminal.name)
-                        .font(.system(size: 11, weight: selected ? .semibold : .medium))
-                        .lineLimit(1)
-                    Text(machineName)
+        Button(action: select) {
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(row.running ? DieterTheme.running : DieterTheme.tertiary)
+                    .frame(width: 6, height: 6)
+                Text(terminal.name)
+                Text(machineName)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(DieterTheme.subtle)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(DieterTheme.tileHover, in: Capsule())
+                    .accessibilityIdentifier("terminal.node.\(machineID)")
+                    .smokeTarget("terminal.node.\(machineID).\(terminal.id)")
+                if !row.running {
+                    Text(row.status)
                         .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(DieterTheme.subtle)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(DieterTheme.tileHover, in: Capsule())
-                        .accessibilityIdentifier("terminal.node.\(machineID)")
-                        .smokeTarget("terminal.node.\(machineID).\(terminal.id)")
-                    if !row.running {
-                        Text(row.status)
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundStyle(DieterTheme.tertiary)
-                    }
+                        .foregroundStyle(DieterTheme.tertiary)
                 }
-                .frame(minWidth: 120, maxWidth: 210, alignment: .leading)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(terminal.name), \(machineName)")
-            .accessibilityIdentifier("terminal.select.\(machineID).\(terminal.id)")
-
+            .frame(minWidth: 120, maxWidth: 210, alignment: .leading)
+            // Room for the close button, which sits inside the segment's trailing edge.
+            .padding(.trailing, 14)
+        }
+        .buttonStyle(DieterSegmentStyle(selected: selected))
+        .accessibilityLabel("\(terminal.name), \(machineName)")
+        .accessibilityIdentifier("terminal.select.\(machineID).\(terminal.id)")
+        .overlay(alignment: .trailing) {
             Button(action: close) {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .semibold))
                     .frame(width: 16, height: 16)
-                    .background(hovering ? DieterTheme.tileHover : Color.clear, in: Circle())
+                    .background(closeHovering ? DieterTheme.text.opacity(0.1) : Color.clear, in: Circle())
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .foregroundStyle(DieterTheme.tertiary)
+            .onHover { closeHovering = $0 }
             .help("Close terminal")
+            .padding(.trailing, 7)
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 7)
-        .frame(height: 30)
-        .background(
-            selected ? DieterTheme.segmentThumb : (hovering ? DieterTheme.tileHover : Color.clear), in: Capsule()
-        )
-        .overlay(alignment: .trailing) { Rectangle().fill(DieterTheme.border).frame(width: 1) }
-        .onHover { hovering = $0 }
         .contextMenu {
             Button("Close terminal…", role: .destructive, action: close)
         }
@@ -426,8 +417,7 @@ private struct NewTerminalSheet: View {
                 }
                 .padding(.horizontal, 12)
                 .frame(maxWidth: .infinity, minHeight: 44)
-                .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(DieterTheme.strongBorder))
+                .dieterInset()
 
                 if machineHome {
                     terminalFieldLabel("Machine")
@@ -447,8 +437,7 @@ private struct NewTerminalSheet: View {
                     }
                     .padding(.horizontal, 12)
                     .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(DieterTheme.strongBorder))
+                    .dieterInset()
                 } else if !destinationDetail.isEmpty {
                     HStack(spacing: 9) {
                         Image(systemName: "desktopcomputer")
@@ -478,13 +467,10 @@ private struct NewTerminalSheet: View {
 
                     VStack(alignment: .leading, spacing: 7) {
                         terminalFieldLabel("Shell")
-                        Picker("Shell", selection: $shell) {
-                            Text("zsh").tag("zsh")
-                            Text("bash").tag("bash")
-                            Text("fish").tag("fish")
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.segmented)
+                        DieterSegmentedPicker(
+                            "Shell", selection: $shell, options: ["zsh", "bash", "fish"], fillsWidth: true,
+                            optionTitle: { $0 }
+                        )
                         .frame(height: 38)
                         .accessibilityIdentifier("new-terminal.shell")
                     }
@@ -538,7 +524,7 @@ private struct NewTerminalSheet: View {
             HStack(spacing: 10) {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(DieterBarButtonStyle(size: 30))
+                    .buttonStyle(DieterBarButtonStyle())
                     .keyboardShortcut(.cancelAction)
                 Button {
                     creating = true
@@ -563,7 +549,7 @@ private struct NewTerminalSheet: View {
                         Text("Open terminal")
                     }
                 }
-                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
+                .buttonStyle(DieterBarButtonStyle(prominent: true))
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canCreate)
                 .accessibilityIdentifier("new-terminal.create")

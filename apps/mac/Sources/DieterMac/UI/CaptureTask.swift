@@ -297,7 +297,7 @@ struct CapturedTaskDraftView: View {
                     screenshotInspector: true, screenshotInspectorWide: geometry.size.width >= 800)
             }
         }
-        .dieterGlass(.regular, in: Rectangle())
+        .dieterPanel(radius: 0, shadow: false)
         .onChange(of: presented) { _, value in if !value { dismiss() } }
     }
 }

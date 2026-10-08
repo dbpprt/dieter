@@ -26,7 +26,9 @@ struct LoadFeedback: View {
                 .font(DieterFont.meta)
                 .foregroundStyle(DieterTheme.subtle)
                 .fixedSize(horizontal: false, vertical: true)
-            if error != nil, let retry { Button("Retry", action: retry).controlSize(.small) }
+            if error != nil, let retry {
+                Button("Retry", action: retry).buttonStyle(DieterBarButtonStyle(size: 26))
+            }
         }
         .padding(compact ? 8 : 20)
         .frame(maxWidth: compact ? nil : .infinity, maxHeight: compact ? nil : .infinity)

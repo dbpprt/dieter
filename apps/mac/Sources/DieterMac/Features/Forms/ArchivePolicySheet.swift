@@ -26,11 +26,9 @@ struct ArchivePolicySheet: View {
                 Spacer()
             }.padding(24)
 
-            Picker("Settings section", selection: $selectedTab) {
-                Text("General").tag("general")
-                Text("Browser routing").tag("routing")
-            }
-            .pickerStyle(.segmented)
+            DieterSegmentedPicker(
+                "Settings section", selection: $selectedTab, options: ["general", "routing"], fillsWidth: true
+            ) { $0 == "general" ? "General" : "Browser routing" }
             .accessibilityIdentifier("board.settings.sections")
             .smokeTarget("board.settings.sections")
             .padding(.horizontal, 24)
@@ -76,7 +74,7 @@ struct ArchivePolicySheet: View {
                                 .scrollContentBackground(.hidden)
                                 .padding(8)
                                 .frame(minHeight: 140)
-                                .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                                .dieterInset(radius: 8)
                                 .accessibilityIdentifier("board.hostnames")
                                 .smokeTarget("board.hostnames")
                             Text(
@@ -96,11 +94,11 @@ struct ArchivePolicySheet: View {
             }
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }.buttonStyle(DieterGlassButtonStyle()).disabled(saving)
+                Button("Cancel") { dismiss() }.buttonStyle(DieterBarButtonStyle()).disabled(saving)
                     .keyboardShortcut(.cancelAction)
                     .smokeTarget("board.settings.cancel")
                 Button(saving ? "Saving…" : "Save changes") { Task { await save() } }
-                    .buttonStyle(DieterGlassButtonStyle(prominent: true))
+                    .buttonStyle(DieterBarButtonStyle(prominent: true))
                     .keyboardShortcut(.defaultAction)
                     .disabled(
                         saving || boardName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

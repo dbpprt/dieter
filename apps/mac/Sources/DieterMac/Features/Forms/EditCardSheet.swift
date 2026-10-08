@@ -102,14 +102,13 @@ struct EditCardSheet: View {
                         .textFieldStyle(.plain).font(.system(size: 15, weight: .medium))
                         .focused($focusedField, equals: .title)
                         .padding(.horizontal, 14).frame(height: 46)
-                        .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10).stroke(
-                                focusedField == .title
-                                    ? DieterTheme.shellDeep.opacity(0.85) : DieterTheme.strongBorder,
-                                lineWidth: focusedField == .title ? 2 : 1
-                            )
-                        )
+                        .dieterInset(radius: 10)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 10)
+                                .strokeBorder(DieterTheme.shellDeep.opacity(0.85), lineWidth: 2)
+                                .opacity(focusedField == .title ? 1 : 0)
+                                .allowsHitTesting(false)
+                        }
                         .accessibilityIdentifier("edit-card.title")
 
                     Text("Agent task")
@@ -120,14 +119,13 @@ struct EditCardSheet: View {
                         .focused($focusedField, equals: .task)
                         .padding(10)
                         .frame(height: 190)
-                        .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10).stroke(
-                                focusedField == .task
-                                    ? DieterTheme.shellDeep.opacity(0.85) : DieterTheme.strongBorder,
-                                lineWidth: focusedField == .task ? 2 : 1
-                            )
-                        )
+                        .dieterInset(radius: 10)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 10)
+                                .strokeBorder(DieterTheme.shellDeep.opacity(0.85), lineWidth: 2)
+                                .opacity(focusedField == .task ? 1 : 0)
+                                .allowsHitTesting(false)
+                        }
                         .accessibilityIdentifier("edit-card.task")
 
                     Divider().overlay(DieterTheme.border)
@@ -140,10 +138,11 @@ struct EditCardSheet: View {
                     Text("Agent workspace")
                         .font(.system(size: 12, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
                     if card.workspace.revision.isEmpty {
-                        Picker("Workspace", selection: $workspaceDraft.mode) {
-                            ForEach(ConversationWorkspaceMode.allCases) { mode in Text(mode.title).tag(mode) }
+                        LabeledContent("Workspace") {
+                            DieterSegmentedPicker(
+                                "Workspace", selection: $workspaceDraft.mode,
+                                options: ConversationWorkspaceMode.allCases, optionTitle: { $0.title })
                         }
-                        .pickerStyle(.menu)
                         .foregroundStyle(DieterTheme.text)
                         if workspaceDraft.mode == .worktree {
                             HStack {
@@ -153,13 +152,13 @@ struct EditCardSheet: View {
                             .textFieldStyle(.plain)
                             .padding(8)
                             .foregroundStyle(DieterTheme.text)
-                            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 6))
+                            .dieterInset(radius: 6)
                         }
                         TextField("Base remote", text: $workspaceDraft.baseRemote)
                             .textFieldStyle(.plain)
                             .padding(8)
                             .foregroundStyle(DieterTheme.text)
-                            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 6))
+                            .dieterInset(radius: 6)
                         Picker("Publishing", selection: $workspaceDraft.remotePublishMode) {
                             ForEach(AdminChoices.options.publishModes, id: \.id) { mode in Text(mode.title).tag(mode.id)
                             }

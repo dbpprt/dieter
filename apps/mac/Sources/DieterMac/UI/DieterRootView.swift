@@ -442,12 +442,9 @@ struct AppSidebar: View {
             Button {
                 store.sidebarCollapsed = true
             } label: {
-                Image(systemName: "sidebar.left").font(.system(size: 12.5, weight: .regular))
-                    .foregroundStyle(DieterTheme.subtle)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
+                Image(systemName: "sidebar.left").font(.system(size: 13, weight: .medium))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
             .help("Hide sidebar (⌃⌘S)")
             .accessibilityLabel("Hide sidebar")
             .accessibilityIdentifier("sidebar.hide")
@@ -624,17 +621,10 @@ struct AppSidebar: View {
             Button {
                 store.openSettings()
             } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(store.section == .settings ? DieterTheme.text : DieterTheme.subtle)
-                    .frame(width: 30, height: 30)
-                    .background(
-                        store.section == .settings ? DieterTheme.tileSelected : .clear,
-                        in: RoundedRectangle(cornerRadius: DieterMetrics.rowRadius, style: .continuous)
-                    )
-                    .contentShape(Rectangle())
+                Image(systemName: "gearshape").font(.system(size: 13, weight: .medium))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(DieterBarButtonStyle(shape: .circle, prominent: store.section == .settings, size: 28))
+            .accessibilityAddTraits(store.section == .settings ? .isSelected : [])
             .help("Settings (⌘,)")
             .accessibilityLabel("Settings")
             .accessibilityIdentifier("sidebar.settings").smokeTarget("sidebar.settings")
@@ -860,11 +850,9 @@ private struct SidebarProjectFolderGroup<Content: View>: View {
                         Divider()
                         Button("Delete folder", systemImage: "trash", role: .destructive, action: delete)
                     } label: {
-                        Image(systemName: "ellipsis").frame(width: 18, height: 20)
+                        DieterMenuLabel(symbol: "ellipsis", size: 24)
                     }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
+                    .dieterMenuChrome(.circle)
                     .help("Folder options")
                 }
             }
@@ -1103,7 +1091,7 @@ private struct SidebarProjectTabs: View {
     private var current: Bool { store.selectedProjectID == project.id }
 
     var body: some View {
-        HStack(spacing: 1) {
+        HStack(spacing: 2) {
             if let board {
                 tab(
                     "Board", symbol: "rectangle.split.3x1", selected: current && store.section == .board,
@@ -1145,8 +1133,8 @@ private struct SidebarProjectTabs: View {
             .disabled(projectIsUnavailable)
             .opacity(projectIsUnavailable ? 0.42 : 1)
         }
-        .padding(2)
-        .background(DieterTheme.inset, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(3)
+        .dieterControlChrome(RoundedRectangle(cornerRadius: 12, style: .continuous), interactive: false)
     }
 
     private func tab(
@@ -1159,21 +1147,48 @@ private struct SidebarProjectTabs: View {
                     .minimumScaleFactor(0.8)
                     .fixedSize(horizontal: true, vertical: false)
             }
-            .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
-            .frame(maxWidth: .infinity, minHeight: 40)
-            .background {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(selected ? DieterTheme.segmentThumb : .clear)
-                    .shadow(color: .black.opacity(selected && !DieterTheme.isDark ? 0.08 : 0), radius: 1.5, y: 0.5)
-            }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SidebarProjectTabStyle(selected: selected))
         .help(title)
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier(id)
         .smokeTarget(id)
+    }
+}
+
+/// A vertical segment in the project tab track: the glass segment thumb
+/// behind a symbol over its title.
+private struct SidebarProjectTabStyle: ButtonStyle {
+    let selected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        SidebarProjectTabBody(label: configuration.label, selected: selected, pressed: configuration.isPressed)
+    }
+}
+
+private struct SidebarProjectTabBody<Label: View>: View {
+    let label: Label
+    let selected: Bool
+    let pressed: Bool
+    @State private var hovering = false
+
+    var body: some View {
+        label
+            .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
+            .frame(maxWidth: .infinity, minHeight: 40)
+            .background {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(
+                        selected
+                            ? DieterTheme.segmentThumb
+                            : (hovering || pressed ? DieterTheme.tileHover : Color.clear)
+                    )
+                    .shadow(color: .black.opacity(selected && !DieterTheme.isDark ? 0.08 : 0), radius: 1.5, y: 0.5)
+            }
+            .contentShape(Rectangle())
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: selected)
     }
 }
 
@@ -1518,8 +1533,8 @@ struct ConnectionOverlay: View {
                         VStack(spacing: 8) {
                             Text("Sign in to \(store.activeGateway.name) to discover its enrolled machines.")
                                 .font(.caption).foregroundStyle(DieterTheme.subtle)
-                            Button("Sign in with GitHub") { Task { await store.signIn() } }.buttonStyle(
-                                .borderedProminent)
+                            Button("Sign in with GitHub") { Task { await store.signIn() } }
+                                .buttonStyle(DieterBarButtonStyle(prominent: true))
                         }
                     }
 
@@ -1541,7 +1556,9 @@ struct ConnectionOverlay: View {
                                     Task { await store.saveEndpoint(gateway) }
                                     address = ""
                                 }
-                            }.disabled(MachineEndpoint(address: address, name: "") == nil)
+                            }
+                            .buttonStyle(DieterBarButtonStyle(size: 28))
+                            .disabled(MachineEndpoint(address: address, name: "") == nil)
                         }.padding(.top, 8)
                     }
                     .font(.caption)

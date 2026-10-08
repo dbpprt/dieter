@@ -9,11 +9,10 @@ private struct ProviderQuotaCompactAccount: Identifiable {
     var id: String { "\(provider.rawValue):\(account.accountKey)" }
 }
 
+/// The sidebar's quota meters, one row per included account.
 struct ProviderQuotaCompactView: View {
     @Environment(DieterStore.self) private var store
     @State private var presented = false
-    var embeddedInToolbar = false
-    var embeddedInSidebar = false
 
     private var groups: [ClientQuotaGroupRow] {
         store.quotas.providerQuotaRows.filter { !$0.accounts.isEmpty }
@@ -34,19 +33,12 @@ struct ProviderQuotaCompactView: View {
             } label: {
                 Group {
                     if groups.isEmpty {
-                        ProgressView()
-                            .controlSize(.mini)
-                            .providerQuotaCompactChrome(
-                                embeddedInToolbar: embeddedInToolbar,
-                                embeddedInSidebar: embeddedInSidebar)
+                        ProgressView().controlSize(.mini)
                     } else if accounts.isEmpty {
                         Label("Quotas", systemImage: "gauge.with.dots.needle.0percent")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(DieterTheme.tertiary)
-                            .providerQuotaCompactChrome(
-                                embeddedInToolbar: embeddedInToolbar,
-                                embeddedInSidebar: embeddedInSidebar)
-                    } else if embeddedInSidebar {
+                    } else {
                         VStack(alignment: .leading, spacing: 4) {
                             ForEach(accounts) { item in
                                 ProviderQuotaAccountCompactLabel(
@@ -58,25 +50,9 @@ struct ProviderQuotaCompactView: View {
                             }
                         }
                         .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        HStack(alignment: .center, spacing: embeddedInToolbar ? 10 : 6) {
-                            ForEach(accounts) { item in
-                                ProviderQuotaAccountCompactLabel(
-                                    provider: item.provider,
-                                    account: item.account
-                                )
-                                .providerQuotaCompactChrome(
-                                    embeddedInToolbar: embeddedInToolbar,
-                                    embeddedInSidebar: false)
-                            }
-                        }
                     }
                 }
-                .frame(
-                    maxWidth: embeddedInSidebar ? .infinity : nil,
-                    minHeight: 30,
-                    alignment: embeddedInSidebar ? .leading : .center)
+                .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Global provider quotas by account")
@@ -113,7 +89,7 @@ struct ProviderQuotaSidebarBlock: View {
             }
             .padding(.horizontal, 8).frame(height: 22)
             if hasAccounts {
-                ProviderQuotaCompactView(embeddedInSidebar: true)
+                ProviderQuotaCompactView()
                     .padding(.horizontal, 8)
             } else {
                 Button {
@@ -143,42 +119,6 @@ struct ProviderQuotaSidebarBlock: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("sidebar.provider-quotas")
-    }
-}
-
-private struct ProviderQuotaCompactChrome: ViewModifier {
-    let embeddedInToolbar: Bool
-    let embeddedInSidebar: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .padding(.horizontal, embeddedInSidebar ? 0 : embeddedInToolbar ? 4 : 8)
-            .frame(
-                maxWidth: embeddedInSidebar ? .infinity : nil,
-                minHeight: 24,
-                alignment: embeddedInSidebar ? .leading : .center
-            )
-            .background {
-                if !embeddedInToolbar && !embeddedInSidebar {
-                    RoundedRectangle(cornerRadius: embeddedInSidebar ? 7 : 12, style: .continuous)
-                        .fill(DieterTheme.tile)
-                }
-            }
-            .overlay {
-                if !embeddedInToolbar && !embeddedInSidebar {
-                    RoundedRectangle(cornerRadius: embeddedInSidebar ? 7 : 12, style: .continuous)
-                        .stroke(DieterTheme.tileRim)
-                }
-            }
-    }
-}
-
-private extension View {
-    func providerQuotaCompactChrome(embeddedInToolbar: Bool, embeddedInSidebar: Bool = false) -> some View {
-        modifier(
-            ProviderQuotaCompactChrome(
-                embeddedInToolbar: embeddedInToolbar,
-                embeddedInSidebar: embeddedInSidebar))
     }
 }
 
@@ -260,6 +200,7 @@ struct ProviderQuotaDetailsView: View {
                         Label("Refresh", systemImage: "arrow.clockwise")
                     }
                 }
+                .buttonStyle(DieterBarButtonStyle(size: 28))
                 .disabled(store.quotas.providerQuotasLoading)
                 .accessibilityIdentifier("provider-quotas.refresh")
                 .smokeTarget("provider-quotas.refresh")
@@ -421,8 +362,7 @@ struct ProviderQuotaDetailsView: View {
             .accessibilityIdentifier("provider-quotas.include.\(account.accountKey)")
             if account.canReset {
                 Button("Use reset credit…") { resetConfirmationAccountKey = account.accountKey }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .buttonStyle(DieterBarButtonStyle(size: 26))
                     .disabled(store.quotas.providerQuotaMutatingAccounts.contains(account.accountKey))
                     .accessibilityIdentifier("provider-quotas.reset.\(account.accountKey)")
             }

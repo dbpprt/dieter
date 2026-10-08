@@ -101,10 +101,12 @@ struct ConversationWorkspacePickerSheet: View {
             HStack(spacing: 10) {
                 Spacer()
                 Button("Cancel") { dismiss() }
+                    .buttonStyle(DieterBarButtonStyle())
                     .keyboardShortcut(.cancelAction)
                     .accessibilityIdentifier("workspace.close")
                     .smokeTarget("workspace.close")
                 Button("Done") { applySelection() }
+                    .buttonStyle(DieterBarButtonStyle(prominent: true))
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("workspace.confirm")
                     .smokeTarget("workspace.confirm")

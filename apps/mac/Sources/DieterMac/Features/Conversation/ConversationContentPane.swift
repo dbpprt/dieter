@@ -494,14 +494,16 @@ private struct ConversationWorkspaceTabView: View {
             }
             if tab.files.conflict {
                 Button("Reload") { Task { await tab.files.reloadDocument() } }
-                    .controlSize(.small).disabled(tab.files.saving || !active || !tab.files.isLive)
+                    .buttonStyle(DieterBarButtonStyle(size: 28))
+                    .disabled(tab.files.saving || !active || !tab.files.isLive)
                     .help("Replace your edits with the version on disk")
                     .accessibilityIdentifier("conversation.content.reload").smokeTarget("conversation.content.reload")
             }
             if tab.dirty {
                 Button("Save") { Task { await tab.files.saveCurrentDocument() } }
                     .keyboardShortcut("s", modifiers: .command)
-                    .controlSize(.small).disabled(tab.files.saving || !active || !tab.files.isLive)
+                    .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28))
+                    .disabled(tab.files.saving || !active || !tab.files.isLive)
                     .accessibilityIdentifier("conversation.content.save").smokeTarget("conversation.content.save")
             }
             Button {
@@ -509,7 +511,7 @@ private struct ConversationWorkspaceTabView: View {
             } label: {
                 Image(systemName: "sidebar.right")
             }
-            .buttonStyle(.borderless).help("Toggle file navigator")
+            .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Toggle file navigator")
             .accessibilityIdentifier("conversation.content.files.toggle")
             .smokeTarget("conversation.content.files.toggle")
         }

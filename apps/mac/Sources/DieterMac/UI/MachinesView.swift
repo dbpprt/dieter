@@ -179,7 +179,7 @@ struct MachinePopover: View {
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
             .disabled(!store.machineIsAvailable(machine) || store.fleet.machineInformationLoading)
             .help("Refresh machine information")
             .accessibilityIdentifier("machine.refresh")
@@ -195,10 +195,9 @@ struct MachinePopover: View {
                     if operation.action == .updateDaemon { Divider() }
                 }
             } label: {
-                Label("Actions", systemImage: "ellipsis.circle")
+                DieterMenuLabel(title: "Actions", symbol: "ellipsis.circle", size: 28)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+            .dieterMenuChrome()
             .disabled(store.fleet.machineOperationInFlight)
             .help("Machine operations")
             .accessibilityIdentifier("machine.actions")
@@ -209,7 +208,7 @@ struct MachinePopover: View {
             } label: {
                 Image(systemName: "xmark")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
             .help("Close machine information")
             .accessibilityIdentifier("machine.close")
         }
@@ -468,9 +467,7 @@ struct MachinePopover: View {
             Button("Open terminals", systemImage: "terminal") {
                 Task { await store.openTerminals(on: machine) }
             }
-            .buttonStyle(.plain)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(DieterTheme.text)
+            .buttonStyle(DieterBarButtonStyle(size: 28))
             .disabled(!store.machineIsAvailable(machine))
             .accessibilityIdentifier("machine.open-terminals")
         }
@@ -494,7 +491,7 @@ struct MachinePopover: View {
             .multilineTextAlignment(.center)
             if machine.online {
                 Button("Try again") { Task { await store.fleet.refreshSelectedMachineInformation() } }
-                    .buttonStyle(.bordered).controlSize(.small)
+                    .buttonStyle(DieterBarButtonStyle(size: 28))
             }
         }
         .frame(maxWidth: .infinity, minHeight: 220)

@@ -218,11 +218,9 @@ struct WorkspaceChangesView: View {
             Menu {
                 operationMenu
             } label: {
-                Image(systemName: "ellipsis")
+                DieterMenuLabel(symbol: "ellipsis", size: 28)
             }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().buttonStyle(
-                DieterBarButtonStyle(shape: .circle, size: 28)
-            )
+            .dieterMenuChrome(.circle)
             .help("Workspace actions")
             Button {
                 Task { await model.loadWorkspaceSurface() }
@@ -415,9 +413,8 @@ struct WorkspaceChangesView: View {
             Image(systemName: "exclamationmark.circle.fill").foregroundStyle(DieterTheme.amber)
             Text(error).font(DieterFont.meta).foregroundStyle(DieterTheme.subtle).lineLimit(2)
             Spacer()
-            Button("Retry") { Task { await model.loadWorkspaceSurface() } }.buttonStyle(.plain)
-                .foregroundStyle(
-                    DieterTheme.shell)
+            Button("Retry") { Task { await model.loadWorkspaceSurface() } }
+                .buttonStyle(DieterBarButtonStyle(size: 26))
         }
         .padding(.horizontal, 14).frame(minHeight: 34).background(DieterTheme.amber.opacity(0.08))
     }
@@ -469,25 +466,23 @@ struct WorkspaceChangesView: View {
         if compact {
             VStack(spacing: 0) {
                 HStack(spacing: 4) {
-                    ForEach(WorkspaceCompactPane.allCases) { pane in
-                        Button {
-                            compactPane = pane
-                        } label: {
-                            HStack(spacing: 5) {
-                                Text(pane.rawValue)
-                                if pane == .files {
-                                    Text("\((changes?.files.count ?? 0) + (changes?.commits.count ?? 0))")
-                                        .foregroundStyle(DieterTheme.tertiary)
+                    DieterSegmentTrack(height: 28) {
+                        ForEach(WorkspaceCompactPane.allCases) { pane in
+                            Button {
+                                compactPane = pane
+                            } label: {
+                                HStack(spacing: 5) {
+                                    Text(pane.rawValue)
+                                    if pane == .files {
+                                        Text("\((changes?.files.count ?? 0) + (changes?.commits.count ?? 0))")
+                                            .foregroundStyle(DieterTheme.tertiary)
+                                    }
                                 }
                             }
-                            .font(.system(size: 11, weight: compactPane == pane ? .semibold : .medium))
-                            .padding(.horizontal, 10).frame(height: 27)
-                            .background(
-                                compactPane == pane ? DieterTheme.segmentThumb : .clear,
-                                in: Capsule())
+                            .buttonStyle(DieterSegmentStyle(selected: compactPane == pane, height: 22))
                         }
-                        .buttonStyle(.plain)
                     }
+                    .fixedSize()
                     Spacer()
                     if compactPane == .diff, !model.selectedChangePath.isEmpty {
                         Text(ClientChangedFileLabel.of(model.selectedChangePath).filename)
@@ -550,9 +545,8 @@ struct WorkspaceChangesView: View {
                         Text("GitHub")
                         Image(systemName: "arrow.up.right").font(.system(size: 8, weight: .bold))
                     }
-                    .font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.shell)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(DieterBarButtonStyle(size: 24))
                 .help("View on GitHub")
             }
             if !pr.signals.isEmpty || pr.number > 0 {
@@ -601,9 +595,9 @@ struct WorkspaceChangesView: View {
                 Button {
                     operationKind = .refreshPullRequest
                 } label: {
-                    Image(systemName: "arrow.clockwise").font(.system(size: 9, weight: .semibold))
+                    Image(systemName: "arrow.clockwise")
                 }
-                .buttonStyle(.plain).foregroundStyle(DieterTheme.tertiary)
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 24))
                 .disabled(!availability.allows(.refreshPullRequest))
                 .help("Refresh pull request state")
             }
@@ -675,8 +669,7 @@ struct WorkspaceChangesView: View {
                         NSPasteboard.general.setString(
                             commits.map(\.sha).joined(separator: "\n"), forType: .string)
                     }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 9, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
+                    .buttonStyle(DieterBarButtonStyle(size: 24))
                     .help("Copy every commit SHA")
                 }
                 .padding(.horizontal, 11).frame(height: 30)
@@ -835,18 +828,10 @@ struct WorkspaceChangesView: View {
             HStack(spacing: 5) {
                 Image(systemName: viewed ? "checkmark.square.fill" : "square")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(viewed ? DieterTheme.diffAddition : DieterTheme.tertiary)
-                Text("Viewed").font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(viewed ? DieterTheme.text : DieterTheme.subtle)
+                Text("Viewed")
             }
-            .padding(.horizontal, 8).frame(height: 26)
-            .background(
-                viewed ? DieterTheme.tileSelected : DieterTheme.tile,
-                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-            )
-            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(DieterTheme.tileRim))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(DieterBarButtonStyle(prominent: viewed, tint: DieterTheme.running, size: 28))
         .help(viewed ? "Mark as not viewed" : "Mark as viewed and jump to the next file")
         .accessibilityIdentifier("changes.viewed-toggle")
     }

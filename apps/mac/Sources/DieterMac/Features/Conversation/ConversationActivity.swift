@@ -167,7 +167,7 @@ struct SubagentsView: View {
                         } label: {
                             Label("Stop all", systemImage: "stop.fill")
                         }
-                        .buttonStyle(.bordered).tint(DieterTheme.coral)
+                        .buttonStyle(DieterBarButtonStyle(destructive: true, size: 28))
                     }
                 }.padding(.bottom, 4)
 

@@ -51,13 +51,10 @@ struct NewProjectSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 17) {
                     if existingProjectID.isEmpty {
-                        Picker("Project type", selection: $draft.mode) {
-                            ForEach(ProjectSetupMode.allCases) { mode in
-                                Text(mode.title).tag(mode)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
+                        DieterSegmentedPicker(
+                            "Project type", selection: $draft.mode, options: ProjectSetupMode.allCases,
+                            fillsWidth: true, optionTitle: { $0.title }
+                        )
                         .accessibilityIdentifier("new-project.mode")
                     }
 
@@ -101,10 +98,10 @@ struct NewProjectSheet: View {
                                 DieterTheme.tertiary)
                         }
                         .foregroundStyle(DieterTheme.subtle).padding(.horizontal, 13).frame(height: 48)
-                        .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
-                        .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.strongBorder))
+                        .contentShape(RoundedRectangle(cornerRadius: 9))
+                        .dieterInset(radius: 9)
                     }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
                     Text(
                         "The repository path and every agent process belong to this host. This placement choice does not filter the combined workspace."
                     )
@@ -168,10 +165,10 @@ struct NewProjectSheet: View {
                                     }
                                     .font(.system(size: 13, weight: .medium)).foregroundStyle(DieterTheme.subtle)
                                     .padding(.horizontal, 12).frame(height: 40)
-                                    .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
-                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.strongBorder))
+                                    .contentShape(RoundedRectangle(cornerRadius: 8))
+                                    .dieterInset(radius: 8)
                                 }
-                                .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
                                 .accessibilityIdentifier("new-project.workflow")
                             }
                         }
@@ -215,8 +212,7 @@ struct NewProjectSheet: View {
                             .font(.system(size: 13)).lineSpacing(3).lineLimit(1...5)
                             .padding(.horizontal, 12).padding(.vertical, 13)
                             .frame(height: 105)
-                            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
-                            .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.strongBorder))
+                            .dieterInset(radius: 9)
                             .accessibilityIdentifier("new-project.instructions")
                         Text("Stored centrally and included in every new card conversation for this project.")
                             .font(.caption2).foregroundStyle(DieterTheme.tertiary)
@@ -347,7 +343,6 @@ struct NewProjectSheet: View {
         TextField(placeholder, text: text)
             .textFieldStyle(.plain).font(.system(size: 13))
             .padding(.horizontal, 12).frame(height: 40)
-            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.strongBorder))
+            .dieterInset(radius: 8)
     }
 }

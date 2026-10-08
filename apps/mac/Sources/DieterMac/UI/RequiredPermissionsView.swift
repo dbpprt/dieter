@@ -37,15 +37,18 @@ struct RequiredPermissionsView: View {
                 )
                 .font(.callout).foregroundStyle(DieterTheme.subtle)
                 if let error = permissions.settingsError { Text(error).foregroundStyle(.red) }
-                HStack {
+                HStack(spacing: 8) {
                     Button("Check Again") { permissions.refresh() }
+                        .buttonStyle(DieterBarButtonStyle())
                         .accessibilityIdentifier("permissions.check")
                         .smokeTarget("permissions.check")
                     Spacer()
                     Button("Skip for Now") { permissions.skipSetup() }
+                        .buttonStyle(DieterBarButtonStyle())
                         .accessibilityIdentifier("permissions.skip")
                         .smokeTarget("permissions.skip")
                     Button("Quit Dieter") { NSApp.terminate(nil) }
+                        .buttonStyle(DieterBarButtonStyle())
                 }
                 Text(
                     "Sharing this Mac through its daemon requires separate permission for the daemon. On that Mac, run dieter daemon permissions for guided setup."
@@ -74,7 +77,7 @@ struct RequiredPermissionsView: View {
                     Text("Granted").font(.callout).foregroundStyle(.green)
                 } else {
                     Button("Grant \(permission.title)…") { permissions.grant(permission) }
-                        .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
+                        .buttonStyle(DieterBarButtonStyle(prominent: true))
                         .accessibilityIdentifier("permissions.grant.\(permission.rawValue)")
                         .smokeTarget("permissions.grant.\(permission.rawValue)")
                 }
@@ -82,7 +85,6 @@ struct RequiredPermissionsView: View {
             Spacer(minLength: 0)
         }
         .padding(20)
-        .background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(DieterTheme.border, lineWidth: 1))
+        .dieterTile(radius: 14)
     }
 }

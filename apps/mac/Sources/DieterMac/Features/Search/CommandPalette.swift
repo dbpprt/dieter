@@ -124,7 +124,7 @@ struct CommandPalette: View {
             }.font(.system(size: 10)).foregroundStyle(.secondary).padding(12)
         }
         .frame(width: 600, height: 430)
-        .dieterGlass(.regular, in: RoundedRectangle(cornerRadius: 22))
+        .dieterPanel(radius: 22)
         .presentationBackground(.clear)
         .background(SheetOutsideClickDismissal(enabled: true) { dismiss() })
         .task(id: "\(catalogRevision)|\(query)") { await search() }

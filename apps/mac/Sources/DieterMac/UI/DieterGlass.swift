@@ -138,6 +138,11 @@ extension View {
     func dieterCircleChrome(prominent: Bool = false, tint: Color? = nil) -> some View {
         modifier(DieterControlChrome(shape: Circle(), prominent: prominent, prominentTint: tint))
     }
+
+    /// Control chrome in any outline, for tracks that hold more than one line.
+    func dieterControlChrome<S: InsettableShape>(_ shape: S, interactive: Bool = true) -> some View {
+        modifier(DieterControlChrome(shape: shape, interactive: interactive))
+    }
 }
 
 /// A floating row of glass controls sharing one sampling region.
@@ -248,19 +253,37 @@ struct DieterBarButtonStyle: ButtonStyle {
     var size: CGFloat = DieterMetrics.capsuleHeight
 
     func makeBody(configuration: Configuration) -> some View {
-        let label = configuration.label
-            .font(.system(size: size < 30 ? 11 : 12.5, weight: prominent ? .semibold : .medium))
-            .foregroundStyle(prominent ? Color.white : (destructive ? DieterTheme.failed : DieterTheme.text))
+        DieterBarButtonBody(style: self, label: configuration.label, pressed: configuration.isPressed)
+    }
+}
+
+private struct DieterBarButtonBody<Label: View>: View {
+    @Environment(\.isEnabled) private var isEnabled
+    let style: DieterBarButtonStyle
+    let label: Label
+    let pressed: Bool
+
+    var body: some View {
+        let size = style.size
+        let content =
+            label
+            .font(.system(size: size < 30 ? 11 : 12.5, weight: style.prominent ? .semibold : .medium))
+            .foregroundStyle(
+                style.prominent ? Color.white : (style.destructive ? DieterTheme.failed : DieterTheme.text)
+            )
             .lineLimit(1)
-            .padding(.horizontal, shape == .circle ? 0 : (size < 30 ? 10 : 13))
-            .frame(width: shape == .circle ? size : nil, height: size)
-            .opacity(configuration.isPressed ? 0.72 : 1)
-        switch shape {
-        case .capsule:
-            label.contentShape(Capsule()).dieterCapsuleChrome(prominent: prominent, tint: tint)
-        case .circle:
-            label.contentShape(Circle()).dieterCircleChrome(prominent: prominent, tint: tint)
+            .padding(.horizontal, style.shape == .circle ? 0 : (size < 30 ? 10 : 13))
+            .frame(width: style.shape == .circle ? size : nil, height: size)
+            .opacity(pressed ? 0.72 : 1)
+        Group {
+            switch style.shape {
+            case .capsule:
+                content.contentShape(Capsule()).dieterCapsuleChrome(prominent: style.prominent, tint: style.tint)
+            case .circle:
+                content.contentShape(Circle()).dieterCircleChrome(prominent: style.prominent, tint: style.tint)
+            }
         }
+        .opacity(isEnabled ? 1 : 0.45)
     }
 }
 
@@ -312,6 +335,117 @@ struct DieterSearchCapsule: View {
         .help("Search and commands (⌘K)")
         .accessibilityLabel("Search and commands")
         .accessibilityIdentifier("workspace.search")
+    }
+}
+
+/// A `Menu` label sized like a bar button: an icon circle, or a capsule with
+/// an optional symbol, a title and a chevron. Pair it with `dieterMenuChrome`.
+struct DieterMenuLabel: View {
+    var title: String?
+    var symbol: String?
+    var showsChevron = true
+    var size: CGFloat = DieterMetrics.capsuleHeight
+
+    var body: some View {
+        Group {
+            if let title {
+                HStack(spacing: 6) {
+                    if let symbol { Image(systemName: symbol).font(.system(size: 11, weight: .semibold)) }
+                    Text(title).lineLimit(1)
+                    if showsChevron {
+                        Image(systemName: "chevron.down").font(.system(size: 8.5, weight: .bold))
+                            .foregroundStyle(DieterTheme.tertiary)
+                    }
+                }
+                .font(.system(size: size < 30 ? 11 : 12.5, weight: .medium))
+                .padding(.horizontal, size < 30 ? 10 : 13)
+                .frame(height: size)
+                .contentShape(Capsule())
+            } else {
+                Image(systemName: symbol ?? "ellipsis")
+                    .font(.system(size: size < 30 ? 11 : 12.5, weight: .semibold))
+                    .frame(width: size, height: size)
+                    .contentShape(Circle())
+            }
+        }
+        .foregroundStyle(DieterTheme.text)
+    }
+}
+
+/// Glass chrome for a `Menu` whose label is sized like a bar button.
+private struct DieterMenuChromeModifier: ViewModifier {
+    let shape: DieterBarButtonStyle.Outline
+    let prominent: Bool
+
+    func body(content: Content) -> some View {
+        let menu = content.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+        switch shape {
+        case .capsule: menu.dieterCapsuleChrome(prominent: prominent)
+        case .circle: menu.dieterCircleChrome(prominent: prominent)
+        }
+    }
+}
+
+extension View {
+    /// Turns a `Menu` into a glass bar control; size its label with `DieterMenuLabel`.
+    func dieterMenuChrome(_ shape: DieterBarButtonStyle.Outline = .capsule, prominent: Bool = false) -> some View {
+        modifier(DieterMenuChromeModifier(shape: shape, prominent: prominent))
+    }
+}
+
+/// The glass replacement for `.pickerStyle(.segmented)`: one capsule track
+/// with a lighter thumb on the selected option.
+struct DieterSegmentedPicker<Value: Hashable, Label: View>: View {
+    let title: String
+    @Binding var selection: Value
+    let options: [Value]
+    var fillsWidth = false
+    var height: CGFloat = DieterMetrics.segmentHeight
+    @ViewBuilder var label: (Value) -> Label
+
+    var body: some View {
+        DieterSegmentTrack(height: height, fillsWidth: fillsWidth) {
+            ForEach(options, id: \.self) { option in
+                Button {
+                    selection = option
+                } label: {
+                    label(option)
+                }
+                .buttonStyle(
+                    DieterSegmentStyle(selected: option == selection, fillsWidth: fillsWidth, height: height - 6)
+                )
+                .accessibilityAddTraits(option == selection ? .isSelected : [])
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(title)
+    }
+}
+
+extension DieterSegmentedPicker where Label == Text {
+    init(
+        _ title: String, selection: Binding<Value>, options: [Value], fillsWidth: Bool = false,
+        height: CGFloat = DieterMetrics.segmentHeight, optionTitle: @escaping (Value) -> String
+    ) {
+        self.init(
+            title: title, selection: selection, options: options, fillsWidth: fillsWidth, height: height,
+            label: { Text(optionTitle($0)) })
+    }
+}
+
+/// A toggle drawn as a glass capsule chip, filled with its tint while on.
+struct DieterChipToggleStyle: ToggleStyle {
+    var tint: Color?
+    var size: CGFloat = 26
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            configuration.label
+        }
+        .buttonStyle(DieterBarButtonStyle(prominent: configuration.isOn, tint: tint, size: size))
+        .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
     }
 }
 

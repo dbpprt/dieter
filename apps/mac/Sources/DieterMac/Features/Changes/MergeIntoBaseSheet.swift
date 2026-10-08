@@ -195,10 +195,11 @@ struct MergeIntoBaseSheet: View {
             VStack(alignment: .leading, spacing: 7) {
                 Text("STRATEGY").font(DieterFont.sectionLabel).tracking(0.45).foregroundStyle(
                     DieterTheme.tertiary)
-                Picker("Merge strategy", selection: $strategy) {
-                    ForEach(readiness.strategies, id: \.strategy) { Text($0.title).tag($0.strategy) }
-                }
-                .labelsHidden().pickerStyle(.segmented).disabled(running)
+                DieterSegmentedPicker(
+                    "Merge strategy", selection: $strategy, options: readiness.strategies.map(\.strategy),
+                    optionTitle: { value in readiness.strategies.first { $0.strategy == value }?.title ?? value }
+                )
+                .disabled(running)
                 Text(readiness.strategies.first { $0.strategy == strategy }?.caption ?? "")
                     .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                 Toggle("Validate the merge result", isOn: $validate)
@@ -264,8 +265,7 @@ struct MergeIntoBaseSheet: View {
                         Button("Open in editor") {
                             Task { await model.openWorkspaceFiles(card: card, opening: conflict.path) }
                         }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.shell)
+                        .buttonStyle(DieterBarButtonStyle(size: 26))
                     }
                 }
                 .padding(.horizontal, 11).frame(height: 38)
@@ -313,13 +313,13 @@ struct MergeIntoBaseSheet: View {
                     .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                 Spacer()
                 Button("Abort") { startOperationAndDismiss(.abortConflict) }
-                    .buttonStyle(DieterBarButtonStyle(destructive: true, size: 30))
+                    .buttonStyle(DieterBarButtonStyle(destructive: true))
                     .disabled(!availability.allows(.abortConflict))
                 Button("Continue after resolving") { startOperationAndDismiss(.continueConflict) }
-                    .buttonStyle(DieterBarButtonStyle(size: 30))
+                    .buttonStyle(DieterBarButtonStyle())
                     .disabled(!availability.allows(.continueConflict))
                 Button("Merge blocked") {}
-                    .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
+                    .buttonStyle(DieterBarButtonStyle(prominent: true))
                     .disabled(true).opacity(0.45)
             } else {
                 Text(availability.mergeDestination)
@@ -331,22 +331,22 @@ struct MergeIntoBaseSheet: View {
                     } label: {
                         Label("Update from \(baseBranch)", systemImage: "arrow.triangle.2.circlepath")
                     }
-                    .buttonStyle(DieterBarButtonStyle(size: 30))
+                    .buttonStyle(DieterBarButtonStyle())
                 }
                 if availability.allows(.createPullRequest) {
                     Button("Create PR instead…") {
                         dismiss()
                         onCreatePullRequestInstead()
                     }
-                    .buttonStyle(DieterBarButtonStyle(size: 30))
+                    .buttonStyle(DieterBarButtonStyle())
                 }
-                Button("Cancel") { dismiss() }.buttonStyle(DieterBarButtonStyle(size: 30))
+                Button("Cancel") { dismiss() }.buttonStyle(DieterBarButtonStyle())
                 Button {
                     startMerge()
                 } label: {
                     Label(readiness.mergeTitle, systemImage: "arrow.triangle.merge")
                 }
-                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
+                .buttonStyle(DieterBarButtonStyle(prominent: true))
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!canMerge)
                 .opacity(canMerge ? 1 : 0.5)

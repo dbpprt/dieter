@@ -21,10 +21,11 @@ struct NewBoardSheet: View {
             }
             TextField("Board name", text: $name)
             TextField("Description", text: $description)
-            Picker("Workflow", selection: $workflow) {
-                ForEach(AdminChoices.options.workflows, id: \.id) { option in Text(option.title).tag(option.id) }
+            LabeledContent("Workflow") {
+                DieterSegmentedPicker(
+                    "Workflow", selection: $workflow, options: AdminChoices.options.workflows.map(\.id),
+                    optionTitle: { AdminChoices.choice($0, in: AdminChoices.options.workflows)?.title ?? $0 })
             }
-            .pickerStyle(.segmented)
             Text(AdminChoices.choice(workflow, in: AdminChoices.options.workflows)?.lanes ?? "")
                 .font(.caption).foregroundStyle(.secondary)
             Picker("Archive Done conversations", selection: $doneArchivePolicy) {
@@ -38,7 +39,7 @@ struct NewBoardSheet: View {
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
+                Button("Cancel") { dismiss() }.buttonStyle(DieterBarButtonStyle())
                 Button("Create") {
                     Task {
                         await store.createBoard(
@@ -46,7 +47,7 @@ struct NewBoardSheet: View {
                             doneArchivePolicy: doneArchivePolicy, baseRemote: baseRemote,
                             remotePublishMode: remotePublishMode)
                     }
-                }.buttonStyle(.borderedProminent).disabled(
+                }.buttonStyle(DieterBarButtonStyle(prominent: true)).disabled(
                     name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }.padding(24).frame(width: 540)
@@ -71,9 +72,9 @@ struct RenameBoardSheet: View {
                     .onSubmit { rename(board.id) }
                 HStack {
                     Spacer()
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { dismiss() }.buttonStyle(DieterBarButtonStyle())
                     Button("Rename") { rename(board.id) }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(DieterBarButtonStyle(prominent: true))
                         .disabled(normalizedName.isEmpty || normalizedName == board.name)
                 }
             } else {
@@ -110,9 +111,9 @@ struct RenameProjectSheet: View {
                     .onSubmit { rename(project.id) }
                 HStack {
                     Spacer()
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { dismiss() }.buttonStyle(DieterBarButtonStyle())
                     Button("Rename") { rename(project.id) }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(DieterBarButtonStyle(prominent: true))
                         .disabled(normalizedName.isEmpty || normalizedName == project.name)
                 }
             } else {
@@ -148,8 +149,8 @@ struct RenameMachineSheet: View {
                 .onSubmit { save() }
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
-                Button("Rename") { save() }.buttonStyle(.borderedProminent)
+                Button("Cancel") { dismiss() }.buttonStyle(DieterBarButtonStyle())
+                Button("Rename") { save() }.buttonStyle(DieterBarButtonStyle(prominent: true))
                     .disabled(saving || normalized.isEmpty || normalized == machine.name)
             }
         }

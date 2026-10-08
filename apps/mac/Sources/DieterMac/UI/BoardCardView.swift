@@ -592,13 +592,14 @@ struct BoardCardContextMenu: ViewModifier {
                     HStack {
                         Spacer()
                         Button("Cancel") { renamePresented = false }
+                            .buttonStyle(DieterBarButtonStyle())
                             .smokeTarget("card-editor.cancel")
                         Button("Rename") {
                             Task {
                                 await store.rename(card, title: renameText)
                                 renamePresented = false
                             }
-                        }.buttonStyle(.borderedProminent).disabled(
+                        }.buttonStyle(DieterBarButtonStyle(prominent: true)).disabled(
                             renameText.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }.padding(22).frame(width: 440)

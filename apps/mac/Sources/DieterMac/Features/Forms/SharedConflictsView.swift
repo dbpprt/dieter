@@ -23,7 +23,12 @@ private struct SharedConflictsView: View {
     @State private var saving = false
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Resolve shared edits").font(.title2.weight(.semibold))
+                Spacer()
+            }
+            .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 8)
             List {
                 if !error.isEmpty { Text(error).foregroundStyle(.red) }
                 ForEach(records, id: \.id) { record in
@@ -37,14 +42,20 @@ private struct SharedConflictsView: View {
                                 Text(display(version)).textSelection(.enabled)
                                 Button(version.deleted ? "Keep deletion" : "Keep this value") {
                                     Task { await resolve(record, version) }
-                                }.disabled(saving)
+                                }
+                                .buttonStyle(DieterBarButtonStyle(size: 26))
+                                .disabled(saving)
                             }.padding(.vertical, 6)
                         }
                     }
                 }
             }
-            .navigationTitle("Resolve shared edits")
-            .toolbar { Button("Done") { dismiss() } }
+            .scrollContentBackground(.hidden)
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }.buttonStyle(DieterBarButtonStyle())
+            }
+            .padding(20)
         }.frame(width: 600, height: 500)
             .task { await load() }
     }

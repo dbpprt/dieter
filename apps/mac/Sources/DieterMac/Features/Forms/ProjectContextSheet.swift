@@ -14,15 +14,22 @@ struct ProjectContextSheet: View {
     @State private var confirmConsolidation = false
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Project context").font(.title2.weight(.semibold))
+                Spacer()
+            }
+            .padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 4)
+
             Form {
                 SharedConflictsButton(keys: store.selectedProject?.conflictKeys ?? [])
+                    .buttonStyle(DieterBarButtonStyle(size: 26))
                 ProjectContextFields(
                     name: $draft.name, summary: $draft.summary, prompt: $draft.prompt,
                     baseRemote: $draft.baseRemote, baseBranch: $draft.baseBranch,
                     validationCommands: $draft.validationCommands, workspacesPresented: $workspacesPresented)
                 Section("Checkouts & machines") {
-                    ProjectCheckoutMenu(projectID: store.selectedProjectID)
+                    ProjectCheckoutMenu(projectID: store.selectedProjectID, size: 28)
                     ForEach(store.selectedProject?.checkoutChoices ?? [], id: \.id) { checkout in
                         HStack {
                             VStack(alignment: .leading) {
@@ -33,6 +40,7 @@ struct ProjectContextSheet: View {
                             }
                             Spacer()
                             Button("Detach", role: .destructive) { Task { await store.detachCheckout(checkout) } }
+                                .buttonStyle(DieterBarButtonStyle(destructive: true, size: 26))
                         }
                     }
                     Text("Attach another checkout from Add project by choosing this existing project.").font(.caption)
@@ -51,17 +59,25 @@ struct ProjectContextSheet: View {
                     Text(
                         "Keep destination settings. Move all boards and checkout registrations into that project, preserving conversations and their machines."
                     ).font(.caption)
-                    Button("Consolidate…") { confirmConsolidation = true }.disabled(destinationID.isEmpty)
+                    Button("Consolidate…") { confirmConsolidation = true }
+                        .buttonStyle(DieterBarButtonStyle(size: 26)).disabled(destinationID.isEmpty)
                 }
-            }.formStyle(.grouped).navigationTitle("Project context")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { dismiss() }.smokeTarget("project.context.cancel")
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") { save() }.disabled(saving || !draft.isValid)
-                    }
-                }
+            }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
+
+            HStack(spacing: 10) {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(DieterBarButtonStyle())
+                    .keyboardShortcut(.cancelAction)
+                    .smokeTarget("project.context.cancel")
+                Button("Save") { save() }
+                    .buttonStyle(DieterBarButtonStyle(prominent: true))
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(saving || !draft.isValid)
+            }
+            .padding(20)
         }
         .confirmationDialog("Consolidate into the selected project?", isPresented: $confirmConsolidation) {
             Button("Consolidate") {
@@ -121,7 +137,7 @@ struct ProjectContextFields: View {
                     .scrollContentBackground(.hidden)
                     .padding(8)
                     .frame(height: 200)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                    .dieterInset(radius: 8)
             } header: {
                 Text("Agent instructions")
             } footer: {
@@ -151,6 +167,7 @@ struct ProjectContextFields: View {
                     Text("Workspace mode is selected independently when each chat or card is created.")
                         .font(.caption).foregroundStyle(.secondary)
                     Button("Manage existing workspaces…") { workspacesPresented = true }
+                        .buttonStyle(DieterBarButtonStyle(size: 26))
                 }
             }
             Section {
@@ -173,11 +190,13 @@ struct ProjectContextFields: View {
                                 Button("Remove command", role: .destructive) {
                                     validationCommands.removeAll { $0.id == command.id }
                                 }
+                                .buttonStyle(DieterBarButtonStyle(destructive: true, size: 26))
                             }
                             .padding(.top, 8)
                         }
                     }
                     Button("Add validation command", systemImage: "plus") { validationCommands.append(.init()) }
+                        .buttonStyle(DieterBarButtonStyle(size: 26))
                     Text(
                         "Validation runs directly inside the conversation workspace before merge when requested. Arguments are passed literally, one line per argument."
                     )
@@ -232,7 +251,7 @@ struct ProjectWorkspacesSheet: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }.buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
-                Button("Done") { dismiss() }
+                Button("Done") { dismiss() }.buttonStyle(DieterBarButtonStyle(size: 28))
             }
             .padding(18).background(DieterTheme.sidebar)
             if store.projectWorkspaces.isEmpty {
@@ -283,9 +302,9 @@ struct ProjectWorkspacesSheet: View {
                             }
                             .disabled(!workspace.canDiscard)
                         } label: {
-                            Image(systemName: "ellipsis.circle")
+                            DieterMenuLabel(symbol: "ellipsis", size: 26)
                         }
-                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                        .dieterMenuChrome(.circle)
                         .disabled(workspace.pending)
                     }
                     .padding(.vertical, 5)

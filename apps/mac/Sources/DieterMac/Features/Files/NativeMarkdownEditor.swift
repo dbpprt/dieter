@@ -26,10 +26,9 @@ struct NativeMarkdownEditor: View {
                         Button("Heading \(level)") { controls.send(.heading, level: level) }
                     }
                 } label: {
-                    Image(systemName: "textformat.size")
+                    DieterMenuLabel(symbol: "textformat.size", size: 26)
                 }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
+                .dieterMenuChrome(.circle)
                 .quickHelp("Heading")
                 Divider().frame(height: 16).padding(.horizontal, 4)
                 formatButton("Bulleted list", symbol: "list.bullet", command: .bullet)
@@ -38,8 +37,7 @@ struct NativeMarkdownEditor: View {
                 formatButton("Code block", symbol: "curlybraces", command: .code)
                 Spacer(minLength: 0)
             }
-            .buttonStyle(.borderless)
-            .controlSize(.small)
+            .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 26))
             .padding(.horizontal, 10)
             .frame(height: 34)
             .overlay(alignment: .bottom) { Divider() }
@@ -58,7 +56,7 @@ struct NativeMarkdownEditor: View {
         Button {
             controls.send(command)
         } label: {
-            Image(systemName: symbol).frame(width: 25, height: 26)
+            Image(systemName: symbol)
         }
         .quickHelp(label)
         .accessibilityLabel(label)

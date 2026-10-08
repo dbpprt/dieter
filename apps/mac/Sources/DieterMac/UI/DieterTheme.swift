@@ -544,80 +544,6 @@ enum DieterFont {
     static let monoSmall = Font.system(size: 10, design: .monospaced)
 }
 
-struct FluidPaneChrome<Primary: View, Secondary: View>: View {
-    let background: Color
-    let spacing: CGFloat
-    private let hasSecondary: Bool
-    let primary: Primary
-    let secondary: Secondary
-
-    init(
-        background: Color = .clear,
-        spacing: CGFloat = 10,
-        showsSecondary: Bool = true,
-        @ViewBuilder primary: () -> Primary,
-        @ViewBuilder secondary: () -> Secondary
-    ) {
-        self.background = background
-        self.spacing = spacing
-        hasSecondary = showsSecondary
-        self.primary = primary()
-        self.secondary = secondary()
-    }
-
-    init(
-        background: Color = .clear,
-        @ViewBuilder primary: () -> Primary
-    ) where Secondary == EmptyView {
-        self.background = background
-        spacing = 0
-        hasSecondary = false
-        self.primary = primary()
-        secondary = EmptyView()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: hasSecondary ? spacing : 0) {
-            primary.frame(maxWidth: .infinity, alignment: .leading)
-            if hasSecondary { secondary.frame(maxWidth: .infinity, alignment: .leading) }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, DieterMetrics.headerTopPadding)
-        .padding(.bottom, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(background)
-    }
-}
-
-struct PaneTitleBlock: View {
-    let title: String
-    var subtitle: String = ""
-    var symbol: String? = nil
-    var prominent = false
-    var annotation: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 7) {
-                Text(title)
-                    .font(prominent ? DieterFont.paneTitle : DieterFont.title)
-                    .lineLimit(1)
-                if let annotation {
-                    ExperimentalBadge(text: annotation)
-                }
-            }
-            if !subtitle.isEmpty {
-                Text(subtitle)
-                    .font(DieterFont.subtitle)
-                    .foregroundStyle(DieterTheme.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-        }
-        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-    }
-}
-
 struct DieterFlowLayout: Layout {
     var horizontalSpacing: CGFloat = 7
     var verticalSpacing: CGFloat = 7
@@ -705,23 +631,6 @@ struct StatusPill: View {
         .padding(.horizontal, 9).frame(height: 22)
         .background(color.opacity(0.14), in: Capsule())
         .fixedSize()
-    }
-}
-
-struct ExperimentalBadge: View {
-    var text = "Experimental"
-
-    var body: some View {
-        Text(text.uppercased())
-            .font(.system(size: 8, weight: .bold))
-            .tracking(0.35)
-            .foregroundStyle(DieterTheme.amber)
-            .padding(.horizontal, 6)
-            .frame(height: 16)
-            .background(DieterTheme.amber.opacity(0.12), in: Capsule())
-            .overlay(Capsule().stroke(DieterTheme.amber.opacity(0.22)))
-            .fixedSize()
-            .accessibilityLabel(text)
     }
 }
 

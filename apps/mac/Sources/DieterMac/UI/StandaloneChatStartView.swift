@@ -60,26 +60,29 @@ struct StandaloneChatStartView: View {
     private var preview: ClientCreationPreview { form.preview }
     var body: some View {
         VStack(spacing: 0) {
-            FluidPaneChrome(background: .clear, spacing: 8) {
-                HStack {
-                    PaneTitleBlock(
-                        title: "New chat",
-                        subtitle: destination.map {
-                            "\($0.project.name) on \($0.machineName) · Standalone chat"
-                        }
-                            ?? "Choose a machine and project · Standalone chat",
-                        symbol: "bubble.left"
-                    )
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text("New chat").font(.system(size: 15, weight: .semibold)).foregroundStyle(DieterTheme.text)
+                        .lineLimit(1)
                     StatusPill(text: "New")
+                    Spacer(minLength: 0)
                 }
-            } secondary: {
+                .frame(height: 44)
+                Text(
+                    destination.map { "\($0.project.name) on \($0.machineName) · Standalone chat" }
+                        ?? "Choose a machine and project · Standalone chat"
+                )
+                .font(.system(size: 11.5)).foregroundStyle(DieterTheme.tertiary)
+                .lineLimit(1).truncationMode(.middle)
                 HStack(spacing: 7) {
                     Image(systemName: "info.circle").foregroundStyle(DieterTheme.shell)
                     Text("Standalone chats stay in their project folder and never become board cards.")
-                    Spacer()
+                    Spacer(minLength: 0)
                 }
                 .font(.caption2).foregroundStyle(DieterTheme.tertiary)
             }
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Spacer(minLength: 24)
             VStack(spacing: 16) {
@@ -99,23 +102,7 @@ struct StandaloneChatStartView: View {
                 .lineSpacing(3)
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     ForEach(suggestions, id: \.0) { suggestion in
-                        Button {
-                            form.intent.prompt = suggestion.1
-                        } label: {
-                            HStack {
-                                Image(systemName: "sparkles").font(.system(size: 10)).foregroundStyle(
-                                    DieterTheme.shell)
-                                Text(suggestion.0).font(.system(size: 12, weight: .medium))
-                                Spacer()
-                            }
-                            .padding(.horizontal, 13).frame(height: 46)
-                            .background(
-                                DieterTheme.tile,
-                                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
-                        }.buttonStyle(.plain)
+                        StandaloneChatSuggestionTile(title: suggestion.0) { form.intent.prompt = suggestion.1 }
                     }
                 }.frame(maxWidth: 590)
             }
@@ -367,5 +354,26 @@ struct StandaloneChatStartView: View {
             form.attachments = []
         }
         submitting = false
+    }
+}
+
+private struct StandaloneChatSuggestionTile: View {
+    let title: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: "sparkles").font(.system(size: 10)).foregroundStyle(DieterTheme.shell)
+                Text(title).font(.system(size: 12, weight: .medium))
+                Spacer()
+            }
+            .padding(.horizontal, 13).frame(height: 46)
+            .dieterTile(DieterTileState(selected: false, hovering: hovering))
+            .contentShape(RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }

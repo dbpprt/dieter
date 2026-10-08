@@ -228,7 +228,8 @@ struct QuickTaskPopover: View {
                         } else {
                             ProjectCheckoutMenu(
                                 projectID: draftProjectID,
-                                accessibilityIdentifier: "quick-task.machine"
+                                accessibilityIdentifier: "quick-task.machine",
+                                size: 28
                             )
                         }
                     }
@@ -296,7 +297,7 @@ struct QuickTaskPopover: View {
                 } label: {
                     Label("Attach", systemImage: "paperclip")
                 }
-                .buttonStyle(DieterGlassButtonStyle())
+                .buttonStyle(DieterBarButtonStyle(size: 28))
                 .disabled(submitting || formDraft.attachmentImportID != nil)
                 .accessibilityIdentifier("quick-task.attach")
                 Text("Paste or drop screenshots · \(SharedRules.shared.attachmentLimits())")
@@ -363,7 +364,7 @@ struct QuickTaskPopover: View {
                     HStack {
                         Spacer()
                         Button("Done") { settingsPresented = false }
-                            .buttonStyle(DieterGlassButtonStyle())
+                            .buttonStyle(DieterBarButtonStyle())
                             .keyboardShortcut(.defaultAction)
                     }
                 }
@@ -376,7 +377,7 @@ struct QuickTaskPopover: View {
             HStack(spacing: 9) {
                 Button("Cancel") { isPresented = false }
                     .smokeTarget("quick-task.cancel")
-                    .buttonStyle(DieterGlassButtonStyle())
+                    .buttonStyle(DieterBarButtonStyle())
                 Spacer()
                 Button {
                     Task { await submit(runImmediately: false) }
@@ -390,7 +391,7 @@ struct QuickTaskPopover: View {
                         Text("Add task")
                     }
                 }
-                .buttonStyle(DieterGlassButtonStyle())
+                .buttonStyle(DieterBarButtonStyle())
                 .disabled(cannotSubmit)
                 .keyboardShortcut(.return, modifiers: [.command])
                 .accessibilityIdentifier("quick-task.create")
@@ -400,7 +401,7 @@ struct QuickTaskPopover: View {
                 } label: {
                     Label("Run task", systemImage: "play.fill")
                 }
-                .buttonStyle(DieterGlassButtonStyle(prominent: true))
+                .buttonStyle(DieterBarButtonStyle(prominent: true))
                 .disabled(cannotSubmit || runningLane == nil)
                 .keyboardShortcut(.return, modifiers: [.command, .shift])
                 .help("Create this task and start the agent immediately")
