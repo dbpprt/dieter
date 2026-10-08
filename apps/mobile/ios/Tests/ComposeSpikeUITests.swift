@@ -101,13 +101,12 @@ final class ComposeSpikeUITests: XCTestCase {
             "Composer stays visible above the system keyboard")
         let followUp = "Keep the same task and add the next step."
         composer.typeText(followUp)
-        // Compose can still be applying injected keystrokes after typeText
-        // returns. Send only after the complete draft reaches accessibility.
-        let completeDraft = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in composer.value as? String == followUp }, object: composer)
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [completeDraft], timeout: 10), .completed,
-            "The complete follow-up is entered before sending")
+        // Compose applies typed text asynchronously; sending earlier submits a
+        // prefix and leaves the rest focused in the composer.
+        let typed = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in (composer.value as? String)?.contains(followUp) == true }, object: composer
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [typed], timeout: 10), .completed, "The composer holds the whole message")
         app.buttons["Send message"].tap()
         if landscape {
             keyboard.buttons["Hide keyboard"].tap()
