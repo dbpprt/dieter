@@ -58,13 +58,13 @@ final class ComposeSpikeUITests: XCTestCase {
         XCTAssertTrue(title.waitForExistence(timeout: 10))
         title.tap(); title.typeText("A shared mobile conversation")
         let hideKeyboard = app.buttons["Hide keyboard"].firstMatch
-        XCTAssertTrue(hideKeyboard.isHittable, "Task header stays visible while editing the title")
+        XCTAssertTrue(waitForHittable(hideKeyboard), "Task header stays visible while editing the title")
         hideKeyboard.tap()
         let prompt = app.textViews.matching(NSPredicate(format: "label CONTAINS %@", "What should we do?")).firstMatch
         XCTAssertTrue(prompt.waitForExistence(timeout: 10))
         prompt.tap(); prompt.typeText("Explain how this task stays in one durable conversation.")
         capture("ios-new-task")
-        XCTAssertTrue(hideKeyboard.isHittable, "Task header stays visible while editing the prompt")
+        XCTAssertTrue(waitForHittable(hideKeyboard), "Task header stays visible while editing the prompt")
         hideKeyboard.tap()
         // The full legacy form includes agent, workspace and label sections.
         // Scroll its gutter so a multiline field cannot consume the gesture.
@@ -102,13 +102,13 @@ final class ComposeSpikeUITests: XCTestCase {
             XCTAssertTrue(keyboard.waitForNonExistence(timeout: 10))
         }
         // Match the complete selectable reply across accessibility traits after
-        // keyboard dismissal; its UIKit element type is not the assertion.
+        // keyboard dismissal, then wait for native hit-testing to settle.
         let followUpReply = app.descendants(matching: .any).matching(
             NSPredicate(format: "label == %@", "Mock harness received: Keep the same task and add the next step.")
         ).firstMatch
         XCTAssertTrue(
             followUpReply.waitForExistence(timeout: 30), "The follow-up reply appears in the same conversation")
-        XCTAssertTrue(followUpReply.isHittable, "The follow-up reply is visible")
+        XCTAssertTrue(waitForHittable(followUpReply), "The follow-up reply is visible")
         let review = app.buttons["Review"]
         XCTAssertTrue(review.waitForExistence(timeout: 60)); review.tap()
         app.buttons["Back to board"].tap()
@@ -157,6 +157,11 @@ final class ComposeSpikeUITests: XCTestCase {
     }
     private func element(_ app: XCUIApplication, containing text: String) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+    }
+    private func waitForHittable(_ element: XCUIElement) -> Bool {
+        let hittable = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in element.exists && element.isHittable }, object: element)
+        return XCTWaiter.wait(for: [hittable], timeout: 10) == .completed
     }
     private func assertRunningLane(_ app: XCUIApplication, landscape: Bool) {
         if landscape {
