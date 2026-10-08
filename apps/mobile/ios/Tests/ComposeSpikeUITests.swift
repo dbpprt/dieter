@@ -45,8 +45,10 @@ final class ComposeSpikeUITests: XCTestCase {
         press(cardMenu)
         XCTAssertTrue(app.buttons["Move to"].waitForExistence(timeout: 5), "Card actions open as a native menu")
         capture("ios-card-menu")
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
-        Thread.sleep(forTimeInterval: 0.6)
+        // Dismiss it on the navigation title, which has no action of its own; a tap on
+        // the content could land on the search field once the menu has closed.
+        app.navigationBars.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(waitFor { !app.buttons["Move to"].exists }, "The card menu closes")
         press(seededTask)
         XCTAssertTrue(element(app, containing: "Your board stays within reach").waitForExistence(timeout: 20))
         if landscape {
@@ -68,11 +70,14 @@ final class ComposeSpikeUITests: XCTestCase {
         app.buttons["chrome-new-task"].firstMatch.tap()
         let title = element(app, identifier: "task-title")
         XCTAssertTrue(title.waitForExistence(timeout: 10))
-        press(title)
+        focus(title)
         title.typeText("A shared mobile conversation")
         XCTAssertTrue(waitForValue(title, containing: "A shared mobile conversation"), "The title holds the typed text")
         let prompt = element(app, identifier: "task-prompt")
-        press(prompt)
+        // Return moves on to the prompt, which also scrolls it above the keyboard; on an iPad
+        // window the keyboard's shortcut bar can cover the prompt, so it is not tapped.
+        title.typeText("\n")
+        XCTAssertTrue(waitFor { self.hasKeyboardFocus(prompt) }, "Return in the title moves on to the prompt")
         let request = "Explain how this task stays in one durable conversation."
         prompt.typeText(request)
         // Compose applies typed text asynchronously; Start enables once the form holds it.
@@ -89,7 +94,7 @@ final class ComposeSpikeUITests: XCTestCase {
 
         let composer = element(app, identifier: "message-input")
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
-        press(composer)
+        focus(composer)
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
         XCTAssertTrue(
@@ -101,6 +106,13 @@ final class ComposeSpikeUITests: XCTestCase {
         XCTAssertTrue(waitForValue(composer, containing: followUp), "The composer holds the whole message")
         let send = element(app, identifier: "send-message")
         press(send)
+        if landscape {
+            // An iPad window can leave the transcript little room above the keyboard; hide it
+            // to read the reply. XCTest can keep reporting a hidden iPad keyboard, so the
+            // reply checks below decide.
+            let hide = keyboard.buttons["Hide keyboard"]
+            if hide.exists { hide.tap() }
+        }
         let followUpReply = element(app, containing: "Mock harness received: \(followUp)")
         XCTAssertTrue(
             followUpReply.waitForExistence(timeout: 90), "The follow-up reply appears in the same conversation")
@@ -212,16 +224,37 @@ final class ComposeSpikeUITests: XCTestCase {
     }
 
     /// Taps a Compose element where it is drawn. On iOS 26 XCTest's hit-test check can
-    /// resolve a nested Compose control to its container, although touches reach it.
+    /// resolve a nested Compose control to its container, although touches reach it. With
+    /// the keyboard up, the tap goes to the element's visible part above it.
     private func press(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(waitFor { self.hasFrame(element) }, "\(element) is on screen", file: file, line: line)
-        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let frame = element.frame
+        var y = frame.midY
+        let keyboard = XCUIApplication().keyboards.firstMatch
+        if hasFrame(keyboard) && keyboard.frame.height > 1 && y > keyboard.frame.minY - 8 {
+            y = max(frame.minY + 4, keyboard.frame.minY - 8)
+        }
+        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: (y - frame.minY) / frame.height)).tap()
     }
 
     /// Inside the window and fully above [bottom], e.g. a reply clear of the composer.
     private func isAbove(_ element: XCUIElement, _ bottom: XCUIElement, in app: XCUIApplication) -> Bool {
         hasFrame(element) && hasFrame(bottom) && element.frame.minY >= app.frame.minY
             && element.frame.maxY <= bottom.frame.minY + 1
+    }
+
+    /// Taps a Compose text field until it holds keyboard focus; Compose moves focus after
+    /// the touch, so typing straight away can reach the previously focused field.
+    private func focus(_ field: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        for _ in 0..<3 {
+            press(field, file: file, line: line)
+            if waitFor(timeout: 5, { self.hasKeyboardFocus(field) }) { return }
+        }
+        XCTFail("\(field) takes keyboard focus", file: file, line: line)
+    }
+
+    private func hasKeyboardFocus(_ field: XCUIElement) -> Bool {
+        (field.value(forKey: "hasKeyboardFocus") as? Bool) == true
     }
 
     private func waitForValue(_ element: XCUIElement, containing text: String) -> Bool {

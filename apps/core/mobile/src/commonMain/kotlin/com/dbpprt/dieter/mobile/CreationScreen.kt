@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -20,6 +22,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dbpprt.dieter.client.v1.*
@@ -104,6 +107,9 @@ internal fun CreationScreen(store: MobileStore, chat: Boolean) {
                                 contentDescription = if (chat) "Chat title" else "Task title"
                             },
                         singleLine = true,
+                        // Return moves on to the prompt, which then scrolls above the keyboard.
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        keyboardActions = KeyboardActions(onNext = { prompt.requestFocus() }),
                         textStyle = type.headline.copy(color = palette.label),
                         cursorBrush = SolidColor(if (apple) palette.info else colors.primary),
                         decorationBox = { inner ->
