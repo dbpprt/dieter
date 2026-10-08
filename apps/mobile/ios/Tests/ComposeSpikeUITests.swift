@@ -102,13 +102,10 @@ final class ComposeSpikeUITests: XCTestCase {
         app.buttons["Send message"].tap()
         if landscape {
             keyboard.buttons["Hide keyboard"].tap()
-            // iPad can retain a zero-height keyboard accessibility preview
-            // after dismissal. Require its visual frame to disappear.
-            let dismissedKeyboard = XCTNSPredicateExpectation(
-                predicate: NSPredicate { _, _ in !keyboard.exists || keyboard.frame.isEmpty }, object: keyboard)
-            XCTAssertEqual(
-                XCTWaiter.wait(for: [dismissedKeyboard], timeout: 10), .completed,
-                "The system keyboard is dismissed before checking the follow-up reply")
+            // iPadOS keeps a zero-height keyboard element after hiding it.
+            let hidden = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in !keyboard.exists || keyboard.frame.height < 1 }, object: keyboard)
+            XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 10), .completed, "The system keyboard hides")
         }
         // Match the complete selectable reply across accessibility traits after
         // keyboard dismissal, then wait for native hit-testing to settle.
