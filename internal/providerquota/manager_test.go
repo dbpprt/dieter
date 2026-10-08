@@ -2,8 +2,11 @@ package providerquota
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,6 +31,133 @@ func TestConfiguredCodexProfilesSupportsSeveralExplicitAccounts(t *testing.T) {
 	}
 	if got, want := len(profiles), 2; got != want {
 		t.Fatalf("profiles = %v, want %d distinct entries", profiles, want)
+	}
+}
+
+func TestClaudeDiscoveryAndRefreshShareFiveMinutePollingAndTenMinuteRecovery(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("DIETER_CLAUDE_ACCOUNT_HOMES", "")
+	t.Setenv("CODEX_HOME", t.TempDir())
+	t.Setenv("DIETER_CODEX_ACCOUNT_HOMES", "")
+	provider := gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE
+	key := make([]byte, 32)
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	now := start
+	manager := New(t.TempDir(), nil)
+	manager.now = func() time.Time { return now }
+	var calls int
+	fail := false
+	manager.readProbe = func(_ context.Context, got gatewayv1.ProviderQuotaProvider, _ string) (probeResult, error) {
+		if got != provider {
+			return probeResult{}, nil
+		}
+		calls++
+		if fail {
+			return probeResult{}, errors.New("provider throttled")
+		}
+		return probeResult{StableAccountID: "claude-account", Availability: "available"}, nil
+	}
+	discover := func() {
+		t.Helper()
+		if _, err := manager.Discover(context.Background(), key); err != nil {
+			t.Fatal(err)
+		}
+	}
+	discover()
+	accountKey := manager.ActiveAccountKey("claude-code")
+	if accountKey == "" {
+		t.Fatal("successful discovery must associate the active profile")
+	}
+	refresh := func() *gatewayv1.ProviderQuotaRefreshResult {
+		t.Helper()
+		result, err := manager.Refresh(context.Background(), key, &gatewayv1.ProviderQuotaRefreshRequest{Provider: provider, AccountKey: accountKey})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	for _, elapsed := range []time.Duration{time.Minute, 4*time.Minute + 59*time.Second} {
+		now = start.Add(elapsed)
+		discover()
+		if result := refresh(); result.GetSnapshot() == nil {
+			t.Fatalf("cached refresh = %v", result)
+		}
+		if got := manager.handles[accountKey].probedAt; !got.Equal(start) {
+			t.Fatalf("cached discovery moved probe time to %s", got)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("made %d provider calls inside the five-minute interval", calls)
+	}
+	now = start.Add(5 * time.Minute)
+	fail = true
+	discover()
+	if result := refresh(); result.GetErrorCode() != "temporarily_unavailable" || result.GetRetryAfterSeconds() != 600 {
+		t.Fatalf("failed refresh = %v", result)
+	}
+	if calls != 2 {
+		t.Fatalf("failed discovery and refresh made %d calls, want 2 total", calls)
+	}
+	if manager.ActiveAccountKey("claude-code") != accountKey {
+		t.Fatal("temporary failure lost the known account association")
+	}
+	now = start.Add(15*time.Minute - time.Second)
+	discover()
+	refresh()
+	if calls != 2 {
+		t.Fatalf("retried before the ten-minute cooldown: %d calls", calls)
+	}
+	now = start.Add(15 * time.Minute)
+	fail = false
+	discover()
+	if result := refresh(); result.GetSnapshot() == nil {
+		t.Fatalf("recovered refresh = %v", result)
+	}
+	if calls != 3 {
+		t.Fatalf("recovery made %d calls, want 3 total", calls)
+	}
+}
+
+func TestClaudeColdDiscoveryFailureWaitsTenMinutesAndConcurrentReadsCoalesce(t *testing.T) {
+	manager := New(t.TempDir(), nil)
+	provider := gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE
+	start := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	now := start
+	manager.now = func() time.Time { return now }
+	var calls atomic.Int32
+	fail := true
+	manager.readProbe = func(context.Context, gatewayv1.ProviderQuotaProvider, string) (probeResult, error) {
+		calls.Add(1)
+		if fail {
+			return probeResult{}, errors.New("provider throttled")
+		}
+		return probeResult{StableAccountID: "claude-account", Availability: "available"}, nil
+	}
+	if _, err := manager.probe(context.Background(), provider, ""); err == nil {
+		t.Fatal("expected cold probe failure")
+	}
+	now = start.Add(10*time.Minute - time.Second)
+	if _, err := manager.probe(context.Background(), provider, ""); err == nil {
+		t.Fatal("cooldown must retain the failed state")
+	}
+	if calls.Load() != 1 {
+		t.Fatal("cold discovery retried during cooldown")
+	}
+	now = start.Add(10 * time.Minute)
+	fail = false
+	var group sync.WaitGroup
+	for range 20 {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			if _, err := manager.probe(context.Background(), provider, ""); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	group.Wait()
+	if calls.Load() != 2 {
+		t.Fatalf("overlapping reads made %d provider calls, want 2 total", calls.Load())
 	}
 }
 

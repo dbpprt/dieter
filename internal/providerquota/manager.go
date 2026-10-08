@@ -22,13 +22,13 @@ import (
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
 	"github.com/dbpprt/dieter/internal/harness"
+	"github.com/dbpprt/dieter/internal/providerquota/policy"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
-	maxAccounts        = 8
-	maxProbeOutput     = 64 << 10
-	probeCacheDuration = time.Minute
+	maxAccounts    = 8
+	maxProbeOutput = 64 << 10
 )
 
 type Manager struct {
@@ -36,8 +36,17 @@ type Manager struct {
 	logger *slog.Logger
 	now    func() time.Time
 
-	mu      sync.Mutex
-	handles map[string]accountHandle
+	mu           sync.Mutex
+	handles      map[string]accountHandle
+	claudeProbes map[string]*cachedProbe
+	readProbe    func(context.Context, gatewayv1.ProviderQuotaProvider, string) (probeResult, error)
+}
+
+type cachedProbe struct {
+	mu     sync.Mutex
+	result probeResult
+	err    error
+	nextAt time.Time
 }
 
 type runtimeDirectoryProvider interface {
@@ -90,6 +99,7 @@ type probeResetCredits struct {
 }
 
 type probeResult struct {
+	probedAt             time.Time
 	StableAccountID      string               `json:"stableAccountID"`
 	DisplayEmail         string               `json:"displayEmail"`
 	AccountKind          string               `json:"accountKind"`
@@ -117,7 +127,11 @@ func NewWithRuntime(root string, logger *slog.Logger, runtimeProvider runtimeDir
 	if runtimeProvider == nil {
 		runtimeProvider = harness.NewSubprocessRunner(root)
 	}
-	return &Manager{runner: runtimeProvider, logger: logger, now: time.Now, handles: map[string]accountHandle{}}
+	m := &Manager{runner: runtimeProvider, logger: logger, now: time.Now, handles: map[string]accountHandle{}, claudeProbes: map[string]*cachedProbe{}}
+	m.readProbe = func(ctx context.Context, provider gatewayv1.ProviderQuotaProvider, profileRoot string) (probeResult, error) {
+		return m.runProbe(ctx, provider, profileRoot, "read", "", "")
+	}
+	return m
 }
 
 // ActiveAccountKey returns the owner-scoped account identity used by new
@@ -163,6 +177,19 @@ func (m *Manager) Discover(ctx context.Context, correlationKey []byte) (*gateway
 		return nil, err
 	}
 	m.mu.Lock()
+	// Bound the cache to the currently configured profiles, including the default.
+	for root := range m.claudeProbes {
+		present := false
+		for _, configured := range claudeProfiles {
+			if root == configured {
+				present = true
+				break
+			}
+		}
+		if !present {
+			delete(m.claudeProbes, root)
+		}
+	}
 	previousHandles := make(map[string]accountHandle, len(m.handles))
 	for key, handle := range m.handles {
 		previousHandles[key] = handle
@@ -241,7 +268,7 @@ func (m *Manager) Discover(ctx context.Context, correlationKey []byte) (*gateway
 		}
 		nextHandles[accountKey] = accountHandle{
 			provider: discovered.provider, profileRoot: profileRoot, stableAccountID: result.StableAccountID,
-			lastProbe: result, probedAt: m.now().UTC(),
+			lastProbe: result, probedAt: result.probedAt,
 		}
 		presence.Accounts = append(presence.Accounts, &gatewayv1.ProviderAccountPresence{
 			Provider:   discovered.provider,
@@ -276,11 +303,15 @@ func (m *Manager) Refresh(ctx context.Context, correlationKey []byte, request *g
 	}
 	result := handle.lastProbe
 	probed := false
-	if handle.probedAt.IsZero() || m.now().Sub(handle.probedAt) > probeCacheDuration {
+	if handle.probedAt.IsZero() || m.now().Sub(handle.probedAt) >= policy.RefreshInterval(handle.provider) {
 		var err error
 		result, err = m.probe(ctx, handle.provider, handle.profileRoot)
 		if err != nil {
-			return &gatewayv1.ProviderQuotaRefreshResult{ErrorCode: "temporarily_unavailable"}, nil
+			failure := &gatewayv1.ProviderQuotaRefreshResult{ErrorCode: "temporarily_unavailable"}
+			if handle.provider == gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE {
+				failure.RetryAfterSeconds = uint32(policy.FailureBackoff(handle.provider, 1) / time.Second)
+			}
+			return failure, nil
 		}
 		probed = true
 	}
@@ -292,7 +323,7 @@ func (m *Manager) Refresh(ctx context.Context, correlationKey []byte, request *g
 		m.mu.Lock()
 		if current, ok := m.handles[request.GetAccountKey()]; ok && current.stableAccountID == handle.stableAccountID {
 			current.lastProbe = result
-			current.probedAt = m.now().UTC()
+			current.probedAt = result.probedAt
 			m.handles[request.GetAccountKey()] = current
 		}
 		m.mu.Unlock()
@@ -450,7 +481,43 @@ func (w *cappedBuffer) Write(value []byte) (int, error) {
 }
 
 func (m *Manager) probe(ctx context.Context, provider gatewayv1.ProviderQuotaProvider, profileRoot string) (probeResult, error) {
-	return m.runProbe(ctx, provider, profileRoot, "read", "", "")
+	if provider != gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE {
+		result, err := m.readProbe(ctx, provider, profileRoot)
+		result.probedAt = m.now().UTC()
+		return result, err
+	}
+	// Discovery, automatic refresh, and manual refresh share this cooldown.
+	// Serializing each profile also coalesces overlapping provider requests.
+	m.mu.Lock()
+	cached := m.claudeProbes[profileRoot]
+	if cached == nil {
+		if len(m.claudeProbes) >= maxAccounts {
+			m.mu.Unlock()
+			return probeResult{}, errors.New("Claude quota profile limit exceeded")
+		}
+		cached = &cachedProbe{}
+		m.claudeProbes[profileRoot] = cached
+	}
+	m.mu.Unlock()
+	cached.mu.Lock()
+	defer cached.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return probeResult{}, err
+	}
+	if m.now().Before(cached.nextAt) {
+		return cached.result, cached.err
+	}
+	result, err := m.readProbe(ctx, provider, profileRoot)
+	if ctx.Err() != nil {
+		return probeResult{}, ctx.Err()
+	}
+	result.probedAt = m.now().UTC()
+	interval := policy.RefreshInterval(provider)
+	if err != nil {
+		interval = policy.FailureBackoff(provider, 1)
+	}
+	cached.result, cached.err, cached.nextAt = result, err, result.probedAt.Add(interval)
+	return result, err
 }
 
 func (m *Manager) runProbe(ctx context.Context, provider gatewayv1.ProviderQuotaProvider, profileRoot, action, idempotencyKey, expectedAccountID string) (probeResult, error) {

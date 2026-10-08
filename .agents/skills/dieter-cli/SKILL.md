@@ -149,6 +149,10 @@ Use `quota include` or `quota exclude` to change summary membership. OpenAI
 `quota reset` consumes one reset credit, requires `--confirm RESET`, and is
 routed to an online daemon that currently has the exact account.
 
+Claude usage is polled at most once every five minutes per profile, with a
+ten-minute cooldown after a failed probe. Discovery and explicit `quota refresh`
+share that cooldown; cached reads do not force another provider request.
+
 Machine restart, shutdown, and daemon update require the exact confirmation
 phrases shown by `--help` and are available only when the target daemon reports
 the matching capability. Linux power control is non-interactive
