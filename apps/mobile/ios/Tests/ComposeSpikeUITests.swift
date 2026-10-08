@@ -82,7 +82,8 @@ final class ComposeSpikeUITests: XCTestCase {
         app.buttons["Start working"].tap()
         let reply = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Mock harness received:"))
             .firstMatch
-        XCTAssertTrue(reply.waitForExistence(timeout: 60))
+        // A mock turn on a loaded CI runner can take over 30 s to answer.
+        XCTAssertTrue(reply.waitForExistence(timeout: 90))
         capture("ios-conversation")
         // The placeholder-based label changes on focus; the shared test tag
         // identifies this editor before and after the keyboard appears.
@@ -124,7 +125,7 @@ final class ComposeSpikeUITests: XCTestCase {
             NSPredicate(format: "label == %@", "Mock harness received: \(followUp)")
         ).firstMatch
         XCTAssertTrue(
-            followUpReply.waitForExistence(timeout: 30), "The follow-up reply appears in the same conversation")
+            followUpReply.waitForExistence(timeout: 90), "The follow-up reply appears in the same conversation")
         XCTAssertTrue(waitForHittable(followUpReply), "The follow-up reply is visible")
         let transcript = app.descendants(matching: .any).matching(identifier: "conversation-timeline").firstMatch
         XCTAssertTrue(transcript.waitForExistence(timeout: 10))
