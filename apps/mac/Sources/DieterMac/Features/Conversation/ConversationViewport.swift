@@ -318,6 +318,33 @@ struct ConversationViewportObservation: Equatable {
     let initialPositionComplete: Bool
 }
 
+struct ConversationHistoryActions {
+    let earlier: () -> Void
+    let later: () -> Void
+    let isLoading: () -> Bool
+}
+
+/// Used for both the network load and the hidden transcript's first layout.
+/// Keeping feedback outside the scroll content avoids a blank preparation
+/// stage and prevents the indicator from shifting the message stack.
+struct ConversationLoadingView: View {
+    let standalone: Bool
+    var preparingTimeline = false
+
+    var body: some View {
+        VStack(spacing: 20) {
+            ConversationDieterActivityGlyph(size: 64)
+            Text(preparingTimeline ? "Preparing conversation…" : (standalone ? "Opening chat…" : "Opening task…"))
+                .font(.headline)
+                .foregroundStyle(DieterTheme.subtle)
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("conversation.loading")
+    }
+}
+
 struct EmptyConversationView: View {
     let standalone: Bool
     let prompt: String
@@ -435,6 +462,15 @@ final class ConversationScrollController: NSObject {
             guard registration.messageIDs.contains(id), let view = registration.view else { return false }
             return view.window != nil && view.bounds.width > 0 && view.bounds.height > 0
         }
+    }
+
+    func projectionIsLaidOut(firstMessageID: String?, lastMessageID: String?) -> Bool {
+        guard let scroll = attachedScrollView,
+            scroll.contentView.bounds.width > 0, scroll.contentView.bounds.height > 0,
+            scroll.documentView != nil, currentLayout(scroll) == lastLayout
+        else { return false }
+        return (firstMessageID.map(hasLaidOutMessage) ?? true)
+            && (lastMessageID.map(hasLaidOutMessage) ?? true)
     }
 
     private var resolvedScrollView: NSScrollView? {
