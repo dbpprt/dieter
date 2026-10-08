@@ -58,13 +58,13 @@ final class ComposeSpikeUITests: XCTestCase {
         XCTAssertTrue(title.waitForExistence(timeout: 10))
         title.tap(); title.typeText("A shared mobile conversation")
         let hideKeyboard = app.buttons["Hide keyboard"].firstMatch
-        XCTAssertTrue(hideKeyboard.isHittable, "Task header stays visible while editing the title")
+        XCTAssertTrue(waitForHittable(hideKeyboard), "Task header stays visible while editing the title")
         hideKeyboard.tap()
         let prompt = app.textViews.matching(NSPredicate(format: "label CONTAINS %@", "What should we do?")).firstMatch
         XCTAssertTrue(prompt.waitForExistence(timeout: 10))
         prompt.tap(); prompt.typeText("Explain how this task stays in one durable conversation.")
         capture("ios-new-task")
-        XCTAssertTrue(hideKeyboard.isHittable, "Task header stays visible while editing the prompt")
+        XCTAssertTrue(waitForHittable(hideKeyboard), "Task header stays visible while editing the prompt")
         hideKeyboard.tap()
         // The full legacy form includes agent, workspace and label sections.
         // Scroll its gutter so a multiline field cannot consume the gesture.
@@ -81,20 +81,34 @@ final class ComposeSpikeUITests: XCTestCase {
             .firstMatch
         XCTAssertTrue(reply.waitForExistence(timeout: 60))
         capture("ios-conversation")
-        // Placeholder text disappears on focus. A tablet also keeps board search open.
-        let composer = app.textViews.matching(NSPredicate(format: "label CONTAINS %@", "Keep the conversation going"))
-            .firstMatch
+        // The placeholder-based label changes on focus; the shared test tag
+        // identifies this editor before and after the keyboard appears.
+        let composer = app.textViews["message-input"]
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
         composer.tap()
-        XCTAssertTrue(composer.isHittable, "Composer stays visible above the system keyboard")
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
+        let visibleComposer = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                composer.exists && composer.isHittable && composer.frame.maxY <= keyboard.frame.minY + 1
+            }, object: composer)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [visibleComposer], timeout: 10), .completed,
+            "Composer stays visible above the system keyboard")
         composer.typeText("Keep the same task and add the next step.")
         app.buttons["Send message"].tap()
-        if landscape { app.keyboards.firstMatch.buttons["Hide keyboard"].tap() }
+        if landscape {
+            keyboard.buttons["Hide keyboard"].tap()
+            XCTAssertTrue(keyboard.waitForNonExistence(timeout: 10))
+        }
+        // Match the complete selectable reply across accessibility traits after
+        // keyboard dismissal, then wait for native hit-testing to settle.
+        let followUpReply = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label == %@", "Mock harness received: Keep the same task and add the next step.")
+        ).firstMatch
         XCTAssertTrue(
-            app.staticTexts.matching(
-                NSPredicate(format: "label CONTAINS %@", "Mock harness received: Keep the same task")
-            ).firstMatch
-                .waitForExistence(timeout: 30))
+            followUpReply.waitForExistence(timeout: 30), "The follow-up reply appears in the same conversation")
+        XCTAssertTrue(waitForHittable(followUpReply), "The follow-up reply is visible")
         let review = app.buttons["Review"]
         XCTAssertTrue(review.waitForExistence(timeout: 60)); review.tap()
         app.buttons["Back to board"].tap()
@@ -143,6 +157,11 @@ final class ComposeSpikeUITests: XCTestCase {
     }
     private func element(_ app: XCUIApplication, containing text: String) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+    }
+    private func waitForHittable(_ element: XCUIElement) -> Bool {
+        let hittable = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in element.exists && element.isHittable }, object: element)
+        return XCTWaiter.wait(for: [hittable], timeout: 10) == .completed
     }
     private func assertRunningLane(_ app: XCUIApplication, landscape: Bool) {
         if landscape {
