@@ -13,18 +13,29 @@ terminal emulation, screen video/input and iOS navigation chrome.
 
 ## Platform design
 
-- **Android:** Material 3, the legacy Sora display font, 12 dp card corners and
-  the exact eight legacy palettes. Monochrome is the default. Cards keep labels,
-  age, summary, machine/branch badges, agent status, token footer and Start actions.
-- **iOS:** system typography, grouped surfaces and rounded filled fields; native
-  SF Symbol tabs and New controls use SwiftUI `glassEffect` on iOS 26+. iOS 18–25
-  uses system material; Reduce Transparency uses an opaque surface. Content
-  cards remain legible. Compose owns keyboard insets and the SwiftUI host ignores
-  keyboard safe-area changes.
-- **Adaptive layouts:** an Android navigation rail from 840 dp, conversation splits from
-  600 dp, and parallel board lanes when the board itself has at least 700 dp.
-  Compact layouts use scrollable lane tabs. The same content and commands run
-  on iPhone, iPad and Android.
+Each platform gets its own chrome and controls; the screens' content, state and
+commands are shared.
+
+- **Android:** Material 3 throughout. Colors come from the wallpaper (dynamic
+  color, Android 12+, switchable in Settings) or from tonal schemes built from
+  the eight Dieter palettes; Monochrome is the default. Root lists collapse a
+  large top app bar, detail screens use a top app bar with an overflow menu,
+  and New task is an extended FAB. Navigation is a navigation bar (rail from
+  600 dp); system back pops the visible tab stack. Lanes are tabs with counts,
+  pickers are dropdown menus or bottom sheets, and confirmations are dialogs.
+  Titles use the Sora display font; the app draws edge to edge.
+- **iOS:** UIKit owns navigation. A `UITabBarController` holds one
+  `UINavigationController` per tab (a sidebar-adaptable tab bar on iPad), so
+  large titles, subtitles, back gestures and Liquid Glass bar buttons are the
+  system's own. Screen actions are `UIBarButtonItem`s and `UIMenu`s, in-content
+  "…" buttons open native menus, forms are sheets with detents, and
+  confirmations and text prompts are alerts. Compose draws each screen's
+  content with iOS system colors, Dynamic Type sizes, SF Symbols and
+  inset-grouped lists.
+- **Adaptive layouts:** Android shows list and detail side by side from 840 dp;
+  iPad uses a split view in regular width. A board shows parallel lanes from
+  700 dp and swipeable lane tabs below that. The same content and commands run
+  on phones and tablets.
 
 [Design audit and port inventory](DESIGN_PORT.md) maps the legacy surfaces to the
 shared implementation. [Legacy captures](design/legacy-android/index.html)
@@ -37,7 +48,7 @@ results and remaining qualification requirements.
 ```mermaid
 flowchart TB
   A[Android Activity / Keystore / OkHttp] --> U[Shared Compose mobile UI]
-  I[SwiftUI Liquid Glass / UIKit host] --> U
+  I[UIKit tab/navigation shell] --> U
   U --> C[Existing KMP client core]
   I --> P[Existing Keychain / grpc-swift / certificate pinning]
   P --> C

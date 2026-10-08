@@ -1,6 +1,7 @@
 package com.dbpprt.dieter.mobile
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -67,6 +68,7 @@ internal actual fun NativeScreenCanvas(store: MobileStore, modifier: Modifier) {
     DisposableEffect(surface) { onDispose { surface.close() } }
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 internal actual fun rememberAttachmentPicker(
     onPicked: (List<com.dbpprt.dieter.api.v1.MessagePart>) -> Unit,
@@ -108,37 +110,51 @@ internal actual fun rememberAttachmentPicker(
             picked(uris, true)
         }
     if (choosing)
-        AlertDialog(
+        ModalBottomSheet(
             onDismissRequest = { choosing = false },
-            title = { Text("Attach images or files") },
-            text = {
-                Column {
-                    TextButton(
-                        onClick = {
-                            choosing = false
-                            photos.launch(
-                                androidx.activity.result.PickVisualMediaRequest(
-                                    androidx.activity.result.contract.ActivityResultContracts
-                                        .PickVisualMedia
-                                        .ImageOnly
-                                )
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ) {
+            Text(
+                "Attach",
+                Modifier.padding(start = 24.dp, bottom = 8.dp),
+                style = MaterialTheme.typography.titleLarge,
+            )
+            ListItem(
+                headlineContent = { Text("Photos") },
+                supportingContent = { Text("Up to 4 images") },
+                leadingContent = { Icon(Glyph.IMAGE, null, size = 24.dp) },
+                colors =
+                    ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                    ),
+                modifier =
+                    Modifier.clickable {
+                        choosing = false
+                        photos.launch(
+                            androidx.activity.result.PickVisualMediaRequest(
+                                androidx.activity.result.contract.ActivityResultContracts
+                                    .PickVisualMedia
+                                    .ImageOnly
                             )
-                        }
-                    ) {
-                        Text("Photo library")
-                    }
-                    TextButton(
-                        onClick = {
-                            choosing = false
-                            launcher.launch(arrayOf("*/*"))
-                        }
-                    ) {
-                        Text("Choose files")
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { choosing = false }) { Text("Cancel") } },
-        )
+                        )
+                    },
+            )
+            ListItem(
+                headlineContent = { Text("Files") },
+                supportingContent = { Text(com.dbpprt.dieter.core.composition.Attachments.LIMITS) },
+                leadingContent = { Icon(Glyph.FOLDER, null, size = 24.dp) },
+                colors =
+                    ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                    ),
+                modifier =
+                    Modifier.clickable {
+                        choosing = false
+                        launcher.launch(arrayOf("*/*"))
+                    },
+            )
+            Spacer(Modifier.height(24.dp))
+        }
     return { choosing = true }
 }
 

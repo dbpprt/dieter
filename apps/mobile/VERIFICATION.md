@@ -8,11 +8,62 @@ app identities and additional CI gates, with no TestFlight publishing.
 Native journeys use a disposable authenticated Go gateway, enrolled daemon,
 persisted workspace and deterministic mock harness. New tasks and follow-up
 replies pass through the actual daemon; seeded history is sample data. The
-[gallery](design/index.html) contains 48 final native captures and links to the
-17 legacy reference captures. Originals and their hashes are retained in
+[gallery](design/index.html) contains 48 native captures of the redesign below and
+links to the 17 legacy reference captures. Originals and their hashes are retained in
 [capture provenance](screenshots/provenance.json).
 
-## Final port qualification
+## Native platform redesign (8 October 2026)
+
+The shared screens now sit in each platform's own navigation instead of one
+Material-styled shell:
+
+- **iOS:** `DieterComposeHost` hosts each route in a UIKit `UITabBarController`
+  and per-tab `UINavigationController`s, with a sidebar and split view on iPad.
+  Bar buttons, `UIMenu`s, sheets, alerts and toasts are native; Compose draws
+  content with iOS system colors, Dynamic Type sizes and SF Symbols.
+- **Android:** Material 3 top app bars, extended FAB, navigation bar and rail,
+  list and detail side by side from 840 dp, dynamic color, system back and
+  edge-to-edge bars.
+- **Shared:** per-tab navigation stacks in `Navigation.kt` bind core scopes
+  (board, project, conversation, files, terminals, telemetry) to the visible
+  routes on both platforms.
+
+| Check                                                                              | Result                                             | Evidence                                                 |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------- |
+| Shared Compose: seven JVM tests, including navigation-stack binding, final sources | Passed                                             | `tmp/app-pipelines/a6415c42-0080-4bc2-88b9-e598d508f155` |
+| Android pipeline: 16-view journey, Activity recreation and dark system bars        | Passed; native test 50.489 seconds, cleanup passed | `tmp/app-pipelines/99f6fd02-42e9-4dbb-9678-af5f2b59b6c6` |
+| Android app and test APKs after formatting and unused-icon removal                 | Built                                              | `tmp/app-pipelines/2494b46b-cd1a-4047-aeb9-76f96e9501d7` |
+| iPhone 17 Pro / iOS 27.0, portrait: the same XCUITest journey                      | Passed; 130.865 seconds, after the fixes below     | Local run, see below                                     |
+| iPad Pro 11-inch (M5) / iOS 27.0, landscape sidebar and split view                 | Passed; 126.162 seconds, after the fixes below     | Local run, see below                                     |
+| Android tablet layout (2560 × 1600 at 320 dpi): rail, board list and conversation  | Inspected manually                                 | Not retained                                             |
+
+The iOS journeys ran `ComposeSpikeUITests/testSharedTaskJourney` against fresh
+isolated gateways, enrolled daemons and mock harnesses, with app data reset per
+run, from a build on an external volume. `compose_spike action:ios_qualify` was
+not run: the internal disk had 9 GB free and an earlier run of that lane ran out
+of space. The iOS results are therefore not pipeline-qualified and have no
+ownership journal; rerun that lane before relying on them.
+
+Regressions found and fixed during this round:
+
+- A new task opened under its temporary card ID and stayed on a spinner once
+  the server ID arrived. Routes now resolve outbox IDs before rendering.
+- The transcript's follow-to-bottom scroll could run during a layout pass and
+  crash Android (`performMeasureAndLayout called during measure layout`); it now
+  requests the scroll for the next measure.
+- A navigation update that arrived while UIKit was popping a screen pushed that
+  screen back (seen as a lost back tap after "Move to Review"). Stack syncs now
+  wait for the transition and reapply the latest state once the pop is recorded.
+- iPad columns and the tab sidebar report their overlap as safe area; screens
+  now respect horizontal insets instead of drawing under neighbouring columns.
+- iPad detail columns opened tools by pushing onto the previous tool; list rows
+  now replace the detail. A Monochrome sidebar selection was white on white in
+  dark mode, and the empty detail column now explains each tab.
+- Android: dark system bars stayed light after Activity recreation, lane tabs
+  squeezed their count badges in narrow panes, the rail duplicated New task, and
+  three generated icons (Badge, Palette, Speed) were missing their arcs.
+
+## Port qualification (7 October 2026)
 
 | Check                                                                                                | Result                                                                                                                                        | Retained evidence                                                                                                     |
 | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |

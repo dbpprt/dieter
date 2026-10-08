@@ -12,9 +12,10 @@
     <header>
       <h1>Dieter · Android design → shared Compose</h1>
       <p>
-        48 actual native screenshots from passing Android, iPhone and iPad journeys. Shared cards
-        and functionality follow the shipping Android design; Android uses Material navigation and
-        iOS uses native SwiftUI Liquid Glass.
+        48 actual native screenshots from passing Android, iPhone and iPad journeys. The shared
+        Compose screens sit in each platform's own navigation: Material 3 app bars, FAB and
+        navigation bar on Android; UIKit tab bar or iPad sidebar, navigation bars, menus and sheets
+        on iOS.
       </p>
       <nav>
         <a href="legacy-android/index.html">17 legacy Android references</a
@@ -23,10 +24,11 @@
         ><a href="../screenshots/provenance.json">Capture provenance</a>
       </nav>
       <p class="status">
-        All three 16-view journeys and owned device cleanup passed on 7 October 2026. Sample history
-        is seeded; new tasks and follow-up replies run through a real isolated daemon and mock
-        harness. This is an opt-in migration spike; production cutover requirements are recorded in
-        verification.
+        All three 16-view journeys passed on 8 October 2026; Android through the pipeline with
+        owned-device cleanup, iPhone and iPad as local XCUITest runs that are not yet
+        pipeline-qualified. Sample history is seeded; new tasks and follow-up replies run through a
+        real isolated daemon and mock harness. This is an opt-in migration spike; production cutover
+        requirements are recorded in verification.
       </p>
       <nav>
         <a href="#inbox">Inbox</a><a href="#projects">Projects</a><a href="#board">Board</a
@@ -40,7 +42,7 @@
     </header>
     <main>
       <section>
-        <h2>Legacy cards → Android Material → iOS Glass</h2>
+        <h2>Legacy cards → Android Material 3 → iOS UIKit</h2>
         <a href="board-comparison.png"
           ><img
             class="compare"
@@ -67,27 +69,27 @@
               ><img
                 loading="lazy"
                 src="../screenshots/android-inbox.png"
-                alt="Android · Material: inbox"
+                alt="Android · Material 3: inbox"
             /></a>
-            <figcaption>Android · Material</figcaption>
+            <figcaption>Android · Material 3</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/iphone-inbox.png"
               ><img
                 loading="lazy"
                 src="../screenshots/iphone-inbox.png"
-                alt="iPhone · Liquid Glass: inbox"
+                alt="iPhone · UIKit: inbox"
             /></a>
-            <figcaption>iPhone · Liquid Glass</figcaption>
+            <figcaption>iPhone · UIKit</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/ipad-inbox.png"
               ><img
                 loading="lazy"
                 src="../screenshots/ipad-inbox.png"
-                alt="iPad · Liquid Glass: inbox"
+                alt="iPad · UIKit split view: inbox"
             /></a>
-            <figcaption>iPad · Liquid Glass</figcaption>
+            <figcaption>iPad · UIKit split view</figcaption>
           </figure>
         </div>
       </section>
@@ -99,27 +101,27 @@
               ><img
                 loading="lazy"
                 src="../screenshots/android-projects.png"
-                alt="Android · Material: projects"
+                alt="Android · Material 3: projects"
             /></a>
-            <figcaption>Android · Material</figcaption>
+            <figcaption>Android · Material 3</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/iphone-projects.png"
               ><img
                 loading="lazy"
                 src="../screenshots/iphone-projects.png"
-                alt="iPhone · Liquid Glass: projects"
+                alt="iPhone · UIKit: projects"
             /></a>
-            <figcaption>iPhone · Liquid Glass</figcaption>
+            <figcaption>iPhone · UIKit</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/ipad-projects.png"
               ><img
                 loading="lazy"
                 src="../screenshots/ipad-projects.png"
-                alt="iPad · Liquid Glass: projects"
+                alt="iPad · UIKit split view: projects"
             /></a>
-            <figcaption>iPad · Liquid Glass</figcaption>
+            <figcaption>iPad · UIKit split view</figcaption>
           </figure>
         </div>
       </section>
@@ -131,27 +133,27 @@
               ><img
                 loading="lazy"
                 src="../screenshots/android-board.png"
-                alt="Android · Material: board"
+                alt="Android · Material 3: board"
             /></a>
-            <figcaption>Android · Material</figcaption>
+            <figcaption>Android · Material 3</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/iphone-board.png"
               ><img
                 loading="lazy"
                 src="../screenshots/iphone-board.png"
-                alt="iPhone · Liquid Glass: board"
+                alt="iPhone · UIKit: board"
             /></a>
-            <figcaption>iPhone · Liquid Glass</figcaption>
+            <figcaption>iPhone · UIKit</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/ipad-board.png"
               ><img
                 loading="lazy"
                 src="../screenshots/ipad-board.png"
-                alt="iPad · Liquid Glass: board"
+                alt="iPad · UIKit split view: board"
             /></a>
-            <figcaption>iPad · Liquid Glass</figcaption>
+            <figcaption>iPad · UIKit split view</figcaption>
           </figure>
         </div>
       </section>
@@ -163,27 +165,24 @@
               ><img
                 loading="lazy"
                 src="../screenshots/android-task.png"
-                alt="Android · Material: task"
+                alt="Android · Material 3: task"
             /></a>
-            <figcaption>Android · Material</figcaption>
+            <figcaption>Android · Material 3</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/iphone-task.png"
-              ><img
-                loading="lazy"
-                src="../screenshots/iphone-task.png"
-                alt="iPhone · Liquid Glass: task"
+              ><img loading="lazy" src="../screenshots/iphone-task.png" alt="iPhone · UIKit: task"
             /></a>
-            <figcaption>iPhone · Liquid Glass</figcaption>
+            <figcaption>iPhone · UIKit</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/ipad-task.png"
               ><img
                 loading="lazy"
                 src="../screenshots/ipad-task.png"
-                alt="iPad · Liquid Glass: task"
+                alt="iPad · UIKit split view: task"
             /></a>
-            <figcaption>iPad · Liquid Glass</figcaption>
+            <figcaption>iPad · UIKit split view</figcaption>
           </figure>
         </div>
       </section>
@@ -195,27 +194,27 @@
               ><img
                 loading="lazy"
                 src="../screenshots/android-subagents.png"
-                alt="Android · Material: subagents"
+                alt="Android · Material 3: subagents"
             /></a>
-            <figcaption>Android · Material</figcaption>
+            <figcaption>Android · Material 3</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/iphone-subagents.png"
               ><img
                 loading="lazy"
                 src="../screenshots/iphone-subagents.png"
-                alt="iPhone · Liquid Glass: subagents"
+                alt="iPhone · UIKit: subagents"
             /></a>
-            <figcaption>iPhone · Liquid Glass</figcaption>
+            <figcaption>iPhone · UIKit</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/ipad-subagents.png"
               ><img
                 loading="lazy"
                 src="../screenshots/ipad-subagents.png"
-                alt="iPad · Liquid Glass: subagents"
+                alt="iPad · UIKit split view: subagents"
             /></a>
-            <figcaption>iPad · Liquid Glass</figcaption>
+            <figcaption>iPad · UIKit split view</figcaption>
           </figure>
         </div>
       </section>
@@ -227,27 +226,27 @@
               ><img
                 loading="lazy"
                 src="../screenshots/android-new-task.png"
-                alt="Android · Material: new-task"
+                alt="Android · Material 3: new-task"
             /></a>
-            <figcaption>Android · Material</figcaption>
+            <figcaption>Android · Material 3</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/iphone-new-task.png"
               ><img
                 loading="lazy"
                 src="../screenshots/iphone-new-task.png"
-                alt="iPhone · Liquid Glass: new-task"
+                alt="iPhone · UIKit: new-task"
             /></a>
-            <figcaption>iPhone · Liquid Glass</figcaption>
+            <figcaption>iPhone · UIKit</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/ipad-new-task.png"
               ><img
                 loading="lazy"
                 src="../screenshots/ipad-new-task.png"
-                alt="iPad · Liquid Glass: new-task"
+                alt="iPad · UIKit split view: new-task"
             /></a>
-            <figcaption>iPad · Liquid Glass</figcaption>
+            <figcaption>iPad · UIKit split view</figcaption>
           </figure>
         </div>
       </section>
@@ -259,27 +258,27 @@
               ><img
                 loading="lazy"
                 src="../screenshots/android-conversation.png"
-                alt="Android · Material: conversation"
+                alt="Android · Material 3: conversation"
             /></a>
-            <figcaption>Android · Material</figcaption>
+            <figcaption>Android · Material 3</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/iphone-conversation.png"
               ><img
                 loading="lazy"
                 src="../screenshots/iphone-conversation.png"
-                alt="iPhone · Liquid Glass: conversation"
+                alt="iPhone · UIKit: conversation"
             /></a>
-            <figcaption>iPhone · Liquid Glass</figcaption>
+            <figcaption>iPhone · UIKit</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/ipad-conversation.png"
               ><img
                 loading="lazy"
                 src="../screenshots/ipad-conversation.png"
-                alt="iPad · Liquid Glass: conversation"
+                alt="iPad · UIKit split view: conversation"
             /></a>
-            <figcaption>iPad · Liquid Glass</figcaption>
+            <figcaption>iPad · UIKit split view</figcaption>
           </figure>
         </div>
       </section>
@@ -291,27 +290,27 @@
               ><img
                 loading="lazy"
                 src="../screenshots/android-review.png"
-                alt="Android · Material: review"
+                alt="Android · Material 3: review"
             /></a>
-            <figcaption>Android · Material</figcaption>
+            <figcaption>Android · Material 3</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/iphone-review.png"
               ><img
                 loading="lazy"
                 src="../screenshots/iphone-review.png"
-                alt="iPhone · Liquid Glass: review"
+                alt="iPhone · UIKit: review"
             /></a>
-            <figcaption>iPhone · Liquid Glass</figcaption>
+            <figcaption>iPhone · UIKit</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/ipad-review.png"
               ><img
                 loading="lazy"
                 src="../screenshots/ipad-review.png"
-                alt="iPad · Liquid Glass: review"
+                alt="iPad · UIKit split view: review"
             /></a>
-            <figcaption>iPad · Liquid Glass</figcaption>
+            <figcaption>iPad · UIKit split view</figcaption>
           </figure>
         </div>
       </section>
@@ -323,27 +322,27 @@
               ><img
                 loading="lazy"
                 src="../screenshots/android-chats.png"
-                alt="Android · Material: chats"
+                alt="Android · Material 3: chats"
             /></a>
-            <figcaption>Android · Material</figcaption>
+            <figcaption>Android · Material 3</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/iphone-chats.png"
               ><img
                 loading="lazy"
                 src="../screenshots/iphone-chats.png"
-                alt="iPhone · Liquid Glass: chats"
+                alt="iPhone · UIKit: chats"
             /></a>
-            <figcaption>iPhone · Liquid Glass</figcaption>
+            <figcaption>iPhone · UIKit</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/ipad-chats.png"
               ><img
                 loading="lazy"
                 src="../screenshots/ipad-chats.png"
-                alt="iPad · Liquid Glass: chats"
+                alt="iPad · UIKit split view: chats"
             /></a>
-            <figcaption>iPad · Liquid Glass</figcaption>
+            <figcaption>iPad · UIKit split view</figcaption>
           </figure>
         </div>
       </section>
@@ -355,27 +354,27 @@
               ><img
                 loading="lazy"
                 src="../screenshots/android-tools.png"
-                alt="Android · Material: tools"
+                alt="Android · Material 3: tools"
             /></a>
-            <figcaption>Android · Material</figcaption>
+            <figcaption>Android · Material 3</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/iphone-tools.png"
               ><img
                 loading="lazy"
                 src="../screenshots/iphone-tools.png"
-                alt="iPhone · Liquid Glass: tools"
+                alt="iPhone · UIKit: tools"
             /></a>
-            <figcaption>iPhone · Liquid Glass</figcaption>
+            <figcaption>iPhone · UIKit</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/ipad-tools.png"
               ><img
                 loading="lazy"
                 src="../screenshots/ipad-tools.png"
-                alt="iPad · Liquid Glass: tools"
+                alt="iPad · UIKit split view: tools"
             /></a>
-            <figcaption>iPad · Liquid Glass</figcaption>
+            <figcaption>iPad · UIKit split view</figcaption>
           </figure>
         </div>
       </section>
@@ -387,27 +386,27 @@
               ><img
                 loading="lazy"
                 src="../screenshots/android-machines.png"
-                alt="Android · Material: machines"
+                alt="Android · Material 3: machines"
             /></a>
-            <figcaption>Android · Material</figcaption>
+            <figcaption>Android · Material 3</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/iphone-machines.png"
               ><img
                 loading="lazy"
                 src="../screenshots/iphone-machines.png"
-                alt="iPhone · Liquid Glass: machines"
+                alt="iPhone · UIKit: machines"
             /></a>
-            <figcaption>iPhone · Liquid Glass</figcaption>
+            <figcaption>iPhone · UIKit</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/ipad-machines.png"
               ><img
                 loading="lazy"
                 src="../screenshots/ipad-machines.png"
-                alt="iPad · Liquid Glass: machines"
+                alt="iPad · UIKit split view: machines"
             /></a>
-            <figcaption>iPad · Liquid Glass</figcaption>
+            <figcaption>iPad · UIKit split view</figcaption>
           </figure>
         </div>
       </section>
@@ -419,27 +418,27 @@
               ><img
                 loading="lazy"
                 src="../screenshots/android-files.png"
-                alt="Android · Material: files"
+                alt="Android · Material 3: files"
             /></a>
-            <figcaption>Android · Material</figcaption>
+            <figcaption>Android · Material 3</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/iphone-files.png"
               ><img
                 loading="lazy"
                 src="../screenshots/iphone-files.png"
-                alt="iPhone · Liquid Glass: files"
+                alt="iPhone · UIKit: files"
             /></a>
-            <figcaption>iPhone · Liquid Glass</figcaption>
+            <figcaption>iPhone · UIKit</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/ipad-files.png"
               ><img
                 loading="lazy"
                 src="../screenshots/ipad-files.png"
-                alt="iPad · Liquid Glass: files"
+                alt="iPad · UIKit split view: files"
             /></a>
-            <figcaption>iPad · Liquid Glass</figcaption>
+            <figcaption>iPad · UIKit split view</figcaption>
           </figure>
         </div>
       </section>
@@ -451,27 +450,27 @@
               ><img
                 loading="lazy"
                 src="../screenshots/android-file-preview.png"
-                alt="Android · Material: file-preview"
+                alt="Android · Material 3: file-preview"
             /></a>
-            <figcaption>Android · Material</figcaption>
+            <figcaption>Android · Material 3</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/iphone-file-preview.png"
               ><img
                 loading="lazy"
                 src="../screenshots/iphone-file-preview.png"
-                alt="iPhone · Liquid Glass: file-preview"
+                alt="iPhone · UIKit: file-preview"
             /></a>
-            <figcaption>iPhone · Liquid Glass</figcaption>
+            <figcaption>iPhone · UIKit</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/ipad-file-preview.png"
               ><img
                 loading="lazy"
                 src="../screenshots/ipad-file-preview.png"
-                alt="iPad · Liquid Glass: file-preview"
+                alt="iPad · UIKit split view: file-preview"
             /></a>
-            <figcaption>iPad · Liquid Glass</figcaption>
+            <figcaption>iPad · UIKit split view</figcaption>
           </figure>
         </div>
       </section>
@@ -483,27 +482,27 @@
               ><img
                 loading="lazy"
                 src="../screenshots/android-schedules.png"
-                alt="Android · Material: schedules"
+                alt="Android · Material 3: schedules"
             /></a>
-            <figcaption>Android · Material</figcaption>
+            <figcaption>Android · Material 3</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/iphone-schedules.png"
               ><img
                 loading="lazy"
                 src="../screenshots/iphone-schedules.png"
-                alt="iPhone · Liquid Glass: schedules"
+                alt="iPhone · UIKit: schedules"
             /></a>
-            <figcaption>iPhone · Liquid Glass</figcaption>
+            <figcaption>iPhone · UIKit</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/ipad-schedules.png"
               ><img
                 loading="lazy"
                 src="../screenshots/ipad-schedules.png"
-                alt="iPad · Liquid Glass: schedules"
+                alt="iPad · UIKit split view: schedules"
             /></a>
-            <figcaption>iPad · Liquid Glass</figcaption>
+            <figcaption>iPad · UIKit split view</figcaption>
           </figure>
         </div>
       </section>
@@ -515,27 +514,27 @@
               ><img
                 loading="lazy"
                 src="../screenshots/android-settings-dark.png"
-                alt="Android · Material: settings-dark"
+                alt="Android · Material 3: settings-dark"
             /></a>
-            <figcaption>Android · Material</figcaption>
+            <figcaption>Android · Material 3</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/iphone-settings-dark.png"
               ><img
                 loading="lazy"
                 src="../screenshots/iphone-settings-dark.png"
-                alt="iPhone · Liquid Glass: settings-dark"
+                alt="iPhone · UIKit: settings-dark"
             /></a>
-            <figcaption>iPhone · Liquid Glass</figcaption>
+            <figcaption>iPhone · UIKit</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/ipad-settings-dark.png"
               ><img
                 loading="lazy"
                 src="../screenshots/ipad-settings-dark.png"
-                alt="iPad · Liquid Glass: settings-dark"
+                alt="iPad · UIKit split view: settings-dark"
             /></a>
-            <figcaption>iPad · Liquid Glass</figcaption>
+            <figcaption>iPad · UIKit split view</figcaption>
           </figure>
         </div>
       </section>
@@ -547,27 +546,27 @@
               ><img
                 loading="lazy"
                 src="../screenshots/android-board-dark.png"
-                alt="Android · Material: board-dark"
+                alt="Android · Material 3: board-dark"
             /></a>
-            <figcaption>Android · Material</figcaption>
+            <figcaption>Android · Material 3</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/iphone-board-dark.png"
               ><img
                 loading="lazy"
                 src="../screenshots/iphone-board-dark.png"
-                alt="iPhone · Liquid Glass: board-dark"
+                alt="iPhone · UIKit: board-dark"
             /></a>
-            <figcaption>iPhone · Liquid Glass</figcaption>
+            <figcaption>iPhone · UIKit</figcaption>
           </figure>
           <figure>
             <a href="../screenshots/ipad-board-dark.png"
               ><img
                 loading="lazy"
                 src="../screenshots/ipad-board-dark.png"
-                alt="iPad · Liquid Glass: board-dark"
+                alt="iPad · UIKit split view: board-dark"
             /></a>
-            <figcaption>iPad · Liquid Glass</figcaption>
+            <figcaption>iPad · UIKit split view</figcaption>
           </figure>
         </div>
       </section>

@@ -29,22 +29,6 @@ class RuntimeMobileCore(private val api: ClientApi) : MobileCore {
         api.observe(slice, scope, receive)
 }
 
-enum class MobileTab {
-    BOARD,
-    CHATS,
-    MACHINES,
-    INBOX,
-    PROJECTS,
-    TOOLS,
-    FILES,
-    SCHEDULES,
-    TERMINALS,
-    SCREENS,
-    USAGE,
-    SETTINGS,
-    PROJECT_CHANGES,
-}
-
 class MobilePreferences(
     val read: (String) -> String? = { null },
     val write: (String, String) -> Unit = { _, _ -> },
@@ -95,14 +79,14 @@ class MobileStore(
     val draftTexts = MutableStateFlow<Map<String, String>>(emptyMap())
     val palette = MutableStateFlow(DieterPalette.resolve(preferences.read("palette")))
     val appearance = MutableStateFlow(preferences.read("appearance") ?: "system")
-    val tab = MutableStateFlow(MobileTab.INBOX)
+    val dynamicColor = MutableStateFlow(preferences.read("dynamic-color") == "true")
+    val routes = MutableStateFlow(MobileNavigation())
     val creatingChat = MutableStateFlow(false)
     val detailTab = MutableStateFlow("Conversation")
     val selectedProject = MutableStateFlow("")
     val boardFilter = MutableStateFlow(BoardViewTarget())
     val selectedCard = MutableStateFlow("")
     val selectedBoard = MutableStateFlow("")
-    val creating = MutableStateFlow(false)
     val signInUrl = MutableStateFlow("")
     val busy = MutableStateFlow(false)
     val error = MutableStateFlow("")
@@ -176,8 +160,15 @@ class MobileStore(
             observe(Slice.SLICE_CREATION, "") {
                 it.creation?.let { value ->
                     creationDefaults.value = value
-                    if (tab.value == MobileTab.FILES && selectedCard.value.isEmpty()) bindFiles()
-                    if (tab.value == MobileTab.PROJECT_CHANGES) bindProjectChanges()
+                    when (
+                        (routes.value.modal ?: routes.value.top)
+                            .let { it as? MobileRoute.Tool }
+                            ?.page
+                    ) {
+                        ToolPage.FILES -> bindFiles()
+                        ToolPage.CHANGES -> bindProjectChanges()
+                        else -> Unit
+                    }
                 }
             }
         subscriptions +=
@@ -295,6 +286,250 @@ class MobileStore(
         preferences.write("appearance", value)
     }
 
+    fun setDynamicColor(value: Boolean) {
+        dynamicColor.value = value
+        preferences.write("dynamic-color", value.toString())
+    }
+
+    // Navigation -------------------------------------------------------------------------------
+
+    /** Switches tabs; selecting the current tab again returns to its root, as on both platforms. */
+    fun selectTab(value: MobileTab) {
+        val current = routes.value
+        routes.value =
+            if (current.tab == value) current.with(value, listOf(MobileRoute.Root(value)))
+            else current.copy(tab = value)
+        syncNavigation()
+    }
+
+    fun push(route: MobileRoute) {
+        val current = routes.value
+        if (current.top == route) return
+        routes.value = current.with(current.tab, current.stack + route)
+        syncNavigation()
+    }
+
+    /**
+     * Opens [route] from the list [source]: anything already open after that list is replaced, so
+     * selecting another row swaps the detail pane on tablets and is a plain push on phones.
+     */
+    fun showFrom(source: MobileRoute, route: MobileRoute) {
+        val current = routes.value
+        val index = current.stack.indexOf(source)
+        if (index < 0) return push(route)
+        val base = current.stack.take(index + 1)
+        if (base + route == current.stack) return
+        routes.value = current.with(current.tab, base + route)
+        syncNavigation()
+    }
+
+    /** Opens a conversation from a list, replacing any conversation already open after it. */
+    fun openConversation(cardId: String) {
+        val current = routes.value
+        val id = outbox.value.resolutions[cardId] ?: cardId
+        val base = current.stack.dropLastWhile { it.isDetail }
+        routes.value = current.with(current.tab, base + MobileRoute.Conversation(id))
+        syncNavigation()
+    }
+
+    fun pop() {
+        val current = routes.value
+        if (current.stack.size > 1) {
+            routes.value = current.with(current.tab, current.stack.dropLast(1))
+            syncNavigation()
+        }
+    }
+
+    /** Native back gestures report the remaining depth of a tab stack. */
+    fun popTo(tab: MobileTab, depth: Int) {
+        val current = routes.value
+        val stack = current.stacks.getValue(tab)
+        if (depth < 1 || depth >= stack.size) return
+        routes.value = current.with(tab, stack.take(depth))
+        syncNavigation()
+    }
+
+    fun present(route: MobileRoute) {
+        routes.value = routes.value.copy(modal = route)
+        syncNavigation()
+    }
+
+    fun dismiss() {
+        if (routes.value.modal == null) return
+        routes.value = routes.value.copy(modal = null)
+        syncNavigation()
+    }
+
+    /** Android system back: modal, then stack, then the start tab. */
+    fun handleBack(): Boolean {
+        val current = routes.value
+        when {
+            current.modal != null -> dismiss()
+            current.stack.size > 1 -> pop()
+            current.tab != MobileTab.INBOX -> selectTab(MobileTab.INBOX)
+            else -> return false
+        }
+        return true
+    }
+
+    private var activeTop = ""
+
+    /** Binds core scopes to the visible routes. Navigation itself carries no business rules. */
+    private fun syncNavigation() {
+        val state = routes.value
+        val stack = state.stack
+        val cardId = stack.lastOrNull { it.isDetail }?.cardScope
+        stack
+            .lastOrNull { it is MobileRoute.Board }
+            ?.let { board ->
+                board as MobileRoute.Board
+                if (board.boardId != selectedBoard.value) chooseBoard(board.boardId)
+            }
+        stack
+            .lastOrNull { it is MobileRoute.Project }
+            ?.let { project ->
+                project as MobileRoute.Project
+                if (project.projectId != selectedProject.value) {
+                    selectedProject.value = project.projectId
+                    selectedCheckout.value = ""
+                }
+            }
+        if (cardId == null) {
+            if (selectedCard.value.isNotEmpty()) closeCard()
+        } else {
+            openCard(cardId)
+            val pane =
+                stack
+                    .lastOrNull { it is MobileRoute.Pane || it is MobileRoute.Conversation }
+                    .let { (it as? MobileRoute.Pane)?.pane }
+            val wanted = pane?.title ?: "Conversation"
+            if (detailTab.value != wanted) selectDetail(wanted)
+        }
+        val screen =
+            stack.lastOrNull { it is MobileRoute.ScreenSession } as? MobileRoute.ScreenSession
+        if (screen == null && selectedScreen.value.isNotEmpty()) closeScreen()
+        else if (screen != null && screen.machineId != selectedScreen.value)
+            openNativeScreen(screen.machineId)
+        val machine = (stack.lastOrNull() as? MobileRoute.Machine)?.machineId.orEmpty()
+        if (machine != selectedMachine) {
+            selectedMachine = machine
+            command(
+                Command(
+                    telemetry =
+                        TelemetryCommand(select = TelemetrySelect(machine, machine.isNotEmpty()))
+                )
+            )
+        }
+        val top = state.modal ?: state.top
+        if (top.key == activeTop) return
+        activeTop = top.key
+        when (top) {
+            is MobileRoute.Root ->
+                if (top.tab == MobileTab.INBOX)
+                    command(Command(quotas = QuotasCommand(load = QuotasLoad())))
+            is MobileRoute.Tool -> {
+                if (top.projectId.isNotEmpty() && top.projectId != selectedProject.value) {
+                    selectedProject.value = top.projectId
+                    selectedCheckout.value = ""
+                }
+                if (top.page == ToolPage.FILES && files.value.directory.isNotEmpty())
+                    filesCommand(FilesCommand(navigate = FilesPath("")))
+                activateTool(top.page)
+            }
+            is MobileRoute.Pane ->
+                if (top.pane == CardPane.FILES && files.value.directory.isNotEmpty())
+                    filesCommand(FilesCommand(navigate = FilesPath("")))
+            is MobileRoute.FilePath ->
+                filesCommand(
+                    if (top.file) FilesCommand(open_ = FilesPath(top.path))
+                    else FilesCommand(navigate = FilesPath(top.path))
+                )
+            is MobileRoute.TerminalSession ->
+                command(
+                    if (top.cardId.isNotEmpty())
+                        Command(
+                            terminals =
+                                TerminalsCommand(
+                                    scope = TERMINAL_SCOPE,
+                                    select = TerminalId(top.terminalId),
+                                )
+                        )
+                    else
+                        Command(
+                            terminal_overview =
+                                TerminalOverviewCommand(
+                                    scope = TERMINAL_SCOPE,
+                                    select = TerminalId(top.terminalId),
+                                )
+                        )
+                )
+            else -> Unit
+        }
+        // Leaving a document returns the shared files scope to its listing.
+        if (top !is MobileRoute.FilePath || !top.file) {
+            val document = files.value.selected_path
+            if (
+                document.isNotEmpty() &&
+                    stack.none { it is MobileRoute.FilePath && it.file && it.path == document }
+            )
+                filesCommand(FilesCommand(close = Step()))
+        }
+    }
+
+    private var selectedMachine = ""
+
+    internal fun filesCommand(value: FilesCommand) =
+        command(Command(files = value.copy(scope = FILES_SCOPE)))
+
+    /** Debug builds replay navigation steps for screenshots; see [runDebugScript]. */
+    fun debugScript(script: String) {
+        scope.launch { runDebugScript(script) }
+    }
+
+    fun replaceTop(route: MobileRoute) {
+        val current = routes.value
+        routes.value = current.with(current.tab, current.stack.dropLast(1) + route)
+        syncNavigation()
+    }
+
+    private fun activateTool(page: ToolPage) {
+        when (page) {
+            ToolPage.FILES -> bindFiles()
+            ToolPage.CHANGES -> bindProjectChanges()
+            ToolPage.SCHEDULES -> {
+                val projectId = currentProjectId()
+                action {
+                    core.dispatch(
+                        Command(
+                            schedules =
+                                SchedulesCommand(
+                                    scope = SCHEDULES_SCOPE,
+                                    bind = ScheduleProject(projectId),
+                                )
+                        )
+                    )
+                    core.dispatch(
+                        Command(
+                            schedules = SchedulesCommand(scope = SCHEDULES_SCOPE, load = Step())
+                        )
+                    )
+                }
+            }
+            ToolPage.TERMINALS ->
+                command(
+                    Command(
+                        terminal_overview =
+                            TerminalOverviewCommand(
+                                scope = TERMINAL_SCOPE,
+                                load = TerminalOverviewLoad(),
+                            )
+                    )
+                )
+            ToolPage.USAGE -> command(Command(quotas = QuotasCommand(load = QuotasLoad())))
+            else -> Unit
+        }
+    }
+
     private fun retainTerminalOutput(output: List<TerminalOutput>, ids: List<String>) {
         val next = terminalScreens.value.toMutableMap()
         output.forEach { event ->
@@ -355,7 +590,7 @@ class MobileStore(
                 )
             )
         if (
-            tab.value == MobileTab.TERMINALS ||
+            (routes.value.top as? MobileRoute.Tool)?.page == ToolPage.TERMINALS ||
                 (selectedCard.value.isNotEmpty() && detailTab.value == "Terminal")
         )
             core.dispatch(
@@ -399,47 +634,6 @@ class MobileStore(
         selectedScreen.value = ""
     }
 
-    fun navigate(value: MobileTab) {
-        back()
-        tab.value = value
-        when (value) {
-            MobileTab.FILES -> bindFiles()
-            MobileTab.PROJECT_CHANGES -> bindProjectChanges()
-            MobileTab.SCHEDULES -> {
-                val projectId = currentProjectId()
-                action {
-                    core.dispatch(
-                        Command(
-                            schedules =
-                                SchedulesCommand(
-                                    scope = SCHEDULES_SCOPE,
-                                    bind = ScheduleProject(projectId),
-                                )
-                        )
-                    )
-                    core.dispatch(
-                        Command(
-                            schedules = SchedulesCommand(scope = SCHEDULES_SCOPE, load = Step())
-                        )
-                    )
-                }
-            }
-            MobileTab.TERMINALS ->
-                command(
-                    Command(
-                        terminal_overview =
-                            TerminalOverviewCommand(
-                                scope = TERMINAL_SCOPE,
-                                load = TerminalOverviewLoad(),
-                            )
-                    )
-                )
-            MobileTab.USAGE,
-            MobileTab.INBOX -> command(Command(quotas = QuotasCommand(load = QuotasLoad())))
-            else -> Unit
-        }
-    }
-
     fun currentProjectId() =
         selectedProject.value.ifEmpty {
             workspace.value.boards.firstOrNull { it.id == selectedBoard.value }?.project_id
@@ -454,7 +648,7 @@ class MobileStore(
     fun newConversation(chat: Boolean = false) {
         pendingAgentChoices.clear()
         creatingChat.value = chat
-        creating.value = true
+        present(MobileRoute.NewTask(chat))
         preview(
             CreationIntent(
                 project_id = currentProjectId(),
@@ -671,7 +865,8 @@ class MobileStore(
         filterBoard(BoardViewTarget(board_id = id))
     }
 
-    fun openCard(requested: String) {
+    /** Binds the conversation scope. Call [openConversation] to navigate. */
+    internal fun openCard(requested: String) {
         val id = outbox.value.resolutions[requested] ?: requested
         if (id == selectedCard.value) return
         generation += 1
@@ -680,7 +875,6 @@ class MobileStore(
         conversation.value = ConversationSlice(card_id = id, loading = true)
         selectedCard.value = id
         conversationScope = resolvedScopes[id] ?: id
-        creating.value = false
         detailTab.value = "Conversation"
         conversationSubscription =
             observe(Slice.SLICE_CONVERSATION, conversationScope) { update ->
@@ -697,12 +891,12 @@ class MobileStore(
         }
     }
 
-    fun back() {
+    private fun closeCard() {
         generation += 1
         conversationSubscription?.close()
         conversationSubscription = null
         selectedCard.value = ""
-        creating.value = false
+        detailTab.value = "Conversation"
         action { core.dispatch(Command(set_visible_conversation = SetVisibleConversation())) }
     }
 

@@ -34,10 +34,11 @@ centralized in `native/android-webrtc/sdk.gradle`. The original iOS Metal render
 cursor state and input view moved into SharedCore so both iOS hosts can use them.
 Termux and SwiftTerm render terminal bytes; the KMP core owns sessions and replay.
 
-Android keeps Material controls and Sora. iOS keeps the same content/actions,
-uses system type and grouped/filled controls, and places native SwiftUI Liquid
-Glass around the four destinations and New control. Native pickers and previews
-supply platform interaction. No backend rule, API or release identity is forked.
+Android uses Material 3 components, dynamic color and Sora titles. On iOS,
+UIKit tab bars, navigation stacks, bar buttons, menus, sheets and alerts carry
+the same actions, and Compose draws content with system colors, type and SF
+Symbols. Native pickers and previews supply platform interaction. No backend
+rule, API or release identity is forked.
 
 ## Evidence and limits
 
