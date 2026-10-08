@@ -53,7 +53,7 @@ struct TaskPlanView: View {
                 }
             }
         }
-        .background(DieterTheme.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(DieterTheme.inset, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -64,7 +64,8 @@ struct TaskPlanView: View {
             ? "checkmark.circle.fill" : status == "in_progress" ? "circle.dotted.circle.fill" : "circle"
     }
     private func planColor(_ status: String) -> Color {
-        status == "completed" ? DieterTheme.eyes : status == "in_progress" ? DieterTheme.primary : DieterTheme.tertiary
+        status == "completed"
+            ? DieterTheme.running : status == "in_progress" ? DieterTheme.action : DieterTheme.tertiary
     }
 }
 
@@ -86,7 +87,7 @@ struct SubagentTimelineGroup: View {
                         DieterTheme.tertiary)
                 }
                 .padding(.horizontal, 10).frame(height: 31)
-                .background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 7))
+                .background(DieterTheme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }.buttonStyle(.plain)
             if expanded {
                 VStack(spacing: 7) { ForEach(agents, id: \.id) { SubagentTimelineCard(agent: $0) } }.padding(
@@ -139,13 +140,13 @@ struct SubagentTimelineCard: View {
                 }.padding(.horizontal, 11).padding(.bottom, 11)
             }
         }
-        .background(DieterTheme.surface, in: RoundedRectangle(cornerRadius: 9))
+        .dieterTile(radius: 10)
     }
 }
 
 struct SubagentsView: View {
     @Environment(ConversationContext.self) private var context
-    var background: Color = DieterTheme.background
+    var background: Color = .clear
     private var agents: [Dieter_V1_Subagent] { context.conversation?.conversation.subagents ?? [] }
     private var running: Int { agents.filter { subagentSummary($0).active }.count }
 
@@ -157,7 +158,7 @@ struct SubagentsView: View {
                         .font(.headline)
                     if running > 0 {
                         Text("• \(running) running").font(.caption.weight(.semibold)).foregroundStyle(
-                            DieterTheme.primary)
+                            DieterTheme.action)
                     }
                     Spacer()
                     if running > 0, let card = context.selectedCard {
@@ -210,8 +211,8 @@ struct SubagentDetailCard: View {
                 if summary.active {
                     GeometryReader { geometry in
                         ZStack(alignment: .leading) {
-                            Capsule().fill(DieterTheme.raised).frame(height: 3)
-                            Capsule().fill(DieterTheme.primary).frame(
+                            Capsule().fill(DieterTheme.hairline).frame(height: 3)
+                            Capsule().fill(DieterTheme.action).frame(
                                 width: max(16, geometry.size.width * max(0, summary.contextFraction)), height: 3)
                         }
                     }.frame(height: 3)
@@ -225,9 +226,9 @@ struct SubagentDetailCard: View {
                 Spacer(); StatusPill(runtime: agent.status)
             }.padding(.horizontal, 13).frame(height: 36)
         }
-        .background(DieterTheme.surface, in: RoundedRectangle(cornerRadius: 10))
+        .background(DieterTheme.tile, in: RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10).stroke(
-                summary.active ? DieterTheme.primary.opacity(0.5) : .clear))
+                summary.active ? DieterTheme.action.opacity(0.5) : .clear))
     }
 }

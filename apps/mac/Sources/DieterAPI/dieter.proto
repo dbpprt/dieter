@@ -312,6 +312,9 @@ enum MachineOperationAction {
   MACHINE_OPERATION_ACTION_UPDATE_DAEMON = 3;
   MACHINE_OPERATION_ACTION_PRIVACY_ON = 4;
   MACHINE_OPERATION_ACTION_PRIVACY_OFF = 5;
+  // Register the optional privileged input helper; macOS administrator approval
+  // and Input Monitoring must be completed on the target Mac.
+  MACHINE_OPERATION_ACTION_PRIVACY_SETUP = 6;
 }
 
 // Owner-only, current-boot physical display/input protection. It is independent
@@ -327,6 +330,8 @@ message MachinePrivacy {
   State state = 3;
   string reason = 4;
   uint32 display_count = 5;
+  uint32 input_device_count = 6;
+  bool helper_setup_required = 7;
 }
 
 message MachineOperationRequest {

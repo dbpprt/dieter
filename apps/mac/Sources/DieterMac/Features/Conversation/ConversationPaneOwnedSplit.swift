@@ -36,6 +36,7 @@ struct ConversationPaneOwnedSplit<ChatBar: View, Chat: View, WorkspaceBar: View,
         controller.chatColumn.contentHost.rootView = AnyView(chat())
         controller.workspaceColumn.titlebarHost.rootView = AnyView(workspaceBar())
         controller.workspaceColumn.contentHost.rootView = AnyView(content())
+        controller.setHairline(NSColor(DieterTheme.hairline))
         controller.setPresentation(split: presented, singleWorkspace: singleWorkspace)
     }
 
@@ -59,7 +60,7 @@ final class ConversationPaneOwnedSplitController: NSSplitViewController {
 
     init() {
         super.init(nibName: nil, bundle: nil)
-        let split = NSSplitView()
+        let split = DieterSplitView()
         split.isVertical = true
         split.dividerStyle = .thin
         split.setAccessibilityIdentifier("conversation.workspace-split")
@@ -98,6 +99,13 @@ final class ConversationPaneOwnedSplitController: NSSplitViewController {
         setPresentation(split: presented, singleWorkspace: false)
     }
 
+    /// The columns share one panel; a hairline separates them.
+    func setHairline(_ color: NSColor) {
+        guard let split = splitView as? DieterSplitView, split.drawnDividerColor != color else { return }
+        split.drawnDividerColor = color
+        split.needsDisplay = true
+    }
+
     func setPresentation(split presented: Bool, singleWorkspace: Bool) {
         guard self.presented != presented || self.singleWorkspace != singleWorkspace else { return }
         presentationGeneration &+= 1
@@ -112,6 +120,12 @@ final class ConversationPaneOwnedSplitController: NSSplitViewController {
         chatItem.isCollapsed = !presented && singleWorkspace
         workspaceItem.isCollapsed = !presented && !singleWorkspace
         restorePosition = presented
+        // Beside each other, both columns show one header row; alone, a column
+        // shows the full header with its breadcrumb and tab track.
+        let headerHeight =
+            presented ? ConversationPanelHeaderMetrics.rowHeight : ConversationPanelHeaderMetrics.fullHeight
+        chatColumn.setTitlebarHeight(headerHeight)
+        workspaceColumn.setTitlebarHeight(headerHeight)
         updateThicknessLimits()
         view.needsLayout = true
         schedulePositionRestore()
@@ -183,6 +197,13 @@ final class ConversationPaneOwnedColumnController: NSViewController {
     let titlebarHost = ConversationTitlebarHostingView(rootView: AnyView(EmptyView()))
     let contentHost = NSHostingView(rootView: AnyView(EmptyView()))
     private let accessibilityIdentifier: String
+    private var titlebarHeight: NSLayoutConstraint?
+
+    func setTitlebarHeight(_ height: CGFloat) {
+        _ = view
+        guard let titlebarHeight, abs(titlebarHeight.constant - height) > 0.5 else { return }
+        titlebarHeight.constant = height
+    }
 
     init(identifier: String) {
         accessibilityIdentifier = identifier
@@ -200,11 +221,14 @@ final class ConversationPaneOwnedColumnController: NSViewController {
         contentHost.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(titlebarHost)
         container.addSubview(contentHost)
+        let height = titlebarHost.heightAnchor.constraint(
+            equalToConstant: ConversationPanelHeaderMetrics.fullHeight)
+        titlebarHeight = height
         NSLayoutConstraint.activate([
             titlebarHost.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             titlebarHost.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             titlebarHost.topAnchor.constraint(equalTo: container.topAnchor),
-            titlebarHost.heightAnchor.constraint(equalToConstant: 40),
+            height,
             contentHost.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             contentHost.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             contentHost.topAnchor.constraint(equalTo: titlebarHost.bottomAnchor),
@@ -214,9 +238,9 @@ final class ConversationPaneOwnedColumnController: NSViewController {
     }
 }
 
-/// The pane's titlebar is actual split content, not a safe-area-aware SwiftUI
-/// overlay. Inheriting the window titlebar inset moves a 40pt rail partly
-/// outside its 40pt native host and clips its pointer target.
+/// The pane's header is actual split content, not a safe-area-aware SwiftUI
+/// overlay. Inheriting the window titlebar inset would move the header partly
+/// outside its native host and clip its pointer targets.
 @MainActor
 final class ConversationTitlebarHostingView: NSHostingView<AnyView> {
     override var safeAreaInsets: NSEdgeInsets { NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0) }
@@ -224,61 +248,17 @@ final class ConversationTitlebarHostingView: NSHostingView<AnyView> {
 }
 
 struct ConversationPaneSurfaceBar: View {
-    @Environment(ConversationContext.self) private var context
     @Bindable var model: ConversationContentModel
     let workspacePresented: Bool
     let kanbanPresented: Bool
     let toggleKanban: () -> Void
     var showsKanban = true
 
-    private var standalone: Bool {
-        context.model.state.chat
-    }
-
     var body: some View {
         ConversationPaneTitlebar {
-            if workspacePresented {
-                HStack(spacing: 6) {
-                    ConversationTitleStatusMenu(standalone: standalone, actionHeight: 40)
-                    if showsKanban {
-                        ConversationSurfaceToggles(
-                            model: model,
-                            workspacePresented: true,
-                            kanbanPresented: kanbanPresented,
-                            toggleKanban: toggleKanban,
-                            showsConversation: false,
-                            height: 40
-                        )
-                    }
-                }
-            } else {
-                HStack(spacing: 6) {
-                    if showsKanban {
-                        ConversationSurfaceToggles(
-                            model: model,
-                            workspacePresented: false,
-                            kanbanPresented: kanbanPresented,
-                            toggleKanban: toggleKanban,
-                            showsConversation: false,
-                            height: 40
-                        )
-                        Divider()
-                            .frame(height: 18)
-                            .padding(.horizontal, 2)
-                    }
-                    ConversationWorkspaceTabBar(
-                        model: model,
-                        nativeToolbar: true,
-                        includesConversation: true,
-                        showsControls: false
-                    )
-                    .frame(minWidth: 0, maxWidth: .infinity)
-                    ConversationWorkspaceControls(model: model, height: 40)
-                        .fixedSize()
-                    ConversationCloseButton(height: 40)
-                }
-                .environment(context)
-            }
+            ConversationPanelHeader(
+                model: model, role: workspacePresented ? .chatBesideWorkspace : .unified,
+                kanbanPresented: kanbanPresented, toggleKanban: showsKanban ? toggleKanban : nil)
         }
         .accessibilityIdentifier(
             workspacePresented
@@ -288,55 +268,29 @@ struct ConversationPaneSurfaceBar: View {
 }
 
 struct ConversationPaneWorkspaceBar: View {
-    @Environment(ConversationContext.self) private var context
     @Bindable var model: ConversationContentModel
     let kanbanPresented: Bool
     let toggleKanban: () -> Void
     var showsKanban = true
 
-    private var standalone: Bool {
-        context.model.state.chat
-    }
-
     var body: some View {
         ConversationPaneTitlebar {
-            HStack(spacing: 6) {
-                if !model.splitMode {
-                    ConversationActionsMenu(standalone: standalone, height: 40)
-                }
-                if !model.splitMode && showsKanban {
-                    ConversationSurfaceToggles(
-                        model: model, workspacePresented: false,
-                        kanbanPresented: kanbanPresented, toggleKanban: toggleKanban,
-                        showsConversation: false,
-                        height: 40
-                    )
-                    Divider().frame(height: 18).padding(.horizontal, 2)
-                }
-                ConversationWorkspaceTabBar(
-                    model: model,
-                    nativeToolbar: true,
-                    includesConversation: !model.splitMode,
-                    showsControls: false
-                )
-                .frame(minWidth: 0, maxWidth: .infinity)
-                ConversationWorkspaceControls(model: model, height: 40)
-                    .fixedSize()
-                ConversationCloseButton(height: 40)
-            }
+            ConversationPanelHeader(
+                model: model, role: model.splitMode ? .workspaceBesideChat : .singleWorkspace,
+                kanbanPresented: kanbanPresented, toggleKanban: showsKanban ? toggleKanban : nil)
         }
         .accessibilityIdentifier("conversation.toolbar.rail.sidebar")
     }
 }
 
 struct ConversationPaneTitlebar<Content: View>: View {
+    /// The header's inset from its column edge.
+    static var horizontalInset: CGFloat { 12 }
     @ViewBuilder let content: () -> Content
 
     var body: some View {
         content()
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .background(DieterTheme.surface)
-            .overlay(alignment: .bottom) { Divider() }
+            .padding(.horizontal, Self.horizontalInset)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }

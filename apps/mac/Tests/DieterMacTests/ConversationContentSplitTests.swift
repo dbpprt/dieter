@@ -105,12 +105,12 @@ import Testing
     #expect(abs(chatColumn.width - split.arrangedSubviews[0].frame.width) < 1)
     #expect(abs(chatTitlebar.minX - chatColumn.minX) < 1)
     #expect(abs(chatTitlebar.maxX - chatColumn.maxX) < 1)
-    #expect(abs(chatTitlebar.height - 40) < 1)
+    #expect(abs(chatTitlebar.height - ConversationPanelHeaderMetrics.rowHeight) < 1)
     #expect(controller.chatColumn.titlebarHost.safeAreaInsets.top == 0)
     #expect(controller.chatColumn.titlebarHost.safeAreaRect == controller.chatColumn.titlebarHost.bounds)
     #expect(abs(workspaceTitlebar.minX - workspaceColumn.minX) < 1)
     #expect(abs(workspaceTitlebar.maxX - workspaceColumn.maxX) < 1)
-    #expect(abs(workspaceTitlebar.height - 40) < 1)
+    #expect(abs(workspaceTitlebar.height - ConversationPanelHeaderMetrics.rowHeight) < 1)
     #expect(controller.workspaceColumn.titlebarHost.safeAreaInsets.top == 0)
     #expect(abs(chatColumn.maxX + split.dividerThickness - workspaceColumn.minX) < 1)
 
@@ -187,9 +187,10 @@ import Testing
             host.layoutSubtreeIfNeeded()
             guard let probe = titlebarAlignmentProbe(in: host) else { return false }
             let frame = probe.convert(probe.bounds, to: host)
-            return abs(host.bounds.width - width) < 2 && abs(frame.minX - 10) < 2
+            return abs(host.bounds.width - width) < 2
+                && abs(frame.minX - ConversationPaneTitlebar<EmptyView>.horizontalInset) < 2
         }
-        #expect(aligned, "Titlebar controls must start 10 points inside their pane at width \(width)")
+        #expect(aligned, "Titlebar controls must start at the header inset at width \(width)")
     }
 }
 
@@ -307,11 +308,11 @@ private struct ContentSplitFixture: View {
 }
 
 @MainActor private func nativeTranscript(_ view: NSView) -> MessageTextView? {
-    (view as? MessageTextView) ?? view.subviews.lazy.compactMap { nativeTranscript($0) }.first
+    (view as? MessageTextView) ?? view.firstSubviewResult { nativeTranscript($0) }
 }
 
 @MainActor private func nativeSplit(_ view: NSView) -> NSSplitView? {
-    (view as? NSSplitView) ?? view.subviews.lazy.compactMap { nativeSplit($0) }.first
+    (view as? NSSplitView) ?? view.firstSubviewResult { nativeSplit($0) }
 }
 
 private struct TitlebarAlignmentProbe: NSViewRepresentable {
@@ -326,7 +327,7 @@ private struct TitlebarAlignmentProbe: NSViewRepresentable {
 
 @MainActor private func titlebarAlignmentProbe(in view: NSView) -> NSView? {
     if view.accessibilityIdentifier() == "conversation.titlebar.alignment-probe" { return view }
-    return view.subviews.lazy.compactMap { titlebarAlignmentProbe(in: $0) }.first
+    return view.firstSubviewResult { titlebarAlignmentProbe(in: $0) }
 }
 
 @MainActor private func waitForContentSplit(_ predicate: () -> Bool) async -> Bool {

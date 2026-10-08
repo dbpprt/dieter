@@ -13,6 +13,7 @@ private func operationSymbol(_ action: Dieter_V1_MachineOperationAction) -> Stri
     switch action {
     case .privacyOn: "lock.shield"
     case .privacyOff: "lock.open"
+    case .privacySetup: "shield.lefthalf.filled"
     case .updateDaemon: "arrow.down.circle"
     case .restart: "arrow.clockwise.circle"
     case .shutdown: "power"
@@ -135,7 +136,7 @@ struct MachinePopover: View {
                 .font(.system(size: 23, weight: .medium))
                 .foregroundStyle(DieterTheme.shell)
                 .frame(width: 54, height: 54)
-                .background(DieterTheme.selection, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .background(DieterTheme.tileSelected, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 9) {
                     Text(machine.name).font(.system(size: 22, weight: .bold))
@@ -218,6 +219,7 @@ struct MachinePopover: View {
         switch action {
         case .privacyOn: "machine.privacy-on"
         case .privacyOff: "machine.privacy-off"
+        case .privacySetup: "machine.privacy-setup"
         case .updateDaemon: "machine.update-daemon"
         case .restart: "machine.restart"
         case .shutdown: "machine.shutdown"
@@ -313,7 +315,7 @@ struct MachinePopover: View {
                         .font(DieterFont.body).foregroundStyle(DieterTheme.subtle)
                         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                         .background(
-                            DieterTheme.surface.opacity(0.45),
+                            DieterTheme.tile,
                             in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 } else {
                     ForEach(information.gpu.devices, id: \.id) { device in
@@ -406,7 +408,7 @@ struct MachinePopover: View {
                         systemImage: "network")
                 }
             }
-            .background(DieterTheme.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .dieterTile(radius: 12)
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DieterTheme.border))
         }
     }
@@ -441,7 +443,7 @@ struct MachinePopover: View {
                     }
                 }
             }
-            .background(DieterTheme.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .dieterTile(radius: 12)
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DieterTheme.border))
         }
     }
@@ -508,7 +510,7 @@ private struct MachineMetricPanel<Content: View>: View {
         VStack(alignment: .leading, spacing: 12) { content }
             .padding(16)
             .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
-            .background(DieterTheme.surface.opacity(0.62), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .dieterTile(radius: 13)
             .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(DieterTheme.border))
     }
 }
@@ -550,7 +552,7 @@ private struct MachineMemoryBar: View {
                 Rectangle().fill(DieterTheme.shell.opacity(0.66)).frame(width: max(0, cacheWidth))
                 Spacer(minLength: 0)
             }
-            .background(DieterTheme.raised)
+            .background(DieterTheme.tile)
             .clipShape(Capsule())
         }
     }

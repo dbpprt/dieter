@@ -106,7 +106,7 @@ struct QuickTaskStoryEditorTests {
 
     private func quickTaskEditor(in view: NSView) -> QuickTaskStoryTextView? {
         (view as? QuickTaskStoryTextView)
-            ?? view.subviews.lazy.compactMap { quickTaskEditor(in: $0) }.first
+            ?? view.firstSubviewResult { quickTaskEditor(in: $0) }
     }
 }
 

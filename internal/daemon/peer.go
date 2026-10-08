@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"net"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -209,18 +210,21 @@ func peerRTCCooldown(failures int) time.Duration {
 }
 
 // PeerSync runs only from serve. No handler construction starts background work.
-// One peer at a time and two peers per round bound connections and fanout. All
-// actors can write; rounds rotate through online account members without a leader.
+// Independent per-peer retries and a bounded worker set isolate stalled peers.
+// All actors can write; rounds rotate through account members without a leader.
 type PeerSync struct {
-	Identity  *Identity
-	Store     *store.Store
-	Log       *slog.Logger
-	Interval  time.Duration
-	RelayOnly bool // Require TURN for isolated qualification; false preserves normal route preference.
-	next      int
-	rtcMu     sync.Mutex
-	rtcRetry  map[string]peerRTCRetry
-	now       func() time.Time
+	Identity    *Identity
+	Store       *store.Store
+	Log         *slog.Logger
+	Interval    time.Duration
+	RelayOnly   bool // Require TURN for isolated qualification; false preserves normal route preference.
+	next        int
+	syncMu      sync.Mutex
+	syncRetry   map[string]peerSyncRetry
+	activePeers int
+	rtcMu       sync.Mutex
+	rtcRetry    map[string]peerRTCRetry
+	now         func() time.Time
 }
 
 func (p *PeerSync) rtcAttemptAllowed(target string) bool {
@@ -256,6 +260,64 @@ func (p *PeerSync) timeNow() time.Time {
 	return time.Now()
 }
 
+type peerSyncRetry struct {
+	failures int
+	retryAt  time.Time
+	active   bool
+}
+
+const maxConcurrentPeerExchanges = 4
+
+func (p *PeerSync) selectPeers(peers []string, limit int) []string {
+	p.syncMu.Lock()
+	defer p.syncMu.Unlock()
+	if p.syncRetry == nil {
+		p.syncRetry = map[string]peerSyncRetry{}
+	}
+	live := map[string]bool{}
+	for _, id := range peers {
+		live[id] = true
+	}
+	for id, state := range p.syncRetry {
+		if !live[id] && !state.active {
+			delete(p.syncRetry, id)
+		}
+	}
+	var selected []string
+	for n := 0; n < len(peers) && len(selected) < limit && p.activePeers < maxConcurrentPeerExchanges; n++ {
+		id := peers[p.next%len(peers)]
+		p.next++
+		state := p.syncRetry[id]
+		if state.active || p.timeNow().Before(state.retryAt) {
+			continue
+		}
+		state.active = true
+		p.syncRetry[id] = state
+		p.activePeers++
+		selected = append(selected, id)
+	}
+	return selected
+}
+func (p *PeerSync) finishPeer(target string, err error) {
+	p.syncMu.Lock()
+	defer p.syncMu.Unlock()
+	state := p.syncRetry[target]
+	state.active = false
+	p.activePeers--
+	if err == nil {
+		state.failures = 0
+		state.retryAt = time.Time{}
+	} else {
+		state.failures++
+		delay := 15 * time.Second
+		for n := 1; n < state.failures && delay < 2*time.Minute; n++ {
+			delay = min(delay*2, 2*time.Minute)
+		}
+		state.retryAt = p.timeNow().Add(delay)
+	}
+	p.syncRetry[target] = state
+}
+
 func (p *PeerSync) Run(ctx context.Context) {
 	interval := p.Interval
 	if interval <= 0 {
@@ -267,14 +329,14 @@ func (p *PeerSync) Run(ctx context.Context) {
 	}
 	delay := interval
 	changes := p.Store.PeerChangesAvailable()
+	var workers sync.WaitGroup
+	defer workers.Wait()
 	for ctx.Err() == nil {
-		round, cancel := context.WithTimeout(ctx, 100*time.Second)
-		err := p.Round(round)
+		discovery, cancel := context.WithTimeout(ctx, 25*time.Second)
+		err := p.round(discovery, ctx, &workers)
 		cancel()
 		if err != nil && ctx.Err() == nil {
-			logger.Warn("peer store synchronization pending", "error", err)
-		}
-		if err != nil {
+			logger.Warn("peer store discovery pending", "error", err)
 			delay = min(max(delay*2, interval), 2*time.Minute)
 		} else {
 			delay = interval
@@ -287,8 +349,6 @@ func (p *PeerSync) Run(ctx context.Context) {
 		case <-timer.C:
 		case <-changes:
 			timer.Stop()
-			// Coalesce bursts and forwarded pages, and retain backoff when the
-			// account control plane is unavailable. No tight retry on failures.
 			pause := time.Second
 			if err != nil {
 				pause = delay
@@ -303,7 +363,12 @@ func (p *PeerSync) Run(ctx context.Context) {
 		}
 	}
 }
-func (p *PeerSync) Round(ctx context.Context) error {
+func (p *PeerSync) Round(ctx context.Context) error { return p.round(ctx, ctx, nil) }
+
+// Discovery can fail globally; exchange failures back off only their target.
+// Serve dispatches without waiting for slow exchanges. Explicit Round waits for
+// its admitted peers, preserving callers' durable convergence boundary.
+func (p *PeerSync) round(ctx, workerCtx context.Context, workers *sync.WaitGroup) error {
 	if err := p.Store.FlushSharedOutbox(); err != nil {
 		return err
 	}
@@ -357,45 +422,83 @@ func (p *PeerSync) Round(ctx context.Context) error {
 	}
 	sort.Strings(peers)
 	if len(peers) == 0 {
+		if workers != nil {
+			return nil
+		}
 		return lastErr
 	}
-	for n := 0; n < 2 && n < len(peers); n++ {
-		target := peers[p.next%len(peers)]
-		p.next++
-		attempt, cancel := context.WithTimeout(ctx, 40*time.Second)
-		connection, e := dialPeer(attempt, p.Identity, conn, target, p.RelayOnly, !p.RelayOnly && !p.rtcAttemptAllowed(target))
-		if e == nil {
-			if connection.RTCFallback != nil {
-				retry := p.recordRTCFallback(target)
+	limit := 2
+	if workers != nil {
+		limit = maxConcurrentPeerExchanges
+	}
+	selected := p.selectPeers(peers, limit)
+	results := make(chan error, len(selected))
+	for _, target := range selected {
+		if workers != nil {
+			workers.Add(1)
+		}
+		go func() {
+			if workers != nil {
+				defer workers.Done()
+			}
+			attempt, cancel := context.WithTimeout(workerCtx, 40*time.Second)
+			defer cancel()
+			// Each exchange owns its connection. A completed discovery closes only its
+			// own RPCs, never an independently progressing peer.
+			connection, e := dialGateway(attempt, p.Identity, false)
+			if e == nil {
+				e = p.exchangePeer(attempt, binding, connection, target)
+				connection.Close()
+			}
+			p.finishPeer(target, e)
+			if workers == nil {
+				results <- e
+			} else if e != nil && workerCtx.Err() == nil {
 				logger := p.Log
 				if logger == nil {
 					logger = slog.Default()
 				}
-				logger.Info("peer WebRTC unavailable; using gateway relay",
-					"peer", target,
-					"stage", connection.RTCFallback.Stage,
-					"reason", connection.RTCFallback.Reason,
-					"elapsed_ms", connection.RTCFallback.ElapsedMS,
-					"retry_in", peerRTCCooldown(retry.failures))
-			} else if len(connection.Route) >= len("webrtc-") && connection.Route[:len("webrtc-")] == "webrtc-" {
-				p.clearRTCFallback(target)
+				logger.Warn("peer store synchronization pending", "peer", target, "error", e)
 			}
-			e = p.exchange(attempt, binding, connection.Client, target, connection.Route)
-			if e == nil {
-				e = p.Store.PeerSynced(binding, target, connection.Route)
-			} else if errors.Is(e, ErrPeerCatchUp) {
-				e = nil
+		}()
+	}
+	if workers == nil {
+		for range selected {
+			if e := <-results; e != nil {
+				lastErr = e
 			}
-			connection.Close()
-		} else {
-			_ = p.Store.RecordPeerSync(binding, store.PeerSyncDiagnostic{PeerID: target, LastAttemptAt: time.Now().UTC().Format(time.RFC3339Nano), Direction: "connect", FailureCode: sanitizedRTCReason(e)})
-		}
-		cancel()
-		if e != nil {
-			lastErr = fmt.Errorf("peer %s: %w", target, e)
 		}
 	}
+	if workers != nil {
+		return nil
+	}
 	return lastErr
+}
+
+func (p *PeerSync) exchangePeer(ctx context.Context, binding store.PeerIdentity, conn grpc.ClientConnInterface, target string) error {
+	connection, e := dialPeer(ctx, p.Identity, conn, target, p.RelayOnly, !p.RelayOnly && !p.rtcAttemptAllowed(target))
+	if e != nil {
+		_ = p.Store.RecordPeerSync(binding, store.PeerSyncDiagnostic{PeerID: target, LastAttemptAt: time.Now().UTC().Format(time.RFC3339Nano), Direction: "connect", FailureCode: sanitizedRTCReason(e)})
+		return fmt.Errorf("peer %s: %w", target, e)
+	}
+	defer connection.Close()
+	if connection.RTCFallback != nil {
+		retry := p.recordRTCFallback(target)
+		logger := p.Log
+		if logger == nil {
+			logger = slog.Default()
+		}
+		logger.Info("peer WebRTC unavailable; using gateway relay", "peer", target, "stage", connection.RTCFallback.Stage, "reason", connection.RTCFallback.Reason, "elapsed_ms", connection.RTCFallback.ElapsedMS, "retry_in", peerRTCCooldown(retry.failures))
+	} else if strings.HasPrefix(connection.Route, "webrtc-") {
+		p.clearRTCFallback(target)
+	}
+	e = p.exchange(ctx, binding, connection.Client, target, connection.Route)
+	if e == nil {
+		e = p.Store.PeerSynced(binding, target, connection.Route)
+	} else if errors.Is(e, ErrPeerCatchUp) {
+		e = nil
+	}
+	return e
 }
 
 // Exchange resumes each direction from a durable local transport checkpoint.

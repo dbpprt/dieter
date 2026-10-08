@@ -98,14 +98,15 @@ struct RemoteDirectoryBrowserSheet: View {
                         } label: {
                             Image(systemName: "chevron.left")
                         }
-                        .buttonStyle(DieterIconButtonStyle()).disabled(listing?.parent.isEmpty != false || loading)
+                        .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).disabled(
+                            listing?.parent.isEmpty != false || loading)
                         TextField("Path on \(machine?.name ?? "machine")", text: $pathField)
                             .textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
                             .padding(.horizontal, 10).frame(height: 30)
                             .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 7))
                             .overlay(RoundedRectangle(cornerRadius: 7).stroke(DieterTheme.strongBorder))
                             .onSubmit { Task { await load(pathField) } }
-                        Button("Go") { Task { await load(pathField) } }.buttonStyle(DieterSecondaryButtonStyle())
+                        Button("Go") { Task { await load(pathField) } }.buttonStyle(DieterBarButtonStyle(size: 30))
                             .disabled(loading)
                     }
 
@@ -231,12 +232,12 @@ struct RemoteDirectoryBrowserSheet: View {
                             .font(.caption).foregroundStyle(DieterTheme.tertiary)
                     }
                     Spacer()
-                    Button("Cancel") { dismiss() }.buttonStyle(DieterSecondaryButtonStyle())
+                    Button("Cancel") { dismiss() }.buttonStyle(DieterBarButtonStyle(size: 30))
                     Button(mode == .existing ? "Use this working tree" : "Use this path") {
                         selection = mode == .existing ? (listing?.path ?? "") : newProjectPath
                         dismiss()
                     }
-                    .buttonStyle(DieterPrimaryButtonStyle()).disabled(!canUseSelection)
+                    .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30)).disabled(!canUseSelection)
                     .accessibilityIdentifier("new-project.browser-use")
                 }
             }

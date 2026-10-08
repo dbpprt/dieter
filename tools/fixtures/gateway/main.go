@@ -890,14 +890,19 @@ func isolatedGitEnvironment(environment []string) []string {
 }
 
 // Presentation fixtures never blank the operator desktop.
-type isolatedPrivacy struct{ enabled bool }
+type isolatedPrivacy struct{ enabled, setup bool }
+
+func (f *isolatedPrivacy) Setup(ctx context.Context) (*dieterv1.MachinePrivacy, error) {
+	f.setup = true
+	return f.Snapshot(ctx)
+}
 
 func (f *isolatedPrivacy) Snapshot(context.Context) (*dieterv1.MachinePrivacy, error) {
 	state := dieterv1.MachinePrivacy_STATE_OFF
 	if f.enabled {
 		state = dieterv1.MachinePrivacy_STATE_ON
 	}
-	return &dieterv1.MachinePrivacy{Supported: true, Requested: f.enabled, State: state, DisplayCount: 1}, nil
+	return &dieterv1.MachinePrivacy{Supported: f.setup, HelperSetupRequired: !f.setup, Requested: f.enabled, State: state, DisplayCount: 1, InputDeviceCount: 2}, nil
 }
 func (f *isolatedPrivacy) Set(ctx context.Context, enabled bool) (*dieterv1.MachinePrivacy, error) {
 	f.enabled = enabled

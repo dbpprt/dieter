@@ -526,11 +526,13 @@ class AdminRulesTest {
         assertFalse(PeerSyncHealth.isCurrent(PeerSyncDiagnostic(), true, now))
         val peers = mapOf("p" to ("laptop" to true))
         assertEquals(
-            listOf("Shared updates between studio and laptop are delayed."),
+            listOf("Board and settings sync between studio and laptop is delayed."),
             PeerSyncHealth.warnings("studio", true, true, listOf(recent), peers, now),
         )
         assertEquals(
-            listOf("Shared updates between studio and laptop are blocked by a rejected record."),
+            listOf(
+                "Board and settings sync between studio and laptop is blocked by a rejected record."
+            ),
             PeerSyncHealth.warnings(
                 "studio",
                 true,

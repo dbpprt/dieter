@@ -37,7 +37,7 @@ struct TurnFailureBanner: View {
                 Button("View log", action: onViewLog)
                     .buttonStyle(.plain)
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(DieterTheme.primary)
+                    .foregroundStyle(DieterTheme.action)
                     .accessibilityIdentifier("conversation.failure.view-log")
                     .smokeTarget("conversation.failure.view-log")
                 Button(action: onRetry) {
@@ -47,14 +47,14 @@ struct TurnFailureBanner: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(DieterTheme.elevated)
+                .tint(DieterTheme.action)
                 .foregroundStyle(DieterTheme.text)
                 .disabled(retrying || !failure.retryable)
                 .accessibilityIdentifier("conversation.failure.retry")
             }
         }
         .padding(16)
-        .background(DieterTheme.surface.opacity(0.92), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(DieterTheme.failed.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(DieterTheme.coral.opacity(0.45), lineWidth: 1)
@@ -106,7 +106,7 @@ struct CreationFailureBanner: View {
                     .accessibilityIdentifier("conversation.creation-failure.discard")
                 Button("Retry creation", action: onRetry)
                     .buttonStyle(.borderedProminent)
-                    .tint(DieterTheme.elevated)
+                    .tint(DieterTheme.action)
                     .foregroundStyle(DieterTheme.text)
                     .accessibilityIdentifier("conversation.creation-failure.retry")
             }
@@ -143,7 +143,7 @@ struct TurnFailureLogSheet: View {
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     .padding(12)
             }
-            .background(DieterTheme.background, in: RoundedRectangle(cornerRadius: 10))
+            .background(DieterTheme.inset, in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(DieterTheme.border))
             HStack {
                 Button("Copy log") {

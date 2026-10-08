@@ -8,6 +8,8 @@ struct PrivacySnapshot: Codable, Equatable {
     var state = 0  // Same values as MachinePrivacy.State.
     var reason = ""
     var displayCount = 0
+    var inputDeviceCount = 0
+    var helperSetupRequired = false
     var error: String?
 }
 
@@ -46,6 +48,10 @@ final class PrivacyLease {
                     throw error
                 }
                 requested = true
+            } else {
+                do { try driver.acquire() } catch {
+                    failure = String(error.localizedDescription.prefix(1024)); throw error
+                }
             }
             do { try driver.maintain(); failure = "" } catch {
                 failure = String(error.localizedDescription.prefix(1024)); throw error
@@ -101,6 +107,32 @@ final class SystemPrivacyDesktopDriver: PrivacyDesktopDriver {
     private var tapSource: CFRunLoopSource?
     private var hiddenCursor = false
     private var disabledAt: [TimeInterval] = []
+    private lazy var input = PrivacyHIDMonitor(requestLock: { [weak self] in self?.requestAuthenticationLock() })
+
+    static var privacyBundle: URL {
+        PrivacyHelperPackage.bundle(for: URL(fileURLWithPath: CommandLine.arguments[0]))
+    }
+
+    static var privacyBundleInstalled: Bool {
+        FileManager.default.isExecutableFile(
+            atPath: privacyBundle.appendingPathComponent("Contents/MacOS/dieter-privacy").path)
+    }
+
+    static func setup() throws -> PrivacySnapshot {
+        let executable = privacyBundle.appendingPathComponent("Contents/MacOS/dieter-privacy")
+        guard privacyBundleInstalled else {
+            throw PrivacyHIDError("Install DieterPrivacyHelper.app beside the daemon to set up privacy mode")
+        }
+        let process = Process(); process.executableURL = executable; process.arguments = ["--privacy-hid-register"]
+        let pipe = Pipe(); process.standardOutput = pipe
+        try process.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile(); process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw PrivacyHIDError("macOS could not register the privacy helper")
+        }
+        let status = try JSONDecoder().decode(PrivacyHIDStatus.self, from: data)
+        return .init(supported: false, reason: status.reason, helperSetupRequired: true)
+    }
 
     static func displays() throws -> [CGDirectDisplayID] {
         var count: UInt32 = 0
@@ -122,13 +154,24 @@ final class SystemPrivacyDesktopDriver: PrivacyDesktopDriver {
                     displayCount: displays.count)
             }
             for display in displays { _ = try PrivacyGammaTable.read(display) }
-            return .init(supported: true, displayCount: displays.count)
-        } catch { return .init(reason: String(error.localizedDescription.prefix(1024))) }
+            let input = try PrivacyHIDConnection.exchange("status")
+            guard input.available else {
+                return .init(
+                    reason: input.reason, displayCount: displays.count, inputDeviceCount: input.deviceCount,
+                    helperSetupRequired: Self.privacyBundleInstalled)
+            }
+            return .init(supported: true, displayCount: displays.count, inputDeviceCount: input.deviceCount)
+        } catch {
+            return .init(
+                reason: String(error.localizedDescription.prefix(1024)),
+                helperSetupRequired: Self.privacyBundleInstalled)
+        }
     }
     static func isPhysical(_ event: CGEvent) -> Bool {
         event.getIntegerValueField(.eventSourceStateID) == CGEventSourceStateID.hidSystemState.rawValue
     }
     func acquire() throws {
+        try input.acquire()
         guard tap == nil else { return }
         // Session taps do not require root. A HID-location tap would.
         let types: [CGEventType] = [
@@ -163,6 +206,10 @@ final class SystemPrivacyDesktopDriver: PrivacyDesktopDriver {
         do { try maintain() } catch { try? release(); throw error }
     }
     func maintain() throws {
+        do { try maintainProtection() } catch { input.protectionLost(); throw error }
+    }
+    private func maintainProtection() throws {
+        try input.audit()
         guard CGPreflightPostEventAccess(), let tap else {
             throw CaptureError.invalidArgument("Privacy input protection lost its Accessibility permission")
         }
@@ -192,10 +239,23 @@ final class SystemPrivacyDesktopDriver: PrivacyDesktopDriver {
             if online.contains(display) { try original.apply(display) }
             originals.removeValue(forKey: display)
         }
+        try input.release()
         if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
         if let tapSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), tapSource, .commonModes) }
         tap = nil; tapSource = nil; disabledAt = []
         if hiddenCursor { _ = CGDisplayShowCursor(CGMainDisplayID()); hiddenCursor = false }
+    }
+
+    // Apple's documented Lock Screen shortcut is a best-effort fallback, not
+    // proof that loginwindow authenticated the lock. Never report healthy based
+    // on it, and do not inject a login password or unlock the authentication UI.
+    private func requestAuthenticationLock() {
+        let source = CGEventSource(stateID: .privateState)
+        for down in [true, false] {
+            let event = CGEvent(keyboardEventSource: source, virtualKey: 12, keyDown: down)
+            event?.flags = [.maskControl, .maskCommand]
+            event?.post(tap: .cghidEventTap)
+        }
     }
 }
 
@@ -207,6 +267,11 @@ final class SyntheticPrivacyDesktopDriver: PrivacyDesktopDriver {
 }
 
 enum PrivacyService {
+    static func setup(dryRun: Bool) throws {
+        let value = dryRun ? PrivacySnapshot(supported: true) : try SystemPrivacyDesktopDriver.setup()
+        let encoder = JSONEncoder(); encoder.keyEncodingStrategy = .convertToSnakeCase
+        FileHandle.standardOutput.write(try encoder.encode(value))
+    }
     static func capabilities(dryRun: Bool) {
         let driver: any PrivacyDesktopDriver = dryRun ? SyntheticPrivacyDesktopDriver() : SystemPrivacyDesktopDriver()
         let encoder = JSONEncoder(); encoder.keyEncodingStrategy = .convertToSnakeCase

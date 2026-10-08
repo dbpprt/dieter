@@ -15,58 +15,50 @@ struct TerminalsView: View {
     private var selected: Dieter_V1_Terminal? { model.selectedTerminal }
 
     var body: some View {
-        VStack(spacing: 0) {
-            FluidPaneChrome {
-                HStack(spacing: 12) {
-                    PaneTitleBlock(
-                        title: "Terminals",
-                        subtitle: model.terminalScopeCardID == nil
-                            ? store.terminalOverview.terminalOverviewStatus : model.terminalStatus,
-                        prominent: true
-                    )
-                    Spacer()
-                    if model.terminalScopeCardID != nil {
-                        Button("All terminals") { Task { await showAll() } }.controlSize(.small)
-                    }
-                    Button {
-                        model.createTerminalPresented = true
-                    } label: {
-                        Label("New terminal", systemImage: "plus")
-                            .font(.system(size: 11, weight: .semibold))
-                            .padding(.horizontal, 12)
-                            .frame(height: 30)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.white)
-                    .background(DieterTheme.shellDeep, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .keyboardShortcut("t", modifiers: [.command, .shift])
-                    .accessibilityIdentifier("terminals.new").disabled(!model.isLive)
+        DieterSectionScaffold {
+            DieterTitleCapsule(
+                title: "Terminals", count: visibleEntries.isEmpty ? nil : visibleEntries.count,
+                detail: model.terminalScopeCardID == nil
+                    ? store.terminalOverview.terminalOverviewStatus : model.terminalStatus)
+        } trailing: {
+            if model.terminalScopeCardID != nil {
+                Button("All terminals") { Task { await showAll() } }
+                    .buttonStyle(DieterBarButtonStyle())
+            }
+            Button {
+                model.createTerminalPresented = true
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "plus").font(.system(size: 11, weight: .bold))
+                    Text("New terminal")
                 }
             }
+            .buttonStyle(DieterBarButtonStyle())
+            .keyboardShortcut("t", modifiers: [.command, .shift])
+            .accessibilityIdentifier("terminals.new").disabled(!model.isLive)
+        } content: {
+            VStack(spacing: 0) {
+                if !visibleEntries.isEmpty, visibleLoading || visibleError != nil {
+                    LoadFeedback(
+                        title: "Refreshing terminals…", error: visibleError,
+                        retry: { Task { await store.loadTerminals() } }, compact: true)
+                }
+                if !visibleEntries.isEmpty {
+                    terminalTabs
+                    Rectangle().fill(DieterTheme.hairline).frame(height: 1)
+                }
 
-            Divider().overlay(DieterTheme.border)
-
-            if !visibleEntries.isEmpty, visibleLoading || visibleError != nil {
-                LoadFeedback(
-                    title: "Refreshing terminals…", error: visibleError,
-                    retry: { Task { await store.loadTerminals() } }, compact: true)
-            }
-            if !visibleEntries.isEmpty {
-                terminalTabs
-                Divider().overlay(DieterTheme.border)
-            }
-
-            if visibleLoading && visibleEntries.isEmpty {
-                LoadFeedback(title: "Loading persistent terminals…")
-            } else if let error = visibleError, visibleEntries.isEmpty {
-                LoadFeedback(title: "Terminals", error: error, retry: { Task { await store.loadTerminals() } })
-            } else if let selected {
-                terminalWorkspace(selected)
-            } else {
-                emptyState
+                if visibleLoading && visibleEntries.isEmpty {
+                    LoadFeedback(title: "Loading persistent terminals…")
+                } else if let error = visibleError, visibleEntries.isEmpty {
+                    LoadFeedback(title: "Terminals", error: error, retry: { Task { await store.loadTerminals() } })
+                } else if let selected {
+                    terminalWorkspace(selected)
+                } else {
+                    emptyState
+                }
             }
         }
-        .background(DieterTheme.background)
         .sheet(isPresented: $model.createTerminalPresented) {
             NewTerminalSheet()
         }
@@ -161,8 +153,8 @@ struct TerminalsView: View {
                 .help("New terminal")
             }
         }
-        .frame(height: 38)
-        .background(DieterTheme.sidebar)
+        .padding(.horizontal, 6)
+        .frame(height: 42)
     }
 
     private var selectedEntryID: String? {
@@ -233,7 +225,6 @@ struct TerminalsView: View {
             .foregroundStyle(DieterTheme.tertiary)
             .padding(.horizontal, 12)
             .frame(height: 28)
-            .background(DieterTheme.sidebar)
         }
     }
 
@@ -241,7 +232,7 @@ struct TerminalsView: View {
         VStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(DieterTheme.selection)
+                    .fill(DieterTheme.tileHover)
                     .frame(width: 54, height: 54)
                 Image(systemName: "terminal")
                     .font(.system(size: 21, weight: .semibold))
@@ -259,8 +250,7 @@ struct TerminalsView: View {
             .multilineTextAlignment(.center)
             .frame(maxWidth: 390)
             Button("Open a terminal") { model.createTerminalPresented = true }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                .buttonStyle(DieterBarButtonStyle(prominent: true))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(32)
@@ -282,8 +272,8 @@ private struct TerminalTab: View {
             Button(action: select) {
                 HStack(spacing: 7) {
                     Circle()
-                        .fill(row.running ? DieterTheme.eyes : DieterTheme.tertiary)
-                        .frame(width: 5, height: 5)
+                        .fill(row.running ? DieterTheme.running : DieterTheme.tertiary)
+                        .frame(width: 6, height: 6)
                     Text(terminal.name)
                         .font(.system(size: 11, weight: selected ? .semibold : .medium))
                         .lineLimit(1)
@@ -292,8 +282,7 @@ private struct TerminalTab: View {
                         .foregroundStyle(DieterTheme.subtle)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
-                        .background(DieterTheme.raised, in: Capsule())
-                        .overlay(Capsule().stroke(DieterTheme.border))
+                        .background(DieterTheme.tileHover, in: Capsule())
                         .accessibilityIdentifier("terminal.node.\(machineID)")
                         .smokeTarget("terminal.node.\(machineID).\(terminal.id)")
                     if !row.running {
@@ -313,7 +302,7 @@ private struct TerminalTab: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .semibold))
                     .frame(width: 16, height: 16)
-                    .background(hovering ? DieterTheme.raised : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+                    .background(hovering ? DieterTheme.tileHover : Color.clear, in: Circle())
             }
             .buttonStyle(.plain)
             .foregroundStyle(DieterTheme.tertiary)
@@ -321,11 +310,10 @@ private struct TerminalTab: View {
         }
         .padding(.leading, 12)
         .padding(.trailing, 7)
-        .frame(height: 38)
-        .background(selected ? DieterTheme.background : Color.clear)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(selected ? DieterTheme.shell : Color.clear).frame(height: 1)
-        }
+        .frame(height: 30)
+        .background(
+            selected ? DieterTheme.segmentThumb : (hovering ? DieterTheme.tileHover : Color.clear), in: Capsule()
+        )
         .overlay(alignment: .trailing) { Rectangle().fill(DieterTheme.border).frame(width: 1) }
         .onHover { hovering = $0 }
         .contextMenu {
@@ -404,7 +392,7 @@ private struct NewTerminalSheet: View {
                     Image(systemName: "xmark")
                         .font(.system(size: 11, weight: .bold))
                 }
-                .buttonStyle(DieterIconButtonStyle())
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
                 .help("Close")
             }
             .padding(.horizontal, 22)
@@ -550,7 +538,7 @@ private struct NewTerminalSheet: View {
             HStack(spacing: 10) {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(DieterSecondaryButtonStyle())
+                    .buttonStyle(DieterBarButtonStyle(size: 30))
                     .keyboardShortcut(.cancelAction)
                 Button {
                     creating = true
@@ -575,7 +563,7 @@ private struct NewTerminalSheet: View {
                         Text("Open terminal")
                     }
                 }
-                .buttonStyle(DieterPrimaryButtonStyle())
+                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canCreate)
                 .accessibilityIdentifier("new-terminal.create")

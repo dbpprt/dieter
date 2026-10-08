@@ -51,6 +51,17 @@ import Testing
                     ancestor = view.superview
                 }
                 #expect(abs(split.sidebarHost.frame.width - SidebarSizing.defaultWidth) < 1)
+                // Every section keeps the window controls inside the floating
+                // sidebar card, inset from the window edge.
+                let lights = descendants(split.sidebarHost).compactMap { $0 as? DieterWindowTrafficLightsView }
+                #expect(lights.count == 1)
+                if let light = lights.first {
+                    let frame = light.convert(light.bounds, to: split.sidebarHost)
+                    #expect(frame.minX >= DieterMetrics.windowInset - 0.5)
+                    #expect(frame.maxX <= split.sidebarHost.bounds.width)
+                    let top = split.sidebarHost.isFlipped ? frame.minY : split.sidebarHost.bounds.height - frame.maxY
+                    #expect(top >= DieterMetrics.windowInset - 0.5 && top <= DieterMetrics.titleBandHeight)
+                }
                 if let output = ProcessInfo.processInfo.environment["DIETER_CHROME_EVIDENCE"],
                     let rep = host.view.bitmapImageRepForCachingDisplay(in: host.view.bounds)
                 {

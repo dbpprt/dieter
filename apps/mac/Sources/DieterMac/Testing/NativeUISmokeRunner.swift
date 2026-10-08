@@ -371,9 +371,9 @@
                     projectContextClosed && projectContextDismissed
                     ? "passed" : "failed: project settings did not dismiss before Quick Task"
 
-                // Board/Chats now own their pane headers. Exercise the global
-                // titlebar action on a destination that still exposes it.
-                store.section = .files
+                // Board, Chats, Files, and Changes own their pane headers. Exercise
+                // the global titlebar action on a destination that still exposes it.
+                store.section = .schedules
                 let globalReady = await waitForBoardControl("sidebar.quick-task", in: window)
                 recordNavigationTargetFailure(
                     "sidebar.quick-task", section: store.section, window: window,
@@ -880,8 +880,14 @@
                 }
             }
 
-            click(window: window, x: 370, distanceFromTop: 215)
-            try? await DieterTaskSleep.seconds(1)
+            // Open the first visible card through its own control; the board's
+            // header and lane geometry are free to change.
+            if let card = store.displayedCards.first {
+                if await NativeUIAccessibility.waitForInteractiveTarget("card.\(card.id)", in: window) {
+                    NativeUIAccessibility.click("card.\(card.id)", in: window)
+                }
+                _ = await waitUntil(timeout: 5) { store.selectedCardID == card.id }
+            }
             results["07-card-conversation"] =
                 store.selectedCardID == nil ? "failed: no card selected" : "passed"
             await captureAppearances(window, named: "07-card-conversation.png", in: output)
@@ -1752,7 +1758,7 @@
             {
                 return text
             }
-            return view.subviews.lazy.compactMap { nativeQuickTaskField(in: $0, expectedText: expectedText) }.first
+            return view.firstSubviewResult { nativeQuickTaskField(in: $0, expectedText: expectedText) }
         }
 
         private static func focusQuickTaskStory(in window: NSWindow, expectedText: String? = nil) async -> Bool {
@@ -2094,7 +2100,7 @@
             {
                 return text
             }
-            return view.subviews.lazy.compactMap { nativeRichTextView(in: $0) }.first
+            return view.firstSubviewResult { nativeRichTextView(in: $0) }
         }
 
         private static func nativeDiagramImages(in editor: NSTextView?) -> [NSRect] {
@@ -2117,7 +2123,7 @@
             if let split = view as? NSSplitView, let controller = split.delegate as? MarkdownEditorSplitController {
                 return controller
             }
-            return view.subviews.lazy.compactMap { markdownSplitController(in: $0) }.first
+            return view.firstSubviewResult { markdownSplitController(in: $0) }
         }
 
         private static func closeBoardConversationForToolbar(store: DieterStore, window: NSWindow) async -> Bool {
@@ -2544,11 +2550,17 @@
         }
 
         private static func doubleClickTitleBar(of window: NSWindow) {
-            let point = NSPoint(
-                x: window.contentLayoutRect.midX,
-                y: window.contentLayoutRect.maxY
-                    + ((window.frame.height - window.contentLayoutRect.maxY) / 2)
-            )
+            // Top bars fill the title band with controls; double-click its
+            // empty region beside the window controls.
+            let point =
+                NativeUIAccessibility.find("workspace.title-band", in: window)?.recordedFrame.map {
+                    window.convertPoint(fromScreen: NSPoint(x: $0.midX, y: $0.midY))
+                }
+                ?? NSPoint(
+                    x: window.contentLayoutRect.midX,
+                    y: window.contentLayoutRect.maxY
+                        + ((window.frame.height - window.contentLayoutRect.maxY) / 2)
+                )
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             let timestamp = ProcessInfo.processInfo.systemUptime

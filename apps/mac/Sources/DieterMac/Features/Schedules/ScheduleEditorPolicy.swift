@@ -29,7 +29,7 @@ struct ScheduleEditorSection<Content: View>: View {
             }
             content
         }
-        .padding(15).frame(maxWidth: .infinity, alignment: .leading).dieterSurface(radius: 12)
+        .padding(15).frame(maxWidth: .infinity, alignment: .leading).dieterTile(radius: 12)
     }
 }
 

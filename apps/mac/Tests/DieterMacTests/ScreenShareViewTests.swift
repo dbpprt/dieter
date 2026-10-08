@@ -162,7 +162,8 @@ private final class ScreenShareViewFixture {
         first.controller.session.fold(.phase("streaming"))
         second.controller.session.fold(.phase("streaming"))
         let host = NSHostingView(
-            rootView: ScreensView(model: model, machines: [], initialMachineID: "alpha"))
+            rootView: ScreensView(model: model, machines: [], initialMachineID: "alpha")
+                .environment(DieterStore(liveEnvironment: false)))
         host.sizingOptions = []
         root = host
         window = NSWindow(

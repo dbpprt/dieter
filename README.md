@@ -69,13 +69,14 @@ follow-ups from being lost when their provider session closes.
 ## Quick start
 
 You need a configured agent account on the host and access to a Dieter gateway.
-Use your own gateway origin below; [self-hosting is documented](https://getdieter.com/docs/gateway/).
+Setup defaults to `https://gateway.getdieter.com` (an allowed account is required).
+For your own gateway, pass `--gateway https://YOUR-GATEWAY`; [self-hosting is documented](https://getdieter.com/docs/gateway/).
 
 On **Apple Silicon macOS**:
 
 ```sh
 brew install dbpprt/tap/dieter
-dieter setup --gateway https://dieter.example.com
+dieter setup
 dieter project open ~/Development/my-project
 
 brew install --cask dbpprt/tap/dieter-app
@@ -83,8 +84,11 @@ open -a Dieter
 ```
 
 Sign in to the same gateway in the app, open your project, and create a task.
-`setup` enrolls the machine and starts its service. `project open` separately
-registers an existing Git working tree.
+`setup` enrolls the machine, starts its Homebrew service, and registers the
+background privacy helper. Approve **Dieter Privacy Helper** in Login Items &
+Extensions and grant Input Monitoring when prompted; privacy remains off until
+enabled. The daemon and capture helper remain standalone executables.
+`project open` separately registers an existing Git working tree.
 
 The standard gateway is `https://gateway.getdieter.com`, with STUN/TURN at
 `turn.getdieter.com`. Access requires an allowed account. Existing installations
@@ -105,7 +109,7 @@ On **Linux amd64/arm64**, install Node.js 22.19+, npm, Git, and
 
 ```sh
 curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
-dieter setup --gateway https://dieter.example.com
+dieter setup
 dieter project open ~/Development/my-project
 dieter doctor
 ```
@@ -115,6 +119,15 @@ dieter doctor
 | macOS 26+, Apple Silicon | Homebrew cask above or [release downloads](https://github.com/dbpprt/dieter/releases/latest)     |
 | Android 8+               | [Download the APK](https://github.com/dbpprt/dieter/releases/latest/download/Dieter-Android.apk) |
 | iOS 18+, iPhone and iPad | [Beta and source-build guide](apps/ios/README.md)                                                |
+
+Gateway relay traffic uses four independently authenticated connections for
+health/control, peer replication, commands, and subscriptions. A busy watch or
+stalled peer does not consume the other traffic classes' admission or byte
+budgets. `dieter machine route MACHINE` reports each relay channel's connectivity,
+active calls, limit, buffered bytes, rejected calls, and last response time.
+“Board and settings sync between … is delayed” refers to shared projects, boards,
+card placement, labels, and portable settings; repository files and conversation
+transcripts remain on their owner machine.
 
 The daemon supports headless Linux hosts. Screen hosting needs an active desktop
 and [platform dependencies](landingpage/content/docs/installation.md#linux).
@@ -252,11 +265,22 @@ sidebar shows the live state; stale and degraded protection are identified.
 
 ```sh
 dieter --machine MACHINE_ID machine privacy status
+dieter --machine MACHINE_ID machine privacy setup
 dieter --machine MACHINE_ID machine privacy on --key UNIQUE_LOCK_ID
 dieter --machine MACHINE_ID machine privacy off --key UNIQUE_UNLOCK_ID
 ```
 
-Omit `--machine` for the local daemon. Requires Accessibility permission and
-compatible display transfer tables. This protects the logged-in desktop; macOS
-login/FileVault and hardware/system shortcuts remain separate. See
+Omit `--machine` for the local daemon. **Set Up Privacy Mode…** registers the
+separate signed background privacy helper; an administrator must approve it in Login Items
+& Extensions and grant
+Input Monitoring on the target Mac. The Go daemon and capture helper remain standalone executables; only
+`DieterPrivacyHelper.app` contains the privileged input service. The main daemon
+stays unprivileged. Normal `dieter setup` handles helper registration on macOS;
+`--no-open` and `--no-start` defer it to `dieter machine privacy setup`. Requires
+Accessibility permission and compatible display transfer tables. Protection
+exclusively claims matched HID input devices, with a secondary session filter.
+Status includes the protected input-device count and whether setup is required.
+This protects the logged-in desktop; macOS login/FileVault and forced power/reboot
+remain separate. Lost protection is degraded; a requested Lock Screen shortcut
+does not establish a verified authentication lock. See
 [privacy implementation and verification](native/macos-capture/privacy-mode-research.md).

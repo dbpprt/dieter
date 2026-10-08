@@ -1,8 +1,27 @@
 import AppKit
 import SwiftUI
 
+/// A split view for floating glass panels: the gap between panels is the
+/// divider, so it draws nothing (or a hairline inside one panel) and accepts
+/// drags across the whole gap.
+@MainActor
+class DieterSplitView: NSSplitView {
+    var drawnDividerColor: NSColor = .clear
+
+    override var dividerColor: NSColor { drawnDividerColor }
+
+    /// The distance on each side of the divider that still starts a resize.
+    static let dragMargin: CGFloat = 5
+
+    static func effectiveRect(_ rect: NSRect, in splitView: NSSplitView) -> NSRect {
+        splitView.isVertical
+            ? rect.insetBy(dx: -dragMargin, dy: 0) : rect.insetBy(dx: 0, dy: -dragMargin)
+    }
+}
+
 /// Native resizing and collapse without an additional system sidebar material.
-/// The workspace owns one backdrop beneath both columns, including the titlebar.
+/// The workspace owns one backdrop beneath both columns, including the titlebar;
+/// the sidebar draws its own floating glass card inside its column.
 struct WorkspaceSplit<Sidebar: View, Detail: View>: NSViewControllerRepresentable {
     @Binding var visibility: NavigationSplitViewVisibility
     @Binding var sidebarWidth: Double
@@ -41,7 +60,7 @@ struct WorkspaceSplit<Sidebar: View, Detail: View>: NSViewControllerRepresentabl
 
     override init(nibName: NSNib.Name? = nil, bundle: Bundle? = nil) {
         super.init(nibName: nibName, bundle: bundle)
-        let split = NSSplitView()
+        let split = DieterSplitView()
         split.isVertical = true
         split.dividerStyle = .thin
         split.setAccessibilityIdentifier("workspace.navigation-split")
@@ -120,6 +139,16 @@ struct WorkspaceSplit<Sidebar: View, Detail: View>: NSViewControllerRepresentabl
     override func splitViewDidResizeSubviews(_ notification: Notification) {
         super.splitViewDidResizeSubviews(notification)
         if !configuring { scheduleLayout() }
+    }
+
+    override func splitView(
+        _ splitView: NSSplitView, effectiveRect proposedEffectiveRect: NSRect, forDrawnRect drawnRect: NSRect,
+        ofDividerAt dividerIndex: Int
+    ) -> NSRect {
+        DieterSplitView.effectiveRect(
+            super.splitView(
+                splitView, effectiveRect: proposedEffectiveRect, forDrawnRect: drawnRect, ofDividerAt: dividerIndex),
+            in: splitView)
     }
 
     override func toggleSidebar(_ sender: Any?) {

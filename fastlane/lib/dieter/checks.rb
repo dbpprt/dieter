@@ -68,9 +68,12 @@ module Dieter
               .fetch("checks")
               .partition do |request|
                 request["operation"] == "e2e" ||
-                  %w[screens_native_test screens_test screens_hevc_test].include?(
-                    request["operation"]
-                  )
+                  %w[
+                    privacy_native_test
+                    screens_native_test
+                    screens_test
+                    screens_hevc_test
+                  ].include?(request["operation"])
               end
         end
         Atomic.json(File.join(context.output, "affected-checks.json"), plan)
@@ -127,6 +130,8 @@ module Dieter
         Core.new(context).apple_test(options)
       when %w[mac core_test]
         Mac.new(context).core_test(options)
+      when %w[mac privacy_native_test]
+        Mac.new(context).privacy_native_test
       when %w[mac screens_native_test]
         Mac.new(context).screens_native_test
       when %w[mac screens_test]
@@ -209,6 +214,15 @@ module Dieter
           log: File.join(context.output, "harness-tests.log")
         )
       when %w[portable site_build]
+        # Hosted runners lack Hugo; local hosts get it from mise.
+        hugo =
+          ENV
+            .fetch("PATH", "")
+            .split(File::PATH_SEPARATOR)
+            .any? { |directory| File.executable?(File.join(directory, "hugo")) }
+        if !hugo && ENV["GITHUB_ACTIONS"] == "true"
+          context.command(%w[just site install-ci], timeout: 300)
+        end
         context.command(%w[just site build], timeout: 300)
       else
         raise PipelineError, "Unknown typed check #{component}/#{operation}"

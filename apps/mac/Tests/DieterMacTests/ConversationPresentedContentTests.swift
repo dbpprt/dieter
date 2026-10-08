@@ -38,6 +38,78 @@ import Testing
     #expect(received == ["card:first", "card:second", "card:first"])
 }
 
+@Test @MainActor func presentationStaysConsumedAfterChatReopenAndAppRecreation() throws {
+    let suite = "PresentationTests.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    var received: [String] = []
+
+    func openChat() -> (ScriptedCoreClient, ConversationModel) {
+        let core = ScriptedCoreClient()
+        let model = ConversationModel(presentationDefaults: defaults)
+        model.core = core
+        model.selectedChatID = "chat"
+        model.onContentPresentation = { value, _ in received.append(value.id) }
+        model.observe("chat")
+        return (core, model)
+    }
+    func emit(_ core: ScriptedCoreClient, id: String = "first", machine: String = "machine") {
+        core.emitConversation("chat", daemonID: machine) {
+            $0.conversation.presentedContent.id = id
+            $0.conversation.presentedContent.url = "https://example.com"
+        }
+    }
+
+    let (core, model) = openChat()
+    // A cached transcript can arrive before its owner is resolved. It must
+    // not consume the request under an empty machine identity.
+    emit(core, machine: "")
+    #expect(received.isEmpty)
+    emit(core)
+    #expect(received == ["first"])
+    model.observe(nil)
+    model.selectedChatID = nil
+    model.selectedChatID = "chat"
+    model.observe("chat")
+    emit(core)
+    #expect(received == ["first"])
+    model.observe(nil)
+
+    let (reopenedCore, reopenedModel) = openChat()
+    defer { reopenedModel.observe(nil) }
+    emit(reopenedCore, machine: "")
+    emit(reopenedCore)
+    #expect(received == ["first"])
+    // A fresh request for the same URL still presents once.
+    emit(reopenedCore, id: "second")
+    emit(reopenedCore, id: "second")
+    #expect(received == ["first", "second"])
+    emit(reopenedCore, machine: "other-machine")
+    #expect(received == ["first", "second", "first"])
+}
+
+@Test @MainActor func oldPresentationIsNotReplayedAfterManyOtherRequests() {
+    let core = ScriptedCoreClient()
+    let model = ConversationModel()
+    model.core = core
+    model.selectedCardID = "card"
+    model.observe("card")
+    defer { model.observe(nil) }
+    var received = 0
+    model.onContentPresentation = { _, _ in received += 1 }
+    for index in 0...512 {
+        core.emitConversation("card") {
+            $0.conversation.presentedContent.id = "request-\(index)"
+        }
+    }
+    model.observe(nil)
+    model.observe("card")
+    core.emitConversation("card") {
+        $0.conversation.presentedContent.id = "request-0"
+    }
+    #expect(received == 513)
+}
+
 @Test @MainActor func unselectedPresentationCannotOpenAnotherConversationsWorkspace() {
     let core = ScriptedCoreClient()
     let model = ConversationModel()

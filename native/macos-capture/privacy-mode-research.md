@@ -1,8 +1,10 @@
 # macOS privacy mode: design and qualification
 
 Dieter implements boot-scoped local privacy for an already logged-in macOS
-session. **Lock Local Screen…** blanks physical display transfer tables and
-suppresses physical session input while remote control and desktop captures
+session. **Set Up Privacy Mode…** registers the privileged input helper; local
+administrator approval and Input Monitoring permission are required.
+**Lock Local Screen…** exclusively opens matched HID input devices and blanks
+physical display transfer tables while remote control and desktop captures
 continue. **Unlock Local Screen…** restores the display tables and local input.
 The Mac sidebar shows a small shield, an explicit warning for degraded
 protection, and last-known styling while offline.
@@ -39,6 +41,41 @@ daemons to adopt the existing owner. A native owner lock serializes launches.
 An explicit unlock restores displays before releasing the event tap and exits
 the helper. An unused off helper has a bounded idle lifetime.
 
+The Go daemon (`dieter`) and native capture executable (`dieter-capture`) remain
+standalone files. A separate signed, background-only `DieterPrivacyHelper.app`
+contains only the small `dieter-privacy` executable and its LaunchDaemon plist.
+Public `SMAppService` registers that bundle's LaunchDaemon; macOS owns approval.
+Capture locates the bundle beside its canonical executable, or in Homebrew's
+adjacent `libexec` directory, and invokes it only for setup. The privileged binary is built from HID lease, IPC authentication and
+service code, without screen-capture, encoder or Go daemon code.
+
+The root process accepts only status/on/off over a launchd-owned transient Unix
+socket. Audit-token validation requires the standalone capture identifier and
+our signing team. Development bundles seal the exact capture CDHash in their
+signed Info.plist; release builds exclude that lookup and its metadata. Clients
+cannot supply a path, executable, shell command or persistent root state. The
+main daemon and capture process retain login-user privileges.
+
+Every release ships all three components together. Homebrew, the portable
+installer and the versioned macOS installer preserve the standalone binary
+layout. Homebrew keeps its original `bin.install "dieter", "dieter-capture"`
+layout and ships the helper in `libexec`. Post-install stages that signed resource
+with the executable pair; normal `dieter setup` registers its background service
+through the running daemon and guides macOS approval. `--no-open` and
+`--no-start` defer registration to `dieter machine privacy setup`. Setup never
+enables privacy or changes an existing privacy request.
+The managed service keeps its real `bin/dieter` path; signatures are
+verified independently for the daemon, capture executable and privacy bundle.
+The helper, service definition and standalone executable pair activate and roll
+back together. Missing, linked or invalid helpers cannot be staged as a new
+release; an unacknowledged upgrade restores the previous installation.
+
+The root input lease belongs to the acquiring login UID. It survives transport
+and user-helper disconnects; another login cannot release it. Its state is
+memory-only, so reboot starts off. A replacement root process has a new generation
+and cannot silently satisfy the user's old lease. The user helper reports degraded
+until explicit on adopts the replacement. Registration never enables privacy.
+
 The daemon atomically records the desired state under `DIETER_HOME`, using its
 central mutation lock and `kern.bootsessionuuid`. Same-boot startup restores the
 request; records from an earlier boot do not reactivate privacy. Constructors
@@ -49,7 +86,7 @@ idempotency receipts.
 `GetMachineInformation` reports `MachinePrivacy` and action capabilities.
 `PerformMachineOperation` handles privacy on/off through the same explicit core
 API and thin Connect adapter as local, direct TLS and gateway relay operations.
-The CLI exposes `dieter [--machine ID|NAME] machine privacy status|on|off`.
+The CLI exposes `dieter [--machine ID|NAME] machine privacy status|setup|on|off`.
 Owner-only `WatchChanges` snapshots and deltas feed the shared core, so closing
 machine details does not stop sidebar updates. Privacy is not replicated as an
 account preference or stored on the gateway.
@@ -66,14 +103,30 @@ An active `.cgSessionEventTap` at `.headInsertEventTap` drops HID-source keyboar
 modifier, pointer, button, drag, scroll and observable system events. Synthetic
 input remains available to Dieter and desktop automation. Dieter's injector uses
 its own private event source. Event taps require Accessibility permission; a
-root-only HID-location tap is not used.
+root HID-location tap alone would still miss keyboard events under Secure Event
+Input, as [Karabiner's developers document](https://github.com/pqrs-org/Karabiner-Elements/blob/main/DEVELOPMENT.md#the-difference-of-event-grabbing-methods).
+
+The privileged service uses public `IOHIDDeviceOpen` with
+`kIOHIDOptionsTypeSeizeDevice` before the session event path. It matches keyboard,
+keypad, pointer/mouse, joystick/gamepad, consumer-control and digitizer collections.
+Matching callbacks attempt to seize attached devices; a bounded rescan reconciles
+enumeration. Rejected devices, revoked Input Monitoring or device overflow never
+produce an active status. Partial acquisitions retain owned devices until unlock.
+Off remains usable after Input Monitoring is revoked, and restoration can retry.
+
+On lost protection, the user service requests Apple's Control-Command-Q Lock
+Screen shortcut once per failure episode. This is a best-effort request, not
+verified authentication. The state stays degraded regardless of that request;
+no automatic password entry or OS unlock is implemented.
 
 This is privacy for the normal graphical session, not a macOS authentication
-lock. Hardware/system shortcuts, secure-input paths, permission revocation and
-helper crashes can bypass or remove session-level protection. A forced reboot
+lock. Forced power/reboot, unqualified device/gesture paths, hot-plug timing,
+permission revocation and helper crashes can bypass or remove protection. Local
+software with synthetic-input privileges is outside this physical-input boundary.
+A forced reboot
 clears privacy by design. FileVault and macOS login remain independent; Dieter
-cannot unlock them. No private screen-lock API or unverified automatic OS-lock
-fallback is claimed. Ordinary terminal agents do not require an unlocked desktop.
+cannot unlock them. No verified automatic authentication-lock fallback is claimed.
+Ordinary terminal agents do not require an unlocked desktop.
 
 A successful table readback verifies macOS state, not the physical panel's
 behavior on every display transport. DisplayLink, HDR, mirrored displays,
@@ -84,21 +137,32 @@ results from synthetic fixtures.
 ## Reproducible checks
 
 ```sh
+mise exec -- just pipeline check component:mac operation:privacy_native_test
 mise exec -- just pipeline check component:mac operation:screens_native_test
 DIETER_TEST_PRIVACY_PHYSICAL=1 mise exec -- just pipeline check component:mac operation:screens_native_test
 mise exec -- just pipeline core_test
 mise exec -- just pipeline mac e2e cases:mac.machine
 ```
 
+Set `DIETER_TEST_PRIVACY_HELPER` to the absolute path of the exact capture binary
+paired with its approved development privacy helper bundle for the opt-in desktop test. It
+controls the real capture-service socket and privileged service, without giving
+the test executable a root authentication exemption. Complete local administrator
+approval and Input Monitoring before this required opt-in run.
+
 The opt-in desktop test changes the display tables briefly and restores them.
 Use only an owned, idle desktop. It checks all-black table readback, unfiltered
 ScreenCaptureKit pixels, HID-source suppression, remote-source delivery and
 exact restoration. It does not claim independent physical-panel observation or
 a physical USB/Bluetooth keyboard matrix.
+It also requires a nonzero protected-device count and confirms protection during
+an owned Secure Event Input interval. This does not qualify every physical key,
+consumer key, gesture or peripheral pathway.
 
 On 2026-10-06, the Apple M4 test host with one GLKVM display (2560 × 1440)
-passed the transfer-table/capture probe and native input/capture/restoration
-assertions. Lease tests cover degraded audits and retryable restoration. The
+passed the earlier session-filter implementation's transfer-table/capture probe
+and native input/capture/restoration assertions. Those results do not qualify
+the new privileged HID seizure. Lease tests cover degraded audits and retryable restoration. The
 Go suite covers helper adoption, bounded protocol, boot requests, uncertain
 mutations, change-stream updates and isolated CLI routes. Shared-core tests
 cover cache/reset, freshness, degraded presentation and operation menus. The
@@ -106,3 +170,45 @@ packaged Mac case clicks the real Actions menu, Lock/Unlock confirmations and
 result alerts through the isolated authenticated fixture. After closing details
 it verifies the sidebar shield's VoiceOver label and captures the rendered row;
 it never blanks the operator screen through that fixture.
+
+On 2026-10-07, the enhanced implementation passed the isolated packaged Mac
+machine journey (18 assertions, including setup, lock, unlock and the rendered
+sidebar shield), 709 shared-core tests, the Go API/CLI/runtime race tests and
+145 pipeline contract tests (701 assertions). Portable packaging support tests
+passed; their Linux service lifecycle test was unavailable on this macOS host.
+The native helper gate passed lease/recovery and capture integration checks,
+including a real kernel peer-token/code-signature round trip. A release-mode
+helper build confirmed that development capture trust is excluded. Android
+passed 28 unit tests and lint; the iOS app and its test bundles built successfully.
+The privileged desktop opt-in remains unqualified until the task-owned helper
+is approved in macOS and receives Input Monitoring permission. Software and UI
+fixture results must not be presented as proof of physical shortcut suppression.
+
+The previous integrated-daemon package was superseded by the standalone layout
+above. Its earlier setup registration and software test results do not qualify
+this new helper binary or its macOS permissions. The headless
+`privacy_native_test` gate verifies both development and release-mode packages,
+ad-hoc signatures, HID admission and live caller authentication, synthetic capture
+privacy ownership, and an isolated standalone daemon/CLI round trip. It never
+registers the global privileged service, changes TCC, or suppresses operator
+input. Administrator approval, Input Monitoring and the physical desktop opt-in
+remain separate required host checks.
+
+On 2026-10-07, the final standalone/Homebrew layout passed the native package
+gate with both development and release-mode helper builds. It verified helper
+discovery beside the executable and in Homebrew's `libexec`, canonical symlinks,
+live caller authentication, helper isolation, signed resource staging, and a real
+standalone daemon/CLI round trip using synthetic capture. The isolated setup
+registrar verified the registration action and approval-pending status with
+privacy off. CLI onboarding tests also covered deferred registration, repeated
+setup, existing privacy requests and registration failures.
+
+The packaging support suite passed 84 tests with the existing Linux lifecycle
+skip on macOS. Pipeline contracts passed 146 tests / 707 assertions; the relevant
+Go race tests and Go vet passed. The shared core passed 709 tests with no skips.
+Local native packages used verified ad-hoc signatures, including a check that
+production verification rejects those signatures. The Developer ID signing and
+notarization pipeline was updated; its credentialed release run was not performed
+locally. No global service registration, macOS permission changes or physical
+privacy operation was performed for this standalone layout. Administrator
+approval, Input Monitoring and physical-input qualification remain required.

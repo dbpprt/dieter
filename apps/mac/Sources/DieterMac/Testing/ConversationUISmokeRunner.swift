@@ -625,7 +625,8 @@
             }
             let originalWidth = column.frame.width
             let widths: [CGFloat] =
-                scope == "card" ? [460, 320] : [conversationContentWidth(split: split, column: column)]
+                scope == "card"
+                ? [460, BoardConversationSizing.minimumWidth] : [conversationContentWidth(split: split, column: column)]
             let controls = store.conversationContext.agentControls ?? ClientAgentControlsState()
             var identifiers = [
                 "conversation.composer", "conversation.attach", "conversation.provider",
@@ -903,9 +904,9 @@
                     $0.model = harness.defaultModel
                     $0.providerOptions = ["fast_mode": "false"]
                 }, catalog: store.harnessCatalog)
-            setConversationContentWidth(320, split: split, column: column)
+            setConversationContentWidth(BoardConversationSizing.minimumWidth, split: split, column: column)
             let resized = await NativeUIAccessibility.wait(timeout: 5) {
-                abs(conversationContentWidth(split: split, column: column) - 320) < 2
+                abs(conversationContentWidth(split: split, column: column) - BoardConversationSizing.minimumWidth) < 2
             }
             guard resized else {
                 results["omp-provider-options"] =

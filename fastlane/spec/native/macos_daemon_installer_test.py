@@ -21,10 +21,15 @@ class InstallerTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.source = self.root / "source"
         self.source.mkdir()
+        self.bundle = self.source / "DieterPrivacyHelper.app/Contents/MacOS"
+        self.bundle.mkdir(parents=True)
         for name in ("dieter", "dieter-capture"):
             path = self.source / name
             path.write_text("#!/bin/sh\nexit 0\n")
             path.chmod(0o755)
+        helper = self.bundle / "dieter-privacy"
+        helper.write_text("#!/bin/sh\nexit 0\n")
+        helper.chmod(0o755)
         (self.source / "LICENSE").write_text("Test license\n")
         self.output = self.root / "dist/dieter.pkg"
 
@@ -33,8 +38,11 @@ class InstallerTests(unittest.TestCase):
         script.write_text(preinstall_script(version))
         volume = self.root / "volume"
         volume.mkdir(exist_ok=True)
-        return subprocess.run(["/bin/sh", str(script), "package.pkg", "/", str(volume)],
-                              capture_output=True, text=True)
+        return subprocess.run(
+            ["/bin/sh", str(script), "package.pkg", "/", str(volume)],
+            capture_output=True,
+            text=True,
+        )
 
     def test_reinstall_refused_without_modifying_existing_daemon(self):
         existing = self.root / "volume/usr/local/libexec/dieter/1.2.3"
@@ -45,8 +53,13 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(executable.read_bytes(), b"existing running daemon")
 
     def test_each_symlink_ancestor_is_refused(self):
-        for relative in ("usr", "usr/local", "usr/local/libexec", "usr/local/libexec/dieter",
-                         "usr/local/libexec/dieter/1.2.3"):
+        for relative in (
+            "usr",
+            "usr/local",
+            "usr/local/libexec",
+            "usr/local/libexec/dieter",
+            "usr/local/libexec/dieter/1.2.3",
+        ):
             with self.subTest(relative=relative):
                 volume = self.root / "volume"
                 if volume.exists():
@@ -71,7 +84,10 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(release_number("v1.2.3"), "1.2.3")
         (self.source / "dieter").unlink()
         (self.source / "dieter").symlink_to(self.source / "dieter-capture")
-        with patch("fastlane.lib.dieter.native.installer.run") as command, self.assertRaises(RuntimeError):
+        with (
+            patch("fastlane.lib.dieter.native.installer.run") as command,
+            self.assertRaises(RuntimeError),
+        ):
             build(self.source, self.output, "1.2.3")
         command.assert_not_called()
 
@@ -80,28 +96,49 @@ class InstallerTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             build(self.source, self.output, "v1.2.3")
         expanded = self.root / "expanded"
-        subprocess.run(["pkgutil", "--expand-full", str(self.output), str(expanded)], check=True,
-                       capture_output=True)
+        subprocess.run(
+            ["pkgutil", "--expand-full", str(self.output), str(expanded)],
+            check=True,
+            capture_output=True,
+        )
         metadata = ET.parse(expanded / "PackageInfo").getroot()
         self.assertEqual(metadata.get("identifier"), "com.dbpprt.dieter.daemon.v1.2.3")
         self.assertEqual(metadata.get("version"), "1.2.3")
         self.assertEqual(metadata.get("install-location"), "/usr/local/libexec/dieter/1.2.3")
         payload = expanded / "Payload"
         files = {str(path.relative_to(payload)) for path in payload.rglob("*") if path.is_file()}
-        self.assertEqual(files, {"dieter", "dieter-capture", "LICENSE", "INSTALL.txt"})
-        bom = subprocess.run(["lsbom", "-s", str(expanded / "Bom")], check=True,
-                             capture_output=True, text=True).stdout.splitlines()
-        # pkgbuild may add AppleDouble entries for the four payload files.
-        self.assertEqual({name for name in bom if not name.startswith("./._")},
-                         {".", "./dieter", "./dieter-capture", "./LICENSE", "./INSTALL.txt"})
-        self.assertTrue(all(name == "." or Path(name).parent == Path(".") for name in bom))
+        self.assertEqual(
+            files,
+            {
+                "LICENSE",
+                "INSTALL.txt",
+                "dieter",
+                "dieter-capture",
+                "DieterPrivacyHelper.app/Contents/MacOS/dieter-privacy",
+            },
+        )
+        bom = subprocess.run(
+            ["lsbom", "-s", str(expanded / "Bom")], check=True, capture_output=True, text=True
+        ).stdout.splitlines()
+        # pkgbuild may add AppleDouble entries beside payload files and directories.
+        self.assertEqual(
+            {name for name in bom if not Path(name).name.startswith("._")},
+            {
+                ".",
+                "./LICENSE",
+                "./INSTALL.txt",
+                "./DieterPrivacyHelper.app",
+                "./DieterPrivacyHelper.app/Contents",
+                "./DieterPrivacyHelper.app/Contents/MacOS",
+                "./dieter",
+                "./dieter-capture",
+                "./DieterPrivacyHelper.app/Contents/MacOS/dieter-privacy",
+            },
+        )
         self.assertEqual({path.name for path in (expanded / "Scripts").iterdir()}, {"preinstall"})
         self.assertEqual((expanded / "Scripts/preinstall").read_text(), preinstall_script("1.2.3"))
         with self.assertRaisesRegex(RuntimeError, "already exists"):
             build(self.source, self.output, "v1.2.3")
-
-
-
 
 
 if __name__ == "__main__":

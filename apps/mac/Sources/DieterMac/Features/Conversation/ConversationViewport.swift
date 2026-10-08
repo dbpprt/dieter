@@ -344,7 +344,7 @@ struct EmptyConversationView: View {
                     }
                 }
                 .padding(12).frame(maxWidth: 520, alignment: .leading)
-                .background(DieterTheme.elevated, in: RoundedRectangle(cornerRadius: 10))
+                .dieterTile(radius: 12)
             }
         }.frame(maxWidth: .infinity).padding(.vertical, 55)
     }

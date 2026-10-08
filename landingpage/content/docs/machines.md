@@ -18,10 +18,11 @@ running. A headless Linux host needs no graphical login for agents or terminals;
 On the new machine, install the daemon and run:
 
 ```sh
-dieter setup --gateway https://dieter.example.com
+dieter setup
 ```
 
-Use your gateway origin. After GitHub sign-in, approve the machine name and
+Setup defaults to `https://gateway.getdieter.com`; for self-hosting, pass
+`--gateway https://YOUR-GATEWAY`. After GitHub sign-in, approve the machine name and
 verification code. Setup starts the managed service. For manual service setups,
 `dieter daemon enroll --gateway URL --name "Workstation"` handles enrollment and
 `dieter daemon start` runs the daemon in the foreground.

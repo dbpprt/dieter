@@ -108,7 +108,7 @@ final class AppSession {
     /// Some machine's complete, current view of the account's navigation is applied.
     @ObservationIgnored var navigationCaughtUp = false
     var navigationSyncError: String?
-    let conversationModel = ConversationModel()
+    let conversationModel: ConversationModel
     @ObservationIgnored var onConversationContentConnectionChanged: @MainActor () -> Void = {}
     @ObservationIgnored lazy var conversationContext = makeConversationContext()
     /// The selected project's conversation workspaces, as the core lists them.
@@ -248,6 +248,7 @@ final class AppSession {
     ) {
         let environment = environment ?? (liveEnvironment ? .live() : .testing(defaults: themeDefaultsOverride))
         self.environment = environment
+        conversationModel = ConversationModel(presentationDefaults: environment.defaults)
         terminalsModel = TerminalsModel()
         screensModel = ScreensModel(defaults: environment.defaults)
         defaultConversationMode = ConversationDefaultMode.load(from: environment.defaults)

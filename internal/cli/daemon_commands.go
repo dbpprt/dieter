@@ -174,7 +174,8 @@ Actions:
   gateway                                    Show the connected gateway build
   watch [--count N]                          Stream gateway presence as JSON Lines
   show [MACHINE]                             Show gateway presence and route
-  privacy <status|on|off> [--key ID]          Control macOS local display/input privacy
+  route [MACHINE]                            Inspect direct routes and relay channel health
+  privacy <status|setup|on|off> [--key ID]    Control macOS local display/input privacy
   info [MACHINE]                             Show live host telemetry (local by default)
   rename --name NAME [MACHINE]               Rename an enrolled machine
   revoke --confirm MACHINE_ID [MACHINE]       Revoke an enrolled machine
@@ -531,13 +532,13 @@ func streamEnd(err error, ctx context.Context) error {
 
 // Privacy uses the same authenticated daemon routes as every machine operation.
 func (c *CLI) machinePrivacyCommand(args []string) error {
-	const group = "Usage: dieter [--machine ID|NAME] machine privacy <status|on|off> [--key ID]\n\nBlack out local displays and block physical input while agents and remote control continue.\nRequires macOS Accessibility permission. Stays on across disconnects and daemon restarts;\nunlock explicitly or reboot to clear. This is session privacy, not an authentication lock.\n"
+	const group = "Usage: dieter [--machine ID|NAME] machine privacy <status|setup|on|off> [--key ID]\n\nBlack out local displays and block physical input while agents and remote control continue.\nSetup registers the privileged input helper; approve it and grant Input Monitoring on the target Mac.\nRequires macOS Accessibility permission. Stays on across disconnects and daemon restarts;\nunlock explicitly or reboot to clear. This is session privacy, not an authentication lock.\n"
 	if groupHelp(args) {
 		fmt.Fprint(c.Out, group)
 		return nil
 	}
 	action := args[0]
-	if action != "status" && action != "on" && action != "off" {
+	if action != "status" && action != "on" && action != "off" && action != "setup" {
 		return fmt.Errorf("unknown privacy action %q", action)
 	}
 	options := " [--key ID]"
@@ -576,6 +577,9 @@ func (c *CLI) machinePrivacyCommand(args []string) error {
 	wire := dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_ON
 	if action == "off" {
 		wire = dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_OFF
+	}
+	if action == "setup" {
+		wire = dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_SETUP
 	}
 	value, err := client.PerformMachineOperation(rpcCtx, &dieterv1.MachineOperationRequest{Action: wire, IdempotencyKey: *key})
 	if err != nil {

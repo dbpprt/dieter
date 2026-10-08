@@ -135,6 +135,14 @@ struct DieterMacApp: App {
                 }
                 .keyboardShortcut(",", modifiers: .command)
             }
+            CommandGroup(before: .toolbar) {
+                Button(store.sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar") {
+                    openWindow(id: "workspace"); store.sidebarCollapsed.toggle()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .control])
+                .disabled(!permissions.canUseApp)
+                Divider()
+            }
             CommandMenu("Dieter") {
                 Button("Command Palette…") {
                     openWindow(id: "workspace"); store.commandPalettePresented = true
@@ -298,7 +306,7 @@ struct MenuBarContent: View {
                 MenuBarActionButton(
                     title: store.phase.isConnected ? "Disconnect" : "Connect",
                     tint: store.phase.isConnected ? DieterTheme.coral : DieterTheme.text,
-                    background: DieterTheme.raised,
+                    background: DieterTheme.tileHover,
                 ) {
                     if store.phase.isConnected { store.disconnect() } else { Task { await store.connect() } }
                 }
@@ -322,7 +330,7 @@ struct MenuBarContent: View {
         HStack(alignment: .center, spacing: 11) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(store.phase.isConnected ? DieterTheme.eyes.opacity(0.14) : DieterTheme.surface)
+                    .fill(store.phase.isConnected ? DieterTheme.running.opacity(0.14) : DieterTheme.tile)
                 Image(systemName: store.phase.isConnected ? "wifi" : "wifi.slash")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(store.phase.isConnected ? DieterTheme.eyes : DieterTheme.tertiary)
@@ -375,7 +383,7 @@ struct MenuBarContent: View {
                     }
                     .padding(.horizontal, 11).frame(height: 34)
                     .background(
-                        DieterTheme.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        DieterTheme.tile, in: RoundedRectangle(cornerRadius: 9, style: .continuous)
                     )
                     .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(DieterTheme.border))
                 }

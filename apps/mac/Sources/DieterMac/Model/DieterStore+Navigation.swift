@@ -69,6 +69,15 @@ extension DieterStore {
         await openProject(projectID, section: .changes)
     }
 
+    /// Shows a checkout path in Files: a folder's listing, or a file opened beside its folder.
+    func openProjectPath(_ projectID: String, path: String, directory: Bool) async {
+        await openProject(projectID, section: .files)
+        guard section == .files, selectedProjectID == projectID, filesError == nil else { return }
+        let folder = directory ? path : (path as NSString).deletingLastPathComponent
+        if !folder.isEmpty { await filesModel.navigateFiles(to: folder) }
+        if !directory, section == .files, selectedProjectID == projectID { await openFile(path: path) }
+    }
+
     func openInbox() async {
         guard section != .inbox else { return }
         boardSelectionGeneration &+= 1

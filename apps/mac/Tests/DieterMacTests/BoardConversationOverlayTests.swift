@@ -6,7 +6,7 @@ import Testing
 @Test func boardConversationWidthPreferencesStayWithinNativeLimits() {
     #expect(BoardConversationSizing.regularWidth(0) == 460)
     #expect(BoardConversationSizing.regularWidth(.nan) == 460)
-    #expect(BoardConversationSizing.regularWidth(200) == 320)
+    #expect(BoardConversationSizing.regularWidth(200) == BoardConversationSizing.minimumWidth)
     #expect(BoardConversationSizing.regularWidth(540) == 540)
     #expect(BoardConversationSizing.regularWidth(2_000) == 1_320)
 }
@@ -484,7 +484,7 @@ private struct BoardConversationBridgeTestView: View {
 }
 
 @MainActor private func boardConversationTranscript(in view: NSView) -> MessageTextView? {
-    (view as? MessageTextView) ?? view.subviews.lazy.compactMap { boardConversationTranscript(in: $0) }.first
+    (view as? MessageTextView) ?? view.firstSubviewResult { boardConversationTranscript(in: $0) }
 }
 
 private struct BoardConversationBridgeTestActionCapture: NSViewRepresentable {

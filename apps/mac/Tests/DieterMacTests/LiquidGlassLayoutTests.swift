@@ -30,7 +30,7 @@ import Testing
     }
 }
 
-@Test @MainActor func allChatsContinuousCanvasRendersAcrossAppearances() {
+@Test @MainActor func chatsCanvasAndFloatingPanelRenderAcrossAppearances() {
     defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
 
     for scheme in [ColorScheme.light, .dark] {
@@ -42,13 +42,14 @@ import Testing
                 Spacer()
             }
             .frame(width: 320)
-            .background { DieterPaneBackground(role: .navigation) }
 
             Color.clear
+                .dieterConversationPanel()
+                .padding(DieterMetrics.windowInset)
                 .frame(width: 600)
-                .background { DieterPaneBackground(role: .content) }
         }
         .frame(height: 600)
+        .background(DieterTheme.canvas)
         .environment(\.colorScheme, scheme)
 
         let renderer = ImageRenderer(content: fixture)
@@ -71,7 +72,7 @@ import Testing
 
     func height() -> CGFloat {
         let host = NSHostingView(
-            rootView: ConversationChrome(compact: true, standalone: false, tab: .constant("Conversation"))
+            rootView: ConversationPanelHeader(model: store.conversationContext.content, role: .unified)
                 .environment(store)
                 .environment(store.conversationContext)
                 .frame(width: 320))
@@ -85,15 +86,22 @@ import Testing
         "A long conversation title that needs several lines while keeping workspace and status controls readable"
     store.state.cards = [card]
     let longHeight = height()
-    // The pane-native header uses a single truncated title beside status and
-    // actions. Long titles must not shift the transcript or composer.
+    // The panel header truncates one title line beside status and actions.
+    // Long titles must not shift the transcript or composer.
     #expect(abs(longHeight - shortHeight) < 1)
-    #expect(longHeight < 240)
+    #expect(abs(longHeight - ConversationPanelHeaderMetrics.fullHeight) < 1)
 }
 
-@Test func conversationSidebarChromeKeepsNavigationInTheNativeTitlebar() {
-    #expect(ConversationChromeLayout.showsConversationTabs(workspacePresented: false))
-    #expect(ConversationChromeLayout.showsConversationTabs(workspacePresented: true))
+@Test func conversationHeaderRowKeepsItsControlsInsideThePaneTitlebarBand() {
+    // Beside a split workspace each column shows one header row; its glass
+    // circles stay within the top 40 points the pane smoke test measures.
+    let circleBottom =
+        (ConversationPanelHeaderMetrics.rowHeight + ConversationPanelHeaderMetrics.circleSize) / 2
+    #expect(circleBottom <= 40)
+    #expect(
+        ConversationPanelHeaderMetrics.fullHeight
+            == ConversationPanelHeaderMetrics.titleRowHeight + ConversationPanelHeaderMetrics.breadcrumbHeight
+            + ConversationPanelHeaderMetrics.trackRowHeight)
 }
 
 @Test @MainActor func conversationWorkingIndicatorUsesTheFullIOSStyleRow() {

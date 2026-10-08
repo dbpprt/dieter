@@ -41,7 +41,7 @@ struct PinnedChatDragPreview: View {
                 .font(.system(size: 12, weight: .semibold)).lineLimit(1)
         }
         .padding(.horizontal, 12).frame(width: 220, height: 40, alignment: .leading)
-        .background(DieterTheme.elevated, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .background(DieterTheme.panelSolid, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(DieterTheme.shell.opacity(0.4))
         )

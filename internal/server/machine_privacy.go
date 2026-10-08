@@ -7,6 +7,7 @@ import (
 	"time"
 
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
+	"github.com/dbpprt/dieter/internal/remotedesktop"
 	"github.com/dbpprt/dieter/internal/store"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -77,6 +78,31 @@ func (api *grpcAPI) performPrivacyOperation(ctx context.Context, request *dieter
 	defer s.privacyMu.Unlock()
 	bounded, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
+	if request.GetAction() == dieterv1.MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_SETUP {
+		current, err := s.privacyDriver.Snapshot(bounded)
+		if err != nil {
+			return nil, status.Error(codes.FailedPrecondition, "Cannot verify privacy before helper setup")
+		}
+		if current.GetRequested() || current.GetState() == dieterv1.MachinePrivacy_STATE_ON {
+			return nil, status.Error(codes.FailedPrecondition, "Unlock privacy before changing the helper registration")
+		}
+		driver, ok := s.privacyDriver.(remotedesktop.PrivacySetupDriver)
+		if !ok {
+			return nil, status.Error(codes.FailedPrecondition, "Privacy helper setup is unavailable")
+		}
+		if _, err := driver.Setup(bounded); err != nil {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		s.privacySnapshot = nil
+		response := &dieterv1.MachineOperationResponse{Accepted: true, OperationId: key, Message: "Privacy helper setup requested. On the target Mac, approve Dieter Privacy Helper in System Settings > General > Login Items & Extensions and grant Input Monitoring. Privacy stays off until you lock the local screen."}
+		s.machineOperations[key] = acceptedMachineOperation{action: request.GetAction(), response: response}
+		s.machineOperationOrder = append(s.machineOperationOrder, key)
+		for len(s.machineOperationOrder) > 32 {
+			delete(s.machineOperations, s.machineOperationOrder[0])
+			s.machineOperationOrder = s.machineOperationOrder[1:]
+		}
+		return proto.Clone(response).(*dieterv1.MachineOperationResponse), nil
+	}
 	boot, err := s.privacyBootID(bounded)
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
@@ -129,6 +155,18 @@ func (s *Server) restorePrivacy(ctx context.Context) {
 	defer cancel()
 	boot, err := s.privacyBootID(bounded)
 	if err != nil || boot != request.BootID {
+		return
+	}
+	current, err := s.privacyDriver.Snapshot(bounded)
+	if err != nil {
+		s.log.Error("could not verify machine privacy recovery", "error", err)
+		return
+	}
+	// Adopt a surviving capture owner without issuing another on request. That
+	// owner may have detected a privileged-helper restart; recovery must retain
+	// its degraded state until an explicit privacy operation adopts a new lease.
+	if current.GetRequested() {
+		s.privacySnapshot, s.privacyReadAt = proto.Clone(current).(*dieterv1.MachinePrivacy), time.Now()
 		return
 	}
 	value, err := s.privacyDriver.Set(bounded, true)

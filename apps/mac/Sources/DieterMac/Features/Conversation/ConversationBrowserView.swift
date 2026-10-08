@@ -58,7 +58,7 @@ struct ConversationBrowserView: View {
                         browser.openAddress(address); addressFocused = false
                     }
                     .padding(.horizontal, 9).frame(height: 27)
-                    .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+                    .dieterCapsuleChrome(interactive: false)
                     .accessibilityLabel("Browser address")
                     .accessibilityIdentifier("conversation.browser.address").smokeTarget("conversation.browser.address")
                     .smokeTarget(scopedTarget("address"))
@@ -86,7 +86,7 @@ struct ConversationBrowserView: View {
                     Spacer(minLength: 4)
                     Button("Retry") { browser.reload() }
                 }
-                .font(.caption).padding(12).background(.quaternary)
+                .font(.caption).padding(12).background(DieterTheme.tile)
                 .accessibilityIdentifier("conversation.browser.failure")
             }
             if browser.currentURL != nil {

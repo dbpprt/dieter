@@ -85,7 +85,7 @@ struct EditCardSheet: View {
                 } label: {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .bold))
                 }
-                .buttonStyle(DieterIconButtonStyle())
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
                 .disabled(saving)
                 .help("Close")
             }
@@ -183,7 +183,7 @@ struct EditCardSheet: View {
             HStack(spacing: 10) {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(DieterSecondaryButtonStyle()).disabled(saving)
+                    .buttonStyle(DieterBarButtonStyle(size: 30)).disabled(saving)
                     .smokeTarget("card-editor.cancel")
                 Button {
                     Task { await save() }
@@ -193,7 +193,7 @@ struct EditCardSheet: View {
                         Text("Save changes")
                     }
                 }
-                .buttonStyle(DieterPrimaryButtonStyle())
+                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
                 .disabled(!canSave)
                 .help(problem)
                 .keyboardShortcut("s", modifiers: .command)

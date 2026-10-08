@@ -221,7 +221,7 @@ func TestGatewayRejectsOversizedEnvelopesThroughTLSProxyWithoutPayload(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	hello, err := proto.Marshal(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, DaemonId: credential.GetDaemonId()})
+	hello, err := proto.Marshal(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO, DaemonId: credential.GetDaemonId(), SessionId: strings.Repeat("a", 64), Generation: credential.GetGeneration()})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -26,23 +26,59 @@ module Dieter
       fixture = GatewayFixture.new(@context, "core", @context.private_dir, direct: true)
       values = fixture.start
       @context.cleanup { fixture.close }
-      swift_test(options.fetch("filter", "SharedCoreIntegrationTests|AppSessionCoreIntegrationTests"), values)
+      swift_test(
+        options.fetch("filter", "SharedCoreIntegrationTests|AppSessionCoreIntegrationTests"),
+        values
+      )
     end
 
     def build(options)
       @context.lease("apple-build")
       assert_stopped
-      @context.command(["bash", "apps/mac/scripts/sync-proto.sh"], timeout: 120)
+      @context.command(%w[bash apps/mac/scripts/sync-proto.sh], timeout: 120)
       configuration = options.fetch("configuration", "debug")
       @framework.build(configuration: configuration)
       scratch = AppleBuild.mac_scratch(@context, operation: :build)
-      argv = ["swift", "build", "--package-path", "apps/mac", "--scratch-path", scratch, "--only-use-versions-from-resolved-file", "--manifest-cache", "local", "--disable-index-store", "--product", "DieterMac", "-c", configuration, *jobs]
+      argv = [
+        "swift",
+        "build",
+        "--package-path",
+        "apps/mac",
+        "--scratch-path",
+        scratch,
+        "--only-use-versions-from-resolved-file",
+        "--manifest-cache",
+        "local",
+        "--disable-index-store",
+        "--product",
+        "DieterMac",
+        "-c",
+        configuration,
+        *jobs
+      ]
       @context.command(argv, timeout: 2400, log: File.join(@context.output, "build.log"))
       assert_stopped
-      @context.command(["python3", "-c", "import os,sys; from pathlib import Path; from fastlane.lib.dieter.native.mac_bundle import package,signing_identity; package(Path(sys.argv[1]), Path(sys.argv[2]), signing_identity(dict(os.environ)), os.environ.get('DIETER_RELEASE_VERSION',''))", @root, File.join(scratch, configuration)], timeout: 300)
-      source = @context.command(["git", "rev-parse", "HEAD"], timeout: 30).strip
+      @context.command(
+        [
+          "python3",
+          "-c",
+          "import os,sys; from pathlib import Path; from fastlane.lib.dieter.native.mac_bundle import package,signing_identity; package(Path(sys.argv[1]), Path(sys.argv[2]), signing_identity(dict(os.environ)), os.environ.get('DIETER_RELEASE_VERSION',''))",
+          @root,
+          File.join(scratch, configuration)
+        ],
+        timeout: 300
+      )
+      source = @context.command(%w[git rev-parse HEAD], timeout: 30).strip
       bundle = File.join(@root, "apps/mac/build/Dieter.app")
-      artifacts = ArtifactSet.new(component: "mac", source: source, configuration: configuration, products: {"app" => bundle})
+      artifacts =
+        ArtifactSet.new(
+          component: "mac",
+          source: source,
+          configuration: configuration,
+          products: {
+            "app" => bundle
+          }
+        )
       artifacts.write(File.join(@context.output, "artifacts.json"))
       bundle
     end
@@ -52,7 +88,9 @@ module Dieter
     end
 
     def screens_native_test
-      raise Unavailable, "Native Apple capture requires macOS" unless RUBY_PLATFORM.include?("darwin")
+      unless RUBY_PLATFORM.include?("darwin")
+        raise Unavailable, "Native Apple capture requires macOS"
+      end
       @context.lease("apple-build")
       @context.lease("mac-desktop")
       assert_stopped
@@ -60,9 +98,170 @@ module Dieter
       binary = File.join(@context.private_dir, "input-state")
       @context.command(["bash", "native/macos-capture/build.sh", helper], timeout: 300)
       sources = Dir.glob(File.join(@root, "native/macos-capture/*.swift")).sort
-      @context.command(["xcrun", "swiftc", "-parse-as-library", "-O", "-D", "DIETER_CAPTURE_TEST", "-framework", "AppKit", "-framework", "IOKit", "-framework", "ScreenCaptureKit", "-framework", "VideoToolbox", *sources, "apps/mac/Sources/DieterTransport/RemoteDesktopKeyMap.swift", "apps/mac/Sources/DieterTransport/ScreenClipboardContent.swift", "native/macos-capture/tests/InputState.swift", "-o", binary], timeout: 300)
+      @context.command(
+        [
+          "xcrun",
+          "swiftc",
+          "-parse-as-library",
+          "-O",
+          "-D",
+          "DIETER_CAPTURE_TEST",
+          "-framework",
+          "AppKit",
+          "-framework",
+          "IOKit",
+          "-framework",
+          "Security",
+          "-framework",
+          "ServiceManagement",
+          "-framework",
+          "SystemConfiguration",
+          "-framework",
+          "ScreenCaptureKit",
+          "-framework",
+          "VideoToolbox",
+          *sources,
+          "apps/mac/Sources/DieterTransport/RemoteDesktopKeyMap.swift",
+          "apps/mac/Sources/DieterTransport/ScreenClipboardContent.swift",
+          "native/macos-capture/tests/InputState.swift",
+          "-o",
+          binary
+        ],
+        timeout: 300
+      )
       @context.command([binary], timeout: 120, log: File.join(@context.output, "input-state.log"))
-      @context.command(["go", "test", "-race", "./internal/remotedesktop"], environment: {"DIETER_TEST_CAPTURE_HELPER" => helper}, timeout: 1200, log: File.join(@context.output, "capture-tests.log"))
+      privacy_hid_tests
+      @context.command(
+        %w[go test -race ./internal/remotedesktop],
+        environment: {
+          "DIETER_TEST_CAPTURE_HELPER" => helper
+        },
+        timeout: 1200,
+        log: File.join(@context.output, "capture-tests.log")
+      )
+    end
+
+    # This package/IPC gate uses synthetic pixels and isolated state. It needs
+    # a compiler lease, but never owns or changes the operator's desktop.
+    def privacy_native_test
+      unless RUBY_PLATFORM.include?("darwin")
+        raise Unavailable, "Native privacy packaging requires macOS"
+      end
+      @context.lease("apple-build")
+      stage = File.join(@context.private_dir, "privacy-package")
+      FileUtils.mkdir_p(stage)
+      @context.command(
+        ["go", "build", "-o", File.join(stage, "dieter"), "./cmd/dieter"],
+        timeout: 600
+      )
+      @context.command(
+        [
+          "codesign",
+          "--force",
+          "--identifier",
+          "com.dbpprt.dieter.daemon",
+          "--sign",
+          "-",
+          File.join(stage, "dieter")
+        ],
+        timeout: 120
+      )
+      helper = File.join(stage, "dieter-capture")
+      @context.command(["bash", "native/macos-capture/build.sh", helper], timeout: 300)
+      @context.command(
+        ["codesign", "--force", "--identifier", "com.dbpprt.dieter.capture", "--sign", "-", helper],
+        timeout: 120
+      )
+      @context.command(["bash", "native/macos-privacy/package.sh", stage], timeout: 300)
+      privacy_hid_tests
+      @context.command(
+        %w[
+          go
+          test
+          -race
+          ./internal/serviceruntime
+          -run
+          ^TestNativePrivacyPackageSmoke$
+          -count=1
+          -v
+        ],
+        environment: {
+          "DIETER_TEST_PRIVACY_PACKAGE" => stage
+        },
+        timeout: 300,
+        log: File.join(@context.output, "privacy-package.log")
+      )
+      @context.command(
+        %w[go test -race ./internal/remotedesktop -run Privacy -count=1 -v],
+        environment: {
+          "DIETER_TEST_CAPTURE_HELPER" => helper
+        },
+        timeout: 300,
+        log: File.join(@context.output, "privacy-capture.log")
+      )
+      release_stage = File.join(@context.private_dir, "privacy-release-package")
+      FileUtils.mkdir_p(release_stage)
+      %w[dieter dieter-capture].each { |name| FileUtils.cp(File.join(stage, name), release_stage) }
+      @context.command(
+        ["bash", "native/macos-privacy/package.sh", release_stage],
+        environment: {
+          "DIETER_PRIVACY_RELEASE" => "1"
+        },
+        timeout: 300
+      )
+      @context.command(
+        %w[
+          go
+          test
+          -race
+          ./internal/serviceruntime
+          -run
+          ^TestNativePrivacyPackageSmoke$
+          -count=1
+          -v
+        ],
+        environment: {
+          "DIETER_TEST_PRIVACY_PACKAGE" => release_stage,
+          "DIETER_TEST_PRIVACY_RELEASE" => "1"
+        },
+        timeout: 300,
+        log: File.join(@context.output, "privacy-release-package.log")
+      )
+    end
+
+    def privacy_hid_tests
+      hid_binary = File.join(@context.private_dir, "privacy-hid-tests")
+      @context.command(
+        [
+          "xcrun",
+          "swiftc",
+          "-parse-as-library",
+          "-O",
+          "-D",
+          "DIETER_PRIVACY_TEST",
+          "-framework",
+          "IOKit",
+          "-framework",
+          "Security",
+          "-framework",
+          "ServiceManagement",
+          "-framework",
+          "SystemConfiguration",
+          "native/macos-privacy/PrivacyHIDProtection.swift",
+          "native/macos-privacy/PrivacyHIDService.swift",
+          "native/macos-capture/PrivacyHIDProtocol.swift",
+          "native/macos-capture/PrivacyHelperPackage.swift",
+          "native/macos-capture/tests/PrivacyHIDProtectionTests.swift",
+          "-o",
+          hid_binary
+        ],
+        timeout: 300
+      )
+      @context.command(
+        [hid_binary],
+        timeout: 120,
+        log: File.join(@context.output, "privacy-hid-tests.log")
+      )
     end
 
     def screens_test
@@ -70,20 +269,40 @@ module Dieter
       @context.lease("mac-desktop")
       assert_stopped
       helper, fixture, bundle = ScreenFixture.tools(@context, @context.private_dir, input: true)
-      environment = {"DIETER_TEST_CAPTURE_HELPER" => helper, "DIETER_TEST_SCREEN_FIXTURE" => fixture, "DIETER_TEST_INPUT_TARGET" => bundle}
-      filter = if ENV["DIETER_TEST_SCREEN_UNDOCK"] == "1"
-                 "remoteDesktopUndockedEndToEnd"
-               elsif ENV["DIETER_TEST_SCREEN_RECOVERY"] == "1"
-                 "remoteDesktopRecoveryAuthenticatedTransport"
-               elsif ENV["DIETER_TEST_SCREEN_LATENCY_ONLY"] == "1"
-                 "remoteDesktopNativeEndToEnd"
-               else "remoteDesktop"
-               end
-      matrix = [{"DIETER_TEST_SCREEN_CODEC" => ENV.fetch("DIETER_TEST_SCREEN_CODEC", "h264")}]
+      environment = {
+        "DIETER_TEST_CAPTURE_HELPER" => helper,
+        "DIETER_TEST_SCREEN_FIXTURE" => fixture,
+        "DIETER_TEST_INPUT_TARGET" => bundle
+      }
+      filter =
+        if ENV["DIETER_TEST_SCREEN_UNDOCK"] == "1"
+          "remoteDesktopUndockedEndToEnd"
+        elsif ENV["DIETER_TEST_SCREEN_RECOVERY"] == "1"
+          "remoteDesktopRecoveryAuthenticatedTransport"
+        elsif ENV["DIETER_TEST_SCREEN_LATENCY_ONLY"] == "1"
+          "remoteDesktopNativeEndToEnd"
+        else
+          "remoteDesktop"
+        end
+      matrix = [{ "DIETER_TEST_SCREEN_CODEC" => ENV.fetch("DIETER_TEST_SCREEN_CODEC", "h264") }]
       if ENV["DIETER_TEST_SCREEN_LATENCY_MATRIX"] == "1"
-        presentations = ENV.fetch("DIETER_TEST_SCREEN_PRESENTATIONS", "immediate display-link").split
-        raise PipelineError, "Invalid presentation modes" unless !presentations.empty? && (presentations - %w[immediate display-link bounded low-latency]).empty?
-        matrix = %w[h264 hevc].product(presentations, %w[0 1]).map { |codec, mode, bitrate| {"DIETER_TEST_SCREEN_CODEC" => codec, "DIETER_SCREEN_PRESENTATION" => mode, "DIETER_SCREEN_FAST_BITRATE" => bitrate, "DIETER_TEST_SCREEN_LATENCY_ONLY" => "1"} }
+        presentations =
+          ENV.fetch("DIETER_TEST_SCREEN_PRESENTATIONS", "immediate display-link").split
+        unless !presentations.empty? &&
+                 (presentations - %w[immediate display-link bounded low-latency]).empty?
+          raise PipelineError, "Invalid presentation modes"
+        end
+        matrix =
+          %w[h264 hevc]
+            .product(presentations, %w[0 1])
+            .map do |codec, mode, bitrate|
+              {
+                "DIETER_TEST_SCREEN_CODEC" => codec,
+                "DIETER_SCREEN_PRESENTATION" => mode,
+                "DIETER_SCREEN_FAST_BITRATE" => bitrate,
+                "DIETER_TEST_SCREEN_LATENCY_ONLY" => "1"
+              }
+            end
         filter = "remoteDesktopNativeEndToEnd"
       end
       @framework.build
@@ -95,8 +314,26 @@ module Dieter
       @context.lease("mac-desktop")
       assert_stopped
       helper, fixture, = ScreenFixture.tools(@context, @context.private_dir, input: false)
-      environment = {"DIETER_TEST_CAPTURE_HELPER" => helper, "DIETER_TEST_SCREEN_FIXTURE" => fixture, "DIETER_TEST_HEVC_FRAMES" => File.join(@context.private_dir, "frames.bin")}
-      @context.command(["go", "test", "-race", "./internal/remotedesktop", "-run", "TestHEVC|TestCapturePoolKeepsCodecs|TestNativeHelperHEVCRoundTrip|TestNativeHEVCAndH264", "-count=1", "-v"], environment: environment, timeout: 1200, log: File.join(@context.output, "hevc-native.log"))
+      environment = {
+        "DIETER_TEST_CAPTURE_HELPER" => helper,
+        "DIETER_TEST_SCREEN_FIXTURE" => fixture,
+        "DIETER_TEST_HEVC_FRAMES" => File.join(@context.private_dir, "frames.bin")
+      }
+      @context.command(
+        %w[
+          go
+          test
+          -race
+          ./internal/remotedesktop
+          -run
+          TestHEVC|TestCapturePoolKeepsCodecs|TestNativeHelperHEVCRoundTrip|TestNativeHEVCAndH264
+          -count=1
+          -v
+        ],
+        environment: environment,
+        timeout: 1200,
+        log: File.join(@context.output, "hevc-native.log")
+      )
       @framework.build
       swift_test("remoteDesktopHEVC", environment)
     end
@@ -105,8 +342,10 @@ module Dieter
       raise Unavailable, "Mac execution requires macOS" unless RUBY_PLATFORM.include?("darwin")
       @context.lease("mac-desktop")
       assert_stopped
-      user = @context.command(["stat", "-f", "%Su", "/dev/console"], timeout: 15).strip
-      raise Unavailable, "Mac execution requires a logged-in desktop" if %w[root loginwindow].include?(user) || user.empty?
+      user = @context.command(%w[stat -f %Su /dev/console], timeout: 15).strip
+      if %w[root loginwindow].include?(user) || user.empty?
+        raise Unavailable, "Mac execution requires a logged-in desktop"
+      end
       @context.lease("apple-build")
     end
 
@@ -122,25 +361,51 @@ module Dieter
       state = Dir.mktmpdir("mac-case-", @context.private_dir)
       preferences = "com.dbpprt.dieter.e2e.#{Digest::SHA256.hexdigest(state)}"
       fixture, app = nil, nil
-      result = {"status" => "failed", "reason" => "", "setupMs" => 0, "executionMs" => 0}
+      result = { "status" => "failed", "reason" => "", "setupMs" => 0, "executionMs" => 0 }
       begin
         assert_stopped
         suite = test_case.dig("native", "suite") || "flow"
-        base = ["--dieter-state-root", File.join(state, "client"), "--appearance-defaults-suite", preferences]
+        base = [
+          "--dieter-state-root",
+          File.join(state, "client"),
+          "--appearance-defaults-suite",
+          preferences
+        ]
         if test_case.fetch("fixture") == "gateway"
           fixture = GatewayFixture.new(@context, suite, state, evidence: evidence)
           values = fixture.start
           token = File.join(state, "session-token")
           Atomic.write(token, values.fetch("DIETER_ISOLATED_TOKEN"))
-          base += ["--dieter-endpoint", "http://#{values.fetch('DIETER_ISOLATED_ADDR')}", "--dieter-access-token-file", token, "--ui-smoke-fixture-root", File.join(state, "gateway"), "--ui-smoke-fixture-daemon", values.fetch("DIETER_ISOLATED_DAEMON")]
+          base += [
+            "--dieter-endpoint",
+            "http://#{values.fetch("DIETER_ISOLATED_ADDR")}",
+            "--dieter-access-token-file",
+            token,
+            "--ui-smoke-fixture-root",
+            File.join(state, "gateway"),
+            "--ui-smoke-fixture-daemon",
+            values.fetch("DIETER_ISOLATED_DAEMON")
+          ]
         end
-        @context.command(["defaults", "write", preferences, "DieterAppearance", "-string", "dark"], timeout: 15) if suite == "island"
+        if suite == "island"
+          @context.command(
+            ["defaults", "write", preferences, "DieterAppearance", "-string", "dark"],
+            timeout: 15
+          )
+        end
         if test_case["native"]
-          phases = @contract.call("mac-phases", {suite: suite, output: evidence, target: preferences})
+          phases =
+            @contract.call("mac-phases", { suite: suite, output: evidence, target: preferences })
         else
           plan = File.join(state, "plan.json")
-          Atomic.json(plan, {version: 1, case: test_case})
-          phases = [{"name" => "flow", "report" => "report.json", "argv" => ["--flow-ui-smoke", "--e2e-plan", plan, "--ui-smoke-output", evidence]}]
+          Atomic.json(plan, { version: 1, case: test_case })
+          phases = [
+            {
+              "name" => "flow",
+              "report" => "report.json",
+              "argv" => ["--flow-ui-smoke", "--e2e-plan", plan, "--ui-smoke-output", evidence]
+            }
+          ]
         end
         result["setupMs"] = ((monotonic - started) * 1000).round
         began = monotonic
@@ -154,29 +419,45 @@ module Dieter
           assert_stopped
           path = File.join(evidence, phase.fetch("report"))
           FileUtils.mkdir_p(File.dirname(path))
-          activation = File.join(evidence, "activation-#{phase.fetch('name')}.pid")
+          activation = File.join(evidence, "activation-#{phase.fetch("name")}.pid")
           executable = File.join(@bundle, "Contents/MacOS/DieterMac")
-          app = @context.start([executable, *base, "--e2e-activation-ready", activation, *phase.fetch("argv")], log: File.join(evidence, "app-#{phase.fetch('name')}.log"))
+          app =
+            @context.start(
+              [executable, *base, "--e2e-activation-ready", activation, *phase.fetch("argv")],
+              log: File.join(evidence, "app-#{phase.fetch("name")}.log")
+            )
           await_file(app, activation, timeout: 20)
-          raise PipelineError, "Activation PID does not match owned app" unless File.read(activation).strip == app.pid.to_s
-          actual = @context.command(["pgrep", "-x", "DieterMac"], timeout: 10).strip
-          raise PipelineError, "Activation requires exactly the owned app" unless actual == app.pid.to_s
+          unless File.read(activation).strip == app.pid.to_s
+            raise PipelineError, "Activation PID does not match owned app"
+          end
+          actual = @context.command(%w[pgrep -x DieterMac], timeout: 10).strip
+          unless actual == app.pid.to_s
+            raise PipelineError, "Activation requires exactly the owned app"
+          end
           @context.command(["open", @bundle], timeout: 15)
           await_file(app, path, timeout: 1200)
-          raise PipelineError, "Invalid or oversized Mac report" if File.symlink?(path) || File.size(path) > 1024 * 1024
+          if File.symlink?(path) || File.size(path) > 1024 * 1024
+            raise PipelineError, "Invalid or oversized Mac report"
+          end
           phase_results = JSON.parse(File.read(path))
           app.wait(timeout: 5) # A failing app cannot override passing report fragments.
           app = nil
-          phase_results.each { |key, value| results["#{phase.fetch('name')}.#{key}"] = value }
+          phase_results.each { |key, value| results["#{phase.fetch("name")}.#{key}"] = value }
         end
         result["executionMs"] = ((monotonic - began) * 1000).round
         report = File.join(evidence, "qualified-checks.json")
         Atomic.json(report, results)
-        required = test_case.dig("native", "checks") || test_case.fetch("steps").each_index.map { |index| "flow.step-#{index}" }
-        qualified_case = test_case.merge("native" => {"checks" => required})
-        result.merge!(@contract.call("qualify", {platform: "mac", path: report, case: qualified_case}))
+        required =
+          test_case.dig("native", "checks") ||
+            test_case.fetch("steps").each_index.map { |index| "flow.step-#{index}" }
+        qualified_case = test_case.merge("native" => { "checks" => required })
+        result.merge!(
+          @contract.call("qualify", { platform: "mac", path: report, case: qualified_case })
+        )
       rescue StandardError => error
-        result["status"] = error.is_a?(Unavailable) ? "unavailable" : error.is_a?(Interrupted) ? "interrupted" : "failed"
+        result["status"] = error.is_a?(Unavailable) ?
+          "unavailable" :
+          error.is_a?(Interrupted) ? "interrupted" : "failed"
         result["reason"] = error.message
       ensure
         problems = []
@@ -204,7 +485,9 @@ module Dieter
       loop do
         return if File.file?(path)
         # Check the atomically published file again after observing app exit.
-        raise PipelineError, "Owned process exited before #{File.basename(path)}" if !process.running? && !File.file?(path)
+        if !process.running? && !File.file?(path)
+          raise PipelineError, "Owned process exited before #{File.basename(path)}"
+        end
         raise Interrupted, "Deadline waiting for #{File.basename(path)}" if monotonic >= deadline
         if monotonic >= progress
           puts "Waiting for native #{File.basename(path)}; deadline in #{(deadline - monotonic).round}s"
@@ -219,9 +502,27 @@ module Dieter
     end
 
     def swift_test(filter, extra_environment = {})
-      argv = ["swift", "test", "--package-path", "apps/mac", "--scratch-path", AppleBuild.mac_scratch(@context, operation: :test), "--only-use-versions-from-resolved-file", "--manifest-cache", "local", "--disable-index-store", "--no-parallel", *jobs]
+      argv = [
+        "swift",
+        "test",
+        "--package-path",
+        "apps/mac",
+        "--scratch-path",
+        AppleBuild.mac_scratch(@context, operation: :test),
+        "--only-use-versions-from-resolved-file",
+        "--manifest-cache",
+        "local",
+        "--disable-index-store",
+        "--no-parallel",
+        *jobs
+      ]
       argv += ["--filter", filter] unless filter.empty?
-      @context.command(argv, environment: extra_environment, timeout: 3600, log: File.join(@context.output, "unit.log"))
+      @context.command(
+        argv,
+        environment: extra_environment,
+        timeout: 3600,
+        log: File.join(@context.output, "unit.log")
+      )
     end
   end
 end

@@ -7,7 +7,7 @@ struct ConversationTimeline: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(ConversationContext.self) private var context
     // The native sidebar supplies its own adaptive glass behind the transcript.
-    var background: Color = DieterTheme.background
+    var background: Color = .clear
     // Optional instrumentation for isolated native scroll regression fixtures.
     var onTailScroll: (() -> Void)?
     var onViewportObservation: ((ConversationViewportObservation) -> Void)?

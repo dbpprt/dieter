@@ -123,7 +123,7 @@ struct WorkspaceDiffContent: View {
                     if layout.more {
                         Button("Load the rest of this diff") { loadMore() }
                             .disabled(loadingMore)
-                            .buttonStyle(DieterSecondaryButtonStyle()).padding(12)
+                            .buttonStyle(DieterBarButtonStyle(size: 30)).padding(12)
                     } else if !layout.note.isEmpty {
                         Text(layout.note)
                             .font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)

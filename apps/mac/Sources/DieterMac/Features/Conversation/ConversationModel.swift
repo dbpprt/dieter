@@ -1,3 +1,4 @@
+import CryptoKit
 import DieterAPI
 import DieterShared
 import Foundation
@@ -81,7 +82,11 @@ final class ConversationModel {
     @ObservationIgnored private var slice: ClientConversationSlice?
     @ObservationIgnored private var updates: UInt64 = 0
     @ObservationIgnored private var presentedContentIDs: Set<String> = []
-    @ObservationIgnored private var presentedContentOrder: [String] = []
+    @ObservationIgnored private let presentationDefaults: UserDefaults?
+
+    init(presentationDefaults: UserDefaults? = nil) {
+        self.presentationDefaults = presentationDefaults
+    }
     /// A slice is being presented; otherwise a UI fixture set the conversation.
     @ObservationIgnored private var presenting = false
 
@@ -280,14 +285,20 @@ final class ConversationModel {
 
     private func presentContent(from value: Dieter_V1_Conversation, daemonID: String) {
         let presentation = value.presentedContent
-        guard !presentation.id.isEmpty, let selectedID = selectedCardID ?? selectedChatID,
+        guard !daemonID.isEmpty, !presentation.id.isEmpty, let selectedID = selectedCardID ?? selectedChatID,
             value.cardID == selectedID || observedCardID == selectedID
         else { return }
         let key = [daemonID, selectedID, presentation.id].map { "\($0.utf8.count):\($0)" }.joined()
-        guard presentedContentIDs.insert(key).inserted else { return }
-        presentedContentOrder.append(key)
-        if presentedContentOrder.count > 512 {
-            presentedContentIDs.remove(presentedContentOrder.removeFirst())
+        // This is a local UI effect receipt, not conversation state. Retain it
+        // across navigation and app launches; evicting a receipt replays the
+        // daemon's retained request the next time its chat is opened.
+        let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
+        let receipt = "conversation.presentedContent.\(digest)"
+        if let presentationDefaults {
+            guard !presentationDefaults.bool(forKey: receipt) else { return }
+            presentationDefaults.set(true, forKey: receipt)
+        } else {
+            guard presentedContentIDs.insert(key).inserted else { return }
         }
         onContentPresentation(presentation, selectedID)
     }

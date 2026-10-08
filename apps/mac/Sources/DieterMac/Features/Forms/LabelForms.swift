@@ -69,7 +69,7 @@ struct LabelsSheet: View {
                                     creating || !SharedRules.shared.labelProblem(name: name, color: color).isEmpty)
                         }
                     }
-                    .padding(14).dieterSurface(radius: 10)
+                    .padding(14).dieterTile(radius: 10)
                 }
                 .padding(18)
             }
@@ -146,7 +146,7 @@ struct BoardLabelEditorRow: View {
                     .disabled(saving || !SharedRules.shared.labelProblem(name: name, color: color).isEmpty)
             }
         }
-        .padding(14).dieterSurface(radius: 10)
+        .padding(14).dieterTile(radius: 10)
     }
 
     private func save() async {

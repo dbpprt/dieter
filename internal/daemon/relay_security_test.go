@@ -18,6 +18,7 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/relaypolicy"
 	"github.com/dbpprt/dieter/internal/rpcraw"
 	"github.com/dbpprt/dieter/internal/trust"
 	"google.golang.org/grpc"
@@ -25,7 +26,25 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
+
+func TestRelayBinaryMetadataIsSafeForProtobuf(t *testing.T) {
+	values := firstMetadata(metadata.MD{"trace-bin": {string([]byte{0xff, 0, 0x80})}, "result": {"retained"}, "Authorization": {"secret"}, "Cookie": {"secret"}, "X-Dieter-Operator-Subject": {"secret"}})
+	frame := &gatewayv1.DaemonLinkFrame{Metadata: values}
+	raw, err := proto.Marshal(frame)
+	if err != nil {
+		t.Fatal("binary metadata broke relay serialization", err)
+	}
+	decoded := &gatewayv1.DaemonLinkFrame{}
+	if err := proto.Unmarshal(raw, decoded); err != nil {
+		t.Fatal(err)
+	}
+	value, err := base64.StdEncoding.DecodeString(decoded.Metadata["trace-bin"])
+	if err != nil || string(value) != string([]byte{0xff, 0, 0x80}) || decoded.Metadata["result"] != "retained" || len(decoded.Metadata) != 2 {
+		t.Fatalf("binary metadata or credential filtering changed: %v, %v", decoded.Metadata, err)
+	}
+}
 
 func relaySecurityFixture(t *testing.T) (*GatewayClient, ed25519.PrivateKey, *grpc.ClientConn, *atomic.Int32) {
 	t.Helper()
@@ -201,14 +220,19 @@ func TestCanceledRelayEscapesSaturatedResponseQueue(t *testing.T) {
 			defer closeLink()
 			callCtx, cancel := context.WithCancel(linkCtx)
 			defer cancel()
-			queue := make(chan *gatewayv1.DaemonLinkFrame, 1)
-			queue <- &gatewayv1.DaemonLinkFrame{}
+			queue := relaypolicy.NewQueue(&relaypolicy.Budget{})
+			defer queue.Close()
+			for range 8 {
+				if err := queue.Add(&gatewayv1.DaemonLinkFrame{StreamId: 1}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			entered, done := make(chan struct{}), make(chan struct{})
 			go func() {
 				defer close(done)
 				c.relayLocal(callCtx, connection, frame, func(ctx context.Context, response *gatewayv1.DaemonLinkFrame, _ bool) bool {
 					close(entered)
-					return enqueueRelayResponse(ctx, linkCtx, queue, response)
+					return queue.AddWait(ctx, response) == nil
 				})
 			}()
 			select {
@@ -222,7 +246,7 @@ func TestCanceledRelayEscapesSaturatedResponseQueue(t *testing.T) {
 			case <-time.After(time.Second):
 				t.Fatal("canceled relay retained its worker behind a full queue")
 			}
-			if linkCtx.Err() != nil || len(queue) != 1 || calls.Load() != 1 {
+			if linkCtx.Err() != nil || queue.Bytes() == 0 || calls.Load() != 1 {
 				t.Fatal("cancel affected the link or dispatched another operation")
 			}
 			frame = signedRelayFrame(t, c, private, func(frame *gatewayv1.DaemonLinkFrame, claims *trust.DelegationClaims) {
@@ -240,25 +264,27 @@ func TestCanceledRelayEscapesSaturatedResponseQueue(t *testing.T) {
 
 func TestRelayResponseAdmissionHonorsBothCancellationScopes(t *testing.T) {
 	for _, cancelRPC := range []bool{true, false} {
-		callCtx, cancelCall := context.WithCancel(t.Context())
 		linkCtx, cancelLink := context.WithCancel(t.Context())
-		queue := make(chan *gatewayv1.DaemonLinkFrame, 1)
+		callCtx, cancelCall := context.WithCancel(linkCtx)
+		queue := relaypolicy.NewQueue(&relaypolicy.Budget{})
 		if cancelRPC {
 			cancelCall()
 		} else {
 			cancelLink()
 		}
-		if enqueueRelayResponse(callCtx, linkCtx, queue, &gatewayv1.DaemonLinkFrame{}) || len(queue) != 0 {
-			t.Error("enqueued a response after cancellation")
+		if queue.AddWait(callCtx, &gatewayv1.DaemonLinkFrame{}) == nil || queue.Bytes() != 0 {
+			t.Error("enqueued response after cancellation")
 		}
 		cancelCall()
 		cancelLink()
+		queue.Close()
 	}
 }
 
 type stalledControlGateway struct {
 	gatewayv1.UnimplementedDaemonLinkServiceServer
 	generation uint64
+	alterAck   func(*gatewayv1.DaemonLinkFrame)
 }
 
 func (g *stalledControlGateway) Connect(stream grpc.BidiStreamingServer[gatewayv1.DaemonLinkFrame, gatewayv1.DaemonLinkFrame]) error {
@@ -272,8 +298,16 @@ func (g *stalledControlGateway) Connect(stream grpc.BidiStreamingServer[gatewayv
 	if _, err := stream.Recv(); err != nil {
 		return err
 	}
-	if err := stream.Send(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK, ReleaseVersion: "0.4.1-dev", Compatibility: gatewayv1.CompatibilityStatus_COMPATIBILITY_STATUS_COMPATIBLE, DaemonId: hello.GetDaemonId(), Generation: g.generation}); err != nil {
+	ack := &gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_HELLO_ACK, ReleaseVersion: "0.4.1-dev", Compatibility: gatewayv1.CompatibilityStatus_COMPATIBILITY_STATUS_COMPATIBLE, DaemonId: hello.GetDaemonId(), Generation: g.generation, Lane: hello.Lane, SessionId: hello.SessionId}
+	if g.alterAck != nil {
+		g.alterAck(ack)
+	}
+	if err := stream.Send(ack); err != nil {
 		return err
+	}
+	if g.alterAck != nil {
+		<-stream.Context().Done()
+		return stream.Context().Err()
 	}
 	// Stop reading after handshake. The daemon's output flow-control window
 	// fills, then control admission must close the link instead of blocking
@@ -285,6 +319,35 @@ func (g *stalledControlGateway) Connect(stream grpc.BidiStreamingServer[gatewayv
 	}
 	<-stream.Context().Done()
 	return stream.Context().Err()
+}
+
+func TestGatewayMustAcknowledgeCurrentRelayContract(t *testing.T) {
+	for name, alter := range map[string]func(*gatewayv1.DaemonLinkFrame){
+		"missing process session": func(f *gatewayv1.DaemonLinkFrame) { f.SessionId = "" },
+		"another process session": func(f *gatewayv1.DaemonLinkFrame) { f.SessionId = strings.Repeat("0", 64) },
+		"another lane":            func(f *gatewayv1.DaemonLinkFrame) { f.Lane = relaypolicy.Command },
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, private, local, _ := relaySecurityFixture(t)
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			gateway := grpc.NewServer()
+			gatewayv1.RegisterDaemonLinkServiceServer(gateway, &stalledControlGateway{generation: c.Identity.Generation, alterAck: alter})
+			go func() { _ = gateway.Serve(listener) }()
+			t.Cleanup(gateway.Stop)
+			c.Identity.GatewayURL, c.Identity.PrivateKey = "http://"+listener.Addr().String(), private
+			c.LocalTarget = local.Target()
+			c.OnAcknowledged = func(time.Time) { t.Error("incompatible relay was declared connected") }
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			_, err = c.runOnce(ctx)
+			if err == nil || !strings.Contains(err.Error(), "did not acknowledge the relay lane") {
+				t.Fatalf("incompatible relay contract accepted: %v", err)
+			}
+		})
+	}
 }
 
 func TestStalledGatewayControlQueueClosesLinkWithoutCallerCancellation(t *testing.T) {

@@ -188,6 +188,9 @@ const (
 	MachineOperationAction_MACHINE_OPERATION_ACTION_UPDATE_DAEMON MachineOperationAction = 3
 	MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_ON    MachineOperationAction = 4
 	MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_OFF   MachineOperationAction = 5
+	// Register the optional privileged input helper; macOS administrator approval
+	// and Input Monitoring must be completed on the target Mac.
+	MachineOperationAction_MACHINE_OPERATION_ACTION_PRIVACY_SETUP MachineOperationAction = 6
 )
 
 // Enum value maps for MachineOperationAction.
@@ -199,6 +202,7 @@ var (
 		3: "MACHINE_OPERATION_ACTION_UPDATE_DAEMON",
 		4: "MACHINE_OPERATION_ACTION_PRIVACY_ON",
 		5: "MACHINE_OPERATION_ACTION_PRIVACY_OFF",
+		6: "MACHINE_OPERATION_ACTION_PRIVACY_SETUP",
 	}
 	MachineOperationAction_value = map[string]int32{
 		"MACHINE_OPERATION_ACTION_UNSPECIFIED":   0,
@@ -207,6 +211,7 @@ var (
 		"MACHINE_OPERATION_ACTION_UPDATE_DAEMON": 3,
 		"MACHINE_OPERATION_ACTION_PRIVACY_ON":    4,
 		"MACHINE_OPERATION_ACTION_PRIVACY_OFF":   5,
+		"MACHINE_OPERATION_ACTION_PRIVACY_SETUP": 6,
 	}
 )
 
@@ -1583,14 +1588,16 @@ func (x *MachineProcessGPU) GetMemoryBytes() uint64 {
 // Owner-only, current-boot physical display/input protection. It is independent
 // of viewer sessions and is never replicated as an account setting.
 type MachinePrivacy struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Supported     bool                   `protobuf:"varint,1,opt,name=supported,proto3" json:"supported,omitempty"`
-	Requested     bool                   `protobuf:"varint,2,opt,name=requested,proto3" json:"requested,omitempty"`
-	State         MachinePrivacy_State   `protobuf:"varint,3,opt,name=state,proto3,enum=dieter.v1.MachinePrivacy_State" json:"state,omitempty"`
-	Reason        string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
-	DisplayCount  uint32                 `protobuf:"varint,5,opt,name=display_count,json=displayCount,proto3" json:"display_count,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Supported           bool                   `protobuf:"varint,1,opt,name=supported,proto3" json:"supported,omitempty"`
+	Requested           bool                   `protobuf:"varint,2,opt,name=requested,proto3" json:"requested,omitempty"`
+	State               MachinePrivacy_State   `protobuf:"varint,3,opt,name=state,proto3,enum=dieter.v1.MachinePrivacy_State" json:"state,omitempty"`
+	Reason              string                 `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	DisplayCount        uint32                 `protobuf:"varint,5,opt,name=display_count,json=displayCount,proto3" json:"display_count,omitempty"`
+	InputDeviceCount    uint32                 `protobuf:"varint,6,opt,name=input_device_count,json=inputDeviceCount,proto3" json:"input_device_count,omitempty"`
+	HelperSetupRequired bool                   `protobuf:"varint,7,opt,name=helper_setup_required,json=helperSetupRequired,proto3" json:"helper_setup_required,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *MachinePrivacy) Reset() {
@@ -1656,6 +1663,20 @@ func (x *MachinePrivacy) GetDisplayCount() uint32 {
 		return x.DisplayCount
 	}
 	return 0
+}
+
+func (x *MachinePrivacy) GetInputDeviceCount() uint32 {
+	if x != nil {
+		return x.InputDeviceCount
+	}
+	return 0
+}
+
+func (x *MachinePrivacy) GetHelperSetupRequired() bool {
+	if x != nil {
+		return x.HelperSetupRequired
+	}
+	return false
 }
 
 type MachineOperationRequest struct {
@@ -21898,13 +21919,15 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\x11MachineProcessGPU\x12\x15\n" +
 	"\x06gpu_id\x18\x01 \x01(\tR\x05gpuId\x12&\n" +
 	"\fmemory_bytes\x18\x02 \x01(\x04H\x00R\vmemoryBytes\x88\x01\x01B\x0f\n" +
-	"\r_memory_bytes\"\xfa\x01\n" +
+	"\r_memory_bytes\"\xdc\x02\n" +
 	"\x0eMachinePrivacy\x12\x1c\n" +
 	"\tsupported\x18\x01 \x01(\bR\tsupported\x12\x1c\n" +
 	"\trequested\x18\x02 \x01(\bR\trequested\x125\n" +
 	"\x05state\x18\x03 \x01(\x0e2\x1f.dieter.v1.MachinePrivacy.StateR\x05state\x12\x16\n" +
 	"\x06reason\x18\x04 \x01(\tR\x06reason\x12#\n" +
-	"\rdisplay_count\x18\x05 \x01(\rR\fdisplayCount\"8\n" +
+	"\rdisplay_count\x18\x05 \x01(\rR\fdisplayCount\x12,\n" +
+	"\x12input_device_count\x18\x06 \x01(\rR\x10inputDeviceCount\x122\n" +
+	"\x15helper_setup_required\x18\a \x01(\bR\x13helperSetupRequired\"8\n" +
 	"\x05State\x12\r\n" +
 	"\tSTATE_OFF\x10\x00\x12\f\n" +
 	"\bSTATE_ON\x10\x01\x12\x12\n" +
@@ -23964,14 +23987,15 @@ const file_dieter_v1_dieter_proto_rawDesc = "" +
 	"\rGPUMemoryKind\x12\x1f\n" +
 	"\x1bGPU_MEMORY_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17GPU_MEMORY_KIND_UNIFIED\x10\x01\x12\x1d\n" +
-	"\x19GPU_MEMORY_KIND_DEDICATED\x10\x02*\x8e\x02\n" +
+	"\x19GPU_MEMORY_KIND_DEDICATED\x10\x02*\xba\x02\n" +
 	"\x16MachineOperationAction\x12(\n" +
 	"$MACHINE_OPERATION_ACTION_UNSPECIFIED\x10\x00\x12$\n" +
 	" MACHINE_OPERATION_ACTION_RESTART\x10\x01\x12%\n" +
 	"!MACHINE_OPERATION_ACTION_SHUTDOWN\x10\x02\x12*\n" +
 	"&MACHINE_OPERATION_ACTION_UPDATE_DAEMON\x10\x03\x12'\n" +
 	"#MACHINE_OPERATION_ACTION_PRIVACY_ON\x10\x04\x12(\n" +
-	"$MACHINE_OPERATION_ACTION_PRIVACY_OFF\x10\x05*\xa3\x01\n" +
+	"$MACHINE_OPERATION_ACTION_PRIVACY_OFF\x10\x05\x12*\n" +
+	"&MACHINE_OPERATION_ACTION_PRIVACY_SETUP\x10\x06*\xa3\x01\n" +
 	"\x0fExecutionStream\x12 \n" +
 	"\x1cEXECUTION_STREAM_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17EXECUTION_STREAM_STDOUT\x10\x01\x12\x1b\n" +

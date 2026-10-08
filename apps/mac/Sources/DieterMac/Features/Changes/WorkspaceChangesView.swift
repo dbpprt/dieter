@@ -99,7 +99,7 @@ struct WorkspaceChangesView: View {
             let compact = WorkspaceReviewLayout.isCompact(width: geometry.size.width)
             VStack(spacing: 0) {
                 workspaceToolbar(compact: compact, roomy: geometry.size.width >= 900)
-                Divider().overlay(DieterTheme.paneSeparator)
+                Rectangle().fill(DieterTheme.hairline).frame(height: 1)
                 workspaceContent(compact: compact)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -221,7 +221,7 @@ struct WorkspaceChangesView: View {
                 Image(systemName: "ellipsis")
             }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().buttonStyle(
-                DieterIconButtonStyle()
+                DieterBarButtonStyle(shape: .circle, size: 28)
             )
             .help("Workspace actions")
             Button {
@@ -233,33 +233,22 @@ struct WorkspaceChangesView: View {
                     Image(systemName: "arrow.clockwise")
                 }
             }
-            .buttonStyle(DieterIconButtonStyle()).disabled(model.workspaceLoading).help("Refresh changes")
+            .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).disabled(model.workspaceLoading).help(
+                "Refresh changes")
         }
-        .padding(.horizontal, 14).frame(height: 52).background(DieterTheme.sidebar)
+        .padding(.horizontal, 14).frame(height: 52)
     }
 
     private var viewModePicker: some View {
-        HStack(spacing: 2) {
+        DieterSegmentTrack(height: 28) {
             ForEach(WorkspaceDiffViewMode.allCases) { mode in
-                Button {
-                    diffModeRaw = mode.rawValue
-                } label: {
-                    Text(mode.rawValue)
-                        .font(.system(size: 11, weight: diffMode == mode ? .semibold : .medium))
-                        .foregroundStyle(diffMode == mode ? DieterTheme.text : DieterTheme.tertiary)
-                        .padding(.horizontal, 9).frame(height: 24)
-                        .background(
-                            diffMode == mode ? DieterTheme.elevated : .clear,
-                            in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("changes.view-mode-\(mode.rawValue.lowercased())")
-                .smokeTarget("changes.view-mode-\(mode.rawValue.lowercased())")
+                Button(mode.rawValue) { diffModeRaw = mode.rawValue }
+                    .buttonStyle(DieterSegmentStyle(selected: diffMode == mode, height: 22))
+                    .accessibilityIdentifier("changes.view-mode-\(mode.rawValue.lowercased())")
+                    .smokeTarget("changes.view-mode-\(mode.rawValue.lowercased())")
             }
         }
-        .padding(2)
-        .background(DieterTheme.surface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(DieterTheme.border))
+        .fixedSize()
     }
 
     @ViewBuilder private func toolbarActions(compact: Bool, roomy: Bool) -> some View {
@@ -271,7 +260,7 @@ struct WorkspaceChangesView: View {
                 } label: {
                     Label(compact ? "Commit" : "Commit changes", systemImage: "checkmark.circle").lineLimit(1)
                 }
-                .buttonStyle(DieterPrimaryButtonStyle())
+                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
             }
         } else {
             if !compact {
@@ -284,13 +273,13 @@ struct WorkspaceChangesView: View {
                     )
                     .lineLimit(1).fixedSize()
                 }
-                .buttonStyle(DieterSecondaryButtonStyle())
+                .buttonStyle(DieterBarButtonStyle(size: 30))
                 .disabled(!availability.allows(.update))
                 .help("Rebase this workspace onto the latest \(baseBranch)")
 
                 if mode == "worktree" {
                     Button("Discard…") { operationKind = .discard }
-                        .buttonStyle(DieterSecondaryButtonStyle(destructive: true))
+                        .buttonStyle(DieterBarButtonStyle(destructive: true, size: 30))
                         .disabled(!availability.allows(.discard))
                         .help("Remove the worktree and its branch")
                 }
@@ -301,7 +290,7 @@ struct WorkspaceChangesView: View {
                     } label: {
                         Label("Create PR…", systemImage: "arrow.triangle.pull").lineLimit(1).fixedSize()
                     }
-                    .buttonStyle(DieterSecondaryButtonStyle())
+                    .buttonStyle(DieterBarButtonStyle(size: 30))
                     .disabled(!availability.allows(.createPullRequest))
                 }
             }
@@ -315,7 +304,7 @@ struct WorkspaceChangesView: View {
                     )
                     .lineLimit(1).fixedSize()
                 }
-                .buttonStyle(DieterPrimaryButtonStyle())
+                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
                 .disabled(!availability.allowsMergeFlow)
                 .accessibilityIdentifier("changes.merge-into-base")
             } else if availability.allows(.commit) {
@@ -324,7 +313,7 @@ struct WorkspaceChangesView: View {
                 } label: {
                     Label(compact ? "Commit" : "Commit changes", systemImage: "checkmark.circle").lineLimit(1)
                 }
-                .buttonStyle(DieterPrimaryButtonStyle())
+                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
             }
         }
     }
@@ -411,7 +400,7 @@ struct WorkspaceChangesView: View {
             }
             Spacer()
             Button("Review conflicts…") { mergeSheetPresented = true }
-                .buttonStyle(DieterPrimaryButtonStyle(tint: DieterTheme.coral))
+                .buttonStyle(DieterBarButtonStyle(prominent: true, tint: DieterTheme.coral, size: 30))
                 .disabled(!availability.allowsMergeFlow)
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
@@ -466,11 +455,11 @@ struct WorkspaceChangesView: View {
                 Spacer()
                 if model.operationCancelable {
                     Button("Cancel") { Task { await model.cancelCurrentGitOperation() } }.buttonStyle(
-                        DieterSecondaryButtonStyle(destructive: true))
+                        DieterBarButtonStyle(destructive: true, size: 30))
                 }
             }
         }
-        .padding(.horizontal, 14).padding(.vertical, 9).background(DieterTheme.raised)
+        .padding(.horizontal, 14).padding(.vertical, 9).background(DieterTheme.tile)
         .overlay(alignment: .bottom) { Rectangle().fill(DieterTheme.border).frame(height: 1) }
     }
 
@@ -494,8 +483,8 @@ struct WorkspaceChangesView: View {
                             .font(.system(size: 11, weight: compactPane == pane ? .semibold : .medium))
                             .padding(.horizontal, 10).frame(height: 27)
                             .background(
-                                compactPane == pane ? DieterTheme.selection : .clear,
-                                in: RoundedRectangle(cornerRadius: 6))
+                                compactPane == pane ? DieterTheme.segmentThumb : .clear,
+                                in: Capsule())
                         }
                         .buttonStyle(.plain)
                     }
@@ -507,7 +496,7 @@ struct WorkspaceChangesView: View {
                             ).lineLimit(1)
                     }
                 }
-                .padding(.horizontal, 10).frame(height: 38).background(DieterTheme.sidebar)
+                .padding(.horizontal, 10).frame(height: 38)
                 Divider().overlay(DieterTheme.border)
                 if compactPane == .files {
                     reviewNavigator(workspace: workspace, compact: true)
@@ -592,7 +581,7 @@ struct WorkspaceChangesView: View {
                         Label("Ask agent to address review", systemImage: "sparkles")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(DieterSecondaryButtonStyle())
+                    .buttonStyle(DieterBarButtonStyle(size: 30))
                 }
                 Button {
                     operationKind = .mergePullRequest
@@ -600,7 +589,7 @@ struct WorkspaceChangesView: View {
                     Text(pr.mergeBlockedReason.isEmpty ? "Merge PR" : "Merge PR · \(pr.mergeBlockedReason)")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(DieterPrimaryButtonStyle())
+                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
                 .disabled(!availability.allows(.mergePullRequest))
                 .opacity(availability.allows(.mergePullRequest) ? 1 : 0.55)
             }
@@ -621,7 +610,7 @@ struct WorkspaceChangesView: View {
             .font(.system(size: 9)).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
         }
         .padding(11)
-        .background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .dieterTile(radius: 10)
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
     }
 
@@ -694,7 +683,7 @@ struct WorkspaceChangesView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .dieterTile(radius: 10)
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
     }
 
@@ -738,7 +727,7 @@ struct WorkspaceChangesView: View {
             } label: {
                 Image(systemName: "finder")
             }
-            .buttonStyle(DieterIconButtonStyle()).help("Reveal workspace in Finder")
+            .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Reveal workspace in Finder")
         }
         .font(.system(size: 10, weight: .medium)).foregroundStyle(DieterTheme.tertiary)
         .padding(.horizontal, 10).frame(height: 42)
@@ -817,19 +806,19 @@ struct WorkspaceChangesView: View {
                 } label: {
                     Image(systemName: "doc.on.doc")
                 }
-                .buttonStyle(DieterIconButtonStyle()).help("Copy file path")
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Copy file path")
                 if let card {
                     Button {
                         Task { await model.openWorkspaceFiles(card: card, opening: model.selectedChangePath) }
                     } label: {
                         Image(systemName: "pencil")
                     }
-                    .buttonStyle(DieterIconButtonStyle()).help("Open file in workspace editor")
+                    .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Open file in workspace editor")
                 }
                 viewedToggle
             }
         }
-        .padding(.horizontal, 12).frame(height: 46).background(DieterTheme.sidebar)
+        .padding(.horizontal, 12).frame(height: 46)
     }
 
     private var viewedToggle: some View {
@@ -852,10 +841,10 @@ struct WorkspaceChangesView: View {
             }
             .padding(.horizontal, 8).frame(height: 26)
             .background(
-                viewed ? DieterTheme.selection : DieterTheme.surface,
+                viewed ? DieterTheme.tileSelected : DieterTheme.tile,
                 in: RoundedRectangle(cornerRadius: 7, style: .continuous)
             )
-            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(DieterTheme.border))
+            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(DieterTheme.tileRim))
         }
         .buttonStyle(.plain)
         .help(viewed ? "Mark as not viewed" : "Mark as viewed and jump to the next file")
@@ -931,8 +920,8 @@ struct WorkspaceChangesView: View {
                 Button("Cancel") {
                     selectedCommentLine = nil
                     commentBody = ""
-                }.buttonStyle(DieterSecondaryButtonStyle())
-                Button("Add comment") { addComment(line) }.buttonStyle(DieterPrimaryButtonStyle())
+                }.buttonStyle(DieterBarButtonStyle(size: 30))
+                Button("Add comment") { addComment(line) }.buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
                     .disabled(commentBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding(.horizontal, 16).padding(.bottom, 16)

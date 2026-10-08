@@ -12,7 +12,7 @@ import (
 )
 
 func TestPrivacyNativeProtocolBoundsAndRejection(t *testing.T) {
-	for _, raw := range []string{`{"state":3}`, `{"state":1}`, `{"state":2}`, `{"display_count":33}`, `invalid`} {
+	for _, raw := range []string{`{"state":3}`, `{"state":1}`, `{"state":2}`, `{"display_count":33}`, `{"input_device_count":129}`, `invalid`} {
 		if _, err := decodePrivacy([]byte(raw)); err == nil {
 			t.Fatalf("accepted %s", raw)
 		}

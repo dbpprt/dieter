@@ -56,6 +56,7 @@ class CoreRuntimeEndToEndTest : EndToEnd() {
             runtime.onMachine(fixture.daemonId) {
                 it.PerformMachineOperation().execute(MachineOperationRequest(action = action))
             }
+        privacy(MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_SETUP)
         privacy(MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_ON)
         slices.await(15.seconds, describe = { "privacy sidebar: ${slices.value}" }) {
             it?.machines?.any { machine ->

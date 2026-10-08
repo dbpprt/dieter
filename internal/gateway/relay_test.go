@@ -7,6 +7,7 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/relaypolicy"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -168,6 +169,13 @@ func TestRelayReleasesByteBudgetWhileConsumingAndClosing(t *testing.T) {
 		}
 		if round == 1 {
 			relay.Close()
+			if _, err := relay.Recv(); err != io.EOF {
+				t.Fatalf("canceled stream retained responses: %v", err)
+			}
+			if relay.queue.bytes.Load() != 0 {
+				t.Fatal("canceled stream retained bytes")
+			}
+			break
 		}
 		for i := 0; i < 4; i++ {
 			if got, err := relay.Recv(); err != nil || got != frame {
@@ -190,7 +198,7 @@ func TestRelayFailureDrainsWhileReceiverIsActive(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		<-link.send
+		drainTestRelayOpen(t, link)
 		for i := 0; i < defaultRelayFrameBuffer; i++ {
 			link.dispatch(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE, StreamId: relay.id, Payload: []byte("queued output")})
 		}
@@ -232,12 +240,50 @@ func newTestRelayHub(t *testing.T) (*Hub, *daemonLink) {
 	t.Helper()
 	hub := NewHub(nil, Config{})
 	link := &daemonLink{
-		id: "isolated-test-daemon", send: make(chan *gatewayv1.DaemonLinkFrame, 8),
+		id: "isolated-test-daemon", budget: relaypolicy.NewBudget(relaypolicy.BufferedBytes, nil),
 		control: make(chan *gatewayv1.DaemonLinkFrame, 2*(maxDaemonRelayStreams+maxDaemonWatchStreams)),
 		done:    make(chan struct{}), streams: map[uint64]*relayFrameQueue{},
 	}
+	link.outbound = relaypolicy.NewQueue(link.budget)
 	link.markSeen(time.Now())
-	hub.register(link)
+	if err := hub.register(link); err != nil {
+		t.Fatal(err)
+	}
+	for _, lane := range relaypolicy.Lanes {
+		hub.relayLinks[link.id][lane] = link
+	}
 	t.Cleanup(func() { hub.unregister(link) })
 	return hub, link
+}
+
+func drainTestRelayOpen(t *testing.T, link *daemonLink) {
+	t.Helper()
+	f, release := link.outbound.Next()
+	if f == nil {
+		t.Fatal("missing queued OPEN")
+	}
+	release()
+}
+
+func TestRelayFailureReturnsCapacityErrorWhenOtherCallsHoldAllBytes(t *testing.T) {
+	hub, link := newTestRelayHub(t)
+	stream, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: "/dieter.v1.DieterService/WatchKV"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	drainTestRelayOpen(t, link)
+	remaining := int64(relaypolicy.BufferedBytes) - link.budget.Used()
+	if !link.budget.Reserve(remaining) {
+		t.Fatal("could not saturate lane budget")
+	}
+	defer link.budget.Release(remaining)
+	link.failStream(stream.id, status.Error(codes.ResourceExhausted, "relay client is not consuming responses"))
+	frame, err := stream.Recv()
+	if err != nil || frame.Kind != gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RPC_ERROR || frame.StatusCode != int32(codes.ResourceExhausted) {
+		t.Fatalf("capacity failure became silent success: %v, %v", frame, err)
+	}
+	if _, err = stream.Recv(); err != io.EOF {
+		t.Fatal(err)
+	}
 }

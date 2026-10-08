@@ -233,6 +233,7 @@
             switch action {
             case .privacyOn: "lock.shield"
             case .privacyOff: "lock.open"
+            case .privacySetup: "shield.lefthalf.filled"
             case .updateDaemon: "arrow.down.circle"
             case .restart: "arrow.clockwise.circle"
             case .shutdown: "power"

@@ -74,7 +74,7 @@ struct RequiredPermissionsView: View {
                     Text("Granted").font(.callout).foregroundStyle(.green)
                 } else {
                     Button("Grant \(permission.title)…") { permissions.grant(permission) }
-                        .buttonStyle(DieterPrimaryButtonStyle())
+                        .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
                         .accessibilityIdentifier("permissions.grant.\(permission.rawValue)")
                         .smokeTarget("permissions.grant.\(permission.rawValue)")
                 }

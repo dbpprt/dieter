@@ -873,6 +873,10 @@ func assertChangesCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
 
 type cliPrivacyFixture struct{ enabled bool }
 
+func (f *cliPrivacyFixture) Setup(ctx context.Context) (*dieterv1.MachinePrivacy, error) {
+	return f.Snapshot(ctx)
+}
+
 func (f *cliPrivacyFixture) Snapshot(context.Context) (*dieterv1.MachinePrivacy, error) {
 	state := dieterv1.MachinePrivacy_STATE_OFF
 	if f.enabled {
@@ -886,6 +890,11 @@ func (f *cliPrivacyFixture) Set(ctx context.Context, enabled bool) (*dieterv1.Ma
 }
 func assertPrivacyCLI(t *testing.T, client *CLI, output *bytes.Buffer) {
 	t.Helper()
+	raw := runDaemonCLI(t, client, output, "machine", "privacy", "setup", "--key", "privacy-test-setup-"+client.transport.route)
+	var setup dieterv1.MachineOperationResponse
+	if err := protojson.Unmarshal([]byte(raw), &setup); err != nil || !setup.Accepted || !strings.Contains(setup.Message, "Input Monitoring") {
+		t.Fatalf("setup=%s err=%v", raw, err)
+	}
 	runDaemonCLI(t, client, output, "machine", "privacy", "on", "--key", "privacy-test-on-"+client.transport.route)
 	locked := &dieterv1.MachinePrivacy{}
 	value := runDaemonCLI(t, client, output, "machine", "privacy", "status")

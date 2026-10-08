@@ -201,7 +201,7 @@ final class NativeMarkdownTextContainer: NSView {
 
     private func textView(in view: NSView) -> NSTextView? {
         if let editor = view as? NSTextView { return editor }
-        return view.subviews.lazy.compactMap { self.textView(in: $0) }.first
+        return view.firstSubviewResult { self.textView(in: $0) }
     }
 }
 

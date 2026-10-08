@@ -70,6 +70,14 @@ func LoadOrCreateEnrollmentIdentity(boardHome, name, gatewayURL string) (*Identi
 	}
 	identity, err := LoadIdentity(boardHome)
 	if err == nil {
+		// A failed enrollment must not pin subsequent attempts to an old origin.
+		// Preserve the key so retrying never changes this machine's identity.
+		if !identity.Enrolled() && (identity.GatewayURL != gatewayURL || identity.Name != name) {
+			identity.GatewayURL, identity.Name = gatewayURL, name
+			if err := identity.save(); err != nil {
+				return nil, err
+			}
+		}
 		return identity, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
