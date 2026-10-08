@@ -315,13 +315,14 @@ struct AttachmentMarkupEditor: View {
                     .smokeTarget("attachment.markup.canvas")
                 Divider()
                 if let error { Text(error).font(.caption).foregroundStyle(.orange).padding(8) }
-                HStack {
+                HStack(spacing: 8) {
                     Text("\(Int(document.pixelSize.width)) × \(Int(document.pixelSize.height))")
                         .font(.caption).foregroundStyle(.secondary)
                     Spacer()
                     Button("Cancel") {
                         document.clear(); cancel?()
                     }
+                    .buttonStyle(DieterBarButtonStyle())
                     .accessibilityIdentifier("attachment.markup.cancel").smokeTarget("attachment.markup.cancel")
                     Button("Apply") {
                         do {
@@ -330,14 +331,14 @@ struct AttachmentMarkupEditor: View {
                             document.clear()
                         } catch { self.error = error.localizedDescription }
                     }
-                    .buttonStyle(.borderedProminent).disabled(!document.hasChanges)
+                    .buttonStyle(DieterBarButtonStyle(prominent: true)).disabled(!document.hasChanges)
                     .accessibilityIdentifier("attachment.markup.apply").smokeTarget("attachment.markup.apply")
                 }
                 .padding(10)
             } else {
                 ContentUnavailableView(
                     "Markup unavailable", systemImage: "photo", description: Text(error ?? "Opening image…"))
-                if let cancel { Button("Close", action: cancel).padding(12) }
+                if let cancel { Button("Close", action: cancel).buttonStyle(DieterBarButtonStyle()).padding(12) }
             }
         }
         .background(DieterTheme.surface)
@@ -349,20 +350,20 @@ struct AttachmentMarkupEditor: View {
 
     private func tools(_ document: AttachmentMarkupDocument) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 3) {
-                ForEach(AttachmentMarkupTool.allCases) { tool in
-                    Button {
-                        document.tool = tool
-                    } label: {
-                        Image(systemName: tool.symbol).frame(width: 27, height: 25)
-                            .background(
-                                document.tool == tool ? Color.accentColor.opacity(0.2) : .clear,
-                                in: RoundedRectangle(cornerRadius: 5))
+            HStack(spacing: 6) {
+                DieterSegmentTrack(height: 28) {
+                    ForEach(AttachmentMarkupTool.allCases) { tool in
+                        Button {
+                            document.tool = tool
+                        } label: {
+                            Image(systemName: tool.symbol)
+                        }
+                        .buttonStyle(DieterSegmentStyle(selected: document.tool == tool, height: 22))
+                        .help(tool.title).accessibilityLabel(tool.title)
+                        .accessibilityAddTraits(document.tool == tool ? .isSelected : [])
+                        .accessibilityIdentifier("attachment.markup.tool.\(tool.rawValue)")
+                        .smokeTarget("attachment.markup.tool.\(tool.rawValue)")
                     }
-                    .buttonStyle(.borderless).help(tool.title).accessibilityLabel(tool.title)
-                    .accessibilityAddTraits(document.tool == tool ? .isSelected : [])
-                    .accessibilityIdentifier("attachment.markup.tool.\(tool.rawValue)")
-                    .smokeTarget("attachment.markup.tool.\(tool.rawValue)")
                 }
                 Spacer(minLength: 0)
                 Button {
@@ -370,6 +371,7 @@ struct AttachmentMarkupEditor: View {
                 } label: {
                     Image(systemName: "arrow.uturn.backward")
                 }
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
                 .disabled(!document.canUndo).help("Undo (⌘Z)").accessibilityLabel("Undo mark")
                 .accessibilityIdentifier("attachment.markup.undo").smokeTarget("attachment.markup.undo")
                 Button {
@@ -377,8 +379,10 @@ struct AttachmentMarkupEditor: View {
                 } label: {
                     Image(systemName: "arrow.uturn.forward")
                 }
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
                 .disabled(!document.canRedo).help("Redo (⇧⌘Z)").accessibilityLabel("Redo mark")
-                Button("Clear") { document.clear() }.disabled(!document.hasChanges)
+                Button("Clear") { document.clear() }
+                    .buttonStyle(DieterBarButtonStyle(size: 28)).disabled(!document.hasChanges)
                     .accessibilityIdentifier("attachment.markup.clear").smokeTarget("attachment.markup.clear")
             }
             HStack(spacing: 7) {

@@ -19,7 +19,7 @@ struct FileDocumentActions: View {
             let actions = active ? resolveExternalActions() : nil
             let key = files.documentKey
             let session = files.fileEditorSession
-            HStack(spacing: 10) {
+            HStack(spacing: 6) {
                 Button {
                     showInFinder()
                 } label: {
@@ -29,6 +29,7 @@ struct FileDocumentActions: View {
                         Label("Show in Finder", systemImage: "folder")
                     }
                 }
+                .nativeControlChrome(iconOnly: compact)
                 .disabled(!active || actions?.fileURL == nil)
                 .help(actions?.unavailableReason ?? "Show in Finder")
                 .accessibilityLabel("Show in Finder")
@@ -54,6 +55,7 @@ struct FileDocumentActions: View {
                         if compact { Text("Export") } else { Label("Export", systemImage: "square.and.arrow.up") }
                     }
                     .fixedSize()
+                    .nativeControlChrome(iconOnly: false)
                     .disabled(!active || exportingMarkdown || files.fileEditorSession.documentKey != files.documentKey)
                     .help("Export the current draft as PDF or HTML")
                     .accessibilityIdentifier("\(identifierPrefix).export-menu")
@@ -68,6 +70,7 @@ struct FileDocumentActions: View {
                             Label("Save a Copy…", systemImage: "square.and.arrow.down")
                         }
                     }
+                    .nativeControlChrome(iconOnly: compact)
                     .disabled(!active)
                     .help("Save a local copy of this file")
                     .accessibilityLabel("Save a Copy…")
@@ -78,7 +81,7 @@ struct FileDocumentActions: View {
                     ProgressView().controlSize(.small).accessibilityLabel("Exporting Markdown")
                 }
             }
-            .buttonStyle(.borderless).controlSize(.small).font(.caption)
+            .buttonStyle(.borderless).controlSize(.small).font(.system(size: 11, weight: .medium))
         }
     }
 
@@ -164,5 +167,15 @@ struct FileDocumentActions: View {
             }
         }
         return response == .OK ? panel.url : nil
+    }
+}
+
+extension View {
+    /// Glass bar chrome around a native control. These stay AppKit buttons and
+    /// pop-up buttons: the Finder smoke and the hosted tests read their state.
+    fileprivate func nativeControlChrome(iconOnly: Bool) -> some View {
+        padding(.horizontal, iconOnly ? 0 : 10)
+            .frame(width: iconOnly ? 28 : nil, height: 28)
+            .dieterCapsuleChrome()
     }
 }

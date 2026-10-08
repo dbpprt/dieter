@@ -306,25 +306,6 @@
             return nil
         }
 
-        @discardableResult
-        static func selectSegment(_ index: Int, identifier: String, in window: NSWindow) -> Bool {
-            guard let element = find(identifier, in: window), let host = element.recordedWindow,
-                let root = host.contentView
-            else { return false }
-            var views = [root]
-            while let view = views.popLast() {
-                if let control = view as? NSSegmentedControl, index < control.segmentCount,
-                    let frame = element.recordedFrame,
-                    frame.intersects(host.convertToScreen(control.convert(control.bounds, to: nil)))
-                {
-                    control.selectedSegment = index
-                    return control.sendAction(control.action, to: control.target)
-                }
-                views.append(contentsOf: view.subviews)
-            }
-            return false
-        }
-
         /// SwiftUI registers sheet controls before AppKit finishes positioning
         /// their window. Wait for stable screen geometry before a mouse fallback.
         static func pressWhenSettled(_ identifier: String, in window: NSWindow) async -> Bool {

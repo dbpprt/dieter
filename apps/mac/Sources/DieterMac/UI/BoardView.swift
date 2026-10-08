@@ -90,6 +90,7 @@ struct BoardCanvas: View {
                             Text("This empty board and its settings have been preserved.")
                         } actions: {
                             Button("Restore board") { Task { await store.restoreBoard(board.id) } }
+                                .buttonStyle(DieterBarButtonStyle(prominent: true))
                                 .accessibilityIdentifier("board.restore")
                                 .smokeTarget("board.restore")
                         }

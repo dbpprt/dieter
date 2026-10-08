@@ -234,12 +234,8 @@ struct ConversationTimeline: View {
                     returnToLatest()
                 } label: {
                     Label("Jump to latest", systemImage: "arrow.down")
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, 13)
-                        .frame(height: 34)
-                        .dieterGlass(.regular.interactive(), in: Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(DieterBarButtonStyle())
                 .padding(.bottom, 12)
                 .accessibilityIdentifier("conversation.jump-to-latest")
                 .smokeTarget("conversation.jump-to-latest")
@@ -449,7 +445,7 @@ struct ConversationTimeline: View {
                 Button(earlier ? "Load earlier messages" : "Load later messages") {
                     if earlier { showEarlierMessages() } else { showLaterMessages() }
                 }
-                .buttonStyle(.borderless).font(.caption)
+                .buttonStyle(.plain).font(.caption).foregroundStyle(DieterTheme.action)
             }
         }
         .frame(maxWidth: .infinity).frame(height: 18)

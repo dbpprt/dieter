@@ -156,6 +156,9 @@ final class NativeChatPaneSplitController: NSSplitViewController {
 
         browserHost.sizingOptions = []
         detailHost.sizingOptions = []
+        // The detail is a floating panel inset from the window edges, so the
+        // titlebar safe area must not push its content up or down inside it.
+        detailHost.safeAreaRegions = []
         let browserController = NSViewController()
         browserController.view = browserHost
         let detailController = NSViewController()

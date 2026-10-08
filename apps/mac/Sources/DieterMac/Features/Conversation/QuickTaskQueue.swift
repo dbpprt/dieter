@@ -231,12 +231,8 @@ struct QueuedComposerMessage: View {
                         }
                         Text(action == .steer ? "Steering…" : "Steer")
                     }
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(DieterTheme.subtle)
-                    .padding(.horizontal, 7)
-                    .frame(height: 28)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(DieterBarButtonStyle(size: 28))
                 .disabled(action != nil)
                 .help("Stop the current turn and run this message next")
                 .accessibilityIdentifier("conversation.queued-message.steer.\(message.id)")
@@ -250,14 +246,10 @@ struct QueuedComposerMessage: View {
                         ProgressView().controlSize(.mini)
                     } else {
                         Image(systemName: "trash")
-                            .font(.system(size: 13, weight: .medium))
                     }
                 }
-                .foregroundStyle(DieterTheme.tertiary)
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(DieterBarButtonStyle(shape: .circle, destructive: true, size: 28))
             .disabled(action != nil)
             .help("Remove queued message")
             .accessibilityLabel("Remove queued message")
@@ -271,15 +263,9 @@ struct QueuedComposerMessage: View {
                     perform(.remove, onRemove)
                 }
             } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(DieterTheme.tertiary)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
+                DieterMenuLabel(symbol: "ellipsis", size: 28)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
+            .dieterMenuChrome(.circle)
             .disabled(action != nil)
             .help("Queued message actions")
             .accessibilityIdentifier("conversation.queued-message.menu.\(message.id)")

@@ -67,7 +67,6 @@ struct ConversationView: View {
                     ConversationContentPane(model: context.content)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea(.container, edges: .top)
             } else {
                 ConversationContentSplit(presented: workspacePresented, singleWorkspace: singleWorkspace) {
                     VStack(spacing: 0) {

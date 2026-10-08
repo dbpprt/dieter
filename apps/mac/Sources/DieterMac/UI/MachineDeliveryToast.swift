@@ -69,20 +69,16 @@ private struct MachineDeliveryToast: View {
                     .lineLimit(outbox.phase == .waitingForStorage ? nil : 2)
                     .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: 12) {
+                HStack(spacing: 8) {
                     Button("Cancel Delivery", role: .destructive) {
                         discardConfirmationPresented = true
                     }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(DieterTheme.tertiary)
+                    .buttonStyle(DieterBarButtonStyle(destructive: true, size: 26))
                     .accessibilityIdentifier("\(identifier).cancel-queue")
 
                     if !outbox.retryTitle.isEmpty {
                         Button(outbox.retryTitle) { Task { await store.retryOutbox(daemonID: outbox.daemonID) } }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-                            .tint(tint)
+                            .buttonStyle(DieterBarButtonStyle(prominent: true, tint: tint, size: 26))
                             .accessibilityIdentifier("\(identifier).retry")
                             .smokeTarget("\(identifier).retry")
                     }

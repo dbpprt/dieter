@@ -152,8 +152,7 @@ struct InboxFeed: View {
                         .padding(.horizontal, 11).frame(height: 30)
                         .contentShape(Capsule())
                     }
-                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-                    .dieterCapsuleChrome()
+                    .dieterMenuChrome()
                     .accessibilityLabel("Filter by project")
                     .accessibilityIdentifier("inbox.project-filter").smokeTarget("inbox.project-filter")
                 }
@@ -176,10 +175,9 @@ struct InboxFeed: View {
                             .accessibilityIdentifier("inbox.range.\(value)")
                     }
                 } label: {
-                    Text(SharedRules.shared.timelineRangeTitle(hours: Int32(hours))).font(DieterFont.meta)
-                        .foregroundStyle(DieterTheme.subtle)
+                    DieterMenuLabel(title: SharedRules.shared.timelineRangeTitle(hours: Int32(hours)), size: 24)
                 }
-                .menuStyle(.borderlessButton).fixedSize()
+                .dieterMenuChrome()
                 .accessibilityLabel("Timeline range")
                 .accessibilityIdentifier("inbox.range").smokeTarget("inbox.range")
             }
@@ -227,7 +225,7 @@ struct InboxFeed: View {
 
     private var showMore: some View {
         Button("Show more activity") { visibleLimit += 20 }
-            .buttonStyle(.plain).font(DieterFont.meta).foregroundStyle(DieterTheme.primary)
+            .buttonStyle(DieterBarButtonStyle(size: 26))
             .frame(maxWidth: .infinity).padding(.vertical, 9)
             .accessibilityIdentifier("inbox.show-more").smokeTarget("inbox.show-more")
     }

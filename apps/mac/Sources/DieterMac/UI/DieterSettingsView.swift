@@ -146,11 +146,12 @@ private struct BrowserSettings: View {
                     HStack {
                         Text(entry).font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
                         Spacer()
-                        Button("Remove", systemImage: "minus.circle") {
+                        Button("Remove", systemImage: "minus") {
                             externalURLs.removeAll { $0 == entry }
                             save()
                         }
                         .labelStyle(.iconOnly)
+                        .buttonStyle(DieterBarButtonStyle(shape: .circle, destructive: true, size: 24))
                         .accessibilityLabel("Remove \(entry)")
                     }
                     Divider().overlay(DieterTheme.border)
@@ -161,6 +162,7 @@ private struct BrowserSettings: View {
                         .onSubmit(addURL)
                         .accessibilityIdentifier("settings.browser.externalURL")
                     Button("Add", action: addURL)
+                        .buttonStyle(DieterBarButtonStyle(size: 28))
                         .disabled(newURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         .accessibilityIdentifier("settings.browser.addExternalURL")
                 }
@@ -252,11 +254,11 @@ struct PromptSettingsEditor: View {
                         .labelsHidden().frame(width: 180)
                         .accessibilityIdentifier("settings.prompts.machine")
                         Spacer()
-                        Picker("Template", selection: $globalKind) {
-                            Text("Context").tag("Context")
-                            Text("Board skill").tag("Board")
-                            Text("Chat skill").tag("Chat")
-                        }.labelsHidden().pickerStyle(.segmented).frame(width: 300)
+                        DieterSegmentedPicker(
+                            "Template", selection: $globalKind, options: ["Context", "Board", "Chat"], fillsWidth: true,
+                            optionTitle: { $0 == "Context" ? "Context" : "\($0) skill" }
+                        )
+                        .frame(width: 300)
                     }
                     TextEditor(text: globalTemplate)
                         .font(.system(size: 11, design: .monospaced)).scrollContentBackground(.hidden)
@@ -276,7 +278,8 @@ struct PromptSettingsEditor: View {
                     }
                     HStack {
                         Spacer();
-                        Button("Save global templates") { Task { await saveGlobal() } }.buttonStyle(.borderedProminent)
+                        Button("Save global templates") { Task { await saveGlobal() } }
+                            .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28))
                             .disabled(saving || machineID.isEmpty)
                     }
                 }.promptPanel()
@@ -321,7 +324,8 @@ struct PromptSettingsEditor: View {
                                     )
                                 )
                                 .textFieldStyle(.roundedBorder)
-                                Button("Save") { Task { await saveLabel(label) } }.disabled(saving)
+                                Button("Save") { Task { await saveLabel(label) } }
+                                    .buttonStyle(DieterBarButtonStyle(size: 28)).disabled(saving)
                                 Button {
                                     togglePreviewLabel(label.id)
                                 } label: {
@@ -342,8 +346,8 @@ struct PromptSettingsEditor: View {
                             Text("\(preview.estimatedTokens) estimated tokens · \(preview.source)").font(.caption2)
                                 .foregroundStyle(DieterTheme.tertiary)
                         }
-                        Button("Refresh preview") { Task { await loadPreview() } }.disabled(
-                            store.selectedProject == nil)
+                        Button("Refresh preview") { Task { await loadPreview() } }
+                            .buttonStyle(DieterBarButtonStyle(size: 28)).disabled(store.selectedProject == nil)
                     }
                     if let preview {
                         Text(preview.instructions).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
@@ -396,7 +400,8 @@ struct PromptSettingsEditor: View {
                 .background(
                     DieterTheme.input.opacity(inherits.wrappedValue ? 0.45 : 1), in: RoundedRectangle(cornerRadius: 8))
             HStack {
-                Spacer(); Button("Save", action: save).disabled(disabled || saving)
+                Spacer()
+                Button("Save", action: save).buttonStyle(DieterBarButtonStyle(size: 28)).disabled(disabled || saving)
             }
         }.promptPanel().frame(maxWidth: .infinity)
     }
@@ -578,9 +583,11 @@ struct GeneralSettings: View {
                                 }
                                 Spacer()
                                 Button("Retry") { Task { await store.retryOutboxItem(item.id) } }
+                                    .buttonStyle(DieterBarButtonStyle(size: 28))
                                 Button("Discard", role: .destructive) {
                                     Task { await store.discardOutboxItem(item.id) }
                                 }
+                                .buttonStyle(DieterBarButtonStyle(destructive: true, size: 28))
                             }
                             if item.id != store.failedOutboxItems.last?.id { Divider().overlay(DieterTheme.border) }
                         }
@@ -639,18 +646,20 @@ struct GeneralSettings: View {
                     subtitle:
                         "Choose what appears in every conversation timeline. This preference is saved on this Mac."
                 ) {
-                    Picker(
-                        "Default layout",
-                        selection: Binding(
-                            get: { store.defaultConversationMode },
-                            set: { store.defaultConversationMode = $0 }
+                    HStack(spacing: 10) {
+                        Text("Default layout")
+                        Spacer(minLength: 0)
+                        DieterSegmentedPicker(
+                            "Default layout",
+                            selection: Binding(
+                                get: { store.defaultConversationMode },
+                                set: { store.defaultConversationMode = $0 }
+                            ),
+                            options: ConversationDefaultMode.allCases,
+                            optionTitle: { $0 == .tabs ? "Tabs" : "Workspace" }
                         )
-                    ) {
-                        Text("Tabs").tag(ConversationDefaultMode.tabs)
-                        Text("Workspace").tag(ConversationDefaultMode.workspace)
+                        .accessibilityIdentifier("settings.conversation.defaultMode")
                     }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("settings.conversation.defaultMode")
                     Text("Applies when you open a different card or chat. You can still switch layouts in its header.")
                         .font(.caption)
                         .foregroundStyle(DieterTheme.tertiary)
@@ -744,6 +753,7 @@ struct GeneralSettings: View {
                             .font(.caption).foregroundStyle(DieterTheme.tertiary)
                         Spacer()
                         Button("Archive project…", role: .destructive) { archiveConfirmation = true }
+                            .buttonStyle(DieterBarButtonStyle(destructive: true, size: 28))
                             .disabled(store.selectedProjectID.isEmpty)
                     }
                 }
@@ -761,6 +771,7 @@ private struct PaletteOption: View {
     let palette: DieterPalette
     let selected: Bool
     let action: () -> Void
+    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
@@ -783,16 +794,11 @@ private struct PaletteOption: View {
             .foregroundStyle(DieterTheme.text)
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 44)
-            .background(
-                selected ? DieterTheme.selection : DieterTheme.raised,
-                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .stroke(selected ? DieterTheme.shell.opacity(0.48) : DieterTheme.border)
-            )
+            .dieterTile(DieterTileState(selected: selected, hovering: hovering))
+            .contentShape(RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous))
         }
         .buttonStyle(.plain)
+        .onHover { hovering = $0 }
         .accessibilityLabel("\(palette.title) design")
         .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityIdentifier("settings.palette.\(palette.rawValue)")
@@ -804,34 +810,30 @@ private struct AppearanceOption: View {
     let appearance: DieterAppearance
     let selected: Bool
     let action: () -> Void
+    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 9) {
                 Image(systemName: appearance.symbol)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(selected ? DieterTheme.shellDeep : DieterTheme.subtle)
+                    .foregroundStyle(selected ? DieterTheme.shell : DieterTheme.subtle)
                     .frame(width: 24)
                 Text(appearance.title)
                     .font(.system(size: 12, weight: selected ? .semibold : .medium))
                 Spacer(minLength: 4)
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(selected ? DieterTheme.shellDeep : DieterTheme.tertiary)
+                    .foregroundStyle(selected ? DieterTheme.shell : DieterTheme.tertiary)
             }
             .foregroundStyle(DieterTheme.text)
             .padding(.horizontal, 11)
             .frame(maxWidth: .infinity, minHeight: 46)
-            .background(
-                selected ? DieterTheme.selection : DieterTheme.raised,
-                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .stroke(selected ? DieterTheme.shellDeep.opacity(0.42) : DieterTheme.border)
-            )
+            .dieterTile(DieterTileState(selected: selected, hovering: hovering))
+            .contentShape(RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous))
         }
         .buttonStyle(.plain)
+        .onHover { hovering = $0 }
         .accessibilityLabel("\(appearance.title) appearance")
         .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityIdentifier("settings.appearance.\(appearance.rawValue)")
@@ -910,7 +912,8 @@ struct ConnectionSettings: View {
                 }
                 Spacer()
                 if store.phase == .authenticationRequired {
-                    Button("Sign in with GitHub") { Task { await store.signIn() } }.buttonStyle(.borderedProminent)
+                    Button("Sign in with GitHub") { Task { await store.signIn() } }
+                        .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28))
                 }
             }
             Divider().overlay(DieterTheme.border)
@@ -928,6 +931,7 @@ struct ConnectionSettings: View {
                     Button("Clean sync…") { pendingCleanSync = true }
                         .accessibilityIdentifier("settings.connection.clean-sync")
                 }
+                .buttonStyle(DieterBarButtonStyle(size: 28))
             }
             Text(
                 "Clean sync replays every machine's changes from the beginning, rebuilding this Mac's cached workspace while it stays shown. Sign-in and pending changes are kept."
@@ -957,13 +961,15 @@ struct ConnectionSettings: View {
                         Text("Active gateway").font(.caption2).foregroundStyle(DieterTheme.eyes)
                     }
                     Button("Use gateway") { Task { await store.chooseGateway(gateway) } }
+                        .buttonStyle(DieterBarButtonStyle(size: 28))
                     if store.gateways.count > 1 {
                         Button(role: .destructive) {
                             store.deleteEndpoint(gateway)
                         } label: {
                             Image(systemName: "trash")
                         }
-                        .buttonStyle(.plain).disabled(gateway.credentialID == store.activeGateway.credentialID)
+                        .buttonStyle(DieterBarButtonStyle(shape: .circle, destructive: true, size: 26))
+                        .disabled(gateway.credentialID == store.activeGateway.credentialID)
                         .help("Remove gateway")
                     }
                 }
@@ -995,12 +1001,15 @@ struct ConnectionSettings: View {
                         pendingRename = machine
                     } label: {
                         Image(systemName: "pencil")
-                    }.buttonStyle(.plain).help("Rename machine")
+                    }
+                    .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 26)).help("Rename machine")
                     Button(role: .destructive) {
                         pendingRevoke = machine
                     } label: {
                         Image(systemName: "trash")
-                    }.buttonStyle(.plain).help("Revoke machine")
+                    }
+                    .buttonStyle(DieterBarButtonStyle(shape: .circle, destructive: true, size: 26))
+                    .help("Revoke machine")
                 }
                 if machine.id != store.machines.last?.id { Divider().overlay(DieterTheme.border) }
             }
@@ -1021,7 +1030,7 @@ struct ConnectionSettings: View {
                         name = ""; address = ""
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28))
                 .disabled(MachineEndpoint(address: address, name: "") == nil)
             }
             Text(

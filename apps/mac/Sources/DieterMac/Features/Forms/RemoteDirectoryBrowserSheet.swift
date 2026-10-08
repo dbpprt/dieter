@@ -48,8 +48,7 @@ struct RemoteDirectoryBrowserSheet: View {
             HStack(spacing: 11) {
                 Image(systemName: "externaldrive.connected.to.line.below")
                     .font(.system(size: 18, weight: .semibold)).foregroundStyle(DieterTheme.shell)
-                    .frame(width: 36, height: 36).background(
-                        DieterTheme.elevated, in: RoundedRectangle(cornerRadius: 9))
+                    .frame(width: 36, height: 36).dieterTile(radius: 9)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(mode == .existing ? "Choose a Git working tree" : "Choose where to create the project")
                         .font(.system(size: 17, weight: .bold))
@@ -68,20 +67,14 @@ struct RemoteDirectoryBrowserSheet: View {
                     Text("LOCATIONS").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
                         .padding(.horizontal, 9).padding(.bottom, 3)
                     ForEach(listing?.locations ?? [], id: \.path) { location in
-                        Button {
+                        DieterNavRow(
+                            title: location.name, symbol: locationSymbol(location.kind),
+                            selected: listing?.path == location.path
+                        ) {
+                            EmptyView()
+                        } action: {
                             Task { await load(location.path) }
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: locationSymbol(location.kind)).frame(width: 15)
-                                Text(location.name).lineLimit(1)
-                                Spacer()
-                            }
-                            .font(.system(size: 12, weight: .medium)).foregroundStyle(DieterTheme.subtle)
-                            .padding(.horizontal, 9).frame(height: 30)
-                            .background(
-                                listing?.path == location.path ? DieterTheme.raised : .clear,
-                                in: RoundedRectangle(cornerRadius: 7))
-                        }.buttonStyle(.plain)
+                        }
                     }
                     Spacer()
                     Toggle("Show hidden folders", isOn: $showHidden).toggleStyle(.checkbox).font(.caption)
@@ -103,8 +96,7 @@ struct RemoteDirectoryBrowserSheet: View {
                         TextField("Path on \(machine?.name ?? "machine")", text: $pathField)
                             .textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
                             .padding(.horizontal, 10).frame(height: 30)
-                            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 7))
-                            .overlay(RoundedRectangle(cornerRadius: 7).stroke(DieterTheme.strongBorder))
+                            .dieterInset(radius: 7)
                             .onSubmit { Task { await load(pathField) } }
                         Button("Go") { Task { await load(pathField) } }.buttonStyle(DieterBarButtonStyle(size: 30))
                             .disabled(loading)
@@ -133,29 +125,7 @@ struct RemoteDirectoryBrowserSheet: View {
                                     Button {
                                         Task { await load(entry.path) }
                                     } label: {
-                                        HStack(spacing: 10) {
-                                            Image(
-                                                systemName: entry.gitRepository
-                                                    ? "folder.badge.gearshape" : "folder.fill"
-                                            )
-                                            .foregroundStyle(entry.gitRepository ? DieterTheme.eyes : DieterTheme.shell)
-                                            .frame(width: 19)
-                                            Text(entry.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                                            Spacer()
-                                            if entry.gitRepository {
-                                                Text("Git repository").font(.caption2.weight(.semibold))
-                                                    .foregroundStyle(
-                                                        DieterTheme.eyes
-                                                    )
-                                                    .padding(.horizontal, 7).padding(.vertical, 3).background(
-                                                        DieterTheme.eyes.opacity(0.1), in: Capsule())
-                                            }
-                                            Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold))
-                                                .foregroundStyle(DieterTheme.tertiary)
-                                        }
-                                        .foregroundStyle(DieterTheme.subtle).padding(.horizontal, 11).frame(height: 36)
-                                        .background(
-                                            DieterTheme.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 8))
+                                        RemoteDirectoryEntryRow(entry: entry)
                                     }
                                     .buttonStyle(.plain)
                                     .disabled(loading)
@@ -175,8 +145,7 @@ struct RemoteDirectoryBrowserSheet: View {
                             }
                             .padding(.horizontal, 22)
                             .padding(.vertical, 16)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(DieterTheme.border))
+                            .dieterPanel(radius: 12)
                             .accessibilityElement(children: .combine)
                             .accessibilityLabel("Loading folders from \(machine?.name ?? "remote machine")")
                             .accessibilityIdentifier("new-project.browser-loading")
@@ -196,8 +165,7 @@ struct RemoteDirectoryBrowserSheet: View {
                         TextField("project", text: $newFolderName)
                             .textFieldStyle(.plain).font(.system(size: 12, design: .monospaced))
                             .padding(.horizontal, 10).frame(height: 30)
-                            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 7))
-                            .overlay(RoundedRectangle(cornerRadius: 7).stroke(DieterTheme.strongBorder))
+                            .dieterInset(radius: 7)
                             .accessibilityIdentifier("new-project.browser-folder-name")
                         Text(newProjectPath)
                             .font(.caption2.monospaced()).foregroundStyle(DieterTheme.tertiary)
@@ -282,5 +250,33 @@ struct RemoteDirectoryBrowserSheet: View {
         case "computer": "desktopcomputer"
         default: "folder"
         }
+    }
+}
+
+/// One subfolder in the remote browser, as a tile that lifts on hover.
+private struct RemoteDirectoryEntryRow: View {
+    let entry: Dieter_V1_DirectoryEntry
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: entry.gitRepository ? "folder.badge.gearshape" : "folder.fill")
+                .foregroundStyle(entry.gitRepository ? DieterTheme.eyes : DieterTheme.shell)
+                .frame(width: 19)
+            Text(entry.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+            Spacer()
+            if entry.gitRepository {
+                Text("Git repository").font(.caption2.weight(.semibold))
+                    .foregroundStyle(DieterTheme.eyes)
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(DieterTheme.eyes.opacity(0.1), in: Capsule())
+            }
+            Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold))
+                .foregroundStyle(DieterTheme.tertiary)
+        }
+        .foregroundStyle(DieterTheme.subtle).padding(.horizontal, 11).frame(height: 36)
+        .dieterTile(DieterTileState(selected: false, hovering: hovering), radius: 8)
+        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .onHover { hovering = $0 }
     }
 }

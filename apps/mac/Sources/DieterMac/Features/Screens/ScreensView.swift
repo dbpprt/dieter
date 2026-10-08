@@ -64,9 +64,11 @@ struct ScreensView: View {
                             title: selectedSession.machineName, detail: "This screen share is open in its own window.",
                             symbol: "macwindow.on.rectangle"
                         ) {
-                            HStack {
+                            HStack(spacing: 8) {
                                 Button("Show window") { model.undock(selectedSession.id, fullScreen: false) }
+                                    .buttonStyle(DieterBarButtonStyle())
                                 Button("Return to Dieter") { model.dock(selectedSession.id) }
+                                    .buttonStyle(DieterBarButtonStyle(prominent: true))
                                     .accessibilityIdentifier("screens.dock")
                             }
                         }
@@ -94,38 +96,37 @@ struct ScreensView: View {
 
     private var screenTabs: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                ForEach(model.sessions) { session in
-                    ScreenShareTab(
-                        session: session,
-                        selected: session.id == model.selectedSessionID,
-                        select: { model.selectSession(session.id) },
-                        close: { model.closeSession(session.id) })
+            HStack(spacing: 8) {
+                DieterSegmentTrack {
+                    ForEach(model.sessions) { session in
+                        ScreenShareTab(
+                            session: session,
+                            selected: session.id == model.selectedSessionID,
+                            select: { model.selectSession(session.id) },
+                            close: { model.closeSession(session.id) })
+                    }
                 }
                 Button {
                     model.createScreenSharePresented = true
                 } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 10, weight: .semibold))
-                        .frame(width: 38, height: 38)
+                    Image(systemName: "plus").font(.system(size: 10, weight: .semibold))
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(DieterTheme.tertiary)
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 26))
                 .help("New screen share")
             }
+            .padding(.horizontal, 10)
         }
-        .padding(.horizontal, 6)
-        .frame(height: 42)
+        .frame(height: 44)
     }
 
     @ViewBuilder private func primaryAction(_ session: ScreenShareSession) -> some View {
         if session.controller.active {
             Button("Disconnect") { session.disconnect() }
-                .buttonStyle(DieterBarButtonStyle(size: 30))
+                .buttonStyle(DieterBarButtonStyle())
                 .accessibilityIdentifier("screens.disconnect")
         } else {
             Button("Connect") { session.connect() }
-                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
+                .buttonStyle(DieterBarButtonStyle(prominent: true))
                 .disabled(selectedMachine.flatMap { entries[$0.id] }?.canShareScreen != true)
                 .accessibilityIdentifier("screens.connect")
         }
@@ -300,57 +301,49 @@ private struct ScreenShareTab: View {
     let selected: Bool
     let select: () -> Void
     let close: () -> Void
-    @State private var hovering = false
+    @State private var closeHovering = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            Button(action: select) {
-                HStack(spacing: 7) {
-                    Circle()
-                        .fill(session.isConnected ? DieterTheme.running : DieterTheme.tertiary)
-                        .frame(width: 6, height: 6)
-                    Text("Screen")
-                        .font(.system(size: 11, weight: selected ? .semibold : .medium))
-                    Text(session.machineName)
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(DieterTheme.subtle)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(DieterTheme.tileHover, in: Capsule())
-                        .accessibilityIdentifier("screen.node.\(session.machineID)")
-                        .smokeTarget("screen.badge.\(session.id)")
-                }
-                .frame(minWidth: 120, maxWidth: 210, alignment: .leading)
-                .padding(.leading, 12)
-                .padding(.trailing, 7)
-                .frame(height: 30)
-                .contentShape(Rectangle())
+        Button(action: select) {
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(session.isConnected ? DieterTheme.running : DieterTheme.tertiary)
+                    .frame(width: 6, height: 6)
+                Text("Screen")
+                Text(session.machineName)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(DieterTheme.subtle)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(DieterTheme.tileHover, in: Capsule())
+                    .accessibilityIdentifier("screen.node.\(session.machineID)")
+                    .smokeTarget("screen.badge.\(session.id)")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Screen, \(session.machineName)")
-            .accessibilityIdentifier("screen.select.\(session.id)")
-            .smokeTarget("screen.select.\(session.id)")
-
+            .frame(minWidth: 120, maxWidth: 210, alignment: .leading)
+            // Room for the close button, which sits inside the segment's trailing edge.
+            .padding(.trailing, 14)
+        }
+        .buttonStyle(DieterSegmentStyle(selected: selected))
+        .accessibilityLabel("Screen, \(session.machineName)")
+        .accessibilityIdentifier("screen.select.\(session.id)")
+        .smokeTarget("screen.select.\(session.id)")
+        .overlay(alignment: .trailing) {
             Button(action: close) {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .semibold))
                     .frame(width: 16, height: 16)
-                    .background(hovering ? DieterTheme.tileHover : Color.clear, in: Circle())
-                    .frame(width: 26, height: 30)
-                    .contentShape(Rectangle())
+                    .background(closeHovering ? DieterTheme.text.opacity(0.1) : Color.clear, in: Circle())
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .foregroundStyle(DieterTheme.tertiary)
+            .onHover { closeHovering = $0 }
             .help("Close screen share")
             .accessibilityLabel("Close screen share, \(session.machineName)")
             .accessibilityIdentifier("screen.close.\(session.id)")
             .smokeTarget("screen.close.\(session.id)")
+            .padding(.trailing, 7)
         }
-        .frame(height: 30)
-        .background(
-            selected ? DieterTheme.segmentThumb : (hovering ? DieterTheme.tileHover : Color.clear), in: Capsule()
-        )
-        .onHover { hovering = $0 }
         .contextMenu { Button("Close screen share", action: close) }
     }
 }
@@ -390,16 +383,18 @@ private struct NewScreenShareSheet: View {
                 .font(.caption)
                 .foregroundStyle(DieterTheme.coral)
             }
-            HStack {
+            HStack(spacing: 8) {
                 Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(DieterBarButtonStyle())
+                    .keyboardShortcut(.cancelAction)
                 Button("Connect") {
                     guard let machine = selectedMachine else { return }
                     model.createSession(
                         machineID: machine.id, daemonID: machine.daemonID ?? "", machineName: machine.name)
                     dismiss()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(DieterBarButtonStyle(prominent: true))
                 .keyboardShortcut(.defaultAction)
                 .disabled(selectedMachine.map(canShare) != true)
                 .accessibilityIdentifier("screens.new.connect")
@@ -426,6 +421,7 @@ private struct NewScreenShareSheet: View {
 
 struct ScreenShareOptions: View {
     let controller: RemoteDesktopController
+    var size: CGFloat = DieterMetrics.capsuleHeight
 
     /// The core's quality and codec choices, in menu order.
     private static let options: ClientScreenStreamOptions =
@@ -436,6 +432,7 @@ struct ScreenShareOptions: View {
             Button(SharedRules.shared.screenControlAction(controlActive: controller.sessionState.controlActive)) {
                 controller.transferControl(take: !controller.sessionState.controlActive)
             }
+            .buttonStyle(DieterBarButtonStyle(size: size))
             .disabled(controller.controlTransferPending)
             .accessibilityIdentifier("screens.control")
             .smokeTarget("screens.control")
@@ -486,8 +483,10 @@ struct ScreenShareOptions: View {
             if !controller.codecFallbackReason.isEmpty { Text(controller.codecFallbackReason) }
             Button("Refresh screen") { controller.configure(refresh: true) }
         } label: {
-            Image(systemName: "slider.horizontal.3")
+            DieterMenuLabel(symbol: "slider.horizontal.3", size: size)
         }
+        .dieterMenuChrome(.circle)
+        .help("Screen options")
         .accessibilityLabel("Screen options")
     }
 

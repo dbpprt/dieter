@@ -1,9 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// A board conversation extends its real split through the full-size titlebar.
-/// Each split item owns its titlebar strip, so tabs, separators, and pointer
-/// tracking move in the same AppKit layout pass as the pane itself.
+/// The conversation panel's real split. Each split item owns its header strip,
+/// so tabs, separators, and pointer tracking move in the same AppKit layout
+/// pass as the pane itself.
 struct ConversationPaneOwnedSplit<ChatBar: View, Chat: View, WorkspaceBar: View, Content: View>:
     NSViewControllerRepresentable
 {

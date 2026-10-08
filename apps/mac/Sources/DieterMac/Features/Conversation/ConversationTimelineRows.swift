@@ -79,8 +79,9 @@ struct TimelineStepGroupsView: View {
                     let initial = Int(SharedRules.shared.timelineInitialGroups())
                     firstVisibleID = groups[max(0, start - initial)].id
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .font(.caption)
+                .foregroundStyle(DieterTheme.action)
                 .accessibilityIdentifier("conversation.message.earlier.\(row.messageIds.first ?? "")")
             }
             ForEach(groups.dropFirst(start), id: \.id) { group in
@@ -187,12 +188,13 @@ struct UserMessageBubble: View {
                             .foregroundStyle(DieterTheme.coral)
                         Spacer(minLength: 8)
                         Button("Retry") { Task { await context.retryOutboxItem(messageID) } }
+                            .buttonStyle(DieterBarButtonStyle(size: 24))
                         Button("Remove", role: .destructive) {
                             Task { await context.discardOutboxItem(messageID) }
                         }
+                        .buttonStyle(DieterBarButtonStyle(destructive: true, size: 24))
                         .accessibilityIdentifier("conversation.failed-message.remove.\(messageID)")
                     }
-                    .controlSize(.small)
                 }
             }
             .padding(.leading, 14).padding(.trailing, 18).padding(.vertical, 9)

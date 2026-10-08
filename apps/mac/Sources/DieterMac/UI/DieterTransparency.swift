@@ -188,24 +188,6 @@ extension View {
     }
 }
 
-struct DieterGlassButtonStyle: PrimitiveButtonStyle {
-    var prominent = false
-
-    @ViewBuilder func makeBody(configuration: Configuration) -> some View {
-        if DieterTheme.usesTransparency {
-            if prominent {
-                Button(configuration).buttonStyle(.glassProminent)
-            } else {
-                Button(configuration).buttonStyle(.glass)
-            }
-        } else if prominent {
-            Button(configuration).buttonStyle(.borderedProminent)
-        } else {
-            Button(configuration).buttonStyle(.bordered)
-        }
-    }
-}
-
 /// Floating content sits above busy, moving views, so ordinary pane translucency
 /// does not provide enough separation. Keep the native glass highlight and blur,
 /// then add a palette wash whose density matches the size of the floating surface.

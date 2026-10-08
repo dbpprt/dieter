@@ -189,11 +189,9 @@ struct ChatNavigationFolderGroup: View {
                         Divider()
                         Button("Delete folder", systemImage: "trash", role: .destructive, action: delete)
                     } label: {
-                        Image(systemName: "ellipsis").frame(width: 18, height: 20)
+                        DieterMenuLabel(symbol: "ellipsis", size: 24)
                     }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
+                    .dieterMenuChrome(.circle)
                     .help("Folder options")
                 }
             }
@@ -265,7 +263,7 @@ struct ChatPageControls: View {
                 .disabled(!page.canGoForward)
                 .accessibilityLabel("Next chats")
         }
-        .buttonStyle(.plain)
+        .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 24))
         .padding(.horizontal, 8).padding(.vertical, 4)
     }
 }

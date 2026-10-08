@@ -144,16 +144,16 @@ struct ConversationFileNavigator: View {
                         isOn: Binding(
                             get: { tab.tree.showHidden }, set: { tab.tree.showHidden = $0 }))
                 } label: {
-                    Image(systemName: "ellipsis")
+                    DieterMenuLabel(symbol: "ellipsis", size: 28)
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .dieterMenuChrome(.circle)
                 .help("File options")
                 Button {
                     Task { await tab.tree.refresh() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
-                .buttonStyle(.borderless).help("Refresh files")
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Refresh files")
                 .accessibilityIdentifier("conversation.content.files.refresh")
                 .smokeTarget("conversation.content.files.refresh")
             }

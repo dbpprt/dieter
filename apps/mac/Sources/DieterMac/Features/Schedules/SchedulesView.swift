@@ -25,9 +25,6 @@ struct SchedulesView: View {
             .disabled(model.schedulesLoading)
             .help("Refresh schedules")
             ProjectCheckoutMenu(projectID: context.target.projectID)
-                .menuStyle(.button).buttonStyle(.plain).fixedSize()
-                .padding(.horizontal, 12).frame(height: DieterMetrics.capsuleHeight)
-                .dieterCapsuleChrome()
             Button {
                 Task { await openEditor(scheduleID: nil, owner: "") }
             } label: {
@@ -146,6 +143,7 @@ struct ScheduleRow: View {
     let schedule: Dieter_V1_Schedule
     let row: ClientScheduleRow
     let selected: Bool
+    @State private var hovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -165,15 +163,9 @@ struct ScheduleRow: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            selected ? DieterTheme.selection : DieterTheme.surface.opacity(0.5),
-            in: RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous).stroke(
-                selected ? .clear : DieterTheme.border)
-        )
+        .dieterTile(DieterTileState(selected: selected, hovering: hovering))
         .contentShape(RoundedRectangle(cornerRadius: DieterMetrics.cardRadius))
+        .onHover { hovering = $0 }
     }
 }
 
@@ -192,13 +184,16 @@ struct ScheduleDetail: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            FluidPaneChrome(spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
-                    PaneTitleBlock(
-                        title: schedule.name,
-                        subtitle: row.subtitle,
-                        symbol: "calendar.badge.clock"
-                    )
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(schedule.name).font(.system(size: 13.5, weight: .semibold)).lineLimit(1)
+                        if !row.subtitle.isEmpty {
+                            Text(row.subtitle).font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary)
+                                .lineLimit(1).truncationMode(.middle)
+                        }
+                    }
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                     Group {
                         Toggle(
                             "Enabled",
@@ -206,12 +201,11 @@ struct ScheduleDetail: View {
                                 get: { schedule.enabled }, set: { _ in Task { await model.toggleSchedule(schedule) } })
                         )
                         .labelsHidden().toggleStyle(.switch).controlSize(.small)
-                        Button("Edit", action: edit).buttonStyle(DieterBarButtonStyle(size: 30))
+                        Button("Edit", action: edit).buttonStyle(DieterBarButtonStyle(size: 28))
                         Button("Run now") { Task { await model.runSchedule(schedule) } }.buttonStyle(
-                            DieterBarButtonStyle(prominent: true, size: 30))
+                            DieterBarButtonStyle(prominent: true, size: 28))
                     }.disabled(!model.isLive)
                 }
-            } secondary: {
                 HStack(spacing: 8) {
                     Text(schedule.cron).font(.system(size: 11, design: .monospaced))
                     Text("·")
@@ -221,6 +215,7 @@ struct ScheduleDetail: View {
                 }
                 .font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary)
             }
+            .padding(.horizontal, 16).padding(.top, DieterMetrics.headerTopPadding).padding(.bottom, 10)
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
@@ -245,6 +240,7 @@ struct ScheduleDetail: View {
                     HStack {
                         Text("Recent runs").font(.system(size: 13, weight: .semibold)); Spacer();
                         Button("Delete schedule", role: .destructive) { Task { await model.deleteSchedule(schedule) } }
+                            .buttonStyle(DieterBarButtonStyle(destructive: true, size: 28))
                             .disabled(!model.isLive)
                     }
                     if model.scheduleRunsLoading && model.runRows.isEmpty {
@@ -265,7 +261,10 @@ struct ScheduleDetail: View {
                                     }
                                 }; Spacer();
                                 Text(run.trigger).font(.caption).foregroundStyle(.secondary);
-                                if !run.cardID.isEmpty { Button("Open card") { openCard(run.cardID) } }
+                                if !run.cardID.isEmpty {
+                                    Button("Open card") { openCard(run.cardID) }
+                                        .buttonStyle(DieterBarButtonStyle(size: 24))
+                                }
                             }
                             .padding(10).dieterTile(radius: 8)
                         }
@@ -281,7 +280,7 @@ struct ScheduleDetail: View {
                                 }
                                 .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(DieterBarButtonStyle(size: 30))
+                            .buttonStyle(DieterBarButtonStyle(size: 28))
                             .disabled(model.scheduleRunsLoadingMore)
                             .accessibilityIdentifier("schedule-runs.load-more")
                         }

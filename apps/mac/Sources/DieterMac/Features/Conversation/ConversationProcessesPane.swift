@@ -18,9 +18,10 @@ struct ConversationProcessesPane: View {
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
-                    .buttonStyle(.borderless).help("Refresh processes").accessibilityLabel("Refresh processes")
+                    .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
+                    .help("Refresh processes").accessibilityLabel("Refresh processes")
                     .disabled(model.loading || !model.connected)
-                }.padding(12)
+                }.padding(.horizontal, 12).padding(.vertical, 8)
                 Divider()
                 if let error = model.error { Text(error).font(.caption).foregroundStyle(.secondary).padding(12) }
                 if model.processes.isEmpty {
@@ -79,7 +80,8 @@ struct ConversationProcessesPane: View {
                     }
                     Spacer(minLength: 8)
                     Button("Stop", systemImage: "stop.fill") { Task { await model.stopSelected() } }
-                        .controlSize(.small).disabled(!model.canStop || !model.connected)
+                        .buttonStyle(DieterBarButtonStyle(destructive: true, size: 28))
+                        .disabled(!model.canStop || !model.connected)
                         .accessibilityIdentifier("conversation.content.processes.stop")
                         .smokeTarget("conversation.content.processes.stop")
                 }.padding(12)

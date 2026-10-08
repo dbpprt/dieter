@@ -49,13 +49,9 @@ struct GitOperationSheet: View {
                     Text("Starting operation…").font(DieterFont.meta).foregroundStyle(DieterTheme.tertiary)
                 }
                 Spacer()
-                Button("Cancel") { dismiss() }.buttonStyle(DieterBarButtonStyle(size: 30))
+                Button("Cancel") { dismiss() }.buttonStyle(DieterBarButtonStyle())
                 Button(spec.title, role: spec.destructive ? .destructive : nil) { start() }
-                    .buttonStyle(
-                        spec.destructive
-                            ? DieterBarButtonStyle(prominent: true, tint: DieterTheme.coral, size: 30)
-                            : DieterBarButtonStyle(prominent: true, size: 30)
-                    )
+                    .buttonStyle(DieterBarButtonStyle(prominent: !spec.destructive, destructive: spec.destructive))
                     .disabled(starting || !ready).opacity(starting || !ready ? 0.5 : 1)
             }
             .padding(.horizontal, 20).frame(height: 58).background(DieterTheme.sidebar)
@@ -78,10 +74,9 @@ struct GitOperationSheet: View {
                     multiline: true)
             case .strategy:
                 WorkspaceSheetPickerLabel(copy.strategy.uppercased())
-                Picker(copy.strategy, selection: $form.strategy) {
-                    ForEach(spec.strategies, id: \.strategy) { Text($0.title).tag($0.strategy) }
-                }
-                .labelsHidden().pickerStyle(.segmented)
+                DieterSegmentedPicker(
+                    copy.strategy, selection: $form.strategy, options: spec.strategies.map(\.strategy),
+                    optionTitle: { strategy in spec.strategies.first { $0.strategy == strategy }?.title ?? strategy })
             case .stageAll:
                 WorkspaceSheetOptions { Toggle(copy.stageAll, isOn: $form.stageAll) }
             case .fetch:

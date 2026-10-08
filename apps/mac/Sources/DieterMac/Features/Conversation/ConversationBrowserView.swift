@@ -71,7 +71,7 @@ struct ConversationBrowserView: View {
                 .accessibilityIdentifier("conversation.browser.external").smokeTarget("conversation.browser.external")
                 .smokeTarget(scopedTarget("external"))
             }
-            .labelStyle(.iconOnly).buttonStyle(.borderless).controlSize(.small)
+            .labelStyle(.iconOnly).buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
             .padding(.horizontal, 10).frame(height: 38)
             ZStack(alignment: .leading) {
                 Divider()
@@ -84,7 +84,7 @@ struct ConversationBrowserView: View {
                     Image(systemName: "exclamationmark.triangle")
                     Text(failure).textSelection(.enabled)
                     Spacer(minLength: 4)
-                    Button("Retry") { browser.reload() }
+                    Button("Retry") { browser.reload() }.buttonStyle(DieterBarButtonStyle(size: 26))
                 }
                 .font(.caption).padding(12).background(DieterTheme.tile)
                 .accessibilityIdentifier("conversation.browser.failure")

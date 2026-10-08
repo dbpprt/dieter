@@ -21,6 +21,9 @@ struct NativeMarkdownEditorTests {
         window.isReleasedWhenClosed = false
         window.contentView = host
         window.setContentSize(.init(width: 1000, height: 650))
+        window.setFrameOrigin(.init(x: -3_000, y: -3_000))
+        window.orderFrontRegardless()
+        window.makeKey()
         defer { window.close() }
         host.layoutSubtreeIfNeeded()
         try await settle { allTextViews(in: host).contains { $0.textLayoutManager != nil && $0.isEditable } }
@@ -42,7 +45,6 @@ struct NativeMarkdownEditorTests {
         #expect(!containsWebView(in: host))
         window.setContentSize(.init(width: 800, height: 650))
         #expect(MarkdownFileEditorMode.allCases == [.edit, .source])
-        #expect(modePicker(in: host)?.segmentCount == 2)
         try selectMode(.edit, in: host)
         try await settle { rich.isEditable && rich.string == original + " Updated." }
         try selectMode(.source, in: host)
@@ -253,21 +255,23 @@ struct NativeMarkdownEditorTests {
         #expect(html.contains("bar"))
     }
 
-    private func selectMode(_ mode: MarkdownFileEditorMode, in view: NSView) throws {
-        let picker = try #require(modePicker(in: view))
-        let index = try #require(MarkdownFileEditorMode.allCases.firstIndex(of: mode))
-        let action = try #require(picker.action)
-        picker.selectedSegment = index
-        #expect(picker.sendAction(action, to: picker.target))
-    }
-
-    private func modePicker(in view: NSView) -> NSSegmentedControl? {
-        if let picker = view as? NSSegmentedControl,
-            picker.segmentCount == MarkdownFileEditorMode.allCases.count
-        {
-            return picker
+    /// Clicks a segment of the fixed-width glass mode picker, which starts 12
+    /// points in and is centred in the 38-point bar at the top of the editor.
+    private func selectMode(_ mode: MarkdownFileEditorMode, in host: NSView) throws {
+        let window = try #require(host.window)
+        let index = CGFloat(try #require(MarkdownFileEditorMode.allCases.firstIndex(of: mode)))
+        let segment = (MarkdownFileEditorMode.pickerWidth - 8) / 2
+        let x = 15 + index * (segment + 2) + segment / 2
+        let point = host.convert(NSPoint(x: x, y: host.isFlipped ? 19 : host.bounds.height - 19), to: nil)
+        func mouse(_ type: NSEvent.EventType) throws -> NSEvent {
+            try #require(
+                NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                    pressure: type == .leftMouseDown ? 1 : 0))
         }
-        return view.firstSubviewResult { modePicker(in: $0) }
+        window.sendEvent(try mouse(.leftMouseDown))
+        window.sendEvent(try mouse(.leftMouseUp))
     }
 
     private func containsWebView(in view: NSView) -> Bool {

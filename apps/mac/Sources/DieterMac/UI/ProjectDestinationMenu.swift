@@ -6,6 +6,7 @@ struct ProjectCheckoutMenu: View {
     @Environment(DieterStore.self) private var store
     let projectID: String
     var accessibilityIdentifier = ""
+    var size: CGFloat = DieterMetrics.capsuleHeight
 
     private var resolvedAccessibilityIdentifier: String {
         accessibilityIdentifier.isEmpty ? "project.checkout.\(projectID)" : accessibilityIdentifier
@@ -39,8 +40,9 @@ struct ProjectCheckoutMenu: View {
                 )
             }
         } label: {
-            Label(selectedCheckoutLabel, systemImage: "desktopcomputer")
+            DieterMenuLabel(title: selectedCheckoutLabel, symbol: "desktopcomputer", size: size)
         }
+        .dieterMenuChrome()
         .help("Choose the machine and checkout for files, Git, and new conversations")
         .accessibilityIdentifier(resolvedAccessibilityIdentifier)
         .smokeTarget(resolvedAccessibilityIdentifier)

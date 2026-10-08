@@ -169,29 +169,26 @@ struct ProjectChangesView: View {
     private var changesToolbar: some View {
         Group {
             HStack(spacing: 8) {
-                ProjectCheckoutMenu(projectID: store.selectedProjectID)
-                    .menuStyle(.button).fixedSize()
+                ProjectCheckoutMenu(projectID: store.selectedProjectID, size: 28)
                 branchSummary
                 Spacer(minLength: 8)
                 ViewThatFits(in: .horizontal) {
                     shipActions(iconOnly: false).fixedSize()
                     shipActions(iconOnly: true).fixedSize()
                 }
-                refreshButton
+                refreshButton()
             }
-            .font(.callout)
-            .controlSize(.regular)
-            .buttonStyle(DieterGlassButtonStyle())
             .padding(.horizontal, 12).padding(.vertical, 8)
         }
     }
 
-    private var refreshButton: some View {
+    private func refreshButton(size: CGFloat = 28) -> some View {
         Button {
             Task { await model.refresh() }
         } label: {
             Label("Refresh", systemImage: "arrow.clockwise").labelStyle(.iconOnly)
         }
+        .buttonStyle(DieterBarButtonStyle(shape: .circle, size: size))
         .disabled(model.refreshing).help("Refresh changes")
         .accessibilityLabel("Refresh changes").accessibilityIdentifier("project-changes.refresh")
         .smokeTarget("project-changes.refresh")
@@ -216,18 +213,20 @@ struct ProjectChangesView: View {
         .opacity(ready && changes != nil ? 1 : 0)
     }
 
-    private func shipActions(iconOnly: Bool) -> some View {
+    private func shipActions(iconOnly: Bool, size: CGFloat = 28) -> some View {
         HStack(spacing: 6) {
-            shipButton("Update", symbol: "arrow.down.circle", kind: "update", iconOnly: iconOnly)
+            shipButton("Update", symbol: "arrow.down.circle", kind: "update", iconOnly: iconOnly, size: size)
                 .help("Fetch and rebase onto the base branch")
-            shipButton("Validate", symbol: "checkmark.seal", kind: "validate", iconOnly: iconOnly)
+            shipButton("Validate", symbol: "checkmark.seal", kind: "validate", iconOnly: iconOnly, size: size)
                 .help("Run the project's validation")
-            shipButton("Push", symbol: "arrow.up.circle", kind: "push", iconOnly: iconOnly)
+            shipButton("Push", symbol: "arrow.up.circle", kind: "push", iconOnly: iconOnly, size: size)
                 .help("Push the current branch")
         }
     }
 
-    private func shipButton(_ title: String, symbol: String, kind: String, iconOnly: Bool) -> some View {
+    private func shipButton(_ title: String, symbol: String, kind: String, iconOnly: Bool, size: CGFloat)
+        -> some View
+    {
         Button {
             model.startOperation(kind: kind)
         } label: {
@@ -237,6 +236,7 @@ struct ProjectChangesView: View {
                 Label(title, systemImage: symbol)
             }
         }
+        .buttonStyle(DieterBarButtonStyle(shape: iconOnly ? .circle : .capsule, size: size))
         .disabled(!can(kind))
         .accessibilityLabel(title)
         .accessibilityIdentifier("project-changes.\(kind)").smokeTarget("project-changes.\(kind)")
@@ -252,7 +252,7 @@ struct ProjectChangesView: View {
                 } description: {
                     Text(error)
                 } actions: {
-                    Button("Retry") { Task { await model.refresh() } }
+                    Button("Retry") { Task { await model.refresh() } }.buttonStyle(DieterBarButtonStyle(size: 28))
                 }
             } else {
                 ProgressView("Reading changes…")
@@ -300,10 +300,9 @@ struct ProjectChangesView: View {
         HStack(spacing: 6) {
             branchSummary
             Spacer(minLength: 4)
-            shipActions(iconOnly: true)
-            refreshButton
+            shipActions(iconOnly: true, size: 26)
+            refreshButton(size: 26)
         }
-        .buttonStyle(.borderless).controlSize(.small)
         .padding(.horizontal, 12).frame(height: 34)
         .overlay(alignment: .bottom) { Divider().overlay(DieterTheme.border) }
     }
@@ -358,7 +357,7 @@ struct ProjectChangesView: View {
                     )
                 }.frame(maxWidth: .infinity)
             }
-            .buttonStyle(ChangesActionButtonStyle(prominent: true))
+            .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28))
             .keyboardShortcut(.return, modifiers: .command)
             .disabled(!can("commit") || !commitReady)
             .help(count == 0 ? "Stage files to commit" : "Commit staged changes (⌘↩)")
@@ -419,10 +418,9 @@ struct ProjectChangesView: View {
         _ title: String, symbol: String, identifier: String, action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 11)).frame(width: 24, height: 24)
-                .contentShape(Rectangle())
+            Image(systemName: symbol)
         }
-        .buttonStyle(.plain).foregroundStyle(DieterTheme.subtle)
+        .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 24))
         .help(title).accessibilityLabel(title).accessibilityIdentifier(identifier)
     }
 
@@ -788,7 +786,7 @@ struct ProjectChangesView: View {
                 if let error = model.diffError {
                     HStack {
                         Label(error, systemImage: "exclamationmark.triangle").lineLimit(2); Spacer()
-                        Button("Retry") { model.retryDiff() }
+                        Button("Retry") { model.retryDiff() }.buttonStyle(DieterBarButtonStyle(size: 26))
                     }.font(.callout).padding(12).foregroundStyle(DieterTheme.coral)
                 }
                 if let diff = model.diff {
@@ -889,14 +887,14 @@ struct ProjectChangesView: View {
             fileStepper(position: position, total: total, wide: wide)
             diffModePicker
             Button("Discard") { discard = .init(path: selection.path, folder: false, fileCount: 1) }
-                .buttonStyle(ChangesActionButtonStyle()).foregroundStyle(DieterTheme.coral)
+                .buttonStyle(DieterBarButtonStyle(destructive: true, size: 28))
                 .disabled(!can("discard_changes"))
                 .help("Discard all changes to this file")
                 .accessibilityIdentifier("project-changes.discard").smokeTarget("project-changes.discard")
             Button(staged ? "Unstage" : "Stage") {
                 model.startOperation(kind: staged ? "unstage" : "stage", path: selection.path)
             }
-            .buttonStyle(ChangesActionButtonStyle(prominent: true)).disabled(!can(staged ? "unstage" : "stage"))
+            .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28)).disabled(!can(staged ? "unstage" : "stage"))
             .help(staged ? "Unstage this file (Space)" : "Stage this file (Space)")
             .accessibilityIdentifier("project-changes.stage-file").smokeTarget("project-changes.stage-file")
             Menu {
@@ -912,20 +910,20 @@ struct ProjectChangesView: View {
                 }
                 .disabled(!can("discard_changes"))
             } label: {
-                Image(systemName: "ellipsis")
+                DieterMenuLabel(symbol: "ellipsis", size: 28)
             }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .dieterMenuChrome(.circle)
             .accessibilityLabel("File actions").accessibilityIdentifier("project-changes.file-actions")
         }
     }
 
     /// Steps through changed files in list order without leaving the diff.
     private func fileStepper(position: Int?, total: Int, wide: Bool) -> some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             Button {
                 moveSelection(by: -1)
             } label: {
-                Image(systemName: "chevron.up").frame(width: 22, height: 22).contentShape(Rectangle())
+                Image(systemName: "chevron.up")
             }
             .disabled((position ?? 0) <= 0).help("Previous file (↑)").accessibilityLabel("Previous file")
             .accessibilityIdentifier("project-changes.previous-file")
@@ -936,35 +934,26 @@ struct ProjectChangesView: View {
             Button {
                 moveSelection(by: 1)
             } label: {
-                Image(systemName: "chevron.down").frame(width: 22, height: 22).contentShape(Rectangle())
+                Image(systemName: "chevron.down")
             }
             .disabled(position.map { $0 >= total - 1 } ?? true).help("Next file (↓)").accessibilityLabel("Next file")
             .accessibilityIdentifier("project-changes.next-file")
         }
-        .buttonStyle(.plain).font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
+        .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 26))
     }
 
     private var diffModePicker: some View {
-        HStack(spacing: 2) {
+        DieterSegmentTrack(height: 28) {
             ForEach(["Inline", "Split"], id: \.self) { mode in
-                Button {
-                    diffMode = mode
-                } label: {
-                    Text(mode).font(.system(size: 11, weight: .medium)).frame(width: 42, height: 22)
-                        .foregroundStyle(diffMode == mode ? DieterTheme.text : DieterTheme.tertiary)
-                        .background(
-                            diffMode == mode ? DieterTheme.elevated : .clear,
-                            in: RoundedRectangle(cornerRadius: 4))
-                }.buttonStyle(.plain).accessibilityLabel("\(mode) diff").accessibilityAddTraits(
-                    diffMode == mode ? .isSelected : []
-                )
-                .accessibilityIdentifier("project-changes.diff-mode.\(mode.lowercased())")
-                .smokeTarget("project-changes.diff-mode.\(mode.lowercased())")
+                Button(mode) { diffMode = mode }
+                    .buttonStyle(DieterSegmentStyle(selected: diffMode == mode, height: 22))
+                    .accessibilityLabel("\(mode) diff").accessibilityAddTraits(diffMode == mode ? .isSelected : [])
+                    .accessibilityIdentifier("project-changes.diff-mode.\(mode.lowercased())")
+                    .smokeTarget("project-changes.diff-mode.\(mode.lowercased())")
             }
-        }.padding(2).background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 6))
-            .overlay { RoundedRectangle(cornerRadius: 6).stroke(DieterTheme.border) }
-            .fixedSize()
-            .accessibilityIdentifier("project-changes.diff-mode").smokeTarget("project-changes.diff-mode")
+        }
+        .fixedSize()
+        .accessibilityIdentifier("project-changes.diff-mode").smokeTarget("project-changes.diff-mode")
     }
 
     // MARK: Status
@@ -993,20 +982,5 @@ struct ProjectChangesView: View {
         .padding(.horizontal, 12).frame(minHeight: 22).background(DieterTheme.sidebar)
         .overlay(alignment: .top) { Divider().overlay(DieterTheme.border) }
         .accessibilityIdentifier("project-changes.status").smokeTarget("project-changes.status")
-    }
-}
-
-private struct ChangesActionButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-    var prominent = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 11, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 11).frame(height: 28)
-            .foregroundStyle(prominent ? Color.white : DieterTheme.text)
-            .contentShape(Capsule())
-            .dieterCapsuleChrome(prominent: prominent)
-            .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
     }
 }

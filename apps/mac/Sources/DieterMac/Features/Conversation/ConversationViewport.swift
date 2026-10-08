@@ -44,7 +44,7 @@ struct ConversationAgentWorkingIndicator: View {
         }
         .padding(.horizontal, 12)
         .frame(minHeight: 38)
-        .dieterGlass(.regular.interactive(), in: Capsule())
+        .dieterCapsuleChrome(interactive: false)
         .frame(maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
