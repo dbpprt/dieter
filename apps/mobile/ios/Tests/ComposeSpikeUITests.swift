@@ -32,7 +32,7 @@ final class ComposeSpikeUITests: XCTestCase {
         tab(app, "Projects")
         XCTAssertTrue(app.staticTexts["Main"].waitForExistence(timeout: 20))
         capture("ios-projects")
-        app.staticTexts["Main"].tap()
+        press(app.staticTexts["Main"])
         let seededTask = element(app, containing: "Design the mobile workspace")
         XCTAssertTrue(seededTask.waitForExistence(timeout: 40))
         XCTAssertTrue(element(app, identifier: "lane-1").waitForExistence(timeout: 10), "Lane selector is visible")
@@ -42,12 +42,12 @@ final class ComposeSpikeUITests: XCTestCase {
             NSPredicate(format: "identifier BEGINSWITH %@", "card-menu-")
         ).firstMatch
         XCTAssertTrue(cardMenu.waitForExistence(timeout: 10))
-        cardMenu.tap()
+        press(cardMenu)
         XCTAssertTrue(app.buttons["Move to"].waitForExistence(timeout: 5), "Card actions open as a native menu")
         capture("ios-card-menu")
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
         Thread.sleep(forTimeInterval: 0.6)
-        seededTask.tap()
+        press(seededTask)
         XCTAssertTrue(element(app, containing: "Your board stays within reach").waitForExistence(timeout: 20))
         if landscape {
             XCTAssertTrue(element(app, identifier: "lane-1").exists, "Tablet keeps the board beside its conversation")
@@ -68,33 +68,47 @@ final class ComposeSpikeUITests: XCTestCase {
         app.buttons["chrome-new-task"].firstMatch.tap()
         let title = element(app, identifier: "task-title")
         XCTAssertTrue(title.waitForExistence(timeout: 10))
-        title.tap()
+        press(title)
         title.typeText("A shared mobile conversation")
+        XCTAssertTrue(waitForValue(title, containing: "A shared mobile conversation"), "The title holds the typed text")
         let prompt = element(app, identifier: "task-prompt")
-        prompt.tap()
-        prompt.typeText("Explain how this task stays in one durable conversation.")
-        XCTAssertTrue(app.buttons["chrome-start-working"].firstMatch.isHittable, "Start stays reachable while typing")
+        press(prompt)
+        let request = "Explain how this task stays in one durable conversation."
+        prompt.typeText(request)
+        // Compose applies typed text asynchronously; Start enables once the form holds it.
+        XCTAssertTrue(waitForValue(prompt, containing: request), "The prompt holds the typed text")
+        let start = app.buttons["chrome-start-working"].firstMatch
+        XCTAssertTrue(waitForHittable(start), "Start stays reachable while typing")
+        XCTAssertTrue(waitFor { start.isEnabled }, "Start enables once the form is complete")
         capture("ios-new-task")
-        app.buttons["chrome-start-working"].firstMatch.tap()
+        start.tap()
         let reply = element(app, containing: "Mock harness received:")
         XCTAssertTrue(reply.waitForExistence(timeout: 60))
         capture("ios-conversation")
 
         let composer = element(app, identifier: "message-input")
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
-        composer.tap()
-        XCTAssertTrue(composer.isHittable, "Composer stays visible above the system keyboard")
-        composer.typeText("Keep the same task and add the next step.")
-        element(app, identifier: "send-message").tap()
+        press(composer)
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            waitFor { self.hasFrame(composer) && composer.frame.maxY <= keyboard.frame.minY + 1 },
+            "Composer stays visible above the system keyboard")
+        let followUp = "Keep the same task and add the next step."
+        composer.typeText(followUp)
+        // Sending before Compose applies every keystroke would submit a prefix.
+        XCTAssertTrue(waitForValue(composer, containing: followUp), "The composer holds the whole message")
+        let send = element(app, identifier: "send-message")
+        press(send)
         XCTAssertTrue(
             element(app, containing: "Mock harness received: Keep the same task").waitForExistence(timeout: 30))
         let review = element(app, identifier: "move-review")
         XCTAssertTrue(review.waitForExistence(timeout: 60))
-        review.tap()
+        press(review)
         if !landscape { back(app) }
         let reviewLane = element(app, identifier: "lane-2")
         XCTAssertTrue(reviewLane.waitForExistence(timeout: 20))
-        reviewLane.tap()
+        press(reviewLane)
         XCTAssertTrue(element(app, containing: "A shared mobile conversation").waitForExistence(timeout: 30))
         capture("ios-review")
 
@@ -104,32 +118,35 @@ final class ComposeSpikeUITests: XCTestCase {
         tab(app, "Tools")
         XCTAssertTrue(element(app, identifier: "tool-machines").waitForExistence(timeout: 10))
         capture("ios-tools")
-        element(app, identifier: "tool-machines").tap()
+        press(element(app, identifier: "tool-machines"))
         XCTAssertTrue(element(app, containing: "Isolated E2E machine").waitForExistence(timeout: 20))
         capture("ios-machines")
         // On iPad each tool replaces the detail column beside the Tools list.
         if !landscape { back(app) }
-        element(app, identifier: "tool-files").tap()
+        press(element(app, identifier: "tool-files"))
         XCTAssertTrue(element(app, containing: "README.md").waitForExistence(timeout: 20))
         capture("ios-files")
-        element(app, containing: "README.md").tap()
+        press(element(app, containing: "README.md"))
         XCTAssertTrue(element(app, containing: "One durable conversation").waitForExistence(timeout: 20))
         capture("ios-file-preview")
         back(app)
         if !landscape { back(app) }
-        element(app, identifier: "tool-schedules").tap()
+        press(element(app, identifier: "tool-schedules"))
         XCTAssertTrue(element(app, containing: "Daily workspace review").waitForExistence(timeout: 20))
         capture("ios-schedules")
         if !landscape { back(app) }
         let settings = element(app, identifier: "tool-settings")
-        if !settings.isHittable { app.swipeUp() }
-        settings.tap()
+        // Settings is the last tool row; bring it above the tab bar on phones.
+        if !waitFor(timeout: 3, { self.hasFrame(settings) && settings.frame.maxY < app.frame.maxY - 120 }) {
+            app.swipeUp()
+        }
+        press(settings)
         XCTAssertTrue(element(app, identifier: "appearance-2").waitForExistence(timeout: 10))
-        element(app, identifier: "appearance-2").tap()
+        press(element(app, identifier: "appearance-2"))
         capture("ios-settings-dark")
         tab(app, "Projects")
         XCTAssertTrue(app.staticTexts["Main"].waitForExistence(timeout: 20))
-        app.staticTexts["Main"].tap()
+        press(app.staticTexts["Main"])
         XCTAssertTrue(element(app, identifier: "lane-1").waitForExistence(timeout: 20))
         capture("ios-board-dark")
         app.terminate()
@@ -146,7 +163,7 @@ final class ComposeSpikeUITests: XCTestCase {
     /// Selects a tab from the tab bar or, on iPad, the sidebar, whose rows are not buttons.
     private func tab(_ app: XCUIApplication, _ title: String) {
         let bar = app.tabBars.buttons[title]
-        if bar.exists && bar.isHittable { return bar.tap() }
+        if hasFrame(bar) && bar.isHittable { return bar.tap() }
         let types = [XCUIElement.ElementType.button, .cell, .other].map(\.rawValue)
         let row = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label == %@ AND elementType IN %@", title, types)).firstMatch
@@ -157,10 +174,35 @@ final class ComposeSpikeUITests: XCTestCase {
     /// The native back button of the innermost navigation bar; on iPad, the detail column's.
     private func back(_ app: XCUIApplication) {
         let buttons = app.navigationBars.buttons.matching(identifier: "BackButton").allElementsBoundByIndex
-        let button = buttons.filter({ $0.isHittable }).max(by: { $0.frame.minX < $1.frame.minX })
+        let button = buttons.filter({ hasFrame($0) && $0.isHittable }).max(by: { $0.frame.minX < $1.frame.minX })
         XCTAssertNotNil(button, "A back button is visible")
         button?.tap()
         Thread.sleep(forTimeInterval: 0.5)
+    }
+
+    /// `isHittable` records a failure for elements without an activation point; check the frame first.
+    private func hasFrame(_ element: XCUIElement) -> Bool {
+        element.exists && !element.frame.isEmpty
+    }
+
+    private func waitFor(timeout: TimeInterval = 10, _ condition: @escaping () -> Bool) -> Bool {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in condition() }, object: nil)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    private func waitForHittable(_ element: XCUIElement, timeout: TimeInterval = 10) -> Bool {
+        waitFor(timeout: timeout) { self.hasFrame(element) && element.isHittable }
+    }
+
+    /// Taps a Compose element where it is drawn. On iOS 26 XCTest's hit-test check can
+    /// resolve a nested Compose control to its container, although touches reach it.
+    private func press(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(waitFor { self.hasFrame(element) }, "\(element) is on screen", file: file, line: line)
+        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    }
+
+    private func waitForValue(_ element: XCUIElement, containing text: String) -> Bool {
+        waitFor { (element.value as? String)?.contains(text) == true }
     }
 
     private func capture(_ name: String) {
