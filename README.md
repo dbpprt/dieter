@@ -148,6 +148,9 @@ through it. Agents run with your user permissions, without a Dieter sandbox;
 cloud model providers may receive prompts and code according to their settings.
 Read the [security model](https://getdieter.com/docs/security/).
 
+Claude quota polling runs every five minutes, with a ten-minute cooldown after
+failed requests. Account discovery and manual refresh share the same limit.
+
 There is no browser application or hosted agent runtime. The website is the
 project's documentation; your agents run on your machines.
 

@@ -13,13 +13,13 @@ import (
 	"unicode/utf8"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/providerquota/policy"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
 	providerQuotaCapability        = "provider_quota_v1"
 	providerQuotaResetCapability   = "provider_quota_reset_v1"
-	providerQuotaRefreshInterval   = time.Minute
 	providerQuotaRequestTimeout    = 15 * time.Second
 	providerQuotaScheduleTick      = time.Second
 	maxProviderAccountsPerDaemon   = 8
@@ -258,12 +258,15 @@ func (m *QuotaManager) HandleResult(record DaemonRecord, daemonID, requestID str
 	if code == "" {
 		code = "refresh_failed"
 	}
-	delay := providerFailureBackoff(pending.failures + 1)
+	delay := policy.FailureBackoff(pending.provider, pending.failures+1)
 	if seconds := result.GetRetryAfterSeconds(); seconds > 0 {
 		delay = time.Duration(seconds) * time.Second
 		if delay > time.Hour {
 			delay = time.Hour
 		}
+	}
+	if pending.provider == gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE {
+		delay = max(delay, policy.FailureBackoff(pending.provider, pending.failures+1))
 	}
 	if err := m.store.MarkProviderQuotaFailure(record.GitHubID, daemonID, pending.provider, pending.accountKey, code, now.Add(delay)); err != nil {
 		return err
@@ -306,7 +309,7 @@ func (m *QuotaManager) HandleResetResult(record DaemonRecord, daemonID, requestI
 	if code == "" {
 		code = "reset_failed"
 	}
-	delay := providerFailureBackoff(pending.failures + 1)
+	delay := policy.FailureBackoff(pending.provider, pending.failures+1)
 	if seconds := result.GetRetryAfterSeconds(); seconds > 0 {
 		delay = min(time.Duration(seconds)*time.Second, time.Hour)
 	}
@@ -315,17 +318,6 @@ func (m *QuotaManager) HandleResetResult(record DaemonRecord, daemonID, requestI
 	}
 	m.signalChanged()
 	return nil
-}
-
-func providerFailureBackoff(failures int) time.Duration {
-	steps := []time.Duration{time.Minute, 2 * time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour}
-	if failures <= 1 {
-		return steps[0]
-	}
-	if failures >= len(steps) {
-		return steps[len(steps)-1]
-	}
-	return steps[failures-1]
 }
 
 func (m *QuotaManager) expireRequests() {
@@ -341,7 +333,7 @@ func (m *QuotaManager) expireRequests() {
 	}
 	m.mu.Unlock()
 	for _, pending := range expired {
-		_ = m.store.MarkProviderQuotaFailure(pending.githubID, pending.daemonID, pending.provider, pending.accountKey, "timeout", now.Add(providerFailureBackoff(pending.failures+1)))
+		_ = m.store.MarkProviderQuotaFailure(pending.githubID, pending.daemonID, pending.provider, pending.accountKey, "timeout", now.Add(policy.FailureBackoff(pending.provider, pending.failures+1)))
 		m.signalChanged()
 	}
 }
@@ -396,6 +388,9 @@ func (m *QuotaManager) Refresh(githubID int64, provider gatewayv1.ProviderQuotaP
 
 func (m *QuotaManager) startRefresh(record ProviderQuotaRecord) (bool, error) {
 	if record.Account == nil || record.Account.GetAvailability() != gatewayv1.ProviderQuotaAvailability_PROVIDER_QUOTA_AVAILABILITY_AVAILABLE {
+		return false, nil
+	}
+	if record.Account.GetProvider() == gatewayv1.ProviderQuotaProvider_PROVIDER_QUOTA_PROVIDER_ANTHROPIC_CLAUDE && record.NextAttemptAt.After(m.now()) {
 		return false, nil
 	}
 	accountIndex := providerAccountIndex(record.GitHubID, record.Account.GetProvider(), record.Account.GetAccountKey())
@@ -649,7 +644,7 @@ func (m *QuotaManager) Catalog(githubID int64, provider gatewayv1.ProviderQuotaP
 			snapshot.RefreshState = gatewayv1.ProviderQuotaRefreshState_PROVIDER_QUOTA_REFRESH_STATE_REFRESHING
 		} else if record.LastFailureCode != "" {
 			snapshot.StatusCode = record.LastFailureCode
-			if record.NextAttemptAt.After(now.Add(providerQuotaRefreshInterval)) {
+			if record.NextAttemptAt.After(now.Add(policy.RefreshInterval(snapshot.GetProvider()))) {
 				snapshot.RefreshState = gatewayv1.ProviderQuotaRefreshState_PROVIDER_QUOTA_REFRESH_STATE_THROTTLED
 			} else {
 				snapshot.RefreshState = gatewayv1.ProviderQuotaRefreshState_PROVIDER_QUOTA_REFRESH_STATE_FAILED

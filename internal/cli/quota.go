@@ -213,7 +213,7 @@ func (c *CLI) quotaWatch(args []string) error {
 }
 
 func (c *CLI) quotaRefresh(args []string) error {
-	const usage = "Usage: dieter quota refresh [PROVIDER] [--account KEY] [--format table|json]\n"
+	const usage = "Usage: dieter quota refresh [PROVIDER] [--account KEY] [--format table|json]\n\nClaude refresh respects its five-minute polling interval and ten-minute failure cooldown.\n"
 	set := flags("quota refresh")
 	account := set.String("account", "", "opaque account key returned by quota list --format json")
 	format := set.String("format", "table", "table or json")
