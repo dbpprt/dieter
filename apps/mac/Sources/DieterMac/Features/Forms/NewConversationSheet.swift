@@ -270,6 +270,10 @@ struct NewConversationSheet: View {
         form.attach(store.core)
         form.intent.projectID = store.selectedProjectID
         form.intent.boardID = store.selectedBoardID
+        if !store.newCardLaneID.isEmpty {
+            form.intent.lane = store.newCardLaneID
+            store.newCardLaneID = ""
+        }
         workspaceDraft.mode = ConversationWorkspaceMode.projectMode(store.creationMemory.workspaceMode)
         if workspaceDraft.baseBranch.isEmpty { workspaceDraft.baseBranch = project?.baseBranch ?? "" }
         if workspaceDraft.baseRemote.isEmpty {

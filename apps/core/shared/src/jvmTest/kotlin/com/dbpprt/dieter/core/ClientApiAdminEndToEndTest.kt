@@ -260,9 +260,11 @@ class ClientApiAdminEndToEndTest : EndToEnd() {
         val readings = telemetry.value!!.machines.getValue(fixture.daemonId)
         val expectedActions =
             MachineOperations.ACTIONS.filter {
+                val macOS = readings.information!!.os_name == "macOS"
                 it != MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_OFF &&
-                    (it != MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_ON ||
-                        readings.information!!.os_name == "macOS")
+                    (it != MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_ON || macOS) &&
+                    (it != MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_SETUP ||
+                        macOS && readings.information!!.privacy?.helper_setup_required == true)
             }
         assertEquals(expectedActions, readings.operations.map { it.action })
         assertEquals(

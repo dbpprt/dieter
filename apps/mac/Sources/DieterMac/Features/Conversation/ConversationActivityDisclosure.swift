@@ -38,8 +38,8 @@ struct ConversationActivityDisclosure<Content: View>: View {
                 }
             } label: {
                 Text(summary)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(DieterTheme.subtle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(DieterTheme.tertiary)
                     .lineLimit(2)
                     .textSelection(.disabled)
                     .smokeTarget("conversation.activity.\(identifier).label")
@@ -62,6 +62,18 @@ struct ConversationActivityDisclosure<Content: View>: View {
     }
 }
 
+private struct ConversationToolsGroupedKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// Tool rows sit inside an activity's recessed list and draw no surface of their own.
+    var conversationToolsGrouped: Bool {
+        get { self[ConversationToolsGroupedKey.self] }
+        set { self[ConversationToolsGroupedKey.self] = newValue }
+    }
+}
+
 /// One native button owns the complete header, avoiding the platform disclosure's
 /// separate arrow hit area and the transcript's text-selection gesture.
 private struct ConversationActivityDisclosureStyle: DisclosureGroupStyle {
@@ -72,9 +84,10 @@ private struct ConversationActivityDisclosureStyle: DisclosureGroupStyle {
             Button {
                 withAnimation(.easeInOut(duration: 0.16)) { configuration.isExpanded.toggle() }
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: 7) {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(DieterTheme.tertiary)
                         .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
                         .accessibilityHidden(true)
                     configuration.label
@@ -88,8 +101,14 @@ private struct ConversationActivityDisclosureStyle: DisclosureGroupStyle {
             .accessibilityIdentifier("conversation.activity.\(identifier).toggle")
             .accessibilityValue(configuration.isExpanded ? "Expanded" : "Collapsed")
             if configuration.isExpanded {
+                // Routine work reads as one recessed list, not a stack of cards.
                 configuration.content
-                    .padding(.leading, 15)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .dieterInset(radius: 10)
+                    .environment(\.conversationToolsGrouped, true)
+                    .padding(.leading, 14)
             }
         }
     }

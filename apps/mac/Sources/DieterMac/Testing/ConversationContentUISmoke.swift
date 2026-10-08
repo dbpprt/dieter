@@ -291,7 +291,7 @@
             if let split = view as? NSSplitView, let controller = split.delegate as? BoardConversationSplitController {
                 return controller
             }
-            return view.subviews.lazy.compactMap { boardController(in: $0) }.first
+            return view.firstSubviewResult { boardController(in: $0) }
         }
         private static func enclosingContentSplit(_ view: NSView) -> NSSplitView? {
             var parent = view.superview

@@ -29,50 +29,54 @@ struct ChatsView: View {
         let other = cards(list.otherIds)
         ChatPaneSplit {
             VStack(spacing: 0) {
-                FluidPaneChrome(background: .clear, spacing: 9) {
-                    HStack(spacing: 8) {
-                        PaneTitleBlock(
-                            title: showArchived ? "Archived chats" : "Chats",
-                            subtitle: SharedRules.shared.count(
-                                count: Int32(clamping: list.visibleIds.count), noun: "conversation", plural: ""),
-                            prominent: true
-                        )
-                        Button {
-                            showArchived.toggle()
-                            store.closeConversation()
-                        } label: {
-                            Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
-                        }
-                        .buttonStyle(DieterGlassButtonStyle())
-                        .buttonBorderShape(.circle)
-                        .controlSize(.small)
-                        .tint(showArchived ? DieterTheme.shell : nil)
-                        .help(
-                            showArchived ? "Show active chats" : "Show archived chats")
-                        Button {
-                            folderEditor = .create(title: "New chat folder")
-                        } label: {
-                            Image(systemName: "folder.badge.plus")
-                        }
-                        .buttonStyle(DieterGlassButtonStyle())
-                        .buttonBorderShape(.circle)
-                        .controlSize(.small)
-                        .help("New chat folder")
-                        .accessibilityIdentifier("chats.folder.new")
-                        Button {
-                            store.beginStandaloneChat()
-                        } label: {
-                            Label("New chat", systemImage: "plus")
-                        }
-                        .buttonStyle(DieterGlassButtonStyle(prominent: true)).disabled(showArchived).help(
-                            "New standalone chat"
-                        )
-                        .accessibilityIdentifier("chats.new")
-                        .smokeTarget("chats.new")
+                DieterPaneTopBar {
+                    HStack(spacing: 7) {
+                        Text(showArchived ? "Archived chats" : "Chats")
+                            .font(.system(size: 13.5, weight: .semibold))
+                        Text("\(list.visibleIds.count)")
+                            .font(.system(size: 12, weight: .medium)).monospacedDigit()
+                            .foregroundStyle(DieterTheme.tertiary)
                     }
-                } secondary: {
-                    DieterSearchField(text: $search, placeholder: "Search chats")
+                    .padding(.horizontal, 14).frame(height: DieterMetrics.capsuleHeight)
+                    .dieterCapsuleChrome(interactive: false)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(
+                        SharedRules.shared.count(
+                            count: Int32(clamping: list.visibleIds.count), noun: "conversation", plural: ""))
+                } trailing: {
+                    Button {
+                        showArchived.toggle()
+                        store.closeConversation()
+                    } label: {
+                        Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
+                            .font(.system(size: 12.5, weight: .medium))
+                    }
+                    .buttonStyle(DieterBarButtonStyle(shape: .circle))
+                    .help(showArchived ? "Show active chats" : "Show archived chats")
+                    Button {
+                        folderEditor = .create(title: "New chat folder")
+                    } label: {
+                        Image(systemName: "folder.badge.plus").font(.system(size: 12.5, weight: .medium))
+                    }
+                    .buttonStyle(DieterBarButtonStyle(shape: .circle))
+                    .help("New chat folder")
+                    .accessibilityIdentifier("chats.folder.new")
+                    Button {
+                        store.beginStandaloneChat()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "plus").font(.system(size: 11, weight: .bold))
+                            Text("New chat")
+                        }
+                    }
+                    .buttonStyle(DieterBarButtonStyle(prominent: true))
+                    .disabled(showArchived)
+                    .help("New standalone chat")
+                    .accessibilityIdentifier("chats.new")
+                    .smokeTarget("chats.new")
                 }
+                DieterSearchField(text: $search, placeholder: "Search chats")
+                    .padding(.leading, 14).padding(.trailing, 6).padding(.bottom, 8)
 
                 if list.loading || !list.error.isEmpty {
                     LoadFeedback(
@@ -88,10 +92,7 @@ struct ChatsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         if !pinned.isEmpty {
                             VStack(alignment: .leading, spacing: 5) {
-                                Label("PINNED", systemImage: "pin.fill").font(DieterFont.sectionLabel)
-                                    .foregroundStyle(
-                                        DieterTheme.tertiary
-                                    ).padding(.horizontal, 8)
+                                DieterSectionHeader(title: "Pinned").padding(.horizontal, 8)
                                 ChatGroupCard(
                                     chats: displayedPinned,
                                     movePinnedChat: { store.movePinnedChat($0, onto: $1) }
@@ -110,10 +111,7 @@ struct ChatsView: View {
 
                         if !list.folders.isEmpty {
                             VStack(alignment: .leading, spacing: 7) {
-                                Text("FOLDERS")
-                                    .font(DieterFont.sectionLabel).tracking(0.8)
-                                    .foregroundStyle(DieterTheme.tertiary)
-                                    .padding(.horizontal, 8)
+                                DieterSectionHeader(title: "Folders").padding(.horizontal, 8)
 
                                 ForEach(list.folders, id: \.folderID) { folder in
                                     ChatNavigationFolderGroup(
@@ -135,13 +133,12 @@ struct ChatsView: View {
                             }
                         }
 
-                        Text(showArchived ? "ARCHIVED PROJECTS" : "PROJECTS")
-                            .font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
+                        DieterSectionHeader(title: showArchived ? "Archived projects" : "Projects")
                             .padding(.horizontal, 8).padding(.top, 3)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(
-                                unfiledDropTargeted ? DieterTheme.shellDeep.opacity(0.14) : .clear,
-                                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                unfiledDropTargeted ? DieterTheme.tileSelected : .clear,
+                                in: RoundedRectangle(cornerRadius: DieterMetrics.rowRadius, style: .continuous)
                             )
                             .dropDestination(for: String.self) { values, _ in
                                 guard hasFolders,
@@ -173,9 +170,7 @@ struct ChatsView: View {
 
                         if !other.isEmpty {
                             VStack(alignment: .leading, spacing: 5) {
-                                Text("OTHER")
-                                    .font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
-                                    .padding(.horizontal, 8)
+                                DieterSectionHeader(title: "Other").padding(.horizontal, 8)
                                 ChatGroupCard(chats: other).padding(.leading, 14)
                             }
                         }
@@ -192,10 +187,11 @@ struct ChatsView: View {
                             )
                             .padding(.vertical, 32)
                         }
-                    }.padding(.horizontal, 8).padding(.vertical, 11)
+                    }.padding(.leading, 8).padding(.trailing, 2).padding(.vertical, 6)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .ignoresSafeArea(.container, edges: .top)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("chats.browser-pane")
             .smokeTarget("chats.browser-pane")

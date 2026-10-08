@@ -231,7 +231,7 @@ struct ProjectWorkspacesSheet: View {
                     Task { await store.loadProjectWorkspaces() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
-                }.buttonStyle(DieterIconButtonStyle())
+                }.buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
                 Button("Done") { dismiss() }
             }
             .padding(18).background(DieterTheme.sidebar)

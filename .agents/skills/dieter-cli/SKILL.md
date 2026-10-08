@@ -50,11 +50,18 @@ uses the local daemon enrollment automatically and never stores a separate CLI
 login. An explicit global `--gateway` must match that enrollment:
 
 ```sh
-dieter setup --gateway https://dieter.example.com
+dieter setup
 dieter machine list --format jsonl
 dieter --machine <machine-id> status
 dieter --machine <machine-id> project list --format jsonl
 ```
+
+Setup defaults to `https://gateway.getdieter.com` (requires an allowed account).
+For self-hosting, use `dieter setup --gateway https://YOUR-GATEWAY`.
+An incomplete enrollment retry updates the origin and name while preserving the
+machine key. Completed enrollments retain their identity. Before managed-service
+setup, stop any foreground daemon in its terminal with Ctrl-C. Setup must report
+a connected gateway and a managed service before treating onboarding as complete.
 
 Remote commands prefer the daemon's authenticated direct TLS route, then try
 a data-only WebRTC route when supported, with bounded gateway relay fallback.
@@ -70,7 +77,12 @@ The gateway routes requests and stores only control-plane state plus normalized,
 credential-free provider quota snapshots. It does not store projects,
 transcripts, files, schedules, provider credentials, or harness credentials. Use
 `dieter machine show <machine-id>` and `dieter machine route <machine-id>` to
-inspect presence and advertised routes. Directory output includes the daemon's
+inspect presence and advertised routes. Route JSON also includes `relay_lanes`:
+control (0), replication (1), command (2), and subscription (3), with connectivity,
+active calls/limit, buffered bytes, rejections, last response time, and writer
+stall status. Presence alone does not prove every relay channel is ready. Each
+channel reconnects independently; a stalled watch cannot exhaust health or peer
+replication capacity. Directory output includes the daemon's
 release, gateway compatibility decision, and minimum required release. Route
 only to compatible machines; Update Required means the daemon must meet the
 published floor before it can re-enter the fleet.
@@ -1073,7 +1085,7 @@ Success is local durability, not a global quorum. `peer status` includes bounded
 per-peer attempts, successful exchanges, route/direction, checkpoints, and
 sanitized blocking record identity. A successful exchange with one peer does
 not prove account-wide convergence. `peer status` retains historical failures;
-workspace warnings exclude offline/removed-peer transport failures, cancellations,
+workspace warnings say “Board and settings sync between …” and refer to shared metadata, not files or transcripts. They exclude offline/removed-peer transport failures, cancellations,
 and transport attempts older than five minutes. Record rejections are not aged
 out or suppressed because a peer is offline. Android names both machines and clears warnings on
 recovery, including when the selected machine returns unchanged workspace data. A warning alone is not permission to reset storage or checkpoints.

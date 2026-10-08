@@ -174,6 +174,7 @@ Actions:
   gateway                                    Show the connected gateway build
   watch [--count N]                          Stream gateway presence as JSON Lines
   show [MACHINE]                             Show gateway presence and route
+  route [MACHINE]                            Inspect direct routes and relay channel health
   privacy <status|setup|on|off> [--key ID]    Control macOS local display/input privacy
   info [MACHINE]                             Show live host telemetry (local by default)
   rename --name NAME [MACHINE]               Rename an enrolled machine

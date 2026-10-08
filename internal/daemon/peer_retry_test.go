@@ -53,3 +53,46 @@ func TestSanitizedRTCReasonNeverIncludesErrorText(t *testing.T) {
 		t.Fatalf("raw error escaped sanitization: %q", got)
 	}
 }
+
+func TestPeerFailuresAndActiveAttemptsDoNotDelayHealthyPeer(t *testing.T) {
+	now := time.Unix(1000, 0)
+	p := &PeerSync{now: func() time.Time { return now }}
+	if peers := p.selectPeers([]string{"failed", "healthy", "stalled"}, 3); len(peers) != 3 {
+		t.Fatal(peers)
+	}
+	p.finishPeer("failed", context.DeadlineExceeded)
+	p.finishPeer("healthy", nil)
+	for range 5 {
+		if peers := p.selectPeers([]string{"failed", "healthy", "stalled"}, 3); len(peers) != 1 || peers[0] != "healthy" {
+			t.Fatalf("healthy peer blocked by failed/stalled peers: %v", peers)
+		}
+		p.finishPeer("healthy", nil)
+	}
+	now = now.Add(15 * time.Second)
+	if peers := p.selectPeers([]string{"failed", "healthy", "stalled"}, 3); len(peers) != 2 {
+		t.Fatalf("peer retry deadline ignored: %v", peers)
+	}
+	p.finishPeer("failed", context.DeadlineExceeded)
+	p.finishPeer("healthy", nil)
+	if p.syncRetry["failed"].retryAt.Sub(now) != 30*time.Second {
+		t.Fatal("target retry did not back off")
+	}
+	p.finishPeer("stalled", nil)
+}
+func TestPeerAdmissionIsBoundedAndRemovedPeersArePruned(t *testing.T) {
+	p := &PeerSync{}
+	if peers := p.selectPeers([]string{"a", "b", "c", "d", "e"}, 10); len(peers) != maxConcurrentPeerExchanges {
+		t.Fatal(peers)
+	}
+	if peers := p.selectPeers([]string{"a", "b", "c", "d", "e"}, 10); len(peers) != 0 {
+		t.Fatal("exchange concurrency exceeded")
+	}
+	for _, id := range []string{"a", "b", "c", "d"} {
+		p.finishPeer(id, nil)
+	}
+	p.selectPeers([]string{"e"}, 1)
+	if len(p.syncRetry) != 1 {
+		t.Fatal("removed peer state retained")
+	}
+	p.finishPeer("e", nil)
+}

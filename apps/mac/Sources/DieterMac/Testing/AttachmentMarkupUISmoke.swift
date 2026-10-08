@@ -99,7 +99,7 @@
         private static func canvas(in view: NSView?) -> AttachmentMarkupCanvasView? {
             guard let view else { return nil }
             if let canvas = view as? AttachmentMarkupCanvasView { return canvas }
-            return view.subviews.lazy.compactMap { canvas(in: $0) }.first
+            return view.firstSubviewResult { canvas(in: $0) }
         }
 
         private static func postStroke(in canvas: AttachmentMarkupCanvasView) {

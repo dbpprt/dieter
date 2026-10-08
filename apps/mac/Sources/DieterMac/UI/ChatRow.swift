@@ -231,7 +231,7 @@ struct ChatRowBackground: View {
         RoundedRectangle(cornerRadius: 7, style: .continuous)
             .fill(
                 store.selectedChatID == cardID
-                    ? DieterTheme.selection : (hovering ? DieterTheme.raised.opacity(0.75) : .clear)
+                    ? DieterTheme.tileSelected : (hovering ? DieterTheme.tileHover : .clear)
             )
             .onHover { hovering = $0 }
     }

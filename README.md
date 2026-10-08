@@ -69,13 +69,14 @@ follow-ups from being lost when their provider session closes.
 ## Quick start
 
 You need a configured agent account on the host and access to a Dieter gateway.
-Use your own gateway origin below; [self-hosting is documented](https://getdieter.com/docs/gateway/).
+Setup defaults to `https://gateway.getdieter.com` (an allowed account is required).
+For your own gateway, pass `--gateway https://YOUR-GATEWAY`; [self-hosting is documented](https://getdieter.com/docs/gateway/).
 
 On **Apple Silicon macOS**:
 
 ```sh
 brew install dbpprt/tap/dieter
-dieter setup --gateway https://dieter.example.com
+dieter setup
 dieter project open ~/Development/my-project
 
 brew install --cask dbpprt/tap/dieter-app
@@ -108,7 +109,7 @@ On **Linux amd64/arm64**, install Node.js 22.19+, npm, Git, and
 
 ```sh
 curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
-dieter setup --gateway https://dieter.example.com
+dieter setup
 dieter project open ~/Development/my-project
 dieter doctor
 ```
@@ -118,6 +119,15 @@ dieter doctor
 | macOS 26+, Apple Silicon | Homebrew cask above or [release downloads](https://github.com/dbpprt/dieter/releases/latest)     |
 | Android 8+               | [Download the APK](https://github.com/dbpprt/dieter/releases/latest/download/Dieter-Android.apk) |
 | iOS 18+, iPhone and iPad | [Beta and source-build guide](apps/ios/README.md)                                                |
+
+Gateway relay traffic uses four independently authenticated connections for
+health/control, peer replication, commands, and subscriptions. A busy watch or
+stalled peer does not consume the other traffic classes' admission or byte
+budgets. `dieter machine route MACHINE` reports each relay channel's connectivity,
+active calls, limit, buffered bytes, rejected calls, and last response time.
+“Board and settings sync between … is delayed” refers to shared projects, boards,
+card placement, labels, and portable settings; repository files and conversation
+transcripts remain on their owner machine.
 
 The daemon supports headless Linux hosts. Screen hosting needs an active desktop
 and [platform dependencies](landingpage/content/docs/installation.md#linux).

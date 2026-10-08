@@ -180,6 +180,32 @@ struct DieterThemePerformanceTests {
         }
     }
 
+    @Test @MainActor func floatingPanelsStayDistinctAndLegibleWithoutGlass() throws {
+        defer { DieterTheme.install(selection: .load()) }
+
+        for palette in DieterPalette.allCases {
+            for scheme in [ColorScheme.light, .dark] {
+                DieterTheme.install(
+                    selection: DieterThemeSelection(
+                        appearance: scheme == .dark ? .dark : .light, palette: palette, transparencyEnabled: false),
+                    systemColorScheme: scheme, reduceTransparency: false)
+                #expect(!DieterTheme.usesTransparency)
+                let panel = try #require(NSColor(DieterTheme.panelSolid).usingColorSpace(.sRGB))
+                let canvas = try #require(NSColor(DieterTheme.canvasSolid).usingColorSpace(.sRGB))
+                let text = try #require(NSColor(DieterTheme.text).usingColorSpace(.sRGB))
+                let tertiary = try #require(NSColor(DieterTheme.tertiary).usingColorSpace(.sRGB))
+                // Solid mode and Reduce Transparency still separate the floating
+                // sidebar and conversation panels from the window canvas.
+                let difference =
+                    abs(panel.redComponent - canvas.redComponent) + abs(panel.greenComponent - canvas.greenComponent)
+                    + abs(panel.blueComponent - canvas.blueComponent)
+                #expect(difference > 0.05, "\(palette.rawValue) \(scheme) panel matches the canvas")
+                #expect(contrastRatio(text, panel) >= 7, "\(palette.rawValue) \(scheme) panel text contrast")
+                #expect(contrastRatio(tertiary, panel) >= 3, "\(palette.rawValue) \(scheme) panel meta contrast")
+            }
+        }
+    }
+
     @Test @MainActor func machinePresenceColorsRemainGreenAndRedAcrossThemes() throws {
         defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
 

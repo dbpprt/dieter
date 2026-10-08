@@ -331,7 +331,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	authorized := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+session, "x-dieter-client-version", "0.4.1-dev")
 
 	deadline := time.Now().Add(5 * time.Second)
-	for !gatewayServer.Hub.Online(identity.ID) && time.Now().Before(deadline) {
+	for !gatewayServer.Hub.RelayReady(identity.ID) && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	if !gatewayServer.Hub.Online(identity.ID) {

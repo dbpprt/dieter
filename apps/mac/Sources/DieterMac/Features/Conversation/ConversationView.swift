@@ -70,7 +70,13 @@ struct ConversationView: View {
                 .ignoresSafeArea(.container, edges: .top)
             } else {
                 ConversationContentSplit(presented: workspacePresented, singleWorkspace: singleWorkspace) {
-                    conversationBody(workspacePresented: workspacePresented)
+                    VStack(spacing: 0) {
+                        ConversationPanelHeader(
+                            model: context.content, role: workspacePresented ? .chatBesideWorkspace : .unified
+                        )
+                        .padding(.horizontal, ConversationPaneTitlebar<EmptyView>.horizontalInset)
+                        conversationBody(workspacePresented: workspacePresented)
+                    }
                 } content: {
                     ConversationContentPane(model: context.content)
                 }
@@ -112,9 +118,6 @@ struct ConversationView: View {
         @Bindable var content = context.content
         let tab = content.conversationTab
         return VStack(spacing: 0) {
-            ConversationChrome(
-                compact: compact, standalone: standalone, tab: $content.conversationTab)
-
             Group {
                 if context.conversationLoading {
                     DeferredConversationLoadFeedback()

@@ -544,6 +544,60 @@ func (DaemonLinkFrameKind) EnumDescriptor() ([]byte, []int) {
 	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{8}
 }
 
+// Each lane uses its own authenticated connection and flow-control window.
+// These are resource classes, not authorization scopes.
+type RelayLane int32
+
+const (
+	RelayLane_RELAY_LANE_CONTROL      RelayLane = 0
+	RelayLane_RELAY_LANE_REPLICATION  RelayLane = 1
+	RelayLane_RELAY_LANE_COMMAND      RelayLane = 2
+	RelayLane_RELAY_LANE_SUBSCRIPTION RelayLane = 3
+)
+
+// Enum value maps for RelayLane.
+var (
+	RelayLane_name = map[int32]string{
+		0: "RELAY_LANE_CONTROL",
+		1: "RELAY_LANE_REPLICATION",
+		2: "RELAY_LANE_COMMAND",
+		3: "RELAY_LANE_SUBSCRIPTION",
+	}
+	RelayLane_value = map[string]int32{
+		"RELAY_LANE_CONTROL":      0,
+		"RELAY_LANE_REPLICATION":  1,
+		"RELAY_LANE_COMMAND":      2,
+		"RELAY_LANE_SUBSCRIPTION": 3,
+	}
+)
+
+func (x RelayLane) Enum() *RelayLane {
+	p := new(RelayLane)
+	*p = x
+	return p
+}
+
+func (x RelayLane) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RelayLane) Descriptor() protoreflect.EnumDescriptor {
+	return file_dieter_gateway_v1_gateway_proto_enumTypes[9].Descriptor()
+}
+
+func (RelayLane) Type() protoreflect.EnumType {
+	return &file_dieter_gateway_v1_gateway_proto_enumTypes[9]
+}
+
+func (x RelayLane) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RelayLane.Descriptor instead.
+func (RelayLane) EnumDescriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{9}
+}
+
 type Account struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	GithubId int64                  `protobuf:"varint,1,opt,name=github_id,json=githubId,proto3" json:"github_id,omitempty"`
@@ -2056,8 +2110,9 @@ type DaemonRoute struct {
 	// The authenticated owner uses the enrolled leaf certificate to verify
 	// daemon-signed remote-desktop session bindings on both relay and direct
 	// signaling routes.
-	DaemonCertificatePem []byte `protobuf:"bytes,6,opt,name=daemon_certificate_pem,json=daemonCertificatePem,proto3" json:"daemon_certificate_pem,omitempty"`
-	ControlWebrtc        bool   `protobuf:"varint,7,opt,name=control_webrtc,json=controlWebrtc,proto3" json:"control_webrtc,omitempty"`
+	DaemonCertificatePem []byte             `protobuf:"bytes,6,opt,name=daemon_certificate_pem,json=daemonCertificatePem,proto3" json:"daemon_certificate_pem,omitempty"`
+	ControlWebrtc        bool               `protobuf:"varint,7,opt,name=control_webrtc,json=controlWebrtc,proto3" json:"control_webrtc,omitempty"`
+	RelayLanes           []*RelayLaneStatus `protobuf:"bytes,8,rep,name=relay_lanes,json=relayLanes,proto3" json:"relay_lanes,omitempty"`
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -2139,6 +2194,13 @@ func (x *DaemonRoute) GetControlWebrtc() bool {
 		return x.ControlWebrtc
 	}
 	return false
+}
+
+func (x *DaemonRoute) GetRelayLanes() []*RelayLaneStatus {
+	if x != nil {
+		return x.RelayLanes
+	}
+	return nil
 }
 
 type RTCIceServer struct {
@@ -4077,6 +4139,106 @@ func (x *ProviderQuotaResetResult) GetRetryAfterSeconds() uint32 {
 	return 0
 }
 
+type RelayLaneStatus struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Lane           RelayLane              `protobuf:"varint,1,opt,name=lane,proto3,enum=dieter.gateway.v1.RelayLane" json:"lane,omitempty"`
+	Connected      bool                   `protobuf:"varint,2,opt,name=connected,proto3" json:"connected,omitempty"`
+	ActiveCalls    uint32                 `protobuf:"varint,3,opt,name=active_calls,json=activeCalls,proto3" json:"active_calls,omitempty"`
+	CallLimit      uint32                 `protobuf:"varint,4,opt,name=call_limit,json=callLimit,proto3" json:"call_limit,omitempty"`
+	QueuedBytes    uint64                 `protobuf:"varint,5,opt,name=queued_bytes,json=queuedBytes,proto3" json:"queued_bytes,omitempty"`
+	RejectedCalls  uint64                 `protobuf:"varint,6,opt,name=rejected_calls,json=rejectedCalls,proto3" json:"rejected_calls,omitempty"`
+	LastResponseAt string                 `protobuf:"bytes,7,opt,name=last_response_at,json=lastResponseAt,proto3" json:"last_response_at,omitempty"`
+	WriteStalled   bool                   `protobuf:"varint,8,opt,name=write_stalled,json=writeStalled,proto3" json:"write_stalled,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RelayLaneStatus) Reset() {
+	*x = RelayLaneStatus{}
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RelayLaneStatus) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RelayLaneStatus) ProtoMessage() {}
+
+func (x *RelayLaneStatus) ProtoReflect() protoreflect.Message {
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RelayLaneStatus.ProtoReflect.Descriptor instead.
+func (*RelayLaneStatus) Descriptor() ([]byte, []int) {
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *RelayLaneStatus) GetLane() RelayLane {
+	if x != nil {
+		return x.Lane
+	}
+	return RelayLane_RELAY_LANE_CONTROL
+}
+
+func (x *RelayLaneStatus) GetConnected() bool {
+	if x != nil {
+		return x.Connected
+	}
+	return false
+}
+
+func (x *RelayLaneStatus) GetActiveCalls() uint32 {
+	if x != nil {
+		return x.ActiveCalls
+	}
+	return 0
+}
+
+func (x *RelayLaneStatus) GetCallLimit() uint32 {
+	if x != nil {
+		return x.CallLimit
+	}
+	return 0
+}
+
+func (x *RelayLaneStatus) GetQueuedBytes() uint64 {
+	if x != nil {
+		return x.QueuedBytes
+	}
+	return 0
+}
+
+func (x *RelayLaneStatus) GetRejectedCalls() uint64 {
+	if x != nil {
+		return x.RejectedCalls
+	}
+	return 0
+}
+
+func (x *RelayLaneStatus) GetLastResponseAt() string {
+	if x != nil {
+		return x.LastResponseAt
+	}
+	return ""
+}
+
+func (x *RelayLaneStatus) GetWriteStalled() bool {
+	if x != nil {
+		return x.WriteStalled
+	}
+	return false
+}
+
 type DaemonLinkFrame struct {
 	state                         protoimpl.MessageState       `protogen:"open.v1"`
 	Kind                          DaemonLinkFrameKind          `protobuf:"varint,1,opt,name=kind,proto3,enum=dieter.gateway.v1.DaemonLinkFrameKind" json:"kind,omitempty"`
@@ -4105,13 +4267,20 @@ type DaemonLinkFrame struct {
 	ProviderQuotaResetResult      *ProviderQuotaResetResult    `protobuf:"bytes,25,opt,name=provider_quota_reset_result,json=providerQuotaResetResult,proto3" json:"provider_quota_reset_result,omitempty"`
 	CompatibilityPolicy           *CompatibilityPolicy         `protobuf:"bytes,26,opt,name=compatibility_policy,json=compatibilityPolicy,proto3" json:"compatibility_policy,omitempty"`
 	Compatibility                 CompatibilityStatus          `protobuf:"varint,27,opt,name=compatibility,proto3,enum=dieter.gateway.v1.CompatibilityStatus" json:"compatibility,omitempty"`
-	unknownFields                 protoimpl.UnknownFields
-	sizeCache                     protoimpl.SizeCache
+	Lane                          RelayLane                    `protobuf:"varint,28,opt,name=lane,proto3,enum=dieter.gateway.v1.RelayLane" json:"lane,omitempty"`
+	// All lanes of one daemon process join this unpredictable session identity.
+	SessionId string `protobuf:"bytes,29,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	// Fragmented payloads retain one logical message bound. Metadata is carried
+	// only by the first fragment; offsets must be contiguous within a stream.
+	PayloadSize   uint32 `protobuf:"varint,31,opt,name=payload_size,json=payloadSize,proto3" json:"payload_size,omitempty"`
+	PayloadOffset uint32 `protobuf:"varint,32,opt,name=payload_offset,json=payloadOffset,proto3" json:"payload_offset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DaemonLinkFrame) Reset() {
 	*x = DaemonLinkFrame{}
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[51]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4123,7 +4292,7 @@ func (x *DaemonLinkFrame) String() string {
 func (*DaemonLinkFrame) ProtoMessage() {}
 
 func (x *DaemonLinkFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[51]
+	mi := &file_dieter_gateway_v1_gateway_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4136,7 +4305,7 @@ func (x *DaemonLinkFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonLinkFrame.ProtoReflect.Descriptor instead.
 func (*DaemonLinkFrame) Descriptor() ([]byte, []int) {
-	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{51}
+	return file_dieter_gateway_v1_gateway_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *DaemonLinkFrame) GetKind() DaemonLinkFrameKind {
@@ -4321,6 +4490,34 @@ func (x *DaemonLinkFrame) GetCompatibility() CompatibilityStatus {
 	return CompatibilityStatus_COMPATIBILITY_STATUS_UNSPECIFIED
 }
 
+func (x *DaemonLinkFrame) GetLane() RelayLane {
+	if x != nil {
+		return x.Lane
+	}
+	return RelayLane_RELAY_LANE_CONTROL
+}
+
+func (x *DaemonLinkFrame) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *DaemonLinkFrame) GetPayloadSize() uint32 {
+	if x != nil {
+		return x.PayloadSize
+	}
+	return 0
+}
+
+func (x *DaemonLinkFrame) GetPayloadOffset() uint32 {
+	if x != nil {
+		return x.PayloadOffset
+	}
+	return 0
+}
+
 var File_dieter_gateway_v1_gateway_proto protoreflect.FileDescriptor
 
 const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
@@ -4444,7 +4641,7 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\x04port\x18\x03 \x01(\rR\x04port\x12\x18\n" +
 	"\anetwork\x18\x04 \x01(\tR\anetwork\x12\x1a\n" +
 	"\bpriority\x18\x05 \x01(\x05R\bpriority\x121\n" +
-	"\x14certificate_identity\x18\x06 \x01(\tR\x13certificateIdentity\"\xc5\x02\n" +
+	"\x14certificate_identity\x18\x06 \x01(\tR\x13certificateIdentity\"\x8a\x03\n" +
 	"\vDaemonRoute\x12\x1b\n" +
 	"\tdaemon_id\x18\x01 \x01(\tR\bdaemonId\x12'\n" +
 	"\x0frelay_available\x18\x02 \x01(\bR\x0erelayAvailable\x12O\n" +
@@ -4454,7 +4651,9 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"generation\x12\"\n" +
 	"\rdaemon_ca_pem\x18\x05 \x01(\fR\vdaemonCaPem\x124\n" +
 	"\x16daemon_certificate_pem\x18\x06 \x01(\fR\x14daemonCertificatePem\x12%\n" +
-	"\x0econtrol_webrtc\x18\a \x01(\bR\rcontrolWebrtc\"^\n" +
+	"\x0econtrol_webrtc\x18\a \x01(\bR\rcontrolWebrtc\x12C\n" +
+	"\vrelay_lanes\x18\b \x03(\v2\".dieter.gateway.v1.RelayLaneStatusR\n" +
+	"relayLanes\"^\n" +
 	"\fRTCIceServer\x12\x12\n" +
 	"\x04urls\x18\x01 \x03(\tR\x04urls\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12\x1e\n" +
@@ -4629,7 +4828,17 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\aoutcome\x18\x02 \x01(\tR\aoutcome\x12\x1d\n" +
 	"\n" +
 	"error_code\x18\x03 \x01(\tR\terrorCode\x12.\n" +
-	"\x13retry_after_seconds\x18\x04 \x01(\rR\x11retryAfterSeconds\"\x8a\r\n" +
+	"\x13retry_after_seconds\x18\x04 \x01(\rR\x11retryAfterSeconds\"\xbc\x02\n" +
+	"\x0fRelayLaneStatus\x120\n" +
+	"\x04lane\x18\x01 \x01(\x0e2\x1c.dieter.gateway.v1.RelayLaneR\x04lane\x12\x1c\n" +
+	"\tconnected\x18\x02 \x01(\bR\tconnected\x12!\n" +
+	"\factive_calls\x18\x03 \x01(\rR\vactiveCalls\x12\x1d\n" +
+	"\n" +
+	"call_limit\x18\x04 \x01(\rR\tcallLimit\x12!\n" +
+	"\fqueued_bytes\x18\x05 \x01(\x04R\vqueuedBytes\x12%\n" +
+	"\x0erejected_calls\x18\x06 \x01(\x04R\rrejectedCalls\x12(\n" +
+	"\x10last_response_at\x18\a \x01(\tR\x0elastResponseAt\x12#\n" +
+	"\rwrite_stalled\x18\b \x01(\bR\fwriteStalled\"\xab\x0e\n" +
 	"\x0fDaemonLinkFrame\x12:\n" +
 	"\x04kind\x18\x01 \x01(\x0e2&.dieter.gateway.v1.DaemonLinkFrameKindR\x04kind\x12\x1b\n" +
 	"\tstream_id\x18\x02 \x01(\x04R\bstreamId\x12\x1b\n" +
@@ -4661,10 +4870,15 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"\x1cprovider_quota_reset_request\x18\x18 \x01(\v2,.dieter.gateway.v1.ProviderQuotaResetRequestR\x19providerQuotaResetRequest\x12j\n" +
 	"\x1bprovider_quota_reset_result\x18\x19 \x01(\v2+.dieter.gateway.v1.ProviderQuotaResetResultR\x18providerQuotaResetResult\x12Y\n" +
 	"\x14compatibility_policy\x18\x1a \x01(\v2&.dieter.gateway.v1.CompatibilityPolicyR\x13compatibilityPolicy\x12L\n" +
-	"\rcompatibility\x18\x1b \x01(\x0e2&.dieter.gateway.v1.CompatibilityStatusR\rcompatibility\x1a;\n" +
+	"\rcompatibility\x18\x1b \x01(\x0e2&.dieter.gateway.v1.CompatibilityStatusR\rcompatibility\x120\n" +
+	"\x04lane\x18\x1c \x01(\x0e2\x1c.dieter.gateway.v1.RelayLaneR\x04lane\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x1d \x01(\tR\tsessionId\x12!\n" +
+	"\fpayload_size\x18\x1f \x01(\rR\vpayloadSize\x12%\n" +
+	"\x0epayload_offset\x18  \x01(\rR\rpayloadOffset\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x12\x10\x13R\vapi_version*\x89\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x12\x10\x13J\x04\b\x1e\x10\x1fR\vapi_version*\x89\x01\n" +
 	"\x16CompatibilityComponent\x12'\n" +
 	"#COMPATIBILITY_COMPONENT_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eCOMPATIBILITY_COMPONENT_CLIENT\x10\x01\x12\"\n" +
@@ -4728,7 +4942,12 @@ const file_dieter_gateway_v1_gateway_proto_rawDesc = "" +
 	"5DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_REQUEST\x10\x11\x128\n" +
 	"4DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT\x10\x12\x127\n" +
 	"3DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_REQUEST\x10\x13\x126\n" +
-	"2DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_RESULT\x10\x142\xa2\x0f\n" +
+	"2DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_RESULT\x10\x14*t\n" +
+	"\tRelayLane\x12\x16\n" +
+	"\x12RELAY_LANE_CONTROL\x10\x00\x12\x1a\n" +
+	"\x16RELAY_LANE_REPLICATION\x10\x01\x12\x16\n" +
+	"\x12RELAY_LANE_COMMAND\x10\x02\x12\x1b\n" +
+	"\x17RELAY_LANE_SUBSCRIPTION\x10\x032\xa2\x0f\n" +
 	"\x0eGatewayService\x12e\n" +
 	"\x10GetCompatibility\x12'.dieter.gateway.v1.CompatibilityRequest\x1a(.dieter.gateway.v1.CompatibilityResponse\x12@\n" +
 	"\n" +
@@ -4766,8 +4985,8 @@ func file_dieter_gateway_v1_gateway_proto_rawDescGZIP() []byte {
 	return file_dieter_gateway_v1_gateway_proto_rawDescData
 }
 
-var file_dieter_gateway_v1_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
-var file_dieter_gateway_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
+var file_dieter_gateway_v1_gateway_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
+var file_dieter_gateway_v1_gateway_proto_msgTypes = make([]protoimpl.MessageInfo, 54)
 var file_dieter_gateway_v1_gateway_proto_goTypes = []any{
 	(CompatibilityComponent)(0),                      // 0: dieter.gateway.v1.CompatibilityComponent
 	(CompatibilityStatus)(0),                         // 1: dieter.gateway.v1.CompatibilityStatus
@@ -4778,167 +4997,172 @@ var file_dieter_gateway_v1_gateway_proto_goTypes = []any{
 	(ProviderQuotaRefreshState)(0),                   // 6: dieter.gateway.v1.ProviderQuotaRefreshState
 	(ProviderQuotaFreshness)(0),                      // 7: dieter.gateway.v1.ProviderQuotaFreshness
 	(DaemonLinkFrameKind)(0),                         // 8: dieter.gateway.v1.DaemonLinkFrameKind
-	(*Account)(nil),                                  // 9: dieter.gateway.v1.Account
-	(*DaemonRef)(nil),                                // 10: dieter.gateway.v1.DaemonRef
-	(*Daemon)(nil),                                   // 11: dieter.gateway.v1.Daemon
-	(*RemoteDesktopPresence)(nil),                    // 12: dieter.gateway.v1.RemoteDesktopPresence
-	(*ListDaemonsResponse)(nil),                      // 13: dieter.gateway.v1.ListDaemonsResponse
-	(*GatewayInformation)(nil),                       // 14: dieter.gateway.v1.GatewayInformation
-	(*CompatibilityPolicy)(nil),                      // 15: dieter.gateway.v1.CompatibilityPolicy
-	(*CompatibilityRequest)(nil),                     // 16: dieter.gateway.v1.CompatibilityRequest
-	(*CompatibilityResponse)(nil),                    // 17: dieter.gateway.v1.CompatibilityResponse
-	(*WatchDaemonsRequest)(nil),                      // 18: dieter.gateway.v1.WatchDaemonsRequest
-	(*DaemonPresenceUpdate)(nil),                     // 19: dieter.gateway.v1.DaemonPresenceUpdate
-	(*BeginDaemonEnrollmentRequest)(nil),             // 20: dieter.gateway.v1.BeginDaemonEnrollmentRequest
-	(*DaemonEnrollment)(nil),                         // 21: dieter.gateway.v1.DaemonEnrollment
-	(*CompleteDaemonEnrollmentRequest)(nil),          // 22: dieter.gateway.v1.CompleteDaemonEnrollmentRequest
-	(*UnenrollDaemonRequest)(nil),                    // 23: dieter.gateway.v1.UnenrollDaemonRequest
-	(*DaemonRecoveryRef)(nil),                        // 24: dieter.gateway.v1.DaemonRecoveryRef
-	(*DaemonRecoveryState)(nil),                      // 25: dieter.gateway.v1.DaemonRecoveryState
-	(*RecoverDaemonRequest)(nil),                     // 26: dieter.gateway.v1.RecoverDaemonRequest
-	(*DaemonCredential)(nil),                         // 27: dieter.gateway.v1.DaemonCredential
-	(*RenameDaemonRequest)(nil),                      // 28: dieter.gateway.v1.RenameDaemonRequest
-	(*ExchangeDaemonTokenRequest)(nil),               // 29: dieter.gateway.v1.ExchangeDaemonTokenRequest
-	(*DaemonAccessToken)(nil),                        // 30: dieter.gateway.v1.DaemonAccessToken
-	(*DirectCandidate)(nil),                          // 31: dieter.gateway.v1.DirectCandidate
-	(*DaemonRoute)(nil),                              // 32: dieter.gateway.v1.DaemonRoute
-	(*RTCIceServer)(nil),                             // 33: dieter.gateway.v1.RTCIceServer
-	(*RTCConfiguration)(nil),                         // 34: dieter.gateway.v1.RTCConfiguration
-	(*ProviderQuotaWindow)(nil),                      // 35: dieter.gateway.v1.ProviderQuotaWindow
-	(*ProviderCreditBalance)(nil),                    // 36: dieter.gateway.v1.ProviderCreditBalance
-	(*ProviderSpendAllowance)(nil),                   // 37: dieter.gateway.v1.ProviderSpendAllowance
-	(*ProviderResetCredit)(nil),                      // 38: dieter.gateway.v1.ProviderResetCredit
-	(*ProviderResetCredits)(nil),                     // 39: dieter.gateway.v1.ProviderResetCredits
-	(*ProviderQuotaMachine)(nil),                     // 40: dieter.gateway.v1.ProviderQuotaMachine
-	(*ProviderQuotaSnapshot)(nil),                    // 41: dieter.gateway.v1.ProviderQuotaSnapshot
-	(*ProviderQuotaSummary)(nil),                     // 42: dieter.gateway.v1.ProviderQuotaSummary
-	(*ProviderQuotaGroup)(nil),                       // 43: dieter.gateway.v1.ProviderQuotaGroup
-	(*ListProviderQuotasRequest)(nil),                // 44: dieter.gateway.v1.ListProviderQuotasRequest
-	(*ListProviderQuotasResponse)(nil),               // 45: dieter.gateway.v1.ListProviderQuotasResponse
-	(*WatchProviderQuotasRequest)(nil),               // 46: dieter.gateway.v1.WatchProviderQuotasRequest
-	(*ProviderQuotaUpdate)(nil),                      // 47: dieter.gateway.v1.ProviderQuotaUpdate
-	(*RefreshProviderQuotasRequest)(nil),             // 48: dieter.gateway.v1.RefreshProviderQuotasRequest
-	(*RefreshProviderQuotasResponse)(nil),            // 49: dieter.gateway.v1.RefreshProviderQuotasResponse
-	(*SetProviderQuotaSummaryInclusionRequest)(nil),  // 50: dieter.gateway.v1.SetProviderQuotaSummaryInclusionRequest
-	(*SetProviderQuotaSummaryInclusionResponse)(nil), // 51: dieter.gateway.v1.SetProviderQuotaSummaryInclusionResponse
-	(*ConsumeProviderQuotaResetRequest)(nil),         // 52: dieter.gateway.v1.ConsumeProviderQuotaResetRequest
-	(*ConsumeProviderQuotaResetResponse)(nil),        // 53: dieter.gateway.v1.ConsumeProviderQuotaResetResponse
-	(*ProviderAccountPresence)(nil),                  // 54: dieter.gateway.v1.ProviderAccountPresence
-	(*ProviderAccountsPresence)(nil),                 // 55: dieter.gateway.v1.ProviderAccountsPresence
-	(*ProviderQuotaRefreshRequest)(nil),              // 56: dieter.gateway.v1.ProviderQuotaRefreshRequest
-	(*ProviderQuotaRefreshResult)(nil),               // 57: dieter.gateway.v1.ProviderQuotaRefreshResult
-	(*ProviderQuotaResetRequest)(nil),                // 58: dieter.gateway.v1.ProviderQuotaResetRequest
-	(*ProviderQuotaResetResult)(nil),                 // 59: dieter.gateway.v1.ProviderQuotaResetResult
-	(*DaemonLinkFrame)(nil),                          // 60: dieter.gateway.v1.DaemonLinkFrame
-	nil,                                              // 61: dieter.gateway.v1.DaemonLinkFrame.MetadataEntry
-	(*emptypb.Empty)(nil),                            // 62: google.protobuf.Empty
+	(RelayLane)(0),                                   // 9: dieter.gateway.v1.RelayLane
+	(*Account)(nil),                                  // 10: dieter.gateway.v1.Account
+	(*DaemonRef)(nil),                                // 11: dieter.gateway.v1.DaemonRef
+	(*Daemon)(nil),                                   // 12: dieter.gateway.v1.Daemon
+	(*RemoteDesktopPresence)(nil),                    // 13: dieter.gateway.v1.RemoteDesktopPresence
+	(*ListDaemonsResponse)(nil),                      // 14: dieter.gateway.v1.ListDaemonsResponse
+	(*GatewayInformation)(nil),                       // 15: dieter.gateway.v1.GatewayInformation
+	(*CompatibilityPolicy)(nil),                      // 16: dieter.gateway.v1.CompatibilityPolicy
+	(*CompatibilityRequest)(nil),                     // 17: dieter.gateway.v1.CompatibilityRequest
+	(*CompatibilityResponse)(nil),                    // 18: dieter.gateway.v1.CompatibilityResponse
+	(*WatchDaemonsRequest)(nil),                      // 19: dieter.gateway.v1.WatchDaemonsRequest
+	(*DaemonPresenceUpdate)(nil),                     // 20: dieter.gateway.v1.DaemonPresenceUpdate
+	(*BeginDaemonEnrollmentRequest)(nil),             // 21: dieter.gateway.v1.BeginDaemonEnrollmentRequest
+	(*DaemonEnrollment)(nil),                         // 22: dieter.gateway.v1.DaemonEnrollment
+	(*CompleteDaemonEnrollmentRequest)(nil),          // 23: dieter.gateway.v1.CompleteDaemonEnrollmentRequest
+	(*UnenrollDaemonRequest)(nil),                    // 24: dieter.gateway.v1.UnenrollDaemonRequest
+	(*DaemonRecoveryRef)(nil),                        // 25: dieter.gateway.v1.DaemonRecoveryRef
+	(*DaemonRecoveryState)(nil),                      // 26: dieter.gateway.v1.DaemonRecoveryState
+	(*RecoverDaemonRequest)(nil),                     // 27: dieter.gateway.v1.RecoverDaemonRequest
+	(*DaemonCredential)(nil),                         // 28: dieter.gateway.v1.DaemonCredential
+	(*RenameDaemonRequest)(nil),                      // 29: dieter.gateway.v1.RenameDaemonRequest
+	(*ExchangeDaemonTokenRequest)(nil),               // 30: dieter.gateway.v1.ExchangeDaemonTokenRequest
+	(*DaemonAccessToken)(nil),                        // 31: dieter.gateway.v1.DaemonAccessToken
+	(*DirectCandidate)(nil),                          // 32: dieter.gateway.v1.DirectCandidate
+	(*DaemonRoute)(nil),                              // 33: dieter.gateway.v1.DaemonRoute
+	(*RTCIceServer)(nil),                             // 34: dieter.gateway.v1.RTCIceServer
+	(*RTCConfiguration)(nil),                         // 35: dieter.gateway.v1.RTCConfiguration
+	(*ProviderQuotaWindow)(nil),                      // 36: dieter.gateway.v1.ProviderQuotaWindow
+	(*ProviderCreditBalance)(nil),                    // 37: dieter.gateway.v1.ProviderCreditBalance
+	(*ProviderSpendAllowance)(nil),                   // 38: dieter.gateway.v1.ProviderSpendAllowance
+	(*ProviderResetCredit)(nil),                      // 39: dieter.gateway.v1.ProviderResetCredit
+	(*ProviderResetCredits)(nil),                     // 40: dieter.gateway.v1.ProviderResetCredits
+	(*ProviderQuotaMachine)(nil),                     // 41: dieter.gateway.v1.ProviderQuotaMachine
+	(*ProviderQuotaSnapshot)(nil),                    // 42: dieter.gateway.v1.ProviderQuotaSnapshot
+	(*ProviderQuotaSummary)(nil),                     // 43: dieter.gateway.v1.ProviderQuotaSummary
+	(*ProviderQuotaGroup)(nil),                       // 44: dieter.gateway.v1.ProviderQuotaGroup
+	(*ListProviderQuotasRequest)(nil),                // 45: dieter.gateway.v1.ListProviderQuotasRequest
+	(*ListProviderQuotasResponse)(nil),               // 46: dieter.gateway.v1.ListProviderQuotasResponse
+	(*WatchProviderQuotasRequest)(nil),               // 47: dieter.gateway.v1.WatchProviderQuotasRequest
+	(*ProviderQuotaUpdate)(nil),                      // 48: dieter.gateway.v1.ProviderQuotaUpdate
+	(*RefreshProviderQuotasRequest)(nil),             // 49: dieter.gateway.v1.RefreshProviderQuotasRequest
+	(*RefreshProviderQuotasResponse)(nil),            // 50: dieter.gateway.v1.RefreshProviderQuotasResponse
+	(*SetProviderQuotaSummaryInclusionRequest)(nil),  // 51: dieter.gateway.v1.SetProviderQuotaSummaryInclusionRequest
+	(*SetProviderQuotaSummaryInclusionResponse)(nil), // 52: dieter.gateway.v1.SetProviderQuotaSummaryInclusionResponse
+	(*ConsumeProviderQuotaResetRequest)(nil),         // 53: dieter.gateway.v1.ConsumeProviderQuotaResetRequest
+	(*ConsumeProviderQuotaResetResponse)(nil),        // 54: dieter.gateway.v1.ConsumeProviderQuotaResetResponse
+	(*ProviderAccountPresence)(nil),                  // 55: dieter.gateway.v1.ProviderAccountPresence
+	(*ProviderAccountsPresence)(nil),                 // 56: dieter.gateway.v1.ProviderAccountsPresence
+	(*ProviderQuotaRefreshRequest)(nil),              // 57: dieter.gateway.v1.ProviderQuotaRefreshRequest
+	(*ProviderQuotaRefreshResult)(nil),               // 58: dieter.gateway.v1.ProviderQuotaRefreshResult
+	(*ProviderQuotaResetRequest)(nil),                // 59: dieter.gateway.v1.ProviderQuotaResetRequest
+	(*ProviderQuotaResetResult)(nil),                 // 60: dieter.gateway.v1.ProviderQuotaResetResult
+	(*RelayLaneStatus)(nil),                          // 61: dieter.gateway.v1.RelayLaneStatus
+	(*DaemonLinkFrame)(nil),                          // 62: dieter.gateway.v1.DaemonLinkFrame
+	nil,                                              // 63: dieter.gateway.v1.DaemonLinkFrame.MetadataEntry
+	(*emptypb.Empty)(nil),                            // 64: google.protobuf.Empty
 }
 var file_dieter_gateway_v1_gateway_proto_depIdxs = []int32{
-	31, // 0: dieter.gateway.v1.Daemon.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
-	12, // 1: dieter.gateway.v1.Daemon.remote_desktop:type_name -> dieter.gateway.v1.RemoteDesktopPresence
+	32, // 0: dieter.gateway.v1.Daemon.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
+	13, // 1: dieter.gateway.v1.Daemon.remote_desktop:type_name -> dieter.gateway.v1.RemoteDesktopPresence
 	1,  // 2: dieter.gateway.v1.Daemon.compatibility:type_name -> dieter.gateway.v1.CompatibilityStatus
-	11, // 3: dieter.gateway.v1.ListDaemonsResponse.daemons:type_name -> dieter.gateway.v1.Daemon
-	14, // 4: dieter.gateway.v1.ListDaemonsResponse.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
-	15, // 5: dieter.gateway.v1.GatewayInformation.compatibility_policy:type_name -> dieter.gateway.v1.CompatibilityPolicy
+	12, // 3: dieter.gateway.v1.ListDaemonsResponse.daemons:type_name -> dieter.gateway.v1.Daemon
+	15, // 4: dieter.gateway.v1.ListDaemonsResponse.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
+	16, // 5: dieter.gateway.v1.GatewayInformation.compatibility_policy:type_name -> dieter.gateway.v1.CompatibilityPolicy
 	0,  // 6: dieter.gateway.v1.CompatibilityRequest.component:type_name -> dieter.gateway.v1.CompatibilityComponent
-	15, // 7: dieter.gateway.v1.CompatibilityResponse.policy:type_name -> dieter.gateway.v1.CompatibilityPolicy
+	16, // 7: dieter.gateway.v1.CompatibilityResponse.policy:type_name -> dieter.gateway.v1.CompatibilityPolicy
 	1,  // 8: dieter.gateway.v1.CompatibilityResponse.status:type_name -> dieter.gateway.v1.CompatibilityStatus
-	11, // 9: dieter.gateway.v1.DaemonPresenceUpdate.daemons:type_name -> dieter.gateway.v1.Daemon
-	14, // 10: dieter.gateway.v1.DaemonPresenceUpdate.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
-	31, // 11: dieter.gateway.v1.DaemonRoute.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
-	33, // 12: dieter.gateway.v1.RTCConfiguration.ice_servers:type_name -> dieter.gateway.v1.RTCIceServer
-	5,  // 13: dieter.gateway.v1.ProviderQuotaWindow.kind:type_name -> dieter.gateway.v1.ProviderQuotaWindowKind
-	38, // 14: dieter.gateway.v1.ProviderResetCredits.details:type_name -> dieter.gateway.v1.ProviderResetCredit
-	4,  // 15: dieter.gateway.v1.ProviderQuotaMachine.availability:type_name -> dieter.gateway.v1.ProviderQuotaAvailability
-	2,  // 16: dieter.gateway.v1.ProviderQuotaSnapshot.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	3,  // 17: dieter.gateway.v1.ProviderQuotaSnapshot.account_kind:type_name -> dieter.gateway.v1.ProviderAccountKind
-	4,  // 18: dieter.gateway.v1.ProviderQuotaSnapshot.availability:type_name -> dieter.gateway.v1.ProviderQuotaAvailability
-	35, // 19: dieter.gateway.v1.ProviderQuotaSnapshot.windows:type_name -> dieter.gateway.v1.ProviderQuotaWindow
-	36, // 20: dieter.gateway.v1.ProviderQuotaSnapshot.credits:type_name -> dieter.gateway.v1.ProviderCreditBalance
-	37, // 21: dieter.gateway.v1.ProviderQuotaSnapshot.spend_allowance:type_name -> dieter.gateway.v1.ProviderSpendAllowance
-	39, // 22: dieter.gateway.v1.ProviderQuotaSnapshot.reset_credits:type_name -> dieter.gateway.v1.ProviderResetCredits
-	6,  // 23: dieter.gateway.v1.ProviderQuotaSnapshot.refresh_state:type_name -> dieter.gateway.v1.ProviderQuotaRefreshState
-	40, // 24: dieter.gateway.v1.ProviderQuotaSnapshot.machines:type_name -> dieter.gateway.v1.ProviderQuotaMachine
-	5,  // 25: dieter.gateway.v1.ProviderQuotaSummary.summary_window_kind:type_name -> dieter.gateway.v1.ProviderQuotaWindowKind
-	7,  // 26: dieter.gateway.v1.ProviderQuotaSummary.freshness:type_name -> dieter.gateway.v1.ProviderQuotaFreshness
-	2,  // 27: dieter.gateway.v1.ProviderQuotaGroup.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	41, // 28: dieter.gateway.v1.ProviderQuotaGroup.accounts:type_name -> dieter.gateway.v1.ProviderQuotaSnapshot
-	42, // 29: dieter.gateway.v1.ProviderQuotaGroup.summary:type_name -> dieter.gateway.v1.ProviderQuotaSummary
-	2,  // 30: dieter.gateway.v1.ListProviderQuotasRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	43, // 31: dieter.gateway.v1.ListProviderQuotasResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
-	14, // 32: dieter.gateway.v1.ListProviderQuotasResponse.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
-	2,  // 33: dieter.gateway.v1.WatchProviderQuotasRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	43, // 34: dieter.gateway.v1.ProviderQuotaUpdate.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
-	2,  // 35: dieter.gateway.v1.RefreshProviderQuotasRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	43, // 36: dieter.gateway.v1.RefreshProviderQuotasResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
-	2,  // 37: dieter.gateway.v1.SetProviderQuotaSummaryInclusionRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	43, // 38: dieter.gateway.v1.SetProviderQuotaSummaryInclusionResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
-	2,  // 39: dieter.gateway.v1.ConsumeProviderQuotaResetRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	43, // 40: dieter.gateway.v1.ConsumeProviderQuotaResetResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
-	2,  // 41: dieter.gateway.v1.ProviderAccountPresence.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	3,  // 42: dieter.gateway.v1.ProviderAccountPresence.account_kind:type_name -> dieter.gateway.v1.ProviderAccountKind
-	4,  // 43: dieter.gateway.v1.ProviderAccountPresence.availability:type_name -> dieter.gateway.v1.ProviderQuotaAvailability
-	54, // 44: dieter.gateway.v1.ProviderAccountsPresence.accounts:type_name -> dieter.gateway.v1.ProviderAccountPresence
-	2,  // 45: dieter.gateway.v1.ProviderQuotaRefreshRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	41, // 46: dieter.gateway.v1.ProviderQuotaRefreshResult.snapshot:type_name -> dieter.gateway.v1.ProviderQuotaSnapshot
-	2,  // 47: dieter.gateway.v1.ProviderQuotaResetRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
-	41, // 48: dieter.gateway.v1.ProviderQuotaResetResult.snapshot:type_name -> dieter.gateway.v1.ProviderQuotaSnapshot
-	8,  // 49: dieter.gateway.v1.DaemonLinkFrame.kind:type_name -> dieter.gateway.v1.DaemonLinkFrameKind
-	61, // 50: dieter.gateway.v1.DaemonLinkFrame.metadata:type_name -> dieter.gateway.v1.DaemonLinkFrame.MetadataEntry
-	31, // 51: dieter.gateway.v1.DaemonLinkFrame.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
-	12, // 52: dieter.gateway.v1.DaemonLinkFrame.remote_desktop:type_name -> dieter.gateway.v1.RemoteDesktopPresence
-	55, // 53: dieter.gateway.v1.DaemonLinkFrame.provider_accounts:type_name -> dieter.gateway.v1.ProviderAccountsPresence
-	56, // 54: dieter.gateway.v1.DaemonLinkFrame.provider_quota_refresh_request:type_name -> dieter.gateway.v1.ProviderQuotaRefreshRequest
-	57, // 55: dieter.gateway.v1.DaemonLinkFrame.provider_quota_refresh_result:type_name -> dieter.gateway.v1.ProviderQuotaRefreshResult
-	58, // 56: dieter.gateway.v1.DaemonLinkFrame.provider_quota_reset_request:type_name -> dieter.gateway.v1.ProviderQuotaResetRequest
-	59, // 57: dieter.gateway.v1.DaemonLinkFrame.provider_quota_reset_result:type_name -> dieter.gateway.v1.ProviderQuotaResetResult
-	15, // 58: dieter.gateway.v1.DaemonLinkFrame.compatibility_policy:type_name -> dieter.gateway.v1.CompatibilityPolicy
-	1,  // 59: dieter.gateway.v1.DaemonLinkFrame.compatibility:type_name -> dieter.gateway.v1.CompatibilityStatus
-	16, // 60: dieter.gateway.v1.GatewayService.GetCompatibility:input_type -> dieter.gateway.v1.CompatibilityRequest
-	62, // 61: dieter.gateway.v1.GatewayService.GetAccount:input_type -> google.protobuf.Empty
-	62, // 62: dieter.gateway.v1.GatewayService.ListDaemons:input_type -> google.protobuf.Empty
-	18, // 63: dieter.gateway.v1.GatewayService.WatchDaemons:input_type -> dieter.gateway.v1.WatchDaemonsRequest
-	20, // 64: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:input_type -> dieter.gateway.v1.BeginDaemonEnrollmentRequest
-	22, // 65: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:input_type -> dieter.gateway.v1.CompleteDaemonEnrollmentRequest
-	23, // 66: dieter.gateway.v1.GatewayService.UnenrollDaemon:input_type -> dieter.gateway.v1.UnenrollDaemonRequest
-	28, // 67: dieter.gateway.v1.GatewayService.RenameDaemon:input_type -> dieter.gateway.v1.RenameDaemonRequest
-	10, // 68: dieter.gateway.v1.GatewayService.RevokeDaemon:input_type -> dieter.gateway.v1.DaemonRef
-	24, // 69: dieter.gateway.v1.GatewayService.InspectDaemonRecovery:input_type -> dieter.gateway.v1.DaemonRecoveryRef
-	26, // 70: dieter.gateway.v1.GatewayService.RecoverDaemon:input_type -> dieter.gateway.v1.RecoverDaemonRequest
-	29, // 71: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:input_type -> dieter.gateway.v1.ExchangeDaemonTokenRequest
-	10, // 72: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:input_type -> dieter.gateway.v1.DaemonRef
-	10, // 73: dieter.gateway.v1.GatewayService.GetRTCConfiguration:input_type -> dieter.gateway.v1.DaemonRef
-	44, // 74: dieter.gateway.v1.GatewayService.ListProviderQuotas:input_type -> dieter.gateway.v1.ListProviderQuotasRequest
-	46, // 75: dieter.gateway.v1.GatewayService.WatchProviderQuotas:input_type -> dieter.gateway.v1.WatchProviderQuotasRequest
-	48, // 76: dieter.gateway.v1.GatewayService.RefreshProviderQuotas:input_type -> dieter.gateway.v1.RefreshProviderQuotasRequest
-	50, // 77: dieter.gateway.v1.GatewayService.SetProviderQuotaSummaryInclusion:input_type -> dieter.gateway.v1.SetProviderQuotaSummaryInclusionRequest
-	52, // 78: dieter.gateway.v1.GatewayService.ConsumeProviderQuotaReset:input_type -> dieter.gateway.v1.ConsumeProviderQuotaResetRequest
-	60, // 79: dieter.gateway.v1.DaemonLinkService.Connect:input_type -> dieter.gateway.v1.DaemonLinkFrame
-	17, // 80: dieter.gateway.v1.GatewayService.GetCompatibility:output_type -> dieter.gateway.v1.CompatibilityResponse
-	9,  // 81: dieter.gateway.v1.GatewayService.GetAccount:output_type -> dieter.gateway.v1.Account
-	13, // 82: dieter.gateway.v1.GatewayService.ListDaemons:output_type -> dieter.gateway.v1.ListDaemonsResponse
-	19, // 83: dieter.gateway.v1.GatewayService.WatchDaemons:output_type -> dieter.gateway.v1.DaemonPresenceUpdate
-	21, // 84: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonEnrollment
-	27, // 85: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonCredential
-	62, // 86: dieter.gateway.v1.GatewayService.UnenrollDaemon:output_type -> google.protobuf.Empty
-	11, // 87: dieter.gateway.v1.GatewayService.RenameDaemon:output_type -> dieter.gateway.v1.Daemon
-	62, // 88: dieter.gateway.v1.GatewayService.RevokeDaemon:output_type -> google.protobuf.Empty
-	25, // 89: dieter.gateway.v1.GatewayService.InspectDaemonRecovery:output_type -> dieter.gateway.v1.DaemonRecoveryState
-	27, // 90: dieter.gateway.v1.GatewayService.RecoverDaemon:output_type -> dieter.gateway.v1.DaemonCredential
-	30, // 91: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:output_type -> dieter.gateway.v1.DaemonAccessToken
-	32, // 92: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:output_type -> dieter.gateway.v1.DaemonRoute
-	34, // 93: dieter.gateway.v1.GatewayService.GetRTCConfiguration:output_type -> dieter.gateway.v1.RTCConfiguration
-	45, // 94: dieter.gateway.v1.GatewayService.ListProviderQuotas:output_type -> dieter.gateway.v1.ListProviderQuotasResponse
-	47, // 95: dieter.gateway.v1.GatewayService.WatchProviderQuotas:output_type -> dieter.gateway.v1.ProviderQuotaUpdate
-	49, // 96: dieter.gateway.v1.GatewayService.RefreshProviderQuotas:output_type -> dieter.gateway.v1.RefreshProviderQuotasResponse
-	51, // 97: dieter.gateway.v1.GatewayService.SetProviderQuotaSummaryInclusion:output_type -> dieter.gateway.v1.SetProviderQuotaSummaryInclusionResponse
-	53, // 98: dieter.gateway.v1.GatewayService.ConsumeProviderQuotaReset:output_type -> dieter.gateway.v1.ConsumeProviderQuotaResetResponse
-	60, // 99: dieter.gateway.v1.DaemonLinkService.Connect:output_type -> dieter.gateway.v1.DaemonLinkFrame
-	80, // [80:100] is the sub-list for method output_type
-	60, // [60:80] is the sub-list for method input_type
-	60, // [60:60] is the sub-list for extension type_name
-	60, // [60:60] is the sub-list for extension extendee
-	0,  // [0:60] is the sub-list for field type_name
+	12, // 9: dieter.gateway.v1.DaemonPresenceUpdate.daemons:type_name -> dieter.gateway.v1.Daemon
+	15, // 10: dieter.gateway.v1.DaemonPresenceUpdate.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
+	32, // 11: dieter.gateway.v1.DaemonRoute.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
+	61, // 12: dieter.gateway.v1.DaemonRoute.relay_lanes:type_name -> dieter.gateway.v1.RelayLaneStatus
+	34, // 13: dieter.gateway.v1.RTCConfiguration.ice_servers:type_name -> dieter.gateway.v1.RTCIceServer
+	5,  // 14: dieter.gateway.v1.ProviderQuotaWindow.kind:type_name -> dieter.gateway.v1.ProviderQuotaWindowKind
+	39, // 15: dieter.gateway.v1.ProviderResetCredits.details:type_name -> dieter.gateway.v1.ProviderResetCredit
+	4,  // 16: dieter.gateway.v1.ProviderQuotaMachine.availability:type_name -> dieter.gateway.v1.ProviderQuotaAvailability
+	2,  // 17: dieter.gateway.v1.ProviderQuotaSnapshot.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	3,  // 18: dieter.gateway.v1.ProviderQuotaSnapshot.account_kind:type_name -> dieter.gateway.v1.ProviderAccountKind
+	4,  // 19: dieter.gateway.v1.ProviderQuotaSnapshot.availability:type_name -> dieter.gateway.v1.ProviderQuotaAvailability
+	36, // 20: dieter.gateway.v1.ProviderQuotaSnapshot.windows:type_name -> dieter.gateway.v1.ProviderQuotaWindow
+	37, // 21: dieter.gateway.v1.ProviderQuotaSnapshot.credits:type_name -> dieter.gateway.v1.ProviderCreditBalance
+	38, // 22: dieter.gateway.v1.ProviderQuotaSnapshot.spend_allowance:type_name -> dieter.gateway.v1.ProviderSpendAllowance
+	40, // 23: dieter.gateway.v1.ProviderQuotaSnapshot.reset_credits:type_name -> dieter.gateway.v1.ProviderResetCredits
+	6,  // 24: dieter.gateway.v1.ProviderQuotaSnapshot.refresh_state:type_name -> dieter.gateway.v1.ProviderQuotaRefreshState
+	41, // 25: dieter.gateway.v1.ProviderQuotaSnapshot.machines:type_name -> dieter.gateway.v1.ProviderQuotaMachine
+	5,  // 26: dieter.gateway.v1.ProviderQuotaSummary.summary_window_kind:type_name -> dieter.gateway.v1.ProviderQuotaWindowKind
+	7,  // 27: dieter.gateway.v1.ProviderQuotaSummary.freshness:type_name -> dieter.gateway.v1.ProviderQuotaFreshness
+	2,  // 28: dieter.gateway.v1.ProviderQuotaGroup.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	42, // 29: dieter.gateway.v1.ProviderQuotaGroup.accounts:type_name -> dieter.gateway.v1.ProviderQuotaSnapshot
+	43, // 30: dieter.gateway.v1.ProviderQuotaGroup.summary:type_name -> dieter.gateway.v1.ProviderQuotaSummary
+	2,  // 31: dieter.gateway.v1.ListProviderQuotasRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	44, // 32: dieter.gateway.v1.ListProviderQuotasResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
+	15, // 33: dieter.gateway.v1.ListProviderQuotasResponse.gateway_information:type_name -> dieter.gateway.v1.GatewayInformation
+	2,  // 34: dieter.gateway.v1.WatchProviderQuotasRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	44, // 35: dieter.gateway.v1.ProviderQuotaUpdate.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
+	2,  // 36: dieter.gateway.v1.RefreshProviderQuotasRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	44, // 37: dieter.gateway.v1.RefreshProviderQuotasResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
+	2,  // 38: dieter.gateway.v1.SetProviderQuotaSummaryInclusionRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	44, // 39: dieter.gateway.v1.SetProviderQuotaSummaryInclusionResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
+	2,  // 40: dieter.gateway.v1.ConsumeProviderQuotaResetRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	44, // 41: dieter.gateway.v1.ConsumeProviderQuotaResetResponse.groups:type_name -> dieter.gateway.v1.ProviderQuotaGroup
+	2,  // 42: dieter.gateway.v1.ProviderAccountPresence.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	3,  // 43: dieter.gateway.v1.ProviderAccountPresence.account_kind:type_name -> dieter.gateway.v1.ProviderAccountKind
+	4,  // 44: dieter.gateway.v1.ProviderAccountPresence.availability:type_name -> dieter.gateway.v1.ProviderQuotaAvailability
+	55, // 45: dieter.gateway.v1.ProviderAccountsPresence.accounts:type_name -> dieter.gateway.v1.ProviderAccountPresence
+	2,  // 46: dieter.gateway.v1.ProviderQuotaRefreshRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	42, // 47: dieter.gateway.v1.ProviderQuotaRefreshResult.snapshot:type_name -> dieter.gateway.v1.ProviderQuotaSnapshot
+	2,  // 48: dieter.gateway.v1.ProviderQuotaResetRequest.provider:type_name -> dieter.gateway.v1.ProviderQuotaProvider
+	42, // 49: dieter.gateway.v1.ProviderQuotaResetResult.snapshot:type_name -> dieter.gateway.v1.ProviderQuotaSnapshot
+	9,  // 50: dieter.gateway.v1.RelayLaneStatus.lane:type_name -> dieter.gateway.v1.RelayLane
+	8,  // 51: dieter.gateway.v1.DaemonLinkFrame.kind:type_name -> dieter.gateway.v1.DaemonLinkFrameKind
+	63, // 52: dieter.gateway.v1.DaemonLinkFrame.metadata:type_name -> dieter.gateway.v1.DaemonLinkFrame.MetadataEntry
+	32, // 53: dieter.gateway.v1.DaemonLinkFrame.direct_candidates:type_name -> dieter.gateway.v1.DirectCandidate
+	13, // 54: dieter.gateway.v1.DaemonLinkFrame.remote_desktop:type_name -> dieter.gateway.v1.RemoteDesktopPresence
+	56, // 55: dieter.gateway.v1.DaemonLinkFrame.provider_accounts:type_name -> dieter.gateway.v1.ProviderAccountsPresence
+	57, // 56: dieter.gateway.v1.DaemonLinkFrame.provider_quota_refresh_request:type_name -> dieter.gateway.v1.ProviderQuotaRefreshRequest
+	58, // 57: dieter.gateway.v1.DaemonLinkFrame.provider_quota_refresh_result:type_name -> dieter.gateway.v1.ProviderQuotaRefreshResult
+	59, // 58: dieter.gateway.v1.DaemonLinkFrame.provider_quota_reset_request:type_name -> dieter.gateway.v1.ProviderQuotaResetRequest
+	60, // 59: dieter.gateway.v1.DaemonLinkFrame.provider_quota_reset_result:type_name -> dieter.gateway.v1.ProviderQuotaResetResult
+	16, // 60: dieter.gateway.v1.DaemonLinkFrame.compatibility_policy:type_name -> dieter.gateway.v1.CompatibilityPolicy
+	1,  // 61: dieter.gateway.v1.DaemonLinkFrame.compatibility:type_name -> dieter.gateway.v1.CompatibilityStatus
+	9,  // 62: dieter.gateway.v1.DaemonLinkFrame.lane:type_name -> dieter.gateway.v1.RelayLane
+	17, // 63: dieter.gateway.v1.GatewayService.GetCompatibility:input_type -> dieter.gateway.v1.CompatibilityRequest
+	64, // 64: dieter.gateway.v1.GatewayService.GetAccount:input_type -> google.protobuf.Empty
+	64, // 65: dieter.gateway.v1.GatewayService.ListDaemons:input_type -> google.protobuf.Empty
+	19, // 66: dieter.gateway.v1.GatewayService.WatchDaemons:input_type -> dieter.gateway.v1.WatchDaemonsRequest
+	21, // 67: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:input_type -> dieter.gateway.v1.BeginDaemonEnrollmentRequest
+	23, // 68: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:input_type -> dieter.gateway.v1.CompleteDaemonEnrollmentRequest
+	24, // 69: dieter.gateway.v1.GatewayService.UnenrollDaemon:input_type -> dieter.gateway.v1.UnenrollDaemonRequest
+	29, // 70: dieter.gateway.v1.GatewayService.RenameDaemon:input_type -> dieter.gateway.v1.RenameDaemonRequest
+	11, // 71: dieter.gateway.v1.GatewayService.RevokeDaemon:input_type -> dieter.gateway.v1.DaemonRef
+	25, // 72: dieter.gateway.v1.GatewayService.InspectDaemonRecovery:input_type -> dieter.gateway.v1.DaemonRecoveryRef
+	27, // 73: dieter.gateway.v1.GatewayService.RecoverDaemon:input_type -> dieter.gateway.v1.RecoverDaemonRequest
+	30, // 74: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:input_type -> dieter.gateway.v1.ExchangeDaemonTokenRequest
+	11, // 75: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:input_type -> dieter.gateway.v1.DaemonRef
+	11, // 76: dieter.gateway.v1.GatewayService.GetRTCConfiguration:input_type -> dieter.gateway.v1.DaemonRef
+	45, // 77: dieter.gateway.v1.GatewayService.ListProviderQuotas:input_type -> dieter.gateway.v1.ListProviderQuotasRequest
+	47, // 78: dieter.gateway.v1.GatewayService.WatchProviderQuotas:input_type -> dieter.gateway.v1.WatchProviderQuotasRequest
+	49, // 79: dieter.gateway.v1.GatewayService.RefreshProviderQuotas:input_type -> dieter.gateway.v1.RefreshProviderQuotasRequest
+	51, // 80: dieter.gateway.v1.GatewayService.SetProviderQuotaSummaryInclusion:input_type -> dieter.gateway.v1.SetProviderQuotaSummaryInclusionRequest
+	53, // 81: dieter.gateway.v1.GatewayService.ConsumeProviderQuotaReset:input_type -> dieter.gateway.v1.ConsumeProviderQuotaResetRequest
+	62, // 82: dieter.gateway.v1.DaemonLinkService.Connect:input_type -> dieter.gateway.v1.DaemonLinkFrame
+	18, // 83: dieter.gateway.v1.GatewayService.GetCompatibility:output_type -> dieter.gateway.v1.CompatibilityResponse
+	10, // 84: dieter.gateway.v1.GatewayService.GetAccount:output_type -> dieter.gateway.v1.Account
+	14, // 85: dieter.gateway.v1.GatewayService.ListDaemons:output_type -> dieter.gateway.v1.ListDaemonsResponse
+	20, // 86: dieter.gateway.v1.GatewayService.WatchDaemons:output_type -> dieter.gateway.v1.DaemonPresenceUpdate
+	22, // 87: dieter.gateway.v1.GatewayService.BeginDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonEnrollment
+	28, // 88: dieter.gateway.v1.GatewayService.CompleteDaemonEnrollment:output_type -> dieter.gateway.v1.DaemonCredential
+	64, // 89: dieter.gateway.v1.GatewayService.UnenrollDaemon:output_type -> google.protobuf.Empty
+	12, // 90: dieter.gateway.v1.GatewayService.RenameDaemon:output_type -> dieter.gateway.v1.Daemon
+	64, // 91: dieter.gateway.v1.GatewayService.RevokeDaemon:output_type -> google.protobuf.Empty
+	26, // 92: dieter.gateway.v1.GatewayService.InspectDaemonRecovery:output_type -> dieter.gateway.v1.DaemonRecoveryState
+	28, // 93: dieter.gateway.v1.GatewayService.RecoverDaemon:output_type -> dieter.gateway.v1.DaemonCredential
+	31, // 94: dieter.gateway.v1.GatewayService.ExchangeDaemonToken:output_type -> dieter.gateway.v1.DaemonAccessToken
+	33, // 95: dieter.gateway.v1.GatewayService.ResolveDaemonRoute:output_type -> dieter.gateway.v1.DaemonRoute
+	35, // 96: dieter.gateway.v1.GatewayService.GetRTCConfiguration:output_type -> dieter.gateway.v1.RTCConfiguration
+	46, // 97: dieter.gateway.v1.GatewayService.ListProviderQuotas:output_type -> dieter.gateway.v1.ListProviderQuotasResponse
+	48, // 98: dieter.gateway.v1.GatewayService.WatchProviderQuotas:output_type -> dieter.gateway.v1.ProviderQuotaUpdate
+	50, // 99: dieter.gateway.v1.GatewayService.RefreshProviderQuotas:output_type -> dieter.gateway.v1.RefreshProviderQuotasResponse
+	52, // 100: dieter.gateway.v1.GatewayService.SetProviderQuotaSummaryInclusion:output_type -> dieter.gateway.v1.SetProviderQuotaSummaryInclusionResponse
+	54, // 101: dieter.gateway.v1.GatewayService.ConsumeProviderQuotaReset:output_type -> dieter.gateway.v1.ConsumeProviderQuotaResetResponse
+	62, // 102: dieter.gateway.v1.DaemonLinkService.Connect:output_type -> dieter.gateway.v1.DaemonLinkFrame
+	83, // [83:103] is the sub-list for method output_type
+	63, // [63:83] is the sub-list for method input_type
+	63, // [63:63] is the sub-list for extension type_name
+	63, // [63:63] is the sub-list for extension extendee
+	0,  // [0:63] is the sub-list for field type_name
 }
 
 func init() { file_dieter_gateway_v1_gateway_proto_init() }
@@ -4956,8 +5180,8 @@ func file_dieter_gateway_v1_gateway_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_dieter_gateway_v1_gateway_proto_rawDesc), len(file_dieter_gateway_v1_gateway_proto_rawDesc)),
-			NumEnums:      9,
-			NumMessages:   53,
+			NumEnums:      10,
+			NumMessages:   54,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

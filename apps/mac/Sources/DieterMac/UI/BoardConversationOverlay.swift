@@ -13,7 +13,8 @@ extension EnvironmentValues {
 }
 
 enum BoardConversationSizing {
-    static let minimumWidth: CGFloat = 320
+    /// A 320-point conversation inside its floating panel.
+    static let minimumWidth: CGFloat = 320 + DieterMetrics.panelHorizontalInset
     static let maximumWidth: CGFloat = 1_320
     static let defaultWidth: CGFloat = 460
     static let minimumBoardWidth: CGFloat = 220
@@ -238,6 +239,16 @@ final class BoardConversationSplitController: NSSplitViewController {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
+    override func splitView(
+        _ splitView: NSSplitView, effectiveRect proposedEffectiveRect: NSRect, forDrawnRect drawnRect: NSRect,
+        ofDividerAt dividerIndex: Int
+    ) -> NSRect {
+        DieterSplitView.effectiveRect(
+            super.splitView(
+                splitView, effectiveRect: proposedEffectiveRect, forDrawnRect: drawnRect, ofDividerAt: dividerIndex),
+            in: splitView)
+    }
+
     override func viewDidLayout() {
         super.viewDidLayout()
         let width = splitView.bounds.width
@@ -408,7 +419,7 @@ final class BoardConversationSplitController: NSSplitViewController {
 
 /// Divider tracking stays native. Completed gestures only persist the bounded
 /// regular width; they never change presentation mode or hide the board.
-final class BoardConversationSplitView: NSSplitView {
+final class BoardConversationSplitView: DieterSplitView {
     var onDividerDragBegan: (() -> Void)?
     var onDividerDragEnded: (() -> Void)?
     var boardCollapsed = false
@@ -425,7 +436,7 @@ final class BoardConversationSplitView: NSSplitView {
 
     override func mouseDown(with event: NSEvent) {
         let beganOnDivider =
-            dividerTrackingRect.insetBy(dx: -3, dy: 0).contains(
+            dividerTrackingRect.insetBy(dx: -DieterSplitView.dragMargin, dy: 0).contains(
                 convert(event.locationInWindow, from: nil)) && !boardCollapsed
         if beganOnDivider { onDividerDragBegan?() }
         super.mouseDown(with: event)

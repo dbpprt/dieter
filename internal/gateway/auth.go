@@ -24,6 +24,7 @@ import (
 	"github.com/dbpprt/dieter/internal/buildinfo"
 	"github.com/dbpprt/dieter/internal/compatibility"
 	"github.com/dbpprt/dieter/internal/linkauth"
+	"github.com/dbpprt/dieter/internal/relaypolicy"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -66,32 +67,55 @@ const (
 )
 
 type streamBudget struct {
-	mu       sync.Mutex
-	total    int
-	accounts map[int64]int
+	mu           sync.Mutex
+	total        int
+	accounts     map[int64]int
+	laneTotals   [4]int
+	laneAccounts [4]map[int64]int
 }
 
 func (b *streamBudget) acquire(account int64) bool {
+	return b.acquireLane(account, relaypolicy.Command)
+}
+func (b *streamBudget) release(account int64) { b.releaseLane(account, relaypolicy.Command) }
+func (b *streamBudget) acquireLane(account int64, lane relaypolicy.Lane) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.total >= maxGatewayStreams || b.accounts[account] >= maxAccountStreams {
+	accountLimit, globalLimit := maxAccountStreams, maxGatewayStreams
+	if lane == relaypolicy.Control || lane == relaypolicy.Replication {
+		accountLimit, globalLimit = 64, 512
+	}
+	if b.laneTotals[lane] >= globalLimit || b.laneAccounts[lane][account] >= accountLimit {
 		return false
 	}
-	if b.accounts == nil {
-		b.accounts = map[int64]int{}
+	if b.laneAccounts[lane] == nil {
+		b.laneAccounts[lane] = map[int64]int{}
 	}
-	b.total++
-	b.accounts[account]++
+	b.laneTotals[lane]++
+	b.laneAccounts[lane][account]++
+	if lane == relaypolicy.Command {
+		b.total++
+		if b.accounts == nil {
+			b.accounts = map[int64]int{}
+		}
+		b.accounts[account]++
+	}
 	return true
 }
-
-func (b *streamBudget) release(account int64) {
+func (b *streamBudget) releaseLane(account int64, lane relaypolicy.Lane) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.total--
-	b.accounts[account]--
-	if b.accounts[account] == 0 {
-		delete(b.accounts, account)
+	b.laneTotals[lane]--
+	b.laneAccounts[lane][account]--
+	if b.laneAccounts[lane][account] == 0 {
+		delete(b.laneAccounts[lane], account)
+	}
+	if lane == relaypolicy.Command {
+		b.total--
+		b.accounts[account]--
+		if b.accounts[account] == 0 {
+			delete(b.accounts, account)
+		}
 	}
 }
 
@@ -140,7 +164,7 @@ func (a *Auth) StreamInterceptor(service any, stream grpc.ServerStream, info *gr
 	if len(headers.Get("authorization")) != 1 {
 		return status.Error(codes.Unauthenticated, "authentication required")
 	}
-	ctx, cancel, err := a.AuthenticateSession(stream.Context(), headers.Get("authorization")[0])
+	ctx, cancel, err := a.authenticateLane(stream.Context(), headers.Get("authorization")[0], relaypolicy.Subscription)
 	if err != nil {
 		return err
 	}
@@ -200,6 +224,9 @@ func consistentMetadataValue(values []string) string {
 // AuthenticateSession ties a streaming transport to its current session. Polling
 // also closes idle transports after sign-out; canceling it never stops an agent.
 func (a *Auth) AuthenticateSession(ctx context.Context, authorization string) (context.Context, context.CancelFunc, error) {
+	return a.authenticateLane(ctx, authorization, relaypolicy.Command)
+}
+func (a *Auth) authenticateLane(ctx context.Context, authorization string, lane relaypolicy.Lane) (context.Context, context.CancelFunc, error) {
 	principal, ok := a.AuthenticateBearer(authorization)
 	if !ok {
 		return nil, nil, status.Error(codes.Unauthenticated, "authentication required")
@@ -220,12 +247,12 @@ func (a *Auth) AuthenticateSession(ctx context.Context, authorization string) (c
 		}
 		stillAuthorized = func() bool { return a.daemonEnrollmentCurrent(claims) }
 	}
-	if !a.streams.acquire(principal.GitHubID) {
+	if !a.streams.acquireLane(principal.GitHubID, lane) {
 		return nil, nil, status.Error(codes.ResourceExhausted, "too many authenticated streams")
 	}
 	ctx, cancel := context.WithCancelCause(context.WithValue(ctx, principalKey{}, principal))
 	go func() {
-		defer a.streams.release(principal.GitHubID)
+		defer a.streams.releaseLane(principal.GitHubID, lane)
 		ticker := time.NewTicker(sessionCheckInterval)
 		defer ticker.Stop()
 		for {

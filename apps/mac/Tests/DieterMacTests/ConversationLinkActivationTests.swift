@@ -74,7 +74,7 @@ import Testing
     host.frame = NSRect(x: 0, y: 0, width: 500, height: 100)
     host.layoutSubtreeIfNeeded()
     func textView(in view: NSView) -> MessageTextView? {
-        (view as? MessageTextView) ?? view.subviews.lazy.compactMap { textView(in: $0) }.first
+        (view as? MessageTextView) ?? view.firstSubviewResult { textView(in: $0) }
     }
     let native = try #require(textView(in: host))
     #expect(native.linkDelegate.activate("docs/plan.md"))
@@ -96,7 +96,7 @@ import Testing
     fullSource.frame = NSRect(x: 0, y: 0, width: 500, height: 300)
     fullSource.layoutSubtreeIfNeeded()
     func textView(in view: NSView) -> NSTextView? {
-        (view as? NSTextView) ?? view.subviews.lazy.compactMap { textView(in: $0) }.first
+        (view as? NSTextView) ?? view.firstSubviewResult { textView(in: $0) }
     }
     let native = try #require(textView(in: fullSource))
     #expect(native.string == source && native.isSelectable && !native.isEditable)

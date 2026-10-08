@@ -44,7 +44,7 @@ struct NewProjectSheet: View {
                 } label: {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .bold))
                 }
-                .buttonStyle(DieterIconButtonStyle()).help("Close").disabled(submitting)
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Close").disabled(submitting)
             }
             .padding(.horizontal, 24).padding(.top, 22).padding(.bottom, 15)
 
@@ -119,7 +119,7 @@ struct NewProjectSheet: View {
                         } label: {
                             Label("Browse…", systemImage: "folder")
                         }
-                        .buttonStyle(DieterSecondaryButtonStyle())
+                        .buttonStyle(DieterBarButtonStyle(size: 30))
                         .accessibilityIdentifier("new-project.browse")
                         .smokeTarget("new-project.browse")
                         .disabled(submitting || machineID.isEmpty || !selectedMachineAvailable)
@@ -242,7 +242,7 @@ struct NewProjectSheet: View {
             HStack(spacing: 10) {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(DieterSecondaryButtonStyle())
+                    .buttonStyle(DieterBarButtonStyle(size: 30))
                     .disabled(submitting)
                 Button {
                     submit()
@@ -259,7 +259,7 @@ struct NewProjectSheet: View {
                             existingProjectID.isEmpty ? draft.mode.submitTitle : "Attach checkout", systemImage: "plus")
                     }
                 }
-                .buttonStyle(DieterPrimaryButtonStyle())
+                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
                 .disabled(submitting || !canSubmit || !selectedMachineAvailable)
                 .accessibilityIdentifier("new-project.submit")
             }

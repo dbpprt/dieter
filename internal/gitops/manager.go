@@ -430,6 +430,8 @@ func (m *Manager) unstage(ctx context.Context, operation *model.GitOperation, va
 	return nil
 }
 
+// discardChanges restores one file, or every file under one folder, to HEAD.
+// Paths absent from HEAD are untracked there and removed; ignored files stay.
 func (m *Manager) discardChanges(ctx context.Context, operation *model.GitOperation, value model.Workspace) error {
 	filePath, err := operationPath(operation.Parameters, true)
 	if err != nil {
@@ -438,54 +440,64 @@ func (m *Manager) discardChanges(ctx context.Context, operation *model.GitOperat
 	if err := m.createRecovery(ctx, operation, value); err != nil {
 		return err
 	}
-	inHead := false
+	var headFiles []string
 	if value.HeadSHA != "" {
-		headFiles, headErr := m.Git.Run(ctx, value.Path, "--literal-pathspecs", "ls-tree", "-r", "--name-only", "-z", "HEAD", "--", filePath)
+		listed, headErr := m.Git.Run(ctx, value.Path, "--literal-pathspecs", "ls-tree", "-r", "--name-only", "-z", "HEAD", "--", filePath)
 		if headErr != nil {
 			return headErr
 		}
-		for _, candidate := range strings.Split(string(headFiles.Output), "\x00") {
-			if candidate == filePath {
-				inHead = true
-				break
-			}
-		}
+		headFiles = zeroFields(listed.Output)
 	}
 	if value.HeadSHA != "" {
 		if _, err := m.Git.Run(ctx, value.Path, "--literal-pathspecs", "reset", "-q", "HEAD", "--", filePath); err != nil {
 			return err
 		}
-	} else if _, err := m.Git.Run(ctx, value.Path, "--literal-pathspecs", "rm", "--cached", "--ignore-unmatch", "-q", "-f", "--", filePath); err != nil {
+	} else if _, err := m.Git.Run(ctx, value.Path, "--literal-pathspecs", "rm", "-r", "--cached", "--ignore-unmatch", "-q", "-f", "--", filePath); err != nil {
 		return err
 	}
-	if inHead {
+	if len(headFiles) > 0 {
 		if _, err := m.Git.Run(ctx, value.Path, "--literal-pathspecs", "restore", "--source=HEAD", "--worktree", "--", filePath); err != nil {
 			return err
 		}
-	} else {
-		target := filepath.Join(value.Path, filepath.FromSlash(filePath))
-		parent, resolveErr := filepath.EvalSymlinks(filepath.Dir(target))
-		if resolveErr != nil {
-			return resolveErr
-		}
-		relative, relErr := filepath.Rel(value.Path, parent)
-		if relErr != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			return errors.New("checkout path leaves the checkout")
-		}
-		info, statErr := os.Lstat(target)
-		if statErr != nil {
-			return statErr
-		}
-		if !info.Mode().IsRegular() {
-			return errors.New("only regular untracked files can be discarded")
-		}
-		if err := os.Remove(target); err != nil {
+	}
+	// After the reset, anything left that HEAD lacks is untracked.
+	untracked, err := m.Git.Run(ctx, value.Path, "--literal-pathspecs", "ls-files", "--others", "--exclude-standard", "-z", "--", filePath)
+	if err != nil {
+		return err
+	}
+	for _, relative := range zeroFields(untracked.Output) {
+		if err := removeUntracked(value.Path, relative); err != nil {
 			return err
 		}
 	}
 	m.step(operation, "discarded "+filePath+" after creating recovery artifacts")
 	m.refreshTarget(ctx, value)
 	return nil
+}
+
+// removeUntracked deletes one regular untracked file inside the checkout.
+func removeUntracked(root, relative string) error {
+	target := filepath.Join(root, filepath.FromSlash(relative))
+	parent, err := filepath.EvalSymlinks(filepath.Dir(target))
+	if err != nil {
+		return err
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	inside, err := filepath.Rel(resolvedRoot, parent)
+	if err != nil || inside == ".." || strings.HasPrefix(inside, ".."+string(filepath.Separator)) {
+		return errors.New("checkout path leaves the checkout")
+	}
+	info, err := os.Lstat(target)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return errors.New("only regular untracked files can be discarded")
+	}
+	return os.Remove(target)
 }
 
 func (m *Manager) refreshTarget(ctx context.Context, value model.Workspace) {

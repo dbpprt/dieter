@@ -295,7 +295,13 @@ func connectFailure(err error) error {
 	}
 	grpcStatus, ok := status.FromError(err)
 	if ok && grpcStatus.Code() != codes.Unknown {
-		return connect.NewError(connectCode(grpcStatus.Code()), errors.New(grpcStatus.Message()))
+		failure := connect.NewError(connectCode(grpcStatus.Code()), errors.New(grpcStatus.Message()))
+		for _, value := range grpcStatus.Proto().Details {
+			if detail, detailErr := connect.NewErrorDetail(value); detailErr == nil {
+				failure.AddDetail(detail)
+			}
+		}
+		return failure
 	}
 	code := connect.CodeInvalidArgument
 	switch {
