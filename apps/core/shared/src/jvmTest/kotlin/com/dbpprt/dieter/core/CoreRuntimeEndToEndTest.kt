@@ -69,6 +69,9 @@ class CoreRuntimeEndToEndTest : EndToEnd() {
                 machine.id == fixture.daemonId && machine.privacy_active && machine.privacy_stale
             } == true
         }
+        // The sidebar can mark cached privacy stale before the data-plane
+        // stream disconnects. Observe OFFLINE so the next LIVE is a reconnect.
+        runtime.awaitSync(fixture.daemonId, SyncState.OFFLINE)
         fixture.daemonOnline()
         runtime.awaitSync(fixture.daemonId, SyncState.LIVE, 45.seconds)
         privacy(MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_OFF)

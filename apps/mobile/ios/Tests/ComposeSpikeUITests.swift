@@ -81,12 +81,20 @@ final class ComposeSpikeUITests: XCTestCase {
             .firstMatch
         XCTAssertTrue(reply.waitForExistence(timeout: 60))
         capture("ios-conversation")
-        // Placeholder text disappears on focus. A tablet also keeps board search open.
-        let composer = app.textViews.matching(NSPredicate(format: "label CONTAINS %@", "Keep the conversation going"))
-            .firstMatch
+        // The placeholder-based label changes on focus; the shared test tag
+        // identifies this editor before and after the keyboard appears.
+        let composer = app.textViews["message-input"]
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
         composer.tap()
-        XCTAssertTrue(composer.isHittable, "Composer stays visible above the system keyboard")
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
+        let visibleComposer = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                composer.exists && composer.isHittable && composer.frame.maxY <= keyboard.frame.minY + 1
+            }, object: composer)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [visibleComposer], timeout: 10), .completed,
+            "Composer stays visible above the system keyboard")
         composer.typeText("Keep the same task and add the next step.")
         app.buttons["Send message"].tap()
         if landscape { app.keyboards.firstMatch.buttons["Hide keyboard"].tap() }

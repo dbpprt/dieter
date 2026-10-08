@@ -278,10 +278,10 @@ func automaticHistoryPagingKeepsEveryCommittedFrameAnchored(chat: Bool) async th
     let controls = try #require(actions)
     var ranges: [ClosedRange<Int>] = []
     for _ in 0..<4 {
-        // A scrollbar reaching the edge and wheel input against a clamped
-        // edge must both load history without an explicit paging action.
-        scroll.contentView.scroll(to: NSPoint(x: 0, y: -scroll.contentInsets.top))
-        scroll.reflectScrolledClipView(scroll.contentView)
+        // Deliver input before moving the native clip, as AppKit does. A raw
+        // clip jump can be treated as layout while a previous page's reading
+        // position is still held, especially on faster CI workers.
+        try automaticScrollWheelToEdge(scroll, window: window, earlier: true)
         let reading = try #require(automaticScrollReadingPosition(in: scroll))
         let committed = CommittedFrameSampler {
             automaticScrollTextPosition(reading.text, in: scroll).map { abs($0 - reading.offset) } ?? 10_000
@@ -300,9 +300,14 @@ func automaticHistoryPagingKeepsEveryCommittedFrameAnchored(chat: Bool) async th
     try #require(earlier.upperBound < 359, "The fixture must exceed the retained render budget")
     // Desktop rendering is bounded separately from the core's deep history.
     // Automatic later paging remains available if that budget excluded the tail.
-    scroll.contentView.scroll(
-        to: NSPoint(x: 0, y: (scroll.documentView?.bounds.maxY ?? 0) - scroll.contentView.bounds.height))
-    scroll.reflectScrolledClipView(scroll.contentView)
+    let controller = try #require(
+        automaticScrollViews(in: root).compactMap { ($0 as? ConversationScrollBridge.MonitorView)?.controller }.first)
+    // Keep the preceding page's hold active on both fast and slow workers.
+    controller.holdReadingPosition()
+    try automaticScrollWheelToEdge(scroll, window: window, earlier: false)
+    try #require(
+        scroll.contentView.bounds.maxY - scroll.contentInsets.bottom >= (scroll.documentView?.bounds.height ?? 0) - 2,
+        "Downward input must reach the rendered edge even while a page anchor is held")
     let reading = try #require(automaticScrollReadingPosition(in: scroll))
     let committed = CommittedFrameSampler {
         automaticScrollTextPosition(reading.text, in: scroll).map { abs($0 - reading.offset) } ?? 10_000
@@ -423,6 +428,12 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
         scroll.contentView.scroll(to: scroll.contentView.constrainBoundsRect(bounds).origin)
         scroll.reflectScrolledClipView(scroll.contentView)
     }
+}
+
+@MainActor private func automaticScrollWheelToEdge(_ scroll: NSScrollView, window: NSWindow, earlier: Bool) throws {
+    let distance = Int32(
+        ceil((scroll.documentView?.bounds.height ?? 0) + scroll.contentInsets.top + scroll.contentInsets.bottom))
+    try automaticScrollWheel(scroll, window: window, pixels: earlier ? distance : -distance, phase: 1)
 }
 
 @MainActor private func automaticScrollReadingPosition(in scroll: NSScrollView) -> (text: String, offset: CGFloat)? {
