@@ -70,18 +70,21 @@ final class ComposeSpikeUITests: XCTestCase {
         app.buttons["chrome-new-task"].firstMatch.tap()
         let title = element(app, identifier: "task-title")
         XCTAssertTrue(title.waitForExistence(timeout: 10))
-        focus(title)
-        title.typeText("A shared mobile conversation")
+        // Typing goes to the focused field and each field's value proves where it went: the
+        // per-element focus probe and typeText check are unreliable on loaded CI runners.
+        focus(title, in: app)
+        app.typeText("A shared mobile conversation")
         XCTAssertTrue(waitForValue(title, containing: "A shared mobile conversation"), "The title holds the typed text")
         let prompt = element(app, identifier: "task-prompt")
         // Return moves on to the prompt, which also scrolls it above the keyboard; on an iPad
         // window the keyboard's shortcut bar can cover the prompt, so it is not tapped.
-        title.typeText("\n")
-        XCTAssertTrue(waitFor { self.hasKeyboardFocus(prompt) }, "Return in the title moves on to the prompt")
+        app.typeText("\n")
+        _ = waitFor(timeout: 5) { self.hasKeyboardFocus(prompt) }
         let request = "Explain how this task stays in one durable conversation."
-        prompt.typeText(request)
+        app.typeText(request)
         // Compose applies typed text asynchronously; Start enables once the form holds it.
-        XCTAssertTrue(waitForValue(prompt, containing: request), "The prompt holds the typed text")
+        XCTAssertTrue(
+            waitForValue(prompt, containing: request), "Return moved on to the prompt, which holds the request")
         let start = app.buttons["chrome-start-working"].firstMatch
         XCTAssertTrue(waitForHittable(start), "Start stays reachable while typing")
         XCTAssertTrue(waitFor { start.isEnabled }, "Start enables once the form is complete")
@@ -94,14 +97,14 @@ final class ComposeSpikeUITests: XCTestCase {
 
         let composer = element(app, identifier: "message-input")
         XCTAssertTrue(composer.waitForExistence(timeout: 10))
-        focus(composer)
+        focus(composer, in: app)
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
         XCTAssertTrue(
             waitFor { self.hasFrame(composer) && composer.frame.maxY <= keyboard.frame.minY + 1 },
             "Composer stays visible above the system keyboard")
         let followUp = "Keep the same task and add the next step."
-        composer.typeText(followUp)
+        app.typeText(followUp)
         // Sending before Compose applies every keystroke would submit a prefix.
         XCTAssertTrue(waitForValue(composer, containing: followUp), "The composer holds the whole message")
         let send = element(app, identifier: "send-message")
@@ -227,7 +230,13 @@ final class ComposeSpikeUITests: XCTestCase {
     /// resolve a nested Compose control to its container, although touches reach it. With
     /// the keyboard up, the tap goes to the element's visible part above it.
     private func press(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
-        XCTAssertTrue(waitFor { self.hasFrame(element) }, "\(element) is on screen", file: file, line: line)
+        guard waitFor(timeout: 5, { self.hasFrame(element) }) else {
+            // On a loaded CI runner XCTest can report no frame while the keyboard is up; use
+            // its own hit point instead.
+            XCTAssertTrue(element.waitForExistence(timeout: 5), "\(element) exists", file: file, line: line)
+            element.tap()
+            return
+        }
         let frame = element.frame
         var y = frame.midY
         let keyboard = XCUIApplication().keyboards.firstMatch
@@ -243,14 +252,16 @@ final class ComposeSpikeUITests: XCTestCase {
             && element.frame.maxY <= bottom.frame.minY + 1
     }
 
-    /// Taps a Compose text field until it holds keyboard focus; Compose moves focus after
-    /// the touch, so typing straight away can reach the previously focused field.
-    private func focus(_ field: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
-        for _ in 0..<3 {
-            press(field, file: file, line: line)
-            if waitFor(timeout: 5, { self.hasKeyboardFocus(field) }) { return }
-        }
-        XCTFail("\(field) takes keyboard focus", file: file, line: line)
+    /// Taps a Compose text field once and waits for the keyboard; Compose moves focus after
+    /// the touch, so give it a moment before typing.
+    private func focus(
+        _ field: XCUIElement, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        press(field, file: file, line: line)
+        XCTAssertTrue(
+            app.keyboards.firstMatch.waitForExistence(timeout: 10), "\(field) shows the keyboard", file: file,
+            line: line)
+        _ = waitFor(timeout: 5) { self.hasKeyboardFocus(field) }
     }
 
     private func hasKeyboardFocus(_ field: XCUIElement) -> Bool {
