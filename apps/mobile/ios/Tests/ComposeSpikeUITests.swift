@@ -91,6 +91,7 @@ final class ComposeSpikeUITests: XCTestCase {
         composer.tap()
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 10))
+        XCTAssertTrue(keyboard.keys.firstMatch.waitForExistence(timeout: 10), "The software keyboard is available")
         let visibleComposer = XCTNSPredicateExpectation(
             predicate: NSPredicate { _, _ in
                 composer.exists && composer.isHittable && composer.frame.maxY <= keyboard.frame.minY + 1
@@ -98,19 +99,30 @@ final class ComposeSpikeUITests: XCTestCase {
         XCTAssertEqual(
             XCTWaiter.wait(for: [visibleComposer], timeout: 10), .completed,
             "Composer stays visible above the system keyboard")
-        composer.typeText("Keep the same task and add the next step.")
+        let followUp = "Keep the same task and add the next step."
+        composer.typeText(followUp)
+        // Compose can still be applying injected keystrokes after typeText
+        // returns. Send only after the complete draft reaches accessibility.
+        let completeDraft = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in composer.value as? String == followUp }, object: composer)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [completeDraft], timeout: 10), .completed,
+            "The complete follow-up is entered before sending")
         app.buttons["Send message"].tap()
         if landscape {
             keyboard.buttons["Hide keyboard"].tap()
-            // iPadOS keeps a zero-height keyboard element after hiding it.
+            // iPadOS can retain its shortcut bar after hiding the software
+            // keyboard. Wait for the typing keys to disappear.
             let hidden = XCTNSPredicateExpectation(
-                predicate: NSPredicate { _, _ in !keyboard.exists || keyboard.frame.height < 1 }, object: keyboard)
+                predicate: NSPredicate { _, _ in
+                    !keyboard.exists || keyboard.frame.height < 1 || keyboard.keys.count == 0
+                }, object: keyboard)
             XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 10), .completed, "The system keyboard hides")
         }
         // Match the complete selectable reply across accessibility traits after
         // keyboard dismissal, then wait for native hit-testing to settle.
         let followUpReply = app.descendants(matching: .any).matching(
-            NSPredicate(format: "label == %@", "Mock harness received: Keep the same task and add the next step.")
+            NSPredicate(format: "label == %@", "Mock harness received: \(followUp)")
         ).firstMatch
         XCTAssertTrue(
             followUpReply.waitForExistence(timeout: 30), "The follow-up reply appears in the same conversation")
