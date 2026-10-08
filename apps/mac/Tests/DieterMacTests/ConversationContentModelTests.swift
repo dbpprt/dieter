@@ -463,6 +463,26 @@ private actor ConversationContentTerminalFixture: TerminalsRPC {
         #expect(content.selection == .file(path: "third.md", line: nil))
     }
 
+    @Test func automaticWebPresentationNeverLaunchesAnExternalBrowser() async throws {
+        let content = ConversationContentModel()
+        let destination = try url("https://example.com/docs")
+        var opened: [URL] = []
+        content.shouldOpenWebURLExternally = { $0 == destination }
+        content.openWebURLExternally = { opened.append($0) }
+
+        #expect(!(await content.present(destination, conversationID: "card-A")))
+        #expect(opened.isEmpty)
+        #expect(content.tabs.isEmpty)
+        #expect(!content.isPresented(for: "card-A"))
+        content.showEmpty(conversationID: "card-A")
+        #expect(!(await content.present(destination, conversationID: "card-A")))
+        #expect(opened.isEmpty, "Even a visible workspace cannot automatically launch another app")
+
+        #expect(await content.open(destination, conversationID: "card-A"))
+        #expect(opened == [destination], "An explicit click still respects external browser preferences")
+        #expect(content.tabs.isEmpty)
+    }
+
     @Test func automaticPresentationNeverPromptsToReplaceAnotherConversationsDirtyEditor() async throws {
         let client = ConversationContentFilesFixture(), content = model(client)
         #expect(await content.open(try url("draft.md"), conversationID: "card-A"))

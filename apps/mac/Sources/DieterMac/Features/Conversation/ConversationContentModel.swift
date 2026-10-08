@@ -111,6 +111,10 @@ final class ConversationContentModel {
     @ObservationIgnored private var pendingTab: ConversationContentTab?
     @ObservationIgnored var currentEndpointID: @MainActor (String) -> String? = { _ in nil }
     @ObservationIgnored var validateWebURL: @MainActor (URL, String) throws -> Void = { _, _ in }
+    @ObservationIgnored var shouldOpenWebURLExternally: @MainActor (URL) -> Bool = {
+        ExternalBrowserRules.matches($0, entries: ExternalBrowserRules.entries())
+    }
+    @ObservationIgnored var openWebURLExternally: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
     @ObservationIgnored var onSaveFailure: (String) -> Void = { _ in }
     @ObservationIgnored var onReviewSendMessage: @MainActor (String, Dieter_V1_Card, WorkspaceTarget) async -> Bool = {
         _, _, _ in false
@@ -307,8 +311,10 @@ final class ConversationContentModel {
         do {
             if ConversationContentLink.isWeb(url) {
                 try validateWebURL(url, id)
-                if ExternalBrowserRules.matches(url, entries: ExternalBrowserRules.entries()) {
-                    NSWorkspace.shared.open(url)
+                if shouldOpenWebURLExternally(url) {
+                    // Only an explicit link click may launch another app.
+                    guard activation == .interactive else { return false }
+                    openWebURLExternally(url)
                     return true
                 }
                 let link = try ConversationContentLink.resolve(url, workspaceRoot: "")
