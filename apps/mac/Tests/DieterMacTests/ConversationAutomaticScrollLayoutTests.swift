@@ -132,7 +132,7 @@ func openingWaitsForLayoutAndCancelsThePreviousConversation(chat: Bool) async th
 }
 
 @Test(arguments: [false, true]) @MainActor
-func explicitHistoryLoadPreservesTheReaderThroughNetworkDelay(chat: Bool) async throws {
+func automaticHistoryLoadPreservesTheReaderThroughNetworkDelay(chat: Bool) async throws {
     // This page reaches the beginning, so the history control disappears
     // after its loading state without shifting the transcript.
     var snapshot = automaticScrollSnapshot(start: 60, end: 90)
@@ -177,21 +177,14 @@ func explicitHistoryLoadPreservesTheReaderThroughNetworkDelay(chat: Bool) async 
                 - (scroll.documentView?.bounds.maxY ?? 0)) < 2)
 
     let controls = try #require(actions)
-    let mounted = automaticScrollRenderedMessageIDs(in: scroll)
-    for index in 0..<30 {
+    // Native scrolling first mounts the already loaded rows, then requests
+    // the next core page without a click on the history control.
+    for index in 0..<100 {
         try automaticScrollWheel(scroll, window: window, pixels: 64, phase: index == 0 ? 1 : 2)
-        await settleAutomaticScroll(root, milliseconds: 10)
+        await settleAutomaticScroll(root, milliseconds: 20)
+        if rpc.requestCount > 0 { break }
     }
-    try automaticScrollWheel(scroll, window: window, pixels: 0, phase: 4)
-    #expect(rpc.requestCount == 0, "Scrolling alone must not fetch or swap history")
-    #expect(automaticScrollRenderedMessageIDs(in: scroll) == mounted)
-    controls.earlier()
-    try await waitForAutomaticHistoryLayout(controls, root: root)
-    // The first action reveals older rows already loaded by the core; the
-    // second requests an actual network page.
-    controls.earlier()
-    await settleAutomaticScroll(root, milliseconds: 40)
-    try #require(rpc.requestCount == 1)
+    try #require(rpc.requestCount == 1, "Scrolling to earlier history must request a page automatically")
     try #require(model.conversationHistoryLoading)
 
     // The user keeps scrolling while the network is outstanding. Restoring
@@ -209,8 +202,7 @@ func explicitHistoryLoadPreservesTheReaderThroughNetworkDelay(chat: Bool) async 
         automaticScrollTextPosition(reading.text, in: scroll).map { abs($0 - reading.offset) }
     }
 
-    controls.earlier()
-    #expect(rpc.requestCount == 1, "Repeated clicks while loading must not request another page")
+    #expect(rpc.requestCount == 1, "Continued scrolling while loading must not request another page")
     rpc.releasePage()
     for _ in 0..<40 {
         await settleAutomaticScroll(root, milliseconds: 20)
@@ -221,6 +213,7 @@ func explicitHistoryLoadPreservesTheReaderThroughNetworkDelay(chat: Bool) async 
             break
         }
     }
+    try await waitForAutomaticHistoryLayout(controls, root: root)
     await settleAutomaticScroll(root, milliseconds: 160)
     let restoredOffset = try #require(automaticScrollTextPosition(reading.text, in: scroll))
     #expect(abs(restoredOffset - reading.offset) < 2, "Loading must preserve the current message's pixel offset")
@@ -249,7 +242,7 @@ func explicitHistoryLoadPreservesTheReaderThroughNetworkDelay(chat: Bool) async 
 }
 
 @Test(arguments: [false, true]) @MainActor
-func explicitHistoryPagingKeepsEveryCommittedFrameAnchored(chat: Bool) async throws {
+func automaticHistoryPagingKeepsEveryCommittedFrameAnchored(chat: Bool) async throws {
     let store = DieterStore(liveEnvironment: false)
     let context = store.conversationContext
     var snapshot = automaticScrollSnapshot(start: 0, end: 360)
@@ -285,16 +278,17 @@ func explicitHistoryPagingKeepsEveryCommittedFrameAnchored(chat: Bool) async thr
     let controls = try #require(actions)
     var ranges: [ClosedRange<Int>] = []
     for _ in 0..<4 {
-        // Read at the top where the earlier control lives, then load one batch.
+        // A scrollbar reaching the edge and wheel input against a clamped
+        // edge must both load history without an explicit paging action.
         scroll.contentView.scroll(to: NSPoint(x: 0, y: -scroll.contentInsets.top))
         scroll.reflectScrolledClipView(scroll.contentView)
-        await settleAutomaticScroll(root, milliseconds: 40)
         let reading = try #require(automaticScrollReadingPosition(in: scroll))
         let committed = CommittedFrameSampler {
             automaticScrollTextPosition(reading.text, in: scroll).map { abs($0 - reading.offset) } ?? 10_000
         }
-        controls.earlier()
+        try automaticScrollWheel(scroll, window: window, pixels: 1, phase: 1)
         try await waitForAutomaticHistoryLayout(controls, root: root)
+        try automaticScrollWheel(scroll, window: window, pixels: 0, phase: 4)
         #expect(committed.stop() < 2, "A page insertion must not display even one displaced frame")
         let ids = automaticScrollRenderedMessageIDs(in: scroll)
         ranges.append(try #require(ids.min())...#require(ids.max()))
@@ -305,17 +299,17 @@ func explicitHistoryPagingKeepsEveryCommittedFrameAnchored(chat: Bool) async thr
     let earlier = try #require(ranges.last)
     try #require(earlier.upperBound < 359, "The fixture must exceed the retained render budget")
     // Desktop rendering is bounded separately from the core's deep history.
-    // Explicit later paging remains available if that budget excluded the tail.
+    // Automatic later paging remains available if that budget excluded the tail.
     scroll.contentView.scroll(
         to: NSPoint(x: 0, y: (scroll.documentView?.bounds.maxY ?? 0) - scroll.contentView.bounds.height))
     scroll.reflectScrolledClipView(scroll.contentView)
-    await settleAutomaticScroll(root, milliseconds: 40)
     let reading = try #require(automaticScrollReadingPosition(in: scroll))
     let committed = CommittedFrameSampler {
         automaticScrollTextPosition(reading.text, in: scroll).map { abs($0 - reading.offset) } ?? 10_000
     }
-    controls.later()
+    try automaticScrollWheel(scroll, window: window, pixels: -1, phase: 1)
     try await waitForAutomaticHistoryLayout(controls, root: root)
+    try automaticScrollWheel(scroll, window: window, pixels: 0, phase: 4)
     #expect(committed.stop() < 2, "Later paging must preserve the reader in every frame")
     #expect((automaticScrollRenderedMessageIDs(in: scroll).max() ?? 0) > earlier.upperBound)
 }

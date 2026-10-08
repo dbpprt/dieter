@@ -222,7 +222,7 @@ struct ConversationTimeline: View {
                 controller: scroller,
                 rendersLatest: renderedThroughLatest,
                 onFollowingChange: handleFollowingChange,
-                onUserScroll: { _ in },
+                onUserScroll: handleUserScroll,
                 onScrollableChange: { contentCanScroll = $0 },
                 onScrollIntent: handleUserScrollIntent,
                 onTailCorrection: onTailScroll)
@@ -395,12 +395,30 @@ struct ConversationTimeline: View {
         }
     }
 
+    private func handleUserScroll(_ proximity: ConversationScrollController.EdgeProximity) {
+        guard timelineReadyForDisplay else { return }
+        if proximity.movedEarlier, proximity.nearStart {
+            showEarlierMessages()
+        } else if !proximity.movedEarlier, proximity.nearEnd {
+            showLaterMessages()
+        }
+    }
+
     private func handleUserScrollIntent(_ delta: CGFloat) {
-        // Wheel input changes the reading position; history is loaded by the
-        // explicit controls, as on iOS. Never replace rows mid-scroll merely
-        // because the viewport approached a render-window edge.
-        if delta > 0, scroller.contentCanScroll { scroller.detach() }
-        if delta < 0, renderedThroughLatest, scroller.isAtEdge(earlier: false) { scroller.follow() }
+        let earlier = delta > 0
+        // Relinquish the live tail before native scrolling. The same paging
+        // path handles automatic loading and the accessible retry controls:
+        // wait for the core page, mount it once, then preserve the reader
+        // through layout, just as the iOS transcript does.
+        if earlier, scroller.contentCanScroll { scroller.detach() }
+        guard timelineReadyForDisplay, scroller.isAtEdge(earlier: earlier) else { return }
+        if earlier {
+            showEarlierMessages()
+        } else if renderedThroughLatest {
+            scroller.follow()
+        } else {
+            showLaterMessages()
+        }
     }
 
     private func returnToLatest() {
@@ -426,7 +444,8 @@ struct ConversationTimeline: View {
             } else if !available {
                 Color.clear
             } else {
-                // Explicit paging keeps the document steady during scrolling.
+                // Scrolling loads history automatically. Keep a retry control
+                // for failed requests and transcripts too short to scroll.
                 Button(earlier ? "Load earlier messages" : "Load later messages") {
                     if earlier { showEarlierMessages() } else { showLaterMessages() }
                 }
