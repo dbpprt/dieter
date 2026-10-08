@@ -99,7 +99,10 @@ final class ComposeSpikeUITests: XCTestCase {
         app.buttons["Send message"].tap()
         if landscape {
             keyboard.buttons["Hide keyboard"].tap()
-            XCTAssertTrue(keyboard.waitForNonExistence(timeout: 10))
+            // iPadOS keeps a zero-height keyboard element after hiding it.
+            let hidden = XCTNSPredicateExpectation(
+                predicate: NSPredicate { _, _ in !keyboard.exists || keyboard.frame.height < 1 }, object: keyboard)
+            XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 10), .completed, "The system keyboard hides")
         }
         // Match the complete selectable reply across accessibility traits after
         // keyboard dismissal, then wait for native hit-testing to settle.
