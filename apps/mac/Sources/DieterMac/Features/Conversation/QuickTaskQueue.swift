@@ -134,12 +134,12 @@ struct ConversationStartCardBanner: View {
                     Text(starting ? "Starting…" : "Run task")
                 }
             }
-            .buttonStyle(DieterPrimaryButtonStyle())
+            .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
             .disabled(starting)
             .accessibilityIdentifier("conversation-run-card")
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(DieterTheme.shellDeep.opacity(0.08))
+        .background(DieterTheme.tile)
         .overlay(alignment: .top) { Divider().overlay(DieterTheme.border) }
     }
 }
@@ -288,7 +288,7 @@ struct QueuedComposerMessage: View {
         .padding(.trailing, 8)
         .padding(.vertical, 9)
         .frame(minHeight: 58)
-        .background(DieterTheme.elevated.opacity(0.96), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(DieterTheme.tileSelected, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(DieterTheme.border.opacity(0.9))

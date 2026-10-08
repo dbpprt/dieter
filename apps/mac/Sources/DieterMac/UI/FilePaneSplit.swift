@@ -15,7 +15,7 @@ struct FilePaneSplit<Navigator: View, Preview: View>: View {
             let width = min(max(storedWidth, 260), maximum)
             HStack(spacing: 0) {
                 navigator.frame(width: width, height: geometry.size.height)
-                Rectangle().fill(DieterTheme.border)
+                Rectangle().fill(DieterTheme.hairline)
                     .frame(width: 1)
                     .frame(width: 7)
                     .contentShape(Rectangle())

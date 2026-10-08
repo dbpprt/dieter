@@ -80,7 +80,7 @@ struct CommandPalette: View {
                     .onSubmit { if rows.indices.contains(selection) { activate(rows[selection]) } }
                 Text("esc").font(.caption).foregroundStyle(.secondary)
                     .padding(.horizontal, 6).padding(.vertical, 3)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 5))
+                    .background(DieterTheme.tileHover, in: RoundedRectangle(cornerRadius: 5))
             }.padding(20)
             Divider()
             ScrollViewReader { proxy in
@@ -106,7 +106,7 @@ struct CommandPalette: View {
                                 }
                                 .padding(12).contentShape(Rectangle())
                                 .background(
-                                    offset == selection ? Color.primary.opacity(0.09) : .clear,
+                                    offset == selection ? DieterTheme.tileSelected : .clear,
                                     in: RoundedRectangle(cornerRadius: 12))
                             }.buttonStyle(.plain).id(result.id)
                         }

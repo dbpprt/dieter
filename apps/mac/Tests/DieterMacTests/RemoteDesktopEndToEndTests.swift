@@ -840,7 +840,9 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
         contentRect: NSRect(x: 80, y: 80, width: 1100, height: 800), styleMask: [.titled, .closable, .resizable],
         backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false; window.title = "Dieter — Undock Integration"
-    let root = NSHostingView(rootView: ScreensView(model: model, machines: [], initialMachineID: "fixture"))
+    let root = NSHostingView(
+        rootView: ScreensView(model: model, machines: [], initialMachineID: "fixture")
+            .environment(DieterStore(liveEnvironment: false)))
     root.sizingOptions = []; window.contentView = root
     window.makeKeyAndOrderFront(nil); application.activate(ignoringOtherApps: true)
     defer { model.closeSession(session.id); window.contentView = nil; window.close() }

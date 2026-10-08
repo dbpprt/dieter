@@ -192,7 +192,7 @@ struct QuickTaskPopover: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(DieterTheme.shell)
                     .frame(width: 30, height: 30)
-                    .background(DieterTheme.shellDeep.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .background(DieterTheme.tileSelected, in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Quick task").font(.system(size: 18, weight: .semibold)).smokeTarget(
                         "quick-task.title"
@@ -268,7 +268,7 @@ struct QuickTaskPopover: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+            .dieterInset(radius: 10)
             .overlay {
                 if attachmentDropTargeted {
                     RoundedRectangle(cornerRadius: 8).stroke(Color.accentColor, lineWidth: 2)
@@ -312,7 +312,7 @@ struct QuickTaskPopover: View {
                 TextField("Page URL (optional)", text: $sourceURL)
                     .textFieldStyle(.plain)
                     .padding(10)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                    .dieterInset(radius: 8)
                     .accessibilityIdentifier("quick-task.source-url")
                     .smokeTarget("quick-task.source-url")
                 if let host = CaptureBrowserContext.hostname(sourceURL) {

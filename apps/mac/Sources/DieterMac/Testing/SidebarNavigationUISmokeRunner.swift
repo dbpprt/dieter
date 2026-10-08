@@ -403,7 +403,7 @@
                 {
                     return split
                 }
-                return view.subviews.lazy.compactMap { chatSplit(in: $0) }.first
+                return view.firstSubviewResult { chatSplit(in: $0) }
             }
             guard
                 let mainFrame = main.map({ $0.recordedFrame ?? $0.frame }),

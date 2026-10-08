@@ -48,75 +48,68 @@ struct DieterSettingsView: View {
     @Environment(DieterStore.self) private var store
 
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Settings").font(DieterFont.paneTitle)
-                    Text("Dieter for macOS").font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16).padding(.top, 15).padding(.bottom, 9)
-
-                VStack(spacing: 3) {
-                    ForEach(DieterSettingsSection.allCases) { section in
-                        Button {
-                            store.settingsSection = section
-                        } label: {
-                            SettingsNavigationRow(section: section, selected: section == store.settingsSection)
+        DieterSectionScaffold(showsQuickTask: false) {
+            DieterTitleCapsule(title: "Settings", symbol: "gearshape", detail: "Dieter for macOS")
+        } trailing: {
+            EmptyView()
+        } content: {
+            HStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    VStack(spacing: 1) {
+                        ForEach(DieterSettingsSection.allCases) { section in
+                            Button {
+                                store.settingsSection = section
+                            } label: {
+                                SettingsNavigationRow(section: section, selected: section == store.settingsSection)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("settings.\(section.rawValue.lowercased())")
+                            .smokeTarget("settings.\(section.rawValue.lowercased())")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("settings.\(section.rawValue.lowercased())")
-                        .smokeTarget("settings.\(section.rawValue.lowercased())")
                     }
-                }
-                .padding(9)
+                    .padding(8)
 
-                Spacer(minLength: 10)
+                    Spacer(minLength: 10)
 
-                Divider().overlay(DieterTheme.border)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Dieter \(DieterRelease.current)")
-                    Text(store.activeGateway.address).lineLimit(1).help(store.activeGateway.address)
-                }
-                .font(.caption2).foregroundStyle(DieterTheme.tertiary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
-            }
-            .background(DieterTheme.sidebar)
-            .frame(width: 220)
-
-            Divider().overlay(DieterTheme.border)
-
-            VStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(store.settingsSection.rawValue).font(.system(size: 18, weight: .semibold))
-                    Text(store.settingsSection.subtitle).font(DieterFont.subtitle).foregroundStyle(
-                        DieterTheme.tertiary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 22).padding(.top, 18).padding(.bottom, 12)
-                .background(DieterTheme.background)
-
-                Group {
-                    switch store.settingsSection {
-                    case .general: GeneralSettings()
-                    case .browser: BrowserSettings()
-                    case .connection: ConnectionSettings()
-                    case .usage: UsageSettings()
-                    case .prompts: PromptSettingsEditor()
-                    case .notifications: NotificationSettings()
-                    case .island: IslandSettings()
-                    case .agents: AgentSettings()
-                    case .experimental: ExperimentalSettings()
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Dieter \(DieterRelease.current)")
+                        Text(store.activeGateway.address).lineLimit(1).help(store.activeGateway.address)
                     }
+                    .font(DieterFont.monoSmall).foregroundStyle(DieterTheme.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                }
+                .frame(width: 210)
+
+                Rectangle().fill(DieterTheme.hairline).frame(width: 1)
+
+                VStack(spacing: 0) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(store.settingsSection.rawValue).font(.system(size: 18, weight: .semibold))
+                        Text(store.settingsSection.subtitle).font(DieterFont.subtitle).foregroundStyle(
+                            DieterTheme.tertiary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 22).padding(.top, 18).padding(.bottom, 12)
+
+                    Group {
+                        switch store.settingsSection {
+                        case .general: GeneralSettings()
+                        case .browser: BrowserSettings()
+                        case .connection: ConnectionSettings()
+                        case .usage: UsageSettings()
+                        case .prompts: PromptSettingsEditor()
+                        case .notifications: NotificationSettings()
+                        case .island: IslandSettings()
+                        case .agents: AgentSettings()
+                        case .experimental: ExperimentalSettings()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .background(DieterTheme.background)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(DieterTheme.background)
     }
 }
 
@@ -206,14 +199,18 @@ private struct SettingsNavigationRow: View {
             Text(section.rawValue)
             Spacer()
         }
-        .font(.system(size: 12, weight: selected ? .semibold : .medium))
+        .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
         .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
         .padding(.horizontal, 10)
-        .frame(height: 32)
+        .frame(height: DieterMetrics.rowHeight)
         .background(
-            selected ? DieterTheme.selection : Color.clear,
-            in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous)
+            selected ? DieterTheme.tileSelected : .clear,
+            in: RoundedRectangle(cornerRadius: DieterMetrics.rowRadius, style: .continuous)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: DieterMetrics.rowRadius, style: .continuous)
+                .strokeBorder(selected ? DieterTheme.tileRim : .clear)
+        }
     }
 }
 
@@ -510,7 +507,6 @@ private struct SettingsPage<Content: View>: View {
                 .padding(18)
                 .frame(maxWidth: .infinity, alignment: .top)
         }
-        .background(DieterTheme.background)
     }
 }
 
@@ -530,8 +526,7 @@ private struct SettingsPanel<Content: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(DieterTheme.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(DieterTheme.border))
+        .dieterTile(radius: 12)
     }
 }
 

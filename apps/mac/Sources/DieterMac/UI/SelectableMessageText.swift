@@ -221,7 +221,7 @@ final class MessageTextView: NSTextView {
                         attributes: [
                             .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
                             .foregroundColor: color,
-                            .backgroundColor: NSColor(DieterTheme.raised),
+                            .backgroundColor: NSColor(DieterTheme.inset),
                         ]))
             case .table(let table):
                 append(table: table, to: result, color: color)
@@ -248,7 +248,7 @@ final class MessageTextView: NSTextView {
                 cell.setWidth(7, type: .absoluteValueType, for: .padding)
                 cell.setWidth(1, type: .absoluteValueType, for: .border)
                 cell.setBorderColor(NSColor(DieterTheme.border))
-                cell.backgroundColor = NSColor(row == 0 ? DieterTheme.raised : DieterTheme.surface)
+                cell.backgroundColor = NSColor(row == 0 ? DieterTheme.tileHover : DieterTheme.tile)
                 let style = NSMutableParagraphStyle()
                 style.textBlocks = [cell]
                 switch table.alignments[column] {

@@ -267,7 +267,7 @@ struct NativeMarkdownEditorTests {
         {
             return picker
         }
-        return view.subviews.lazy.compactMap { modePicker(in: $0) }.first
+        return view.firstSubviewResult { modePicker(in: $0) }
     }
 
     private func containsWebView(in view: NSView) -> Bool {
@@ -276,7 +276,7 @@ struct NativeMarkdownEditorTests {
 
     private func textView(in view: NSView) -> NSTextView? {
         if let text = view as? NSTextView { return text }
-        return view.subviews.lazy.compactMap { textView(in: $0) }.first
+        return view.firstSubviewResult { textView(in: $0) }
     }
 
     private func allTextViews(in view: NSView) -> [NSTextView] {

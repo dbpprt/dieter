@@ -5,7 +5,6 @@ import UniformTypeIdentifiers
 
 struct BoardView: View {
     @Environment(DieterStore.self) private var store
-    var usesTitlebarSpace = false
     var active = true
 
     var body: some View {
@@ -16,37 +15,37 @@ struct BoardView: View {
         let contentPresented =
             content.splitMode && content.isOpen && content.conversationID == selectedCardID
             && content.endpointID == (content.currentEndpointID(selectedCardID ?? "") ?? "")
-        BoardConversationOverlay(
-            board: AnyView(
-                BoardCanvas().environment(store)
+        VStack(spacing: 0) {
+            BoardTopBar()
+            BoardConversationOverlay(
+                board: AnyView(
+                    BoardCanvas().environment(store)
+                        .dieterThemeRoot(
+                            palette: store.themeSelection.palette, appearance: store.themeSelection.appearance)),
+                conversation: AnyView(
+                    ConversationView(
+                        compact: true,
+                        surfaceStyle: .inherited,
+                        kanbanPresented: store.kanbanPresentedAlongsideConversation,
+                        toggleKanban: { store.kanbanPresentedAlongsideConversation.toggle() }
+                    )
+                    .dieterConversationPanel()
+                    .padding(.leading, DieterMetrics.panelGap)
+                    .padding(.trailing, DieterMetrics.windowInset)
+                    .padding(.bottom, DieterMetrics.windowInset)
+                    .environment(store)
+                    .environment(store.conversationContext)
                     .dieterThemeRoot(
                         palette: store.themeSelection.palette, appearance: store.themeSelection.appearance)),
-            conversation: AnyView(
-                ConversationView(
-                    compact: true,
-                    surfaceStyle: .inherited,
-                    kanbanPresented: store.kanbanPresentedAlongsideConversation,
-                    toggleKanban: { store.kanbanPresentedAlongsideConversation.toggle() }
-                )
-                .background(DieterTheme.surface)
-                .environment(store)
-                .environment(store.conversationContext)
-                .dieterThemeRoot(
-                    palette: store.themeSelection.palette, appearance: store.themeSelection.appearance)),
-            presented: store.selectedCardID != nil,
-            companionPresented: contentPresented,
-            boardPresented: store.kanbanPresentedAlongsideConversation,
-            active: active
-        )
+                presented: store.selectedCardID != nil,
+                companionPresented: contentPresented,
+                boardPresented: store.kanbanPresentedAlongsideConversation,
+                active: active
+            )
+            .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
+        }
         .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
-        // Keep the native split itself in the titlebar region so its divider
-        // visually and interactively separates the toolbar navigation above
-        // each pane. The split items continue to publish their own safe areas,
-        // keeping board and conversation content below the window controls.
-        .ignoresSafeArea(
-            .container, edges: usesTitlebarSpace && selectedCardID != nil ? .top : []
-        )
-        .background(DieterTheme.surface)
+        .ignoresSafeArea(.container, edges: .top)
     }
 
 }
@@ -54,14 +53,10 @@ struct BoardView: View {
 /// Keep board observations separate from conversation presentation and tokens.
 struct BoardCanvas: View {
     @Environment(DieterStore.self) private var store
-    var usesTitlebarSpace = false
-    var active = true
 
     var body: some View {
         content
-            .safeAreaInset(edge: .top) { SharedConflictsButton(keys: store.selectedBoard?.conflictKeys ?? []) }
             .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
-            .background(DieterTheme.surface)
             .ignoresSafeArea(.container, edges: .top)
             .smokeTarget("board.canvas")
     }
@@ -98,17 +93,8 @@ struct BoardCanvas: View {
                                 .accessibilityIdentifier("board.restore")
                                 .smokeTarget("board.restore")
                         }
-                    } else {
-                        BoardHeader()
-                        if let board = store.selectedBoard {
-                            if board.retirementBlocked {
-                                Text(
-                                    "This board remains available because it has references or a conflicting retirement change."
-                                )
-                                .font(DieterFont.meta).padding(8)
-                            }
-                            KanbanView(board: board)
-                        }
+                    } else if let board = store.selectedBoard {
+                        KanbanView(board: board)
                     }
                 }
             case .empty:
@@ -121,7 +107,7 @@ struct BoardCanvas: View {
                 } actions: {
                     if let projectID = store.selectedProject?.id {
                         Button("Create board") { store.presentNewBoard(projectID: projectID) }
-                            .buttonStyle(DieterPrimaryButtonStyle())
+                            .buttonStyle(DieterBarButtonStyle(prominent: true))
                             .accessibilityIdentifier("board.empty-create")
                     }
                 }

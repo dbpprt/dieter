@@ -113,9 +113,9 @@ struct ScheduleEditor: View {
                 }
                 Spacer()
                 Toggle("Enabled", isOn: $draft.enabled).toggleStyle(.switch).controlSize(.small)
-                Button("Cancel") { dismiss() }.buttonStyle(DieterSecondaryButtonStyle())
+                Button("Cancel") { dismiss() }.buttonStyle(DieterBarButtonStyle(size: 30))
                 Button(saving ? "Saving…" : "Save schedule") { Task { await save() } }
-                    .buttonStyle(DieterPrimaryButtonStyle()).disabled(!canSave)
+                    .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30)).disabled(!canSave)
                     .accessibilityIdentifier("schedule-editor.save")
             }
             .padding(.horizontal, 22).padding(.vertical, 17).background(DieterTheme.sidebar)

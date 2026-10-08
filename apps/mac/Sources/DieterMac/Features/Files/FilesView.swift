@@ -18,81 +18,42 @@ struct FilesView: View {
     private var editorSession: FileEditorSession { model.fileEditorSession }
 
     var body: some View {
-        VStack(spacing: 0) {
-            paneHeader
-            Divider().overlay(DieterTheme.border)
-            FilePaneSplit {
-                VStack(spacing: 0) {
-                    if model.filesLoading || model.filesError != nil {
-                        LoadFeedback(
-                            title: "Loading files…", error: model.filesError,
-                            retry: { Task { await model.loadFiles() } }, compact: true
-                        )
-                        .accessibilityIdentifier("files.list-feedback")
-                    }
-                    List {
-                        if !model.filePath.isEmpty {
-                            Button {
-                                navigateToParent()
-                            } label: {
-                                Label("Parent Folder", systemImage: "arrow.turn.up.left")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(DieterTheme.subtle)
-                                    .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(model.fileNavigationLoading)
-                            .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
+        DieterSectionScaffold {
+            DieterTitleCapsule(title: "Files", detail: headerSummary)
+        } trailing: {
+            EmptyView()
+        } content: {
+            VStack(spacing: 0) {
+                navigationToolbar
+                Rectangle().fill(DieterTheme.hairline).frame(height: 1)
+                FilePaneSplit {
+                    VStack(spacing: 0) {
+                        if model.filesLoading || model.filesError != nil {
+                            LoadFeedback(
+                                title: "Loading files…", error: model.filesError,
+                                retry: { Task { await model.loadFiles() } }, compact: true
+                            )
+                            .accessibilityIdentifier("files.list-feedback")
                         }
-                        ForEach(model.files, id: \.path) { entry in
-                            Button {
-                                Task {
-                                    if entry.kind == "directory" {
-                                        await model.navigateFiles(to: entry.path)
-                                    } else {
-                                        await model.openFile(path: entry.path)
-                                    }
+                        List {
+                            if !model.filePath.isEmpty {
+                                Button {
+                                    navigateToParent()
+                                } label: {
+                                    Label("Parent Folder", systemImage: "arrow.turn.up.left")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(DieterTheme.subtle)
+                                        .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
+                                        .contentShape(Rectangle())
                                 }
-                            } label: {
-                                HStack(spacing: 9) {
-                                    Image(
-                                        systemName: FilePresentation.symbol(
-                                            name: entry.name, directory: entry.kind == "directory")
-                                    )
-                                    .foregroundStyle(
-                                        entry.kind == "directory" ? DieterTheme.shell : DieterTheme.tertiary
-                                    )
-                                    .frame(width: 15)
-                                    Text(entry.name).lineLimit(1)
-                                    Spacer()
-                                    if entry.kind != "directory" {
-                                        Text(SharedRules.shared.bytes(count: entry.size))
-                                            .font(.caption2).foregroundStyle(DieterTheme.tertiary)
-                                    }
-                                }
-                                .font(
-                                    .system(
-                                        size: 12, weight: model.selectedFilePath == entry.path ? .semibold : .regular)
-                                )
-                                .padding(.horizontal, 8).frame(minHeight: 24)
-                                .background(
-                                    model.selectedFilePath == entry.path ? DieterTheme.selection : .clear,
-                                    in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous)
-                                )
-                                .contentShape(Rectangle())
+                                .buttonStyle(.plain)
+                                .disabled(model.fileNavigationLoading)
+                                .listRowInsets(EdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10))
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("files.row.\(entry.path)")
-                            .smokeTarget("files.row.\(entry.path)")
-                            .disabled(entry.kind == "directory" && model.fileNavigationLoading)
-                            .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                            .contextMenu {
-                                Button(entry.kind == "directory" ? "Open Folder" : "Open") {
+                            ForEach(model.files, id: \.path) { entry in
+                                Button {
                                     Task {
                                         if entry.kind == "directory" {
                                             await model.navigateFiles(to: entry.path)
@@ -100,104 +61,151 @@ struct FilesView: View {
                                             await model.openFile(path: entry.path)
                                         }
                                     }
-                                }
-                                Divider()
-                                Button("Copy Path") { FileExternalActions.copy(entry.path) }
-                                Button("Copy Name") { FileExternalActions.copy(entry.name) }
-                                Divider()
-                                Button("Move or rename…") {
-                                    movingEntry = entry; moveDestination = entry.path
-                                }.disabled(!model.isLive || model.saving)
-                                Button("Delete", role: .destructive) {
-                                    Task {
-                                        await model.deleteFile(path: entry.path, recursive: entry.kind == "directory")
-                                    }
-                                }.disabled(!model.isLive || model.saving)
-                            }
-                        }
-                    }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
-                }.frame(maxHeight: .infinity, alignment: .top).background(DieterTheme.sidebar)
-            } preview: {
-                VStack(spacing: 0) {
-                    if (model.fileLoading || model.fileError != nil) && model.fileDocument == nil {
-                        LoadFeedback(
-                            title: "Loading \(model.selectedFilePath)…", error: model.fileError,
-                            retry: { Task { await model.openFile(path: model.selectedFilePath) } }
-                        )
-                        .accessibilityIdentifier("files.preview-feedback")
-                    } else if let document = model.fileDocument {
-                        VStack(spacing: 0) {
-                            documentToolbar(document)
-                            Divider().overlay(DieterTheme.border)
-                            if model.fileLoading || model.fileError != nil {
-                                // A save conflict offers Reload above instead of retrying the read.
-                                LoadFeedback(
-                                    title: "Refreshing \(document.name)…", error: model.fileError,
-                                    retry: model.conflict
-                                        ? nil : { Task { await model.openFile(path: document.path) } },
-                                    compact: true)
-                            }
-                            let renderer = FilePresentation.renderer(document)
-                            switch renderer {
-                            case .image:
-                                if let image = NSImage(data: document.bytes) {
-                                    ProjectImagePreview(image: image)
-                                } else {
-                                    unsupportedDocument(document)
-                                }
-                            case .pdf:
-                                ConversationPDFDocumentRenderer(data: document.bytes) {
-                                    unsupportedDocument(document)
-                                }
-                            case .markdown, .text:
-                                VStack(spacing: 0) {
-                                    if renderer == .markdown {
-                                        MarkdownFileEditor(
-                                            session: editorSession, documentKey: model.documentKey,
-                                            text: document.content, filename: document.name
+                                } label: {
+                                    HStack(spacing: 9) {
+                                        Image(
+                                            systemName: FilePresentation.symbol(
+                                                name: entry.name, directory: entry.kind == "directory")
                                         )
-                                        .id(model.documentKey)
-                                    } else {
-                                        SyntaxHighlightedEditor(
-                                            session: editorSession,
-                                            documentKey: model.documentKey,
-                                            text: document.content,
-                                            filename: document.name
+                                        .foregroundStyle(
+                                            entry.kind == "directory" ? DieterTheme.shell : DieterTheme.tertiary
                                         )
-                                        .id(model.documentKey)
-                                        .accessibilityIdentifier("files.editor")
-                                    }
-                                    HStack(spacing: 12) {
-                                        Text(model.languageName)
-                                        Text("UTF-8")
+                                        .frame(width: 15)
+                                        Text(entry.name).lineLimit(1)
                                         Spacer()
-                                        Text("\(editorSession.lineCount) lines")
+                                        if entry.kind != "directory" {
+                                            Text(SharedRules.shared.bytes(count: entry.size))
+                                                .font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                                        }
                                     }
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(DieterTheme.tertiary)
-                                    .padding(.horizontal, 12).frame(height: 25)
-                                    .background(DieterTheme.sidebar)
-                                    .overlay(alignment: .top) { Rectangle().fill(DieterTheme.border).frame(height: 1) }
+                                    .font(
+                                        .system(
+                                            size: 12,
+                                            weight: model.selectedFilePath == entry.path ? .semibold : .regular)
+                                    )
+                                    .padding(.horizontal, 8).frame(minHeight: 24)
+                                    .background(
+                                        model.selectedFilePath == entry.path ? DieterTheme.tileSelected : .clear,
+                                        in: RoundedRectangle(cornerRadius: DieterMetrics.rowRadius, style: .continuous)
+                                    )
+                                    .contentShape(Rectangle())
                                 }
-                            default:
-                                unsupportedDocument(document)
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("files.row.\(entry.path)")
+                                .smokeTarget("files.row.\(entry.path)")
+                                .disabled(entry.kind == "directory" && model.fileNavigationLoading)
+                                .listRowInsets(EdgeInsets(top: 0, leading: 6, bottom: 0, trailing: 6))
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                                .contextMenu {
+                                    Button(entry.kind == "directory" ? "Open Folder" : "Open") {
+                                        Task {
+                                            if entry.kind == "directory" {
+                                                await model.navigateFiles(to: entry.path)
+                                            } else {
+                                                await model.openFile(path: entry.path)
+                                            }
+                                        }
+                                    }
+                                    Divider()
+                                    Button("Copy Path") { FileExternalActions.copy(entry.path) }
+                                    Button("Copy Name") { FileExternalActions.copy(entry.name) }
+                                    Divider()
+                                    Button("Move or rename…") {
+                                        movingEntry = entry; moveDestination = entry.path
+                                    }.disabled(!model.isLive || model.saving)
+                                    Button("Delete", role: .destructive) {
+                                        Task {
+                                            await model.deleteFile(
+                                                path: entry.path, recursive: entry.kind == "directory")
+                                        }
+                                    }.disabled(!model.isLive || model.saving)
+                                }
                             }
                         }
-                    } else {
-                        VStack(spacing: 0) {
-                            ContentUnavailableView(
-                                "Select a file", systemImage: "doc.text",
-                                description: Text("Browse and edit text files in the selected Git working tree.")
+                        .listStyle(.plain)
+                        .scrollContentBackground(.hidden)
+                    }.frame(maxHeight: .infinity, alignment: .top)
+                } preview: {
+                    VStack(spacing: 0) {
+                        if (model.fileLoading || model.fileError != nil) && model.fileDocument == nil {
+                            LoadFeedback(
+                                title: "Loading \(model.selectedFilePath)…", error: model.fileError,
+                                retry: { Task { await model.openFile(path: model.selectedFilePath) } }
                             )
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .accessibilityIdentifier("files.preview-feedback")
+                        } else if let document = model.fileDocument {
+                            VStack(spacing: 0) {
+                                documentToolbar(document)
+                                Rectangle().fill(DieterTheme.hairline).frame(height: 1)
+                                if model.fileLoading || model.fileError != nil {
+                                    // A save conflict offers Reload above instead of retrying the read.
+                                    LoadFeedback(
+                                        title: "Refreshing \(document.name)…", error: model.fileError,
+                                        retry: model.conflict
+                                            ? nil : { Task { await model.openFile(path: document.path) } },
+                                        compact: true)
+                                }
+                                let renderer = FilePresentation.renderer(document)
+                                switch renderer {
+                                case .image:
+                                    if let image = NSImage(data: document.bytes) {
+                                        ProjectImagePreview(image: image)
+                                    } else {
+                                        unsupportedDocument(document)
+                                    }
+                                case .pdf:
+                                    ConversationPDFDocumentRenderer(data: document.bytes) {
+                                        unsupportedDocument(document)
+                                    }
+                                case .markdown, .text:
+                                    VStack(spacing: 0) {
+                                        if renderer == .markdown {
+                                            MarkdownFileEditor(
+                                                session: editorSession, documentKey: model.documentKey,
+                                                text: document.content, filename: document.name
+                                            )
+                                            .id(model.documentKey)
+                                        } else {
+                                            SyntaxHighlightedEditor(
+                                                session: editorSession,
+                                                documentKey: model.documentKey,
+                                                text: document.content,
+                                                filename: document.name
+                                            )
+                                            .id(model.documentKey)
+                                            .accessibilityIdentifier("files.editor")
+                                        }
+                                        HStack(spacing: 12) {
+                                            Text(model.languageName)
+                                            Text("UTF-8")
+                                            Spacer()
+                                            Text("\(editorSession.lineCount) lines")
+                                        }
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(DieterTheme.tertiary)
+                                        .padding(.horizontal, 12).frame(height: 25)
+                                        .overlay(alignment: .top) {
+                                            Rectangle().fill(DieterTheme.hairline).frame(height: 1)
+                                        }
+                                    }
+                                default:
+                                    unsupportedDocument(document)
+                                }
+                            }
+                        } else {
+                            VStack(spacing: 0) {
+                                ContentUnavailableView(
+                                    "Select a file", systemImage: "doc.text",
+                                    description: Text("Browse and edit text files in the selected Git working tree.")
+                                )
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
                         }
-                    }
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
-        .ignoresSafeArea(.container, edges: .top)
         .task(id: model.fileScopeGeneration) {
             let generation = model.fileScopeGeneration
             guard await model.loadFiles(), !Task.isCancelled, generation == model.fileScopeGeneration else { return }
@@ -283,14 +291,13 @@ struct FilesView: View {
                     .disabled(!model.isLive || model.saving)
             }
             Button("Save") { Task { await model.saveCurrentDocument() } }
-                .buttonStyle(DieterPrimaryButtonStyle())
+                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
                 .keyboardShortcut("s", modifiers: .command)
                 .accessibilityIdentifier("files.save").smokeTarget("files.save")
                 .disabled(document.binary || !editorSession.isDirty || !model.isLive || model.saving)
         }
         .controlSize(.small)
         .padding(.horizontal, 10).frame(height: 38)
-        .background(DieterTheme.sidebar)
     }
 
     private var headerSummary: String {
@@ -298,19 +305,8 @@ struct FilesView: View {
         return "\(model.fileScopeCardID == nil ? model.projectName : "Conversation workspace") · \(count)"
     }
 
-    private var paneHeader: some View {
-        FluidPaneChrome(background: .clear, spacing: 7) {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Files").font(DieterFont.paneTitle).lineLimit(1)
-                    Text(headerSummary).font(DieterFont.subtitle)
-                        .foregroundStyle(DieterTheme.tertiary).lineLimit(1)
-                }
-                .layoutPriority(1)
-                Spacer(minLength: 8)
-                GlobalQuickTaskButton()
-            }
-        } secondary: {
+    private var navigationToolbar: some View {
+        Group {
             HStack(spacing: 8) {
                 HStack(spacing: 4) {
                     Button {
@@ -371,7 +367,8 @@ struct FilesView: View {
             }
             .font(.callout)
             .controlSize(.regular)
-            .buttonStyle(.bordered)
+            .buttonStyle(DieterGlassButtonStyle())
+            .padding(.horizontal, 12).padding(.vertical, 8)
         }
     }
 
@@ -590,14 +587,14 @@ private struct ProjectImagePreview: View {
                 } label: {
                     Image(systemName: "minus")
                 }
-                .buttonStyle(DieterIconButtonStyle()).disabled(zoom <= 0.5).help("Zoom out")
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).disabled(zoom <= 0.5).help("Zoom out")
                 Button("Fit") { zoom = 1 }.buttonStyle(.borderless).font(.caption)
                 Button {
                     zoom = min(4, zoom + 0.25)
                 } label: {
                     Image(systemName: "plus")
                 }
-                .buttonStyle(DieterIconButtonStyle()).disabled(zoom >= 4).help("Zoom in")
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).disabled(zoom >= 4).help("Zoom in")
             }
             .font(.system(size: 10, weight: .medium)).foregroundStyle(DieterTheme.subtle)
             .padding(.horizontal, 12).padding(.vertical, 9)

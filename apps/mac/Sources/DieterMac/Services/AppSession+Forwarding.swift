@@ -166,6 +166,14 @@ extension AppSession {
         get { window.commandPalettePresented }
         set { window.commandPalettePresented = newValue }
     }
+    var newCardLaneID: String {
+        get { window.newCardLaneID }
+        set { window.newCardLaneID = newValue }
+    }
+    var sidebarCollapsed: Bool {
+        get { window.sidebarCollapsed }
+        set { window.sidebarCollapsed = newValue }
+    }
     var createConversationPresented: Bool {
         get { window.createConversationPresented }
         set { window.createConversationPresented = newValue }

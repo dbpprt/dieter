@@ -64,30 +64,24 @@ struct ProjectChangesView: View {
     private var selectedFile: Dieter_V1_ChangedFile? { model.changes?.files.first { $0.path == model.selection?.path } }
 
     var body: some View {
-        GeometryReader { geometry in
-            let compact = geometry.size.width < 900
-            VStack(spacing: 0) {
-                if standalone {
-                    paneHeader
-                    Divider().overlay(DieterTheme.border)
-                }
-                if compact {
-                    if showCompactDiff, ready, model.selection != nil { diffPane(compact: true) } else { fileNavigator }
-                } else {
-                    HSplitView {
-                        fileNavigator.frame(minWidth: 260, idealWidth: 340, maxWidth: 520)
-                        diffPane(compact: false).frame(minWidth: 440)
+        Group {
+            if standalone {
+                DieterSectionScaffold {
+                    DieterTitleCapsule(title: "Changes", detail: headerSummary)
+                } trailing: {
+                    EmptyView()
+                } content: {
+                    VStack(spacing: 0) {
+                        changesToolbar
+                        Rectangle().fill(DieterTheme.hairline).frame(height: 1)
+                        changesContent
                     }
                 }
-                feedback
-            }
-            .onChange(of: compact) { _, compact in
-                if compact, model.selection != nil { showCompactDiff = true }
+            } else {
+                changesContent
             }
         }
-        .ignoresSafeArea(.container, edges: standalone ? .top : [])
         .foregroundStyle(DieterTheme.text)
-        .background(DieterTheme.background)
         .task(id: targetKey) {
             guard active, scenePhase == .active else { model.suspend(); return }
             if injectedModel == nil {
@@ -137,6 +131,27 @@ struct ProjectChangesView: View {
 
     // MARK: Header
 
+    /// The file list beside the diff, or one of them while compact.
+    private var changesContent: some View {
+        GeometryReader { geometry in
+            let compact = geometry.size.width < 900
+            VStack(spacing: 0) {
+                if compact {
+                    if showCompactDiff, ready, model.selection != nil { diffPane(compact: true) } else { fileNavigator }
+                } else {
+                    HSplitView {
+                        fileNavigator.frame(minWidth: 260, idealWidth: 340, maxWidth: 520)
+                        diffPane(compact: false).frame(minWidth: 440)
+                    }
+                }
+                feedback
+            }
+            .onChange(of: compact) { _, compact in
+                if compact, model.selection != nil { showCompactDiff = true }
+            }
+        }
+    }
+
     private var headerSummary: String {
         guard ready, let changes = model.changes else { return projectName }
         var parts = [projectName]
@@ -151,19 +166,8 @@ struct ProjectChangesView: View {
         return parts.joined(separator: " · ")
     }
 
-    private var paneHeader: some View {
-        FluidPaneChrome(background: .clear, spacing: 7) {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Changes").font(DieterFont.paneTitle).lineLimit(1)
-                    Text(headerSummary).font(DieterFont.subtitle)
-                        .foregroundStyle(DieterTheme.tertiary).lineLimit(1)
-                }
-                .layoutPriority(1)
-                Spacer(minLength: 8)
-                GlobalQuickTaskButton()
-            }
-        } secondary: {
+    private var changesToolbar: some View {
+        Group {
             HStack(spacing: 8) {
                 ProjectCheckoutMenu(projectID: store.selectedProjectID)
                     .menuStyle(.button).fixedSize()
@@ -177,7 +181,8 @@ struct ProjectChangesView: View {
             }
             .font(.callout)
             .controlSize(.regular)
-            .buttonStyle(.bordered)
+            .buttonStyle(DieterGlassButtonStyle())
+            .padding(.horizontal, 12).padding(.vertical, 8)
         }
     }
 
@@ -849,7 +854,9 @@ struct ProjectChangesView: View {
                 } label: {
                     Image(systemName: "chevron.left")
                 }
-                .buttonStyle(DieterIconButtonStyle()).help("Back to files").accessibilityLabel("Back to files")
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Back to files").accessibilityLabel(
+                    "Back to files"
+                )
                 .accessibilityIdentifier("project-changes.back").smokeTarget("project-changes.back")
             }
             Image(systemName: FilePresentation.symbol(name: label.filename)).font(.system(size: 11))
@@ -996,11 +1003,10 @@ private struct ChangesActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 11, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 10).frame(height: 26)
-            .foregroundStyle(prominent ? Color.black.opacity(0.82) : DieterTheme.text)
-            .background(prominent ? DieterTheme.reviewAccent : DieterTheme.input, in: RoundedRectangle(cornerRadius: 5))
-            .overlay { RoundedRectangle(cornerRadius: 5).stroke(prominent ? .clear : DieterTheme.border) }
+            .padding(.horizontal, 11).frame(height: 28)
+            .foregroundStyle(prominent ? Color.white : DieterTheme.text)
+            .contentShape(Capsule())
+            .dieterCapsuleChrome(prominent: prominent)
             .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
-            .contentShape(RoundedRectangle(cornerRadius: 5))
     }
 }

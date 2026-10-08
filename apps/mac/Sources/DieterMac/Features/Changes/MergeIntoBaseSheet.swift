@@ -290,7 +290,7 @@ struct MergeIntoBaseSheet: View {
                         }
                     }
                 }
-                .buttonStyle(DieterPrimaryButtonStyle())
+                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
                 .accessibilityIdentifier("merge.resolve-with-agent")
             }
             .padding(12).frame(maxWidth: .infinity, alignment: .leading)
@@ -313,13 +313,13 @@ struct MergeIntoBaseSheet: View {
                     .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
                 Spacer()
                 Button("Abort") { startOperationAndDismiss(.abortConflict) }
-                    .buttonStyle(DieterSecondaryButtonStyle(destructive: true))
+                    .buttonStyle(DieterBarButtonStyle(destructive: true, size: 30))
                     .disabled(!availability.allows(.abortConflict))
                 Button("Continue after resolving") { startOperationAndDismiss(.continueConflict) }
-                    .buttonStyle(DieterSecondaryButtonStyle())
+                    .buttonStyle(DieterBarButtonStyle(size: 30))
                     .disabled(!availability.allows(.continueConflict))
                 Button("Merge blocked") {}
-                    .buttonStyle(DieterPrimaryButtonStyle())
+                    .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
                     .disabled(true).opacity(0.45)
             } else {
                 Text(availability.mergeDestination)
@@ -331,22 +331,22 @@ struct MergeIntoBaseSheet: View {
                     } label: {
                         Label("Update from \(baseBranch)", systemImage: "arrow.triangle.2.circlepath")
                     }
-                    .buttonStyle(DieterSecondaryButtonStyle())
+                    .buttonStyle(DieterBarButtonStyle(size: 30))
                 }
                 if availability.allows(.createPullRequest) {
                     Button("Create PR instead…") {
                         dismiss()
                         onCreatePullRequestInstead()
                     }
-                    .buttonStyle(DieterSecondaryButtonStyle())
+                    .buttonStyle(DieterBarButtonStyle(size: 30))
                 }
-                Button("Cancel") { dismiss() }.buttonStyle(DieterSecondaryButtonStyle())
+                Button("Cancel") { dismiss() }.buttonStyle(DieterBarButtonStyle(size: 30))
                 Button {
                     startMerge()
                 } label: {
                     Label(readiness.mergeTitle, systemImage: "arrow.triangle.merge")
                 }
-                .buttonStyle(DieterPrimaryButtonStyle())
+                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!canMerge)
                 .opacity(canMerge ? 1 : 0.5)

@@ -49,11 +49,12 @@ struct GitOperationSheet: View {
                     Text("Starting operation…").font(DieterFont.meta).foregroundStyle(DieterTheme.tertiary)
                 }
                 Spacer()
-                Button("Cancel") { dismiss() }.buttonStyle(DieterSecondaryButtonStyle())
+                Button("Cancel") { dismiss() }.buttonStyle(DieterBarButtonStyle(size: 30))
                 Button(spec.title, role: spec.destructive ? .destructive : nil) { start() }
                     .buttonStyle(
                         spec.destructive
-                            ? DieterPrimaryButtonStyle(tint: DieterTheme.coral) : DieterPrimaryButtonStyle()
+                            ? DieterBarButtonStyle(prominent: true, tint: DieterTheme.coral, size: 30)
+                            : DieterBarButtonStyle(prominent: true, size: 30)
                     )
                     .disabled(starting || !ready).opacity(starting || !ready ? 0.5 : 1)
             }

@@ -48,7 +48,7 @@ struct ConversationProcessesPane: View {
                                             Text(status(process)).font(.caption).foregroundStyle(.secondary)
                                         }.padding(10).frame(maxWidth: .infinity, alignment: .leading)
                                             .background(
-                                                model.selectedID == process.id ? Color.primary.opacity(0.08) : .clear,
+                                                model.selectedID == process.id ? DieterTheme.tileSelected : .clear,
                                                 in: RoundedRectangle(cornerRadius: 7)
                                             )
                                             .contentShape(Rectangle())

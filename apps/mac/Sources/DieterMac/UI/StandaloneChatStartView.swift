@@ -110,7 +110,7 @@ struct StandaloneChatStartView: View {
                             }
                             .padding(.horizontal, 13).frame(height: 46)
                             .background(
-                                DieterTheme.surface.opacity(0.7),
+                                DieterTheme.tile,
                                 in: RoundedRectangle(cornerRadius: 10, style: .continuous)
                             )
                             .overlay(
