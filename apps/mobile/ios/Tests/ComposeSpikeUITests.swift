@@ -57,7 +57,10 @@ final class ComposeSpikeUITests: XCTestCase {
         let title = app.textViews.matching(NSPredicate(format: "label CONTAINS %@", "Task title")).firstMatch
         XCTAssertTrue(title.waitForExistence(timeout: 10))
         title.tap(); title.typeText("A shared mobile conversation")
-        let hideKeyboard = app.buttons["Hide keyboard"].firstMatch
+        // The iPad system keyboard has a button with the same label. Scope
+        // this assertion and action to the creation screen's header.
+        let creationSurface = app.scrollViews.containing(.staticText, identifier: "New card").firstMatch
+        let hideKeyboard = creationSurface.buttons["Hide keyboard"]
         XCTAssertTrue(waitForHittable(hideKeyboard), "Task header stays visible while editing the title")
         hideKeyboard.tap()
         let prompt = app.textViews.matching(NSPredicate(format: "label CONTAINS %@", "What should we do?")).firstMatch
