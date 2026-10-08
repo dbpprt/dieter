@@ -95,7 +95,14 @@ final class ComposeSpikeUITests: XCTestCase {
         XCTAssertEqual(
             XCTWaiter.wait(for: [visibleComposer], timeout: 10), .completed,
             "Composer stays visible above the system keyboard")
-        composer.typeText("Keep the same task and add the next step.")
+        let followUp = "Keep the same task and add the next step."
+        composer.typeText(followUp)
+        // Compose applies typed text asynchronously; sending earlier submits a
+        // prefix and leaves the rest focused in the composer.
+        let typed = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in (composer.value as? String)?.contains(followUp) == true }, object: composer
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [typed], timeout: 10), .completed, "The composer holds the whole message")
         app.buttons["Send message"].tap()
         if landscape {
             keyboard.buttons["Hide keyboard"].tap()
