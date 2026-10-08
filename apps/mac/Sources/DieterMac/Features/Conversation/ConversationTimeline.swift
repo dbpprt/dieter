@@ -11,7 +11,10 @@ struct ConversationTimeline: View {
     // Optional instrumentation for isolated native scroll regression fixtures.
     var onTailScroll: (() -> Void)?
     var onViewportObservation: ((ConversationViewportObservation) -> Void)?
+    var onHistoryActions: ((ConversationHistoryActions) -> Void)?
+    var onReadinessChange: ((Bool) -> Void)?
     @State private var historyLoadInFlight = false
+    @State private var awaitingHistoryPage = false
     @State private var loadingEarlier = true
     @State private var historyRequestID: UUID?
     @State private var contentCanScroll = true
@@ -74,6 +77,14 @@ struct ConversationTimeline: View {
             renderCount: renderRange.count
         )
     }
+    private struct PreparationKey: Hashable {
+        let presentation: ConversationPresentationKey
+        let awaitingHistoryPage: Bool
+    }
+
+    private var preparationKey: PreparationKey {
+        PreparationKey(presentation: projectionKey, awaitingHistoryPage: awaitingHistoryPage)
+    }
     private var conversationID: String { context.selectedCardID ?? context.selectedChatID ?? "" }
     private var state: ClientConversationState { context.model.state }
     private var unsentAttachments: [Dieter_V1_MessagePart] {
@@ -122,10 +133,6 @@ struct ConversationTimeline: View {
             // anchor-translation cycle that can trap AttributeGraph in one
             // transaction indefinitely.
             VStack(alignment: .leading, spacing: 15) {
-                if projectionConversationID != conversationID && !messages.isEmpty {
-                    LoadFeedback(title: "Preparing conversation…", compact: true)
-                        .accessibilityIdentifier("conversation.preparing")
-                }
                 // Always mounted at a fixed height: the last older page
                 // arriving must not shift the rows underneath the reader.
                 historyEdge(
@@ -192,12 +199,16 @@ struct ConversationTimeline: View {
                     .background { ConversationScrollAnchorProbe(controller: scroller, messageIDs: []) }
             }
             .padding(.horizontal, 18).padding(.top, 8)
-            // The first projection is laid out at the scroll view's default
-            // origin before the controller pins it to the tail. Keep that
-            // intermediate frame mounted for layout but invisible.
-            .opacity(timelineReadyForDisplay ? 1 : 0)
-            .accessibilityHidden(!timelineReadyForDisplay)
-            .allowsHitTesting(timelineReadyForDisplay)
+        }
+        // Keep the initial layout mounted but invisible until it is positioned.
+        .opacity(timelineReadyForDisplay ? 1 : 0)
+        .accessibilityHidden(!timelineReadyForDisplay)
+        .allowsHitTesting(timelineReadyForDisplay)
+        .overlay {
+            if !timelineReadyForDisplay {
+                ConversationLoadingView(standalone: state.chat, preparingTimeline: true)
+                    .allowsHitTesting(false)
+            }
         }
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         // Growing messages must not move the reading position after a user
@@ -211,7 +222,7 @@ struct ConversationTimeline: View {
                 controller: scroller,
                 rendersLatest: renderedThroughLatest,
                 onFollowingChange: handleFollowingChange,
-                onUserScroll: handleUserScroll,
+                onUserScroll: { _ in },
                 onScrollableChange: { contentCanScroll = $0 },
                 onScrollIntent: handleUserScrollIntent,
                 onTailCorrection: onTailScroll)
@@ -236,6 +247,12 @@ struct ConversationTimeline: View {
                 .onDisappear { updateJumpToLatestCursor(false) }
             }
         }
+        .onAppear {
+            onHistoryActions?(
+                ConversationHistoryActions(
+                    earlier: showEarlierMessages, later: showLaterMessages,
+                    isLoading: { historyLoadInFlight || windowChangePending }))
+        }
         .task(id: responseReadKey) { await acknowledgeVisibleResponse() }
         .onChange(of: showsJumpToLatest) { _, visible in
             #if DIETER_UI_SMOKE
@@ -244,6 +261,7 @@ struct ConversationTimeline: View {
         }
         .onChange(of: timelineReadyForDisplay, initial: true) { _, ready in
             BoardRenderingDiagnostics.recordConversationReady(conversationID, ready: ready)
+            onReadinessChange?(ready)
         }
         .onChange(of: viewportObservation, initial: true) { _, observation in
             onViewportObservation?(observation)
@@ -263,6 +281,7 @@ struct ConversationTimeline: View {
             renderedHasEarlier = false
             renderedThroughLatest = true
             historyLoadInFlight = false
+            awaitingHistoryPage = false
             historyRequestID = nil
             contentCanScroll = true
             projection = .empty
@@ -271,7 +290,11 @@ struct ConversationTimeline: View {
             scroller.reset()
             scroller.beginInitialPositioning()
         }
-        .task(id: projectionKey) {
+        .task(id: preparationKey) {
+            // Keep the mounted projection intact until the page and its target
+            // range are both known. Otherwise one reply mounts two successive
+            // windows: the old range, then the newly requested range.
+            guard !awaitingHistoryPage else { return }
             let key = projectionKey
             let range = renderRange
             let throughLatest = range.upperBound == messages.count && !context.model.browsingEarlierHistory
@@ -300,36 +323,42 @@ struct ConversationTimeline: View {
             // The old rows are still mounted and the user may have kept
             // scrolling during preparation: hold where the reader is now.
             scroller.holdReadingPosition()
-            scroller.rendersLatest = throughLatest
-            projection = next
-            projectionConversationID = key.conversationID
-            renderedPosition = windowPosition
-            renderedHasEarlier = range.lowerBound > 0
-            renderedThroughLatest = throughLatest
-            guard viewportMode == .awaitingInitial(conversationID: key.conversationID) else { return }
-            let source = Array(messages[range])
-            if source.isEmpty {
-                scroller.finishInitialPositioning()
-                viewportMode = .followingLatest
-                return
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                scroller.rendersLatest = throughLatest
+                projection = next
+                projectionConversationID = key.conversationID
+                renderedPosition = windowPosition
+                renderedHasEarlier = range.lowerBound > 0
+                renderedThroughLatest = throughLatest
             }
-            // Reveal the transcript once its first layout is pinned to the tail.
-            for _ in 0..<20 {
-                // Yield an actual run-loop pass so AppKit can place the rows;
-                // a sequence of executor yields can all precede native layout.
-                try? await DieterTaskSleep.milliseconds(5)
-                guard !Task.isCancelled else { return }
-                guard viewportMode == .awaitingInitial(conversationID: key.conversationID) else { return }
-                if let lastID = source.last?.id, scroller.hasLaidOutMessage(lastID),
-                    scroller.isAtEdge(earlier: false)
-                {
-                    break
-                }
+            // Use rendered row identities: some source messages have no
+            // visible row, and must not keep the preparation overlay open.
+            let firstID = next.rows.first?.messageIds.first
+            let lastID = next.rows.last?.messageIds.last
+            let positioningInitially = viewportMode == .awaitingInitial(conversationID: key.conversationID)
+            // As on iOS, position the hidden transcript before revealing it.
+            // A fixed timeout can expire during rich-text layout and expose a
+            // top frame followed by a jump to the tail. History feedback also
+            // stays active until the new rows have finished native layout.
+            var settledPasses = 0
+            while settledPasses < 2 {
+                do { try await DieterTaskSleep.milliseconds(5) } catch { return }
+                guard !Task.isCancelled, key == projectionKey else { return }
+                let laidOut = scroller.projectionIsLaidOut(firstMessageID: firstID, lastMessageID: lastID)
+                let positioned = !positioningInitially || scroller.isAtEdge(earlier: false)
+                settledPasses = laidOut && positioned ? settledPasses + 1 : 0
             }
+            historyRequestID = nil
+            historyLoadInFlight = false
+            guard positioningInitially,
+                viewportMode == .awaitingInitial(conversationID: key.conversationID)
+            else { return }
             // Do not leave a short-message conversation with a half-empty
             // viewport merely to meet a row budget. Grow only when the actual
             // laid-out tail does not fill it, retaining the text/part limits.
-            if let lastID = source.last?.id, scroller.hasLaidOutMessage(lastID),
+            if let lastID, scroller.hasLaidOutMessage(lastID),
                 !scroller.contentCanScroll, range.lowerBound > 0, windowPosition == .latest
             {
                 let limit = min(ConversationRenderWindow.maximumMessages, latestMessageLimit * 2)
@@ -366,33 +395,18 @@ struct ConversationTimeline: View {
         }
     }
 
-    private func handleUserScroll(_ proximity: ConversationScrollController.EdgeProximity) {
-        if proximity.movedEarlier, proximity.nearStart {
-            showEarlierMessages()
-        } else if !proximity.movedEarlier, proximity.nearEnd {
-            showLaterMessages()
-        }
-    }
-
     private func handleUserScrollIntent(_ delta: CGFloat) {
-        let earlier = delta > 0
-        // The native monitor runs before AppKit moves the clip view. Relinquish
-        // the tail now, before content streaming in can undo this gesture.
-        if earlier, scroller.contentCanScroll { scroller.detach() }
-        // A clamped edge produces no movement to observe; act on intent.
-        guard scroller.isAtEdge(earlier: earlier) else { return }
-        if earlier {
-            showEarlierMessages()
-        } else if renderedThroughLatest {
-            scroller.follow()
-        } else {
-            showLaterMessages()
-        }
+        // Wheel input changes the reading position; history is loaded by the
+        // explicit controls, as on iOS. Never replace rows mid-scroll merely
+        // because the viewport approached a render-window edge.
+        if delta > 0, scroller.contentCanScroll { scroller.detach() }
+        if delta < 0, renderedThroughLatest, scroller.isAtEdge(earlier: false) { scroller.follow() }
     }
 
     private func returnToLatest() {
         historyRequestID = nil
         historyLoadInFlight = false
+        awaitingHistoryPage = false
         viewportMode = .followingLatest
         setWindowPosition(.latest)
         scroller.follow()
@@ -405,16 +419,14 @@ struct ConversationTimeline: View {
 
     private func historyEdge(loading: Bool, earlier: Bool, available: Bool) -> some View {
         HStack(spacing: 8) {
-            if !available {
-                Color.clear
-            } else if loading {
+            if loading {
                 ProgressView().controlSize(.small)
                 Text(earlier ? "Loading earlier messages…" : "Loading later messages…")
                     .font(.caption).foregroundStyle(DieterTheme.tertiary)
+            } else if !available {
+                Color.clear
             } else {
-                // Scrolling loads history well before this edge is reached.
-                // The button keeps it reachable when the transcript is too
-                // short to scroll or a request failed.
+                // Explicit paging keeps the document steady during scrolling.
                 Button(earlier ? "Load earlier messages" : "Load later messages") {
                     if earlier { showEarlierMessages() } else { showLaterMessages() }
                 }
@@ -423,7 +435,7 @@ struct ConversationTimeline: View {
         }
         .frame(maxWidth: .infinity).frame(height: 18)
         .accessibilityElement(children: .combine)
-        .accessibilityHidden(!available)
+        .accessibilityHidden(!available && !loading)
         .accessibilityIdentifier(earlier ? "conversation.history.earlier" : "conversation.history.later")
         .smokeTarget(earlier ? "conversation.history.earlier" : "conversation.history.later")
         .accessibilityLabel(earlier ? "Earlier conversation history" : "Later conversation history")
@@ -436,6 +448,8 @@ struct ConversationTimeline: View {
         guard !windowChangePending, !historyLoadInFlight, projectionConversationID == conversationID else { return }
         if let next = ConversationRenderWindow.extendingEarlier(messages: messages, renderedRange: renderRange) {
             leaveLatest()
+            historyLoadInFlight = true
+            loadingEarlier = true
             setWindowPosition(next)
         } else if context.conversationHistoryHasMore {
             loadHistory(earlier: true)
@@ -445,6 +459,9 @@ struct ConversationTimeline: View {
     private func showLaterMessages() {
         guard !windowChangePending, !historyLoadInFlight, projectionConversationID == conversationID else { return }
         if let next = ConversationRenderWindow.extendingLater(messages: messages, renderedRange: renderRange) {
+            leaveLatest()
+            historyLoadInFlight = true
+            loadingEarlier = false
             setWindowPosition(next)
         } else if context.model.browsingEarlierHistory {
             loadHistory(earlier: false)
@@ -471,15 +488,19 @@ struct ConversationTimeline: View {
         let requestID = UUID()
         historyRequestID = requestID
         historyLoadInFlight = true
+        awaitingHistoryPage = true
         loadingEarlier = earlier
         leaveLatest()
         let selectedID = conversationID
         Task { @MainActor in
             let loaded = earlier ? await context.loadEarlierMessages() : await context.model.loadLaterMessages()
             guard historyRequestID == requestID, selectedID == conversationID else { return }
-            historyRequestID = nil
-            historyLoadInFlight = false
-            guard loaded else { return }
+            awaitingHistoryPage = false
+            guard loaded else {
+                historyRequestID = nil
+                historyLoadInFlight = false
+                return
+            }
             // Message identities keep the window where the reader is while
             // the loaded page shifts every index; mount one more page of it.
             let next =

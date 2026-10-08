@@ -5,8 +5,8 @@ import SwiftUI
 import Testing
 @testable import DieterMac
 
-@Test(arguments: [false, true]) @MainActor
-func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool) async throws {
+@Test(arguments: [false, true], [false, true]) @MainActor
+func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool, chat: Bool) async throws {
     let store = DieterStore(liveEnvironment: false)
     var snapshot = automaticScrollSnapshot(start: 0, end: 30)
     for index in snapshot.conversation.messages.indices {
@@ -14,9 +14,14 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
             "Automatic scroll message \(index)."
             + (shortRows ? "" : String(repeating: "\nA rich transcript line to lay out.", count: 8))
     }
-    store.state.chats = [snapshot.detail.card]
-    store.chats = [snapshot.detail.card]
-    store.selectedChatID = snapshot.detail.card.id
+    if chat {
+        store.state.chats = [snapshot.detail.card]
+        store.chats = [snapshot.detail.card]
+        store.selectedChatID = snapshot.detail.card.id
+    } else {
+        snapshot.detail.card.scope = "board"
+        store.selectedCardID = snapshot.detail.card.id
+    }
     store.conversation = snapshot
     store.selectedDetail = snapshot.detail
     let context = store.conversationContext
@@ -26,21 +31,33 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
         historyRequests += 1; return false
     }
     var positioned = false
+    var ready = false
     let root = NSHostingView(
-        rootView: ConversationTimeline(onViewportObservation: { positioned = $0.initialPositionComplete })
-            .environment(store).environment(context))
+        rootView: ConversationTimeline(
+            onViewportObservation: { positioned = $0.initialPositionComplete },
+            onReadinessChange: { ready = $0 }
+        )
+        .environment(store).environment(context))
     root.sizingOptions = []
     let window = NSWindow(
-        contentRect: NSRect(x: 0, y: 0, width: 700, height: 600),
+        contentRect: NSRect(x: 0, y: 0, width: chat ? 700 : 420, height: 600),
         styleMask: [.borderless], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     window.contentView = root
     defer { window.contentView = nil; window.close() }
+    let committed = CommittedFrameSampler {
+        guard ready, let scroll = automaticScrollViews(in: root).compactMap({ $0 as? NSScrollView }).first,
+            let document = scroll.documentView
+        else { return nil }
+        return abs(scroll.documentVisibleRect.maxY - scroll.contentInsets.bottom - document.bounds.maxY)
+    }
     for _ in 0..<100 {
         await settleAutomaticScroll(root, milliseconds: 20)
         if positioned { break }
     }
     #expect(positioned)
+    #expect(ready)
+    #expect(committed.stop() < 2, "Every revealed frame must already be positioned at the tail")
     let scroll = try #require(automaticScrollViews(in: root).compactMap { $0 as? NSScrollView }.first)
     let ids = automaticScrollRenderedMessageIDs(in: scroll)
     #expect(ids.contains(29))
@@ -59,28 +76,89 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
     #expect(context.conversationMessages.count == 30, "Rendering must preserve the loaded history")
 }
 
-@Test @MainActor func automaticHistoryScrollLoadsOnePageAndPreservesTheReaderThroughNetworkDelay() async throws {
-    let snapshot = automaticScrollSnapshot(start: 90, end: 120)
+@Test(arguments: [false, true]) @MainActor
+func openingWaitsForLayoutAndCancelsThePreviousConversation(chat: Bool) async throws {
+    let store = DieterStore(liveEnvironment: false)
+    var snapshot = automaticScrollSnapshot(start: 0, end: 30)
+    if !chat { snapshot.detail.card.scope = "board" }
+    if chat { store.selectedChatID = snapshot.detail.card.id } else { store.selectedCardID = snapshot.detail.card.id }
+    store.conversation = snapshot
+    store.selectedDetail = snapshot.detail
+    store.conversationContext.model.resetHistory(to: snapshot)
+    var ready = false
+    var positionedIDs: [String] = []
+    let root = NSHostingView(
+        rootView: ConversationTimeline(
+            onViewportObservation: { if $0.initialPositionComplete { positionedIDs.append($0.conversationID) } },
+            onReadinessChange: { ready = $0 }
+        )
+        .environment(store).environment(store.conversationContext))
+    root.sizingOptions = []
+    let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: chat ? 700 : 420, height: 0),
+        styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = root
+    defer { window.contentView = nil; window.close() }
+    await settleAutomaticScroll(root, milliseconds: 250)
+    #expect(!ready, "An unusable viewport must stay hidden after the former opening timeout")
+    #expect(positionedIDs.isEmpty)
+
+    var replacement = automaticScrollSnapshot(start: 60, end: 90)
+    replacement.detail.card.id = "replacement-conversation"
+    replacement.detail.card.scope = snapshot.detail.card.scope
+    replacement.conversation.cardID = replacement.detail.card.id
+    if chat {
+        store.selectedChatID = replacement.detail.card.id
+    } else {
+        store.selectedCardID = replacement.detail.card.id
+    }
+    store.conversation = replacement
+    store.selectedDetail = replacement.detail
+    store.conversationContext.model.resetHistory(to: replacement)
+    window.setContentSize(NSSize(width: chat ? 700 : 420, height: 600))
+    for _ in 0..<100 {
+        await settleAutomaticScroll(root, milliseconds: 20)
+        if ready { break }
+    }
+    #expect(ready)
+    #expect(!positionedIDs.isEmpty)
+    #expect(positionedIDs.allSatisfy { $0 == replacement.detail.card.id })
+    let scroll = try #require(automaticScrollViews(in: root).compactMap { $0 as? NSScrollView }.first)
+    let ids = automaticScrollRenderedMessageIDs(in: scroll)
+    #expect(ids.contains(89))
+    #expect(ids.allSatisfy { $0 >= 60 }, "A canceled opening must not mount the previous conversation")
+    #expect(abs(scroll.documentVisibleRect.maxY - (scroll.documentView?.bounds.maxY ?? 0)) < 2)
+}
+
+@Test(arguments: [false, true]) @MainActor
+func explicitHistoryLoadPreservesTheReaderThroughNetworkDelay(chat: Bool) async throws {
+    // This page reaches the beginning, so the history control disappears
+    // after its loading state without shifting the transcript.
+    var snapshot = automaticScrollSnapshot(start: 60, end: 90)
+    if !chat { snapshot.detail.card.scope = "board" }
     let rpc = AutomaticScrollLayoutCore(snapshot)
     let store = DieterStore(core: rpc.core, liveEnvironment: false)
     let context = store.conversationContext
     let model = context.model
     store.state.chats = [snapshot.detail.card]
     store.chats = [snapshot.detail.card]
-    store.selectedChatID = snapshot.detail.card.id
+    if chat { store.selectedChatID = snapshot.detail.card.id } else { store.selectedCardID = snapshot.detail.card.id }
     model.observe(snapshot.detail.card.id)
     rpc.publish()
     context.onLoadEarlierMessages = { await model.loadEarlierMessages() }
 
+    var actions: ConversationHistoryActions?
     let root = NSHostingView(
-        rootView: ConversationTimeline().environment(store).environment(context))
+        rootView: ConversationTimeline(onHistoryActions: { actions = $0 }).environment(store).environment(context))
     root.sizingOptions = []
     let window = NSWindow(
-        contentRect: NSRect(x: 0, y: 0, width: 700, height: 600),
+        contentRect: NSRect(x: 0, y: 0, width: chat ? 700 : 420, height: 600),
         styleMask: [.borderless], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     window.contentView = root
     defer {
+        actions = nil
         model.observe(nil)
         rpc.releasePage()
         window.close()
@@ -98,14 +176,22 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
             scroll.documentVisibleRect.maxY - scroll.contentInsets.bottom
                 - (scroll.documentView?.bounds.maxY ?? 0)) < 2)
 
-    // Deliver native wheel events directly to this hidden fixture's scroll
-    // view. No global input, key window, operator app, or daemon is involved.
-    for index in 0..<100 {
+    let controls = try #require(actions)
+    let mounted = automaticScrollRenderedMessageIDs(in: scroll)
+    for index in 0..<30 {
         try automaticScrollWheel(scroll, window: window, pixels: 64, phase: index == 0 ? 1 : 2)
-        await settleAutomaticScroll(root, milliseconds: 20)
-        if rpc.requestCount > 0 { break }
+        await settleAutomaticScroll(root, milliseconds: 10)
     }
-    try #require(rpc.requestCount == 1, "Scrolling to the earlier edge must request one page")
+    try automaticScrollWheel(scroll, window: window, pixels: 0, phase: 4)
+    #expect(rpc.requestCount == 0, "Scrolling alone must not fetch or swap history")
+    #expect(automaticScrollRenderedMessageIDs(in: scroll) == mounted)
+    controls.earlier()
+    try await waitForAutomaticHistoryLayout(controls, root: root)
+    // The first action reveals older rows already loaded by the core; the
+    // second requests an actual network page.
+    controls.earlier()
+    await settleAutomaticScroll(root, milliseconds: 40)
+    try #require(rpc.requestCount == 1)
     try #require(model.conversationHistoryLoading)
 
     // The user keeps scrolling while the network is outstanding. Restoring
@@ -123,6 +209,8 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
         automaticScrollTextPosition(reading.text, in: scroll).map { abs($0 - reading.offset) }
     }
 
+    controls.earlier()
+    #expect(rpc.requestCount == 1, "Repeated clicks while loading must not request another page")
     rpc.releasePage()
     for _ in 0..<40 {
         await settleAutomaticScroll(root, milliseconds: 20)
@@ -138,6 +226,7 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
     #expect(abs(restoredOffset - reading.offset) < 2, "Loading must preserve the current message's pixel offset")
     #expect(committed.stop() < 2, "No committed frame may show the transcript displaced by the loaded page")
     #expect(model.olderConversationMessages.count == 60)
+    #expect(!model.conversationHistoryHasMore)
     #expect(rpc.requestCount == 1, "A restored viewport must not chain-load another page")
 
     // Scrolling down through the loaded conversation rejoins the live tail
@@ -159,156 +248,76 @@ func initialTranscriptMountsOnlyTheTailAndExpandsToFillShortRows(shortRows: Bool
     #expect(rpc.requestCount == 1)
 }
 
-@Test @MainActor func automaticHistoryDownwardWheelAdvancesFromABoundedRenderedEnd() async throws {
-    let store = DieterStore(liveEnvironment: false)
-    let context = store.conversationContext
-    // Larger than the pages a detached reader retains, so scrolling back must
-    // eventually release the live tail.
-    let latestMessageID = 239
-    var snapshot = automaticScrollSnapshot(start: 40, end: latestMessageID + 1)
-    for index in snapshot.conversation.messages.indices {
-        snapshot.conversation.messages[index].parts[0].text =
-            "Automatic scroll message \(index + 40).\n"
-            + String(
-                repeating: "A longer transcript line keeps rendering bounded while preserving useful content.\n",
-                count: 16)
-    }
-    store.state.chats = [snapshot.detail.card]
-    store.chats = [snapshot.detail.card]
-    store.selectedChatID = snapshot.detail.card.id
-    store.conversation = snapshot
-    store.selectedDetail = snapshot.detail
-    context.model.resetHistory(to: snapshot)
-    context.onLoadEarlierMessages = { false }
-    let root = NSHostingView(
-        rootView: ConversationTimeline().environment(store).environment(context))
-    root.sizingOptions = []
-    let window = NSWindow(
-        contentRect: NSRect(x: 0, y: 0, width: 700, height: 600),
-        styleMask: [.borderless], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
-    window.contentView = root
-    defer { window.close() }
-    await settleAutomaticScroll(root, milliseconds: 350)
-    let scroll = try #require(
-        automaticScrollViews(in: root).compactMap { $0 as? NSScrollView }.first {
-            ($0.documentView?.bounds.height ?? 0)
-                > $0.contentView.bounds.height - $0.contentInsets.top - $0.contentInsets.bottom
-        })
-    let initialIDs = automaticScrollRenderedMessageIDs(in: scroll)
-    try #require(initialIDs.contains(latestMessageID))
-    try #require(initialIDs.count < snapshot.conversation.messages.count, "The fixture must exceed the render budget")
-
-    for index in 0..<400 {
-        try automaticScrollWheel(scroll, window: window, pixels: 160, phase: index == 0 ? 1 : 2)
-        await settleAutomaticScroll(root, milliseconds: 20)
-        if !automaticScrollRenderedMessageIDs(in: scroll).contains(latestMessageID) { break }
-    }
-    try automaticScrollWheel(scroll, window: window, pixels: 0, phase: 4)
-    await settleAutomaticScroll(root, milliseconds: 160)
-    let earlierIDs = automaticScrollRenderedMessageIDs(in: scroll)
-    try #require(
-        !earlierIDs.contains(latestMessageID), "Earlier scrolling must replace the bounded live render window")
-    try #require((earlierIDs.min() ?? latestMessageID + 1) < (initialIDs.min() ?? 0))
-
-    // Newer messages remain outside the retained window. Reaching its end,
-    // by scrollbar or by wheel against the clamped edge, must keep mounting
-    // them until the true latest message is back.
-    for _ in 0..<20 {
-        let document = try #require(scroll.documentView)
-        var bounds = scroll.contentView.bounds
-        bounds.origin.y = document.bounds.maxY - bounds.height + scroll.contentInsets.bottom
-        scroll.contentView.scroll(to: scroll.contentView.constrainBoundsRect(bounds).origin)
-        scroll.reflectScrolledClipView(scroll.contentView)
-        await settleAutomaticScroll(root, milliseconds: 40)
-
-        try automaticScrollWheel(scroll, window: window, pixels: -64, phase: 1)
-        await settleAutomaticScroll(root, milliseconds: 40)
-        try automaticScrollWheel(scroll, window: window, pixels: 0, phase: 4)
-        await settleAutomaticScroll(root, milliseconds: 120)
-        if automaticScrollRenderedMessageIDs(in: scroll).contains(latestMessageID) { break }
-    }
-    #expect(
-        automaticScrollRenderedMessageIDs(in: scroll).contains(latestMessageID),
-        "Downward wheel intent at a bounded page's bottom must make the true latest message reachable")
-}
-
-@Test @MainActor func automaticLongConversationScrollNeverReversesItsRenderWindow() async throws {
+@Test(arguments: [false, true]) @MainActor
+func explicitHistoryPagingKeepsEveryCommittedFrameAnchored(chat: Bool) async throws {
     let store = DieterStore(liveEnvironment: false)
     let context = store.conversationContext
     var snapshot = automaticScrollSnapshot(start: 0, end: 360)
     for index in snapshot.conversation.messages.indices {
         snapshot.conversation.messages[index].parts[0].text =
             "Automatic scroll message \(index).\n"
-            + String(
-                repeating: "Long transcript content keeps each bounded render window deliberately small.\n",
-                count: 10)
+            + String(repeating: "A rich transcript line keeps the render budget small.\n", count: 16)
     }
     snapshot.page.hasMore_p = false
-    store.state.chats = [snapshot.detail.card]
-    store.chats = [snapshot.detail.card]
-    store.selectedChatID = snapshot.detail.card.id
+    if chat {
+        store.selectedChatID = snapshot.detail.card.id
+    } else {
+        snapshot.detail.card.scope = "board"
+        store.selectedCardID = snapshot.detail.card.id
+    }
     store.conversation = snapshot
     store.selectedDetail = snapshot.detail
     context.model.resetHistory(to: snapshot)
     context.onLoadEarlierMessages = { false }
-
+    var actions: ConversationHistoryActions?
     let root = NSHostingView(
-        rootView: ConversationTimeline().environment(store).environment(context))
+        rootView: ConversationTimeline(onHistoryActions: { actions = $0 })
+            .environment(store).environment(context))
     root.sizingOptions = []
     let window = NSWindow(
-        contentRect: NSRect(x: 0, y: 0, width: 700, height: 600),
+        contentRect: NSRect(x: 0, y: 0, width: chat ? 700 : 420, height: 600),
         styleMask: [.borderless], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     window.contentView = root
-    defer { window.close() }
-
+    defer { actions = nil; window.contentView = nil; window.close() }
     await settleAutomaticScroll(root, milliseconds: 350)
-    let scroll = try #require(
-        automaticScrollViews(in: root).compactMap { $0 as? NSScrollView }.first {
-            ($0.documentView?.bounds.height ?? 0)
-                > $0.contentView.bounds.height - $0.contentInsets.top - $0.contentInsets.bottom
-        })
-    let initialVisible = try #require(automaticScrollVisibleMessageID(in: scroll))
-    var windows: [ClosedRange<Int>] = []
-
-    // The live tail now mounts three bounded pages so a reader gets a useful
-    // initial stretch instead of one sparse screen of collapsed activity.
-    // Drive far enough to cross that larger document and exercise at least
-    // one overlapping scrollback-window replacement.
-    for index in 0..<400 {
-        try automaticScrollWheel(scroll, window: window, pixels: 160, phase: index == 0 ? 1 : 2)
-        await settleAutomaticScroll(root, milliseconds: 10)
-        let ids = automaticScrollRenderedMessageIDs(in: scroll)
-        if let lower = ids.min(), let upper = ids.max() {
-            let range = lower...upper
-            if windows.last != range { windows.append(range) }
+    let scroll = try #require(automaticScrollViews(in: root).compactMap { $0 as? NSScrollView }.first)
+    let controls = try #require(actions)
+    var ranges: [ClosedRange<Int>] = []
+    for _ in 0..<4 {
+        // Read at the top where the earlier control lives, then load one batch.
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: -scroll.contentInsets.top))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        await settleAutomaticScroll(root, milliseconds: 40)
+        let reading = try #require(automaticScrollReadingPosition(in: scroll))
+        let committed = CommittedFrameSampler {
+            automaticScrollTextPosition(reading.text, in: scroll).map { abs($0 - reading.offset) } ?? 10_000
         }
-        if windows.last?.lowerBound == 0 { break }
+        controls.earlier()
+        try await waitForAutomaticHistoryLayout(controls, root: root)
+        #expect(committed.stop() < 2, "A page insertion must not display even one displaced frame")
+        let ids = automaticScrollRenderedMessageIDs(in: scroll)
+        ranges.append(try #require(ids.min())...#require(ids.max()))
     }
-    try automaticScrollWheel(scroll, window: window, pixels: 0, phase: 4)
-    await settleAutomaticScroll(root, milliseconds: 160)
-    let finalVisible = try #require(automaticScrollVisibleMessageID(in: scroll))
-
-    try #require(windows.count >= 2, "The fixture must traverse multiple bounded render windows: \(windows)")
-    for (previous, current) in zip(windows, windows.dropFirst()) {
-        #expect(
-            current.lowerBound <= previous.lowerBound,
-            "Earlier-only wheel input paged later: \(windows)")
+    for (previous, current) in zip(ranges, ranges.dropFirst()) {
+        #expect(current.lowerBound < previous.lowerBound)
     }
-    // A render-window replacement mounts its new rows before restoring the
-    // preserved native scroll anchor. Sampling the visible row in that brief
-    // interval observes implementation staging, not a user-visible reversal.
-    // Compare settled endpoints while the window ranges above retain the
-    // per-transition monotonicity assertion.
-    #expect(
-        finalVisible <= initialVisible,
-        "Earlier-only wheel input moved the settled visible transcript forward: \(initialVisible) -> \(finalVisible)")
-    let firstWindow = try #require(windows.first)
-    let lastWindow = try #require(windows.last)
-    #expect(
-        lastWindow.lowerBound <= firstWindow.lowerBound - 24,
-        "The gesture must make substantial progress through the long transcript: \(windows)")
+    let earlier = try #require(ranges.last)
+    try #require(earlier.upperBound < 359, "The fixture must exceed the retained render budget")
+    // Desktop rendering is bounded separately from the core's deep history.
+    // Explicit later paging remains available if that budget excluded the tail.
+    scroll.contentView.scroll(
+        to: NSPoint(x: 0, y: (scroll.documentView?.bounds.maxY ?? 0) - scroll.contentView.bounds.height))
+    scroll.reflectScrolledClipView(scroll.contentView)
+    await settleAutomaticScroll(root, milliseconds: 40)
+    let reading = try #require(automaticScrollReadingPosition(in: scroll))
+    let committed = CommittedFrameSampler {
+        automaticScrollTextPosition(reading.text, in: scroll).map { abs($0 - reading.offset) } ?? 10_000
+    }
+    controls.later()
+    try await waitForAutomaticHistoryLayout(controls, root: root)
+    #expect(committed.stop() < 2, "Later paging must preserve the reader in every frame")
+    #expect((automaticScrollRenderedMessageIDs(in: scroll).max() ?? 0) > earlier.upperBound)
 }
 
 /// Holds a history page open the way a slow network would, then publishes
@@ -488,6 +497,15 @@ private func automaticScrollSnapshot(start: Int, end: Int) -> Dieter_V1_Conversa
         observer = nil
         return worst
     }
+}
+
+@MainActor private func waitForAutomaticHistoryLayout(_ controls: ConversationHistoryActions, root: NSView) async throws
+{
+    for _ in 0..<200 {
+        await settleAutomaticScroll(root, milliseconds: 25)
+        if !controls.isLoading() { return }
+    }
+    try #require(!controls.isLoading(), "History preparation and native layout must complete")
 }
 
 @MainActor private func settleAutomaticScroll(_ root: NSView, milliseconds: Int) async {
