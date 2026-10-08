@@ -97,12 +97,18 @@ final class ComposeSpikeUITests: XCTestCase {
             "Composer stays visible above the system keyboard")
         composer.typeText("Keep the same task and add the next step.")
         app.buttons["Send message"].tap()
-        if landscape { app.keyboards.firstMatch.buttons["Hide keyboard"].tap() }
+        if landscape {
+            keyboard.buttons["Hide keyboard"].tap()
+            XCTAssertTrue(keyboard.waitForNonExistence(timeout: 10))
+        }
+        // Match the complete selectable reply across accessibility traits after
+        // keyboard dismissal; its UIKit element type is not the assertion.
+        let followUpReply = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label == %@", "Mock harness received: Keep the same task and add the next step.")
+        ).firstMatch
         XCTAssertTrue(
-            app.staticTexts.matching(
-                NSPredicate(format: "label CONTAINS %@", "Mock harness received: Keep the same task")
-            ).firstMatch
-                .waitForExistence(timeout: 30))
+            followUpReply.waitForExistence(timeout: 30), "The follow-up reply appears in the same conversation")
+        XCTAssertTrue(followUpReply.isHittable, "The follow-up reply is visible")
         let review = app.buttons["Review"]
         XCTAssertTrue(review.waitForExistence(timeout: 60)); review.tap()
         app.buttons["Back to board"].tap()
