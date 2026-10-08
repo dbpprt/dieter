@@ -300,8 +300,10 @@ func automaticHistoryPagingKeepsEveryCommittedFrameAnchored(chat: Bool) async th
     try #require(earlier.upperBound < 359, "The fixture must exceed the retained render budget")
     // Desktop rendering is bounded separately from the core's deep history.
     // Automatic later paging remains available if that budget excluded the tail.
-    let controller = try #require(
-        automaticScrollViews(in: root).compactMap { ($0 as? ConversationScrollBridge.MonitorView)?.controller }.first)
+    let controllers = automaticScrollViews(in: root).compactMap {
+        ($0 as? ConversationScrollBridge.MonitorView)?.controller
+    }
+    let controller = try #require(controllers.first)
     // Keep the preceding page's hold active on both fast and slow workers.
     controller.holdReadingPosition()
     try automaticScrollWheelToEdge(scroll, window: window, earlier: false)
