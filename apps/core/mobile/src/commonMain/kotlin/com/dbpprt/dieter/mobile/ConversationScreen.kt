@@ -14,6 +14,10 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
@@ -138,13 +142,32 @@ private fun ColumnScope.Transcript(
         snapshotFlow { list.isScrollInProgress }
             .distinctUntilChanged()
             .collect { scrolling ->
-                if (!scrolling && list.layoutInfo.totalItemsCount > 0)
+                if (!scrolling && !following && list.layoutInfo.totalItemsCount > 0)
                     following = !list.canScrollForward
             }
     }
-    LaunchedEffect(view.timeline, view.state?.working, view.loading) {
-        if (following && list.layoutInfo.totalItemsCount > 0)
-            list.scrollToItem(list.layoutInfo.totalItemsCount - 1)
+    val userScroll =
+        remember(list, selected) {
+            object : NestedScrollConnection {
+                override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                    if (source == NestedScrollSource.UserInput && available.y != 0f)
+                        following = false
+                    return Offset.Zero
+                }
+            }
+        }
+    LaunchedEffect(list, selected, following) {
+        if (!following) return@LaunchedEffect
+        // Native text and keyboard changes can remeasure the list after the
+        // transcript update. Follow its measured end until the user scrolls.
+        snapshotFlow {
+            if (following && !list.isScrollInProgress && list.canScrollForward)
+                list.layoutInfo.totalItemsCount
+            else 0
+        }
+            .collect { count ->
+                if (count > 0) list.scrollToItem(count - 1)
+            }
     }
     if (view.error.isNotBlank())
         Notice(
@@ -155,7 +178,7 @@ private fun ColumnScope.Transcript(
     if (view.loading && view.timeline.isEmpty()) LinearProgressIndicator(Modifier.fillMaxWidth())
     Box(Modifier.weight(1f)) {
         LazyColumn(
-            Modifier.fillMaxSize().testTag("conversation-timeline"),
+            Modifier.fillMaxSize().nestedScroll(userScroll).testTag("conversation-timeline"),
             state = list,
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),

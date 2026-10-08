@@ -126,6 +126,13 @@ final class ComposeSpikeUITests: XCTestCase {
         XCTAssertTrue(
             followUpReply.waitForExistence(timeout: 30), "The follow-up reply appears in the same conversation")
         XCTAssertTrue(waitForHittable(followUpReply), "The follow-up reply is visible")
+        let transcript = app.descendants(matching: .any).matching(identifier: "conversation-timeline").firstMatch
+        XCTAssertTrue(transcript.waitForExistence(timeout: 10))
+        transcript.swipeDown()
+        let jumpToLatest = app.buttons["Jump to latest"]
+        XCTAssertTrue(waitForHittable(jumpToLatest), "Reading earlier messages detaches from the latest reply")
+        jumpToLatest.tap()
+        XCTAssertTrue(waitForHittable(followUpReply), "Jumping to latest resumes following the reply")
         let review = app.buttons["Review"]
         XCTAssertTrue(review.waitForExistence(timeout: 60)); review.tap()
         app.buttons["Back to board"].tap()
