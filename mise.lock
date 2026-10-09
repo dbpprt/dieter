@@ -8,25 +8,25 @@ backend = "gem:bundler"
 specifiers = ["2.6.9"]
 
 [[tools.go]]
-version = "1.26.8"
+version = "1.26.9"
 backend = "core:go"
-specifiers = ["1.26.8"]
+specifiers = ["1.26.9"]
 
 [tools.go."platforms.linux-arm64"]
-checksum = "sha256:211ffced9dcb9633a55eac6364816ec0ddd951389a740e88fa8b3337971bdda0"
-url = "https://dl.google.com/go/go1.26.8.linux-arm64.tar.gz"
+checksum = "sha256:4a97373d49fcacdcf3694fea368a500b00ee3e963974f3e7514132717632f052"
+url = "https://dl.google.com/go/go1.26.9.linux-arm64.tar.gz"
 
 [tools.go."platforms.linux-x64"]
-checksum = "sha256:d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b"
-url = "https://dl.google.com/go/go1.26.8.linux-amd64.tar.gz"
+checksum = "sha256:42d158b4d8f7b61ac0a830567c940a86098fb7aac52e467a5ebec03ef5cc2f8d"
+url = "https://dl.google.com/go/go1.26.9.linux-amd64.tar.gz"
 
 [tools.go."platforms.macos-arm64"]
-checksum = "sha256:a012b25b571bd0138a03dcd25375ceba866fe5ca822f426d2c66a4de56fd3f4b"
-url = "https://dl.google.com/go/go1.26.8.darwin-arm64.tar.gz"
+checksum = "sha256:f9bb7c0a02506c5d9bf0d1eb1f7ee6c7684f844ae49558308a0427b830e022cc"
+url = "https://dl.google.com/go/go1.26.9.darwin-arm64.tar.gz"
 
 [tools.go."platforms.macos-x64"]
-checksum = "sha256:186be014105aa6542b767d2c6ed5cca10a0214bdff809ef1724022a8c7894150"
-url = "https://dl.google.com/go/go1.26.8.darwin-amd64.tar.gz"
+checksum = "sha256:00c29e3d4c8562f547410daa18d2959b641bd691ab00c4a525ea817a0253d4bd"
+url = "https://dl.google.com/go/go1.26.9.darwin-amd64.tar.gz"
 
 [[tools.hugo-extended]]
 version = "0.164.0"
