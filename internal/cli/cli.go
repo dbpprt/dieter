@@ -199,7 +199,7 @@ Commands:
   file         Browse and edit project/workspace files with revision checks
   terminal     Create, attach, control, and close daemon-host PTYs
   remote       Run resumable commands and native shells on a daemon host
-  screen       Share screens/clipboard, tune quality, inspect latency and recovery
+  screen       Share screens/clipboard, configure virtual displays, inspect latency
   schedule     Create, preview, dispatch, pause, and inspect schedules
   kv           Shared portable JSON, ordering, and live account subscriptions
   peer         Inspect and edit account peer settings (leaderless sync)

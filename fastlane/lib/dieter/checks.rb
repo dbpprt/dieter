@@ -81,6 +81,7 @@ module Dieter
                 request["operation"] == "e2e" ||
                   %w[
                     privacy_native_test
+                    screens_virtual_test
                     screens_native_test
                     screens_test
                     screens_hevc_test
@@ -154,6 +155,8 @@ module Dieter
         Mac.new(context).core_test(options)
       when %w[mac privacy_native_test]
         Mac.new(context).privacy_native_test
+      when %w[mac screens_virtual_test]
+        Mac.new(context).screens_virtual_test
       when %w[mac screens_native_test]
         Mac.new(context).screens_native_test
       when %w[mac screens_test]

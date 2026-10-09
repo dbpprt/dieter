@@ -64,6 +64,16 @@ follow-ups from being lost when their provider session closes.
   The macOS daemon wakes the display before native capture and keeps it awake
   until the capture process exits, without unlocking or changing sleep/security preferences.
 
+Experimental macOS virtual desktops are available behind the host environment
+option `DIETER_SCREEN_VIRTUAL_DISPLAY=1`. The viewer's **Virtual display** screen
+option uses its drawable pixels (within codec limits), with independent 1×/2× UI
+scaling. CLI automation uses `dieter screen virtual status|set|presented|restore`;
+see `dieter screen virtual --help`. Physical-screen disabling is a separate,
+hardware-qualified opt-in (`DIETER_SCREEN_VIRTUAL_DISABLE=1`), requires an identified
+physical main display, and waits for a presented frame. Temporary changes restore on
+session closure, control handoff, or failure. See the [CLI skill](.agents/skills/dieter-cli/SKILL.md#experimental-macos-virtual-desktop)
+for limits and recovery semantics.
+
 [See the native apps in action →](https://getdieter.com/docs/tour/)
 
 ## Quick start

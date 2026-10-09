@@ -1095,3 +1095,40 @@ out or suppressed because a peer is offline. Android names both machines and cle
 recovery, including when the selected machine returns unchanged workspace data. A warning alone is not permission to reset storage or checkpoints.
 Retained signed summaries containing the retired `commentCount` field remain
 valid; current writers and APIs omit it. Never rewrite foreign signed history.
+
+### Experimental macOS virtual desktop
+
+A host started with `DIETER_SCREEN_VIRTUAL_DISPLAY=1` can advertise
+`virtualDisplaySupported`. Screen options on Mac, iOS, and Android offer an
+experimental virtual display. The shared core uses drawable pixels within the
+codec envelope, with independent 1×/2× desktop scaling and debounced resizing.
+The daemon gives one controlling session the display lease.
+
+```sh
+dieter screen virtual status SESSION
+dieter screen virtual set SESSION --width 2560 --height 1440 --scale 2
+dieter screen virtual presented SESSION --display DISPLAY_ID --generation GENERATION
+dieter screen virtual restore SESSION
+```
+
+These RPCs support local, verified direct TLS, and gateway relay routes with
+`--machine ID|NAME`. `presented` is a receiver acknowledgment: send it only after
+rendering a frame from that exact display and media generation, never merely
+because `status` names it. Missing presentation restores after 15 seconds.
+H.264 supports up to 3840×2160 at 60 fps; HEVC retains its 1920×1080 envelope.
+Sizes must be even logical pixels (backing dimensions divisible by four at 2×).
+A resize restores the prior lease before creating the replacement.
+
+`--disable-physical` additionally requires `DIETER_SCREEN_VIRTUAL_DISABLE=1`
+and a qualified physical main display. It disables physical output only after
+presentation. This private macOS API is experimental; qualify normal restore,
+helper kill, and watchdog recovery on the exact hardware/OS before setting that
+second switch. Neither option enables itself or requires BetterDisplay.
+
+A separate helper owns app-scoped layout changes, an atomic recovery journal
+under `DIETER_HOME/virtual-display`, and an independent watchdog. Physical output
+is restored before the virtual display is destroyed. Control handoff, display
+selection, session closure, receiver-liveness loss, and local display changes
+end the lease. A failed restoration retains its journal; reconnect a missing
+original monitor and retry. Never remove the journal or restart the operator's
+live daemon to exercise these options. Use isolated pipeline fixtures.

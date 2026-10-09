@@ -1,5 +1,6 @@
 package com.dbpprt.dieter.core.screens
 
+import com.dbpprt.dieter.api.v1.ConfirmRemoteDesktopVirtualDisplayRequest
 import com.dbpprt.dieter.api.v1.DieterServiceClient
 import com.dbpprt.dieter.api.v1.RemoteDesktopAvailability
 import com.dbpprt.dieter.api.v1.RemoteDesktopCodecPreference
@@ -10,10 +11,13 @@ import com.dbpprt.dieter.api.v1.RemoteDesktopICECandidate
 import com.dbpprt.dieter.api.v1.RemoteDesktopPointerButton
 import com.dbpprt.dieter.api.v1.RemoteDesktopQuality
 import com.dbpprt.dieter.api.v1.RemoteDesktopReceiverFeedback
+import com.dbpprt.dieter.api.v1.RemoteDesktopRef
 import com.dbpprt.dieter.api.v1.RemoteDesktopSessionBinding
 import com.dbpprt.dieter.api.v1.RemoteDesktopSessionState
 import com.dbpprt.dieter.api.v1.RemoteDesktopSignal
 import com.dbpprt.dieter.api.v1.RemoteDesktopStreamConfiguration
+import com.dbpprt.dieter.api.v1.RemoteDesktopVirtualDisplay
+import com.dbpprt.dieter.api.v1.SetRemoteDesktopVirtualDisplayRequest
 import com.dbpprt.dieter.api.v1.StartRemoteDesktopRequest
 import com.dbpprt.dieter.api.v1.UpdateRemoteDesktopSessionRequest
 import com.dbpprt.dieter.client.v1.ScreenCommand
@@ -95,6 +99,11 @@ class ScreenSession(
     private val cursors = CursorCache()
     private var peerSinceTicks = 0
     private var refreshedForNoFrame = false
+    private var drawable: Triple<Double, Double, Double>? = null
+    private var virtualRequest: SetRemoteDesktopVirtualDisplayRequest? = null
+    private var virtualLease: RemoteDesktopVirtualDisplay? = null
+    private var virtualConfirmed = 0L
+    private var restoringVirtual = false
     private var configuring = false
     private var configurationPending = false
     private var refreshPending = false
@@ -154,6 +163,20 @@ class ScreenSession(
     fun setPreferences(change: (ScreenPreferences) -> ScreenPreferences) {
         val previous = preferences
         preferences = change(preferences)
+        drawable?.let { (w, h, density) ->
+            val size =
+                if (preferences.virtualDisplay)
+                    VirtualDisplaySizing.size(
+                        w,
+                        h,
+                        density,
+                        preferences.virtualScale,
+                        preferences.codec ==
+                            RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_HEVC,
+                    )
+                else config.viewport.size(w, h, density)
+            size?.let { preferences = preferences.copy(width = it.first, height = it.second) }
+        }
         when {
             previous.codec != preferences.codec -> {
                 hevcFailed = false
@@ -573,10 +596,22 @@ class ScreenSession(
         if (merged.displayChanged) {
             releaseInput()
             presentedGeneration = 0
+            virtualConfirmed = 0
             engine?.resetVideo()
             cursors.clear()
             if (view.value.phase is ScreenPhase.Streaming)
                 mutableView.update { it.copy(phase = ScreenPhase.Connecting) }
+        }
+        if (
+            !restoringVirtual &&
+                state?.virtual_display?.active == true &&
+                merged.state.virtual_display?.active != true &&
+                merged.state.control_generation > (state?.control_generation ?: 0)
+        ) {
+            preferences = preferences.copy(virtualDisplay = false, disablePhysical = false)
+            virtualRequest = null
+            virtualLease = null
+            virtualConfirmed = 0
         }
         state = merged.state
         if (merged.clipboardChanged) clipboard.rebase()
@@ -588,6 +623,13 @@ class ScreenSession(
         )
         mutableView.update {
             it.copy(state = merged.state, clipboardEnabled = merged.state.clipboard_enabled)
+        }
+        if (preferences.virtualDisplay && merged.state.control_active && virtualRequest == null)
+            configure()
+        if (!merged.state.control_active) {
+            virtualRequest = null
+            virtualLease = null
+            virtualConfirmed = 0
         }
         lastPresented?.let(::markPresented)
         publishReadiness()
@@ -606,6 +648,44 @@ class ScreenSession(
                 )
         ) {
             presentedGeneration = current.display_generation
+            val virtual = current.virtual_display
+            if (
+                virtual?.active == true &&
+                    current.control_active &&
+                    virtual.display_id == current.display_id &&
+                    virtualConfirmed != current.display_generation
+            ) {
+                virtualConfirmed = current.display_generation
+                val currentRoute = route
+                val attemptToken = token
+                track(
+                    scope.launch {
+                        try {
+                            withDeadline(Deadlines.CALL) {
+                                currentRoute
+                                    ?.client
+                                    ?.ConfirmRemoteDesktopVirtualDisplay()
+                                    ?.execute(
+                                        ConfirmRemoteDesktopVirtualDisplayRequest(
+                                            session_id = sessionId,
+                                            display_id = virtual.display_id,
+                                            display_generation = current.display_generation,
+                                        )
+                                    )
+                            }
+                        } catch (error: Throwable) {
+                            if (error is CancellationException) throw error
+                            if (
+                                attemptToken == token &&
+                                    state?.display_generation == current.display_generation &&
+                                    state?.virtual_display?.active == true &&
+                                    state?.virtual_display?.display_id == virtual.display_id
+                            )
+                                fail("Virtual display presentation: ${Failures.message(error)}")
+                        }
+                    }
+                )
+            }
             if (peerConnected) {
                 recovery.streaming(now())
                 mutableView.update { it.copy(phase = ScreenPhase.Streaming) }
@@ -759,6 +839,10 @@ class ScreenSession(
         peerConnectedOnce = false
         peerRecoveryJob?.cancel()
         peerRecoveryJob = null
+        virtualRequest = null
+        virtualLease = null
+        virtualConfirmed = 0
+        restoringVirtual = false
         presentedGeneration = 0
         lastPresented = null
         state = null
@@ -903,18 +987,29 @@ class ScreenSession(
                             return@launch recover("Switching stream mode…", immediate = true)
                         }
                         val control = request?.control == true
+                        val current = route ?: return@launch
+                        val virtual =
+                            if (wantsConfiguration)
+                                withDeadline(Deadlines.CALL) {
+                                    reconcileVirtual(
+                                        current.client,
+                                        caps.virtual_display_supported,
+                                        caps.virtual_display_disable_supported,
+                                    )
+                                }
+                            else virtualLease
                         val configuration =
                             RemoteDesktopStreamConfiguration(
-                                display_id = preferences.displayId ?: "primary",
+                                display_id =
+                                    virtual?.display_id ?: preferences.displayId ?: "primary",
                                 max_width = preferences.width,
                                 max_height = preferences.height,
-                                max_fps = fps,
+                                max_fps = if (virtual != null) minOf(fps, 60) else fps,
                                 max_bitrate_kbps = ScreenRequests.MAX_BITRATE_KBPS,
                                 quality = preferences.quality,
                                 embedded_cursor = ScreenCapabilities.embedCursor(caps, control),
                             )
                         if (wantsConfiguration) releaseInput()
-                        val current = route ?: return@launch
                         val updated =
                             withDeadline(Deadlines.CALL) {
                                 current.client
@@ -928,7 +1023,10 @@ class ScreenSession(
                                         )
                                     )
                             }
-                        if (attemptToken == token) applyState(updated)
+                        if (attemptToken == token) {
+                            applyState(updated)
+                            restoringVirtual = false
+                        }
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -958,9 +1056,60 @@ class ScreenSession(
         )
     }
 
+    private suspend fun reconcileVirtual(
+        client: DieterServiceClient,
+        supported: Boolean,
+        disableSupported: Boolean,
+    ): RemoteDesktopVirtualDisplay? {
+        val desired =
+            if (preferences.virtualDisplay && state?.control_active == true) {
+                check(supported) { "Experimental virtual displays are unavailable on this host" }
+                check(!preferences.disablePhysical || disableSupported) {
+                    "Physical display disabling is not qualified on this host"
+                }
+                SetRemoteDesktopVirtualDisplayRequest(
+                    session_id = sessionId,
+                    pixel_width = preferences.width,
+                    pixel_height = preferences.height,
+                    scale = preferences.virtualScale,
+                    disable_physical = preferences.disablePhysical,
+                )
+            } else null
+        if (virtualRequest == desired && (desired == null || virtualLease != null))
+            return virtualLease
+        if (virtualRequest != null && virtualRequest != desired) {
+            // Keep the preference through our own restore/recreate notifications.
+            // UpdateSession returns a monotonic state before this flag is cleared.
+            restoringVirtual = true
+            client
+                .RestoreRemoteDesktopVirtualDisplay()
+                .execute(RemoteDesktopRef(session_id = sessionId))
+            virtualRequest = null
+            virtualLease = null
+            virtualConfirmed = 0
+        }
+        if (desired != null) {
+            // Record intent before awaiting: state notifications may arrive before the RPC reply.
+            virtualRequest = desired
+            virtualLease = client.SetRemoteDesktopVirtualDisplay().execute(desired)
+        }
+        return virtualLease
+    }
+
     /** Sets the requested stream size for this view; debounced by 350 ms. */
     fun viewport(widthPoints: Double, heightPoints: Double, scale: Double) {
-        val size = config.viewport.size(widthPoints, heightPoints, scale) ?: return
+        drawable = Triple(widthPoints, heightPoints, scale)
+        val size =
+            (if (preferences.virtualDisplay)
+                VirtualDisplaySizing.size(
+                    widthPoints,
+                    heightPoints,
+                    scale,
+                    preferences.virtualScale,
+                    preferences.codec ==
+                        RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_HEVC,
+                )
+            else config.viewport.size(widthPoints, heightPoints, scale)) ?: return
         if (size == preferences.width to preferences.height) return
         preferences = preferences.copy(width = size.first, height = size.second)
         val expected = token

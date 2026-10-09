@@ -304,6 +304,11 @@ func planChecks(paths []string, packages []string, base string) CheckPlan {
 	}) {
 		add("mac", "privacy_native_test", nil)
 	}
+	if any(func(p string) bool {
+		return strings.Contains(p, "virtual_display") || strings.Contains(p, "VirtualDisplay")
+	}) {
+		add("mac", "screens_virtual_test", nil)
+	}
 	if screens {
 		add("mac", "screens_native_test", nil)
 		add("mac", "screens_test", nil)

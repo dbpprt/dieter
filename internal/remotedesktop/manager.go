@@ -59,20 +59,21 @@ type Identity struct {
 
 type Options struct {
 	// Optional transport instrumentation for isolated fixtures; never set by the daemon CLI.
-	MediaInterceptors []interceptor.Factory
-	ClipboardFactory  func() ClipboardBackend
-	DisplayFactory    func() DisplayBackend
-	Identity          Identity
-	Source            SourceOptions
-	SessionLease      time.Duration
-	DetachGrace       time.Duration
-	MonitorInterval   time.Duration
-	CaptureProbe      func(context.Context, SourceOptions) error
-	ControlProbe      func(context.Context, SourceOptions, bool) error
-	SourceFactory     func(SourceOptions) (FrameSource, error)
-	Logger            *slog.Logger
-	Now               func() time.Time
-	CapabilityProbe   func(context.Context, SourceOptions) (*dieterv1.RemoteDesktopCapabilities, error)
+	MediaInterceptors     []interceptor.Factory
+	ClipboardFactory      func() ClipboardBackend
+	DisplayFactory        func() DisplayBackend
+	VirtualDisplayFactory func() VirtualDisplayBackend
+	Identity              Identity
+	Source                SourceOptions
+	SessionLease          time.Duration
+	DetachGrace           time.Duration
+	MonitorInterval       time.Duration
+	CaptureProbe          func(context.Context, SourceOptions) error
+	ControlProbe          func(context.Context, SourceOptions, bool) error
+	SourceFactory         func(SourceOptions) (FrameSource, error)
+	Logger                *slog.Logger
+	Now                   func() time.Time
+	CapabilityProbe       func(context.Context, SourceOptions) (*dieterv1.RemoteDesktopCapabilities, error)
 }
 
 type Manager struct {
@@ -91,6 +92,12 @@ type Manager struct {
 	displayBackend      DisplayBackend // protected by controlMu
 	displayOwner        *Session
 	displayLeaseDisplay string
+	virtualOwner        *Session
+	virtualBackend      VirtualDisplayBackend
+	virtualPrevious     *dieterv1.RemoteDesktopStreamConfiguration
+	virtualState        *dieterv1.RemoteDesktopVirtualDisplay
+	virtualRequest      *dieterv1.SetRemoteDesktopVirtualDisplayRequest
+	virtualPresented    bool
 	controlGeneration   uint64 // protected by controlMu
 	sessionGeneration   uint64 // protected by mu
 	media               *capturePool
@@ -155,6 +162,9 @@ func New(options Options) *Manager {
 	if options.Source.Kind == "synthetic" && options.DisplayFactory == nil {
 		m.options.DisplayFactory = func() DisplayBackend { return &MemoryDisplayModes{} }
 	}
+	if options.Source.Kind == "synthetic" && options.VirtualDisplayFactory == nil {
+		m.options.VirtualDisplayFactory = func() VirtualDisplayBackend { return &MemoryVirtualDisplay{} }
+	}
 	m.media = newCapturePool(func(o SourceOptions) (FrameSource, error) { return m.options.SourceFactory(o) })
 	return m
 }
@@ -165,6 +175,8 @@ func (m *Manager) Capabilities() *dieterv1.RemoteDesktopCapabilities {
 	value.ClipboardSupported = value.ClipboardSupported || runtime.GOOS == "darwin" || m.options.ClipboardFactory != nil
 	value.BinaryClipboardSupported = value.ClipboardSupported
 	value.DisplayModeSwitchingSupported = value.DisplayModeSwitchingSupported || m.options.DisplayFactory != nil
+	value.VirtualDisplaySupported = m.virtualDisplayEnabled() && (value.VirtualDisplaySupported || m.options.VirtualDisplayFactory != nil)
+	value.VirtualDisplayDisableSupported = value.VirtualDisplaySupported && m.virtualDisableEnabled() && (value.VirtualDisplayDisableSupported || m.options.VirtualDisplayFactory != nil)
 	value.MaxClients = maxClients
 	value.InputProtocolVersion = inputProtocolVersion
 	m.mu.Lock()
@@ -402,6 +414,7 @@ func (m *Manager) clear(session *Session) {
 	m.mu.Unlock()
 	m.controlMu.Lock()
 	if m.controller == session {
+		_, _ = m.restoreVirtualLocked(context.Background())
 		_, _ = m.restoreDisplayLocked(context.Background())
 		m.controller = nil
 		m.controlGeneration++

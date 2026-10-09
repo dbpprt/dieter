@@ -1,6 +1,7 @@
 package com.dbpprt.dieter.core
 
 import com.dbpprt.dieter.api.gateway.v1.RTCConfiguration
+import com.dbpprt.dieter.api.v1.ConfirmRemoteDesktopVirtualDisplayRequest
 import com.dbpprt.dieter.api.v1.DieterServiceClient
 import com.dbpprt.dieter.api.v1.RemoteDesktopCapabilities
 import com.dbpprt.dieter.api.v1.RemoteDesktopClipboardFrame
@@ -17,6 +18,8 @@ import com.dbpprt.dieter.api.v1.RemoteDesktopSessionBinding
 import com.dbpprt.dieter.api.v1.RemoteDesktopSessionDescription
 import com.dbpprt.dieter.api.v1.RemoteDesktopSessionState
 import com.dbpprt.dieter.api.v1.RemoteDesktopSignal
+import com.dbpprt.dieter.api.v1.RemoteDesktopVirtualDisplay
+import com.dbpprt.dieter.api.v1.SetRemoteDesktopVirtualDisplayRequest
 import com.dbpprt.dieter.api.v1.StartRemoteDesktopRequest
 import com.dbpprt.dieter.api.v1.UpdateRemoteDesktopSessionRequest
 import com.dbpprt.dieter.core.runtime.Deadlines
@@ -172,6 +175,11 @@ class ScreenSessionTest {
 
     /** A scripted daemon: each start opens a stream the test drives through [signals]. */
     private inner class FakeDaemon(val sessionId: String = "rd_test", val forge: Boolean = false) {
+        val virtualCreates = CopyOnWriteArrayList<SetRemoteDesktopVirtualDisplayRequest>()
+        val virtualConfirms = CopyOnWriteArrayList<ConfirmRemoteDesktopVirtualDisplayRequest>()
+        val virtualRestores = AtomicInteger()
+        var virtual: RemoteDesktopVirtualDisplay? = null
+        var virtualGeneration = 1L
         val starts = CopyOnWriteArrayList<StartRemoteDesktopRequest>()
         val closes = CopyOnWriteArrayList<String>()
         val updates = CopyOnWriteArrayList<UpdateRemoteDesktopSessionRequest>()
@@ -225,6 +233,47 @@ class ScreenSessionTest {
                 arrayOf(DieterServiceClient::class.java),
             ) { _, method, _ ->
                 when (method.name) {
+                    "SetRemoteDesktopVirtualDisplay" ->
+                        unary<SetRemoteDesktopVirtualDisplayRequest, RemoteDesktopVirtualDisplay>(
+                            method.name
+                        ) {
+                            virtualCreates += it
+                            virtualGeneration++
+                            RemoteDesktopVirtualDisplay(
+                                    active = true,
+                                    display_id = "virtual",
+                                    pixel_width = it.pixel_width,
+                                    pixel_height = it.pixel_height,
+                                    scale = it.scale,
+                                    awaiting_presentation = it.disable_physical,
+                                )
+                                .also { result -> virtual = result }
+                        }
+                    "ConfirmRemoteDesktopVirtualDisplay" ->
+                        unary<
+                            ConfirmRemoteDesktopVirtualDisplayRequest,
+                            RemoteDesktopVirtualDisplay,
+                        >(
+                            method.name
+                        ) {
+                            virtualConfirms += it
+                            virtual!!.copy(awaiting_presentation = false, physical_disabled = true)
+                        }
+                    "RestoreRemoteDesktopVirtualDisplay" ->
+                        unary<RemoteDesktopRef, RemoteDesktopVirtualDisplay>(method.name) {
+                            virtualRestores.incrementAndGet()
+                            virtual = null
+                            virtualGeneration++
+                            signals.trySend(
+                                RemoteDesktopSignal(
+                                    session_id = sessionId,
+                                    state =
+                                        state(virtualGeneration, 3000)
+                                            .copy(control_generation = virtualGeneration),
+                                )
+                            )
+                            RemoteDesktopVirtualDisplay()
+                        }
                     "GetRemoteDesktopCapabilities" ->
                         unary<Unit, RemoteDesktopCapabilities>(method.name) {
                             capabilityReads.incrementAndGet()
@@ -241,7 +290,16 @@ class ScreenSessionTest {
                             method.name
                         ) {
                             updates += it
-                            state(1, 1000)
+                            if (virtual != null)
+                                state(virtualGeneration, 2000)
+                                    .copy(
+                                        display_id = "virtual",
+                                        virtual_display = virtual,
+                                        control_generation = virtualGeneration,
+                                    )
+                            else
+                                state(virtualGeneration, 1000)
+                                    .copy(control_generation = virtualGeneration)
                         }
                     "SetRemoteDesktopControl" ->
                         unary<RemoteDesktopControlRequest, RemoteDesktopSessionState>(method.name) {
@@ -864,6 +922,99 @@ class ScreenSessionTest {
                 "the old timeout cannot alter the idle view",
             )
         }
+    }
+
+    @Test
+    fun virtualDisplayUsesDrawablePixelsAndWaitsForItsPresentedGeneration() = runTest {
+        val engines = Engines()
+        val daemon = FakeDaemon()
+        daemon.caps =
+            daemon.caps.copy(
+                virtual_display_supported = true,
+                virtual_display_disable_supported = true,
+            )
+        val session = virtualSession(engines)
+        val engine = streaming(session, daemon, engines)
+        session.viewport(1280.0, 720.0, 2.0)
+        session.setPreferences {
+            it.copy(virtualDisplay = true, disablePhysical = true, virtualScale = 2)
+        }
+        runCurrent()
+        val request = daemon.virtualCreates.single()
+        assertEquals(2560, request.pixel_width)
+        assertEquals(1440, request.pixel_height)
+        assertEquals(2, request.scale)
+        assertEquals("virtual", daemon.updates.last().configuration?.display_id)
+        assertTrue(
+            daemon.virtualConfirms.isEmpty(),
+            "old screen presentation cannot disable the physical display",
+        )
+        engine.events.presented(1200u)
+        runCurrent()
+        assertTrue(
+            daemon.virtualConfirms.isEmpty(),
+            "stale frame cannot acknowledge a new generation",
+        )
+        engine.events.presented(2100u)
+        runCurrent()
+        assertEquals(2L, daemon.virtualConfirms.single().display_generation)
+        assertEquals("virtual", daemon.virtualConfirms.single().display_id)
+        session.viewport(1000.0, 600.0, 2.0)
+        advanceTimeBy(351)
+        runCurrent()
+        assertTrue(
+            session.preferences.virtualDisplay,
+            "our resize restoration keeps virtual mode enabled",
+        )
+        assertEquals(2000, daemon.virtualCreates.last().pixel_width)
+        assertEquals(1200, daemon.virtualCreates.last().pixel_height)
+        session.setPreferences { it.copy(virtualDisplay = false) }
+        runCurrent()
+        assertEquals(2, daemon.virtualRestores.get())
+        assertEquals("primary", daemon.updates.last().configuration?.display_id)
+        session.disconnect()
+    }
+
+    @Test
+    fun hostVirtualRestorationClearsPreferenceWithoutRecreatingDisplay() = runTest {
+        val engines = Engines()
+        val daemon = FakeDaemon()
+        daemon.caps = daemon.caps.copy(virtual_display_supported = true)
+        val session = virtualSession(engines)
+        streaming(session, daemon, engines)
+        session.setPreferences { it.copy(virtualDisplay = true) }
+        runCurrent()
+        daemon.virtual = null
+        daemon.signals.send(
+            RemoteDesktopSignal(
+                session_id = daemon.sessionId,
+                state = daemon.state(3, 3000).copy(control_generation = 3),
+            )
+        )
+        runCurrent()
+        assertFalse(session.preferences.virtualDisplay)
+        assertEquals(1, daemon.virtualCreates.size)
+        session.disconnect()
+    }
+
+    @Test
+    fun lostVirtualCreateReplyRetriesTheSameDesiredLease() = runTest {
+        val engines = Engines()
+        val daemon = FakeDaemon()
+        daemon.caps = daemon.caps.copy(virtual_display_supported = true)
+        val session = virtualSession(engines)
+        streaming(session, daemon, engines)
+        daemon.unanswered += "SetRemoteDesktopVirtualDisplay"
+        session.setPreferences { it.copy(virtualDisplay = true) }
+        runCurrent()
+        advanceTimeBy(Deadlines.CALL + ScreenSession.CONFIGURATION_RETRY)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(2, daemon.virtualCreates.size)
+        assertEquals(daemon.virtualCreates.first(), daemon.virtualCreates.last())
+        assertEquals(0, daemon.virtualRestores.get(), "an identical server request is idempotent")
+        assertEquals("virtual", daemon.updates.last().configuration?.display_id)
+        session.disconnect()
     }
 
     @Test

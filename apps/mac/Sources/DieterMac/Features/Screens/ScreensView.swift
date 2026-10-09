@@ -441,8 +441,39 @@ struct ScreenShareOptions: View {
                     ? "One client controls the machine at a time" : controller.controlTransferError)
         }
         Menu {
+            if controller.capabilities.virtualDisplaySupported {
+                Toggle(
+                    "Virtual display (experimental)",
+                    isOn: Binding(
+                        get: { controller.session.preferences.virtualDisplay },
+                        set: { enabled in
+                            controller.session.setPreferences {
+                                $0.virtualDisplay = enabled; $0.disablePhysical = false
+                            }
+                        }
+                    )
+                ).disabled(!controller.controlActive)
+                Toggle(
+                    "Turn off host screen",
+                    isOn: Binding(
+                        get: { controller.session.preferences.disablePhysical },
+                        set: { enabled in controller.session.setPreferences { $0.disablePhysical = enabled } }
+                    )
+                ).disabled(
+                    !controller.session.preferences.virtualDisplay
+                        || !controller.capabilities.virtualDisplayDisableSupported || !controller.controlActive)
+                Toggle(
+                    "Larger desktop text (2×)",
+                    isOn: Binding(
+                        get: { controller.session.preferences.virtualScale != 1 },
+                        set: { enabled in controller.session.setPreferences { $0.virtualScale = enabled ? 2 : 1 } }
+                    )
+                ).disabled(!controller.session.preferences.virtualDisplay)
+                Divider()
+            }
             ForEach(controller.capabilities.displays, id: \.id) { display in
-                Button(display.name) { controller.configure(displayID: display.id) }
+                Button(display.name) { controller.configure(displayID: display.id) }.disabled(
+                    controller.session.preferences.virtualDisplay)
             }
             Divider()
             if !controller.keyboardCaptureStatus.isEmpty { Text(controller.keyboardCaptureStatus) }

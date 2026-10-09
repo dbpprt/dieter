@@ -129,7 +129,7 @@ func run(helper, kind, ready string, authenticate bool) error {
 			return err
 		}
 	}
-	source := remotedesktop.SourceOptions{Logger: slog.Default(), ClipboardDirectory: filepath.Join(root, "clipboard"), Kind: kind, HelperPath: helper, ClipboardName: "com.dbpprt.dieter.fixture." + fmt.Sprint(os.Getpid())}
+	source := remotedesktop.SourceOptions{StateRoot: root, Logger: slog.Default(), ClipboardDirectory: filepath.Join(root, "clipboard"), Kind: kind, HelperPath: helper, ClipboardName: "com.dbpprt.dieter.fixture." + fmt.Sprint(os.Getpid())}
 	// Prove the exact native helper once before publishing fixture readiness.
 	// Production capability calls intentionally have a short latency budget,
 	// but a cold helper launch can exceed it on a loaded simulator runner. The

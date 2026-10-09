@@ -590,3 +590,22 @@ tracked policy. Stable/promoted and pinned releases survive. Distribution
 receipts, pending claims and uncertain uploads prevent unsafe pruning. Keep
 release mutations inside the declared workflows; signing credentials belong to
 the destination jobs that need them, and logs redact supplied credential bytes.
+
+### Virtual display qualification
+
+`just pipeline check component:mac operation:screens_virtual_test` compiles the
+native helper and tests its bounded IPC/heartbeat lifecycle with a disposable
+synthetic driver. Set `DIETER_TEST_VIRTUAL_HARDWARE=1` to hold the desktop lease
+and verify real virtual creation, main-display selection, exact geometry,
+normal restoration, helper SIGKILL, and recovery-journal cleanup. This refuses
+an existing DieterMac process and never uses the operator's daemon or state.
+After that gate passes, `DIETER_TEST_VIRTUAL_DISABLE=1` together with
+`DIETER_SCREEN_VIRTUAL_DISABLE=1` additionally qualifies physical disabling on the
+physical main display. These hardware tests intentionally change the desktop
+for the duration of each owned lease; an unavailable host is a failed gate.
+
+`DIETER_TEST_SCREEN_VIRTUAL=1 just pipeline check component:mac operation:screens_test`
+qualifies the shared-core controls through authenticated signaling, native H.264
+encoding, WebRTC, decoding, Metal presentation, generation-bound acknowledgment,
+input, and restoration. Its synthetic display driver preserves the operator's
+monitor. Both gates are required before claiming physical-screen qualification.

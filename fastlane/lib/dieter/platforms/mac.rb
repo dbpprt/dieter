@@ -87,6 +87,28 @@ module Dieter
       ScreenFixture.assert_stopped(@context)
     end
 
+    def screens_virtual_test
+      unless RUBY_PLATFORM.include?("darwin")
+        raise Unavailable, "Virtual display qualification requires macOS"
+      end
+      @context.lease("apple-build")
+      if ENV["DIETER_TEST_VIRTUAL_HARDWARE"] == "1"
+        @context.lease("mac-desktop")
+        assert_stopped
+      end
+      helper = File.join(@context.private_dir, "dieter-capture")
+      @context.command(["bash", "native/macos-capture/build.sh", helper], timeout: 300)
+      @context.command(
+        %w[go test -race ./internal/remotedesktop -run TestNativeVirtualDisplay -count=1 -v],
+        environment: {
+          "DIETER_TEST_CAPTURE_HELPER" => helper,
+          "DIETER_TEST_VIRTUAL_STATE_ROOT" => File.join(@context.output, "virtual-display-state")
+        },
+        timeout: 180,
+        log: File.join(@context.output, "virtual-display-tests.log")
+      )
+    end
+
     def screens_native_test
       unless RUBY_PLATFORM.include?("darwin")
         raise Unavailable, "Native Apple capture requires macOS"
@@ -97,6 +119,21 @@ module Dieter
       helper = File.join(@context.private_dir, "dieter-capture")
       binary = File.join(@context.private_dir, "input-state")
       @context.command(["bash", "native/macos-capture/build.sh", helper], timeout: 300)
+      bridge = File.join(@context.private_dir, "virtual-display-bridge.o")
+      @context.command(
+        [
+          "xcrun",
+          "clang",
+          "-fobjc-arc",
+          "-target",
+          "arm64-apple-macos15.0",
+          "-c",
+          "native/macos-capture/VirtualDisplayBridge.m",
+          "-o",
+          bridge
+        ],
+        timeout: 60
+      )
       sources = Dir.glob(File.join(@root, "native/macos-capture/*.swift")).sort
       @context.command(
         [
@@ -106,6 +143,9 @@ module Dieter
           "-O",
           "-D",
           "DIETER_CAPTURE_TEST",
+          "-import-objc-header",
+          "native/macos-capture/VirtualDisplayBridge.h",
+          bridge,
           "-framework",
           "AppKit",
           "-framework",
@@ -272,10 +312,13 @@ module Dieter
       environment = {
         "DIETER_TEST_CAPTURE_HELPER" => helper,
         "DIETER_TEST_SCREEN_FIXTURE" => fixture,
-        "DIETER_TEST_INPUT_TARGET" => bundle
+        "DIETER_TEST_INPUT_TARGET" => bundle,
+        "DIETER_TEST_SCREEN_VIRTUAL_EVIDENCE" => File.join(@context.output, "virtual-viewer")
       }
       filter =
-        if ENV["DIETER_TEST_SCREEN_UNDOCK"] == "1"
+        if ENV["DIETER_TEST_SCREEN_VIRTUAL"] == "1"
+          "remoteDesktopVirtualDisplayEndToEnd"
+        elsif ENV["DIETER_TEST_SCREEN_UNDOCK"] == "1"
           "remoteDesktopUndockedEndToEnd"
         elsif ENV["DIETER_TEST_SCREEN_RECOVERY"] == "1"
           "remoteDesktopRecoveryAuthenticatedTransport"

@@ -11878,6 +11878,13 @@ public nonisolated struct ClientScreenPreferences: Sendable {
 
   public var clipboard: Bool = false
 
+  public var virtualDisplay: Bool = false
+
+  public var disablePhysical: Bool = false
+
+  /// 1 or 2, defaults to 2.
+  public var virtualScale: Int32 = 0
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -31569,7 +31576,7 @@ nonisolated extension ClientScreenViewport: SwiftProtobuf.Message, SwiftProtobuf
 
 nonisolated extension ClientScreenPreferences: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ScreenPreferences"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}codec\0\u{3}max_fps\0\u{1}quality\0\u{3}display_id\0\u{1}clipboard\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}codec\0\u{3}max_fps\0\u{1}quality\0\u{3}display_id\0\u{1}clipboard\0\u{3}virtual_display\0\u{3}disable_physical\0\u{3}virtual_scale\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -31582,6 +31589,9 @@ nonisolated extension ClientScreenPreferences: SwiftProtobuf.Message, SwiftProto
       case 3: try { try decoder.decodeSingularEnumField(value: &self.quality) }()
       case 4: try { try decoder.decodeSingularStringField(value: &self.displayID) }()
       case 5: try { try decoder.decodeSingularBoolField(value: &self.clipboard) }()
+      case 6: try { try decoder.decodeSingularBoolField(value: &self.virtualDisplay) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.disablePhysical) }()
+      case 8: try { try decoder.decodeSingularInt32Field(value: &self.virtualScale) }()
       default: break
       }
     }
@@ -31603,6 +31613,15 @@ nonisolated extension ClientScreenPreferences: SwiftProtobuf.Message, SwiftProto
     if self.clipboard != false {
       try visitor.visitSingularBoolField(value: self.clipboard, fieldNumber: 5)
     }
+    if self.virtualDisplay != false {
+      try visitor.visitSingularBoolField(value: self.virtualDisplay, fieldNumber: 6)
+    }
+    if self.disablePhysical != false {
+      try visitor.visitSingularBoolField(value: self.disablePhysical, fieldNumber: 7)
+    }
+    if self.virtualScale != 0 {
+      try visitor.visitSingularInt32Field(value: self.virtualScale, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -31612,6 +31631,9 @@ nonisolated extension ClientScreenPreferences: SwiftProtobuf.Message, SwiftProto
     if lhs.quality != rhs.quality {return false}
     if lhs.displayID != rhs.displayID {return false}
     if lhs.clipboard != rhs.clipboard {return false}
+    if lhs.virtualDisplay != rhs.virtualDisplay {return false}
+    if lhs.disablePhysical != rhs.disablePhysical {return false}
+    if lhs.virtualScale != rhs.virtualScale {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

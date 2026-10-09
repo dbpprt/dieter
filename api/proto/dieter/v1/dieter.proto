@@ -161,6 +161,10 @@ service DieterService {
   rpc ListRemoteDesktopDisplayModes(RemoteDesktopRef) returns (RemoteDesktopDisplayModes);
   rpc SetRemoteDesktopDisplayMode(SetRemoteDesktopDisplayModeRequest) returns (RemoteDesktopDisplayModes);
   rpc RestoreRemoteDesktopDisplayMode(RemoteDesktopRef) returns (RemoteDesktopDisplayModes);
+  rpc GetRemoteDesktopVirtualDisplay(RemoteDesktopRef) returns (RemoteDesktopVirtualDisplay);
+  rpc SetRemoteDesktopVirtualDisplay(SetRemoteDesktopVirtualDisplayRequest) returns (RemoteDesktopVirtualDisplay);
+  rpc ConfirmRemoteDesktopVirtualDisplay(ConfirmRemoteDesktopVirtualDisplayRequest) returns (RemoteDesktopVirtualDisplay);
+  rpc RestoreRemoteDesktopVirtualDisplay(RemoteDesktopRef) returns (RemoteDesktopVirtualDisplay);
   // Explicit, bounded permission test performed by the running daemon.
   // Discards one encoded frame and never injects input or changes settings.
   rpc ProbeRemoteDesktopPermissions(ProbeRemoteDesktopPermissionsRequest)
@@ -1813,6 +1817,9 @@ message RemoteDesktopCapabilities {
   bool display_mode_switching_supported = 29;
   // Linux portal consent is requested interactively when a session starts.
   RemoteDesktopAvailability availability = 30;
+  // Experimental, explicitly enabled on the host. Physical disabling is separately qualified.
+  bool virtual_display_supported = 31;
+  bool virtual_display_disable_supported = 32;
 }
 
 // Physical desktop modes, independent of the encoded stream's size limits.
@@ -1841,6 +1848,31 @@ message SetRemoteDesktopDisplayModeRequest {
   string mode_id = 3;
   // Reject stale mode lists or a display changed locally after discovery.
   string expected_current_mode_id = 4;
+}
+
+// One temporary virtual display owned by the controlling screen session.
+message RemoteDesktopVirtualDisplay {
+  bool active = 1;
+  string display_id = 2;
+  int32 pixel_width = 3;
+  int32 pixel_height = 4;
+  int32 scale = 5;
+  bool awaiting_presentation = 6;
+  bool physical_disabled = 7;
+  string original_display_id = 8;
+}
+message SetRemoteDesktopVirtualDisplayRequest {
+  string session_id = 1;
+  int32 pixel_width = 2;
+  int32 pixel_height = 3;
+  int32 scale = 4; // Exactly 1 or 2; backing pixels are independent of UI scale.
+  bool disable_physical = 5;
+}
+message ConfirmRemoteDesktopVirtualDisplayRequest {
+  string session_id = 1;
+  string display_id = 2;
+  // Acknowledge only after presenting a frame from this exact display/media generation.
+  uint64 display_generation = 3;
 }
 
 message RemoteDesktopCodecMode {
@@ -2115,6 +2147,7 @@ message RemoteDesktopSessionState {
   uint32 content_samples = 55;
   string content_class = 56; // Applied controller classification, not a visual-quality score.
   RemoteDesktopRecoveryDiagnostics recovery_diagnostics = 57;
+  RemoteDesktopVirtualDisplay virtual_display = 58;
 }
 
 // Session-local history counters, not proof of successful decode repair.

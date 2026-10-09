@@ -5676,6 +5676,17 @@ public nonisolated struct Dieter_V1_RemoteDesktopCapabilities: @unchecked Sendab
     set {_uniqueStorage()._availability = newValue}
   }
 
+  /// Experimental, explicitly enabled on the host. Physical disabling is separately qualified.
+  public var virtualDisplaySupported: Bool {
+    get {_storage._virtualDisplaySupported}
+    set {_uniqueStorage()._virtualDisplaySupported = newValue}
+  }
+
+  public var virtualDisplayDisableSupported: Bool {
+    get {_storage._virtualDisplayDisableSupported}
+    set {_uniqueStorage()._virtualDisplayDisableSupported = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -5742,6 +5753,71 @@ public nonisolated struct Dieter_V1_SetRemoteDesktopDisplayModeRequest: Sendable
 
   /// Reject stale mode lists or a display changed locally after discovery.
   public var expectedCurrentModeID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// One temporary virtual display owned by the controlling screen session.
+public nonisolated struct Dieter_V1_RemoteDesktopVirtualDisplay: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var active: Bool = false
+
+  public var displayID: String = String()
+
+  public var pixelWidth: Int32 = 0
+
+  public var pixelHeight: Int32 = 0
+
+  public var scale: Int32 = 0
+
+  public var awaitingPresentation: Bool = false
+
+  public var physicalDisabled: Bool = false
+
+  public var originalDisplayID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_SetRemoteDesktopVirtualDisplayRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var sessionID: String = String()
+
+  public var pixelWidth: Int32 = 0
+
+  public var pixelHeight: Int32 = 0
+
+  /// Exactly 1 or 2; backing pixels are independent of UI scale.
+  public var scale: Int32 = 0
+
+  public var disablePhysical: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var sessionID: String = String()
+
+  public var displayID: String = String()
+
+  /// Acknowledge only after presenting a frame from this exact display/media generation.
+  public var displayGeneration: UInt64 = 0
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -6676,6 +6752,15 @@ public nonisolated struct Dieter_V1_RemoteDesktopSessionState: @unchecked Sendab
   public var hasRecoveryDiagnostics: Bool {_storage._recoveryDiagnostics != nil}
   /// Clears the value of `recoveryDiagnostics`. Subsequent reads from it will return its default value.
   public mutating func clearRecoveryDiagnostics() {_uniqueStorage()._recoveryDiagnostics = nil}
+
+  public var virtualDisplay: Dieter_V1_RemoteDesktopVirtualDisplay {
+    get {_storage._virtualDisplay ?? Dieter_V1_RemoteDesktopVirtualDisplay()}
+    set {_uniqueStorage()._virtualDisplay = newValue}
+  }
+  /// Returns true if `virtualDisplay` has been explicitly set.
+  public var hasVirtualDisplay: Bool {_storage._virtualDisplay != nil}
+  /// Clears the value of `virtualDisplay`. Subsequent reads from it will return its default value.
+  public mutating func clearVirtualDisplay() {_uniqueStorage()._virtualDisplay = nil}
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -18608,7 +18693,7 @@ nonisolated extension Dieter_V1_ResizeExecutionRequest: SwiftProtobuf.Message, S
 
 nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopCapabilities"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}platform\0\u{3}graphical_session_active\0\u{2}\u{2}ready\0\u{3}unavailable_reason\0\u{3}helper_version\0\u{3}capture_permission\0\u{3}control_permission\0\u{1}displays\0\u{1}codecs\0\u{3}encoder_available\0\u{3}control_supported\0\u{3}clipboard_supported\0\u{3}audio_supported\0\u{3}file_transfer_supported\0\u{3}active_session\0\u{3}adaptive_supported\0\u{3}cursor_supported\0\u{3}input_protocol_version\0\u{3}max_fps\0\u{1}encoder\0\u{3}daemon_executable\0\u{3}capture_executable\0\u{3}max_clients\0\u{3}connected_clients\0\u{4}\u{2}binary_clipboard_supported\0\u{3}codec_modes\0\u{3}display_mode_switching_supported\0\u{1}availability\0\u{b}enabled\0\u{c}\u{3}\u{1}")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}platform\0\u{3}graphical_session_active\0\u{2}\u{2}ready\0\u{3}unavailable_reason\0\u{3}helper_version\0\u{3}capture_permission\0\u{3}control_permission\0\u{1}displays\0\u{1}codecs\0\u{3}encoder_available\0\u{3}control_supported\0\u{3}clipboard_supported\0\u{3}audio_supported\0\u{3}file_transfer_supported\0\u{3}active_session\0\u{3}adaptive_supported\0\u{3}cursor_supported\0\u{3}input_protocol_version\0\u{3}max_fps\0\u{1}encoder\0\u{3}daemon_executable\0\u{3}capture_executable\0\u{3}max_clients\0\u{3}connected_clients\0\u{4}\u{2}binary_clipboard_supported\0\u{3}codec_modes\0\u{3}display_mode_switching_supported\0\u{1}availability\0\u{3}virtual_display_supported\0\u{3}virtual_display_disable_supported\0\u{b}enabled\0\u{c}\u{3}\u{1}")
 
   fileprivate class _StorageClass {
     var _platform: String = String()
@@ -18639,6 +18724,8 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
     var _codecModes: [Dieter_V1_RemoteDesktopCodecMode] = []
     var _displayModeSwitchingSupported: Bool = false
     var _availability: Dieter_V1_RemoteDesktopAvailability = .unspecified
+    var _virtualDisplaySupported: Bool = false
+    var _virtualDisplayDisableSupported: Bool = false
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -18677,6 +18764,8 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
       _codecModes = source._codecModes
       _displayModeSwitchingSupported = source._displayModeSwitchingSupported
       _availability = source._availability
+      _virtualDisplaySupported = source._virtualDisplaySupported
+      _virtualDisplayDisableSupported = source._virtualDisplayDisableSupported
     }
   }
 
@@ -18723,6 +18812,8 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
         case 28: try { try decoder.decodeRepeatedMessageField(value: &_storage._codecModes) }()
         case 29: try { try decoder.decodeSingularBoolField(value: &_storage._displayModeSwitchingSupported) }()
         case 30: try { try decoder.decodeSingularEnumField(value: &_storage._availability) }()
+        case 31: try { try decoder.decodeSingularBoolField(value: &_storage._virtualDisplaySupported) }()
+        case 32: try { try decoder.decodeSingularBoolField(value: &_storage._virtualDisplayDisableSupported) }()
         default: break
         }
       }
@@ -18815,6 +18906,12 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
       if _storage._availability != .unspecified {
         try visitor.visitSingularEnumField(value: _storage._availability, fieldNumber: 30)
       }
+      if _storage._virtualDisplaySupported != false {
+        try visitor.visitSingularBoolField(value: _storage._virtualDisplaySupported, fieldNumber: 31)
+      }
+      if _storage._virtualDisplayDisableSupported != false {
+        try visitor.visitSingularBoolField(value: _storage._virtualDisplayDisableSupported, fieldNumber: 32)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -18852,6 +18949,8 @@ nonisolated extension Dieter_V1_RemoteDesktopCapabilities: SwiftProtobuf.Message
         if _storage._codecModes != rhs_storage._codecModes {return false}
         if _storage._displayModeSwitchingSupported != rhs_storage._displayModeSwitchingSupported {return false}
         if _storage._availability != rhs_storage._availability {return false}
+        if _storage._virtualDisplaySupported != rhs_storage._virtualDisplaySupported {return false}
+        if _storage._virtualDisplayDisableSupported != rhs_storage._virtualDisplayDisableSupported {return false}
         return true
       }
       if !storagesAreEqual {return false}
@@ -19011,6 +19110,161 @@ nonisolated extension Dieter_V1_SetRemoteDesktopDisplayModeRequest: SwiftProtobu
     if lhs.displayID != rhs.displayID {return false}
     if lhs.modeID != rhs.modeID {return false}
     if lhs.expectedCurrentModeID != rhs.expectedCurrentModeID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_RemoteDesktopVirtualDisplay: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopVirtualDisplay"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}active\0\u{3}display_id\0\u{3}pixel_width\0\u{3}pixel_height\0\u{1}scale\0\u{3}awaiting_presentation\0\u{3}physical_disabled\0\u{3}original_display_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.active) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.displayID) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.pixelWidth) }()
+      case 4: try { try decoder.decodeSingularInt32Field(value: &self.pixelHeight) }()
+      case 5: try { try decoder.decodeSingularInt32Field(value: &self.scale) }()
+      case 6: try { try decoder.decodeSingularBoolField(value: &self.awaitingPresentation) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.physicalDisabled) }()
+      case 8: try { try decoder.decodeSingularStringField(value: &self.originalDisplayID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.active != false {
+      try visitor.visitSingularBoolField(value: self.active, fieldNumber: 1)
+    }
+    if !self.displayID.isEmpty {
+      try visitor.visitSingularStringField(value: self.displayID, fieldNumber: 2)
+    }
+    if self.pixelWidth != 0 {
+      try visitor.visitSingularInt32Field(value: self.pixelWidth, fieldNumber: 3)
+    }
+    if self.pixelHeight != 0 {
+      try visitor.visitSingularInt32Field(value: self.pixelHeight, fieldNumber: 4)
+    }
+    if self.scale != 0 {
+      try visitor.visitSingularInt32Field(value: self.scale, fieldNumber: 5)
+    }
+    if self.awaitingPresentation != false {
+      try visitor.visitSingularBoolField(value: self.awaitingPresentation, fieldNumber: 6)
+    }
+    if self.physicalDisabled != false {
+      try visitor.visitSingularBoolField(value: self.physicalDisabled, fieldNumber: 7)
+    }
+    if !self.originalDisplayID.isEmpty {
+      try visitor.visitSingularStringField(value: self.originalDisplayID, fieldNumber: 8)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_RemoteDesktopVirtualDisplay, rhs: Dieter_V1_RemoteDesktopVirtualDisplay) -> Bool {
+    if lhs.active != rhs.active {return false}
+    if lhs.displayID != rhs.displayID {return false}
+    if lhs.pixelWidth != rhs.pixelWidth {return false}
+    if lhs.pixelHeight != rhs.pixelHeight {return false}
+    if lhs.scale != rhs.scale {return false}
+    if lhs.awaitingPresentation != rhs.awaitingPresentation {return false}
+    if lhs.physicalDisabled != rhs.physicalDisabled {return false}
+    if lhs.originalDisplayID != rhs.originalDisplayID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_SetRemoteDesktopVirtualDisplayRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".SetRemoteDesktopVirtualDisplayRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}session_id\0\u{3}pixel_width\0\u{3}pixel_height\0\u{1}scale\0\u{3}disable_physical\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.sessionID) }()
+      case 2: try { try decoder.decodeSingularInt32Field(value: &self.pixelWidth) }()
+      case 3: try { try decoder.decodeSingularInt32Field(value: &self.pixelHeight) }()
+      case 4: try { try decoder.decodeSingularInt32Field(value: &self.scale) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.disablePhysical) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.sessionID.isEmpty {
+      try visitor.visitSingularStringField(value: self.sessionID, fieldNumber: 1)
+    }
+    if self.pixelWidth != 0 {
+      try visitor.visitSingularInt32Field(value: self.pixelWidth, fieldNumber: 2)
+    }
+    if self.pixelHeight != 0 {
+      try visitor.visitSingularInt32Field(value: self.pixelHeight, fieldNumber: 3)
+    }
+    if self.scale != 0 {
+      try visitor.visitSingularInt32Field(value: self.scale, fieldNumber: 4)
+    }
+    if self.disablePhysical != false {
+      try visitor.visitSingularBoolField(value: self.disablePhysical, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_SetRemoteDesktopVirtualDisplayRequest, rhs: Dieter_V1_SetRemoteDesktopVirtualDisplayRequest) -> Bool {
+    if lhs.sessionID != rhs.sessionID {return false}
+    if lhs.pixelWidth != rhs.pixelWidth {return false}
+    if lhs.pixelHeight != rhs.pixelHeight {return false}
+    if lhs.scale != rhs.scale {return false}
+    if lhs.disablePhysical != rhs.disablePhysical {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ConfirmRemoteDesktopVirtualDisplayRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}session_id\0\u{3}display_id\0\u{3}display_generation\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.sessionID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.displayID) }()
+      case 3: try { try decoder.decodeSingularUInt64Field(value: &self.displayGeneration) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.sessionID.isEmpty {
+      try visitor.visitSingularStringField(value: self.sessionID, fieldNumber: 1)
+    }
+    if !self.displayID.isEmpty {
+      try visitor.visitSingularStringField(value: self.displayID, fieldNumber: 2)
+    }
+    if self.displayGeneration != 0 {
+      try visitor.visitSingularUInt64Field(value: self.displayGeneration, fieldNumber: 3)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest, rhs: Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest) -> Bool {
+    if lhs.sessionID != rhs.sessionID {return false}
+    if lhs.displayID != rhs.displayID {return false}
+    if lhs.displayGeneration != rhs.displayGeneration {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -20266,7 +20520,7 @@ nonisolated extension Dieter_V1_RemoteDesktopInput: SwiftProtobuf.Message, Swift
 
 nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".RemoteDesktopSessionState"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}phase\0\u{1}reason\0\u{1}route\0\u{1}codec\0\u{1}width\0\u{1}height\0\u{1}fps\0\u{3}bitrate_kbps\0\u{3}display_id\0\u{3}display_generation\0\u{1}configuration\0\u{3}encode_ms\0\u{3}capture_delay_ms\0\u{3}queue_ms\0\u{3}frames_sent\0\u{3}frames_dropped\0\u{3}last_frame_id\0\u{3}last_input_ordinal\0\u{1}encoder\0\u{3}embedded_cursor\0\u{3}receiver_fps\0\u{3}rtt_ms\0\u{3}media_generation\0\u{3}media_timestamp\0\u{3}send_ms\0\u{3}capture_to_send_ms\0\u{3}jitter_buffer_ms\0\u{3}render_ms\0\u{3}pacing_bitrate_kbps\0\u{3}control_active\0\u{3}control_generation\0\u{3}controller_name\0\u{3}connected_clients\0\u{3}clipboard_enabled\0\u{3}clipboard_generation\0\u{3}reference_recovery\0\u{3}fec_percent\0\u{3}fec_packets\0\u{3}fec_bytes\0\u{3}reference_acks\0\u{3}reference_recovery_frames\0\u{3}reference_recoveries\0\u{3}render_measurement\0\u{3}decoder_implementation\0\u{3}decoder_hardware\0\u{3}decoder_low_latency_accepted\0\u{3}decoder_configuration_reason\0\u{3}media_rtp_bytes\0\u{3}repair_rtp_bytes\0\u{3}probe_rtp_bytes\0\u{3}fec_rtp_bytes\0\u{3}encoder_configuration\0\u{3}content_changed_fraction\0\u{3}content_measurement_sequence\0\u{3}content_samples\0\u{3}content_class\0\u{3}recovery_diagnostics\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}phase\0\u{1}reason\0\u{1}route\0\u{1}codec\0\u{1}width\0\u{1}height\0\u{1}fps\0\u{3}bitrate_kbps\0\u{3}display_id\0\u{3}display_generation\0\u{1}configuration\0\u{3}encode_ms\0\u{3}capture_delay_ms\0\u{3}queue_ms\0\u{3}frames_sent\0\u{3}frames_dropped\0\u{3}last_frame_id\0\u{3}last_input_ordinal\0\u{1}encoder\0\u{3}embedded_cursor\0\u{3}receiver_fps\0\u{3}rtt_ms\0\u{3}media_generation\0\u{3}media_timestamp\0\u{3}send_ms\0\u{3}capture_to_send_ms\0\u{3}jitter_buffer_ms\0\u{3}render_ms\0\u{3}pacing_bitrate_kbps\0\u{3}control_active\0\u{3}control_generation\0\u{3}controller_name\0\u{3}connected_clients\0\u{3}clipboard_enabled\0\u{3}clipboard_generation\0\u{3}reference_recovery\0\u{3}fec_percent\0\u{3}fec_packets\0\u{3}fec_bytes\0\u{3}reference_acks\0\u{3}reference_recovery_frames\0\u{3}reference_recoveries\0\u{3}render_measurement\0\u{3}decoder_implementation\0\u{3}decoder_hardware\0\u{3}decoder_low_latency_accepted\0\u{3}decoder_configuration_reason\0\u{3}media_rtp_bytes\0\u{3}repair_rtp_bytes\0\u{3}probe_rtp_bytes\0\u{3}fec_rtp_bytes\0\u{3}encoder_configuration\0\u{3}content_changed_fraction\0\u{3}content_measurement_sequence\0\u{3}content_samples\0\u{3}content_class\0\u{3}recovery_diagnostics\0\u{3}virtual_display\0")
 
   fileprivate class _StorageClass {
     var _phase: String = String()
@@ -20326,6 +20580,7 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
     var _contentSamples: UInt32 = 0
     var _contentClass: String = String()
     var _recoveryDiagnostics: Dieter_V1_RemoteDesktopRecoveryDiagnostics? = nil
+    var _virtualDisplay: Dieter_V1_RemoteDesktopVirtualDisplay? = nil
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -20393,6 +20648,7 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
       _contentSamples = source._contentSamples
       _contentClass = source._contentClass
       _recoveryDiagnostics = source._recoveryDiagnostics
+      _virtualDisplay = source._virtualDisplay
     }
   }
 
@@ -20468,6 +20724,7 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
         case 55: try { try decoder.decodeSingularUInt32Field(value: &_storage._contentSamples) }()
         case 56: try { try decoder.decodeSingularStringField(value: &_storage._contentClass) }()
         case 57: try { try decoder.decodeSingularMessageField(value: &_storage._recoveryDiagnostics) }()
+        case 58: try { try decoder.decodeSingularMessageField(value: &_storage._virtualDisplay) }()
         default: break
         }
       }
@@ -20651,6 +20908,9 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
       try { if let v = _storage._recoveryDiagnostics {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 57)
       } }()
+      try { if let v = _storage._virtualDisplay {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 58)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -20717,6 +20977,7 @@ nonisolated extension Dieter_V1_RemoteDesktopSessionState: SwiftProtobuf.Message
         if _storage._contentSamples != rhs_storage._contentSamples {return false}
         if _storage._contentClass != rhs_storage._contentClass {return false}
         if _storage._recoveryDiagnostics != rhs_storage._recoveryDiagnostics {return false}
+        if _storage._virtualDisplay != rhs_storage._virtualDisplay {return false}
         return true
       }
       if !storagesAreEqual {return false}

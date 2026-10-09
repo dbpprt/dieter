@@ -7,8 +7,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.dbpprt.dieter.client.v1.Command
+import com.dbpprt.dieter.client.v1.ScreenCommand
+import com.dbpprt.dieter.client.v1.ScreenViewport
 import com.dbpprt.dieter.core.terminals.TerminalScreen
 import com.dbpprt.dieter.ui.RemoteTerminalView
 import kotlinx.coroutines.launch
@@ -63,7 +67,29 @@ internal actual fun NativeScreenCanvas(store: MobileStore, modifier: Modifier) {
                 store,
             )
         }
-    AndroidView(factory = { surface.view }, modifier = modifier, update = { surface.update(slice) })
+    AndroidView(
+        factory = { surface.view },
+        modifier =
+            modifier.onSizeChanged { size ->
+                // Compose reports drawable pixels; scaling of the remote macOS desktop is
+                // independent.
+                store.command(
+                    Command(
+                        screen =
+                            ScreenCommand(
+                                scope = MobileStore.SCREEN_SCOPE,
+                                viewport =
+                                    ScreenViewport(
+                                        width_points = size.width.toDouble(),
+                                        height_points = size.height.toDouble(),
+                                        scale = 1.0,
+                                    ),
+                            )
+                    )
+                )
+            },
+        update = { surface.update(slice) },
+    )
     LaunchedEffect(surface) { store.canvasActions.collect { surface.control(it) } }
     DisposableEffect(surface) { onDispose { surface.close() } }
 }

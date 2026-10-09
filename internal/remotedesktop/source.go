@@ -60,6 +60,7 @@ type InputSink interface {
 }
 
 type SourceOptions struct {
+	StateRoot  string // Central DIETER_HOME (or disposable fixture root) for native display recovery.
 	RecoveryID string // private encoder identity for acknowledged references; capture stays shared
 	// Optional named pasteboard for isolated native fixtures; empty uses the system clipboard.
 	ClipboardDirectory string

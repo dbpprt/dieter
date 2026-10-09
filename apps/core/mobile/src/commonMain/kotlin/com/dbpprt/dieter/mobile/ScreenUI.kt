@@ -144,10 +144,68 @@ internal fun NativeScreen(store: MobileStore, machineId: String) {
                             ),
                     ),
                     ChromeAction(
+                        "virtual-display",
+                        "Virtual display (experimental)",
+                        Glyph.SCREENS,
+                        checked = preferences().virtual_display,
+                        enabled =
+                            view.capabilities?.virtual_display_supported == true &&
+                                view.control_active,
+                    ) {
+                        send(
+                            ScreenCommand(
+                                preferences =
+                                    preferences()
+                                        .copy(
+                                            virtual_display = !preferences().virtual_display,
+                                            disable_physical = false,
+                                        )
+                            )
+                        )
+                    },
+                    ChromeAction(
+                        "virtual-disable",
+                        "Turn off host screen",
+                        Glyph.SCREENS,
+                        checked = preferences().disable_physical,
+                        enabled =
+                            preferences().virtual_display &&
+                                view.capabilities?.virtual_display_disable_supported == true &&
+                                view.control_active,
+                    ) {
+                        send(
+                            ScreenCommand(
+                                preferences =
+                                    preferences()
+                                        .copy(disable_physical = !preferences().disable_physical)
+                            )
+                        )
+                    },
+                    ChromeAction(
+                        "virtual-scale",
+                        "Larger desktop text (2×)",
+                        Glyph.SCREENS,
+                        checked = preferences().virtual_scale != 1,
+                        enabled = preferences().virtual_display,
+                    ) {
+                        send(
+                            ScreenCommand(
+                                preferences =
+                                    preferences()
+                                        .copy(
+                                            virtual_scale =
+                                                if (preferences().virtual_scale == 1) 2 else 1
+                                        )
+                            )
+                        )
+                    },
+                    ChromeAction(
                         "display",
                         "Display",
                         Glyph.SCREENS,
-                        enabled = (view.capabilities?.displays?.size ?: 0) > 1,
+                        enabled =
+                            !preferences().virtual_display &&
+                                (view.capabilities?.displays?.size ?: 0) > 1,
                         menu =
                             listOf(
                                 MenuSection(

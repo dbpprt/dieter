@@ -153,6 +153,14 @@ struct NativeDisplay: Encodable, Equatable {
     var refreshRate: Double
 }
 
+func nativeDisplayPixelSize(_ id: CGDirectDisplayID) -> (width: Int, height: Int) {
+    if let mode = CGDisplayCopyDisplayMode(id) { return (mode.pixelWidth, mode.pixelHeight) }
+    // CGDisplayPixelsWide/High report the logical mode for virtual HiDPI
+    // displays. Read the current WindowServer mode's backing density too.
+    let scale = DieterDisplayBackingScale(id)
+    return (Int(Double(CGDisplayPixelsWide(id)) * scale), Int(Double(CGDisplayPixelsHigh(id)) * scale))
+}
+
 func nativeDisplays() -> [NativeDisplay] {
     var ids = [CGDirectDisplayID](repeating: 0, count: 32)
     var count: UInt32 = 0
@@ -160,11 +168,13 @@ func nativeDisplays() -> [NativeDisplay] {
     return ids.prefix(Int(count)).map { id in
         let rect = CGDisplayBounds(id)
         let mode = CGDisplayCopyDisplayMode(id)
+        let pixels = nativeDisplayPixelSize(id)
         return NativeDisplay(
             id: String(id), name: CGDisplayIsMain(id) != 0 ? "Main display" : "Display \(id)",
             logicalWidth: Int(rect.width), logicalHeight: Int(rect.height),
-            physicalWidth: mode?.pixelWidth ?? Int(rect.width), physicalHeight: mode?.pixelHeight ?? Int(rect.height),
-            scale: Double(mode?.pixelWidth ?? Int(rect.width)) / max(1, rect.width),
+            physicalWidth: pixels.width,
+            physicalHeight: pixels.height,
+            scale: Double(pixels.width) / max(1, rect.width),
             rotation: Int(CGDisplayRotation(id)), primary: CGDisplayIsMain(id) != 0,
             originX: Int(rect.minX), originY: Int(rect.minY), refreshRate: mode?.refreshRate ?? 60)
     }
