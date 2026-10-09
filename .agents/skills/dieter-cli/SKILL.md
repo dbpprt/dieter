@@ -143,11 +143,18 @@ dieter quota reset openai --account <opaque-key> --confirm RESET
 The table abbreviates opaque account keys. JSON retains the opaque key so it
 can be passed to account-specific commands; it is an owner-scoped HMAC, not a
 provider account ID. OpenAI rows may also include the bounded display email
-returned by the structured account API. Provider summaries choose the lowest remaining percentage
+returned by the provider usage API. Provider summaries choose the lowest remaining percentage
 across included account windows and never sum or average separate allowances.
 Use `quota include` or `quota exclude` to change summary membership. OpenAI
 `quota reset` consumes one reset credit, requires `--confirm RESET`, and is
 routed to an online daemon that currently has the exact account.
+
+OpenAI quota collection reads the configured Codex profile's existing OAuth
+credentials and calls the ChatGPT usage API directly, without launching Codex or
+refreshing plugin marketplaces. File credentials and profile-specific macOS
+Keychain entries are supported; process-only and encrypted secret stores are
+unsupported. Quota reads and resets never refresh or rewrite Codex-owned
+credentials. If its access token expires, run Codex to refresh the login.
 
 Claude usage is polled at most once every five minutes per profile, with a
 ten-minute cooldown after a failed probe. Discovery and explicit `quota refresh`

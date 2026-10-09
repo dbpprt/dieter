@@ -158,6 +158,11 @@ through it. Agents run with your user permissions, without a Dieter sandbox;
 cloud model providers may receive prompts and code according to their settings.
 Read the [security model](https://getdieter.com/docs/security/).
 
+OpenAI and Claude quota collectors read existing OAuth credentials and call the
+provider usage APIs directly. OpenAI polling does not launch Codex or refresh
+plugin marketplaces. Codex credentials remain read-only; expired tokens must be
+refreshed by Codex. OpenAI supports file credentials and profile-specific macOS
+Keychain entries; process-only and encrypted secret stores are unsupported.
 Claude quota polling runs every five minutes, with a ten-minute cooldown after
 failed requests. Account discovery and manual refresh share the same limit.
 
