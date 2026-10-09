@@ -2840,6 +2840,151 @@ public nonisolated struct Dieter_V1_Settings: Sendable {
   public init() {}
 }
 
+/// Claude Design on one daemon host. Never replicated: the Claude login, the
+/// design credential and the account's agent-access grant belong to the host.
+public nonisolated struct Dieter_V1_ClaudeDesignStatus: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Claude Design is enabled for the host's Claude account and Claude Code build.
+  public var available: Bool = false
+
+  /// Claude Design sign-in stored a design credential on the host.
+  public var signedIn: Bool = false
+
+  /// This host can run the Claude Design sign-in.
+  public var canSignIn: Bool = false
+
+  /// Claude Code turns on this machine may use the Claude Design tools.
+  public var accessEnabled: Bool = false
+
+  public var accessUpdatedAt: String = String()
+
+  /// Why Claude Design is unavailable or cannot sign in, when Claude Code says.
+  public var reason: String = String()
+
+  /// The pinned Claude Code release Dieter uses on this machine.
+  public var claudeCodeVersion: String = String()
+
+  /// False until the first sign-in or Claude Code turn installs that release.
+  public var runtimeReady: Bool = false
+
+  public var signInActive: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_SignInClaudeDesignRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+/// The first event carries only sign_in_id. A preparing event reports that the
+/// pinned Claude Code release is being installed. A pages event carries url,
+/// which completes in a browser on the daemon host, and manual_url, whose page
+/// shows an authorization code to submit with SubmitClaudeDesignSignInCode from
+/// any client. The last event has done set and the refreshed status.
+public nonisolated struct Dieter_V1_ClaudeDesignSignInEvent: @unchecked Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var signInID: String {
+    get {_storage._signInID}
+    set {_uniqueStorage()._signInID = newValue}
+  }
+
+  public var preparing: Bool {
+    get {_storage._preparing}
+    set {_uniqueStorage()._preparing = newValue}
+  }
+
+  public var url: String {
+    get {_storage._url}
+    set {_uniqueStorage()._url = newValue}
+  }
+
+  public var manualURL: String {
+    get {_storage._manualURL}
+    set {_uniqueStorage()._manualURL = newValue}
+  }
+
+  public var manualFirst: Bool {
+    get {_storage._manualFirst}
+    set {_uniqueStorage()._manualFirst = newValue}
+  }
+
+  public var done: Bool {
+    get {_storage._done}
+    set {_uniqueStorage()._done = newValue}
+  }
+
+  public var ok: Bool {
+    get {_storage._ok}
+    set {_uniqueStorage()._ok = newValue}
+  }
+
+  public var message: String {
+    get {_storage._message}
+    set {_uniqueStorage()._message = newValue}
+  }
+
+  public var status: Dieter_V1_ClaudeDesignStatus {
+    get {_storage._status ?? Dieter_V1_ClaudeDesignStatus()}
+    set {_uniqueStorage()._status = newValue}
+  }
+  /// Returns true if `status` has been explicitly set.
+  public var hasStatus: Bool {_storage._status != nil}
+  /// Clears the value of `status`. Subsequent reads from it will return its default value.
+  public mutating func clearStatus() {_uniqueStorage()._status = nil}
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+public nonisolated struct Dieter_V1_SubmitClaudeDesignSignInCodeRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var signInID: String = String()
+
+  public var code: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct Dieter_V1_SetClaudeDesignAccessRequest: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  /// Enabling also grants the Claude account's agent access to Design projects,
+  /// which headless Claude Code turns cannot confirm interactively.
+  public var enabled: Bool = false
+
+  /// With enabled false, also revoke that account-wide grant. This affects every
+  /// Claude Code session of the account, not only Dieter.
+  public var revokeGrant: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 public nonisolated struct Dieter_V1_SettingsOptions: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -13426,6 +13571,291 @@ nonisolated extension Dieter_V1_Settings: SwiftProtobuf.Message, SwiftProtobuf._
     if lhs.boardSkillTemplate != rhs.boardSkillTemplate {return false}
     if lhs.chatSkillTemplate != rhs.chatSkillTemplate {return false}
     if lhs.updatedAt != rhs.updatedAt {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_ClaudeDesignStatus: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ClaudeDesignStatus"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}available\0\u{3}signed_in\0\u{3}can_sign_in\0\u{3}access_enabled\0\u{3}access_updated_at\0\u{1}reason\0\u{3}claude_code_version\0\u{3}runtime_ready\0\u{3}sign_in_active\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.available) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.signedIn) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.canSignIn) }()
+      case 4: try { try decoder.decodeSingularBoolField(value: &self.accessEnabled) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.accessUpdatedAt) }()
+      case 6: try { try decoder.decodeSingularStringField(value: &self.reason) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.claudeCodeVersion) }()
+      case 8: try { try decoder.decodeSingularBoolField(value: &self.runtimeReady) }()
+      case 9: try { try decoder.decodeSingularBoolField(value: &self.signInActive) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.available != false {
+      try visitor.visitSingularBoolField(value: self.available, fieldNumber: 1)
+    }
+    if self.signedIn != false {
+      try visitor.visitSingularBoolField(value: self.signedIn, fieldNumber: 2)
+    }
+    if self.canSignIn != false {
+      try visitor.visitSingularBoolField(value: self.canSignIn, fieldNumber: 3)
+    }
+    if self.accessEnabled != false {
+      try visitor.visitSingularBoolField(value: self.accessEnabled, fieldNumber: 4)
+    }
+    if !self.accessUpdatedAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.accessUpdatedAt, fieldNumber: 5)
+    }
+    if !self.reason.isEmpty {
+      try visitor.visitSingularStringField(value: self.reason, fieldNumber: 6)
+    }
+    if !self.claudeCodeVersion.isEmpty {
+      try visitor.visitSingularStringField(value: self.claudeCodeVersion, fieldNumber: 7)
+    }
+    if self.runtimeReady != false {
+      try visitor.visitSingularBoolField(value: self.runtimeReady, fieldNumber: 8)
+    }
+    if self.signInActive != false {
+      try visitor.visitSingularBoolField(value: self.signInActive, fieldNumber: 9)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_ClaudeDesignStatus, rhs: Dieter_V1_ClaudeDesignStatus) -> Bool {
+    if lhs.available != rhs.available {return false}
+    if lhs.signedIn != rhs.signedIn {return false}
+    if lhs.canSignIn != rhs.canSignIn {return false}
+    if lhs.accessEnabled != rhs.accessEnabled {return false}
+    if lhs.accessUpdatedAt != rhs.accessUpdatedAt {return false}
+    if lhs.reason != rhs.reason {return false}
+    if lhs.claudeCodeVersion != rhs.claudeCodeVersion {return false}
+    if lhs.runtimeReady != rhs.runtimeReady {return false}
+    if lhs.signInActive != rhs.signInActive {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_SignInClaudeDesignRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".SignInClaudeDesignRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap()
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    // Load everything into unknown fields
+    while try decoder.nextFieldNumber() != nil {}
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_SignInClaudeDesignRequest, rhs: Dieter_V1_SignInClaudeDesignRequest) -> Bool {
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_ClaudeDesignSignInEvent: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ClaudeDesignSignInEvent"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}sign_in_id\0\u{1}preparing\0\u{1}url\0\u{3}manual_url\0\u{3}manual_first\0\u{1}done\0\u{1}ok\0\u{1}message\0\u{1}status\0")
+
+  fileprivate class _StorageClass {
+    var _signInID: String = String()
+    var _preparing: Bool = false
+    var _url: String = String()
+    var _manualURL: String = String()
+    var _manualFirst: Bool = false
+    var _done: Bool = false
+    var _ok: Bool = false
+    var _message: String = String()
+    var _status: Dieter_V1_ClaudeDesignStatus? = nil
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _signInID = source._signInID
+      _preparing = source._preparing
+      _url = source._url
+      _manualURL = source._manualURL
+      _manualFirst = source._manualFirst
+      _done = source._done
+      _ok = source._ok
+      _message = source._message
+      _status = source._status
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._signInID) }()
+        case 2: try { try decoder.decodeSingularBoolField(value: &_storage._preparing) }()
+        case 3: try { try decoder.decodeSingularStringField(value: &_storage._url) }()
+        case 4: try { try decoder.decodeSingularStringField(value: &_storage._manualURL) }()
+        case 5: try { try decoder.decodeSingularBoolField(value: &_storage._manualFirst) }()
+        case 6: try { try decoder.decodeSingularBoolField(value: &_storage._done) }()
+        case 7: try { try decoder.decodeSingularBoolField(value: &_storage._ok) }()
+        case 8: try { try decoder.decodeSingularStringField(value: &_storage._message) }()
+        case 9: try { try decoder.decodeSingularMessageField(value: &_storage._status) }()
+        default: break
+        }
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if !_storage._signInID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._signInID, fieldNumber: 1)
+      }
+      if _storage._preparing != false {
+        try visitor.visitSingularBoolField(value: _storage._preparing, fieldNumber: 2)
+      }
+      if !_storage._url.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._url, fieldNumber: 3)
+      }
+      if !_storage._manualURL.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._manualURL, fieldNumber: 4)
+      }
+      if _storage._manualFirst != false {
+        try visitor.visitSingularBoolField(value: _storage._manualFirst, fieldNumber: 5)
+      }
+      if _storage._done != false {
+        try visitor.visitSingularBoolField(value: _storage._done, fieldNumber: 6)
+      }
+      if _storage._ok != false {
+        try visitor.visitSingularBoolField(value: _storage._ok, fieldNumber: 7)
+      }
+      if !_storage._message.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._message, fieldNumber: 8)
+      }
+      try { if let v = _storage._status {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 9)
+      } }()
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_ClaudeDesignSignInEvent, rhs: Dieter_V1_ClaudeDesignSignInEvent) -> Bool {
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._signInID != rhs_storage._signInID {return false}
+        if _storage._preparing != rhs_storage._preparing {return false}
+        if _storage._url != rhs_storage._url {return false}
+        if _storage._manualURL != rhs_storage._manualURL {return false}
+        if _storage._manualFirst != rhs_storage._manualFirst {return false}
+        if _storage._done != rhs_storage._done {return false}
+        if _storage._ok != rhs_storage._ok {return false}
+        if _storage._message != rhs_storage._message {return false}
+        if _storage._status != rhs_storage._status {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_SubmitClaudeDesignSignInCodeRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".SubmitClaudeDesignSignInCodeRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}sign_in_id\0\u{1}code\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.signInID) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.code) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.signInID.isEmpty {
+      try visitor.visitSingularStringField(value: self.signInID, fieldNumber: 1)
+    }
+    if !self.code.isEmpty {
+      try visitor.visitSingularStringField(value: self.code, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_SubmitClaudeDesignSignInCodeRequest, rhs: Dieter_V1_SubmitClaudeDesignSignInCodeRequest) -> Bool {
+    if lhs.signInID != rhs.signInID {return false}
+    if lhs.code != rhs.code {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension Dieter_V1_SetClaudeDesignAccessRequest: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".SetClaudeDesignAccessRequest"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}enabled\0\u{3}revoke_grant\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.revokeGrant) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.enabled != false {
+      try visitor.visitSingularBoolField(value: self.enabled, fieldNumber: 1)
+    }
+    if self.revokeGrant != false {
+      try visitor.visitSingularBoolField(value: self.revokeGrant, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_V1_SetClaudeDesignAccessRequest, rhs: Dieter_V1_SetClaudeDesignAccessRequest) -> Bool {
+    if lhs.enabled != rhs.enabled {return false}
+    if lhs.revokeGrant != rhs.revokeGrant {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }

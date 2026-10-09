@@ -5,6 +5,7 @@ import com.dbpprt.dieter.client.v1.FileRenderer
 import com.dbpprt.dieter.client.v1.SyntaxHighlights
 import com.dbpprt.dieter.client.v1.SyntaxKind as SyntaxKindValue
 import com.dbpprt.dieter.core.files.FilePaths
+import com.dbpprt.dieter.core.files.HtmlPreview
 import com.dbpprt.dieter.core.files.MAX_SYNTAX_HIGHLIGHT_CHARACTERS
 import com.dbpprt.dieter.core.files.SyntaxKind
 import com.dbpprt.dieter.core.files.codeLanguageForPath
@@ -50,8 +51,19 @@ object FileExports {
     /** How to show a file with this name or path, media type, and binary flag. */
     fun renderer(path: String, mimeType: String, binary: Boolean): FileRenderer = renderer(FilePaths.renderer(path, mimeType, binary))
 
-    /** Whether the editor may change the file: text and Markdown, never binaries, images, or PDFs. */
+    /** Whether the editor may change the file: text, Markdown, and HTML, never binaries, images, or PDFs. */
     fun editable(path: String, mimeType: String, binary: Boolean): Boolean = FilePaths.editable(path, mimeType, binary)
+
+    const val HTML_PREVIEW_CONTENT_SECURITY_POLICY = HtmlPreview.CONTENT_SECURITY_POLICY
+    const val HTML_PREVIEW_MAX_RESOURCES = HtmlPreview.MAX_RESOURCES
+
+    /** The URL an HTML preview loads [documentPath] from ([HtmlPreview]). */
+    fun htmlPreviewDocumentUrl(documentPath: String): String = HtmlPreview.documentUrl(documentPath)
+
+    /** The workspace file an HTML preview request reads; "" when the request must fail. */
+    fun htmlPreviewResource(url: String): String = HtmlPreview.resource(url).orEmpty()
+
+    fun htmlPreviewMimeType(path: String, reported: String): String = HtmlPreview.mimeType(path, reported)
 
     /** A listing row's icon kind for a file or folder [name]. */
     fun iconKind(name: String, directory: Boolean): FileIconKind = when (FilePaths.icon(name, directory)) {
@@ -69,6 +81,7 @@ object FileExports {
         FilePaths.Renderer.IMAGE -> FileRenderer.FILE_RENDERER_IMAGE
         FilePaths.Renderer.PDF -> FileRenderer.FILE_RENDERER_PDF
         FilePaths.Renderer.UNSUPPORTED -> FileRenderer.FILE_RENDERER_UNSUPPORTED
+        FilePaths.Renderer.HTML -> FileRenderer.FILE_RENDERER_HTML
     }
 
     private fun kind(kind: SyntaxKind): SyntaxKindValue = when (kind) {

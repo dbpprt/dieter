@@ -16,6 +16,7 @@ import (
 	"github.com/dbpprt/dieter/internal/app"
 	"github.com/dbpprt/dieter/internal/attachments"
 	"github.com/dbpprt/dieter/internal/changeset"
+	"github.com/dbpprt/dieter/internal/claudedesign"
 	"github.com/dbpprt/dieter/internal/controlrtc"
 	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/gen/dieter/v1/dieterv1connect"
@@ -56,6 +57,7 @@ type Server struct {
 	filesMu                 sync.RWMutex
 	terminals               *terminal.Manager
 	executions              *remoteexec.Manager
+	claudeDesign            *claudedesign.Manager
 	remoteDesktop           *remotedesktop.Manager
 	machine                 *machine.Collector
 	harnessCatalog          func(context.Context, bool) []harness.Adapter
@@ -83,6 +85,8 @@ type Options struct {
 	MachineAction       func(context.Context, machine.Operation) error
 	MachineCapabilities func(context.Context) []machine.OperationCapability
 	MachineDelay        time.Duration
+	// ClaudeDesign replaces the pinned Claude Code runtime for isolated tests.
+	ClaudeDesign claudedesign.Host
 }
 
 func New(data *store.Store, logger *slog.Logger) *Server {
@@ -114,6 +118,9 @@ func NewWithOptions(data *store.Store, logger *slog.Logger, options Options) *Se
 	}
 	if options.MachineDelay > 0 {
 		application.machineDelay = options.MachineDelay
+	}
+	if options.ClaudeDesign != nil {
+		application.claudeDesign = claudedesign.New(options.ClaudeDesign, data)
 	}
 	return application
 }
@@ -147,6 +154,7 @@ func newServer(data *store.Store, logger *slog.Logger, runner harness.Runner) *S
 	}
 	privacy := remotedesktop.NewNativePrivacy(data.Root, "", false)
 	s.privacyDriver, s.privacyBootID = privacy, privacy.BootID
+	s.claudeDesign = claudedesign.New(claudeDesignHost(service.Runner, data.Root), data)
 	s.changesets = changeset.New(s.workspaces)
 	s.local = newLocalChanges(s)
 	service.BackgroundProcesses = s.backgroundProcess
@@ -411,6 +419,7 @@ func run(ctx context.Context, addr string, data *store.Store, application *Serve
 	application.terminals.Shutdown(shutdownCtx)
 	application.executions.Shutdown(shutdownCtx)
 	application.remoteDesktop.Shutdown(shutdownCtx)
+	application.claudeDesign.Close()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		_ = httpServer.Close()
 	}

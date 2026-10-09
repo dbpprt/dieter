@@ -210,6 +210,7 @@ Commands:
   vault        End-to-end encrypted passwords and TOTP shared by your machines
   peer         Inspect and edit account peer settings (leaderless sync)
   settings     Inspect and update prompt and daemon settings
+  design       Sign in to Claude Design and allow it in Claude Code turns
   prompt       Inspect, update, scope, and preview prompt templates
   watch        Stream this machine's change frames as JSON Lines
   storage      Print the target daemon's central storage path
