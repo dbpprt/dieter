@@ -37,8 +37,8 @@ func (*service) Health(context.Context, *emptypb.Empty) (*dieterv1.HealthRespons
 func (*service) GetState(_ context.Context, r *dieterv1.GetStateRequest) (*dieterv1.State, error) {
 	return &dieterv1.State{Projects: []*dieterv1.Project{{Name: r.GetQuery()}}}, nil
 }
-func (s *service) WatchState(_ *dieterv1.WatchStateRequest, stream dieterv1.DieterService_WatchStateServer) error {
-	if err := stream.Send(&dieterv1.State{}); err != nil {
+func (s *service) WatchChanges(_ *dieterv1.ChangesRequest, stream dieterv1.DieterService_WatchChangesServer) error {
+	if err := stream.Send(&dieterv1.ChangesFrame{}); err != nil {
 		return err
 	}
 	<-stream.Context().Done()
@@ -222,7 +222,7 @@ func TestControlTLSRPCDirectAndTURN(t *testing.T) {
 				t.Fatalf("large RPC: %v", err)
 			}
 			watchCtx, stop := context.WithCancel(ctx)
-			watch, err := client.WatchState(watchCtx, &dieterv1.WatchStateRequest{})
+			watch, err := client.WatchChanges(watchCtx, &dieterv1.ChangesRequest{})
 			if err != nil {
 				t.Fatal(err)
 			}

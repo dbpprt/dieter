@@ -60,6 +60,10 @@ Read `fastlane/README.md` before changing app builds, E2E or releases.
 Add compositions to `fastlane/lib/dieter`; add typed catalog/result contracts to
 `internal/pipeline` and isolated fixtures to `tools/fixtures`. Do not reintroduce
 platform Just modules, host test loops in scripts, or workflow shell pipelines.
+Use Fastlane's maintained actions for Apple tests and archive/export.
+`pipeline/action.rb` runs them inside owned processes with private input and
+deadlines. Shared process, evidence, lease and product contracts belong in
+`fastlane/lib/dieter/pipeline`, not duplicated adapters or workflow code.
 
 Use `fastlane/local.example.json` as the template for ignored `fastlane/local.json`;
 run `just pipeline config_init` once, then edit explicit named target profiles.
@@ -69,10 +73,30 @@ existing development signing/network configuration. Never auto-select a phone.
 
 Preserve exact-device, desktop, build and signing leases and ownership journals.
 Manage only devices/processes started by the task; preserve operator apps and the
-live daemon. Android uses visible host GLES with normal snapshot loading/saving;
-never add wipe, cold-boot, software-renderer, headless or no-snapshot shortcuts.
+live daemon. Android lifecycle belongs to Fastlane: headless tests use a dedicated
+AVD with snapshots disabled; borrowed devices remain with their owners. Never
+wipe operator userdata or kill unrelated processes to repair a test run.
 Required missing/skipped/unavailable assertions and cleanup failures fail gates.
 Use registered background processes and collect their result before finishing.
+Stream sanitized build/test progress. Keep diagnostics bounded and separate from
+immutable checkpoints; never upload DerivedData, app bundles, archives or producer
+copies as diagnostics. Diagnostic upload outages do not require rerunning passed
+tests. Required assertions, cleanup and producer retention still fail closed.
+
+Android emulator E2E is currently flaky and is actively being worked on. A
+software-rendered boot can leave a System UI ANR dialog that steals test focus.
+Locally, keep one warm emulator (`just pipeline android local action:emulator_run`
+as its own registered process) so runs borrow a booted device. Between runs, if
+that emulator shows a System UI "isn't responding" dialog, tap **Wait** (for
+example `uiautomator dump`, then `input tap` on its bounds) and force-stop only
+the isolated `com.dbpprt.dieter.e2e` package an interrupted run left open.
+`conversation.task-capture` currently fails on the AOSP API 35 image: after
+"Preview screenshot.png" the attachment preview never shows "Close preview", and
+the system share chooser lists the test's alternative target under the same
+label and ignores taps while animating. Until it is fixed, the full Android gate
+cannot pass locally. Keep failed evidence and ownership journals; passing subsets
+do not qualify the full Android gate, and assertions must not be relaxed to hide
+emulator failures.
 
 Main produces **dev** prereleases with one reserved numeric SemVer across every
 component. Candidate reruns recover exact retained bytes; never rebuild a consumed
@@ -82,14 +106,46 @@ updaters or activate production. See `fastlane/release-policy.json`.
 
 ## Repository checks
 
-For local development, use `just check-changed --dry-run` to inspect the affected
-checks, then `just check-changed` to run them. The default includes all
-uncommitted changes; use `--base REF` to include branch changes. Run tests for
-the affected packages/components, and native integration tests only for related
-app, shared schema, or integration fixture changes. Preserve the existing app,
+Shared local tools are declared in `mise.toml` and `mise.lock`. Prepare them with
+`mise trust`, `mise install --locked` and `mise run setup`; use
+`mise exec -- just ...` in noninteractive shells. Keep `toolchains.java_home`
+null in `fastlane/local.json` (the template default) so the pipeline inherits
+mise's `JAVA_HOME`, the same Temurin 21 as CI; a configured path that differs
+fails with "JAVA_HOME conflicts with local configuration". Without mise, the
+pipeline falls back to Android Studio's bundled JBR.
+
+Mise does not provision Xcode, SDKs, simulator runtimes, emulators, devices or
+Docker; see `fastlane/README.md`. Gateway `deployment_integration`, which
+`just check-changed` selects for `deploy/gateway/`, `Dockerfile.gateway` and
+TURN probe changes, builds the gateway image and needs a running Docker engine
+with Buildx (Docker Desktop, OrbStack or colima). Restore the previous Docker
+context after stopping a runtime you started. iOS builds need an installed iOS
+simulator runtime; when no simulator exists, the build creates and deletes its
+own.
+
+For local development, inspect `just check-changed --dry-run`, then run selected
+fast checks with `just check-changed`. Include branch changes with `--base REF`.
+Device/desktop checks are listed separately: use `--native` or specific catalog
+cases for related app, schema, fixture or lifecycle changes. Shared orchestration
+edits require pipeline contracts, not every local native build. During refactors,
+run focused checks as needed and affected contracts once at the integration
+boundary. Repeat passing checks only after a relevant change or new failure.
+Do not repeatedly run `just check`, `check-all`, full E2E catalogs, or unrelated
+components between edits. Preserve the existing app,
 daemon, and emulator lifecycle rules; report an unavailable integration run
 instead of disrupting a running operator app. Full checks below remain for CI
 and explicitly requested repository-wide validation.
+
+CI uses `.github/workflows/qualification.yml`: affected checks on PRs and main,
+full qualification on scheduled/manual runs. Routine iOS checks run portable
+policies and `ios.connecting` on both layouts; full runs retain the functional
+catalog. Measure cold builds, cache transfer and native execution separately;
+the ten-minute feedback target is not a promise for full catalogs or TestFlight.
+CI calls Release after qualification passes; Release must
+not independently repeat those checks. Manual releases qualify first.
+`ios_qualify` verifies one simulator build for explicit iPhone/iPad profiles under
+one build lease. Physical tests require their separate exact profile, existing
+development signing and authenticated fixtures; never reuse simulator bytes.
 
 The shared Kotlin client core in `apps/core` has its own checks: `just pipeline core_test` (JVM unit and isolated end-to-end tests over the OkHttp transport that
 Android shares) and, on macOS, `just pipeline core_apple_test`. See `apps/core/README.md`.
@@ -98,23 +154,22 @@ and iOS apps link it as `DieterShared` through `apps/mac/Sources/SharedCore`.
 Put rules in the core, not in an app. `just pipeline ios build` assembles the iOS
 framework slices (it needs a Java runtime) and compiles the iOS app and its test
 bundles; the iOS tests run through `just pipeline ios e2e`.
-
-Android builds use Android Studio's bundled JBR. If `JAVA_HOME` is absent or
-points to a removed Homebrew JDK, use:
-
-```sh
-export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
-```
+`just pipeline ios test_unit` uses the small policy dependency graph and the
+canonical `apps/mac/.build/dieter-ios-policy` cache, without building the Mac app.
 
 ```sh
-npm --prefix internal/harness/runtime ci
-just check
-just pipeline mac test_unit
-just pipeline ios build
-just pipeline android test_unit
+mise exec -- just check
+mise exec -- just pipeline mac test_unit
+mise exec -- just pipeline ios build
+mise exec -- just pipeline android test_unit
 ```
 
 Use `gofmt` on Go files. Keep every native client accessible and adaptive.
+Prepare local commit tools once per checkout/worktree with `just hooks`.
+Use `just format` for explicit source/config/docs working-file fixes and
+`just pre-commit` for staged checks. Keep the no-stash dispatcher and avoid
+automatic staging; qualify hook changes with `just hooks-test`. See
+`fastlane/README.md` for pinned tools, exclusions, and Mac/Linux setup.
 
 ## Daemon CLI feature parity
 

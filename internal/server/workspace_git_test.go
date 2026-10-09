@@ -17,7 +17,7 @@ import (
 )
 
 func TestGitWatchPublishesTerminalStatusAfterLogCursorAlreadyAdvanced(t *testing.T) {
-	data, api, card := syncRecoveryFixture(t)
+	data, api, card := changesFixture(t)
 	operation, err := data.CreateGitOperation(card.ID, "commit", "fixture")
 	if err != nil {
 		t.Fatal(err)

@@ -192,7 +192,7 @@ struct QuickTaskPopover: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(DieterTheme.shell)
                     .frame(width: 30, height: 30)
-                    .background(DieterTheme.shellDeep.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .background(DieterTheme.tileSelected, in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Quick task").font(.system(size: 18, weight: .semibold)).smokeTarget(
                         "quick-task.title"
@@ -214,11 +214,11 @@ struct QuickTaskPopover: View {
                     ) {
                         Text("Choose project").tag("")
                         ForEach(store.projects.filter { !$0.archived }, id: \.id) { Text($0.name).tag($0.id) }
-                    }.accessibilityIdentifier("quick-task.project")
+                    }.accessibilityIdentifier("quick-task.project").smokeTarget("quick-task.project")
                     Picker("Board", selection: $draftBoardID) {
                         Text("Choose board").tag("")
                         ForEach(store.boards(for: draftProjectID), id: \.id) { Text($0.name).tag($0.id) }
-                    }.accessibilityIdentifier("quick-task.board")
+                    }.accessibilityIdentifier("quick-task.board").smokeTarget("quick-task.board")
                     LabeledContent("Run on") {
                         if draftProjectID.isEmpty {
                             Text("Choose a project")
@@ -228,7 +228,8 @@ struct QuickTaskPopover: View {
                         } else {
                             ProjectCheckoutMenu(
                                 projectID: draftProjectID,
-                                accessibilityIdentifier: "quick-task.machine"
+                                accessibilityIdentifier: "quick-task.machine",
+                                size: 28
                             )
                         }
                     }
@@ -268,7 +269,7 @@ struct QuickTaskPopover: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+            .dieterInset(radius: 10)
             .overlay {
                 if attachmentDropTargeted {
                     RoundedRectangle(cornerRadius: 8).stroke(Color.accentColor, lineWidth: 2)
@@ -296,7 +297,7 @@ struct QuickTaskPopover: View {
                 } label: {
                     Label("Attach", systemImage: "paperclip")
                 }
-                .buttonStyle(DieterGlassButtonStyle())
+                .buttonStyle(DieterBarButtonStyle(size: 28))
                 .disabled(submitting || formDraft.attachmentImportID != nil)
                 .accessibilityIdentifier("quick-task.attach")
                 Text("Paste or drop screenshots · \(SharedRules.shared.attachmentLimits())")
@@ -312,7 +313,7 @@ struct QuickTaskPopover: View {
                 TextField("Page URL (optional)", text: $sourceURL)
                     .textFieldStyle(.plain)
                     .padding(10)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                    .dieterInset(radius: 8)
                     .accessibilityIdentifier("quick-task.source-url")
                     .smokeTarget("quick-task.source-url")
                 if let host = CaptureBrowserContext.hostname(sourceURL) {
@@ -363,7 +364,7 @@ struct QuickTaskPopover: View {
                     HStack {
                         Spacer()
                         Button("Done") { settingsPresented = false }
-                            .buttonStyle(DieterGlassButtonStyle())
+                            .buttonStyle(DieterBarButtonStyle())
                             .keyboardShortcut(.defaultAction)
                     }
                 }
@@ -376,7 +377,7 @@ struct QuickTaskPopover: View {
             HStack(spacing: 9) {
                 Button("Cancel") { isPresented = false }
                     .smokeTarget("quick-task.cancel")
-                    .buttonStyle(DieterGlassButtonStyle())
+                    .buttonStyle(DieterBarButtonStyle())
                 Spacer()
                 Button {
                     Task { await submit(runImmediately: false) }
@@ -390,7 +391,7 @@ struct QuickTaskPopover: View {
                         Text("Add task")
                     }
                 }
-                .buttonStyle(DieterGlassButtonStyle())
+                .buttonStyle(DieterBarButtonStyle())
                 .disabled(cannotSubmit)
                 .keyboardShortcut(.return, modifiers: [.command])
                 .accessibilityIdentifier("quick-task.create")
@@ -400,7 +401,7 @@ struct QuickTaskPopover: View {
                 } label: {
                     Label("Run task", systemImage: "play.fill")
                 }
-                .buttonStyle(DieterGlassButtonStyle(prominent: true))
+                .buttonStyle(DieterBarButtonStyle(prominent: true))
                 .disabled(cannotSubmit || runningLane == nil)
                 .keyboardShortcut(.return, modifiers: [.command, .shift])
                 .help("Create this task and start the agent immediately")
@@ -461,7 +462,7 @@ struct QuickTaskPopover: View {
             submitting = false
             return
         }
-        await store.selectBoard(draftBoardID)
+        store.selectBoard(draftBoardID)
         guard store.selectedBoard?.id == draftBoardID else {
             submissionError = "This board is unavailable. Choose another board."
             submitting = false

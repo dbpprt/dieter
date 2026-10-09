@@ -36,10 +36,7 @@ func tokenBatch(n int, token string) []json.RawMessage {
 
 func TestUIChunkBatchDurabilitySequencesAndCheckpoints(t *testing.T) {
 	s, card := batchFixture(t)
-	before, _, err := s.SyncEvents(0, 256)
-	if err != nil {
-		t.Fatal(err)
-	}
+	beforeChanges, _ := changeCounters(t, s)
 	metadata, err := os.ReadFile(s.syncMetadataPath())
 	if err != nil {
 		t.Fatal(err)
@@ -55,18 +52,12 @@ func TestUIChunkBatchDurabilitySequencesAndCheckpoints(t *testing.T) {
 			}
 		}
 	}
-	after, events, err := s.SyncEvents(before.Sequence, 256)
-	if err != nil || after.Sequence != before.Sequence+4 || len(events) != 4 {
-		t.Fatalf("128 deltas must use four sync transactions: %+v %+v %v", after, events, err)
+	if changes, _ := changeCounters(t, s); changes != beforeChanges+4 {
+		t.Fatalf("128 deltas must use four transactions: %d changes after %d", changes, beforeChanges)
 	}
 	currentMetadata, _ := os.ReadFile(s.syncMetadataPath())
 	if !bytes.Equal(metadata, currentMetadata) {
 		t.Fatal("text-only batches invalidated whole-store metadata")
-	}
-	for _, event := range events {
-		if event.Kind != "conversation_changed" {
-			t.Fatalf("unexpected invalidation: %+v", event)
-		}
 	}
 	// The last batch crossed sequence 128 and must checkpoint its complete end.
 	raw, err := os.ReadFile(filepath.Join(s.conversationPath(card.ID), "snapshot.json"))
@@ -96,7 +87,7 @@ func TestUIChunkBatchDurabilitySequencesAndCheckpoints(t *testing.T) {
 
 func TestUIChunkBatchRejectsInvalidInputBeforeAnyAppend(t *testing.T) {
 	s, card := batchFixture(t)
-	before, _, _ := s.SyncEvents(0, 256)
+	beforeChanges, beforeMetadata := changeCounters(t, s)
 	for _, chunks := range [][]json.RawMessage{
 		nil, tokenBatch(MaxUIChunkBatchEvents+1, "x"), tokenBatch(2, strings.Repeat("x", MaxUIChunkBatchBytes)),
 		{json.RawMessage(`{"type":"text-delta","delta":"valid"}`), json.RawMessage(`{"type":`)},
@@ -105,10 +96,10 @@ func TestUIChunkBatchRejectsInvalidInputBeforeAnyAppend(t *testing.T) {
 			t.Fatal("invalid batch accepted")
 		}
 	}
-	after, _, _ := s.SyncEvents(0, 256)
+	changes, metadata := changeCounters(t, s)
 	conversation, err := s.Conversation(card.ID)
-	if err != nil || after != before || conversation.LastSeq != 1 {
-		t.Fatalf("invalid batch partially published: %+v seq=%d err=%v", after, conversation.LastSeq, err)
+	if err != nil || changes != beforeChanges || metadata != beforeMetadata || conversation.LastSeq != 1 {
+		t.Fatalf("invalid batch partially published: %d/%d seq=%d err=%v", changes, metadata, conversation.LastSeq, err)
 	}
 }
 

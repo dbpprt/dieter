@@ -134,14 +134,11 @@ import Testing
         #expect(renderer.nsImage != nil)
 
         let compactMachineBadge = NSHostingView(
-            rootView: ProjectMachineBadge(
-                machine: machine, online: online, compact: true, alignsWithStatus: true))
-        let boardMachineBadge = NSHostingView(
-            rootView: ProjectMachineBadge(
-                machine: machine, online: online, compact: false, alignsWithStatus: true))
-        let runtimeBadge = NSHostingView(rootView: StatusPill(text: "idle", color: DieterTheme.subtle))
-        #expect(abs(compactMachineBadge.fittingSize.height - runtimeBadge.fittingSize.height) < 1)
-        #expect(abs(boardMachineBadge.fittingSize.height - runtimeBadge.fittingSize.height) < 1)
-        #expect(boardMachineBadge.fittingSize.width > 72)
+            rootView: ProjectMachineBadge(machine: machine, online: online, compact: true))
+        let fullMachineBadge = NSHostingView(rootView: ProjectMachineBadge(machine: machine, online: online))
+        // The chat row's compact badge never grows past its slot; the full badge names the host.
+        #expect(compactMachineBadge.fittingSize.width <= 72)
+        #expect(abs(compactMachineBadge.fittingSize.height - 16) < 1)
+        #expect(fullMachineBadge.fittingSize.width > 72)
     }
 }

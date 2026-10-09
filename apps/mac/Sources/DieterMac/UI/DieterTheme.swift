@@ -253,9 +253,17 @@ private struct DieterThemeTokens {
     let terminalBackgroundColor: NSColor
     let terminalForegroundColor: NSColor
     let terminalCaretColor: NSColor
+    let canvasSolid: Color
+    let canvasWash: Color
+    let panelSolid: Color
+    let panelTint: Color
 
     init(palette: DieterPalette, dark: Bool) {
         let colors = palette.spec
+        canvasSolid = Color(rgb: dark ? colors.darkSurface : mix(colors.light, colors.darkBrand, amount: 0.07))
+        canvasWash = Color(rgb: dark ? colors.darkSurface : colors.light, alpha: dark ? 0.58 : 0.5)
+        panelSolid = Color(rgb: dark ? colors.darkRaised : colors.lightSurface)
+        panelTint = dark ? Color(rgb: colors.darkRaised, alpha: 0.34) : Color(rgb: 0xFFFFFF, alpha: 0.42)
         background = Color(rgb: dark ? colors.darkBackground : colors.light)
         sidebar = Color(rgb: dark ? colors.darkBrand : colors.lightSidebar)
         surface = Color(rgb: dark ? colors.darkSurface : colors.lightSurface)
@@ -409,6 +417,42 @@ enum DieterTheme {
     /// Background for the selected navigation or list row.
     static var selection: Color { state.colors.selection }
 
+    // MARK: Liquid Glass roles
+    //
+    // L0 canvas: the window behind every pane. L1 panels: floating rounded glass
+    // (sidebar card, conversation panel, overlays). L2 tiles: cards and rows,
+    // drawn as translucent fills with a hairline rim so lists never sample the
+    // backdrop. L3 controls: capsules and segmented tracks in glass containers.
+
+    static var isDark: Bool { state.installedKey.dark }
+    /// The window canvas: a wash over the behind-window blur, or the opaque window.
+    static var canvas: Color { usesTransparency ? state.colors.canvasWash : state.colors.canvasSolid }
+    static var canvasSolid: Color { state.colors.canvasSolid }
+    /// The opaque fill of a floating panel when glass is unavailable.
+    static var panelSolid: Color { state.colors.panelSolid }
+    /// The palette tint carried by a glass panel.
+    static var panelTint: Color { state.colors.panelTint }
+    static var panelRim: Color { isDark ? .white.opacity(0.11) : .black.opacity(0.08) }
+    static var tile: Color { isDark ? .white.opacity(0.05) : .white.opacity(0.62) }
+    static var tileHover: Color { isDark ? .white.opacity(0.08) : .white.opacity(0.82) }
+    static var tileSelected: Color { isDark ? .white.opacity(0.11) : .white.opacity(0.96) }
+    static var tileRim: Color { isDark ? .white.opacity(0.08) : .black.opacity(0.07) }
+    static var tileRimSelected: Color { isDark ? .white.opacity(0.26) : .black.opacity(0.2) }
+    static var inset: Color { isDark ? .black.opacity(0.24) : .black.opacity(0.045) }
+    static var insetRim: Color { isDark ? .white.opacity(0.05) : .black.opacity(0.05) }
+    static var hairline: Color { isDark ? .white.opacity(0.08) : .black.opacity(0.08) }
+    static var segmentThumb: Color { isDark ? .white.opacity(0.15) : .white }
+    /// Solid controls lift off both the canvas and a panel.
+    static var controlSolid: Color { isDark ? .white.opacity(0.1) : .white }
+    static var controlRim: Color { isDark ? .white.opacity(0.1) : .black.opacity(0.07) }
+
+    /// Status colors stay fixed across decorative palettes.
+    static var running: Color { Color(nsColor: .systemGreen) }
+    static var attention: Color { amber }
+    static var failed: Color { coral }
+    static var action: Color { Color(nsColor: .systemBlue) }
+    static var diffDeletion: Color { coral }
+
     // SwiftTerm also derives inverse-video colors from this background. Keep
     // its canvas opaque so terminal applications retain readable reverse text.
     static var terminalBackground: Color { state.colors.terminalBackground }
@@ -454,12 +498,29 @@ extension View {
 enum DieterMetrics {
     static let browserWidth: CGFloat = 320
     static let browserMaximumWidth: CGFloat = 340
-    static let sidebarExpandedWidth: CGFloat = 234
+    static let sidebarExpandedWidth: CGFloat = 248
     static let navigationRowHeight: CGFloat = 32
     static let controlRadius: CGFloat = 5
-    static let cardRadius: CGFloat = 7
+    static let cardRadius: CGFloat = 10
     /// Shared top inset for every pane header so titles land on one horizontal band.
     static let headerTopPadding: CGFloat = 14
+    /// Distance between floating panels and the window edge.
+    static let windowInset: CGFloat = 10
+    /// Gap between neighbouring floating panels.
+    static let panelGap: CGFloat = 10
+    /// What a detail panel gives up horizontally to its gap and window edge;
+    /// pane minimums add it so the content inside keeps its designed width.
+    static let panelHorizontalInset: CGFloat = panelGap + windowInset
+    static let sidebarCardRadius: CGFloat = 16
+    static let panelRadius: CGFloat = 18
+    static let rowRadius: CGFloat = 8
+    static let bubbleRadius: CGFloat = 16
+    /// The title band shared by traffic lights and every top bar.
+    static let titleBandHeight: CGFloat = 56
+    static let titleBandTop: CGFloat = 12
+    static let capsuleHeight: CGFloat = 32
+    static let segmentHeight: CGFloat = 28
+    static let rowHeight: CGFloat = 29
 }
 
 /// Shared type scale so every pane uses the same few text styles.
@@ -478,102 +539,9 @@ enum DieterFont {
     static let control = Font.custom("Sora", size: 12).weight(.medium)
     /// Small supporting metadata.
     static let meta = Font.system(size: 11)
-}
-
-struct FluidPaneChrome<Primary: View, Secondary: View>: View {
-    let background: Color
-    let spacing: CGFloat
-    private let hasSecondary: Bool
-    let primary: Primary
-    let secondary: Secondary
-
-    init(
-        background: Color = DieterTheme.sidebar,
-        spacing: CGFloat = 10,
-        showsSecondary: Bool = true,
-        @ViewBuilder primary: () -> Primary,
-        @ViewBuilder secondary: () -> Secondary
-    ) {
-        self.background = background
-        self.spacing = spacing
-        hasSecondary = showsSecondary
-        self.primary = primary()
-        self.secondary = secondary()
-    }
-
-    init(
-        background: Color = DieterTheme.sidebar,
-        @ViewBuilder primary: () -> Primary
-    ) where Secondary == EmptyView {
-        self.background = background
-        spacing = 0
-        hasSecondary = false
-        self.primary = primary()
-        secondary = EmptyView()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: hasSecondary ? spacing : 0) {
-            primary.frame(maxWidth: .infinity, alignment: .leading)
-            if hasSecondary { secondary.frame(maxWidth: .infinity, alignment: .leading) }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, DieterMetrics.headerTopPadding)
-        .padding(.bottom, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(background)
-    }
-}
-
-enum DieterPaneRole: Equatable {
-    case navigation
-    case content
-}
-
-/// Shared pane tints over the window's continuous native backdrop.
-struct DieterPaneBackground: View {
-    let role: DieterPaneRole
-    var extendsUnderTitlebar = false
-
-    @ViewBuilder var body: some View {
-        switch role {
-        case .navigation:
-            (DieterTheme.usesTransparency ? Color.clear : DieterTheme.opaqueSurface)
-                .ignoresSafeArea(.container, edges: extendsUnderTitlebar ? .top : [])
-        case .content:
-            (DieterTheme.usesTransparency ? Color.clear : DieterTheme.opaqueSurface)
-                .ignoresSafeArea(.container, edges: extendsUnderTitlebar ? .top : [])
-        }
-    }
-}
-
-struct PaneTitleBlock: View {
-    let title: String
-    var subtitle: String = ""
-    var symbol: String? = nil
-    var prominent = false
-    var annotation: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 7) {
-                Text(title)
-                    .font(prominent ? DieterFont.paneTitle : DieterFont.title)
-                    .lineLimit(1)
-                if let annotation {
-                    ExperimentalBadge(text: annotation)
-                }
-            }
-            if !subtitle.isEmpty {
-                Text(subtitle)
-                    .font(DieterFont.subtitle)
-                    .foregroundStyle(DieterTheme.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-        }
-        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-    }
+    /// Identifiers, branches, diff stats, durations, and latency.
+    static let mono = Font.system(size: 11, design: .monospaced)
+    static let monoSmall = Font.system(size: 10, design: .monospaced)
 }
 
 struct DieterFlowLayout: Layout {
@@ -635,62 +603,34 @@ struct DieterFlowLayout: Layout {
     }
 }
 
-struct SurfaceModifier: ViewModifier {
-    var radius: CGFloat = 12
-    func body(content: Content) -> some View {
-        content
-            .background(DieterTheme.surface.opacity(0.82))
-            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(DieterTheme.border))
-    }
-}
-
-extension View {
-    func dieterSurface(radius: CGFloat = 12) -> some View { modifier(SurfaceModifier(radius: radius)) }
-}
-
 struct StatusPill: View {
     let text: String
     var color: Color = DieterTheme.subtle
+    var showsDot = true
 
     /// A raw runtime, worded and coloured as the shared core classifies it.
-    init(runtime: String) {
+    init(runtime: String, showsDot: Bool = true) {
         text = SharedRules.shared.runtimeLabel(runtime: runtime)
         color = runtimeColor(runtime)
+        self.showsDot = showsDot
     }
 
-    init(text: String, color: Color = DieterTheme.subtle) {
+    init(text: String, color: Color = DieterTheme.subtle, showsDot: Bool = true) {
         self.text = text
         self.color = color
+        self.showsDot = showsDot
     }
 
     var body: some View {
         HStack(spacing: 5) {
-            Circle().fill(color).frame(width: 5, height: 5)
+            if showsDot { Circle().fill(color).frame(width: 5, height: 5) }
             Text(text).lineLimit(1)
         }
-        .font(.system(size: 10, weight: .semibold))
+        .font(.system(size: 11, weight: .semibold))
         .foregroundStyle(color)
-        .padding(.horizontal, 8).padding(.vertical, 4)
-        .background(color.opacity(0.12), in: Capsule())
+        .padding(.horizontal, 9).frame(height: 22)
+        .background(color.opacity(0.14), in: Capsule())
         .fixedSize()
-    }
-}
-
-struct ExperimentalBadge: View {
-    var text = "Experimental"
-
-    var body: some View {
-        Text(text.uppercased())
-            .font(.system(size: 8, weight: .bold))
-            .tracking(0.35)
-            .foregroundStyle(DieterTheme.amber)
-            .padding(.horizontal, 6)
-            .frame(height: 16)
-            .background(DieterTheme.amber.opacity(0.12), in: Capsule())
-            .overlay(Capsule().stroke(DieterTheme.amber.opacity(0.22)))
-            .fixedSize()
-            .accessibilityLabel(text)
     }
 }
 
@@ -710,6 +650,8 @@ struct DieterActivityIndicator: View {
     }
 }
 
+/// The composer's icon buttons. The composer keeps its established look; new
+/// chrome uses `DieterBarButtonStyle`.
 struct DieterIconButtonStyle: ButtonStyle {
     var active = false
 
@@ -726,37 +668,7 @@ struct DieterIconButtonStyle: ButtonStyle {
     }
 }
 
-struct DieterPrimaryButtonStyle: ButtonStyle {
-    var tint: Color = DieterTheme.shellDeep
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 13).frame(height: 30)
-            .background(tint, in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous))
-            .opacity(configuration.isPressed ? 0.78 : 1)
-    }
-}
-
-struct DieterSecondaryButtonStyle: ButtonStyle {
-    var destructive = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(destructive ? DieterTheme.coral : DieterTheme.subtle)
-            .padding(.horizontal, 12).frame(height: 30)
-            .background(
-                DieterTheme.surface.opacity(configuration.isPressed ? 0.6 : 1),
-                in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous).stroke(
-                    DieterTheme.border))
-    }
-}
-
+/// The composer's menu chips; see `DieterIconButtonStyle`.
 struct DieterChipLabel: View {
     let title: String
     var symbol: String? = nil
@@ -800,11 +712,8 @@ struct DieterSearchField: View {
                 .buttonStyle(.plain).foregroundStyle(DieterTheme.tertiary)
             }
         }
-        .padding(.horizontal, 10).frame(height: 30)
-        .dieterGlass(
-            .regular.interactive(),
-            in: RoundedRectangle(cornerRadius: DieterMetrics.controlRadius, style: .continuous)
-        )
+        .padding(.horizontal, 11).frame(height: 30)
+        .dieterCapsuleChrome(interactive: false)
     }
 }
 
@@ -812,8 +721,8 @@ struct DieterSearchField: View {
 @MainActor
 func toneColor(_ tone: ClientRuntimeTone) -> Color {
     switch tone {
-    case .active: DieterTheme.primary
-    case .attention: DieterTheme.amber
+    case .active: DieterTheme.running
+    case .attention: DieterTheme.attention
     case .done: DieterTheme.eyes
     case .failed: DieterTheme.coral
     default: DieterTheme.subtle
@@ -830,7 +739,7 @@ extension ClientTone {
     /// The color a core status tone reads as.
     @MainActor var color: Color {
         switch self {
-        case .success: DieterTheme.eyes
+        case .success: DieterTheme.running
         case .active, .warning: DieterTheme.amber
         case .danger: DieterTheme.coral
         default: DieterTheme.tertiary

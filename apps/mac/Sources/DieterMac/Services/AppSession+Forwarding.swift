@@ -38,9 +38,9 @@ extension AppSession {
         get { replica.projectDirectory }
         set { replica.projectDirectory = newValue }
     }
-    var projectReplicaEndpointIDs: [String: String] {
-        get { replica.projectReplicaEndpointIDs }
-        set { replica.projectReplicaEndpointIDs = newValue }
+    var projectHosts: [String: String] {
+        get { replica.projectHosts }
+        set { replica.projectHosts = newValue }
     }
     var selectedProjectID: String {
         get { window.selectedProjectID }
@@ -165,6 +165,14 @@ extension AppSession {
     var commandPalettePresented: Bool {
         get { window.commandPalettePresented }
         set { window.commandPalettePresented = newValue }
+    }
+    var newCardLaneID: String {
+        get { window.newCardLaneID }
+        set { window.newCardLaneID = newValue }
+    }
+    var sidebarCollapsed: Bool {
+        get { window.sidebarCollapsed }
+        set { window.sidebarCollapsed = newValue }
     }
     var createConversationPresented: Bool {
         get { window.createConversationPresented }

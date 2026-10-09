@@ -180,6 +180,32 @@ struct DieterThemePerformanceTests {
         }
     }
 
+    @Test @MainActor func floatingPanelsStayDistinctAndLegibleWithoutGlass() throws {
+        defer { DieterTheme.install(selection: .load()) }
+
+        for palette in DieterPalette.allCases {
+            for scheme in [ColorScheme.light, .dark] {
+                DieterTheme.install(
+                    selection: DieterThemeSelection(
+                        appearance: scheme == .dark ? .dark : .light, palette: palette, transparencyEnabled: false),
+                    systemColorScheme: scheme, reduceTransparency: false)
+                #expect(!DieterTheme.usesTransparency)
+                let panel = try #require(NSColor(DieterTheme.panelSolid).usingColorSpace(.sRGB))
+                let canvas = try #require(NSColor(DieterTheme.canvasSolid).usingColorSpace(.sRGB))
+                let text = try #require(NSColor(DieterTheme.text).usingColorSpace(.sRGB))
+                let tertiary = try #require(NSColor(DieterTheme.tertiary).usingColorSpace(.sRGB))
+                // Solid mode and Reduce Transparency still separate the floating
+                // sidebar and conversation panels from the window canvas.
+                let difference =
+                    abs(panel.redComponent - canvas.redComponent) + abs(panel.greenComponent - canvas.greenComponent)
+                    + abs(panel.blueComponent - canvas.blueComponent)
+                #expect(difference > 0.05, "\(palette.rawValue) \(scheme) panel matches the canvas")
+                #expect(contrastRatio(text, panel) >= 7, "\(palette.rawValue) \(scheme) panel text contrast")
+                #expect(contrastRatio(tertiary, panel) >= 3, "\(palette.rawValue) \(scheme) panel meta contrast")
+            }
+        }
+    }
+
     @Test @MainActor func machinePresenceColorsRemainGreenAndRedAcrossThemes() throws {
         defer { DieterTheme.install(palette: .monochrome, colorScheme: .light) }
 
@@ -453,7 +479,6 @@ struct DieterThemePerformanceTests {
             project.id = "project-\(projectIndex)"
             project.name = "Project \(projectIndex)"
             store.projectDirectory[project.id] = project
-            store.projectReplicaEndpointIDs[project.id] = store.endpoint.id
 
             for chatIndex in 0..<5 {
                 var chat = Dieter_V1_Card()
@@ -472,7 +497,7 @@ struct DieterThemePerformanceTests {
         }
         store.chats = chats
         store.showChatsFixture()
-        store.phase = .connected(version: "theme-performance-fixture")
+        store.phase = .connected
         store.workspaceIsLive = true
         store.section = .chats
         return (store, running, chats.count)
@@ -554,7 +579,7 @@ struct DieterThemePerformanceTests {
         store.navigationBoards[project.id] = [board]
         store.selectedProjectID = project.id
         store.selectedBoardID = board.id
-        store.phase = .connected(version: "board-performance-fixture")
+        store.phase = .connected
         store.workspaceIsLive = true
         store.section = .board
         store.showBoardFixture(board, cards: cards)

@@ -35,6 +35,7 @@ Actions:
   control take|release SESSION  Transfer or release control
   status SESSION               Show current stream configuration and performance
   configure SESSION [options]  Change display, quality and stream ceilings live
+  virtual ACTION SESSION       Experimental virtual desktop: status, set, presented, restore
   resolution ACTION SESSION    Experimental physical desktop modes: modes, set, restore
   refresh SESSION              Request a fresh keyframe, including an idle screen
   clipboard ACTION SESSION     Read, write, copy, paste, or toggle clipboard sharing
@@ -74,6 +75,8 @@ func (c *CLI) rpcScreen(args []string) error {
 		return c.rpcScreenClipboard(args[1:])
 	case "control":
 		return c.rpcScreenControl(args[1:])
+	case "virtual":
+		return c.rpcVirtualDisplay(args[1:])
 	case "resolution":
 		return c.rpcScreenResolution(args[1:])
 	case "status", "configure", "refresh":

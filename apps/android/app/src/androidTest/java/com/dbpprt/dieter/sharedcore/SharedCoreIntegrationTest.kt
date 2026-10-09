@@ -30,7 +30,7 @@ class SharedCoreIntegrationTest {
     fun relaySignInSyncsTheFixtureAndReachesItsMachine() = runBlocking {
         val workspace = IsolatedCore.connect(container)
         assertTrue(workspace.projects.isNotEmpty())
-        val daemonId = IsolatedCore.daemonId(container)
+        val daemonId = IsolatedCore.machineId
         val information = container.core.onMachine(daemonId) { it.GetMachineInformation().execute(Unit) }
         assertTrue(information.hostname.isNotBlank())
         // The session token is kept in the keystore-backed store, keyed by the gateway's origin.

@@ -331,7 +331,7 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	authorized := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+session, "x-dieter-client-version", "0.4.1-dev")
 
 	deadline := time.Now().Add(5 * time.Second)
-	for !gatewayServer.Hub.Online(identity.ID) && time.Now().Before(deadline) {
+	for !gatewayServer.Hub.RelayReady(identity.ID) && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	if !gatewayServer.Hub.Online(identity.ID) {
@@ -397,18 +397,35 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 		t.Fatalf("close relayed terminal: %v", err)
 	}
 
-	syncStream, err := dieterClient.WatchSync(routed, &dieterv1.SyncRequest{ConversationLimit: 0, HeartbeatMs: 1_000})
+	changeStream, err := dieterClient.WatchChanges(routed, &dieterv1.ChangesRequest{HeartbeatMs: 1_000})
 	if err != nil {
-		t.Fatalf("open relayed global sync: %v", err)
+		t.Fatalf("open relayed change stream: %v", err)
 	}
-	syncFrame, err := syncStream.Recv()
-	if err != nil || syncFrame.GetSnapshot() == nil || syncFrame.GetCursor().GetEpoch() == "" {
-		t.Fatalf("relayed global sync frame=%#v err=%v", syncFrame, err)
+	// Without a peer service this machine never binds an account, so its
+	// records name the store's own peer identity as owner, as do its frames.
+	peer, err := boardStore.PeerIdentity()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if syncFrame.GetCursor().GetProjectionId() == "" {
-		t.Fatal("relay dropped resumable projection identity")
+	projectRecords := 0
+	for caughtUp := false; !caughtUp; {
+		frame, receiveErr := changeStream.Recv()
+		if receiveErr != nil {
+			t.Fatalf("receive relayed changes: %v", receiveErr)
+		}
+		if frame.GetCursor().GetRecordsEpoch() == "" || frame.GetCursor().GetLocalEpoch() == "" || frame.GetDaemonId() != peer.DaemonID {
+			t.Fatalf("relayed change frame lacks its machine or cursor: %#v", frame)
+		}
+		for _, record := range frame.GetRecords() {
+			if record.GetKind() == "project" && strings.HasPrefix(record.GetId(), project.ID+".") {
+				projectRecords++
+			}
+		}
+		caughtUp = frame.GetCaughtUp()
 	}
-	syncSequence := syncFrame.GetCursor().GetSequence()
+	if projectRecords == 0 {
+		t.Fatal("relayed change stream did not carry the project's records")
+	}
 	command := &dieterv1.CreateConversationRequest{
 		ProjectId: project.ID, Title: "Relayed outbox", Prompt: "deliver once",
 		Provider: "mock", Model: "mock", DeferStart: true, WorkspaceMode: "worktree",
@@ -470,50 +487,49 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 	if gitStatus != "succeeded" {
 		t.Fatalf("relayed Git operation ended as %q", gitStatus)
 	}
-	for {
-		frame, receiveErr := syncStream.Recv()
+	// The relayed command reaches the stream as the chat's shared identity and
+	// its owner-only details, including the committed workspace. The workspace
+	// summary is read from Git, so it can follow the writes above by up to a
+	// recovery poll.
+	for identityRecord, ownedCard, committed := false, false, false; !identityRecord || !ownedCard || !committed; {
+		frame, receiveErr := changeStream.Recv()
 		if receiveErr != nil {
-			t.Fatalf("receive relayed command event: %v", receiveErr)
+			t.Fatalf("receive relayed command changes: %v", receiveErr)
 		}
-		found := false
-		for _, chat := range frame.GetDelta().GetChats() {
-			found = found || chat.GetId() == created.GetId()
+		for _, record := range frame.GetRecords() {
+			identityRecord = identityRecord || record.GetKind() == "item" && record.GetId() == created.GetId()+".identity"
 		}
-		if frame.GetCursor().GetSequence() > syncSequence {
-			syncSequence = frame.GetCursor().GetSequence()
-		}
-		if found {
-			break
+		for _, card := range frame.GetOwnedCards() {
+			if card.GetId() != created.GetId() {
+				continue
+			}
+			ownedCard = ownedCard || card.GetInitialPrompt() == command.GetPrompt()
+			workspace := card.GetWorkspace()
+			committed = workspace.GetAhead() == 1 && workspace.GetCurrentOperationId() == ""
 		}
 	}
-	currentCursor, _, err := boardStore.SyncEvents(0, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for syncSequence < currentCursor.Sequence {
-		frame, receiveErr := syncStream.Recv()
+	// Drain what is still in flight, then a projection-neutral write must send
+	// nothing but heartbeats.
+	for heartbeats := 0; heartbeats < 1; {
+		frame, receiveErr := changeStream.Recv()
 		if receiveErr != nil {
-			t.Fatalf("drain relayed workspace events: %v", receiveErr)
+			t.Fatalf("drain relayed workspace changes: %v", receiveErr)
 		}
-		if frame.GetCursor().GetSequence() > syncSequence {
-			syncSequence = frame.GetCursor().GetSequence()
+		if frame.GetHeartbeat() {
+			heartbeats++
 		}
 	}
 	if err := boardStore.SaveCommandResult("gateway-e2e-client", "projection-neutral", store.CommandResult{Kind: "test"}); err != nil {
 		t.Fatal(err)
 	}
-	for {
-		frame, receiveErr := syncStream.Recv()
+	for heartbeats := 0; heartbeats < 2; heartbeats++ {
+		frame, receiveErr := changeStream.Recv()
 		if receiveErr != nil {
-			t.Fatalf("receive relayed projection-neutral event: %v", receiveErr)
+			t.Fatalf("receive relayed heartbeat: %v", receiveErr)
 		}
-		if frame.GetHeartbeat() || frame.GetCursor().GetSequence() <= syncSequence {
-			continue
+		if !frame.GetHeartbeat() || !frame.GetCaughtUp() {
+			t.Fatalf("projection-neutral write produced a data frame: %#v", frame)
 		}
-		if frame.GetDelta() != nil || frame.GetSnapshot() != nil || len(frame.GetEvents()) == 0 {
-			t.Fatalf("relayed projection-neutral event was not cursor-only: delta=%v frame=%#v", frame.GetDelta(), frame)
-		}
-		break
 	}
 	if err := filepath.Walk(config.Root, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil || info.IsDir() {
@@ -531,14 +547,14 @@ func TestGatewayEnrollsDaemonAndRelaysDieterService(t *testing.T) {
 		t.Fatal(err)
 	}
 	watchCtx, stopWatch := context.WithCancel(routed)
-	watch, err := dieterv1.NewDieterServiceClient(connection).WatchState(watchCtx, &dieterv1.WatchStateRequest{IntervalMs: 100})
+	watch, err := dieterv1.NewDieterServiceClient(connection).WatchChanges(watchCtx, &dieterv1.ChangesRequest{})
 	if err != nil {
-		t.Fatalf("open relayed state stream: %v", err)
+		t.Fatalf("open second relayed change stream: %v", err)
 	}
-	state, err := watch.Recv()
+	first, err := watch.Recv()
 	stopWatch()
-	if err != nil || state.GetStorePath() != boardStore.Root {
-		t.Fatalf("relayed state stream=%#v err=%v", state, err)
+	if err != nil || first.GetDaemonId() != peer.DaemonID || !first.GetResetRecords() || !first.GetResetLocal() {
+		t.Fatalf("second relayed change stream=%#v err=%v", first, err)
 	}
 
 	gatewayClient := gatewayv1Client(connection)

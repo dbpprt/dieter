@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Validate the built site and local links in maintained repository documentation."""
+
 import argparse
 from html.parser import HTMLParser
 import json
@@ -48,16 +49,20 @@ def check_site(public):
 
     def resolve(page, url):
         parts = urlsplit(url)
-        if parts.scheme and (parts.scheme not in ("http", "https") or parts.netloc != origin.netloc):
+        if parts.scheme and (
+            parts.scheme not in ("http", "https") or parts.netloc != origin.netloc
+        ):
             return None, ""
         if parts.netloc and parts.netloc != origin.netloc:
             return None, ""
         path = unquote(parts.path)
         if path.startswith("/"):
             if not path.startswith(prefix):
-                errors.append(f"{page.path.relative_to(public)}: link escapes site base {prefix}: {url}")
+                errors.append(
+                    f"{page.path.relative_to(public)}: link escapes site base {prefix}: {url}"
+                )
                 return None, ""
-            target = public / path[len(prefix):]
+            target = public / path[len(prefix) :]
         elif path:
             target = page.path.parent / path
         else:
@@ -77,8 +82,12 @@ def check_site(public):
             elif fragment and target in pages and fragment not in pages[target].ids:
                 errors.append(f"{page.path.relative_to(public)}: missing fragment {link}")
         for attrs in page.images:
-            if "alt" not in attrs or (not (attrs["alt"] or "").strip() and attrs.get("aria-hidden") != "true"):
-                errors.append(f"{page.path.relative_to(public)}: image needs alt text: {attrs.get('src')}")
+            if "alt" not in attrs or (
+                not (attrs["alt"] or "").strip() and attrs.get("aria-hidden") != "true"
+            ):
+                errors.append(
+                    f"{page.path.relative_to(public)}: image needs alt text: {attrs.get('src')}"
+                )
         for url in page.search:
             target, _ = resolve(page, url)
             if target is None or target in checked_indexes or not target.is_file():
@@ -94,17 +103,25 @@ def check_site(public):
 
 
 def markdown_links():
-    tracked = subprocess.check_output(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], cwd=ROOT).decode().split("\0")
-    paths = sorted({
-        p for p in tracked
-        if p.endswith(".md")
-        and not re.search(r"(?:^|/)[^/]*\d{4}-\d{2}-\d{2}[^/]*\.md$", p)
-        and (
-            p in {"README.md", "CONTRIBUTING.md", "SECURITY.md"}
-            or p.startswith(("docs/", "landingpage/", "api/", "deploy/"))
-            or (p.startswith("apps/") and p.endswith("README.md") and "/Vendor/" not in p)
+    tracked = (
+        subprocess.check_output(
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], cwd=ROOT
         )
-    })
+        .decode()
+        .split("\0")
+    )
+    paths = sorted(
+        {
+            p
+            for p in tracked
+            if p.endswith(".md")
+            and (
+                p in {"README.md", "CONTRIBUTING.md", "SECURITY.md", "AGENTS.md"}
+                or p.startswith(("landingpage/", "api/", "deploy/", "fastlane/", ".agents/"))
+                or (p.startswith("apps/") and "/Vendor/" not in p)
+            )
+        }
+    )
     errors = []
     for name in paths:
         path = ROOT / name
@@ -115,6 +132,14 @@ def markdown_links():
         for match in re.finditer(r"\[[^\]\n]*\]\((<[^>]+>|[^\s)]+)(?:\s+\"[^\"]*\")?\)", text):
             url = match[1].strip("<>")
             parts = urlsplit(url)
+            # Public guides often link to this repository through GitHub URLs.
+            # Check those paths locally so deletions cannot leave dead public links.
+            repository_prefixes = ("/dbpprt/dieter/blob/main/", "/dbpprt/dieter/tree/main/")
+            if parts.netloc == "github.com" and parts.path.startswith(repository_prefixes):
+                prefix = next(p for p in repository_prefixes if parts.path.startswith(p))
+                if not (ROOT / unquote(parts.path[len(prefix) :])).exists():
+                    errors.append(f"{name}: missing repository link {url}")
+                continue
             if parts.scheme or parts.netloc or not parts.path or "{{" in url:
                 continue
             if parts.path.startswith("/") and name.startswith("landingpage/"):
@@ -124,7 +149,12 @@ def markdown_links():
                 errors.append(f"{name}: missing local link {url}")
         for match in re.finditer(r'<(?:img|a)\b[^>]*(?:src|href)="([^"{]+)"', text):
             parts = urlsplit(match[1])
-            if not parts.scheme and not parts.netloc and parts.path and not parts.path.startswith("/"):
+            if (
+                not parts.scheme
+                and not parts.netloc
+                and parts.path
+                and not parts.path.startswith("/")
+            ):
                 if not (path.parent / unquote(parts.path)).exists():
                     errors.append(f"{name}: missing HTML link {match[1]}")
     return errors, len(paths)
@@ -140,7 +170,9 @@ def main():
     if errors:
         print("\n".join(errors))
         raise SystemExit(1)
-    print(f"Documentation checks passed: {pages} rendered pages, {documents} Markdown files, local links, fragments, images, and search index.")
+    print(
+        f"Documentation checks passed: {pages} rendered pages, {documents} Markdown files, local links, fragments, images, and search index."
+    )
 
 
 if __name__ == "__main__":

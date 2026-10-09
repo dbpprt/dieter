@@ -1,7 +1,10 @@
-name: Release
+name: Development release
 on:
-  push:
-    branches: [main]
+  workflow_call:
+    inputs:
+      channel:
+        type: string
+        default: dev
   workflow_dispatch:
     inputs:
       channel:
@@ -16,9 +19,16 @@ concurrency:
   group: release-${{ github.sha }}
   cancel-in-progress: false
 jobs:
+  manual-qualification:
+    name: Qualify manual release
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/qualification.yml
+    with:
+      full: true
   reserve:
     name: Reserve immutable development identity
-    if: github.ref == 'refs/heads/main'
+    needs: manual-qualification
+    if: always() && github.ref == 'refs/heads/main' && (needs.manual-qualification.result == 'success' || (github.event_name == 'push' && needs.manual-qualification.result == 'skipped'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -44,58 +54,10 @@ jobs:
           path: tmp/release-identity/identity.json
           retention-days: 90
           if-no-files-found: error
-  check-portable:
-    name: Go and harness runtime
-    needs: reserve
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: portable
-      runner: ubuntu-latest
-  check-core:
-    name: Shared Kotlin core
-    needs: reserve
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: core
-      runner: ubuntu-latest
-  check-android:
-    name: Android client
-    needs: reserve
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: android
-      runner: ubuntu-latest
-  check-mac:
-    name: macOS client
-    needs: reserve
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: mac
-      runner: macos-26
-      native_cases: mac.core,mac.board
-  check-core-apple:
-    name: Shared Kotlin core on Apple
-    needs: reserve
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: core-apple
-      runner: macos-26
-  check-ios:
-    name: iPhone and iPad client
-    needs: reserve
-    strategy:
-      fail-fast: false
-      matrix:
-        profile: [ios-iphone, ios-ipad]
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: ios
-      runner: macos-26
-      native_suite: functional
-      native_profile: ${{ matrix.profile }}
   candidates:
     name: ${{ matrix.name }}
-    needs: [reserve, check-portable, check-core, check-core-apple, check-android, check-mac, check-ios]
+    needs: reserve
+    if: always() && needs.reserve.result == 'success'
     strategy:
       fail-fast: false
       matrix:
@@ -128,6 +90,7 @@ jobs:
             component: ios
             runner: macos-26
     permissions:
+      actions: read
       contents: write
       packages: write
       id-token: write
@@ -160,7 +123,9 @@ jobs:
       MACOS_NOTARY_KEY_ID: ${{ (matrix.component == 'mac' || (matrix.component == 'daemon' && matrix.runner == 'macos-26')) && secrets.MACOS_NOTARY_KEY_ID || '' }}
   coordinate:
     needs: [reserve, candidates]
+    if: always() && needs.reserve.result == 'success' && needs.candidates.result == 'success'
     permissions:
+      actions: read
       contents: write
       packages: write
       id-token: write
@@ -170,8 +135,9 @@ jobs:
       identity_artifact: ${{ needs.reserve.outputs.identity_artifact }}
   distribute:
     needs: [reserve, coordinate]
-    if: github.event_name == 'push' || inputs.channel == 'dev'
+    if: always() && needs.reserve.result == 'success' && needs.coordinate.result == 'success' && (github.event_name == 'push' || inputs.channel == 'dev')
     permissions:
+      actions: read
       contents: write
     uses: ./.github/workflows/release-distribute.yml
     with:
@@ -181,3 +147,20 @@ jobs:
       IOS_APP_STORE_CONNECT_KEY_ID: ${{ secrets.IOS_APP_STORE_CONNECT_KEY_ID }}
       IOS_APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.IOS_APP_STORE_CONNECT_ISSUER_ID }}
       IOS_BUNDLE_ID: ${{ secrets.IOS_BUNDLE_ID }}
+  required:
+    name: Required release stages
+    needs: [reserve, candidates, coordinate, distribute]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/pipeline-setup
+        with:
+          component: report
+      - name: Require candidates, publication and requested delivery
+        env:
+          PIPELINE_JOB_RESULTS: ${{ toJSON(needs) }}
+          PIPELINE_CHANNEL: ${{ github.event_name == 'push' && 'dev' || inputs.channel || 'dev' }}
+        run: just pipeline ci action:release_gate component:report channel:"$PIPELINE_CHANNEL"

@@ -56,10 +56,9 @@
         static func run(store: DieterStore) async {
             let output = outputDirectory()
             try? FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-            // Wait for a genuinely live workspace, not merely one hydrated from the
-            // disk projection: `workspaceIsLive` requires the daemon tunnel to be up
-            // and the current sync to have settled, so the fixture RPC below is not
-            // cancelled by an in-flight sync-recovery pass.
+            // Wait for a genuinely live workspace, not merely the cached one:
+            // `workspaceIsLive` requires every reachable machine's stream to have
+            // caught up, so the fixture RPC below sees current data.
             guard
                 await waitUntil(
                     timeout: 25,
@@ -140,7 +139,7 @@
                 }
                 await store.refreshState()
             }
-            await store.openBoard(board.id, projectID: project.id)
+            store.openBoard(board.id, projectID: project.id)
             try? await DieterTaskSleep.seconds(1)
 
             let workspaceVisible = await waitUntil(timeout: 5) {
@@ -172,25 +171,25 @@
             results["required-permissions-onboarding"] = await RequiredPermissionsUISmoke.run(output: output)
             if results["required-permissions-onboarding"] != "passed" { writeReport(results, to: output); return }
             window.makeKeyAndOrderFront(nil)
-            let compatibleEndpointID = store.endpoint.id
+            // In a mixed fleet the incompatible machine is listed as needing an
+            // update and never read, while the compatible ones stay live.
+            let incompatibleMachine = store.machines.first { store.machineEntry($0)?.compatible == false }
             results["mixed-version-compatible-startup"] =
-                store.machineEntry(store.endpoint)?.compatible == true
-                    && store.machines.contains(where: { store.machineEntry($0)?.compatible == false })
+                store.machines.contains(where: { store.machineEntry($0)?.compatible == true })
+                    && incompatibleMachine != nil && store.workspaceIsLive
                 ? "passed"
-                : "failed: startup did not select a compatible release from the mixed fleet"
-            if let incompatibleMachine = store.machines.first(where: {
-                store.machineEntry($0)?.compatible == false
-            }) {
-                await store.connect(to: incompatibleMachine)
-                results["mixed-version-switch-isolation"] =
-                    store.endpoint.id == compatibleEndpointID && store.phase.isConnected
-                        && store.workspaceIsLive
-                        && store.machineEntry(incompatibleMachine).map { !$0.available && !$0.detail.isEmpty } == true
+                : "failed: the compatible machines were not live beside an incompatible one"
+            if let incompatibleMachine {
+                results["mixed-version-isolation"] =
+                    store.phase.isConnected && store.workspaceIsLive
+                        && store.machineEntry(incompatibleMachine).map {
+                            !$0.available && !$0.detail.isEmpty && $0.syncState == .incompatible
+                        } == true
                         && store.errorMessage == nil
                     ? "passed"
-                    : "failed: incompatible switch displaced the healthy route or presented a global error"
+                    : "failed: the incompatible machine displaced the healthy ones or presented a global error"
             } else {
-                results["mixed-version-switch-isolation"] = "failed: incompatible fixture machine was absent"
+                results["mixed-version-isolation"] = "failed: incompatible fixture machine was absent"
             }
             if let fixtureNote { results["fixture"] = fixtureNote }
             if let scheduleFixtureError {
@@ -273,7 +272,7 @@
             if ProcessInfo.processInfo.arguments.contains("--lane-sort-ui-smoke") {
                 // Navigation measurements finish on Screens. Restore the board
                 // before exercising controls that only exist in its header.
-                await store.openBoard(board.id, projectID: project.id)
+                store.openBoard(board.id, projectID: project.id)
                 _ = await waitUntil(timeout: 5) { NativeUIAccessibility.find("board.quick-task", in: window) != nil }
                 try? await DieterTaskSleep.milliseconds(350)
                 let toolbarUncovered = await closeBoardConversationForToolbar(store: store, window: window)
@@ -326,14 +325,14 @@
                     NativeUIAccessibility.find("board.settings.name", in: window) != nil
                 }
                 try? await DieterTaskSleep.milliseconds(400)
-                let routingClicked = NativeUIAccessibility.selectSegment(
-                    1, identifier: "board.settings.sections", in: window)
+                let routingClicked = NativeUIAccessibility.click(
+                    "board.settings.sections", in: window, horizontalFraction: 0.75)
                 let routingVisible = await waitUntil(timeout: 5) {
                     NativeUIAccessibility.find("board.hostnames", in: window) != nil
                 }
                 try? await DieterTaskSleep.milliseconds(300)
-                let generalClicked = NativeUIAccessibility.selectSegment(
-                    0, identifier: "board.settings.sections", in: window)
+                let generalClicked = NativeUIAccessibility.click(
+                    "board.settings.sections", in: window, horizontalFraction: 0.25)
                 let returned = await waitUntil(timeout: 5) {
                     NativeUIAccessibility.find("board.settings.name", in: window) != nil
                 }
@@ -372,9 +371,9 @@
                     projectContextClosed && projectContextDismissed
                     ? "passed" : "failed: project settings did not dismiss before Quick Task"
 
-                // Board/Chats now own their pane headers. Exercise the global
-                // titlebar action on a destination that still exposes it.
-                store.section = .files
+                // Board, Chats, Files, and Changes own their pane headers. Exercise
+                // the global titlebar action on a destination that still exposes it.
+                store.section = .schedules
                 let globalReady = await waitForBoardControl("sidebar.quick-task", in: window)
                 recordNavigationTargetFailure(
                     "sidebar.quick-task", section: store.section, window: window,
@@ -493,7 +492,7 @@
                             "\($0)=\(NativeUIAccessibility.find($0, in: window)?.recordedFrame?.debugDescription ?? "missing")"
                         }.joined(separator: "; ")
                 }
-                await store.openBoard(board.id, projectID: project.id)
+                store.openBoard(board.id, projectID: project.id)
                 // Close any retained conversation before clicking the board's
                 // own Quick Task control in its pane header.
                 let quickTaskToolbarUncovered = await closeBoardConversationForToolbar(store: store, window: window)
@@ -568,8 +567,10 @@
                     }
                     if !items.isEmpty { pasteboard.writeObjects(items) }
                     // The isolated daemon intercepts Spark metadata requests; the
-                    // actual task must explicitly use its credential-free mock.
-                    if store.harnessCatalog.harnesses.contains(where: { $0.id == "mock" }) {
+                    // actual task must explicitly use its credential-free mock,
+                    // which the machine hosting the board's project offers.
+                    let projectAgents = store.harnessCatalog(forDaemon: store.projectHosts[project.id] ?? "")
+                    if projectAgents.harnesses.contains(where: { $0.id == "mock" }) {
                         // A quick task runs the agent the core remembers.
                         _ = await store.perform {
                             $0.rememberCreation = .with {
@@ -635,9 +636,10 @@
                 NSApp.terminate(nil)
                 return
             }
+            let screenMachine = store.machines.first(where: store.machineIsAvailable)
             let retainedScreen = ScreenShareSession(
-                id: "screen-smoke", machineID: store.endpoint.id,
-                machineName: store.endpoint.name, monitorsInactivity: false)
+                id: "screen-smoke", machineID: screenMachine?.id ?? "",
+                machineName: screenMachine?.name ?? "", monitorsInactivity: false)
             retainedScreen.controller.showFixture {
                 $0.phase = "streaming"
                 $0.active = true
@@ -693,7 +695,7 @@
             results.merge(
                 await ScreenShareUISmoke.run(store: store, session: retainedScreen, window: window, output: output)
             ) { _, new in new }
-            await store.openBoard(board.id, projectID: project.id)
+            store.openBoard(board.id, projectID: project.id)
             try? await DieterTaskSleep.milliseconds(500)
             results["01b-screen-navigation-retention"] =
                 retainedScreen.controller.phase == .streaming && store.screensModel.connectedCount == 1
@@ -709,7 +711,7 @@
             results["01b-screen-timeout-settings"] =
                 earlyScreenTimeoutVisible ? "passed" : "failed: screen-share inactivity controls were missing"
             capture(window, to: output.appending(path: "01b-screen-timeout-settings.png"))
-            await store.openBoard(board.id, projectID: project.id)
+            store.openBoard(board.id, projectID: project.id)
             try? await DieterTaskSleep.milliseconds(500)
 
             // Project expansion remains independent of the system sidebar visibility.
@@ -809,7 +811,7 @@
                     "05-project-schedules", .schedules,
                     { await store.openProject(project.id, section: .schedules) }
                 ),
-                ("06-board", .board, { await store.openBoard(board.id, projectID: project.id) }),
+                ("06-board", .board, { store.openBoard(board.id, projectID: project.id) }),
             ]
             for step in remaining {
                 await step.navigate()
@@ -878,8 +880,14 @@
                 }
             }
 
-            click(window: window, x: 370, distanceFromTop: 215)
-            try? await DieterTaskSleep.seconds(1)
+            // Open the first visible card through its own control; the board's
+            // header and lane geometry are free to change.
+            if let card = store.displayedCards.first {
+                if await NativeUIAccessibility.waitForInteractiveTarget("card.\(card.id)", in: window) {
+                    NativeUIAccessibility.click("card.\(card.id)", in: window)
+                }
+                _ = await waitUntil(timeout: 5) { store.selectedCardID == card.id }
+            }
             results["07-card-conversation"] =
                 store.selectedCardID == nil ? "failed: no card selected" : "passed"
             await captureAppearances(window, named: "07-card-conversation.png", in: output)
@@ -1184,9 +1192,8 @@
             store.closeConversation()
             store.errorMessage = nil
             let chatTitle = "Native UI chat creation \(UUID().uuidString.lowercased())"
-            let chatHarness =
-                store.harnessCatalog.harnesses.first(where: { $0.id == "mock" })
-                ?? store.harnessCatalog.harnesses.first
+            let projectAgents = store.harnessCatalog(forDaemon: store.projectHosts[project.id] ?? "").harnesses
+            let chatHarness = projectAgents.first(where: { $0.id == "mock" }) ?? projectAgents.first
             await store.createConversation(
                 .with {
                     $0.projectID = project.id
@@ -1213,7 +1220,7 @@
             results["13c-standalone-chat-opens"] =
                 openedChat && store.errorMessage == nil
                 ? "passed"
-                : "failed: selected=\(store.selectedChatID ?? "none"), loading=\(store.conversationLoading), error=\(store.errorMessage ?? "none"), session=\(store.session.phase) attached='\(store.session.attachedMachineID)' endpoint=\(store.endpoint.id) replicas=\(store.projectReplicaEndpointIDs[project.id] ?? "none")"
+                : "failed: selected=\(store.selectedChatID ?? "none"), loading=\(store.conversationLoading), error=\(store.errorMessage ?? "none"), session=\(store.session.phase) synced=\(store.workspaceIsLive) project-machine=\(store.projectMachine(forProjectID: project.id)?.id ?? "none")"
             results["13c-standalone-chat-single-row"] =
                 chatRowStayedSingle
                 ? "passed"
@@ -1298,9 +1305,9 @@
             store.coreFoldsHeld = true
             let duplicateMachine = MachineEndpoint(
                 name: "Smoke remote Mac",
-                host: store.endpoint.host,
-                port: store.endpoint.port,
-                secure: store.endpoint.secure,
+                host: store.activeGateway.host,
+                port: store.activeGateway.port,
+                secure: store.activeGateway.secure,
                 daemonID: "smoke-duplicate-machine",
                 online: false,
                 releaseVersion: "v0.4.57"
@@ -1345,7 +1352,7 @@
             // operations never start from the fixture's stale machines.
             store.coreFoldsHeld = false
             results["13h-machine-presence-restored"] =
-                store.replica(forProjectID: project.id)?.online == true
+                store.projectMachine(forProjectID: project.id)?.online == true
                 ? "passed"
                 : "failed: live fixture machine presence was not restored"
             try? await DieterTaskSleep.milliseconds(350)
@@ -1377,7 +1384,7 @@
             try? await DieterTaskSleep.milliseconds(350)
 
             let projectParent = URL(fileURLWithPath: project.path).deletingLastPathComponent()
-            let projectMachineID = store.replica(forProjectID: project.id)?.id ?? store.endpoint.id
+            let projectMachineID = store.projectMachine(forProjectID: project.id)?.id ?? ""
             var newProjectDraft = ProjectSetupDraft()
             newProjectDraft.mode = .newRepository
             newProjectDraft.path =
@@ -1418,7 +1425,7 @@
                 results["15c-open-linked-worktree"] = "failed: \(message)"
             }
 
-            await store.openBoard(board.id, projectID: project.id)
+            store.openBoard(board.id, projectID: project.id)
 
             store.section = .board
             try? await DieterTaskSleep.milliseconds(700)
@@ -1445,7 +1452,7 @@
                 }
                 await store.refreshState()
                 try? await DieterTaskSleep.seconds(1)
-                await store.openBoard(board.id, projectID: project.id)
+                store.openBoard(board.id, projectID: project.id)
                 store.errorMessage = nil
                 let liveCard = store.state.cards.first(where: { $0.boardID == board.id })
                 if let liveCard {
@@ -1480,7 +1487,9 @@
                 }
                 if let trigger = offlineTrigger() {
                     FileManager.default.createFile(atPath: trigger.path, contents: Data())
-                    _ = await waitUntil(timeout: 10) { !store.phase.isConnected }
+                    // The gateway stays online; the core reports that no
+                    // machine is reachable and the workspace is cached.
+                    _ = await waitUntil(timeout: 10) { store.workspaceNotice?.offline == true }
                     // Let the core's workspace and conversation feeds observe
                     // the daemon tunnel closing before checking for alert state.
                     try? await DieterTaskSleep.seconds(1)
@@ -1561,7 +1570,7 @@
 
                 if let trigger = offlineTrigger(), let liveCard {
                     try? FileManager.default.removeItem(at: trigger)
-                    let reconnected = await waitUntil(timeout: 25) { store.phase.isConnected }
+                    let reconnected = await waitUntil(timeout: 25) { store.workspaceNotice?.offline != true }
                     let delivered = await waitUntil(timeout: 15) {
                         guard let machine = store.machine(for: liveCard) else {
                             return false
@@ -1593,27 +1602,27 @@
 
                 if let trigger = offlineTrigger() {
                     _ = FileManager.default.createFile(atPath: trigger.path, contents: Data())
-                    _ = await waitUntil(timeout: 10) { !store.phase.isConnected }
+                    _ = await waitUntil(timeout: 10) { store.workspaceNotice?.offline == true }
                     try? await DieterTaskSleep.seconds(1)
                 }
-                await store.openBoard(cachedBoard.id, projectID: project.id)
+                store.openBoard(cachedBoard.id, projectID: project.id)
                 try? await DieterTaskSleep.milliseconds(700)
                 let offlineLabel = SharedRules.shared.lastConnected(
                     atMillis: store.lastSyncedAt?.epochMillis ?? 0, nowMillis: Date().epochMillis)
                 let stayedUsable =
                     store.section == .board && store.selectedBoard?.id == cachedBoard.id
                     && store.errorMessage == nil
-                    && store.hasLoadedWorkspace && !store.phase.isConnected
+                    && store.hasLoadedWorkspace && store.workspaceNotice?.offline == true
                     && offlineLabel.hasPrefix("Last connected ")
                 results["17-offline-cached-board-navigation"] =
                     stayedUsable
                     ? "passed"
-                    : "failed: section=\(store.section.rawValue), board=\(store.selectedBoard?.id ?? "none"), phase=\(store.session.phaseLabel), freshness=\(offlineLabel), error=\(store.errorMessage ?? "none")"
+                    : "failed: section=\(store.section.rawValue), board=\(store.selectedBoard?.id ?? "none"), phase=\(store.session.phaseLabel), notice=\(store.workspaceNotice?.detail ?? "none"), freshness=\(offlineLabel), error=\(store.errorMessage ?? "none")"
                 await captureAppearances(
                     window, named: "17-offline-cached-board-navigation.png", in: output)
                 if let trigger = offlineTrigger() {
                     try? FileManager.default.removeItem(at: trigger)
-                    _ = await waitUntil(timeout: 25) { store.phase.isConnected }
+                    _ = await waitUntil(timeout: 25) { store.workspaceNotice?.offline != true }
                 }
             } catch {
                 results["17-offline-cached-board-navigation"] =
@@ -1627,7 +1636,6 @@
             try? await DieterTaskSleep.milliseconds(500)
             let reopened = await Task { @MainActor in
                 let selection = store.selectedProjectID
-                let generation = store.connectionGeneration
                 window.close()
                 try? await DieterTaskSleep.milliseconds(350)
                 store.reopenWorkspaceWindow()
@@ -1638,7 +1646,7 @@
                 ) {
                     capture(reopenedWindow, to: output.appending(path: "workspace-window-reopened.png"))
                 }
-                return visible && store.connectionGeneration == generation && store.selectedProjectID == selection
+                return visible && store.phase.isConnected && store.selectedProjectID == selection
             }.value
             results["workspace-window-reopen"] =
                 reopened ? "passed" : "failed: selection, connection or window count changed"
@@ -1750,7 +1758,7 @@
             {
                 return text
             }
-            return view.subviews.lazy.compactMap { nativeQuickTaskField(in: $0, expectedText: expectedText) }.first
+            return view.firstSubviewResult { nativeQuickTaskField(in: $0, expectedText: expectedText) }
         }
 
         private static func focusQuickTaskStory(in window: NSWindow, expectedText: String? = nil) async -> Bool {
@@ -1966,8 +1974,8 @@
                 UserDefaults.standard.set(260.0, forKey: filePaneWidthKey)
                 _ = await waitUntil(timeout: 5) { abs((defaultRich?.bounds.width ?? 0) - originalEditorWidth) < 2 }
 
-                let selectedSource = NativeUIAccessibility.selectSegment(
-                    1, identifier: "files.markdown.layout", in: window)
+                let selectedSource = NativeUIAccessibility.click(
+                    "files.markdown.layout", in: window, horizontalFraction: 0.75)
                 let sourceReady = await waitUntil(timeout: 5) {
                     guard let controller = markdownSplitController(in: window.contentView) else { return false }
                     return controller.layout == .source && controller.splitViewItems[1].isCollapsed
@@ -2001,21 +2009,22 @@
                 results["files-markdown-source-undo"] =
                     edited && undone && redone ? "passed" : "failed: native Source undo/redo lost the shared draft"
                 window.makeFirstResponder(nil)
-                let selectedEdit = NativeUIAccessibility.selectSegment(
-                    0, identifier: "files.markdown.layout", in: window)
+                let selectedEdit = NativeUIAccessibility.click(
+                    "files.markdown.layout", in: window, horizontalFraction: 0.25)
                 let richRestored = await waitUntil(timeout: 5) {
                     controller.layout == .preview && controller.splitViewItems[0].isCollapsed
                         && nativeRichTextView(in: window.contentView) === defaultRich
                         && defaultRich?.string == expected && store.filesModel.fileEditorSession.isDirty
                 }
-                let sourceAgain = NativeUIAccessibility.selectSegment(
-                    1, identifier: "files.markdown.layout", in: window)
+                let sourceAgain = NativeUIAccessibility.click(
+                    "files.markdown.layout", in: window, horizontalFraction: 0.75)
                 let sourceRetained = await waitUntil(timeout: 5) {
                     controller.layout == .source
                         && nativeTextViews(in: controller.sourceHost).contains { $0 === editor }
                         && editor.string == expected && editor.undoManager?.canUndo == true
                 }
-                let editAgain = NativeUIAccessibility.selectSegment(0, identifier: "files.markdown.layout", in: window)
+                let editAgain = NativeUIAccessibility.click(
+                    "files.markdown.layout", in: window, horizontalFraction: 0.25)
                 let editRetained = await waitUntil(timeout: 5) {
                     defaultRich?.isEditable == true && defaultRich?.string == expected && controller.layout == .preview
                 }
@@ -2056,7 +2065,7 @@
                 } else {
                     results["files-markdown-rich-edit-save"] = "failed: rich editor did not return"
                 }
-                await store.openBoard(boardID, projectID: projectID)
+                store.openBoard(boardID, projectID: projectID)
                 await store.openProject(projectID, section: .files)
                 let revisited = await waitUntil(timeout: 5) {
                     nativeTextViews(in: window.contentView).contains { $0.string == expected }
@@ -2092,7 +2101,7 @@
             {
                 return text
             }
-            return view.subviews.lazy.compactMap { nativeRichTextView(in: $0) }.first
+            return view.firstSubviewResult { nativeRichTextView(in: $0) }
         }
 
         private static func nativeDiagramImages(in editor: NSTextView?) -> [NSRect] {
@@ -2115,7 +2124,7 @@
             if let split = view as? NSSplitView, let controller = split.delegate as? MarkdownEditorSplitController {
                 return controller
             }
-            return view.subviews.lazy.compactMap { markdownSplitController(in: $0) }.first
+            return view.firstSubviewResult { markdownSplitController(in: $0) }
         }
 
         private static func closeBoardConversationForToolbar(store: DieterStore, window: NSWindow) async -> Bool {
@@ -2227,7 +2236,7 @@
                 try? await DieterTaskSleep.milliseconds(150)
                 BoardRenderingDiagnostics.start()
                 let start = Date()
-                await store.openBoard(board.id, projectID: project.id)
+                store.openBoard(board.id, projectID: project.id)
                 let selected = Date()
                 window.contentView?.layoutSubtreeIfNeeded()
                 window.displayIfNeeded()
@@ -2542,11 +2551,17 @@
         }
 
         private static func doubleClickTitleBar(of window: NSWindow) {
-            let point = NSPoint(
-                x: window.contentLayoutRect.midX,
-                y: window.contentLayoutRect.maxY
-                    + ((window.frame.height - window.contentLayoutRect.maxY) / 2)
-            )
+            // Top bars fill the title band with controls; double-click its
+            // empty region beside the window controls.
+            let point =
+                NativeUIAccessibility.find("workspace.title-band", in: window)?.recordedFrame.map {
+                    window.convertPoint(fromScreen: NSPoint(x: $0.midX, y: $0.midY))
+                }
+                ?? NSPoint(
+                    x: window.contentLayoutRect.midX,
+                    y: window.contentLayoutRect.maxY
+                        + ((window.frame.height - window.contentLayoutRect.maxY) / 2)
+                )
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             let timestamp = ProcessInfo.processInfo.systemUptime

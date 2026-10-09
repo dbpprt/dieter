@@ -134,12 +134,12 @@ struct ConversationStartCardBanner: View {
                     Text(starting ? "Starting…" : "Run task")
                 }
             }
-            .buttonStyle(DieterPrimaryButtonStyle())
+            .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
             .disabled(starting)
             .accessibilityIdentifier("conversation-run-card")
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(DieterTheme.shellDeep.opacity(0.08))
+        .background(DieterTheme.tile)
         .overlay(alignment: .top) { Divider().overlay(DieterTheme.border) }
     }
 }
@@ -231,12 +231,8 @@ struct QueuedComposerMessage: View {
                         }
                         Text(action == .steer ? "Steering…" : "Steer")
                     }
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(DieterTheme.subtle)
-                    .padding(.horizontal, 7)
-                    .frame(height: 28)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(DieterBarButtonStyle(size: 28))
                 .disabled(action != nil)
                 .help("Stop the current turn and run this message next")
                 .accessibilityIdentifier("conversation.queued-message.steer.\(message.id)")
@@ -250,14 +246,10 @@ struct QueuedComposerMessage: View {
                         ProgressView().controlSize(.mini)
                     } else {
                         Image(systemName: "trash")
-                            .font(.system(size: 13, weight: .medium))
                     }
                 }
-                .foregroundStyle(DieterTheme.tertiary)
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(DieterBarButtonStyle(shape: .circle, destructive: true, size: 28))
             .disabled(action != nil)
             .help("Remove queued message")
             .accessibilityLabel("Remove queued message")
@@ -271,15 +263,9 @@ struct QueuedComposerMessage: View {
                     perform(.remove, onRemove)
                 }
             } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(DieterTheme.tertiary)
-                    .frame(width: 28, height: 28)
-                    .contentShape(Rectangle())
+                DieterMenuLabel(symbol: "ellipsis", size: 28)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
+            .dieterMenuChrome(.circle)
             .disabled(action != nil)
             .help("Queued message actions")
             .accessibilityIdentifier("conversation.queued-message.menu.\(message.id)")
@@ -288,7 +274,7 @@ struct QueuedComposerMessage: View {
         .padding(.trailing, 8)
         .padding(.vertical, 9)
         .frame(minHeight: 58)
-        .background(DieterTheme.elevated.opacity(0.96), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(DieterTheme.tileSelected, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(DieterTheme.border.opacity(0.9))

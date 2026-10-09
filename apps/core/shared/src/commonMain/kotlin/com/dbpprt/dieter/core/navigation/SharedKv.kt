@@ -2,12 +2,9 @@ package com.dbpprt.dieter.core.navigation
 
 import com.dbpprt.dieter.api.v1.KVDeleteRequest
 import com.dbpprt.dieter.api.v1.KVEntry
-import com.dbpprt.dieter.api.v1.KVFrame
-import com.dbpprt.dieter.api.v1.KVListRequest
 import com.dbpprt.dieter.api.v1.KVMoveRequest
 import com.dbpprt.dieter.api.v1.KVPutRequest
 import com.dbpprt.dieter.api.v1.KVRef
-import com.dbpprt.dieter.api.v1.KVWatchRequest
 import com.dbpprt.dieter.core.runtime.Backoff
 import com.dbpprt.dieter.core.runtime.CoreException
 import com.dbpprt.dieter.core.runtime.CoreLogger
@@ -18,10 +15,8 @@ import com.dbpprt.dieter.core.storage.CoreStorage
 import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.time.Clock
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.Instant
 import kotlin.uuid.Uuid
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
@@ -30,8 +25,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -44,15 +37,11 @@ import okio.ByteString
 import okio.ByteString.Companion.encodeUtf8
 import okio.ByteString.Companion.toByteString
 
-/** Delivery and subscription health of one shared namespace. */
+/** Delivery health of one shared namespace. */
 data class KvStatus(
-    val account: String = "",
     val pending: Int = 0,
-    /** A full replay has been applied since the machine was attached. */
+    /** Some machine's complete, current view of the namespace is applied. */
     val caughtUp: Boolean = false,
-    val watchError: String? = null,
-    /** When the subscription started failing, so UIs can hide brief reconnects. */
-    val watchErrorSince: Instant? = null,
     val deliveryError: String? = null,
     /** This device could not save an edit; it was not queued. */
     val localError: String? = null,
@@ -61,25 +50,31 @@ data class KvStatus(
 /** A `{"parent","rank"}` ordering value. */
 data class KvPosition(val parent: String, val rank: String)
 
+/** A machine as a KV mutation names it: its peer account and identity. */
+data class KvAcceptor(val account: String, val daemonId: String)
+
 /**
  * An account-wide, replicated key-value namespace on the daemons (SharedKV).
- * Edits are queued durably per account and delivered in order to the
- * attached machine; the watch applies only replicas that cover what this
- * client already saw, so a lagging machine never rolls a change back.
- * Ported from the Mac and Android `SharedKV`. Confined to the core dispatcher.
+ * Its entries are the account view's joined records ([apply]). Edits are
+ * queued durably per gateway and delivered in order to a reachable machine,
+ * this device's first; a machine that has not yet seen what this client shows
+ * is waited for, so a lagging machine never rolls a change back. Confined to
+ * the core dispatcher.
  */
 class SharedKv(
     private val namespace: String,
     private val sessions: MachineSessions,
-    private val clock: Clock,
+    /** The peer account and identity of a machine whose view is applied, else null. */
+    private val acceptor: (machineId: String) -> KvAcceptor?,
     private val logger: CoreLogger,
 ) {
     private var storage: CoreStorage? = null
-    private var cache = KvCache()
-    private val entries = LinkedHashMap<String, KVEntry>()
-    private val replacement = LinkedHashMap<String, KVEntry>()
+    private var pending: List<KvIntent> = emptyList()
+    private var entries: Map<String, KVEntry> = emptyMap()
+
+    /** Entries machines acknowledged that the account view does not show yet. */
+    private val acknowledged = LinkedHashMap<String, KVEntry>()
     private var generation = 0L
-    private var servedDaemon: String? = null
     private val wake = Channel<Unit>(Channel.CONFLATED)
 
     private val mutableValues = MutableStateFlow<Map<String, ByteString>>(emptyMap())
@@ -90,24 +85,24 @@ class SharedKv(
     private val mutableStatus = MutableStateFlow(KvStatus())
     val status: StateFlow<KvStatus> = mutableStatus.asStateFlow()
 
-    /** Switches to [storage] (one gateway), restoring its last account's namespace. */
+    /** Switches to [storage] (one gateway), restoring its undelivered edits. */
     fun bind(storage: CoreStorage?) {
         if (storage != null && storage.directory == this.storage?.directory) return
         this.storage = storage
         generation++
-        servedDaemon = null
-        val active = storage?.read(activeFile)?.let { runCatching { KvActive.ADAPTER.decode(it) }.getOrNull() }
-        adopt(active?.account.orEmpty(), active?.daemon_id.orEmpty())
+        pending = storage?.read(file)?.let { runCatching { KvPending.ADAPTER.decode(it).intents }.getOrNull() }.orEmpty()
+        acknowledged.clear()
+        mutableStatus.update { KvStatus(pending = pending.size, caughtUp = it.caughtUp) }
+        publish()
+        wake.trySend(Unit)
     }
 
-    private fun adopt(account: String, daemonId: String) {
-        val restored = if (account.isEmpty()) null else storage?.read(cacheFile(account, daemonId))?.let { runCatching { KvCache.ADAPTER.decode(it) }.getOrNull() }
-        cache = restored ?: KvCache(account = account, daemon_id = daemonId)
-        entries.clear()
-        for (entry in cache.entries) entries[entry.key] = entry
-        replacement.clear()
-        mutableStatus.value = KvStatus(account = account, pending = cache.pending.size)
+    /** The account view's entries of this namespace. */
+    fun apply(entries: Map<String, KVEntry>) {
+        this.entries = entries
+        acknowledged.entries.removeAll { (key, entry) -> covers(entries[key], entry) }
         publish()
+        wake.trySend(Unit)
     }
 
     // --- Edits -----------------------------------------------------------
@@ -123,120 +118,65 @@ class SharedKv(
     /** Queues several edits atomically, in order. */
     fun enqueue(intents: List<KvIntent>) {
         if (intents.isEmpty()) return
-        if (cache.account.isEmpty()) throw CoreException(FailureKind.TRANSIENT, "Connect to an account before organizing navigation.")
+        if (storage == null) throw CoreException(FailureKind.TRANSIENT, "Connect to an account before organizing navigation.")
         for (intent in intents) {
             val value = intent.put?.value_json ?: continue
             if (value.size > MAX_VALUE_BYTES) throw CoreException(FailureKind.PERMANENT, "Shared values must be at most 32 KiB.")
         }
-        if (cache.pending.size + intents.size > MAX_PENDING) {
+        if (pending.size + intents.size > MAX_PENDING) {
             throw CoreException(FailureKind.PERMANENT, "Navigation has 1,024 pending edits. Reconnect before editing more.")
         }
-        val previous = cache
-        cache = cache.copy(pending = cache.pending + intents)
+        val previous = pending
+        pending = pending + intents
         try {
             persist()
         } catch (error: Throwable) {
-            cache = previous
+            pending = previous
             mutableStatus.update { it.copy(localError = "Could not save navigation changes on this device.") }
             throw CoreException(FailureKind.OUT_OF_STORAGE, "Could not save navigation changes on this device.", error)
         }
-        mutableStatus.update { it.copy(pending = cache.pending.size, localError = null) }
+        mutableStatus.update { it.copy(pending = pending.size, localError = null) }
         publish()
         wake.trySend(Unit)
     }
 
-    // --- Subscription and delivery ----------------------------------------
+    // --- Delivery ----------------------------------------------------------
 
-    /** Keeps the namespace synchronized with the attached machine, or idles while there is none. */
-    suspend fun run(attached: Flow<String?>) {
-        attached.distinctUntilChanged().collectLatest { daemonId ->
-            generation++
-            servedDaemon = null
-            replacement.clear()
-            mutableStatus.update { it.copy(caughtUp = false, watchError = null, watchErrorSince = null) }
-            if (daemonId == null) return@collectLatest
-            coroutineScope {
-                launch { watch(daemonId) }
-                deliver(daemonId)
-            }
-        }
-    }
-
-    private suspend fun watch(daemonId: String) {
-        while (true) {
-            try {
-                val info = sessions.call(daemonId) { it.ListKV().execute(KVListRequest(namespace = namespace)) }
-                val local = info.account == LOCAL_ACCOUNT
-                if (info.account != cache.account || (local && info.daemon_id != cache.daemon_id)) {
-                    // Late acknowledgements for the previous account are dropped by the generation.
-                    generation++
-                    adopt(info.account, if (local) info.daemon_id else "")
-                    storage?.write(activeFile, KvActive.ADAPTER.encode(KvActive(account = info.account, daemon_id = info.daemon_id)))
-                }
-                servedDaemon = info.daemon_id
+    /**
+     * Delivers queued edits until cancelled to the machines [reachable] lists,
+     * the first preferred. [caughtUp] says whether some machine's complete
+     * view is applied.
+     */
+    suspend fun run(reachable: Flow<List<String>>, caughtUp: Flow<Boolean>): Nothing = coroutineScope {
+        val targets = MutableStateFlow<List<String>>(emptyList())
+        launch { caughtUp.collect { value -> mutableStatus.update { it.copy(caughtUp = value) } } }
+        launch {
+            reachable.collect {
+                targets.value = it
                 wake.trySend(Unit)
-                val account = info.account
-                coroutineScope {
-                    sessions.call(daemonId) { client ->
-                        val call = client.WatchKV()
-                        val frames = call.executeIn(this, KVWatchRequest(namespace = namespace, account = account))
-                        try {
-                            for (frame in frames) apply(frame, account)
-                        } finally {
-                            call.cancel()
-                        }
-                    }
-                }
-                recordWatchError("Navigation subscription ended")
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                recordWatchError(Failures.message(error))
             }
-            delay(WATCH_RETRY)
         }
+        deliver(targets)
     }
 
-    private fun recordWatchError(message: String) {
-        mutableStatus.update { it.copy(watchError = message, watchErrorSince = it.watchErrorSince ?: clock.now(), caughtUp = false) }
-    }
-
-    private fun apply(frame: KVFrame, account: String) {
-        if (frame.account != account || account != cache.account) return
-        if (frame.reset) replacement.clear()
-        for (entry in frame.entries) replacement[entry.key] = entry
-        // A paged replay is published whole, never as a partial layout.
-        if (!frame.caught_up) return
-        for ((key, incoming) in replacement) {
-            val cached = entries[key]
-            if (cached == null || covers(incoming, cached)) entries[key] = incoming
-        }
-        replacement.clear()
-        saveEntries()
-        mutableStatus.update { it.copy(caughtUp = true, watchError = null, watchErrorSince = null) }
-        publish()
-        wake.trySend(Unit)
-    }
-
-    private suspend fun deliver(daemonId: String) {
+    private suspend fun deliver(targets: StateFlow<List<String>>): Nothing {
         var attempt = 0
         while (true) {
-            val intent = cache.pending.firstOrNull()
-            val served = servedDaemon
-            if (intent == null || served == null) {
+            val intent = pending.firstOrNull()
+            val target = intent?.let { target(it, targets.value) }
+            if (intent == null || target == null) {
+                if (intent != null && intent.daemon_id.isNotEmpty()) {
+                    mutableStatus.update { it.copy(deliveryError = "A pending navigation edit awaits its accepting machine.") }
+                }
                 wake.receive()
                 continue
             }
-            if (intent.daemon_id.isNotEmpty() && intent.daemon_id != served) {
-                mutableStatus.update { it.copy(deliveryError = "A pending navigation edit awaits its accepting machine.") }
-                wake.receive()
-                continue
-            }
+            val (machineId, accepting) = target
             val gen = generation
             try {
-                val prepared = if (intent.prepared.size > 0) intent else prepare(daemonId, intent, served) ?: continue
+                val prepared = if (intent.prepared.size > 0) intent else prepare(machineId, accepting, intent) ?: continue
                 if (gen != generation) continue
-                val result = sessions.call(daemonId) { client ->
+                val result = sessions.call(machineId) { client ->
                     when {
                         prepared.move != null -> client.MoveKV().execute(KVMoveRequest.ADAPTER.decode(prepared.prepared))
                         prepared.delete != null -> client.DeleteKV().execute(KVDeleteRequest.ADAPTER.decode(prepared.prepared))
@@ -244,8 +184,7 @@ class SharedKv(
                     }
                 }
                 if (gen != generation) continue
-                val cached = entries[intent.key]
-                if (cached == null || covers(result, cached)) entries[intent.key] = result
+                if (!covers(entries[intent.key], result)) acknowledged[intent.key] = result
                 pop(intent.id)
                 attempt = 0
                 mutableStatus.update { it.copy(deliveryError = null) }
@@ -278,11 +217,21 @@ class SharedKv(
         }
     }
 
+    /**
+     * Where [intent] goes: a prepared edit only to the machine it was prepared
+     * for, since only that machine's receipt makes a retry idempotent; a new
+     * one to the first reachable machine with an applied view.
+     */
+    private fun target(intent: KvIntent, reachable: List<String>): Pair<String, KvAcceptor>? =
+        reachable.firstNotNullOfOrNull { machineId ->
+            acceptor(machineId)?.takeIf { intent.daemon_id.isEmpty() || it.daemonId == intent.daemon_id }?.let { machineId to it }
+        }
+
     /** Builds the exact request for [intent] against the key's current revision, or null when it was dropped. */
-    private suspend fun prepare(daemonId: String, intent: KvIntent, served: String): KvIntent? {
-        val current = get(daemonId, intent.key)
-        val cached = entries[intent.key]
-        if (cached != null && !covers(current, cached)) {
+    private suspend fun prepare(machineId: String, accepting: KvAcceptor, intent: KvIntent): KvIntent? {
+        val current = get(machineId, accepting.account, intent.key)
+        val shown = acknowledged[intent.key] ?: entries[intent.key]
+        if (shown != null && !covers(current, shown)) {
             mutableStatus.update { it.copy(deliveryError = "Waiting for this machine to receive earlier navigation edits.") }
             delay(COVER_WAIT)
             return null
@@ -291,56 +240,56 @@ class SharedKv(
             pop(intent.id)
             return null
         }
-        val ref = KVRef(namespace = namespace, key = intent.key, account = cache.account)
+        val ref = KVRef(namespace = namespace, key = intent.key, account = accepting.account)
         val revision = current?.revision.orEmpty()
         val move = intent.move
         val bytes = when {
             move != null -> {
-                var after = anchor(daemonId, move.after, move.parent)
-                val before = anchor(daemonId, move.before, move.parent)
+                var after = anchor(machineId, accepting.account, move.after, move.parent)
+                val before = anchor(machineId, accepting.account, move.before, move.parent)
                 // Neighbours that crossed meanwhile: keep the position relative to the later one.
                 if (after != null && before != null && after.second >= before.second) after = null
                 KVMoveRequest.ADAPTER.encode(
                     KVMoveRequest(
                         ref = ref, parent = move.parent, after_key = after?.first.orEmpty(), before_key = before?.first.orEmpty(),
-                        expected_revision = revision, operation_id = intent.id, daemon_id = served,
+                        expected_revision = revision, operation_id = intent.id, daemon_id = accepting.daemonId,
                     ),
                 )
             }
-            intent.delete != null -> KVDeleteRequest.ADAPTER.encode(KVDeleteRequest(ref = ref, expected_revision = revision, operation_id = intent.id, daemon_id = served))
+            intent.delete != null -> KVDeleteRequest.ADAPTER.encode(KVDeleteRequest(ref = ref, expected_revision = revision, operation_id = intent.id, daemon_id = accepting.daemonId))
             else -> KVPutRequest.ADAPTER.encode(
-                KVPutRequest(ref = ref, value_json = intent.put?.value_json ?: ByteString.EMPTY, expected_revision = revision, operation_id = intent.id, daemon_id = served),
+                KVPutRequest(ref = ref, value_json = intent.put?.value_json ?: ByteString.EMPTY, expected_revision = revision, operation_id = intent.id, daemon_id = accepting.daemonId),
             )
         }
-        val prepared = intent.copy(prepared = bytes.toByteString(), daemon_id = served)
+        val prepared = intent.copy(prepared = bytes.toByteString(), daemon_id = accepting.daemonId)
         // Persist before sending, so a crash retries the same operation.
         replaceHead(intent.id) { prepared }
         return prepared
     }
 
     /** A usable neighbour: it exists, is live, is a position, and shares the parent. */
-    private suspend fun anchor(daemonId: String, key: String, parent: String): Pair<String, String>? {
+    private suspend fun anchor(machineId: String, account: String, key: String, parent: String): Pair<String, String>? {
         if (key.isEmpty()) return null
-        val entry = get(daemonId, key)?.takeUnless { it.deleted } ?: return null
+        val entry = get(machineId, account, key)?.takeUnless { it.deleted } ?: return null
         val position = decodePosition(entry.value_json) ?: return null
         return if (position.parent == parent) key to position.rank else null
     }
 
-    private suspend fun get(daemonId: String, key: String): KVEntry? = try {
-        sessions.call(daemonId) { it.GetKV().execute(KVRef(namespace = namespace, key = key, account = cache.account)) }
+    private suspend fun get(machineId: String, account: String, key: String): KVEntry? = try {
+        sessions.call(machineId) { it.GetKV().execute(KVRef(namespace = namespace, key = key, account = account)) }
     } catch (error: GrpcException) {
         if (error.grpcStatus == GrpcStatus.NOT_FOUND) null else throw error
     }
 
     private fun pop(id: String) {
-        cache = cache.copy(pending = cache.pending.filterNot { it.id == id })
+        pending = pending.filterNot { it.id == id }
         persistOrFail()
-        mutableStatus.update { it.copy(pending = cache.pending.size) }
+        mutableStatus.update { it.copy(pending = pending.size) }
         publish()
     }
 
     private fun replaceHead(id: String, change: (KvIntent) -> KvIntent) {
-        cache = cache.copy(pending = cache.pending.map { if (it.id == id) change(it) else it })
+        pending = pending.map { if (it.id == id) change(it) else it }
         persistOrFail()
     }
 
@@ -352,21 +301,17 @@ class SharedKv(
         }
     }
 
-    private fun saveEntries() = runCatching { persist() }.onFailure { logger.warn(TAG, "could not persist navigation", it) }
-
     private fun persist() {
-        val target = storage ?: return
-        if (cache.account.isEmpty()) return
-        cache = cache.copy(entries = entries.values.toList())
-        target.write(cacheFile(cache.account, cache.daemon_id), KvCache.ADAPTER.encode(cache))
+        storage?.write(file, KvPending.ADAPTER.encode(KvPending(intents = pending)))
     }
 
     // --- Projection --------------------------------------------------------
 
     private fun publish() {
         val next = LinkedHashMap<String, ByteString>()
-        for ((key, entry) in entries) if (!entry.deleted) next[key] = entry.value_json
-        for (intent in cache.pending) {
+        for ((key, entry) in entries + acknowledged) if (!entry.deleted) next[key] = entry.value_json
+        val shownDeleted = { key: String -> (acknowledged[key] ?: entries[key])?.deleted == true }
+        for (intent in pending) {
             val move = intent.move
             val put = intent.put
             when {
@@ -385,32 +330,20 @@ class SharedKv(
                     val rank = between(left, right) + intent.id.lowercase().replace("-", "") + "h"
                     next[intent.key] = encodePosition(KvPosition(move.parent, rank))
                 }
-                put != null -> {
-                    val tombstone = entries[intent.key]?.deleted == true
-                    if (!(put.requires_existing && tombstone)) next[intent.key] = put.value_json
-                }
+                put != null -> if (!(put.requires_existing && shownDeleted(intent.key))) next[intent.key] = put.value_json
             }
         }
         mutableValues.value = next
     }
 
-    private val activeFile get() = activeFile(namespace)
-
-    private fun cacheFile(account: String, daemonId: String): String = cacheFile(namespace, account, daemonId)
+    private val file get() = "kv-pending-" + CoreStorage.safeName(namespace) + ".pb"
 
     private fun newId() = Uuid.random().toString()
 
     companion object {
-        private fun activeFile(namespace: String) = "kv-active-$namespace.pb"
-
-        private fun cacheFile(namespace: String, account: String, daemonId: String): String =
-            "kv-" + CoreStorage.safeName("$namespace.$account" + if (account == LOCAL_ACCOUNT) ".$daemonId" else "") + ".pb"
-
         const val MAX_PENDING = 1_024
         const val MAX_VALUE_BYTES = 32 * 1024
-        const val LOCAL_ACCOUNT = "local"
 
-        private val WATCH_RETRY = 2.seconds
         private val COVER_WAIT = 1.seconds
         private val ABORTED_RETRY = 250.milliseconds
         private const val TAG = "SharedKv"

@@ -16,11 +16,12 @@ message GatewayRecord {
 }
 
 message AccountsState {
+  reserved 3;
+  reserved "preferred_machine";
+
   repeated GatewayRecord gateways = 1;
-  // Origin of the gateway the client is attached to.
+  // Origin of the active gateway.
   string active_origin = 2;
-  // Per gateway origin: the machine whose feed the client attaches to.
-  map<string, string> preferred_machine = 3;
   // Per gateway origin: whether the user wants to stay connected.
   map<string, bool> desired_connected = 4;
 }

@@ -95,6 +95,55 @@
                     "archived-excluded", fixture != nil && !visible("inbox.row.\(fixture?.id ?? "")", window), &results)
             } catch { results["archived-excluded"] = "failed: \(error)" }
 
+            // Another client's mutations must reach the rendered feed before
+            // any conversation is selected. These RPCs bypass app overlays.
+            do {
+                let rpc = try requireFixture(await store.fixtureRPC())
+                let title = "Inbox running: changed on another client"
+                _ = try await rpc.renameCard(cardID: running.id, title: title)
+                let updated = await NativeUIAccessibility.wait {
+                    store.inboxEntries.contains { $0.id == running.id && $0.card.title == title }
+                        && visible("inbox.title.\(running.id).\(title)", window)
+                }
+                record("remote-update-without-selection", updated && selectedID(store) == nil, &results)
+                capture(window, "00-inbox-remote-update.png", output)
+                _ = try await rpc.renameCard(cardID: running.id, title: running.title)
+                _ = await NativeUIAccessibility.wait {
+                    store.inboxEntries.contains { $0.id == running.id && $0.card.title == running.title }
+                }
+            } catch {
+                results["remote-update-without-selection"] = "failed: \(error)"
+            }
+            do {
+                let rpc = try requireFixture(await store.fixtureRPC())
+                let reply = try await rpc.createCard(
+                    .with {
+                        $0.projectID = waiting.projectID; $0.boardID = waiting.boardID
+                        $0.lane = "running"; $0.title = "Unopened sync reply"
+                        $0.prompt = "Reply to the Inbox sync check."
+                        $0.provider = "mock"; $0.model = "mock"; $0.workspaceMode = "project"
+                    })
+                let arrived = await NativeUIAccessibility.wait(timeout: 30) {
+                    store.inboxEntries.contains {
+                        $0.id == reply.id && $0.kind == .unread && $0.card.runtime == "idle"
+                    }
+                }
+                guard arrived, let unread = store.inboxEntries.first(where: { $0.id == reply.id }) else {
+                    throw NSError(domain: "InboxSyncReplyMissing", code: 1)
+                }
+                _ = try await rpc.markConversationRead(cardID: reply.id, responseSeq: unread.card.responseSeq)
+                let read = await NativeUIAccessibility.wait {
+                    store.inboxEntries.contains {
+                        $0.id == reply.id && !$0.needsYou && $0.card.seenResponseSeq == unread.card.responseSeq
+                    }
+                }
+                record("remote-read-without-selection", read && selectedID(store) == nil, &results)
+                _ = try await rpc.archiveCard(cardID: reply.id)
+                _ = await NativeUIAccessibility.wait { !store.inboxEntries.contains { $0.id == reply.id } }
+            } catch {
+                results["remote-read-without-selection"] = "failed: \(error)"
+            }
+
             let selected = await select(waiting, store: store, window: window)
             record("card-conversation-retains-inbox", selected, &results)
             guard selected else { capture(window, "01-selection-failed.png", output); return }
@@ -279,6 +328,41 @@
             } catch { results["chat-archive-persisted"] = "failed: \(error)" }
             await replaceSearch("", window: window)
             capture(window, "08-inbox-after-archive.png", output)
+            let newTaskClicked = await click("inbox.new-task", window)
+            let taskReady = await NativeUIAccessibility.wait {
+                NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow?.isVisible == true
+            }
+            if taskReady,
+                let popover = NativeUIAccessibility.find("quick-task.story", in: window)?.recordedWindow
+            {
+                record(
+                    "new-task-opens-composer",
+                    newTaskClicked && store.section == .inbox && selectedID(store) == waiting.id
+                        && visible("quick-task.project", popover) && visible("quick-task.board", popover)
+                        && visible("quick-task.run", popover), &results)
+                let projectChosen = await chooseMenu("quick-task.project", title: "Isolated E2E", window: popover)
+                let boardChosen = await chooseMenu("quick-task.board", title: "Main", window: popover)
+                _ = await click("quick-task.story", popover)
+                let focused = await NativeUIAccessibility.wait {
+                    (popover.firstResponder as? NSTextView)?.isEditable == true
+                }
+                let story = "Create a task directly from the Mac Inbox."
+                if focused { await NativeUIAccessibility.type(story, in: popover) }
+                let entered = await NativeUIAccessibility.wait { store.quickTaskForm.story == story }
+                capture(popover, "09-inbox-new-task.png", output)
+                let createClicked = await click("quick-task.create", popover)
+                let saved = await NativeUIAccessibility.wait {
+                    store.navigationCards.values.joined().contains { $0.initialPrompt == story }
+                        && store.quickTaskForm.story.isEmpty
+                }
+                results["new-task-saved"] =
+                    projectChosen && boardChosen && entered && createClicked && saved
+                    ? "passed"
+                    : "failed: project=\(projectChosen) board=\(boardChosen) entered=\(entered) click=\(createClicked) saved=\(saved)"
+            } else {
+                results["new-task-opens-composer"] = "failed: Inbox task composer did not open"
+                results["new-task-saved"] = "failed: Inbox task composer unavailable"
+            }
             let inventory = NativeUIAccessibility.elements(in: window).map {
                 "\($0.identifier ?? "-") \($0.text) \($0.frame)"
             }.joined(separator: "\n")
@@ -297,6 +381,10 @@
             return clicked && ready && store.section == .inbox
         }
         private static func selectedID(_ store: DieterStore) -> String? { store.selectedChatID ?? store.selectedCardID }
+        private static func requireFixture(_ rpc: SmokeFixtureClient?) throws -> SmokeFixtureClient {
+            guard let rpc else { throw NSError(domain: "InboxSyncFixture", code: 1) }
+            return rpc
+        }
         private static func visible(_ id: String, _ window: NSWindow) -> Bool {
             guard let frame = NativeUIAccessibility.find(id, in: window)?.recordedFrame else { return false }
             return frame.width > 0 && frame.height > 0
@@ -388,11 +476,14 @@
             let feed = NativeUIAccessibility.find("inbox.browser-pane", in: window)?.recordedFrame ?? .zero
             let detail = NativeUIAccessibility.find("inbox.detail-pane", in: window)?.recordedFrame ?? .zero
             let card = NativeUIAccessibility.find("inbox.row.\(cardID)", in: window)?.recordedFrame ?? .zero
+            let newTask = NativeUIAccessibility.find("inbox.new-task", in: window)?.recordedFrame ?? .zero
             let valid =
                 feed.width >= 299 && feed.width <= 421 && detail.width >= 350
                 && card.width >= 240 && card.width <= feed.width && card.height >= 60 && card.height <= 104
                 && (key != "default" || abs(feed.width - 340) < 3)
                 && feed.maxX <= detail.minX + 2 && selectedID(store) == cardID && store.section == .inbox
+                && newTask.width > 0 && newTask.height > 0
+                && newTask.minX >= feed.minX && newTask.maxX <= feed.maxX && window.frame.contains(newTask)
             results["layout-\(key)"] = valid ? "passed" : "failed: feed=\(feed) detail=\(detail) card=\(card)"
             results["geometry-\(key)"] = "feed=\(feed) detail=\(detail) card=\(card)"
         }

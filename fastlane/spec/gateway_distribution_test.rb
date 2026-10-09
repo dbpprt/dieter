@@ -7,6 +7,22 @@ require_relative "../lib/dieter/distribution/gateway"
 require_relative "../lib/dieter/distribution/coordinator"
 
 class GatewayImmutableAliasTest < Minitest::Test
+  def test_bundle_push_uses_the_owned_artifact_directory_and_portable_layer_names
+    calls = []
+    context = OpenStruct.new(output: "/artifact directory")
+    context.define_singleton_method(:command) { |argv, **options| calls << [argv, options] }
+    source = "a" * 40
+    runner = Dieter::GatewayOCI.new(context, OpenStruct.new(source: source))
+    before = Dir.pwd
+    runner.send(:push_bundle, "ghcr.io/dbpprt/dieter-gateway-deploy:candidate-0.4.413")
+    argv, options = calls.fetch(0)
+    assert_equal before, Dir.pwd
+    assert_equal "/artifact directory", options.fetch(:chdir)
+    assert_equal ["dieter-gateway-deploy.tar.gz:application/gzip", "gateway-manifest.json:application/json", "gateway-manifest.sigstore.json:application/json"], argv.last(3)
+    assert_includes argv, "org.opencontainers.image.revision=#{source}"
+    refute_includes argv, "--workdir"
+  end
+
   class Context
     attr_reader :commands
     attr_accessor :existing, :failure, :confirmed

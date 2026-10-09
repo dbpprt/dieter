@@ -47,7 +47,27 @@ const (
 	RemotePublishManual      = "manual"
 	RemotePublishPullRequest = "pull_request"
 	RemotePublishPushBase    = "push_base"
+
+	// Card runtimes the daemon writes.
+	RuntimeIdle     = "idle"
+	RuntimeStarting = "starting"
+	RuntimeRunning  = "running"
+	// The reply is complete; the worker is exiting and the workspace refreshing.
+	RuntimeFinishing = "finishing"
+	// Stop was requested; the worker is cleaning up.
+	RuntimeCancelling = "cancelling"
+	RuntimeFailed     = "failed"
 )
+
+// RuntimeHoldsTurn reports whether a turn still owns the card: its worker may
+// still write, and a daemon that dies meanwhile must recover the card.
+func RuntimeHoldsTurn(runtime string) bool {
+	switch runtime {
+	case RuntimeStarting, RuntimeRunning, RuntimeFinishing, RuntimeCancelling:
+		return true
+	}
+	return false
+}
 
 // CanonicalWorkspaceMode accepts the two supported workspace modes.
 func CanonicalWorkspaceMode(value string) (string, bool) {
@@ -737,13 +757,10 @@ type CardDetail struct {
 }
 
 type State struct {
-	RetiredBoards      []Board   `json:"retiredBoards,omitempty"`
-	ArchivedProjectIDs []string  `json:"archivedProjectIds,omitempty"`
-	ArchivedItemIDs    []string  `json:"archivedItemIds,omitempty"`
-	StorePath          string    `json:"storePath"`
-	Projects           []Project `json:"projects"`
-	Project            *Project  `json:"project,omitempty"`
-	Boards             []Board   `json:"boards"`
-	Cards              []Card    `json:"cards"`
-	Chats              []Card    `json:"chats"`
+	StorePath string    `json:"storePath"`
+	Projects  []Project `json:"projects"`
+	Project   *Project  `json:"project,omitempty"`
+	Boards    []Board   `json:"boards"`
+	Cards     []Card    `json:"cards"`
+	Chats     []Card    `json:"chats"`
 }

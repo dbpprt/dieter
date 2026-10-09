@@ -9,6 +9,7 @@ struct InboxFeed: View {
     @State private var projectID = ""
     @State private var hours = 1
     @State private var visibleLimit = 20
+    @State private var newTaskPresented = false
 
     var body: some View {
         let entries = store.inboxEntries
@@ -22,7 +23,6 @@ struct InboxFeed: View {
             store.lastSyncedAt ?? entries.map(\.row.atMillis).max().flatMap { Date(epochMillis: $0) } ?? .distantPast
         VStack(spacing: 0) {
             header(entries: filtered, projects: projects, selectedProject: selectedProject)
-            Divider().overlay(DieterTheme.border)
             TimelineView(.periodic(from: .now, by: 15)) { clock in
                 let now = live ? clock.date : cachedNow
                 let intervals = timeline(filtered, now: now)
@@ -42,18 +42,17 @@ struct InboxFeed: View {
                                 "Recent", id: "recent", entries: filtered.filter { $0.section == .recent }, now: now)
                         }
                     }
-                    .padding(12)
+                    .padding(.leading, 14).padding(.trailing, 6).padding(.vertical, 6)
                 }
                 .accessibilityIdentifier("inbox.feed").smokeTarget("inbox.feed")
             }
         }
         .foregroundStyle(DieterTheme.text)
-        .background(DieterPaneBackground(role: .content))
         .ignoresSafeArea(.container, edges: .top)
         .onChange(of: query) { _, _ in visibleLimit = 20 }
         .onChange(of: projectID) { _, _ in visibleLimit = 20 }
         .onChange(of: hours) { _, _ in visibleLimit = 20 }
-        .onChange(of: store.endpoint.credentialID) { _, _ in
+        .onChange(of: store.activeGateway.credentialID) { _, _ in
             query = ""; projectID = ""; visibleLimit = 20
         }
     }
@@ -82,66 +81,93 @@ struct InboxFeed: View {
     private func header(entries: [InboxActivityEntry], projects: [Dieter_V1_Project], selectedProject: String)
         -> some View
     {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Inbox").font(.system(size: 19, weight: .semibold))
-            HStack(spacing: 5) {
-                Text("\(entries.filter(\.running).count) running").foregroundStyle(DieterTheme.subtle)
-                Text("·").foregroundStyle(DieterTheme.tertiary)
-                Text("\(entries.filter(\.needsYou).count) need attention")
-                    .foregroundStyle(entries.contains(where: \.needsYou) ? DieterTheme.amber : DieterTheme.subtle)
-            }
-            .font(DieterFont.meta)
-            HStack(spacing: 7) {
-                Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
-                TextField("Search activity", text: $query)
-                    .textFieldStyle(.plain).font(.system(size: 12))
-                    .foregroundStyle(DieterTheme.text)
-                    .accessibilityLabel("Search activity")
-                    .accessibilityIdentifier("inbox.search").smokeTarget("inbox.search")
-                if !query.isEmpty {
-                    Button {
-                        query = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
+        VStack(alignment: .leading, spacing: 8) {
+            DieterPaneTopBar {
+                DieterTitleCapsule(title: "Inbox", count: entries.count)
+            } trailing: {
+                Button {
+                    newTaskPresented = true
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "plus").font(.system(size: 11, weight: .bold))
+                        Text("New task")
                     }
-                    .buttonStyle(.plain).foregroundStyle(DieterTheme.tertiary)
-                    .accessibilityLabel("Clear search")
+                }
+                .buttonStyle(DieterBarButtonStyle(prominent: true))
+                .fixedSize()
+                .help("Create a task in any project")
+                .accessibilityIdentifier("inbox.new-task").smokeTarget("inbox.new-task")
+                .popover(isPresented: $newTaskPresented, arrowEdge: .top) {
+                    QuickTaskPopover(
+                        isPresented: $newTaskPresented, draft: store.quickTaskForm, chooseDestination: true
+                    )
+                    .environment(store)
                 }
             }
-            .padding(.horizontal, 9).frame(height: 31)
-            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(DieterTheme.border, lineWidth: 1))
-            Menu {
-                Button("All projects") { projectID = "" }
-                    .accessibilityIdentifier("inbox.project.all")
-                ForEach(projects, id: \.id) { project in
-                    Button(project.name) { projectID = project.id }
-                        .accessibilityIdentifier("inbox.project.\(project.id)")
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 5) {
+                    DieterStatusDot(color: DieterTheme.running, size: 6)
+                    Text("\(entries.filter(\.running).count) running").foregroundStyle(DieterTheme.subtle)
+                    Text("·").foregroundStyle(DieterTheme.tertiary)
+                    Text("\(entries.filter(\.needsYou).count) need attention")
+                        .foregroundStyle(
+                            entries.contains(where: \.needsYou) ? DieterTheme.attention : DieterTheme.subtle)
                 }
-            } label: {
+                .font(DieterFont.meta)
                 HStack(spacing: 7) {
-                    Image(systemName: selectedProject.isEmpty ? "square.grid.2x2" : "folder")
-                    Text(projects.first { $0.id == selectedProject }?.name ?? "All projects").lineLimit(1)
-                    Spacer(minLength: 4)
-                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                    HStack(spacing: 7) {
+                        Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(
+                            DieterTheme.tertiary)
+                        TextField("Search activity", text: $query)
+                            .textFieldStyle(.plain).font(.system(size: 12))
+                            .foregroundStyle(DieterTheme.text)
+                            .accessibilityLabel("Search activity")
+                            .accessibilityIdentifier("inbox.search").smokeTarget("inbox.search")
+                        if !query.isEmpty {
+                            Button {
+                                query = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                            }
+                            .buttonStyle(.plain).foregroundStyle(DieterTheme.tertiary)
+                            .accessibilityLabel("Clear search")
+                        }
+                    }
+                    .padding(.horizontal, 11).frame(height: 30)
+                    .dieterCapsuleChrome(interactive: false)
+                    Menu {
+                        Button("All projects") { projectID = "" }
+                            .accessibilityIdentifier("inbox.project.all")
+                        ForEach(projects, id: \.id) { project in
+                            Button(project.name) { projectID = project.id }
+                                .accessibilityIdentifier("inbox.project.\(project.id)")
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: selectedProject.isEmpty ? "square.grid.2x2" : "folder")
+                            Text(projects.first { $0.id == selectedProject }?.name ?? "All projects").lineLimit(1)
+                            Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
+                        }
+                        .font(.system(size: 11.5, weight: .medium)).foregroundStyle(DieterTheme.subtle)
+                        .padding(.horizontal, 11).frame(height: 30)
+                        .contentShape(Capsule())
+                    }
+                    .dieterMenuChrome()
+                    .accessibilityLabel("Filter by project")
+                    .accessibilityIdentifier("inbox.project-filter").smokeTarget("inbox.project-filter")
                 }
-                .font(DieterFont.meta).foregroundStyle(DieterTheme.subtle)
-                .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden)
-            .foregroundStyle(DieterTheme.subtle)
-            .accessibilityLabel("Filter by project")
-            .accessibilityIdentifier("inbox.project-filter").smokeTarget("inbox.project-filter")
+            .padding(.leading, 14).padding(.trailing, 6)
         }
-        .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 12)
+        .padding(.bottom, 8)
     }
 
     private func timelineSummary(intervals: [InboxTimelineBar], live: Bool) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 5) {
-                Circle().fill(live ? DieterTheme.eyes : DieterTheme.amber).frame(width: 5, height: 5)
+                Circle().fill(live ? DieterTheme.running : DieterTheme.amber).frame(width: 5, height: 5)
                 Text(live ? "LIVE" : "CACHED").font(.system(size: 9, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(live ? DieterTheme.eyes : DieterTheme.amber)
+                    .foregroundStyle(live ? DieterTheme.running : DieterTheme.amber)
                 Spacer(minLength: 3)
                 Menu {
                     ForEach(SharedRules.shared.timelineHours().map(\.intValue), id: \.self) { value in
@@ -149,10 +175,9 @@ struct InboxFeed: View {
                             .accessibilityIdentifier("inbox.range.\(value)")
                     }
                 } label: {
-                    Text(SharedRules.shared.timelineRangeTitle(hours: Int32(hours))).font(DieterFont.meta)
-                        .foregroundStyle(DieterTheme.subtle)
+                    DieterMenuLabel(title: SharedRules.shared.timelineRangeTitle(hours: Int32(hours)), size: 24)
                 }
-                .menuStyle(.borderlessButton).fixedSize()
+                .dieterMenuChrome()
                 .accessibilityLabel("Timeline range")
                 .accessibilityIdentifier("inbox.range").smokeTarget("inbox.range")
             }
@@ -177,19 +202,18 @@ struct InboxFeed: View {
             .font(.system(size: 9, design: .monospaced)).foregroundStyle(DieterTheme.tertiary)
         }
         .padding(11)
-        .background(DieterTheme.surface, in: RoundedRectangle(cornerRadius: 9))
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.border, lineWidth: 1))
+        .dieterTile(radius: DieterMetrics.cardRadius + 2)
     }
 
     @ViewBuilder
     private func section(_ title: String, id: String, entries: [InboxActivityEntry], now: Date) -> some View {
         if !entries.isEmpty {
             HStack {
-                Text(title.uppercased()).font(DieterFont.sectionLabel)
+                Text(title).font(.system(size: 11.5, weight: .semibold))
                 Spacer()
-                Text("\(entries.count)").font(.system(size: 10, design: .monospaced))
+                Text("\(entries.count)").font(DieterFont.monoSmall)
             }
-            .foregroundStyle(DieterTheme.subtle).padding(.top, 13).padding(.bottom, 2)
+            .foregroundStyle(DieterTheme.tertiary).padding(.horizontal, 4).padding(.top, 12).padding(.bottom, 2)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("inbox.section.\(id)").smokeTarget("inbox.section.\(id)")
             ForEach(entries.prefix(visibleLimit)) { entry in
@@ -201,7 +225,7 @@ struct InboxFeed: View {
 
     private var showMore: some View {
         Button("Show more activity") { visibleLimit += 20 }
-            .buttonStyle(.plain).font(DieterFont.meta).foregroundStyle(DieterTheme.primary)
+            .buttonStyle(DieterBarButtonStyle(size: 26))
             .frame(maxWidth: .infinity).padding(.vertical, 9)
             .accessibilityIdentifier("inbox.show-more").smokeTarget("inbox.show-more")
     }
@@ -261,6 +285,7 @@ private struct InboxActivityRow: View {
                     RoundedRectangle(cornerRadius: 2).fill(accent).frame(width: 3)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(entry.row.title)
+                            .smokeTarget("inbox.title.\(entry.id).\(entry.row.title)")
                             .font(.system(size: 13, weight: .semibold)).lineLimit(2)
                             .foregroundStyle(DieterTheme.text)
                             .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
@@ -269,6 +294,11 @@ private struct InboxActivityRow: View {
                         if entry.running {
                             Text(entry.row.detail).font(.system(size: 11))
                                 .foregroundStyle(DieterTheme.subtle).lineLimit(1)
+                        }
+                        // What its machine reports may be old, e.g. while that machine is offline.
+                        if !entry.row.stale.isEmpty {
+                            Label(entry.row.stale, systemImage: "icloud.slash")
+                                .font(.system(size: 10)).foregroundStyle(DieterTheme.amber).lineLimit(1)
                         }
                         HStack(spacing: 5) {
                             Image(systemName: statusSymbol(entry.kind)).font(.system(size: 9, weight: .semibold))
@@ -287,14 +317,8 @@ private struct InboxActivityRow: View {
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
-                .background(
-                    selected ? DieterTheme.selection : DieterTheme.surface, in: RoundedRectangle(cornerRadius: 8)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8).stroke(
-                        selected ? accent.opacity(0.7) : DieterTheme.border, lineWidth: selected ? 1.5 : 1)
-                )
-                .contentShape(RoundedRectangle(cornerRadius: 8))
+                .dieterTile(selected ? .selected : .rest)
+                .contentShape(RoundedRectangle(cornerRadius: DieterMetrics.cardRadius))
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .combine)
@@ -306,9 +330,9 @@ private struct InboxActivityRow: View {
                 } label: {
                     Label("Finish", systemImage: "checkmark")
                         .font(.system(size: 10, weight: .semibold))
-                        .padding(.horizontal, 7).frame(height: 20)
+                        .padding(.horizontal, 8).frame(height: 22)
                         .foregroundStyle(DieterTheme.text)
-                        .background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 5))
+                        .dieterCapsuleChrome()
                 }
                 .buttonStyle(.plain)
                 .disabled(store.movingCardIDs.contains(entry.id) || !store.projectIsAvailable(entry.card.projectID))
@@ -330,11 +354,11 @@ private struct InboxActivityRow: View {
 @MainActor
 private func inboxAccent(_ kind: InboxActivityKind) -> Color {
     switch kind {
-    case .answer, .unread: DieterTheme.amber
-    case .review: DieterTheme.coral
-    case .running: DieterTheme.primary
-    case .failed: DieterTheme.coral
-    case .recent: DieterTheme.eyes
+    case .answer, .unread: DieterTheme.attention
+    case .review: DieterTheme.action
+    case .running: DieterTheme.running
+    case .failed: DieterTheme.failed
+    case .recent: DieterTheme.tertiary
     }
 }
 

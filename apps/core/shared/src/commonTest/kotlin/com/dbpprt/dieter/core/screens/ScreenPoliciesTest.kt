@@ -11,6 +11,7 @@ import com.dbpprt.dieter.api.v1.RemoteDesktopPointerButton
 import com.dbpprt.dieter.api.v1.RemoteDesktopReference
 import com.dbpprt.dieter.api.v1.RemoteDesktopSessionBinding
 import com.dbpprt.dieter.api.v1.RemoteDesktopSessionState
+import com.dbpprt.dieter.api.v1.RemoteDesktopVirtualDisplay
 import com.squareup.wire.GrpcException
 import com.squareup.wire.GrpcStatus
 import kotlin.test.Test
@@ -35,9 +36,20 @@ class ScreenPoliciesTest {
     @Test
     fun softKeyboardReturnAndTabsBecomeKeysWithoutSplittingUnicodeText() {
         assertEquals(listOf(Typed.Key(40)), ScreenKeyboard.committed("\n", 0))
-        assertEquals(listOf(Typed.Text("é世界🙂"), Typed.Key(40), Typed.Text("next"), Typed.Key(43), Typed.Key(40)),
-            ScreenKeyboard.committed("é世界🙂\r\nnext\t\r", 0))
-        assertEquals(listOf(Typed.Key(4), Typed.Key(40)), ScreenKeyboard.committed("a\n", Modifiers.CONTROL))
+        assertEquals(
+            listOf(
+                Typed.Text("é世界🙂"),
+                Typed.Key(40),
+                Typed.Text("next"),
+                Typed.Key(43),
+                Typed.Key(40),
+            ),
+            ScreenKeyboard.committed("é世界🙂\r\nnext\t\r", 0),
+        )
+        assertEquals(
+            listOf(Typed.Key(4), Typed.Key(40)),
+            ScreenKeyboard.committed("a\n", Modifiers.CONTROL),
+        )
         assertEquals(emptyList(), ScreenKeyboard.committed("", 0))
         assertEquals(40, AndroidKeys.hid(66))
         assertEquals(88, AndroidKeys.hid(160))
@@ -45,11 +57,17 @@ class ScreenPoliciesTest {
 
     @Test
     fun trustMessageMatchesTheDaemonGolden() {
-        val binding = RemoteDesktopSessionBinding(
-            client_nonce = "nonce", helper_dtls_fingerprint = "sha-256 AA:BB", expires_at = "2026-08-25T08:00:00Z",
-            offer_sha256 = byteArrayOf(0, 1, 2).toByteString(), control_granted = true, display_id = "primary",
-            input_protocol_version = 3, input_epoch = epoch,
-        )
+        val binding =
+            RemoteDesktopSessionBinding(
+                client_nonce = "nonce",
+                helper_dtls_fingerprint = "sha-256 AA:BB",
+                expires_at = "2026-08-25T08:00:00Z",
+                offer_sha256 = byteArrayOf(0, 1, 2).toByteString(),
+                control_granted = true,
+                display_id = "primary",
+                input_protocol_version = 3,
+                input_epoch = epoch,
+            )
         assertEquals(
             "dieter-remote-desktop-v3\nrd_one\nnonce\nsha-256 AA:BB\n2026-08-25T08:00:00Z\nAAEC\ntrue\nprimary\n3\nBwcHBwcHBwcHBwcHBwcHBw",
             ScreenTrust.message("rd_one", binding).utf8(),
@@ -59,10 +77,17 @@ class ScreenPoliciesTest {
     @Test
     fun publicKeyIsReadFromTheCertificatesSubjectKey() {
         val key = ByteArray(32) { it.toByte() }
-        val spki = byteArrayOf(0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00) + key
-        val pem = "-----BEGIN CERTIFICATE-----\n${(byteArrayOf(1, 2, 3) + spki + byteArrayOf(9)).toByteString().base64()}\n-----END CERTIFICATE-----\n"
+        val spki =
+            byteArrayOf(0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00) +
+                key
+        val pem =
+            "-----BEGIN CERTIFICATE-----\n${(byteArrayOf(1, 2, 3) + spki + byteArrayOf(9)).toByteString().base64()}\n-----END CERTIFICATE-----\n"
         assertEquals(key.toByteString(), ScreenTrust.ed25519PublicKey(pem))
-        assertNull(ScreenTrust.ed25519PublicKey("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----"))
+        assertNull(
+            ScreenTrust.ed25519PublicKey(
+                "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----"
+            )
+        )
     }
 
     @Test
@@ -72,9 +97,17 @@ class ScreenPoliciesTest {
         assertEquals(listOf(250L, 500L, 1000L, 2000L, 4000L, 5000L, 5000L), delays)
         recovery.streaming(t0)
         recovery.interrupted(t0 + 5.seconds)
-        assertEquals(5000L, recovery.nextDelay(t0 + 5.seconds).inWholeMilliseconds, "a short stream keeps the backoff")
+        assertEquals(
+            5000L,
+            recovery.nextDelay(t0 + 5.seconds).inWholeMilliseconds,
+            "a short stream keeps the backoff",
+        )
         recovery.streaming(t0 + 6.seconds)
-        assertEquals(250L, recovery.nextDelay(t0 + 17.seconds).inWholeMilliseconds, "ten stable seconds reset it")
+        assertEquals(
+            250L,
+            recovery.nextDelay(t0 + 17.seconds).inWholeMilliseconds,
+            "ten stable seconds reset it",
+        )
     }
 
     @Test
@@ -86,25 +119,60 @@ class ScreenPoliciesTest {
         assertTrue(ScreenFailures.retryableClosure("session lease expired"))
         assertFalse(ScreenFailures.retryableClosure("closed by host"))
         assertTrue(ScreenFailures.retryableError("peer_failed", "", recoverable = false))
-        assertTrue(ScreenFailures.retryableError("capture_failed", "native capture helper stopped", recoverable = false))
-        assertFalse(ScreenFailures.retryableError("capture_failed", "permission denied", recoverable = false))
+        assertTrue(
+            ScreenFailures.retryableError(
+                "capture_failed",
+                "native capture helper stopped",
+                recoverable = false,
+            )
+        )
+        assertFalse(
+            ScreenFailures.retryableError(
+                "capture_failed",
+                "permission denied",
+                recoverable = false,
+            )
+        )
     }
 
     @Test
     fun capabilitiesDecideControlCursorAndFrameRates() {
-        val mac = RemoteDesktopCapabilities(platform = "darwin", control_supported = true, control_permission = "granted", cursor_supported = true, max_fps = 120)
-        val linux = RemoteDesktopCapabilities(platform = "linux", control_supported = true, control_permission = "not_requested", capture_permission = "not_requested", max_fps = 0)
+        val mac =
+            RemoteDesktopCapabilities(
+                platform = "darwin",
+                control_supported = true,
+                control_permission = "granted",
+                cursor_supported = true,
+                max_fps = 120,
+            )
+        val linux =
+            RemoteDesktopCapabilities(
+                platform = "linux",
+                control_supported = true,
+                control_permission = "not_requested",
+                capture_permission = "not_requested",
+                max_fps = 0,
+            )
         assertTrue(ScreenCapabilities.shouldRequestControl(mac))
         assertTrue(ScreenCapabilities.shouldRequestControl(linux))
-        assertFalse(ScreenCapabilities.shouldRequestControl(mac.copy(control_permission = "denied")))
-        assertEquals("Accessibility permission is required on the host", ScreenCapabilities.controlUnavailableReason(mac.copy(control_permission = "denied")))
+        assertFalse(
+            ScreenCapabilities.shouldRequestControl(mac.copy(control_permission = "denied"))
+        )
+        assertEquals(
+            "Accessibility permission is required on the host",
+            ScreenCapabilities.controlUnavailableReason(mac.copy(control_permission = "denied")),
+        )
         assertTrue(ScreenCapabilities.needsHostApproval(linux))
         assertFalse(ScreenCapabilities.needsHostApproval(mac))
         assertFalse(ScreenCapabilities.embedCursor(mac, control = true))
         assertFalse(ScreenCapabilities.embedCursor(linux, control = true))
         assertTrue(ScreenCapabilities.embedCursor(linux, control = false))
         assertEquals(listOf(30, 60, 90, 120), ScreenCapabilities.frameRates(mac))
-        assertEquals(listOf(30, 60), ScreenCapabilities.frameRates(linux), "an unknown host maximum means 60")
+        assertEquals(
+            listOf(30, 60),
+            ScreenCapabilities.frameRates(linux),
+            "an unknown host maximum means 60",
+        )
         assertEquals(60, ScreenCapabilities.maxFps(120, mac, ceiling = 60))
     }
 
@@ -112,10 +180,16 @@ class ScreenPoliciesTest {
     fun phasesReadAsStatusLinesWithProgressEllipses() {
         assertEquals("Not connected", ScreenPhase.Idle.label)
         assertEquals("Checking machine…", ScreenPhase.Loading.label)
-        assertEquals("Permission required", ScreenPhase.PermissionRequired("Grant Screen Recording").label)
+        assertEquals(
+            "Permission required",
+            ScreenPhase.PermissionRequired("Grant Screen Recording").label,
+        )
         assertEquals("Screen sharing unavailable", ScreenPhase.Unsupported("No display").label)
         assertEquals("Connecting…", ScreenPhase.Connecting.label)
-        assertEquals("Waiting for approval on Linux host…", ScreenPhase.WaitingForHostApproval.label)
+        assertEquals(
+            "Waiting for approval on Linux host…",
+            ScreenPhase.WaitingForHostApproval.label,
+        )
         assertEquals("Live", ScreenPhase.Streaming.label)
         assertEquals("Reconnecting…", ScreenPhase.Reconnecting().label)
         assertEquals("Connection failed", ScreenPhase.Failed("identity changed").label)
@@ -130,28 +204,86 @@ class ScreenPoliciesTest {
         assertEquals(listOf(30, 60, 90, 120), ScreenView(capabilities = mac).frameRates)
 
         // Control is explained only while streaming without it.
-        val streaming = ScreenView(phase = ScreenPhase.Streaming, capabilities = mac, controlActive = true, canTransferControl = true)
+        val streaming =
+            ScreenView(
+                phase = ScreenPhase.Streaming,
+                capabilities = mac,
+                controlActive = true,
+                canTransferControl = true,
+            )
         assertEquals("", streaming.controlUnavailableReason)
-        assertEquals("Accessibility permission is required on the host", streaming.copy(controlActive = false, canTransferControl = false).controlUnavailableReason)
-        assertTrue(streaming.copy(capabilities = RemoteDesktopCapabilities(platform = "linux"), canTransferControl = false).controlUnavailableReason.contains("Linux desktop portal"))
-        assertEquals("", ScreenView(phase = ScreenPhase.Connecting, capabilities = mac).controlUnavailableReason)
+        assertEquals(
+            "Accessibility permission is required on the host",
+            streaming
+                .copy(controlActive = false, canTransferControl = false)
+                .controlUnavailableReason,
+        )
+        assertTrue(
+            streaming
+                .copy(
+                    capabilities = RemoteDesktopCapabilities(platform = "linux"),
+                    canTransferControl = false,
+                )
+                .controlUnavailableReason
+                .contains("Linux desktop portal")
+        )
+        assertEquals(
+            "",
+            ScreenView(phase = ScreenPhase.Connecting, capabilities = mac).controlUnavailableReason,
+        )
 
         assertTrue(streaming.copy(clipboardEnabled = true).clipboardActionsEnabled)
-        assertFalse(streaming.copy(clipboardEnabled = true, clipboardBusy = true).clipboardActionsEnabled)
+        assertFalse(
+            streaming.copy(clipboardEnabled = true, clipboardBusy = true).clipboardActionsEnabled
+        )
         assertFalse(streaming.copy(clipboardEnabled = false).clipboardActionsEnabled)
-        assertFalse(streaming.copy(clipboardEnabled = true, controlActive = false).clipboardActionsEnabled)
+        assertFalse(
+            streaming.copy(clipboardEnabled = true, controlActive = false).clipboardActionsEnabled
+        )
 
-        assertEquals("12 ms RTT", streaming.copy(state = RemoteDesktopSessionState(rtt_ms = 12.4)).latencyLabel)
-        assertEquals("<1 ms RTT", streaming.copy(state = RemoteDesktopSessionState(rtt_ms = 0.4)).latencyLabel)
-        assertEquals("— ms RTT", streaming.copy(state = RemoteDesktopSessionState(rtt_ms = 0.0)).latencyLabel)
-        assertEquals("— ms RTT", streaming.copy(state = RemoteDesktopSessionState(rtt_ms = Double.NaN)).latencyLabel)
-        assertEquals("— ms RTT", ScreenView(phase = ScreenPhase.Reconnecting(), state = RemoteDesktopSessionState(rtt_ms = 12.0)).latencyLabel)
+        assertEquals(
+            "12 ms RTT",
+            streaming.copy(state = RemoteDesktopSessionState(rtt_ms = 12.4)).latencyLabel,
+        )
+        assertEquals(
+            "<1 ms RTT",
+            streaming.copy(state = RemoteDesktopSessionState(rtt_ms = 0.4)).latencyLabel,
+        )
+        assertEquals(
+            "— ms RTT",
+            streaming.copy(state = RemoteDesktopSessionState(rtt_ms = 0.0)).latencyLabel,
+        )
+        assertEquals(
+            "— ms RTT",
+            streaming.copy(state = RemoteDesktopSessionState(rtt_ms = Double.NaN)).latencyLabel,
+        )
+        assertEquals(
+            "— ms RTT",
+            ScreenView(
+                    phase = ScreenPhase.Reconnecting(),
+                    state = RemoteDesktopSessionState(rtt_ms = 12.0),
+                )
+                .latencyLabel,
+        )
     }
 
     @Test
     fun theViewWordsItsStatusMetadataAndConnectionDetails() {
-        val session = RemoteDesktopSessionState(width = 1920, height = 1080, codec = "H264", connected_clients = 1, controller_name = "Pixel")
-        val streaming = ScreenView(phase = ScreenPhase.Streaming, state = session, controlActive = true, routeLabel = "WebRTC · Direct")
+        val session =
+            RemoteDesktopSessionState(
+                width = 1920,
+                height = 1080,
+                codec = "H264",
+                connected_clients = 1,
+                controller_name = "Pixel",
+            )
+        val streaming =
+            ScreenView(
+                phase = ScreenPhase.Streaming,
+                state = session,
+                controlActive = true,
+                routeLabel = "WebRTC · Direct",
+            )
         assertEquals("Connected · Control", streaming.statusLine)
         assertEquals("Connected · View only", streaming.copy(controlActive = false).statusLine)
         assertEquals("Checking machine…", ScreenView(phase = ScreenPhase.Loading).statusLine)
@@ -162,53 +294,163 @@ class ScreenPoliciesTest {
         assertEquals("Control", measured.controlLabel)
         assertEquals("View only", measured.copy(controlActive = false).controlLabel)
         assertEquals("", measured.viewersLabel, "alone, nobody else watches")
-        assertEquals("2 viewers", measured.copy(state = session.copy(connected_clients = 2, control_active = true)).viewersLabel)
-        assertEquals("3 viewers · Pixel controls", measured.copy(state = session.copy(connected_clients = 3, control_active = false)).viewersLabel)
+        assertEquals(
+            "2 viewers",
+            measured
+                .copy(state = session.copy(connected_clients = 2, control_active = true))
+                .viewersLabel,
+        )
+        assertEquals(
+            "3 viewers · Pixel controls",
+            measured
+                .copy(state = session.copy(connected_clients = 3, control_active = false))
+                .viewersLabel,
+        )
         assertEquals("Direct media", measured.mediaRoute)
         assertEquals("Relayed media", measured.copy(mediaRelayed = true).mediaRoute)
-        assertEquals("", measured.copy(mediaRelayed = null).mediaRoute, "unknown until the engine reports its path")
+        assertEquals(
+            "",
+            measured.copy(mediaRelayed = null).mediaRoute,
+            "unknown until the engine reports its path",
+        )
         assertEquals("1920 × 1080 · H264 · 60 fps · Direct media", measured.metadata)
         assertEquals("60 fps", measured.copy(state = null, mediaRelayed = null).metadata)
-        assertEquals("1920 × 1080 · H264 · 0 fps", measured.copy(mediaFps = Double.NaN, mediaRelayed = null).metadata)
-        assertEquals("Your view stays in place while connecting", ScreenView(phase = ScreenPhase.Connecting, mediaRelayed = false).metadata)
+        assertEquals(
+            "1920 × 1080 · H264 · 0 fps",
+            measured.copy(mediaFps = Double.NaN, mediaRelayed = null).metadata,
+        )
+        assertEquals(
+            "Your view stays in place while connecting",
+            ScreenView(phase = ScreenPhase.Connecting, mediaRelayed = false).metadata,
+        )
 
-        // The session's own problem wins, then the host's, then the phase; core labels already end in "…".
-        assertEquals("Capture denied", ScreenView(phase = ScreenPhase.Failed("Capture denied")).waitingMessage(hostReady = false, hostReason = "No login session"))
-        assertEquals("No login session", ScreenView().waitingMessage(hostReady = false, hostReason = "No login session"))
-        assertEquals("Screen sharing is unavailable on this machine.", ScreenView().waitingMessage(hostReady = false, hostReason = ""))
-        assertEquals("Connecting…", ScreenView(phase = ScreenPhase.Connecting).waitingMessage(hostReady = true, hostReason = "ignored"))
+        // The session's own problem wins, then the host's, then the phase; core labels already end
+        // in "…".
+        assertEquals(
+            "Capture denied",
+            ScreenView(phase = ScreenPhase.Failed("Capture denied"))
+                .waitingMessage(hostReady = false, hostReason = "No login session"),
+        )
+        assertEquals(
+            "No login session",
+            ScreenView().waitingMessage(hostReady = false, hostReason = "No login session"),
+        )
+        assertEquals(
+            "Screen sharing is unavailable on this machine.",
+            ScreenView().waitingMessage(hostReady = false, hostReason = ""),
+        )
+        assertEquals(
+            "Connecting…",
+            ScreenView(phase = ScreenPhase.Connecting)
+                .waitingMessage(hostReady = true, hostReason = "ignored"),
+        )
 
         assertEquals(
             listOf(
-                "Status · Live", "Video · Direct media", "— ms RTT", "Signaling · WebRTC · Direct", "Machine · d1",
-                "Display · 1920 × 1080 · H264", "60 fps · 1 viewer", "Controller · Pixel",
+                "Status · Live",
+                "Video · Direct media",
+                "— ms RTT",
+                "Signaling · WebRTC · Direct",
+                "Machine · d1",
+                "Display · 1920 × 1080 · H264",
+                "60 fps · 1 viewer",
+                "Controller · Pixel",
             ),
             measured.copy(mediaFps = 60.2).details,
         )
         assertEquals(
-            listOf("Status · Connecting…", "Video · Negotiating", "— ms RTT", "Signaling · Negotiating", "Machine · d1"),
+            listOf(
+                "Status · Connecting…",
+                "Video · Negotiating",
+                "— ms RTT",
+                "Signaling · Negotiating",
+                "Machine · d1",
+            ),
             ScreenView(phase = ScreenPhase.Connecting, machineId = "d1").details,
         )
         assertEquals(
             listOf("Display · 1920 × 1080 · H264", "60 fps · 2 viewers"),
-            measured.copy(mediaFps = 60.0, state = session.copy(connected_clients = 2, controller_name = "")).details.drop(5),
+            measured
+                .copy(
+                    mediaFps = 60.0,
+                    state = session.copy(connected_clients = 2, controller_name = ""),
+                )
+                .details
+                .drop(5),
         )
     }
 
     @Test
     fun codecsPreferHardwareHevcAndFallBackToH264() {
-        val codecs = listOf(RtpCodec("H264", "42e01f"), RtpCodec("VP8"), RtpCodec("H265"), RtpCodec("H264", "640c1f"), RtpCodec("flexfec-03"))
-        val caps = RemoteDesktopCapabilities(codec_modes = listOf(RemoteDesktopCodecMode(codec = "H265", profile = "main", max_width = 1920, max_height = 1080, max_fps = 60)))
+        val codecs =
+            listOf(
+                RtpCodec("H264", "42e01f"),
+                RtpCodec("VP8"),
+                RtpCodec("H265"),
+                RtpCodec("H264", "640c1f"),
+                RtpCodec("flexfec-03"),
+            )
+        val caps =
+            RemoteDesktopCapabilities(
+                codec_modes =
+                    listOf(
+                        RemoteDesktopCodecMode(
+                            codec = "H265",
+                            profile = "main",
+                            max_width = 1920,
+                            max_height = 1080,
+                            max_fps = 60,
+                        )
+                    )
+            )
         assertTrue(ScreenCodecs.canHevc(caps, 1920, 1080, 60, hardwareDecoder = true))
         assertFalse(ScreenCodecs.canHevc(caps, 3840, 2160, 60, hardwareDecoder = true))
         assertFalse(ScreenCodecs.canHevc(caps, 1920, 1080, 60, hardwareDecoder = false))
-        val auto = ScreenCodecs.receiveCodecs(codecs, RtpCodec::name, RtpCodec::profile, RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_AUTO, canHevc = true)
-        assertEquals(listOf("H265", "H264:640c1f", "H264:42e01f", "flexfec-03"), auto.map { listOfNotNull(it.name, it.profile).joinToString(":") })
-        val h264 = ScreenCodecs.receiveCodecs(codecs, RtpCodec::name, RtpCodec::profile, RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_H264, canHevc = true)
+        val auto =
+            ScreenCodecs.receiveCodecs(
+                codecs,
+                RtpCodec::name,
+                RtpCodec::profile,
+                RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_AUTO,
+                canHevc = true,
+            )
+        assertEquals(
+            listOf("H265", "H264:640c1f", "H264:42e01f", "flexfec-03"),
+            auto.map { listOfNotNull(it.name, it.profile).joinToString(":") },
+        )
+        val h264 =
+            ScreenCodecs.receiveCodecs(
+                codecs,
+                RtpCodec::name,
+                RtpCodec::profile,
+                RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_H264,
+                canHevc = true,
+            )
         assertTrue(h264.none { it.name == "H265" })
-        assertTrue(ScreenCodecs.receiveCodecs(codecs.filter { it.name != "H265" }, RtpCodec::name, RtpCodec::profile, RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_HEVC, true).isEmpty())
-        assertEquals(RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_H264, ScreenCodecs.effective(RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_AUTO, hevcFailed = true))
-        assertEquals(RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_HEVC, ScreenCodecs.effective(RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_HEVC, hevcFailed = true))
+        assertTrue(
+            ScreenCodecs.receiveCodecs(
+                    codecs.filter { it.name != "H265" },
+                    RtpCodec::name,
+                    RtpCodec::profile,
+                    RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_HEVC,
+                    true,
+                )
+                .isEmpty()
+        )
+        assertEquals(
+            RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_H264,
+            ScreenCodecs.effective(
+                RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_AUTO,
+                hevcFailed = true,
+            ),
+        )
+        assertEquals(
+            RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_HEVC,
+            ScreenCodecs.effective(
+                RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_HEVC,
+                hevcFailed = true,
+            ),
+        )
     }
 
     @Test
@@ -223,35 +465,95 @@ class ScreenPoliciesTest {
 
     @Test
     fun stateMergeIsMonotonicPerGeneration() {
-        val first = RemoteDesktopSessionState(display_generation = 2, media_generation = 3, media_timestamp = 900, control_generation = 4, control_active = true, clipboard_generation = 1)
-        assertNull(ScreenStates.merge(first, first.copy(display_generation = 1)), "an older display is dropped")
-        val staleMedia = ScreenStates.merge(first, first.copy(media_generation = 2, media_timestamp = 5, control_generation = 3, control_active = false))!!
+        val first =
+            RemoteDesktopSessionState(
+                display_generation = 2,
+                media_generation = 3,
+                media_timestamp = 900,
+                control_generation = 4,
+                control_active = true,
+                clipboard_generation = 1,
+            )
+        assertNull(
+            ScreenStates.merge(first, first.copy(display_generation = 1)),
+            "an older display is dropped",
+        )
+        val staleMedia =
+            ScreenStates.merge(
+                first,
+                first.copy(
+                    media_generation = 2,
+                    media_timestamp = 5,
+                    control_generation = 3,
+                    control_active = false,
+                ),
+            )!!
         assertEquals(3, staleMedia.state.media_generation)
         assertEquals(900, staleMedia.state.media_timestamp)
         assertTrue(staleMedia.state.control_active, "older control state never regresses")
         assertFalse(staleMedia.displayChanged)
-        val newDisplay = ScreenStates.merge(first, first.copy(display_generation = 3, media_generation = 1, clipboard_generation = 2))!!
+        val newDisplay =
+            ScreenStates.merge(
+                first,
+                first.copy(display_generation = 3, media_generation = 1, clipboard_generation = 2),
+            )!!
         assertTrue(newDisplay.displayChanged)
         assertTrue(newDisplay.clipboardChanged)
-        assertEquals(1, newDisplay.state.media_generation, "a new display restarts media generations")
+        assertEquals(
+            1,
+            newDisplay.state.media_generation,
+            "a new display restarts media generations",
+        )
+        val virtual =
+            first.copy(
+                virtual_display = RemoteDesktopVirtualDisplay(active = true, display_id = "virtual")
+            )
+        assertEquals(
+            virtual.virtual_display,
+            ScreenStates.merge(virtual, first.copy(control_generation = 3))!!.state.virtual_display,
+        )
     }
 
     @Test
     fun presentedFramesBelongToTheirGenerationAcrossWrap() {
         assertTrue(ScreenStates.belongsToGeneration(1000u, 900u, millisecondQuantized = false))
         assertFalse(ScreenStates.belongsToGeneration(800u, 900u, millisecondQuantized = false))
-        assertTrue(ScreenStates.belongsToGeneration(10u, UInt.MAX_VALUE - 5u, millisecondQuantized = false), "the 90 kHz clock wraps")
-        assertTrue(ScreenStates.belongsToGeneration(900u, 950u, millisecondQuantized = true), "Android timestamps are quantized to milliseconds")
+        assertTrue(
+            ScreenStates.belongsToGeneration(
+                10u,
+                UInt.MAX_VALUE - 5u,
+                millisecondQuantized = false,
+            ),
+            "the 90 kHz clock wraps",
+        )
+        assertTrue(
+            ScreenStates.belongsToGeneration(900u, 950u, millisecondQuantized = true),
+            "Android timestamps are quantized to milliseconds",
+        )
         assertFalse(ScreenStates.belongsToGeneration(810u, 950u, millisecondQuantized = true))
     }
 
     @Test
     fun startRequestCarriesPreferencesAndProtocol() {
-        val caps = RemoteDesktopCapabilities(platform = "darwin", control_supported = true, control_permission = "granted", clipboard_supported = true, max_fps = 60)
-        val request = ScreenRequests.start(
-            "n", RTCConfiguration(), "v=0", caps, ScreenPreferences(maxFps = 120, displayId = "external"),
-            RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_H264, "x".repeat(100), referenceRecovery = true,
-        )
+        val caps =
+            RemoteDesktopCapabilities(
+                platform = "darwin",
+                control_supported = true,
+                control_permission = "granted",
+                clipboard_supported = true,
+                max_fps = 60,
+            )
+        val request =
+            ScreenRequests.start(
+                "n",
+                RTCConfiguration(),
+                "v=0",
+                caps,
+                ScreenPreferences(maxFps = 120, displayId = "external"),
+                RemoteDesktopCodecPreference.REMOTE_DESKTOP_CODEC_PREFERENCE_H264,
+                "x".repeat(100),
+                referenceRecovery = true,
+            )
         assertEquals("offer", request.offer?.type)
         assertEquals("external", request.display_id)
         assertEquals(60, request.max_fps)
@@ -268,12 +570,26 @@ class ScreenPoliciesTest {
         assertEquals(0, move.state_barrier)
         assertEquals(500_000, move.pointer_move?.normalized_x)
         assertEquals(1_000_000, move.pointer_move?.normalized_y, "coordinates clamp to the screen")
-        val down = encoder.button(RemoteDesktopPointerButton.Button.BUTTON_LEFT, true, 5, 0.1, 0.1, 0xFF, 3, 4)
+        val down =
+            encoder.button(
+                RemoteDesktopPointerButton.Button.BUTTON_LEFT,
+                true,
+                5,
+                0.1,
+                0.1,
+                0xFF,
+                3,
+                4,
+            )
         assertEquals(1, down.sequence)
         assertEquals(1, down.state_barrier)
         assertEquals(3, down.pointer_button?.click_count, "clicks cap at three")
         assertEquals(0x3F, down.pointer_button?.modifiers)
-        assertEquals(1, encoder.move(0.2, 0.2, 3, 4).state_barrier, "pointer moves follow the reliable input before them")
+        assertEquals(
+            1,
+            encoder.move(0.2, 0.2, 3, 4).state_barrier,
+            "pointer moves follow the reliable input before them",
+        )
         assertEquals(down.event_ordinal + 1, encoder.lastPointerOrdinal)
         assertNull(encoder.key(3, true, false, 0, 3, 4), "HID usages below 4 are not keys")
         assertNotNull(encoder.releaseAll(3, 4).release_all)
@@ -294,7 +610,10 @@ class ScreenPoliciesTest {
         assertEquals(31 to true, ScreenInputEncoder.stroke("@"))
         assertNull(ScreenInputEncoder.stroke("é"))
         assertEquals("copy", ScreenInputEncoder.clipboardShortcut(6, Modifiers.COMMAND))
-        assertEquals("paste", ScreenInputEncoder.clipboardShortcut(25, Modifiers.COMMAND or Modifiers.FUNCTION))
+        assertEquals(
+            "paste",
+            ScreenInputEncoder.clipboardShortcut(25, Modifiers.COMMAND or Modifiers.FUNCTION),
+        )
         assertNull(ScreenInputEncoder.clipboardShortcut(6, Modifiers.COMMAND or Modifiers.SHIFT))
     }
 
@@ -309,7 +628,9 @@ class ScreenPoliciesTest {
         assertEquals(200, first.measurement_age_ms)
         assertTrue(first.input_active)
         assertFalse(feedback.next(t0 + 1.seconds).input_active, "input goes stale after one second")
-        feedback.acknowledge((1..10).map { RemoteDesktopReference(frame_id = it.toLong(), generation = 1) })
+        feedback.acknowledge(
+            (1..10).map { RemoteDesktopReference(frame_id = it.toLong(), generation = 1) }
+        )
         assertEquals((3L..10L).toList(), feedback.next(t0).decoded_references.map { it.frame_id })
     }
 
@@ -319,8 +640,15 @@ class ScreenPoliciesTest {
         val reference = RemoteDesktopReference(frame_id = 1, generation = 1, rtp_timestamp = 9000)
         assertEquals(emptyList(), references.expect(reference, t0))
         assertEquals(listOf(reference), references.decoded(9000u, t0 + 100.milliseconds))
-        assertEquals(emptyList(), references.expect(reference.copy(frame_id = 2, rtp_timestamp = 18000), t0))
-        assertEquals(emptyList(), references.decoded(18000u, t0 + 3.seconds), "late decodes are not acknowledged")
+        assertEquals(
+            emptyList(),
+            references.expect(reference.copy(frame_id = 2, rtp_timestamp = 18000), t0),
+        )
+        assertEquals(
+            emptyList(),
+            references.decoded(18000u, t0 + 3.seconds),
+            "late decodes are not acknowledged",
+        )
         assertEquals(emptyList(), references.expect(reference.copy(generation = 0), t0))
         val quantized = ScreenReferences(millisecondQuantized = true)
         quantized.decoded(9045u, t0)
@@ -331,33 +659,76 @@ class ScreenPoliciesTest {
     fun referencesAckInEitherOrderAcrossTheRtpWrapAndStopWithThePeer() {
         val references = ScreenReferences(millisecondQuantized = false)
         fun reference(id: Long, timestamp: UInt, generation: Long = 1) =
-            RemoteDesktopReference(frame_id = id, generation = generation, rtp_timestamp = timestamp.toInt())
+            RemoteDesktopReference(
+                frame_id = id,
+                generation = generation,
+                rtp_timestamp = timestamp.toInt(),
+            )
         assertEquals(emptyList(), references.expect(reference(1, 90_025u), t0))
-        assertEquals(emptyList(), references.decoded(90_024u, t0), "a neighbouring timestamp is not the frame")
+        assertEquals(
+            emptyList(),
+            references.decoded(90_024u, t0),
+            "a neighbouring timestamp is not the frame",
+        )
         assertEquals(listOf(1L), references.decoded(90_025u, t0).map { it.frame_id })
         references.decoded(UInt.MAX_VALUE, t0)
-        assertEquals(listOf(2L), references.expect(reference(2, UInt.MAX_VALUE), t0).map { it.frame_id }, "the decode came first")
+        assertEquals(
+            listOf(2L),
+            references.expect(reference(2, UInt.MAX_VALUE), t0).map { it.frame_id },
+            "the decode came first",
+        )
         val later = t0 + 2001.milliseconds
-        assertEquals(emptyList(), references.expect(reference(3, 90_025u), later), "decodes expire after two seconds")
+        assertEquals(
+            emptyList(),
+            references.expect(reference(3, 90_025u), later),
+            "decodes expire after two seconds",
+        )
         references.stop()
         references.decoded(90_025u, later)
-        assertEquals(emptyList(), references.expect(reference(4, 90_025u), later), "a stopped peer acknowledges nothing")
+        assertEquals(
+            emptyList(),
+            references.expect(reference(4, 90_025u), later),
+            "a stopped peer acknowledges nothing",
+        )
     }
 
     @Test
     fun referenceChallengesAreBoundedAndScopedToTheNewestGeneration() {
         val references = ScreenReferences(millisecondQuantized = false)
         fun reference(id: Long, timestamp: UInt, generation: Long = 1) =
-            RemoteDesktopReference(frame_id = id, generation = generation, rtp_timestamp = timestamp.toInt())
+            RemoteDesktopReference(
+                frame_id = id,
+                generation = generation,
+                rtp_timestamp = timestamp.toInt(),
+            )
         references.expect(reference(1, 90u), t0)
         val later = t0 + 2001.milliseconds
-        assertEquals(emptyList(), references.decoded(90u, later), "an expired challenge is not answered")
-        for (id in 2..10) references.expect(reference(id.toLong(), (id * 90).toUInt(), generation = 2), later)
-        assertEquals(emptyList(), references.decoded(180u, later), "at most eight challenges are pending")
-        assertEquals(emptyList(), references.expect(reference(11, 180u, generation = 1), later), "an older generation is ignored")
+        assertEquals(
+            emptyList(),
+            references.decoded(90u, later),
+            "an expired challenge is not answered",
+        )
+        for (id in 2..10) references.expect(
+            reference(id.toLong(), (id * 90).toUInt(), generation = 2),
+            later,
+        )
+        assertEquals(
+            emptyList(),
+            references.decoded(180u, later),
+            "at most eight challenges are pending",
+        )
+        assertEquals(
+            emptyList(),
+            references.expect(reference(11, 180u, generation = 1), later),
+            "an older generation is ignored",
+        )
         assertEquals(listOf(10L), references.decoded(900u, later).map { it.frame_id })
         references.expect(reference(12, 270u, generation = 3), later)
-        assertEquals(listOf(12L), references.decoded(270u, later).map { it.frame_id }, "a newer generation drops the older challenges")
+        assertEquals(
+            listOf(12L),
+            references.decoded(270u, later).map { it.frame_id },
+            "a newer generation drops the older challenges",
+        )
     }
 
     @Test
@@ -370,33 +741,77 @@ class ScreenPoliciesTest {
         val results = frames.map { assembler.accept(it.encodeByteString()) }
         assertEquals(listOf(null, null, payload), results)
         assertEquals(1, ClipboardFraming.frames("op", ByteString.EMPTY).size)
-        assertFailsWith<IllegalStateException> { ClipboardFraming.Assembler("other").accept(frames[0].encodeByteString()) }
+        assertFailsWith<IllegalStateException> {
+            ClipboardFraming.Assembler("other").accept(frames[0].encodeByteString())
+        }
     }
 
     @Test
     fun clipboardContentRulesMatchTheDaemon() {
-        fun file(name: String, bytes: Int = 1) = RemoteDesktopClipboardItem(kind = RemoteDesktopClipboardItem.Kind.FILE, name = name, data_ = ByteArray(bytes).toByteString())
+        fun file(name: String, bytes: Int = 1) =
+            RemoteDesktopClipboardItem(
+                kind = RemoteDesktopClipboardItem.Kind.FILE,
+                name = name,
+                data_ = ByteArray(bytes).toByteString(),
+            )
         assertNull(ClipboardContent.validate("hello", emptyList()))
         assertNull(ClipboardContent.validate("", listOf(file("a.txt"), file("b.txt"))))
-        assertEquals("Invalid clipboard file or image", ClipboardContent.validate("", listOf(file("A.txt"), file("a.TXT"))))
-        assertEquals("Invalid clipboard file or image", ClipboardContent.validate("", listOf(file("../x"))))
-        assertEquals("Invalid clipboard file or image", ClipboardContent.validate("text", listOf(file("a"))))
-        assertEquals("Clipboard limit: 1 MiB text or 8 MiB across 64 files", ClipboardContent.validate("", listOf(file("big", 8 * 1024 * 1024 + 1))))
-        val image = RemoteDesktopClipboardItem(kind = RemoteDesktopClipboardItem.Kind.IMAGE, name = "i.png", mime_type = "image/png", data_ = "png".encodeUtf8())
+        assertEquals(
+            "Invalid clipboard file or image",
+            ClipboardContent.validate("", listOf(file("A.txt"), file("a.TXT"))),
+        )
+        assertEquals(
+            "Invalid clipboard file or image",
+            ClipboardContent.validate("", listOf(file("../x"))),
+        )
+        assertEquals(
+            "Invalid clipboard file or image",
+            ClipboardContent.validate("text", listOf(file("a"))),
+        )
+        assertEquals(
+            "Clipboard limit: 1 MiB text or 8 MiB across 64 files",
+            ClipboardContent.validate("", listOf(file("big", 8 * 1024 * 1024 + 1))),
+        )
+        val image =
+            RemoteDesktopClipboardItem(
+                kind = RemoteDesktopClipboardItem.Kind.IMAGE,
+                name = "i.png",
+                mime_type = "image/png",
+                data_ = "png".encodeUtf8(),
+            )
         assertNull(ClipboardContent.validate("", listOf(image)))
-        assertEquals("Invalid clipboard file or image", ClipboardContent.validate("", listOf(image, file("b"))))
+        assertEquals(
+            "Invalid clipboard file or image",
+            ClipboardContent.validate("", listOf(image, file("b"))),
+        )
     }
 
     @Test
     fun cursorShapesAreCachedPerId() {
         val cache = CursorCache()
         val png = "png".encodeUtf8()
-        assertEquals(png, cache.accept(RemoteDesktopCursor(shape_id = "arrow", png = png, width = 16.0, height = 16.0)))
-        assertEquals(png, cache.accept(RemoteDesktopCursor(shape_id = "arrow")), "later updates reuse the cached image")
+        assertEquals(
+            png,
+            cache.accept(
+                RemoteDesktopCursor(shape_id = "arrow", png = png, width = 16.0, height = 16.0)
+            ),
+        )
+        assertEquals(
+            png,
+            cache.accept(RemoteDesktopCursor(shape_id = "arrow")),
+            "later updates reuse the cached image",
+        )
         assertNull(cache.accept(RemoteDesktopCursor(shape_id = "beam")))
-        assertNull(cache.accept(RemoteDesktopCursor(shape_id = "huge", png = png, width = 512.0, height = 16.0)))
+        assertNull(
+            cache.accept(
+                RemoteDesktopCursor(shape_id = "huge", png = png, width = 512.0, height = 16.0)
+            )
+        )
         assertTrue(CursorCache.adoptHostPosition(false, false, false, 5, 5, 200.milliseconds))
-        assertFalse(CursorCache.adoptHostPosition(false, false, false, 4, 5, 200.milliseconds), "the host has not seen the latest move")
+        assertFalse(
+            CursorCache.adoptHostPosition(false, false, false, 4, 5, 200.milliseconds),
+            "the host has not seen the latest move",
+        )
         assertFalse(CursorCache.adoptHostPosition(false, true, false, 5, 5, 200.milliseconds))
         assertTrue(CursorCache.adoptHostPosition(true, true, true, 0, 5, 0.milliseconds))
     }
@@ -429,10 +844,23 @@ class ScreenPoliciesTest {
 
     @Test
     fun displayMatchingPrefersTheClosestMode() {
-        val modes = listOf(
-            RemoteDesktopDisplayMode(logical_width = 1920, logical_height = 1080, pixel_width = 3840, pixel_height = 2160, refresh_rate = 60.0),
-            RemoteDesktopDisplayMode(logical_width = 1512, logical_height = 982, pixel_width = 3024, pixel_height = 1964, refresh_rate = 120.0),
-        )
+        val modes =
+            listOf(
+                RemoteDesktopDisplayMode(
+                    logical_width = 1920,
+                    logical_height = 1080,
+                    pixel_width = 3840,
+                    pixel_height = 2160,
+                    refresh_rate = 60.0,
+                ),
+                RemoteDesktopDisplayMode(
+                    logical_width = 1512,
+                    logical_height = 982,
+                    pixel_width = 3024,
+                    pixel_height = 1964,
+                    refresh_rate = 120.0,
+                ),
+            )
         val target = DisplayMatching.Target(1512.0, 982.0, 2.0, 120.0)
         assertEquals(1512, DisplayMatching.best(modes, target)?.logical_width)
         assertTrue(DisplayMatching.exact(modes[1], target))

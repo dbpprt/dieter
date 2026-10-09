@@ -1,17 +1,6 @@
 import AppKit
 import SwiftUI
 
-private struct ConversationWorkspaceTabsInTitlebarKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-extension EnvironmentValues {
-    var conversationWorkspaceTabsInTitlebar: Bool {
-        get { self[ConversationWorkspaceTabsInTitlebarKey.self] }
-        set { self[ConversationWorkspaceTabsInTitlebarKey.self] = newValue }
-    }
-}
-
 enum ConversationFixedSidebarTab: String, CaseIterable, Identifiable {
     case changes = "Changes"
     case subagents = "Subagents"
@@ -31,7 +20,6 @@ enum ConversationFixedSidebarTab: String, CaseIterable, Identifiable {
 
 struct ConversationContentPane: View {
     @Environment(ConversationContext.self) private var context
-    @Environment(\.conversationWorkspaceTabsInTitlebar) private var workspaceTabsInTitlebar
     @Bindable var model: ConversationContentModel
 
     private var standalone: Bool {
@@ -56,10 +44,6 @@ struct ConversationContentPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !workspaceTabsInTitlebar {
-                ConversationWorkspaceTabBar(model: model, includesConversation: !model.splitMode)
-                Divider()
-            }
             if let error = model.error {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
@@ -88,7 +72,6 @@ struct ConversationContentPane: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DieterTheme.surface)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("conversation.content-pane")
         .smokeTarget("conversation.content-pane")
@@ -158,8 +141,9 @@ struct ConversationContentPane: View {
                     .smokeTarget("conversation.content.launch.\(kind.rawValue)")
                 }
             }
+            .padding(4)
             .frame(maxWidth: 280)
-            .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
+            .dieterTile(radius: 12)
         }
         .padding(30).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -168,8 +152,6 @@ struct ConversationContentPane: View {
 struct ConversationWorkspaceTabBar: View {
     @Environment(ConversationContext.self) private var context
     @Bindable var model: ConversationContentModel
-    var titlebar = false
-    var nativeToolbar = false
     var includesConversation = false
     var showsFixedTabs = true
     var showsWorkspaceTabs = true
@@ -181,17 +163,6 @@ struct ConversationWorkspaceTabBar: View {
 
     private var workspacePresented: Bool {
         model.isPresented(for: conversationID)
-    }
-
-    private var barHeight: CGFloat {
-        if nativeToolbar { return ConversationWorkspaceChromeMetrics.titlebarHeight }
-        return titlebar
-            ? ConversationWorkspaceChromeMetrics.titlebarHeight : ConversationWorkspaceChromeMetrics.tabHeight
-    }
-
-    private var barBackground: Color {
-        if nativeToolbar { return .clear }
-        return titlebar ? DieterTheme.surface : DieterTheme.sidebar.opacity(0.4)
     }
 
     private var fixedTabs: [ConversationFixedSidebarTab] {
@@ -214,7 +185,7 @@ struct ConversationWorkspaceTabBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 6) {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 2) {
@@ -223,7 +194,6 @@ struct ConversationWorkspaceTabBar: View {
                                 title: "Conversation", systemName: "bubble.left",
                                 selected: model.conversationTab == "Conversation"
                                     && (model.splitMode || model.selectedTabID == nil),
-                                height: nativeToolbar ? 40 : 30,
                                 select: {
                                     if !model.splitMode { model.showConversationTab() }
                                 }
@@ -236,18 +206,21 @@ struct ConversationWorkspaceTabBar: View {
                                     tab: tab,
                                     count: count(for: tab),
                                     selected: selectedFixedTab == tab,
-                                    height: nativeToolbar ? 40 : 30,
                                     select: { select(tab) }
                                 )
                                 .id(tab.id)
                             }
                         }
                         if showsWorkspaceTabs {
-                            ForEach(visibleWorkspaceTabs) { tab in
+                            let tabs = visibleWorkspaceTabs
+                            if !tabs.isEmpty && (includesConversation || showsFixedTabs) {
+                                Rectangle().fill(DieterTheme.hairline).frame(width: 1, height: 14)
+                                    .padding(.horizontal, 3)
+                            }
+                            ForEach(tabs) { tab in
                                 ConversationWorkspaceTabLabel(
                                     tab: tab,
                                     selected: model.isOpen && model.selectedTabID == tab.id,
-                                    height: nativeToolbar ? 40 : 30,
                                     select: {
                                         model.conversationTab = "Conversation"
                                         model.selectTab(tab.id)
@@ -258,9 +231,9 @@ struct ConversationWorkspaceTabBar: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 6)
+                    .padding(3)
                 }
-                .frame(minWidth: 0, maxWidth: .infinity)
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 .onChange(of: model.selectedTabID) { _, selectedID in
                     if let selectedID, model.selectedTab?.conversationID == conversationID,
                         model.selectedTab?.kind != .review
@@ -275,15 +248,15 @@ struct ConversationWorkspaceTabBar: View {
                 }
             }
             if showsControls {
-                ConversationWorkspaceControls(model: model)
+                ConversationAddTabMenu(model: model)
+                ConversationSplitToggle(model: model)
             }
         }
-        .frame(minWidth: 0, maxWidth: .infinity, minHeight: barHeight, maxHeight: barHeight, alignment: .leading)
-        .clipped()
-        .background(barBackground)
-        .overlay(alignment: .bottom) {
-            if titlebar && !nativeToolbar { Divider() }
-        }
+        .frame(
+            minWidth: 0, maxWidth: .infinity, minHeight: DieterMetrics.capsuleHeight,
+            maxHeight: DieterMetrics.capsuleHeight, alignment: .leading
+        )
+        .clipShape(Capsule())
     }
 
     private func count(for tab: ConversationFixedSidebarTab) -> Int {
@@ -314,134 +287,24 @@ struct ConversationWorkspaceTabBar: View {
     }
 }
 
-struct ConversationSurfaceToggles: View {
-    @Bindable var model: ConversationContentModel
-    let workspacePresented: Bool
-    let kanbanPresented: Bool
-    let toggleKanban: () -> Void
-    let showsConversation: Bool
-    var showsKanban = true
-    var height: CGFloat = 26
-
-    var body: some View {
-        HStack(spacing: 2) {
-            if showsKanban {
-                ConversationSurfaceToggleLabel(
-                    title: "Kanban",
-                    systemName: "rectangle.3.group",
-                    selected: kanbanPresented,
-                    height: height,
-                    select: toggleKanban
-                )
-                .help(kanbanPresented ? "Hide Kanban" : "Show Kanban")
-            }
-            if showsConversation {
-                ConversationSurfaceToggleLabel(
-                    title: "Conversation",
-                    systemName: "bubble.left",
-                    selected: workspacePresented || model.conversationTab == "Conversation",
-                    height: height,
-                    select: { model.showConversationTab() }
-                )
-                .help("Show Conversation")
-            }
-        }
-        .fixedSize(horizontal: true, vertical: false)
-    }
-}
-
-struct ConversationWorkspaceControls: View {
-    @Environment(ConversationContext.self) private var context
-    @Bindable var model: ConversationContentModel
-    var height: CGFloat = 24
-
-    private var conversationID: String {
-        context.selectedCardID ?? context.selectedChatID ?? ""
-    }
-
-    private var workspacePresented: Bool {
-        model.splitMode && model.isPresented(for: conversationID)
-    }
-
-    var body: some View {
-        HStack(spacing: 2) {
-            Menu {
-                ForEach(model.addablePanelKinds(for: conversationID)) { kind in
-                    Button(kind.title, systemImage: kind.symbol) {
-                        model.requestPanel(kind, conversationID: conversationID)
-                    }
-                    .accessibilityIdentifier("conversation.content.add.\(kind.rawValue)")
-                }
-            } label: {
-                ConversationWorkspaceSymbol(
-                    systemName: "plus", frameSize: ConversationWorkspaceChromeMetrics.actionSize
-                )
-                .frame(width: 28, height: height)
-                .contentShape(Rectangle())
-            }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden)
-            .help("Open a workspace tab")
-            .accessibilityLabel("Open a workspace tab")
-            .accessibilityIdentifier("conversation.content.add").smokeTarget("conversation.content.add")
-
-            Button {
-                if workspacePresented {
-                    model.showSinglePane()
-                } else {
-                    model.showEmpty(conversationID: conversationID)
-                }
-            } label: {
-                ConversationWorkspaceSymbol(
-                    systemName: workspacePresented ? "rectangle.split.1x2" : "sidebar.right",
-                    selected: workspacePresented, frameSize: ConversationWorkspaceChromeMetrics.actionSize
-                )
-                .frame(width: 28, height: height)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .help(workspacePresented ? "Single pane" : "Split conversation and workspace")
-            .accessibilityLabel(workspacePresented ? "Single pane" : "Split conversation and workspace")
-            .accessibilityIdentifier("conversation.content.close").smokeTarget("conversation.content.close")
-        }
-        .fixedSize()
-    }
-}
-
-private struct ConversationSurfaceToggleLabel: View {
-    let title: String
-    let systemName: String
+/// One segment of the conversation's tab track; the selected one carries the thumb.
+private struct ConversationSegmentChrome: ViewModifier {
     let selected: Bool
-    let height: CGFloat
-    let select: () -> Void
     @State private var hovering = false
 
-    var body: some View {
-        Button(action: select) {
-            HStack(spacing: 6) {
-                ConversationWorkspaceSymbol(systemName: systemName, selected: selected)
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
+    func body(content: Content) -> some View {
+        content
+            .font(.system(size: 12, weight: selected ? .semibold : .medium))
+            .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
+            .frame(minHeight: ConversationWorkspaceChromeMetrics.tabHeight)
+            .background {
+                Capsule()
+                    .fill(selected ? DieterTheme.segmentThumb : (hovering ? DieterTheme.tileHover : .clear))
+                    .shadow(color: .black.opacity(selected && !DieterTheme.isDark ? 0.08 : 0), radius: 1.5, y: 0.5)
             }
-            .padding(.horizontal, 9)
-            .frame(minHeight: height)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
-        .background(hovering ? DieterTheme.raised.opacity(0.7) : .clear)
-        .overlay(alignment: .bottom) {
-            Capsule()
-                .fill(selected ? DieterTheme.primary : .clear)
-                .frame(height: 2)
-                .padding(.horizontal, 8)
-        }
-        .onHover { hovering = $0 }
-        .accessibilityLabel(title)
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
-        .accessibilityIdentifier("conversation-tab-\(title.lowercased())")
-        .smokeTarget("conversation-tab-\(title.lowercased())")
-        .fixedSize(horizontal: true, vertical: false)
+            .contentShape(Capsule())
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: selected)
     }
 }
 
@@ -449,25 +312,15 @@ struct ConversationRailTabLabel: View {
     let title: String
     let systemName: String
     let selected: Bool
-    let height: CGFloat
     let select: () -> Void
 
     var body: some View {
         Button(action: select) {
-            HStack(spacing: 6) {
-                ConversationWorkspaceSymbol(systemName: systemName, selected: selected)
-                Text(title).font(.system(size: 12)).lineLimit(1)
-            }
-            .padding(.horizontal, 8)
-            .frame(minHeight: height)
-            .contentShape(Rectangle())
+            Text(title).lineLimit(1)
+                .padding(.horizontal, 12)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(selected ? DieterTheme.text : DieterTheme.subtle)
-        .background(selected ? DieterTheme.elevated : .clear, in: RoundedRectangle(cornerRadius: 4))
-        .overlay(alignment: .bottom) {
-            if selected { Capsule().fill(.secondary.opacity(0.6)).frame(height: 2).padding(.horizontal, 8) }
-        }
+        .modifier(ConversationSegmentChrome(selected: selected))
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .accessibilityIdentifier("conversation-tab-\(title.lowercased())")
@@ -480,26 +333,26 @@ private struct ConversationFixedSidebarTabLabel: View {
     let tab: ConversationFixedSidebarTab
     let count: Int
     let selected: Bool
-    let height: CGFloat
     let select: () -> Void
 
     var body: some View {
         Button(action: select) {
-            HStack(spacing: 6) {
-                ConversationWorkspaceSymbol(systemName: tab.symbol, selected: selected)
-                Text(tab.rawValue).font(.system(size: 12)).lineLimit(1)
-                if count > 0 { ConversationTabCountBadge(count: count, selected: selected) }
+            HStack(spacing: 5) {
+                Text(tab.rawValue).lineLimit(1)
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(DieterTheme.tertiary)
+                        .contentTransition(.numericText())
+                }
             }
-            .frame(minWidth: 36, maxWidth: 180, minHeight: height)
-            .padding(.horizontal, 9)
-            .contentShape(Rectangle())
+            .frame(minWidth: 36, maxWidth: 180)
+            .padding(.horizontal, 11)
         }
         .buttonStyle(.plain)
-        .background(selected ? DieterTheme.surface : .clear, in: RoundedRectangle(cornerRadius: 4))
-        .overlay(alignment: .bottom) {
-            if selected { Capsule().fill(.secondary.opacity(0.6)).frame(height: 2).padding(.horizontal, 8) }
-        }
-        .accessibilityLabel(tab.rawValue)
+        .modifier(ConversationSegmentChrome(selected: selected))
+        .accessibilityLabel(count > 0 ? "\(tab.rawValue), \(count)" : tab.rawValue)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .accessibilityIdentifier("conversation.content.fixed.\(tab.rawValue.lowercased())")
         .smokeTarget("conversation.content.fixed.\(tab.rawValue.lowercased())")
@@ -510,20 +363,19 @@ private struct ConversationFixedSidebarTabLabel: View {
 private struct ConversationWorkspaceTabLabel: View {
     @Bindable var tab: ConversationContentTab
     let selected: Bool
-    let height: CGFloat
     let select: () -> Void
     let close: () -> Void
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             Button(action: select) {
                 HStack(spacing: 6) {
-                    ConversationWorkspaceSymbol(systemName: tab.symbol, selected: selected)
-                    Text(tab.title).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
-                    if tab.dirty { Circle().fill(.secondary).frame(width: 5, height: 5) }
+                    ConversationWorkspaceSymbol(systemName: tab.symbol, selected: selected, frameSize: 14)
+                    Text(tab.title).lineLimit(1).truncationMode(.middle)
+                    if tab.dirty { Circle().fill(DieterTheme.subtle).frame(width: 5, height: 5) }
                 }
-                .frame(minWidth: 36, maxWidth: 180, minHeight: height)
+                .frame(minWidth: 36, maxWidth: 180)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -531,18 +383,15 @@ private struct ConversationWorkspaceTabLabel: View {
             .accessibilityAddTraits(selected ? [.isSelected] : [])
             .accessibilityIdentifier("conversation.content.tab.\(tab.id.uuidString)")
             .smokeTarget("conversation.content.tab.\(tab.id.uuidString)")
-            Button(action: close) { Image(systemName: "xmark").font(.system(size: 9, weight: .medium)) }
-                .buttonStyle(.plain).frame(width: 18, height: height)
+            Button(action: close) { Image(systemName: "xmark").font(.system(size: 8.5, weight: .bold)) }
+                .buttonStyle(.plain).frame(width: 16, height: 16)
                 .opacity(selected || hovering ? 1 : 0)
                 .help("Close \(tab.title)").accessibilityLabel("Close \(tab.title)")
                 .accessibilityIdentifier("conversation.content.tab.\(tab.id.uuidString).close")
                 .smokeTarget("conversation.content.tab.\(tab.id.uuidString).close")
         }
-        .padding(.leading, 9).padding(.trailing, 3)
-        .background(selected ? DieterTheme.surface : .clear, in: RoundedRectangle(cornerRadius: 4))
-        .overlay(alignment: .bottom) {
-            if selected { Capsule().fill(.secondary.opacity(0.6)).frame(height: 2).padding(.horizontal, 8) }
-        }
+        .padding(.leading, 11).padding(.trailing, 5)
+        .modifier(ConversationSegmentChrome(selected: selected))
         .onHover { hovering = $0 }
         .fixedSize(horizontal: true, vertical: false)
     }
@@ -572,7 +421,7 @@ private struct ConversationWorkspaceTabView: View {
                             model: tab.projectReview, projectName: tab.scope?.projectName ?? "Project",
                             active: active, isLive: tab.transportsLive, bindingRevision: tab.transportRevision)
                     } else {
-                        WorkspaceChangesView(model: tab.review, background: DieterTheme.surface, active: active)
+                        WorkspaceChangesView(model: tab.review, background: .clear, active: active)
                     }
                 }
                 .accessibilityIdentifier("conversation.content.review")
@@ -645,14 +494,16 @@ private struct ConversationWorkspaceTabView: View {
             }
             if tab.files.conflict {
                 Button("Reload") { Task { await tab.files.reloadDocument() } }
-                    .controlSize(.small).disabled(tab.files.saving || !active || !tab.files.isLive)
+                    .buttonStyle(DieterBarButtonStyle(size: 28))
+                    .disabled(tab.files.saving || !active || !tab.files.isLive)
                     .help("Replace your edits with the version on disk")
                     .accessibilityIdentifier("conversation.content.reload").smokeTarget("conversation.content.reload")
             }
             if tab.dirty {
                 Button("Save") { Task { await tab.files.saveCurrentDocument() } }
                     .keyboardShortcut("s", modifiers: .command)
-                    .controlSize(.small).disabled(tab.files.saving || !active || !tab.files.isLive)
+                    .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28))
+                    .disabled(tab.files.saving || !active || !tab.files.isLive)
                     .accessibilityIdentifier("conversation.content.save").smokeTarget("conversation.content.save")
             }
             Button {
@@ -660,7 +511,7 @@ private struct ConversationWorkspaceTabView: View {
             } label: {
                 Image(systemName: "sidebar.right")
             }
-            .buttonStyle(.borderless).help("Toggle file navigator")
+            .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Toggle file navigator")
             .accessibilityIdentifier("conversation.content.files.toggle")
             .smokeTarget("conversation.content.files.toggle")
         }

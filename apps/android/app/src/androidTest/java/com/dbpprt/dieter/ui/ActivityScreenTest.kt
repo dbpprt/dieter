@@ -144,7 +144,7 @@ class ActivityScreenTest {
         compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-running"))
         capture("activity-cards-light-large-text.png")
         compose.runOnIdle {
-            current = state.copy(connectionPhase = ConnectionPhase.NO_MACHINE,
+            current = state.copy(connectionPhase = ConnectionPhase.DISCONNECTED,
                 lastConnectedAtMillis = now.minusSeconds(60).toEpochMilli(),
                 providerQuotaGroups = listOf(ProviderQuotaGroup(provider = provider, accounts = listOf(
                     account.copy(windows = emptyList(), availability = ProviderQuotaAvailability.PROVIDER_QUOTA_AVAILABILITY_TEMPORARILY_UNAVAILABLE),
@@ -178,13 +178,24 @@ class ActivityScreenTest {
         compose.onNodeWithTag("activity-age-answer", useUnmergedTree = true)
             .assertContentDescriptionEquals("Last activity: 20m ago")
         compose.runOnIdle {
-            current = current.copy(connectionPhase = ConnectionPhase.NO_MACHINE, lastConnectedAtMillis = now.toEpochMilli())
+            current = current.copy(connectionPhase = ConnectionPhase.DISCONNECTED, lastConnectedAtMillis = now.toEpochMilli())
             clock = now.plusSeconds(180)
         }
         compose.onNodeWithTag("activity-age-answer", useUnmergedTree = true)
             .assertContentDescriptionEquals("Last activity: 23m ago").assertIsDisplayed()
         compose.onNodeWithTag("activity-machine-answer", useUnmergedTree = true)
             .assertContentDescriptionEquals("Machine: MacBook Pro").assertIsDisplayed()
+    }
+
+    @Test fun rowsFromAMachineThatIsAwaySayTheirStateMayBeOld() {
+        val running = card("running", "Polish the Inbox cards", "running")
+        val items = Activity.project(listOf(running), emptyMap(), state.projects, state.spaceBoards) { "garuda is offline" }
+        compose.setContent { DieterTheme {
+            ActivityFeed(state.copy(spaceCards = listOf(running), activityItems = items), onOpen = {}, onConnections = {}, onAccount = {}, onRefreshAccounts = {}, clock = now)
+        } }
+        compose.onNodeWithTag("activity-feed").performScrollToNode(hasTestTag("activity-row-running"))
+        compose.onNodeWithTag("activity-stale-running", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("garuda is offline", useUnmergedTree = true).assertIsDisplayed()
     }
 
     @Test fun streamingRowsKeepTheirOrder() {

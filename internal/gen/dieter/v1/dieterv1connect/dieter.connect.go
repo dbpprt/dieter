@@ -86,11 +86,9 @@ const (
 	DieterServicePerformMachineOperationProcedure = "/dieter.v1.DieterService/PerformMachineOperation"
 	// DieterServiceGetStateProcedure is the fully-qualified name of the DieterService's GetState RPC.
 	DieterServiceGetStateProcedure = "/dieter.v1.DieterService/GetState"
-	// DieterServiceWatchStateProcedure is the fully-qualified name of the DieterService's WatchState
-	// RPC.
-	DieterServiceWatchStateProcedure = "/dieter.v1.DieterService/WatchState"
-	// DieterServiceWatchSyncProcedure is the fully-qualified name of the DieterService's WatchSync RPC.
-	DieterServiceWatchSyncProcedure = "/dieter.v1.DieterService/WatchSync"
+	// DieterServiceWatchChangesProcedure is the fully-qualified name of the DieterService's
+	// WatchChanges RPC.
+	DieterServiceWatchChangesProcedure = "/dieter.v1.DieterService/WatchChanges"
 	// DieterServiceGetHarnessesProcedure is the fully-qualified name of the DieterService's
 	// GetHarnesses RPC.
 	DieterServiceGetHarnessesProcedure = "/dieter.v1.DieterService/GetHarnesses"
@@ -355,6 +353,18 @@ const (
 	// DieterServiceRestoreRemoteDesktopDisplayModeProcedure is the fully-qualified name of the
 	// DieterService's RestoreRemoteDesktopDisplayMode RPC.
 	DieterServiceRestoreRemoteDesktopDisplayModeProcedure = "/dieter.v1.DieterService/RestoreRemoteDesktopDisplayMode"
+	// DieterServiceGetRemoteDesktopVirtualDisplayProcedure is the fully-qualified name of the
+	// DieterService's GetRemoteDesktopVirtualDisplay RPC.
+	DieterServiceGetRemoteDesktopVirtualDisplayProcedure = "/dieter.v1.DieterService/GetRemoteDesktopVirtualDisplay"
+	// DieterServiceSetRemoteDesktopVirtualDisplayProcedure is the fully-qualified name of the
+	// DieterService's SetRemoteDesktopVirtualDisplay RPC.
+	DieterServiceSetRemoteDesktopVirtualDisplayProcedure = "/dieter.v1.DieterService/SetRemoteDesktopVirtualDisplay"
+	// DieterServiceConfirmRemoteDesktopVirtualDisplayProcedure is the fully-qualified name of the
+	// DieterService's ConfirmRemoteDesktopVirtualDisplay RPC.
+	DieterServiceConfirmRemoteDesktopVirtualDisplayProcedure = "/dieter.v1.DieterService/ConfirmRemoteDesktopVirtualDisplay"
+	// DieterServiceRestoreRemoteDesktopVirtualDisplayProcedure is the fully-qualified name of the
+	// DieterService's RestoreRemoteDesktopVirtualDisplay RPC.
+	DieterServiceRestoreRemoteDesktopVirtualDisplayProcedure = "/dieter.v1.DieterService/RestoreRemoteDesktopVirtualDisplay"
 	// DieterServiceProbeRemoteDesktopPermissionsProcedure is the fully-qualified name of the
 	// DieterService's ProbeRemoteDesktopPermissions RPC.
 	DieterServiceProbeRemoteDesktopPermissionsProcedure = "/dieter.v1.DieterService/ProbeRemoteDesktopPermissions"
@@ -439,11 +449,12 @@ type DieterServiceClient interface {
 	GetMachineInformation(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.MachineInformation], error)
 	PerformMachineOperation(context.Context, *connect.Request[v1.MachineOperationRequest]) (*connect.Response[v1.MachineOperationResponse], error)
 	GetState(context.Context, *connect.Request[v1.GetStateRequest]) (*connect.Response[v1.State], error)
-	WatchState(context.Context, *connect.Request[v1.WatchStateRequest]) (*connect.ServerStreamForClient[v1.State], error)
-	// WatchSync is the daemon-wide durable change stream used by native
-	// clients. Views are rendered from the client projection rather than by
-	// opening per-view RPCs.
-	WatchSync(context.Context, *connect.Request[v1.SyncRequest]) (*connect.ServerStreamForClient[v1.SyncFrame], error)
+	// WatchChanges streams this machine's view to native clients: its replica of
+	// the account's shared records in the peer store's own order, plus the
+	// owner-only details and live activity of the conversations it runs. A
+	// client holds one stream per online machine and merges the shared records
+	// causally; no machine is attached or preferred.
+	WatchChanges(context.Context, *connect.Request[v1.ChangesRequest]) (*connect.ServerStreamForClient[v1.ChangesFrame], error)
 	GetHarnesses(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.HarnessCatalog], error)
 	GetSettings(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.Settings], error)
 	GetSettingsOptions(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.SettingsOptions], error)
@@ -554,6 +565,10 @@ type DieterServiceClient interface {
 	ListRemoteDesktopDisplayModes(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopDisplayModes], error)
 	SetRemoteDesktopDisplayMode(context.Context, *connect.Request[v1.SetRemoteDesktopDisplayModeRequest]) (*connect.Response[v1.RemoteDesktopDisplayModes], error)
 	RestoreRemoteDesktopDisplayMode(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopDisplayModes], error)
+	GetRemoteDesktopVirtualDisplay(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopVirtualDisplay], error)
+	SetRemoteDesktopVirtualDisplay(context.Context, *connect.Request[v1.SetRemoteDesktopVirtualDisplayRequest]) (*connect.Response[v1.RemoteDesktopVirtualDisplay], error)
+	ConfirmRemoteDesktopVirtualDisplay(context.Context, *connect.Request[v1.ConfirmRemoteDesktopVirtualDisplayRequest]) (*connect.Response[v1.RemoteDesktopVirtualDisplay], error)
+	RestoreRemoteDesktopVirtualDisplay(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopVirtualDisplay], error)
 	// Explicit, bounded permission test performed by the running daemon.
 	// Discards one encoded frame and never injects input or changes settings.
 	ProbeRemoteDesktopPermissions(context.Context, *connect.Request[v1.ProbeRemoteDesktopPermissionsRequest]) (*connect.Response[v1.RemoteDesktopPermissionProbe], error)
@@ -707,16 +722,10 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(dieterServiceMethods.ByName("GetState")),
 			connect.WithClientOptions(opts...),
 		),
-		watchState: connect.NewClient[v1.WatchStateRequest, v1.State](
+		watchChanges: connect.NewClient[v1.ChangesRequest, v1.ChangesFrame](
 			httpClient,
-			baseURL+DieterServiceWatchStateProcedure,
-			connect.WithSchema(dieterServiceMethods.ByName("WatchState")),
-			connect.WithClientOptions(opts...),
-		),
-		watchSync: connect.NewClient[v1.SyncRequest, v1.SyncFrame](
-			httpClient,
-			baseURL+DieterServiceWatchSyncProcedure,
-			connect.WithSchema(dieterServiceMethods.ByName("WatchSync")),
+			baseURL+DieterServiceWatchChangesProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("WatchChanges")),
 			connect.WithClientOptions(opts...),
 		),
 		getHarnesses: connect.NewClient[emptypb.Empty, v1.HarnessCatalog](
@@ -1271,6 +1280,30 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(dieterServiceMethods.ByName("RestoreRemoteDesktopDisplayMode")),
 			connect.WithClientOptions(opts...),
 		),
+		getRemoteDesktopVirtualDisplay: connect.NewClient[v1.RemoteDesktopRef, v1.RemoteDesktopVirtualDisplay](
+			httpClient,
+			baseURL+DieterServiceGetRemoteDesktopVirtualDisplayProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("GetRemoteDesktopVirtualDisplay")),
+			connect.WithClientOptions(opts...),
+		),
+		setRemoteDesktopVirtualDisplay: connect.NewClient[v1.SetRemoteDesktopVirtualDisplayRequest, v1.RemoteDesktopVirtualDisplay](
+			httpClient,
+			baseURL+DieterServiceSetRemoteDesktopVirtualDisplayProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("SetRemoteDesktopVirtualDisplay")),
+			connect.WithClientOptions(opts...),
+		),
+		confirmRemoteDesktopVirtualDisplay: connect.NewClient[v1.ConfirmRemoteDesktopVirtualDisplayRequest, v1.RemoteDesktopVirtualDisplay](
+			httpClient,
+			baseURL+DieterServiceConfirmRemoteDesktopVirtualDisplayProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("ConfirmRemoteDesktopVirtualDisplay")),
+			connect.WithClientOptions(opts...),
+		),
+		restoreRemoteDesktopVirtualDisplay: connect.NewClient[v1.RemoteDesktopRef, v1.RemoteDesktopVirtualDisplay](
+			httpClient,
+			baseURL+DieterServiceRestoreRemoteDesktopVirtualDisplayProcedure,
+			connect.WithSchema(dieterServiceMethods.ByName("RestoreRemoteDesktopVirtualDisplay")),
+			connect.WithClientOptions(opts...),
+		),
 		probeRemoteDesktopPermissions: connect.NewClient[v1.ProbeRemoteDesktopPermissionsRequest, v1.RemoteDesktopPermissionProbe](
 			httpClient,
 			baseURL+DieterServiceProbeRemoteDesktopPermissionsProcedure,
@@ -1384,138 +1417,141 @@ func NewDieterServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // dieterServiceClient implements DieterServiceClient.
 type dieterServiceClient struct {
-	getKV                           *connect.Client[v1.KVRef, v1.KVEntry]
-	listKV                          *connect.Client[v1.KVListRequest, v1.KVPage]
-	putKV                           *connect.Client[v1.KVPutRequest, v1.KVEntry]
-	deleteKV                        *connect.Client[v1.KVDeleteRequest, v1.KVEntry]
-	moveKV                          *connect.Client[v1.KVMoveRequest, v1.KVEntry]
-	watchKV                         *connect.Client[v1.KVWatchRequest, v1.KVFrame]
-	getPeerChanges                  *connect.Client[v1.PeerChangesRequest, v1.PeerChangesResponse]
-	getPeerRecord                   *connect.Client[v1.PeerRecordRef, v1.PeerRecord]
-	getPeerStoreStatus              *connect.Client[emptypb.Empty, v1.PeerStoreStatus]
-	listPeerRecords                 *connect.Client[v1.PeerSnapshotRequest, v1.PeerSnapshot]
-	putPeerRecord                   *connect.Client[v1.PutPeerRecordRequest, v1.PeerRecord]
-	mergePeerRecords                *connect.Client[v1.MergePeerRecordsRequest, emptypb.Empty]
-	health                          *connect.Client[emptypb.Empty, v1.HealthResponse]
-	getRuntimeStatus                *connect.Client[emptypb.Empty, v1.RuntimeStatus]
-	startControlConnection          *connect.Client[v1.StartControlConnectionRequest, v1.ControlConnection]
-	getControlConnection            *connect.Client[v1.ControlConnectionRef, v1.ControlConnection]
-	closeControlConnection          *connect.Client[v1.ControlConnectionRef, emptypb.Empty]
-	getMachineInformation           *connect.Client[emptypb.Empty, v1.MachineInformation]
-	performMachineOperation         *connect.Client[v1.MachineOperationRequest, v1.MachineOperationResponse]
-	getState                        *connect.Client[v1.GetStateRequest, v1.State]
-	watchState                      *connect.Client[v1.WatchStateRequest, v1.State]
-	watchSync                       *connect.Client[v1.SyncRequest, v1.SyncFrame]
-	getHarnesses                    *connect.Client[emptypb.Empty, v1.HarnessCatalog]
-	getSettings                     *connect.Client[emptypb.Empty, v1.Settings]
-	getSettingsOptions              *connect.Client[emptypb.Empty, v1.SettingsOptions]
-	updateSettings                  *connect.Client[v1.UpdateSettingsRequest, v1.Settings]
-	getPromptSettings               *connect.Client[emptypb.Empty, v1.PromptSettings]
-	updatePromptSettings            *connect.Client[v1.UpdatePromptSettingsRequest, v1.PromptSettings]
-	setProjectPromptTemplate        *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Project]
-	setBoardPromptTemplate          *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Board]
-	previewPrompt                   *connect.Client[v1.PreviewPromptRequest, v1.PromptPreview]
-	listDirectories                 *connect.Client[v1.ListDirectoriesRequest, v1.DirectoryListing]
-	consolidateProject              *connect.Client[v1.ConsolidateProjectRequest, v1.Project]
-	attachCheckout                  *connect.Client[v1.AttachCheckoutRequest, v1.Checkout]
-	detachCheckout                  *connect.Client[v1.CheckoutRef, emptypb.Empty]
-	listCheckouts                   *connect.Client[v1.ProjectRef, v1.CheckoutsResponse]
-	createProject                   *connect.Client[v1.CreateProjectRequest, v1.CreateProjectResponse]
-	updateProject                   *connect.Client[v1.UpdateProjectRequest, v1.Project]
-	updateProjectWorkspaceSettings  *connect.Client[v1.UpdateProjectWorkspaceSettingsRequest, v1.Project]
-	archiveProject                  *connect.Client[v1.ArchiveProjectRequest, v1.Project]
-	listArchivedProjects            *connect.Client[emptypb.Empty, v1.ProjectsResponse]
-	createBoard                     *connect.Client[v1.CreateBoardRequest, v1.Board]
-	getBoard                        *connect.Client[v1.BoardRef, v1.Board]
-	listRetiredBoards               *connect.Client[v1.ListRetiredBoardsRequest, v1.ListRetiredBoardsResponse]
-	setBoardRetired                 *connect.Client[v1.SetBoardRetiredRequest, v1.Board]
-	renameBoard                     *connect.Client[v1.RenameBoardRequest, v1.Board]
-	setBoardArchivePolicy           *connect.Client[v1.SetBoardArchivePolicyRequest, v1.Board]
-	updateBoardHostnames            *connect.Client[v1.UpdateBoardHostnamesRequest, v1.Board]
-	updateBoardGitSettings          *connect.Client[v1.UpdateBoardGitSettingsRequest, v1.Board]
-	listArchivedCards               *connect.Client[v1.BoardRef, v1.CardsResponse]
-	createBoardLabel                *connect.Client[v1.CreateBoardLabelRequest, v1.Board]
-	updateBoardLabel                *connect.Client[v1.UpdateBoardLabelRequest, v1.Board]
-	deleteBoardLabel                *connect.Client[v1.DeleteBoardLabelRequest, v1.Board]
-	createCard                      *connect.Client[v1.CreateConversationRequest, v1.Card]
-	createChat                      *connect.Client[v1.CreateConversationRequest, v1.Card]
-	forkChat                        *connect.Client[v1.ForkChatRequest, v1.Card]
-	listChats                       *connect.Client[v1.ListChatsRequest, v1.ChatsResponse]
-	getCard                         *connect.Client[v1.GetCardRequest, v1.CardDetail]
-	getConversation                 *connect.Client[v1.GetConversationRequest, v1.ConversationSnapshot]
-	pollConversation                *connect.Client[v1.PollConversationRequest, v1.ConversationUpdate]
-	watchConversation               *connect.Client[v1.WatchConversationRequest, v1.ConversationUpdate]
-	getToolOutput                   *connect.Client[v1.GetToolOutputRequest, v1.ToolOutput]
-	presentConversationContent      *connect.Client[v1.PresentConversationContentRequest, v1.ContentPresentation]
-	sendMessage                     *connect.Client[v1.SendMessageRequest, v1.SendMessageResponse]
-	removeQueuedMessage             *connect.Client[v1.RemoveQueuedMessageRequest, v1.QueuedMessage]
-	markConversationRead            *connect.Client[v1.MarkConversationReadRequest, v1.Card]
-	moveCard                        *connect.Client[v1.MoveCardRequest, v1.Card]
-	mergeCard                       *connect.Client[v1.MergeCardRequest, v1.Card]
-	startCard                       *connect.Client[v1.StartCardRequest, v1.StartCardResponse]
-	setCardLabels                   *connect.Client[v1.SetCardLabelsRequest, v1.Card]
-	cancelCard                      *connect.Client[v1.GetCardRequest, emptypb.Empty]
-	renameCard                      *connect.Client[v1.RenameCardRequest, v1.Card]
-	updateCard                      *connect.Client[v1.UpdateCardRequest, v1.Card]
-	archiveCard                     *connect.Client[v1.ArchiveCardRequest, v1.Card]
-	pinChat                         *connect.Client[v1.PinChatRequest, v1.Card]
-	updateConversationWorkspace     *connect.Client[v1.UpdateConversationWorkspaceRequest, v1.Card]
-	getWorkspace                    *connect.Client[v1.ConversationRef, v1.Workspace]
-	listProjectWorkspaces           *connect.Client[v1.ProjectRef, v1.WorkspacesResponse]
-	getChangeset                    *connect.Client[v1.GetChangesetRequest, v1.Changeset]
-	getFileDiff                     *connect.Client[v1.GetDiffRequest, v1.FileDiff]
-	getCommitDiff                   *connect.Client[v1.GetDiffRequest, v1.FileDiff]
-	addChangeComment                *connect.Client[v1.AddChangeCommentRequest, v1.ChangeComment]
-	listChangeComments              *connect.Client[v1.ListChangeCommentsRequest, v1.ChangeCommentsResponse]
-	getSCMCapabilities              *connect.Client[v1.ConversationRef, v1.SCMCapabilities]
-	startGitOperation               *connect.Client[v1.StartGitOperationRequest, v1.GitOperation]
-	getGitOperation                 *connect.Client[v1.GitOperationRef, v1.GitOperation]
-	watchGitOperation               *connect.Client[v1.WatchGitOperationRequest, v1.GitOperationFrame]
-	cancelGitOperation              *connect.Client[v1.GitOperationRef, v1.GitOperation]
-	listFiles                       *connect.Client[v1.ListFilesRequest, v1.FileList]
-	readFile                        *connect.Client[v1.ReadFileRequest, v1.FileDocument]
-	saveFile                        *connect.Client[v1.SaveFileRequest, v1.FileDocument]
-	createFile                      *connect.Client[v1.CreateFileRequest, v1.FileEntry]
-	moveFile                        *connect.Client[v1.MoveFileRequest, v1.MoveFileResponse]
-	deleteFile                      *connect.Client[v1.DeleteFileRequest, emptypb.Empty]
-	listTerminals                   *connect.Client[v1.ListTerminalsRequest, v1.TerminalsResponse]
-	createTerminal                  *connect.Client[v1.CreateTerminalRequest, v1.Terminal]
-	watchTerminal                   *connect.Client[v1.WatchTerminalRequest, v1.TerminalFrame]
-	writeTerminal                   *connect.Client[v1.TerminalInputRequest, v1.Terminal]
-	resizeTerminal                  *connect.Client[v1.ResizeTerminalRequest, v1.Terminal]
-	renameTerminal                  *connect.Client[v1.RenameTerminalRequest, v1.Terminal]
-	closeTerminal                   *connect.Client[v1.TerminalRef, emptypb.Empty]
-	listExecutions                  *connect.Client[v1.ListExecutionsRequest, v1.ExecutionsResponse]
-	startExecution                  *connect.Client[v1.StartExecutionRequest, v1.Execution]
-	getExecution                    *connect.Client[v1.ExecutionRef, v1.Execution]
-	watchExecution                  *connect.Client[v1.WatchExecutionRequest, v1.ExecutionEvent]
-	writeExecutionInput             *connect.Client[v1.ExecutionInputRequest, v1.Execution]
-	signalExecution                 *connect.Client[v1.SignalExecutionRequest, v1.Execution]
-	resizeExecution                 *connect.Client[v1.ResizeExecutionRequest, v1.Execution]
-	cancelExecution                 *connect.Client[v1.ExecutionRef, v1.Execution]
-	closeExecution                  *connect.Client[v1.ExecutionRef, emptypb.Empty]
-	getRemoteDesktopCapabilities    *connect.Client[emptypb.Empty, v1.RemoteDesktopCapabilities]
-	listRemoteDesktopDisplayModes   *connect.Client[v1.RemoteDesktopRef, v1.RemoteDesktopDisplayModes]
-	setRemoteDesktopDisplayMode     *connect.Client[v1.SetRemoteDesktopDisplayModeRequest, v1.RemoteDesktopDisplayModes]
-	restoreRemoteDesktopDisplayMode *connect.Client[v1.RemoteDesktopRef, v1.RemoteDesktopDisplayModes]
-	probeRemoteDesktopPermissions   *connect.Client[v1.ProbeRemoteDesktopPermissionsRequest, v1.RemoteDesktopPermissionProbe]
-	startRemoteDesktop              *connect.Client[v1.StartRemoteDesktopRequest, v1.RemoteDesktopSignal]
-	sendRemoteDesktopSignal         *connect.Client[v1.RemoteDesktopSignal, emptypb.Empty]
-	getRemoteDesktopSession         *connect.Client[v1.RemoteDesktopRef, v1.RemoteDesktopSessionState]
-	listRemoteDesktopSessions       *connect.Client[emptypb.Empty, v1.RemoteDesktopSessions]
-	setRemoteDesktopControl         *connect.Client[v1.RemoteDesktopControlRequest, v1.RemoteDesktopSessionState]
-	updateRemoteDesktopSession      *connect.Client[v1.UpdateRemoteDesktopSessionRequest, v1.RemoteDesktopSessionState]
-	exchangeRemoteDesktopClipboard  *connect.Client[v1.RemoteDesktopClipboardRequest, v1.RemoteDesktopClipboardResponse]
-	closeRemoteDesktop              *connect.Client[v1.RemoteDesktopRef, emptypb.Empty]
-	listSchedules                   *connect.Client[v1.ListSchedulesRequest, v1.SchedulesResponse]
-	getSchedule                     *connect.Client[v1.ScheduleRef, v1.Schedule]
-	previewSchedule                 *connect.Client[v1.PreviewScheduleRequest, v1.SchedulePreview]
-	createSchedule                  *connect.Client[v1.SaveScheduleRequest, v1.Schedule]
-	updateSchedule                  *connect.Client[v1.SaveScheduleRequest, v1.Schedule]
-	deleteSchedule                  *connect.Client[v1.ScheduleRef, emptypb.Empty]
-	runSchedule                     *connect.Client[v1.ScheduleRef, v1.ScheduleRun]
-	setScheduleEnabled              *connect.Client[v1.SetScheduleEnabledRequest, v1.Schedule]
-	listScheduleRuns                *connect.Client[v1.ListScheduleRunsRequest, v1.ScheduleRunsResponse]
+	getKV                              *connect.Client[v1.KVRef, v1.KVEntry]
+	listKV                             *connect.Client[v1.KVListRequest, v1.KVPage]
+	putKV                              *connect.Client[v1.KVPutRequest, v1.KVEntry]
+	deleteKV                           *connect.Client[v1.KVDeleteRequest, v1.KVEntry]
+	moveKV                             *connect.Client[v1.KVMoveRequest, v1.KVEntry]
+	watchKV                            *connect.Client[v1.KVWatchRequest, v1.KVFrame]
+	getPeerChanges                     *connect.Client[v1.PeerChangesRequest, v1.PeerChangesResponse]
+	getPeerRecord                      *connect.Client[v1.PeerRecordRef, v1.PeerRecord]
+	getPeerStoreStatus                 *connect.Client[emptypb.Empty, v1.PeerStoreStatus]
+	listPeerRecords                    *connect.Client[v1.PeerSnapshotRequest, v1.PeerSnapshot]
+	putPeerRecord                      *connect.Client[v1.PutPeerRecordRequest, v1.PeerRecord]
+	mergePeerRecords                   *connect.Client[v1.MergePeerRecordsRequest, emptypb.Empty]
+	health                             *connect.Client[emptypb.Empty, v1.HealthResponse]
+	getRuntimeStatus                   *connect.Client[emptypb.Empty, v1.RuntimeStatus]
+	startControlConnection             *connect.Client[v1.StartControlConnectionRequest, v1.ControlConnection]
+	getControlConnection               *connect.Client[v1.ControlConnectionRef, v1.ControlConnection]
+	closeControlConnection             *connect.Client[v1.ControlConnectionRef, emptypb.Empty]
+	getMachineInformation              *connect.Client[emptypb.Empty, v1.MachineInformation]
+	performMachineOperation            *connect.Client[v1.MachineOperationRequest, v1.MachineOperationResponse]
+	getState                           *connect.Client[v1.GetStateRequest, v1.State]
+	watchChanges                       *connect.Client[v1.ChangesRequest, v1.ChangesFrame]
+	getHarnesses                       *connect.Client[emptypb.Empty, v1.HarnessCatalog]
+	getSettings                        *connect.Client[emptypb.Empty, v1.Settings]
+	getSettingsOptions                 *connect.Client[emptypb.Empty, v1.SettingsOptions]
+	updateSettings                     *connect.Client[v1.UpdateSettingsRequest, v1.Settings]
+	getPromptSettings                  *connect.Client[emptypb.Empty, v1.PromptSettings]
+	updatePromptSettings               *connect.Client[v1.UpdatePromptSettingsRequest, v1.PromptSettings]
+	setProjectPromptTemplate           *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Project]
+	setBoardPromptTemplate             *connect.Client[v1.SetScopedPromptTemplateRequest, v1.Board]
+	previewPrompt                      *connect.Client[v1.PreviewPromptRequest, v1.PromptPreview]
+	listDirectories                    *connect.Client[v1.ListDirectoriesRequest, v1.DirectoryListing]
+	consolidateProject                 *connect.Client[v1.ConsolidateProjectRequest, v1.Project]
+	attachCheckout                     *connect.Client[v1.AttachCheckoutRequest, v1.Checkout]
+	detachCheckout                     *connect.Client[v1.CheckoutRef, emptypb.Empty]
+	listCheckouts                      *connect.Client[v1.ProjectRef, v1.CheckoutsResponse]
+	createProject                      *connect.Client[v1.CreateProjectRequest, v1.CreateProjectResponse]
+	updateProject                      *connect.Client[v1.UpdateProjectRequest, v1.Project]
+	updateProjectWorkspaceSettings     *connect.Client[v1.UpdateProjectWorkspaceSettingsRequest, v1.Project]
+	archiveProject                     *connect.Client[v1.ArchiveProjectRequest, v1.Project]
+	listArchivedProjects               *connect.Client[emptypb.Empty, v1.ProjectsResponse]
+	createBoard                        *connect.Client[v1.CreateBoardRequest, v1.Board]
+	getBoard                           *connect.Client[v1.BoardRef, v1.Board]
+	listRetiredBoards                  *connect.Client[v1.ListRetiredBoardsRequest, v1.ListRetiredBoardsResponse]
+	setBoardRetired                    *connect.Client[v1.SetBoardRetiredRequest, v1.Board]
+	renameBoard                        *connect.Client[v1.RenameBoardRequest, v1.Board]
+	setBoardArchivePolicy              *connect.Client[v1.SetBoardArchivePolicyRequest, v1.Board]
+	updateBoardHostnames               *connect.Client[v1.UpdateBoardHostnamesRequest, v1.Board]
+	updateBoardGitSettings             *connect.Client[v1.UpdateBoardGitSettingsRequest, v1.Board]
+	listArchivedCards                  *connect.Client[v1.BoardRef, v1.CardsResponse]
+	createBoardLabel                   *connect.Client[v1.CreateBoardLabelRequest, v1.Board]
+	updateBoardLabel                   *connect.Client[v1.UpdateBoardLabelRequest, v1.Board]
+	deleteBoardLabel                   *connect.Client[v1.DeleteBoardLabelRequest, v1.Board]
+	createCard                         *connect.Client[v1.CreateConversationRequest, v1.Card]
+	createChat                         *connect.Client[v1.CreateConversationRequest, v1.Card]
+	forkChat                           *connect.Client[v1.ForkChatRequest, v1.Card]
+	listChats                          *connect.Client[v1.ListChatsRequest, v1.ChatsResponse]
+	getCard                            *connect.Client[v1.GetCardRequest, v1.CardDetail]
+	getConversation                    *connect.Client[v1.GetConversationRequest, v1.ConversationSnapshot]
+	pollConversation                   *connect.Client[v1.PollConversationRequest, v1.ConversationUpdate]
+	watchConversation                  *connect.Client[v1.WatchConversationRequest, v1.ConversationUpdate]
+	getToolOutput                      *connect.Client[v1.GetToolOutputRequest, v1.ToolOutput]
+	presentConversationContent         *connect.Client[v1.PresentConversationContentRequest, v1.ContentPresentation]
+	sendMessage                        *connect.Client[v1.SendMessageRequest, v1.SendMessageResponse]
+	removeQueuedMessage                *connect.Client[v1.RemoveQueuedMessageRequest, v1.QueuedMessage]
+	markConversationRead               *connect.Client[v1.MarkConversationReadRequest, v1.Card]
+	moveCard                           *connect.Client[v1.MoveCardRequest, v1.Card]
+	mergeCard                          *connect.Client[v1.MergeCardRequest, v1.Card]
+	startCard                          *connect.Client[v1.StartCardRequest, v1.StartCardResponse]
+	setCardLabels                      *connect.Client[v1.SetCardLabelsRequest, v1.Card]
+	cancelCard                         *connect.Client[v1.GetCardRequest, emptypb.Empty]
+	renameCard                         *connect.Client[v1.RenameCardRequest, v1.Card]
+	updateCard                         *connect.Client[v1.UpdateCardRequest, v1.Card]
+	archiveCard                        *connect.Client[v1.ArchiveCardRequest, v1.Card]
+	pinChat                            *connect.Client[v1.PinChatRequest, v1.Card]
+	updateConversationWorkspace        *connect.Client[v1.UpdateConversationWorkspaceRequest, v1.Card]
+	getWorkspace                       *connect.Client[v1.ConversationRef, v1.Workspace]
+	listProjectWorkspaces              *connect.Client[v1.ProjectRef, v1.WorkspacesResponse]
+	getChangeset                       *connect.Client[v1.GetChangesetRequest, v1.Changeset]
+	getFileDiff                        *connect.Client[v1.GetDiffRequest, v1.FileDiff]
+	getCommitDiff                      *connect.Client[v1.GetDiffRequest, v1.FileDiff]
+	addChangeComment                   *connect.Client[v1.AddChangeCommentRequest, v1.ChangeComment]
+	listChangeComments                 *connect.Client[v1.ListChangeCommentsRequest, v1.ChangeCommentsResponse]
+	getSCMCapabilities                 *connect.Client[v1.ConversationRef, v1.SCMCapabilities]
+	startGitOperation                  *connect.Client[v1.StartGitOperationRequest, v1.GitOperation]
+	getGitOperation                    *connect.Client[v1.GitOperationRef, v1.GitOperation]
+	watchGitOperation                  *connect.Client[v1.WatchGitOperationRequest, v1.GitOperationFrame]
+	cancelGitOperation                 *connect.Client[v1.GitOperationRef, v1.GitOperation]
+	listFiles                          *connect.Client[v1.ListFilesRequest, v1.FileList]
+	readFile                           *connect.Client[v1.ReadFileRequest, v1.FileDocument]
+	saveFile                           *connect.Client[v1.SaveFileRequest, v1.FileDocument]
+	createFile                         *connect.Client[v1.CreateFileRequest, v1.FileEntry]
+	moveFile                           *connect.Client[v1.MoveFileRequest, v1.MoveFileResponse]
+	deleteFile                         *connect.Client[v1.DeleteFileRequest, emptypb.Empty]
+	listTerminals                      *connect.Client[v1.ListTerminalsRequest, v1.TerminalsResponse]
+	createTerminal                     *connect.Client[v1.CreateTerminalRequest, v1.Terminal]
+	watchTerminal                      *connect.Client[v1.WatchTerminalRequest, v1.TerminalFrame]
+	writeTerminal                      *connect.Client[v1.TerminalInputRequest, v1.Terminal]
+	resizeTerminal                     *connect.Client[v1.ResizeTerminalRequest, v1.Terminal]
+	renameTerminal                     *connect.Client[v1.RenameTerminalRequest, v1.Terminal]
+	closeTerminal                      *connect.Client[v1.TerminalRef, emptypb.Empty]
+	listExecutions                     *connect.Client[v1.ListExecutionsRequest, v1.ExecutionsResponse]
+	startExecution                     *connect.Client[v1.StartExecutionRequest, v1.Execution]
+	getExecution                       *connect.Client[v1.ExecutionRef, v1.Execution]
+	watchExecution                     *connect.Client[v1.WatchExecutionRequest, v1.ExecutionEvent]
+	writeExecutionInput                *connect.Client[v1.ExecutionInputRequest, v1.Execution]
+	signalExecution                    *connect.Client[v1.SignalExecutionRequest, v1.Execution]
+	resizeExecution                    *connect.Client[v1.ResizeExecutionRequest, v1.Execution]
+	cancelExecution                    *connect.Client[v1.ExecutionRef, v1.Execution]
+	closeExecution                     *connect.Client[v1.ExecutionRef, emptypb.Empty]
+	getRemoteDesktopCapabilities       *connect.Client[emptypb.Empty, v1.RemoteDesktopCapabilities]
+	listRemoteDesktopDisplayModes      *connect.Client[v1.RemoteDesktopRef, v1.RemoteDesktopDisplayModes]
+	setRemoteDesktopDisplayMode        *connect.Client[v1.SetRemoteDesktopDisplayModeRequest, v1.RemoteDesktopDisplayModes]
+	restoreRemoteDesktopDisplayMode    *connect.Client[v1.RemoteDesktopRef, v1.RemoteDesktopDisplayModes]
+	getRemoteDesktopVirtualDisplay     *connect.Client[v1.RemoteDesktopRef, v1.RemoteDesktopVirtualDisplay]
+	setRemoteDesktopVirtualDisplay     *connect.Client[v1.SetRemoteDesktopVirtualDisplayRequest, v1.RemoteDesktopVirtualDisplay]
+	confirmRemoteDesktopVirtualDisplay *connect.Client[v1.ConfirmRemoteDesktopVirtualDisplayRequest, v1.RemoteDesktopVirtualDisplay]
+	restoreRemoteDesktopVirtualDisplay *connect.Client[v1.RemoteDesktopRef, v1.RemoteDesktopVirtualDisplay]
+	probeRemoteDesktopPermissions      *connect.Client[v1.ProbeRemoteDesktopPermissionsRequest, v1.RemoteDesktopPermissionProbe]
+	startRemoteDesktop                 *connect.Client[v1.StartRemoteDesktopRequest, v1.RemoteDesktopSignal]
+	sendRemoteDesktopSignal            *connect.Client[v1.RemoteDesktopSignal, emptypb.Empty]
+	getRemoteDesktopSession            *connect.Client[v1.RemoteDesktopRef, v1.RemoteDesktopSessionState]
+	listRemoteDesktopSessions          *connect.Client[emptypb.Empty, v1.RemoteDesktopSessions]
+	setRemoteDesktopControl            *connect.Client[v1.RemoteDesktopControlRequest, v1.RemoteDesktopSessionState]
+	updateRemoteDesktopSession         *connect.Client[v1.UpdateRemoteDesktopSessionRequest, v1.RemoteDesktopSessionState]
+	exchangeRemoteDesktopClipboard     *connect.Client[v1.RemoteDesktopClipboardRequest, v1.RemoteDesktopClipboardResponse]
+	closeRemoteDesktop                 *connect.Client[v1.RemoteDesktopRef, emptypb.Empty]
+	listSchedules                      *connect.Client[v1.ListSchedulesRequest, v1.SchedulesResponse]
+	getSchedule                        *connect.Client[v1.ScheduleRef, v1.Schedule]
+	previewSchedule                    *connect.Client[v1.PreviewScheduleRequest, v1.SchedulePreview]
+	createSchedule                     *connect.Client[v1.SaveScheduleRequest, v1.Schedule]
+	updateSchedule                     *connect.Client[v1.SaveScheduleRequest, v1.Schedule]
+	deleteSchedule                     *connect.Client[v1.ScheduleRef, emptypb.Empty]
+	runSchedule                        *connect.Client[v1.ScheduleRef, v1.ScheduleRun]
+	setScheduleEnabled                 *connect.Client[v1.SetScheduleEnabledRequest, v1.Schedule]
+	listScheduleRuns                   *connect.Client[v1.ListScheduleRunsRequest, v1.ScheduleRunsResponse]
 }
 
 // GetKV calls dieter.v1.DieterService.GetKV.
@@ -1618,14 +1654,9 @@ func (c *dieterServiceClient) GetState(ctx context.Context, req *connect.Request
 	return c.getState.CallUnary(ctx, req)
 }
 
-// WatchState calls dieter.v1.DieterService.WatchState.
-func (c *dieterServiceClient) WatchState(ctx context.Context, req *connect.Request[v1.WatchStateRequest]) (*connect.ServerStreamForClient[v1.State], error) {
-	return c.watchState.CallServerStream(ctx, req)
-}
-
-// WatchSync calls dieter.v1.DieterService.WatchSync.
-func (c *dieterServiceClient) WatchSync(ctx context.Context, req *connect.Request[v1.SyncRequest]) (*connect.ServerStreamForClient[v1.SyncFrame], error) {
-	return c.watchSync.CallServerStream(ctx, req)
+// WatchChanges calls dieter.v1.DieterService.WatchChanges.
+func (c *dieterServiceClient) WatchChanges(ctx context.Context, req *connect.Request[v1.ChangesRequest]) (*connect.ServerStreamForClient[v1.ChangesFrame], error) {
+	return c.watchChanges.CallServerStream(ctx, req)
 }
 
 // GetHarnesses calls dieter.v1.DieterService.GetHarnesses.
@@ -2088,6 +2119,28 @@ func (c *dieterServiceClient) RestoreRemoteDesktopDisplayMode(ctx context.Contex
 	return c.restoreRemoteDesktopDisplayMode.CallUnary(ctx, req)
 }
 
+// GetRemoteDesktopVirtualDisplay calls dieter.v1.DieterService.GetRemoteDesktopVirtualDisplay.
+func (c *dieterServiceClient) GetRemoteDesktopVirtualDisplay(ctx context.Context, req *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopVirtualDisplay], error) {
+	return c.getRemoteDesktopVirtualDisplay.CallUnary(ctx, req)
+}
+
+// SetRemoteDesktopVirtualDisplay calls dieter.v1.DieterService.SetRemoteDesktopVirtualDisplay.
+func (c *dieterServiceClient) SetRemoteDesktopVirtualDisplay(ctx context.Context, req *connect.Request[v1.SetRemoteDesktopVirtualDisplayRequest]) (*connect.Response[v1.RemoteDesktopVirtualDisplay], error) {
+	return c.setRemoteDesktopVirtualDisplay.CallUnary(ctx, req)
+}
+
+// ConfirmRemoteDesktopVirtualDisplay calls
+// dieter.v1.DieterService.ConfirmRemoteDesktopVirtualDisplay.
+func (c *dieterServiceClient) ConfirmRemoteDesktopVirtualDisplay(ctx context.Context, req *connect.Request[v1.ConfirmRemoteDesktopVirtualDisplayRequest]) (*connect.Response[v1.RemoteDesktopVirtualDisplay], error) {
+	return c.confirmRemoteDesktopVirtualDisplay.CallUnary(ctx, req)
+}
+
+// RestoreRemoteDesktopVirtualDisplay calls
+// dieter.v1.DieterService.RestoreRemoteDesktopVirtualDisplay.
+func (c *dieterServiceClient) RestoreRemoteDesktopVirtualDisplay(ctx context.Context, req *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopVirtualDisplay], error) {
+	return c.restoreRemoteDesktopVirtualDisplay.CallUnary(ctx, req)
+}
+
 // ProbeRemoteDesktopPermissions calls dieter.v1.DieterService.ProbeRemoteDesktopPermissions.
 func (c *dieterServiceClient) ProbeRemoteDesktopPermissions(ctx context.Context, req *connect.Request[v1.ProbeRemoteDesktopPermissionsRequest]) (*connect.Response[v1.RemoteDesktopPermissionProbe], error) {
 	return c.probeRemoteDesktopPermissions.CallUnary(ctx, req)
@@ -2206,11 +2259,12 @@ type DieterServiceHandler interface {
 	GetMachineInformation(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.MachineInformation], error)
 	PerformMachineOperation(context.Context, *connect.Request[v1.MachineOperationRequest]) (*connect.Response[v1.MachineOperationResponse], error)
 	GetState(context.Context, *connect.Request[v1.GetStateRequest]) (*connect.Response[v1.State], error)
-	WatchState(context.Context, *connect.Request[v1.WatchStateRequest], *connect.ServerStream[v1.State]) error
-	// WatchSync is the daemon-wide durable change stream used by native
-	// clients. Views are rendered from the client projection rather than by
-	// opening per-view RPCs.
-	WatchSync(context.Context, *connect.Request[v1.SyncRequest], *connect.ServerStream[v1.SyncFrame]) error
+	// WatchChanges streams this machine's view to native clients: its replica of
+	// the account's shared records in the peer store's own order, plus the
+	// owner-only details and live activity of the conversations it runs. A
+	// client holds one stream per online machine and merges the shared records
+	// causally; no machine is attached or preferred.
+	WatchChanges(context.Context, *connect.Request[v1.ChangesRequest], *connect.ServerStream[v1.ChangesFrame]) error
 	GetHarnesses(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.HarnessCatalog], error)
 	GetSettings(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.Settings], error)
 	GetSettingsOptions(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.SettingsOptions], error)
@@ -2321,6 +2375,10 @@ type DieterServiceHandler interface {
 	ListRemoteDesktopDisplayModes(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopDisplayModes], error)
 	SetRemoteDesktopDisplayMode(context.Context, *connect.Request[v1.SetRemoteDesktopDisplayModeRequest]) (*connect.Response[v1.RemoteDesktopDisplayModes], error)
 	RestoreRemoteDesktopDisplayMode(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopDisplayModes], error)
+	GetRemoteDesktopVirtualDisplay(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopVirtualDisplay], error)
+	SetRemoteDesktopVirtualDisplay(context.Context, *connect.Request[v1.SetRemoteDesktopVirtualDisplayRequest]) (*connect.Response[v1.RemoteDesktopVirtualDisplay], error)
+	ConfirmRemoteDesktopVirtualDisplay(context.Context, *connect.Request[v1.ConfirmRemoteDesktopVirtualDisplayRequest]) (*connect.Response[v1.RemoteDesktopVirtualDisplay], error)
+	RestoreRemoteDesktopVirtualDisplay(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopVirtualDisplay], error)
 	// Explicit, bounded permission test performed by the running daemon.
 	// Discards one encoded frame and never injects input or changes settings.
 	ProbeRemoteDesktopPermissions(context.Context, *connect.Request[v1.ProbeRemoteDesktopPermissionsRequest]) (*connect.Response[v1.RemoteDesktopPermissionProbe], error)
@@ -2470,16 +2528,10 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(dieterServiceMethods.ByName("GetState")),
 		connect.WithHandlerOptions(opts...),
 	)
-	dieterServiceWatchStateHandler := connect.NewServerStreamHandler(
-		DieterServiceWatchStateProcedure,
-		svc.WatchState,
-		connect.WithSchema(dieterServiceMethods.ByName("WatchState")),
-		connect.WithHandlerOptions(opts...),
-	)
-	dieterServiceWatchSyncHandler := connect.NewServerStreamHandler(
-		DieterServiceWatchSyncProcedure,
-		svc.WatchSync,
-		connect.WithSchema(dieterServiceMethods.ByName("WatchSync")),
+	dieterServiceWatchChangesHandler := connect.NewServerStreamHandler(
+		DieterServiceWatchChangesProcedure,
+		svc.WatchChanges,
+		connect.WithSchema(dieterServiceMethods.ByName("WatchChanges")),
 		connect.WithHandlerOptions(opts...),
 	)
 	dieterServiceGetHarnessesHandler := connect.NewUnaryHandler(
@@ -3034,6 +3086,30 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(dieterServiceMethods.ByName("RestoreRemoteDesktopDisplayMode")),
 		connect.WithHandlerOptions(opts...),
 	)
+	dieterServiceGetRemoteDesktopVirtualDisplayHandler := connect.NewUnaryHandler(
+		DieterServiceGetRemoteDesktopVirtualDisplayProcedure,
+		svc.GetRemoteDesktopVirtualDisplay,
+		connect.WithSchema(dieterServiceMethods.ByName("GetRemoteDesktopVirtualDisplay")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceSetRemoteDesktopVirtualDisplayHandler := connect.NewUnaryHandler(
+		DieterServiceSetRemoteDesktopVirtualDisplayProcedure,
+		svc.SetRemoteDesktopVirtualDisplay,
+		connect.WithSchema(dieterServiceMethods.ByName("SetRemoteDesktopVirtualDisplay")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceConfirmRemoteDesktopVirtualDisplayHandler := connect.NewUnaryHandler(
+		DieterServiceConfirmRemoteDesktopVirtualDisplayProcedure,
+		svc.ConfirmRemoteDesktopVirtualDisplay,
+		connect.WithSchema(dieterServiceMethods.ByName("ConfirmRemoteDesktopVirtualDisplay")),
+		connect.WithHandlerOptions(opts...),
+	)
+	dieterServiceRestoreRemoteDesktopVirtualDisplayHandler := connect.NewUnaryHandler(
+		DieterServiceRestoreRemoteDesktopVirtualDisplayProcedure,
+		svc.RestoreRemoteDesktopVirtualDisplay,
+		connect.WithSchema(dieterServiceMethods.ByName("RestoreRemoteDesktopVirtualDisplay")),
+		connect.WithHandlerOptions(opts...),
+	)
 	dieterServiceProbeRemoteDesktopPermissionsHandler := connect.NewUnaryHandler(
 		DieterServiceProbeRemoteDesktopPermissionsProcedure,
 		svc.ProbeRemoteDesktopPermissions,
@@ -3184,10 +3260,8 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServicePerformMachineOperationHandler.ServeHTTP(w, r)
 		case DieterServiceGetStateProcedure:
 			dieterServiceGetStateHandler.ServeHTTP(w, r)
-		case DieterServiceWatchStateProcedure:
-			dieterServiceWatchStateHandler.ServeHTTP(w, r)
-		case DieterServiceWatchSyncProcedure:
-			dieterServiceWatchSyncHandler.ServeHTTP(w, r)
+		case DieterServiceWatchChangesProcedure:
+			dieterServiceWatchChangesHandler.ServeHTTP(w, r)
 		case DieterServiceGetHarnessesProcedure:
 			dieterServiceGetHarnessesHandler.ServeHTTP(w, r)
 		case DieterServiceGetSettingsProcedure:
@@ -3372,6 +3446,14 @@ func NewDieterServiceHandler(svc DieterServiceHandler, opts ...connect.HandlerOp
 			dieterServiceSetRemoteDesktopDisplayModeHandler.ServeHTTP(w, r)
 		case DieterServiceRestoreRemoteDesktopDisplayModeProcedure:
 			dieterServiceRestoreRemoteDesktopDisplayModeHandler.ServeHTTP(w, r)
+		case DieterServiceGetRemoteDesktopVirtualDisplayProcedure:
+			dieterServiceGetRemoteDesktopVirtualDisplayHandler.ServeHTTP(w, r)
+		case DieterServiceSetRemoteDesktopVirtualDisplayProcedure:
+			dieterServiceSetRemoteDesktopVirtualDisplayHandler.ServeHTTP(w, r)
+		case DieterServiceConfirmRemoteDesktopVirtualDisplayProcedure:
+			dieterServiceConfirmRemoteDesktopVirtualDisplayHandler.ServeHTTP(w, r)
+		case DieterServiceRestoreRemoteDesktopVirtualDisplayProcedure:
+			dieterServiceRestoreRemoteDesktopVirtualDisplayHandler.ServeHTTP(w, r)
 		case DieterServiceProbeRemoteDesktopPermissionsProcedure:
 			dieterServiceProbeRemoteDesktopPermissionsHandler.ServeHTTP(w, r)
 		case DieterServiceStartRemoteDesktopProcedure:
@@ -3497,12 +3579,8 @@ func (UnimplementedDieterServiceHandler) GetState(context.Context, *connect.Requ
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetState is not implemented"))
 }
 
-func (UnimplementedDieterServiceHandler) WatchState(context.Context, *connect.Request[v1.WatchStateRequest], *connect.ServerStream[v1.State]) error {
-	return connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.WatchState is not implemented"))
-}
-
-func (UnimplementedDieterServiceHandler) WatchSync(context.Context, *connect.Request[v1.SyncRequest], *connect.ServerStream[v1.SyncFrame]) error {
-	return connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.WatchSync is not implemented"))
+func (UnimplementedDieterServiceHandler) WatchChanges(context.Context, *connect.Request[v1.ChangesRequest], *connect.ServerStream[v1.ChangesFrame]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.WatchChanges is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) GetHarnesses(context.Context, *connect.Request[emptypb.Empty]) (*connect.Response[v1.HarnessCatalog], error) {
@@ -3871,6 +3949,22 @@ func (UnimplementedDieterServiceHandler) SetRemoteDesktopDisplayMode(context.Con
 
 func (UnimplementedDieterServiceHandler) RestoreRemoteDesktopDisplayMode(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopDisplayModes], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.RestoreRemoteDesktopDisplayMode is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) GetRemoteDesktopVirtualDisplay(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopVirtualDisplay], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.GetRemoteDesktopVirtualDisplay is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) SetRemoteDesktopVirtualDisplay(context.Context, *connect.Request[v1.SetRemoteDesktopVirtualDisplayRequest]) (*connect.Response[v1.RemoteDesktopVirtualDisplay], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.SetRemoteDesktopVirtualDisplay is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) ConfirmRemoteDesktopVirtualDisplay(context.Context, *connect.Request[v1.ConfirmRemoteDesktopVirtualDisplayRequest]) (*connect.Response[v1.RemoteDesktopVirtualDisplay], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.ConfirmRemoteDesktopVirtualDisplay is not implemented"))
+}
+
+func (UnimplementedDieterServiceHandler) RestoreRemoteDesktopVirtualDisplay(context.Context, *connect.Request[v1.RemoteDesktopRef]) (*connect.Response[v1.RemoteDesktopVirtualDisplay], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("dieter.v1.DieterService.RestoreRemoteDesktopVirtualDisplay is not implemented"))
 }
 
 func (UnimplementedDieterServiceHandler) ProbeRemoteDesktopPermissions(context.Context, *connect.Request[v1.ProbeRemoteDesktopPermissionsRequest]) (*connect.Response[v1.RemoteDesktopPermissionProbe], error) {

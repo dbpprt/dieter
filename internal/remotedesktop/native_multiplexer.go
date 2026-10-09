@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -78,7 +79,7 @@ func (m *nativeMultiplexer) process(ctx context.Context, template *nativeHelperS
 	root := &nativeHelperSource{path: template.path, display: template.display, profile: template.profile, codec: template.codec,
 		fps: template.fps, bitrateKbps: template.bitrateKbps, maxWidth: template.maxWidth, maxHeight: template.maxHeight,
 		synthetic: template.synthetic, inputAllowed: template.inputAllowed, logger: template.logger, multiplex: true,
-		portalStatePath: template.portalStatePath, ready: make(chan struct{})}
+		portalStatePath: template.portalStatePath, ready: make(chan struct{}), displayActivity: template.displayActivity}
 	processCtx, cancel := context.WithCancel(context.Background())
 	m.root, m.cancel = root, cancel
 	finished := make(chan struct{})
@@ -109,6 +110,14 @@ func (m *nativeMultiplexer) process(ctx context.Context, template *nativeHelperS
 func waitNativeReady(ctx context.Context, root *nativeHelperSource) (*nativeHelperSource, error) {
 	select {
 	case <-root.ready:
+		root.mu.Lock()
+		defer root.mu.Unlock()
+		if root.writes == nil {
+			if root.stoppedErr != nil {
+				return nil, root.stoppedErr
+			}
+			return nil, errNativeHelperStopped
+		}
 		return root, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -163,6 +172,15 @@ func (s *nativeRendition) SetEventHandler(f func(SourceEvent)) {
 	s.mux.mu.Lock()
 	s.callback = f
 	s.mux.mu.Unlock()
+}
+func (s *nativeRendition) WakeDisplay(ctx context.Context) error {
+	if runtime.GOOS != "darwin" || s.template.synthetic {
+		return nil
+	}
+	if _, err := s.mux.process(ctx, s.template); err != nil {
+		return err
+	}
+	return s.command(ctx, nativeCommand{Kind: "wake_display"}, true)
 }
 func (s *nativeRendition) command(ctx context.Context, command nativeCommand, wait bool) error {
 	s.mux.mu.Lock()

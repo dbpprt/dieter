@@ -135,6 +135,14 @@ struct DieterMacApp: App {
                 }
                 .keyboardShortcut(",", modifiers: .command)
             }
+            CommandGroup(before: .toolbar) {
+                Button(store.sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar") {
+                    openWindow(id: "workspace"); store.sidebarCollapsed.toggle()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .control])
+                .disabled(!permissions.canUseApp)
+                Divider()
+            }
             CommandMenu("Dieter") {
                 Button("Command Palette…") {
                     openWindow(id: "workspace"); store.commandPalettePresented = true
@@ -296,13 +304,11 @@ struct MenuBarContent: View {
             Divider().overlay(DieterTheme.border)
             HStack(spacing: 10) {
                 MenuBarActionButton(
-                    title: store.phase.isConnected ? "Disconnect" : "Connect",
-                    tint: store.phase.isConnected ? DieterTheme.coral : DieterTheme.text,
-                    background: DieterTheme.raised,
+                    title: store.phase.isConnected ? "Disconnect" : "Connect", destructive: store.phase.isConnected
                 ) {
                     if store.phase.isConnected { store.disconnect() } else { Task { await store.connect() } }
                 }
-                MenuBarActionButton(title: "Open Dieter", tint: .white, background: DieterTheme.primary) {
+                MenuBarActionButton(title: "Open Dieter", prominent: true) {
                     openWindow(id: "workspace")
                     NSApp.activate(ignoringOtherApps: true)
                 }
@@ -322,14 +328,14 @@ struct MenuBarContent: View {
         HStack(alignment: .center, spacing: 11) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(store.phase.isConnected ? DieterTheme.eyes.opacity(0.14) : DieterTheme.surface)
+                    .fill(store.phase.isConnected ? DieterTheme.running.opacity(0.14) : DieterTheme.tile)
                 Image(systemName: store.phase.isConnected ? "wifi" : "wifi.slash")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(store.phase.isConnected ? DieterTheme.eyes : DieterTheme.tertiary)
             }
             .frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 2) {
-                Text(store.phase.isConnected ? "Connected to \(store.endpoint.name)" : store.session.phaseLabel)
+                Text(store.phase.isConnected ? "Connected to \(store.activeGateway.name)" : store.session.phaseLabel)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(DieterTheme.text)
                     .lineLimit(1)
@@ -343,51 +349,41 @@ struct MenuBarContent: View {
         }
     }
 
+    /// How many machines can take work, or the gateway before any is listed.
     private var headerDetail: String {
-        let status = store.machineStatusLine(store.endpoint)
-        return status.isEmpty ? "\(store.endpoint.host):\(store.endpoint.port)" : status
+        let machines = store.machines
+        guard !machines.isEmpty else { return "\(store.activeGateway.host):\(store.activeGateway.port)" }
+        return "\(machines.filter(store.machineIsAvailable).count) of \(machines.count) machines available"
     }
 
     private var phaseColor: Color { store.session.tone.color }
 
+    /// Each machine with how current its part of the workspace is; the
+    /// gateways before any machine is listed.
     @ViewBuilder private var endpointRows: some View {
         let rows = store.machines.isEmpty ? store.gateways : store.machines
         if !rows.isEmpty {
             VStack(spacing: 6) {
                 ForEach(rows.prefix(4)) { machine in
-                    let active = machine.id == store.endpoint.id
                     HStack(spacing: 8) {
                         Circle()
                             .fill(machine.online ? DieterTheme.eyes : DieterTheme.coral)
                             .frame(width: 6, height: 6)
                         Text(machine.name)
-                            .font(.system(size: 12, weight: active ? .semibold : .regular))
+                            .font(.system(size: 12))
                             .foregroundStyle(DieterTheme.text)
                             .lineLimit(1)
                         Spacer(minLength: 8)
-                        Text("\(machine.host):\(String(machine.port))")
-                            .font(.system(size: 10.5, design: .monospaced))
+                        Text(store.machineEntry(machine)?.syncLabel ?? "\(machine.host):\(String(machine.port))")
+                            .font(.system(size: 10.5))
                             .foregroundStyle(DieterTheme.tertiary)
                             .lineLimit(1)
-                        if active {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(DieterTheme.eyes)
-                        } else if !machine.online {
-                            Text("unavailable")
-                                .font(.system(size: 10.5))
-                                .foregroundStyle(DieterTheme.tertiary)
-                        }
                     }
                     .padding(.horizontal, 11).frame(height: 34)
                     .background(
-                        active ? DieterTheme.eyes.opacity(0.07) : DieterTheme.surface.opacity(0.72),
-                        in: RoundedRectangle(cornerRadius: 9, style: .continuous),
+                        DieterTheme.tile, in: RoundedRectangle(cornerRadius: 9, style: .continuous)
                     )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .stroke(active ? DieterTheme.eyes.opacity(0.45) : DieterTheme.border),
-                    )
+                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(DieterTheme.border))
                 }
             }
         }
@@ -533,20 +529,14 @@ private struct MenuBarChip: View {
 
 private struct MenuBarActionButton: View {
     let title: String
-    let tint: Color
-    let background: Color
+    var prominent = false
+    var destructive = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(maxWidth: .infinity)
-                .frame(height: 34)
-                .background(background, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .contentShape(Rectangle())
+            Text(title).frame(maxWidth: .infinity)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(DieterBarButtonStyle(prominent: prominent, destructive: destructive))
     }
 }

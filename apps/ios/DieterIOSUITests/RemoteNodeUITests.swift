@@ -76,11 +76,18 @@ final class RemoteNodeUITests: XCTestCase {
         // avoids re-resolving a now-stale TextField query midway through input.
         app.typeText(text)
         dismissKeyboardIntroduction(app)
+        // SwiftUI can replace the title's native field as its preview updates.
+        // CI retained the complete visible title while the optimized value
+        // predicate timed out. Read the current query's value on each poll;
+        // keep the exact suffix and fillTask's complete-value assertions.
         let entered = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value ENDSWITH %@", text), object: field)
+            predicate: NSPredicate { _, _ in
+                (field.value as? String)?.hasSuffix(text) == true
+            }, object: field)
         XCTAssertEqual(
-            XCTWaiter.wait(for: [entered], timeout: 5), .completed,
-            "Typing must update \(identifier).\n\(app.debugDescription)")
+            XCTWaiter.wait(for: [entered], timeout: 10), .completed,
+            "Typing must update \(identifier); current value=\(String(describing: field.value)).\n"
+                + app.debugDescription)
     }
 
     private func dismissKeyboardIntroduction(_ app: XCUIApplication) {
@@ -336,8 +343,8 @@ final class RemoteNodeUITests: XCTestCase {
             banner.waitForExistence(timeout: 45),
             "Taking the isolated daemon offline must present the connection state.\n\(app.debugDescription)")
 
-        // The core words the notice by phase: reconnecting while it retries the
-        // feed, then cached data once presence reports the machine offline.
+        // The core words the notice by phase: reconnecting while the connection
+        // recovers, then cached data once no machine is reachable.
         let noticeTitles = ["Reconnecting to Dieter", "Working from cached data", "Dieter is unavailable"]
         let notice = banner.staticTexts.matching(NSPredicate(format: "label IN %@", noticeTitles)).firstMatch
         XCTAssertTrue(
@@ -640,9 +647,35 @@ final class RemoteNodeUITests: XCTestCase {
             "Run task should remain visible and enabled after entering the task.\n\(app.debugDescription)")
         tap(app, "ios.create.run")
         assistantTextExists(app, "Mock harness received: Verify this request came from iOS", timeout: 150)
-        tap(app, "ios.conversation.model-settings")
-        XCTAssertTrue(element(app, "ios.conversation.model-settings.sheet").waitForExistence(timeout: 10))
-        XCTAssertTrue(element(app, "ios.conversation.model").exists)
+        // Start a fresh client and open the existing task. A creation preview
+        // loads its machine catalog and would hide a missing conversation load.
+        app.terminate()
+        app.launch()
+        waitForBoard(app, project: project, board: board)
+        openBoard(app, board: board)
+        let existingTask = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH 'ios.task.' AND label CONTAINS %@", "iOS remote smoke task")
+        ).firstMatch
+        XCTAssertTrue(existingTask.waitForExistence(timeout: 30), "The existing task must survive relaunch")
+        existingTask.tap()
+        assistantTextExists(app, "Mock harness received: Verify this request came from iOS", timeout: 30)
+        // The reply can arrive before the agent catalog enables this toolbar
+        // action. Require its native readiness and observe the sheet opening.
+        let modelSettingsSheet = element(app, "ios.conversation.model-settings.sheet")
+        tapWhenEnabled(app, "ios.conversation.model-settings", opening: modelSettingsSheet)
+        XCTAssertTrue(
+            modelSettingsSheet.waitForExistence(timeout: 10),
+            "Model settings must open after its toolbar action.\n\(app.debugDescription)")
+        for identifier in ["ios.conversation.provider", "ios.conversation.model"] {
+            let picker = element(app, identifier)
+            let named = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Mock"), object: picker)
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [named], timeout: 20), .completed,
+                "An existing conversation must show its selected agent in \(identifier).\n\(app.debugDescription)")
+        }
+        XCTAssertTrue(
+            element(app, "ios.conversation.effort").exists,
+            "The conversation's model catalog supplies reasoning choices")
         screenshot(app, "03-next-message-settings")
         tap(app, "ios.conversation.model-settings.done")
         screenshot(app, "03-live-remote-conversation")
@@ -904,7 +937,25 @@ final class RemoteNodeUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(
             share.waitForExistence(timeout: 10), "The owned file must expose Share.\n\(files.debugDescription)")
-        share.tap()
+        let shareSheet = files.cells.matching(identifier: "shareCell").firstMatch
+        for attempt in 0..<2 {
+            // Hosted Files left the context menu open after an element tap.
+            // Resolve its visible geometry immediately before sending input,
+            // then require the actual activity sheet before leaving Files.
+            let frame = share.frame
+            guard hasUsableFrame(frame), files.frame.contains(frame) else {
+                XCTFail("Files Share must have a finite visible frame.\n\(files.debugDescription)")
+                return
+            }
+            tapPicker(files, frame: frame)
+            if shareSheet.waitForExistence(timeout: 5) { return }
+            // Retry only an unconsumed context-menu action; never send another
+            // tap into an already opened sheet or restart the Share journey.
+            guard attempt == 0, !shareSheet.exists, share.exists else { break }
+        }
+        XCTAssertTrue(
+            shareSheet.waitForExistence(timeout: 10),
+            "Files Share must open the activity sheet.\n\(files.debugDescription)")
     }
 
     func testShareExtensionRoutesOwnedFileToNewTask() throws {

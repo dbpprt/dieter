@@ -241,6 +241,7 @@ message DaemonRoute {
   // signaling routes.
   bytes daemon_certificate_pem = 6;
   bool control_webrtc = 7;
+  repeated RelayLaneStatus relay_lanes = 8;
 }
 
 message RTCIceServer {
@@ -523,6 +524,26 @@ enum DaemonLinkFrameKind {
   DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_RESULT = 20;
 }
 
+// Each lane uses its own authenticated connection and flow-control window.
+// These are resource classes, not authorization scopes.
+enum RelayLane {
+  RELAY_LANE_CONTROL = 0;
+  RELAY_LANE_REPLICATION = 1;
+  RELAY_LANE_COMMAND = 2;
+  RELAY_LANE_SUBSCRIPTION = 3;
+}
+
+message RelayLaneStatus {
+  RelayLane lane = 1;
+  bool connected = 2;
+  uint32 active_calls = 3;
+  uint32 call_limit = 4;
+  uint64 queued_bytes = 5;
+  uint64 rejected_calls = 6;
+  string last_response_at = 7;
+  bool write_stalled = 8;
+}
+
 message DaemonLinkFrame {
   DaemonLinkFrameKind kind = 1;
   uint64 stream_id = 2;
@@ -552,4 +573,12 @@ message DaemonLinkFrame {
   ProviderQuotaResetResult provider_quota_reset_result = 25;
   CompatibilityPolicy compatibility_policy = 26;
   CompatibilityStatus compatibility = 27;
+  RelayLane lane = 28;
+  // All lanes of one daemon process join this unpredictable session identity.
+  string session_id = 29;
+  reserved 30;
+  // Fragmented payloads retain one logical message bound. Metadata is carried
+  // only by the first fragment; offsets must be contiguous within a stream.
+  uint32 payload_size = 31;
+  uint32 payload_offset = 32;
 }

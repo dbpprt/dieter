@@ -88,7 +88,7 @@ func homebrewUpdateCapability(ctx context.Context, root string) OperationCapabil
 		// Derive the global prefix from brew itself, then require the exact real
 		// executable path; a similarly named executable elsewhere is insufficient.
 		rawHome, prefixErr := exec.CommandContext(prefixCtx, brew, "--prefix").Output()
-		if prefixErr != nil || executable != filepath.Join(serviceruntime.HomebrewRoot(strings.TrimSpace(string(rawHome))), "bin", "dieter") {
+		if prefixErr != nil || executable != serviceruntime.PlatformRuntime(serviceruntime.HomebrewRoot(strings.TrimSpace(string(rawHome)))).DaemonExecutable() {
 			result.UnavailableReason = "the running daemon is not the Homebrew-installed Dieter binary"
 			return result
 		}

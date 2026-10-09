@@ -124,8 +124,8 @@ func (s *Store) ConversationRevision(cardRef string) (string, error) {
 	return s.ConversationRevisionByID(card.ID)
 }
 
-// ConversationRevisionByID is the constant-time form used by WatchSync's
-// bounded conversation projection.
+// ConversationRevisionByID is the constant-time form used by WatchChanges to
+// refresh the activity of a conversation only when its files changed.
 func (s *Store) ConversationRevisionByID(cardID string) (string, error) {
 	if !validFileID(cardID) {
 		return "", fmt.Errorf("card %q: %w", cardID, ErrNotFound)
@@ -309,9 +309,9 @@ func (s *Store) AppendConversationEvent(cardRef, eventType, turnID, messageID st
 }
 
 func conversationEventWriteKind(eventType string, raw json.RawMessage) string {
-	writeKind := "store_changed"
+	writeKind := metadataChange
 	if eventType == "ui-chunk" || eventType == "capability" || eventType == "present-content" {
-		writeKind = "conversation_changed"
+		writeKind = conversationChange
 		if eventType == "ui-chunk" {
 			var chunk struct {
 				Type string `json:"type"`
@@ -320,7 +320,7 @@ func conversationEventWriteKind(eventType string, raw json.RawMessage) string {
 			// Usage updates change the Kanban directory projection; text deltas
 			// continue using the inexpensive conversation-only sync route.
 			if chunk.Type == "message-metadata" || chunk.Type == "finish" {
-				writeKind = "store_changed"
+				writeKind = metadataChange
 			}
 		}
 	}
@@ -393,6 +393,12 @@ func (s *Store) appendConversationEvents(card model.Card, conversation model.Con
 						}
 					}
 				}
+				// The reply is complete in this commit. The turn keeps its lease
+				// while the worker exits and the workspace refreshes, but it is
+				// no longer working on the user's behalf.
+				if conversation.Status == "idle" && (card.Runtime == model.RuntimeRunning || card.Runtime == model.RuntimeStarting) {
+					card.Runtime, card.RuntimeUpdatedAt = model.RuntimeFinishing, event.CreatedAt
+				}
 			}
 			card.LastActivityAt, card.UpdatedAt = event.CreatedAt, event.CreatedAt
 			activity = true
@@ -417,6 +423,10 @@ func (s *Store) appendConversationEvents(card model.Card, conversation model.Con
 	return events, conversation, nil
 }
 
+// streamedActivityInterval bounds how often streamed text rewrites a card's
+// replicated activity time.
+const streamedActivityInterval = 30 * time.Second
+
 func shouldPublishConversationActivity(previous string, event model.ConversationEvent) bool {
 	if event.Type != "ui-chunk" {
 		return true
@@ -429,9 +439,11 @@ func shouldPublishConversationActivity(previous string, event model.Conversation
 	}
 	switch chunk.Type {
 	case "text-delta", "reasoning-delta", "tool-input-delta":
+		// Streamed text refreshes the replicated activity time only coarsely;
+		// live progress reaches clients through the owner's activity stream.
 		before, err := time.Parse(time.RFC3339Nano, previous)
 		at, atErr := time.Parse(time.RFC3339Nano, event.CreatedAt)
-		return err != nil || atErr != nil || at.Before(before) || at.Sub(before) >= 250*time.Millisecond
+		return err != nil || atErr != nil || at.Before(before) || at.Sub(before) >= streamedActivityInterval
 	default:
 		return true
 	}
@@ -460,7 +472,7 @@ func (s *Store) StartQueuedConversationTurn(cardRef, turnID, messageID, queueID,
 }
 
 func (s *Store) StartQueuedConversationTurnParts(cardRef, turnID, messageID, queueID string, parts []model.UIMessagePart) (model.Conversation, error) {
-	release, err := s.beginWriteKind("store_changed")
+	release, err := s.beginWriteKind(metadataChange)
 	if err != nil {
 		return model.Conversation{}, err
 	}
@@ -537,7 +549,7 @@ func (s *Store) RemoveQueuedConversationMessage(cardRef, messageID string) (mode
 	if messageID == "" {
 		return model.QueuedMessage{}, model.Conversation{}, errors.New("queued message id is required")
 	}
-	release, err := s.beginWriteKind("store_changed")
+	release, err := s.beginWriteKind(metadataChange)
 	if err != nil {
 		return model.QueuedMessage{}, model.Conversation{}, err
 	}
@@ -604,7 +616,7 @@ func (s *Store) InterruptConversation(cardRef string) (bool, error) {
 		return false, err
 	}
 	activeConversation := conversation.Status == "running" || conversation.Status == "starting"
-	activeCard := card.Runtime == "running" || card.Runtime == "starting"
+	activeCard := model.RuntimeHoldsTurn(card.Runtime)
 	if !activeConversation && !activeCard {
 		return false, nil
 	}
@@ -960,11 +972,11 @@ func conversationEventSequence(line []byte) (int64, bool) {
 // MarkConversationRead acknowledges exactly the response rendered by a client.
 // A delayed receipt must never clear a newer reply, nor change activity ordering.
 func (s *Store) MarkConversationRead(ref string, responseSeq int64) (model.Card, error) {
-	release, err := s.beginWrite()
+	write, err := s.beginConditionalWrite()
 	if err != nil {
 		return model.Card{}, err
 	}
-	defer release()
+	defer write.finish()
 	card, err := s.ResolveCard(ref)
 	if err != nil {
 		return model.Card{}, err
@@ -975,8 +987,12 @@ func (s *Store) MarkConversationRead(ref string, responseSeq int64) (model.Card,
 	if responseSeq <= 0 || responseSeq > card.ResponseSeq {
 		return model.Card{}, errors.New("response sequence is invalid")
 	}
+	// An already acknowledged or superseded reply records no change.
 	if responseSeq != card.ResponseSeq || responseSeq <= card.SeenResponseSeq {
 		return card, nil
+	}
+	if err := write.prepare(metadataChange); err != nil {
+		return model.Card{}, err
 	}
 	card.SeenResponseSeq = responseSeq
 	card.UpdatedAt = timestamp()

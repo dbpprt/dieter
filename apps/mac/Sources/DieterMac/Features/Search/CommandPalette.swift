@@ -80,7 +80,7 @@ struct CommandPalette: View {
                     .onSubmit { if rows.indices.contains(selection) { activate(rows[selection]) } }
                 Text("esc").font(.caption).foregroundStyle(.secondary)
                     .padding(.horizontal, 6).padding(.vertical, 3)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 5))
+                    .background(DieterTheme.tileHover, in: RoundedRectangle(cornerRadius: 5))
             }.padding(20)
             Divider()
             ScrollViewReader { proxy in
@@ -106,7 +106,7 @@ struct CommandPalette: View {
                                 }
                                 .padding(12).contentShape(Rectangle())
                                 .background(
-                                    offset == selection ? Color.primary.opacity(0.09) : .clear,
+                                    offset == selection ? DieterTheme.tileSelected : .clear,
                                     in: RoundedRectangle(cornerRadius: 12))
                             }.buttonStyle(.plain).id(result.id)
                         }
@@ -124,7 +124,7 @@ struct CommandPalette: View {
             }.font(.system(size: 10)).foregroundStyle(.secondary).padding(12)
         }
         .frame(width: 600, height: 430)
-        .dieterGlass(.regular, in: RoundedRectangle(cornerRadius: 22))
+        .dieterPanel(radius: 22)
         .presentationBackground(.clear)
         .background(SheetOutsideClickDismissal(enabled: true) { dismiss() })
         .task(id: "\(catalogRevision)|\(query)") { await search() }

@@ -81,7 +81,7 @@
     <div class="section-heading"><p class="eyebrow">Make room for your next idea</p><h2>Get started with Dieter.</h2><p>Install a host and a client. Bring a configured agent account and your gateway origin.</p></div>
     <div class="install-grid">
       <article class="install-card"><span class="eyebrow">01 / Apple Silicon macOS</span><h3>A host and a workspace.</h3>
-        {{ partial "codeblock" (dict "lines" (slice "brew install dbpprt/tap/dieter" "brew install --cask dbpprt/tap/dieter-app" "dieter setup --gateway https://dieter.example.com" "dieter project open ~/Development/my-project" "open -a Dieter")) }}
+        {{ partial "codeblock" (dict "lines" (slice "brew install dbpprt/tap/dieter" "brew install --cask dbpprt/tap/dieter-app" "dieter setup" "dieter project open ~/Development/my-project" "open -a Dieter")) }}
         <p>Replace the example gateway with yours. Requires macOS 26+ for the app and Node.js 22.19+, npm, and Git on the host.</p>
       </article>
       <article class="install-card"><span class="eyebrow">02 / Everywhere else</span><h3>Choose your role.</h3><div class="download-list">

@@ -85,7 +85,7 @@ class DieterActivityWidgetProvider : AppWidgetProvider() {
             val connection = core.connection.state.value
             return Snapshot(
                 items = core.currentActivity(),
-                lastSyncAtMs = core.connection.feedStatus.value.lastAppliedAt?.toEpochMilliseconds() ?: 0L,
+                lastSyncAtMs = core.accountSync.updatedAt.value.values.maxOrNull()?.toEpochMilliseconds() ?: 0L,
                 connected = connection.phase == ConnectionPhase.CONNECTED,
                 gateway = connection.gateway?.origin.orEmpty(),
             )

@@ -11,6 +11,9 @@ private func machineBytes(_ value: UInt64) -> String {
 /// The SF Symbol of a machine operation's menu item.
 private func operationSymbol(_ action: Dieter_V1_MachineOperationAction) -> String {
     switch action {
+    case .privacyOn: "lock.shield"
+    case .privacyOff: "lock.open"
+    case .privacySetup: "shield.lefthalf.filled"
     case .updateDaemon: "arrow.down.circle"
     case .restart: "arrow.clockwise.circle"
     case .shutdown: "power"
@@ -68,6 +71,8 @@ struct MachinePopover: View {
                     pendingAction = nil
                     Task { await store.fleet.performMachineOperation(action) }
                 }
+                .accessibilityIdentifier("machine.confirm-operation")
+                .smokeTarget("machine.confirm-operation")
             }
             Button("Cancel", role: .cancel) { pendingAction = nil }
         } message: {
@@ -81,6 +86,8 @@ struct MachinePopover: View {
             )
         ) {
             Button("OK") { store.fleet.machineOperationMessage = nil }
+                .accessibilityIdentifier("machine.operation-ok")
+                .smokeTarget("machine.operation-ok")
         } message: {
             Text(store.fleet.machineOperationMessage ?? "")
         }
@@ -129,7 +136,7 @@ struct MachinePopover: View {
                 .font(.system(size: 23, weight: .medium))
                 .foregroundStyle(DieterTheme.shell)
                 .frame(width: 54, height: 54)
-                .background(DieterTheme.selection, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .background(DieterTheme.tileSelected, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 9) {
                     Text(machine.name).font(.system(size: 22, weight: .bold))
@@ -142,6 +149,16 @@ struct MachinePopover: View {
                     .foregroundStyle(machine.online ? DieterTheme.eyes : DieterTheme.tertiary)
                     .padding(.horizontal, 9).padding(.vertical, 4)
                     .background((machine.online ? DieterTheme.eyes : DieterTheme.tertiary).opacity(0.10), in: Capsule())
+                }
+                if let entry = store.machineEntry(machine), information?.osName == "macOS", !entry.privacyLabel.isEmpty
+                {
+                    Label(
+                        entry.privacyLabel, systemImage: entry.privacyWarning ? "exclamationmark.shield" : "lock.shield"
+                    )
+                    .font(.system(size: 12))
+                    .foregroundStyle(entry.privacyWarning ? DieterTheme.amber : DieterTheme.subtle)
+                    .opacity(entry.privacyStale ? 0.55 : 1)
+                    .accessibilityIdentifier("machine.privacy-status")
                 }
                 Text(machineSubtitle(machine))
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
@@ -162,7 +179,7 @@ struct MachinePopover: View {
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
             .disabled(!store.machineIsAvailable(machine) || store.fleet.machineInformationLoading)
             .help("Refresh machine information")
             .accessibilityIdentifier("machine.refresh")
@@ -178,19 +195,20 @@ struct MachinePopover: View {
                     if operation.action == .updateDaemon { Divider() }
                 }
             } label: {
-                Label("Actions", systemImage: "ellipsis.circle")
+                DieterMenuLabel(title: "Actions", symbol: "ellipsis.circle", size: 28)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+            .dieterMenuChrome()
             .disabled(store.fleet.machineOperationInFlight)
             .help("Machine operations")
+            .accessibilityIdentifier("machine.actions")
+            .smokeTarget("machine.actions")
 
             Button {
                 store.fleet.dismissMachinePopover()
             } label: {
                 Image(systemName: "xmark")
             }
-            .buttonStyle(.plain)
+            .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
             .help("Close machine information")
             .accessibilityIdentifier("machine.close")
         }
@@ -198,6 +216,9 @@ struct MachinePopover: View {
 
     private func operationIdentifier(_ action: Dieter_V1_MachineOperationAction) -> String {
         switch action {
+        case .privacyOn: "machine.privacy-on"
+        case .privacyOff: "machine.privacy-off"
+        case .privacySetup: "machine.privacy-setup"
         case .updateDaemon: "machine.update-daemon"
         case .restart: "machine.restart"
         case .shutdown: "machine.shutdown"
@@ -293,7 +314,7 @@ struct MachinePopover: View {
                         .font(DieterFont.body).foregroundStyle(DieterTheme.subtle)
                         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
                         .background(
-                            DieterTheme.surface.opacity(0.45),
+                            DieterTheme.tile,
                             in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 } else {
                     ForEach(information.gpu.devices, id: \.id) { device in
@@ -386,7 +407,7 @@ struct MachinePopover: View {
                         systemImage: "network")
                 }
             }
-            .background(DieterTheme.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .dieterTile(radius: 12)
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DieterTheme.border))
         }
     }
@@ -421,7 +442,7 @@ struct MachinePopover: View {
                     }
                 }
             }
-            .background(DieterTheme.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .dieterTile(radius: 12)
             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(DieterTheme.border))
         }
     }
@@ -446,9 +467,7 @@ struct MachinePopover: View {
             Button("Open terminals", systemImage: "terminal") {
                 Task { await store.openTerminals(on: machine) }
             }
-            .buttonStyle(.plain)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(DieterTheme.text)
+            .buttonStyle(DieterBarButtonStyle(size: 28))
             .disabled(!store.machineIsAvailable(machine))
             .accessibilityIdentifier("machine.open-terminals")
         }
@@ -472,7 +491,7 @@ struct MachinePopover: View {
             .multilineTextAlignment(.center)
             if machine.online {
                 Button("Try again") { Task { await store.fleet.refreshSelectedMachineInformation() } }
-                    .buttonStyle(.bordered).controlSize(.small)
+                    .buttonStyle(DieterBarButtonStyle(size: 28))
             }
         }
         .frame(maxWidth: .infinity, minHeight: 220)
@@ -488,7 +507,7 @@ private struct MachineMetricPanel<Content: View>: View {
         VStack(alignment: .leading, spacing: 12) { content }
             .padding(16)
             .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
-            .background(DieterTheme.surface.opacity(0.62), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .dieterTile(radius: 13)
             .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(DieterTheme.border))
     }
 }
@@ -530,7 +549,7 @@ private struct MachineMemoryBar: View {
                 Rectangle().fill(DieterTheme.shell.opacity(0.66)).frame(width: max(0, cacheWidth))
                 Spacer(minLength: 0)
             }
-            .background(DieterTheme.raised)
+            .background(DieterTheme.tile)
             .clipShape(Capsule())
         }
     }

@@ -27,13 +27,13 @@ import (
 // outside the sample. This covers eight real projection subscriptions, not the
 // network stack or an operator daemon with unknown concurrent work.
 func TestIdleSubscriptionProcessCost(t *testing.T) {
-	setting := os.Getenv("DIETER_IDLE_SYNC")
+	setting := os.Getenv("DIETER_IDLE_CHANGES")
 	if setting == "" {
-		t.Skip("set DIETER_IDLE_SYNC=30s for idle CPU/RSS evidence")
+		t.Skip("set DIETER_IDLE_CHANGES=30s for idle CPU/RSS evidence")
 	}
 	duration, err := time.ParseDuration(setting)
 	if err != nil || duration < time.Second {
-		t.Fatal("DIETER_IDLE_SYNC must be at least one second")
+		t.Fatal("DIETER_IDLE_CHANGES must be at least one second")
 	}
 	api, card := performanceConversation(t, nil)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -52,8 +52,10 @@ func TestIdleSubscriptionProcessCost(t *testing.T) {
 			defer group.Done()
 			active.Add(1)
 			defer active.Add(-1)
-			_ = api.watchSync(ctx, &dieterv1.SyncRequest{}, func(frame *dieterv1.SyncFrame) error {
-				if frame.GetSnapshot() != nil {
+			first := true
+			_ = api.watchChanges(ctx, &dieterv1.ChangesRequest{}, func(*dieterv1.ChangesFrame) error {
+				if first {
+					first = false
 					initial.Add(1)
 				}
 				return nil
@@ -100,12 +102,15 @@ func TestIdleSubscriptionProcessCost(t *testing.T) {
 	}
 }
 
-func TestSyncHydratesOnlyOwnerBeforeApplyingRecentBudget(t *testing.T) {
+func TestChangesCarryOnlyOwnedConversations(t *testing.T) {
 	var logs bytes.Buffer
 	api, localCard := performanceConversation(t, slog.New(slog.NewTextHandler(&logs, nil)))
 	local := api.server.store
 	identity, err := local.BindPeerAccount("performance", "subject", "local", "https://gateway.test")
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := local.UpdateCardCache(localCard.ID, store.CardCacheInput{Runtime: "running"}); err != nil {
 		t.Fatal(err)
 	}
 	remoteAPI, remoteCard := performanceConversation(t, nil)
@@ -128,12 +133,32 @@ func TestSyncHydratesOnlyOwnerBeforeApplyingRecentBudget(t *testing.T) {
 		}
 		records = records[n:]
 	}
-	projection, err := api.globalSnapshot(30, 1, nil)
-	if err != nil {
-		t.Fatal(err)
+	var frames []*dieterv1.ChangesFrame
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	_ = api.watchChanges(ctx, &dieterv1.ChangesRequest{}, func(frame *dieterv1.ChangesFrame) error {
+		frames = append(frames, frame)
+		if frame.GetCaughtUp() {
+			cancel()
+		}
+		return nil
+	})
+	remoteRecord, owned, activities := false, map[string]bool{}, map[string]bool{}
+	for _, frame := range frames {
+		for _, record := range frame.GetRecords() {
+			remoteRecord = remoteRecord || record.GetId() == remoteCard.ID+".identity"
+		}
+		for _, card := range frame.GetOwnedCards() {
+			owned[card.GetId()] = true
+		}
+		for _, activity := range frame.GetActivities() {
+			activities[activity.GetCardId()] = true
+		}
 	}
-	if len(projection.snapshot.State.Chats) != 2 || len(projection.snapshot.Conversations) != 1 || projection.snapshot.Conversations[0].Detail.Card.Id != localCard.ID {
-		t.Fatalf("remote metadata must remain visible without consuming local hydration budget: %v", projection.snapshot)
+	// The remote chat is visible through its records; only its owner streams
+	// its details and activity.
+	if !remoteRecord || len(owned) != 1 || !owned[localCard.ID] || len(activities) != 1 || !activities[localCard.ID] {
+		t.Fatalf("remote=%v owned=%v activities=%v", remoteRecord, owned, activities)
 	}
 	if logs.Len() != 0 {
 		t.Fatalf("normal remote ownership produced warnings: %s", &logs)
@@ -454,5 +479,28 @@ func BenchmarkToolHeavyConversationMetadata(b *testing.B) {
 		if !proto.Equal(protoCardDetail(detail), snapshot.Detail) {
 			b.Fatal("changed detail")
 		}
+	}
+}
+
+func TestConversationByteBudgetPreservesPagingBoundaries(t *testing.T) {
+	_, api, card := changesFixture(t)
+	conversation := model.Conversation{CardID: card.ID}
+	for i := range 30 {
+		conversation.Messages = append(conversation.Messages, model.UIMessage{ID: fmt.Sprint(i), Role: "assistant", Parts: []model.UIMessagePart{{Type: "text", Text: strings.Repeat("x", 600000)}}})
+		conversation.Subagents = append(conversation.Subagents, model.Subagent{ID: fmt.Sprint(i), MessageID: fmt.Sprint(i), RecentOutput: []string{"output"}})
+		conversation.TaskPlans = append(conversation.TaskPlans, model.TaskPlan{ID: fmt.Sprint(i), MessageID: fmt.Sprint(i), State: "done"})
+	}
+	snapshot := api.conversationSnapshotFrom(model.CardDetail{Card: card}, conversation, 30, nil)
+	if proto.Size(snapshot) > 12<<20 {
+		t.Fatal("selected conversation exceeded its byte budget")
+	}
+	if !snapshot.Page.HasMore || snapshot.Page.Total != 30 || snapshot.Page.End != 30 || snapshot.Page.Start != int32(30-len(snapshot.Conversation.Messages)) {
+		t.Fatalf("incorrect byte-bounded page: %+v", snapshot.Page)
+	}
+	if snapshot.Conversation.Messages[len(snapshot.Conversation.Messages)-1].Id != "29" {
+		t.Fatal("latest message was dropped")
+	}
+	if len(snapshot.Conversation.Subagents) != len(snapshot.Conversation.Messages) || len(snapshot.Conversation.TaskPlans) != len(snapshot.Conversation.Messages) {
+		t.Fatal("paging retained progress for messages outside the page")
 	}
 }

@@ -20,138 +20,141 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DieterService_GetKV_FullMethodName                           = "/dieter.v1.DieterService/GetKV"
-	DieterService_ListKV_FullMethodName                          = "/dieter.v1.DieterService/ListKV"
-	DieterService_PutKV_FullMethodName                           = "/dieter.v1.DieterService/PutKV"
-	DieterService_DeleteKV_FullMethodName                        = "/dieter.v1.DieterService/DeleteKV"
-	DieterService_MoveKV_FullMethodName                          = "/dieter.v1.DieterService/MoveKV"
-	DieterService_WatchKV_FullMethodName                         = "/dieter.v1.DieterService/WatchKV"
-	DieterService_GetPeerChanges_FullMethodName                  = "/dieter.v1.DieterService/GetPeerChanges"
-	DieterService_GetPeerRecord_FullMethodName                   = "/dieter.v1.DieterService/GetPeerRecord"
-	DieterService_GetPeerStoreStatus_FullMethodName              = "/dieter.v1.DieterService/GetPeerStoreStatus"
-	DieterService_ListPeerRecords_FullMethodName                 = "/dieter.v1.DieterService/ListPeerRecords"
-	DieterService_PutPeerRecord_FullMethodName                   = "/dieter.v1.DieterService/PutPeerRecord"
-	DieterService_MergePeerRecords_FullMethodName                = "/dieter.v1.DieterService/MergePeerRecords"
-	DieterService_Health_FullMethodName                          = "/dieter.v1.DieterService/Health"
-	DieterService_GetRuntimeStatus_FullMethodName                = "/dieter.v1.DieterService/GetRuntimeStatus"
-	DieterService_StartControlConnection_FullMethodName          = "/dieter.v1.DieterService/StartControlConnection"
-	DieterService_GetControlConnection_FullMethodName            = "/dieter.v1.DieterService/GetControlConnection"
-	DieterService_CloseControlConnection_FullMethodName          = "/dieter.v1.DieterService/CloseControlConnection"
-	DieterService_GetMachineInformation_FullMethodName           = "/dieter.v1.DieterService/GetMachineInformation"
-	DieterService_PerformMachineOperation_FullMethodName         = "/dieter.v1.DieterService/PerformMachineOperation"
-	DieterService_GetState_FullMethodName                        = "/dieter.v1.DieterService/GetState"
-	DieterService_WatchState_FullMethodName                      = "/dieter.v1.DieterService/WatchState"
-	DieterService_WatchSync_FullMethodName                       = "/dieter.v1.DieterService/WatchSync"
-	DieterService_GetHarnesses_FullMethodName                    = "/dieter.v1.DieterService/GetHarnesses"
-	DieterService_GetSettings_FullMethodName                     = "/dieter.v1.DieterService/GetSettings"
-	DieterService_GetSettingsOptions_FullMethodName              = "/dieter.v1.DieterService/GetSettingsOptions"
-	DieterService_UpdateSettings_FullMethodName                  = "/dieter.v1.DieterService/UpdateSettings"
-	DieterService_GetPromptSettings_FullMethodName               = "/dieter.v1.DieterService/GetPromptSettings"
-	DieterService_UpdatePromptSettings_FullMethodName            = "/dieter.v1.DieterService/UpdatePromptSettings"
-	DieterService_SetProjectPromptTemplate_FullMethodName        = "/dieter.v1.DieterService/SetProjectPromptTemplate"
-	DieterService_SetBoardPromptTemplate_FullMethodName          = "/dieter.v1.DieterService/SetBoardPromptTemplate"
-	DieterService_PreviewPrompt_FullMethodName                   = "/dieter.v1.DieterService/PreviewPrompt"
-	DieterService_ListDirectories_FullMethodName                 = "/dieter.v1.DieterService/ListDirectories"
-	DieterService_ConsolidateProject_FullMethodName              = "/dieter.v1.DieterService/ConsolidateProject"
-	DieterService_AttachCheckout_FullMethodName                  = "/dieter.v1.DieterService/AttachCheckout"
-	DieterService_DetachCheckout_FullMethodName                  = "/dieter.v1.DieterService/DetachCheckout"
-	DieterService_ListCheckouts_FullMethodName                   = "/dieter.v1.DieterService/ListCheckouts"
-	DieterService_CreateProject_FullMethodName                   = "/dieter.v1.DieterService/CreateProject"
-	DieterService_UpdateProject_FullMethodName                   = "/dieter.v1.DieterService/UpdateProject"
-	DieterService_UpdateProjectWorkspaceSettings_FullMethodName  = "/dieter.v1.DieterService/UpdateProjectWorkspaceSettings"
-	DieterService_ArchiveProject_FullMethodName                  = "/dieter.v1.DieterService/ArchiveProject"
-	DieterService_ListArchivedProjects_FullMethodName            = "/dieter.v1.DieterService/ListArchivedProjects"
-	DieterService_CreateBoard_FullMethodName                     = "/dieter.v1.DieterService/CreateBoard"
-	DieterService_GetBoard_FullMethodName                        = "/dieter.v1.DieterService/GetBoard"
-	DieterService_ListRetiredBoards_FullMethodName               = "/dieter.v1.DieterService/ListRetiredBoards"
-	DieterService_SetBoardRetired_FullMethodName                 = "/dieter.v1.DieterService/SetBoardRetired"
-	DieterService_RenameBoard_FullMethodName                     = "/dieter.v1.DieterService/RenameBoard"
-	DieterService_SetBoardArchivePolicy_FullMethodName           = "/dieter.v1.DieterService/SetBoardArchivePolicy"
-	DieterService_UpdateBoardHostnames_FullMethodName            = "/dieter.v1.DieterService/UpdateBoardHostnames"
-	DieterService_UpdateBoardGitSettings_FullMethodName          = "/dieter.v1.DieterService/UpdateBoardGitSettings"
-	DieterService_ListArchivedCards_FullMethodName               = "/dieter.v1.DieterService/ListArchivedCards"
-	DieterService_CreateBoardLabel_FullMethodName                = "/dieter.v1.DieterService/CreateBoardLabel"
-	DieterService_UpdateBoardLabel_FullMethodName                = "/dieter.v1.DieterService/UpdateBoardLabel"
-	DieterService_DeleteBoardLabel_FullMethodName                = "/dieter.v1.DieterService/DeleteBoardLabel"
-	DieterService_CreateCard_FullMethodName                      = "/dieter.v1.DieterService/CreateCard"
-	DieterService_CreateChat_FullMethodName                      = "/dieter.v1.DieterService/CreateChat"
-	DieterService_ForkChat_FullMethodName                        = "/dieter.v1.DieterService/ForkChat"
-	DieterService_ListChats_FullMethodName                       = "/dieter.v1.DieterService/ListChats"
-	DieterService_GetCard_FullMethodName                         = "/dieter.v1.DieterService/GetCard"
-	DieterService_GetConversation_FullMethodName                 = "/dieter.v1.DieterService/GetConversation"
-	DieterService_PollConversation_FullMethodName                = "/dieter.v1.DieterService/PollConversation"
-	DieterService_WatchConversation_FullMethodName               = "/dieter.v1.DieterService/WatchConversation"
-	DieterService_GetToolOutput_FullMethodName                   = "/dieter.v1.DieterService/GetToolOutput"
-	DieterService_PresentConversationContent_FullMethodName      = "/dieter.v1.DieterService/PresentConversationContent"
-	DieterService_SendMessage_FullMethodName                     = "/dieter.v1.DieterService/SendMessage"
-	DieterService_RemoveQueuedMessage_FullMethodName             = "/dieter.v1.DieterService/RemoveQueuedMessage"
-	DieterService_MarkConversationRead_FullMethodName            = "/dieter.v1.DieterService/MarkConversationRead"
-	DieterService_MoveCard_FullMethodName                        = "/dieter.v1.DieterService/MoveCard"
-	DieterService_MergeCard_FullMethodName                       = "/dieter.v1.DieterService/MergeCard"
-	DieterService_StartCard_FullMethodName                       = "/dieter.v1.DieterService/StartCard"
-	DieterService_SetCardLabels_FullMethodName                   = "/dieter.v1.DieterService/SetCardLabels"
-	DieterService_CancelCard_FullMethodName                      = "/dieter.v1.DieterService/CancelCard"
-	DieterService_RenameCard_FullMethodName                      = "/dieter.v1.DieterService/RenameCard"
-	DieterService_UpdateCard_FullMethodName                      = "/dieter.v1.DieterService/UpdateCard"
-	DieterService_ArchiveCard_FullMethodName                     = "/dieter.v1.DieterService/ArchiveCard"
-	DieterService_PinChat_FullMethodName                         = "/dieter.v1.DieterService/PinChat"
-	DieterService_UpdateConversationWorkspace_FullMethodName     = "/dieter.v1.DieterService/UpdateConversationWorkspace"
-	DieterService_GetWorkspace_FullMethodName                    = "/dieter.v1.DieterService/GetWorkspace"
-	DieterService_ListProjectWorkspaces_FullMethodName           = "/dieter.v1.DieterService/ListProjectWorkspaces"
-	DieterService_GetChangeset_FullMethodName                    = "/dieter.v1.DieterService/GetChangeset"
-	DieterService_GetFileDiff_FullMethodName                     = "/dieter.v1.DieterService/GetFileDiff"
-	DieterService_GetCommitDiff_FullMethodName                   = "/dieter.v1.DieterService/GetCommitDiff"
-	DieterService_AddChangeComment_FullMethodName                = "/dieter.v1.DieterService/AddChangeComment"
-	DieterService_ListChangeComments_FullMethodName              = "/dieter.v1.DieterService/ListChangeComments"
-	DieterService_GetSCMCapabilities_FullMethodName              = "/dieter.v1.DieterService/GetSCMCapabilities"
-	DieterService_StartGitOperation_FullMethodName               = "/dieter.v1.DieterService/StartGitOperation"
-	DieterService_GetGitOperation_FullMethodName                 = "/dieter.v1.DieterService/GetGitOperation"
-	DieterService_WatchGitOperation_FullMethodName               = "/dieter.v1.DieterService/WatchGitOperation"
-	DieterService_CancelGitOperation_FullMethodName              = "/dieter.v1.DieterService/CancelGitOperation"
-	DieterService_ListFiles_FullMethodName                       = "/dieter.v1.DieterService/ListFiles"
-	DieterService_ReadFile_FullMethodName                        = "/dieter.v1.DieterService/ReadFile"
-	DieterService_SaveFile_FullMethodName                        = "/dieter.v1.DieterService/SaveFile"
-	DieterService_CreateFile_FullMethodName                      = "/dieter.v1.DieterService/CreateFile"
-	DieterService_MoveFile_FullMethodName                        = "/dieter.v1.DieterService/MoveFile"
-	DieterService_DeleteFile_FullMethodName                      = "/dieter.v1.DieterService/DeleteFile"
-	DieterService_ListTerminals_FullMethodName                   = "/dieter.v1.DieterService/ListTerminals"
-	DieterService_CreateTerminal_FullMethodName                  = "/dieter.v1.DieterService/CreateTerminal"
-	DieterService_WatchTerminal_FullMethodName                   = "/dieter.v1.DieterService/WatchTerminal"
-	DieterService_WriteTerminal_FullMethodName                   = "/dieter.v1.DieterService/WriteTerminal"
-	DieterService_ResizeTerminal_FullMethodName                  = "/dieter.v1.DieterService/ResizeTerminal"
-	DieterService_RenameTerminal_FullMethodName                  = "/dieter.v1.DieterService/RenameTerminal"
-	DieterService_CloseTerminal_FullMethodName                   = "/dieter.v1.DieterService/CloseTerminal"
-	DieterService_ListExecutions_FullMethodName                  = "/dieter.v1.DieterService/ListExecutions"
-	DieterService_StartExecution_FullMethodName                  = "/dieter.v1.DieterService/StartExecution"
-	DieterService_GetExecution_FullMethodName                    = "/dieter.v1.DieterService/GetExecution"
-	DieterService_WatchExecution_FullMethodName                  = "/dieter.v1.DieterService/WatchExecution"
-	DieterService_WriteExecutionInput_FullMethodName             = "/dieter.v1.DieterService/WriteExecutionInput"
-	DieterService_SignalExecution_FullMethodName                 = "/dieter.v1.DieterService/SignalExecution"
-	DieterService_ResizeExecution_FullMethodName                 = "/dieter.v1.DieterService/ResizeExecution"
-	DieterService_CancelExecution_FullMethodName                 = "/dieter.v1.DieterService/CancelExecution"
-	DieterService_CloseExecution_FullMethodName                  = "/dieter.v1.DieterService/CloseExecution"
-	DieterService_GetRemoteDesktopCapabilities_FullMethodName    = "/dieter.v1.DieterService/GetRemoteDesktopCapabilities"
-	DieterService_ListRemoteDesktopDisplayModes_FullMethodName   = "/dieter.v1.DieterService/ListRemoteDesktopDisplayModes"
-	DieterService_SetRemoteDesktopDisplayMode_FullMethodName     = "/dieter.v1.DieterService/SetRemoteDesktopDisplayMode"
-	DieterService_RestoreRemoteDesktopDisplayMode_FullMethodName = "/dieter.v1.DieterService/RestoreRemoteDesktopDisplayMode"
-	DieterService_ProbeRemoteDesktopPermissions_FullMethodName   = "/dieter.v1.DieterService/ProbeRemoteDesktopPermissions"
-	DieterService_StartRemoteDesktop_FullMethodName              = "/dieter.v1.DieterService/StartRemoteDesktop"
-	DieterService_SendRemoteDesktopSignal_FullMethodName         = "/dieter.v1.DieterService/SendRemoteDesktopSignal"
-	DieterService_GetRemoteDesktopSession_FullMethodName         = "/dieter.v1.DieterService/GetRemoteDesktopSession"
-	DieterService_ListRemoteDesktopSessions_FullMethodName       = "/dieter.v1.DieterService/ListRemoteDesktopSessions"
-	DieterService_SetRemoteDesktopControl_FullMethodName         = "/dieter.v1.DieterService/SetRemoteDesktopControl"
-	DieterService_UpdateRemoteDesktopSession_FullMethodName      = "/dieter.v1.DieterService/UpdateRemoteDesktopSession"
-	DieterService_ExchangeRemoteDesktopClipboard_FullMethodName  = "/dieter.v1.DieterService/ExchangeRemoteDesktopClipboard"
-	DieterService_CloseRemoteDesktop_FullMethodName              = "/dieter.v1.DieterService/CloseRemoteDesktop"
-	DieterService_ListSchedules_FullMethodName                   = "/dieter.v1.DieterService/ListSchedules"
-	DieterService_GetSchedule_FullMethodName                     = "/dieter.v1.DieterService/GetSchedule"
-	DieterService_PreviewSchedule_FullMethodName                 = "/dieter.v1.DieterService/PreviewSchedule"
-	DieterService_CreateSchedule_FullMethodName                  = "/dieter.v1.DieterService/CreateSchedule"
-	DieterService_UpdateSchedule_FullMethodName                  = "/dieter.v1.DieterService/UpdateSchedule"
-	DieterService_DeleteSchedule_FullMethodName                  = "/dieter.v1.DieterService/DeleteSchedule"
-	DieterService_RunSchedule_FullMethodName                     = "/dieter.v1.DieterService/RunSchedule"
-	DieterService_SetScheduleEnabled_FullMethodName              = "/dieter.v1.DieterService/SetScheduleEnabled"
-	DieterService_ListScheduleRuns_FullMethodName                = "/dieter.v1.DieterService/ListScheduleRuns"
+	DieterService_GetKV_FullMethodName                              = "/dieter.v1.DieterService/GetKV"
+	DieterService_ListKV_FullMethodName                             = "/dieter.v1.DieterService/ListKV"
+	DieterService_PutKV_FullMethodName                              = "/dieter.v1.DieterService/PutKV"
+	DieterService_DeleteKV_FullMethodName                           = "/dieter.v1.DieterService/DeleteKV"
+	DieterService_MoveKV_FullMethodName                             = "/dieter.v1.DieterService/MoveKV"
+	DieterService_WatchKV_FullMethodName                            = "/dieter.v1.DieterService/WatchKV"
+	DieterService_GetPeerChanges_FullMethodName                     = "/dieter.v1.DieterService/GetPeerChanges"
+	DieterService_GetPeerRecord_FullMethodName                      = "/dieter.v1.DieterService/GetPeerRecord"
+	DieterService_GetPeerStoreStatus_FullMethodName                 = "/dieter.v1.DieterService/GetPeerStoreStatus"
+	DieterService_ListPeerRecords_FullMethodName                    = "/dieter.v1.DieterService/ListPeerRecords"
+	DieterService_PutPeerRecord_FullMethodName                      = "/dieter.v1.DieterService/PutPeerRecord"
+	DieterService_MergePeerRecords_FullMethodName                   = "/dieter.v1.DieterService/MergePeerRecords"
+	DieterService_Health_FullMethodName                             = "/dieter.v1.DieterService/Health"
+	DieterService_GetRuntimeStatus_FullMethodName                   = "/dieter.v1.DieterService/GetRuntimeStatus"
+	DieterService_StartControlConnection_FullMethodName             = "/dieter.v1.DieterService/StartControlConnection"
+	DieterService_GetControlConnection_FullMethodName               = "/dieter.v1.DieterService/GetControlConnection"
+	DieterService_CloseControlConnection_FullMethodName             = "/dieter.v1.DieterService/CloseControlConnection"
+	DieterService_GetMachineInformation_FullMethodName              = "/dieter.v1.DieterService/GetMachineInformation"
+	DieterService_PerformMachineOperation_FullMethodName            = "/dieter.v1.DieterService/PerformMachineOperation"
+	DieterService_GetState_FullMethodName                           = "/dieter.v1.DieterService/GetState"
+	DieterService_WatchChanges_FullMethodName                       = "/dieter.v1.DieterService/WatchChanges"
+	DieterService_GetHarnesses_FullMethodName                       = "/dieter.v1.DieterService/GetHarnesses"
+	DieterService_GetSettings_FullMethodName                        = "/dieter.v1.DieterService/GetSettings"
+	DieterService_GetSettingsOptions_FullMethodName                 = "/dieter.v1.DieterService/GetSettingsOptions"
+	DieterService_UpdateSettings_FullMethodName                     = "/dieter.v1.DieterService/UpdateSettings"
+	DieterService_GetPromptSettings_FullMethodName                  = "/dieter.v1.DieterService/GetPromptSettings"
+	DieterService_UpdatePromptSettings_FullMethodName               = "/dieter.v1.DieterService/UpdatePromptSettings"
+	DieterService_SetProjectPromptTemplate_FullMethodName           = "/dieter.v1.DieterService/SetProjectPromptTemplate"
+	DieterService_SetBoardPromptTemplate_FullMethodName             = "/dieter.v1.DieterService/SetBoardPromptTemplate"
+	DieterService_PreviewPrompt_FullMethodName                      = "/dieter.v1.DieterService/PreviewPrompt"
+	DieterService_ListDirectories_FullMethodName                    = "/dieter.v1.DieterService/ListDirectories"
+	DieterService_ConsolidateProject_FullMethodName                 = "/dieter.v1.DieterService/ConsolidateProject"
+	DieterService_AttachCheckout_FullMethodName                     = "/dieter.v1.DieterService/AttachCheckout"
+	DieterService_DetachCheckout_FullMethodName                     = "/dieter.v1.DieterService/DetachCheckout"
+	DieterService_ListCheckouts_FullMethodName                      = "/dieter.v1.DieterService/ListCheckouts"
+	DieterService_CreateProject_FullMethodName                      = "/dieter.v1.DieterService/CreateProject"
+	DieterService_UpdateProject_FullMethodName                      = "/dieter.v1.DieterService/UpdateProject"
+	DieterService_UpdateProjectWorkspaceSettings_FullMethodName     = "/dieter.v1.DieterService/UpdateProjectWorkspaceSettings"
+	DieterService_ArchiveProject_FullMethodName                     = "/dieter.v1.DieterService/ArchiveProject"
+	DieterService_ListArchivedProjects_FullMethodName               = "/dieter.v1.DieterService/ListArchivedProjects"
+	DieterService_CreateBoard_FullMethodName                        = "/dieter.v1.DieterService/CreateBoard"
+	DieterService_GetBoard_FullMethodName                           = "/dieter.v1.DieterService/GetBoard"
+	DieterService_ListRetiredBoards_FullMethodName                  = "/dieter.v1.DieterService/ListRetiredBoards"
+	DieterService_SetBoardRetired_FullMethodName                    = "/dieter.v1.DieterService/SetBoardRetired"
+	DieterService_RenameBoard_FullMethodName                        = "/dieter.v1.DieterService/RenameBoard"
+	DieterService_SetBoardArchivePolicy_FullMethodName              = "/dieter.v1.DieterService/SetBoardArchivePolicy"
+	DieterService_UpdateBoardHostnames_FullMethodName               = "/dieter.v1.DieterService/UpdateBoardHostnames"
+	DieterService_UpdateBoardGitSettings_FullMethodName             = "/dieter.v1.DieterService/UpdateBoardGitSettings"
+	DieterService_ListArchivedCards_FullMethodName                  = "/dieter.v1.DieterService/ListArchivedCards"
+	DieterService_CreateBoardLabel_FullMethodName                   = "/dieter.v1.DieterService/CreateBoardLabel"
+	DieterService_UpdateBoardLabel_FullMethodName                   = "/dieter.v1.DieterService/UpdateBoardLabel"
+	DieterService_DeleteBoardLabel_FullMethodName                   = "/dieter.v1.DieterService/DeleteBoardLabel"
+	DieterService_CreateCard_FullMethodName                         = "/dieter.v1.DieterService/CreateCard"
+	DieterService_CreateChat_FullMethodName                         = "/dieter.v1.DieterService/CreateChat"
+	DieterService_ForkChat_FullMethodName                           = "/dieter.v1.DieterService/ForkChat"
+	DieterService_ListChats_FullMethodName                          = "/dieter.v1.DieterService/ListChats"
+	DieterService_GetCard_FullMethodName                            = "/dieter.v1.DieterService/GetCard"
+	DieterService_GetConversation_FullMethodName                    = "/dieter.v1.DieterService/GetConversation"
+	DieterService_PollConversation_FullMethodName                   = "/dieter.v1.DieterService/PollConversation"
+	DieterService_WatchConversation_FullMethodName                  = "/dieter.v1.DieterService/WatchConversation"
+	DieterService_GetToolOutput_FullMethodName                      = "/dieter.v1.DieterService/GetToolOutput"
+	DieterService_PresentConversationContent_FullMethodName         = "/dieter.v1.DieterService/PresentConversationContent"
+	DieterService_SendMessage_FullMethodName                        = "/dieter.v1.DieterService/SendMessage"
+	DieterService_RemoveQueuedMessage_FullMethodName                = "/dieter.v1.DieterService/RemoveQueuedMessage"
+	DieterService_MarkConversationRead_FullMethodName               = "/dieter.v1.DieterService/MarkConversationRead"
+	DieterService_MoveCard_FullMethodName                           = "/dieter.v1.DieterService/MoveCard"
+	DieterService_MergeCard_FullMethodName                          = "/dieter.v1.DieterService/MergeCard"
+	DieterService_StartCard_FullMethodName                          = "/dieter.v1.DieterService/StartCard"
+	DieterService_SetCardLabels_FullMethodName                      = "/dieter.v1.DieterService/SetCardLabels"
+	DieterService_CancelCard_FullMethodName                         = "/dieter.v1.DieterService/CancelCard"
+	DieterService_RenameCard_FullMethodName                         = "/dieter.v1.DieterService/RenameCard"
+	DieterService_UpdateCard_FullMethodName                         = "/dieter.v1.DieterService/UpdateCard"
+	DieterService_ArchiveCard_FullMethodName                        = "/dieter.v1.DieterService/ArchiveCard"
+	DieterService_PinChat_FullMethodName                            = "/dieter.v1.DieterService/PinChat"
+	DieterService_UpdateConversationWorkspace_FullMethodName        = "/dieter.v1.DieterService/UpdateConversationWorkspace"
+	DieterService_GetWorkspace_FullMethodName                       = "/dieter.v1.DieterService/GetWorkspace"
+	DieterService_ListProjectWorkspaces_FullMethodName              = "/dieter.v1.DieterService/ListProjectWorkspaces"
+	DieterService_GetChangeset_FullMethodName                       = "/dieter.v1.DieterService/GetChangeset"
+	DieterService_GetFileDiff_FullMethodName                        = "/dieter.v1.DieterService/GetFileDiff"
+	DieterService_GetCommitDiff_FullMethodName                      = "/dieter.v1.DieterService/GetCommitDiff"
+	DieterService_AddChangeComment_FullMethodName                   = "/dieter.v1.DieterService/AddChangeComment"
+	DieterService_ListChangeComments_FullMethodName                 = "/dieter.v1.DieterService/ListChangeComments"
+	DieterService_GetSCMCapabilities_FullMethodName                 = "/dieter.v1.DieterService/GetSCMCapabilities"
+	DieterService_StartGitOperation_FullMethodName                  = "/dieter.v1.DieterService/StartGitOperation"
+	DieterService_GetGitOperation_FullMethodName                    = "/dieter.v1.DieterService/GetGitOperation"
+	DieterService_WatchGitOperation_FullMethodName                  = "/dieter.v1.DieterService/WatchGitOperation"
+	DieterService_CancelGitOperation_FullMethodName                 = "/dieter.v1.DieterService/CancelGitOperation"
+	DieterService_ListFiles_FullMethodName                          = "/dieter.v1.DieterService/ListFiles"
+	DieterService_ReadFile_FullMethodName                           = "/dieter.v1.DieterService/ReadFile"
+	DieterService_SaveFile_FullMethodName                           = "/dieter.v1.DieterService/SaveFile"
+	DieterService_CreateFile_FullMethodName                         = "/dieter.v1.DieterService/CreateFile"
+	DieterService_MoveFile_FullMethodName                           = "/dieter.v1.DieterService/MoveFile"
+	DieterService_DeleteFile_FullMethodName                         = "/dieter.v1.DieterService/DeleteFile"
+	DieterService_ListTerminals_FullMethodName                      = "/dieter.v1.DieterService/ListTerminals"
+	DieterService_CreateTerminal_FullMethodName                     = "/dieter.v1.DieterService/CreateTerminal"
+	DieterService_WatchTerminal_FullMethodName                      = "/dieter.v1.DieterService/WatchTerminal"
+	DieterService_WriteTerminal_FullMethodName                      = "/dieter.v1.DieterService/WriteTerminal"
+	DieterService_ResizeTerminal_FullMethodName                     = "/dieter.v1.DieterService/ResizeTerminal"
+	DieterService_RenameTerminal_FullMethodName                     = "/dieter.v1.DieterService/RenameTerminal"
+	DieterService_CloseTerminal_FullMethodName                      = "/dieter.v1.DieterService/CloseTerminal"
+	DieterService_ListExecutions_FullMethodName                     = "/dieter.v1.DieterService/ListExecutions"
+	DieterService_StartExecution_FullMethodName                     = "/dieter.v1.DieterService/StartExecution"
+	DieterService_GetExecution_FullMethodName                       = "/dieter.v1.DieterService/GetExecution"
+	DieterService_WatchExecution_FullMethodName                     = "/dieter.v1.DieterService/WatchExecution"
+	DieterService_WriteExecutionInput_FullMethodName                = "/dieter.v1.DieterService/WriteExecutionInput"
+	DieterService_SignalExecution_FullMethodName                    = "/dieter.v1.DieterService/SignalExecution"
+	DieterService_ResizeExecution_FullMethodName                    = "/dieter.v1.DieterService/ResizeExecution"
+	DieterService_CancelExecution_FullMethodName                    = "/dieter.v1.DieterService/CancelExecution"
+	DieterService_CloseExecution_FullMethodName                     = "/dieter.v1.DieterService/CloseExecution"
+	DieterService_GetRemoteDesktopCapabilities_FullMethodName       = "/dieter.v1.DieterService/GetRemoteDesktopCapabilities"
+	DieterService_ListRemoteDesktopDisplayModes_FullMethodName      = "/dieter.v1.DieterService/ListRemoteDesktopDisplayModes"
+	DieterService_SetRemoteDesktopDisplayMode_FullMethodName        = "/dieter.v1.DieterService/SetRemoteDesktopDisplayMode"
+	DieterService_RestoreRemoteDesktopDisplayMode_FullMethodName    = "/dieter.v1.DieterService/RestoreRemoteDesktopDisplayMode"
+	DieterService_GetRemoteDesktopVirtualDisplay_FullMethodName     = "/dieter.v1.DieterService/GetRemoteDesktopVirtualDisplay"
+	DieterService_SetRemoteDesktopVirtualDisplay_FullMethodName     = "/dieter.v1.DieterService/SetRemoteDesktopVirtualDisplay"
+	DieterService_ConfirmRemoteDesktopVirtualDisplay_FullMethodName = "/dieter.v1.DieterService/ConfirmRemoteDesktopVirtualDisplay"
+	DieterService_RestoreRemoteDesktopVirtualDisplay_FullMethodName = "/dieter.v1.DieterService/RestoreRemoteDesktopVirtualDisplay"
+	DieterService_ProbeRemoteDesktopPermissions_FullMethodName      = "/dieter.v1.DieterService/ProbeRemoteDesktopPermissions"
+	DieterService_StartRemoteDesktop_FullMethodName                 = "/dieter.v1.DieterService/StartRemoteDesktop"
+	DieterService_SendRemoteDesktopSignal_FullMethodName            = "/dieter.v1.DieterService/SendRemoteDesktopSignal"
+	DieterService_GetRemoteDesktopSession_FullMethodName            = "/dieter.v1.DieterService/GetRemoteDesktopSession"
+	DieterService_ListRemoteDesktopSessions_FullMethodName          = "/dieter.v1.DieterService/ListRemoteDesktopSessions"
+	DieterService_SetRemoteDesktopControl_FullMethodName            = "/dieter.v1.DieterService/SetRemoteDesktopControl"
+	DieterService_UpdateRemoteDesktopSession_FullMethodName         = "/dieter.v1.DieterService/UpdateRemoteDesktopSession"
+	DieterService_ExchangeRemoteDesktopClipboard_FullMethodName     = "/dieter.v1.DieterService/ExchangeRemoteDesktopClipboard"
+	DieterService_CloseRemoteDesktop_FullMethodName                 = "/dieter.v1.DieterService/CloseRemoteDesktop"
+	DieterService_ListSchedules_FullMethodName                      = "/dieter.v1.DieterService/ListSchedules"
+	DieterService_GetSchedule_FullMethodName                        = "/dieter.v1.DieterService/GetSchedule"
+	DieterService_PreviewSchedule_FullMethodName                    = "/dieter.v1.DieterService/PreviewSchedule"
+	DieterService_CreateSchedule_FullMethodName                     = "/dieter.v1.DieterService/CreateSchedule"
+	DieterService_UpdateSchedule_FullMethodName                     = "/dieter.v1.DieterService/UpdateSchedule"
+	DieterService_DeleteSchedule_FullMethodName                     = "/dieter.v1.DieterService/DeleteSchedule"
+	DieterService_RunSchedule_FullMethodName                        = "/dieter.v1.DieterService/RunSchedule"
+	DieterService_SetScheduleEnabled_FullMethodName                 = "/dieter.v1.DieterService/SetScheduleEnabled"
+	DieterService_ListScheduleRuns_FullMethodName                   = "/dieter.v1.DieterService/ListScheduleRuns"
 )
 
 // DieterServiceClient is the client API for DieterService service.
@@ -184,11 +187,12 @@ type DieterServiceClient interface {
 	GetMachineInformation(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*MachineInformation, error)
 	PerformMachineOperation(ctx context.Context, in *MachineOperationRequest, opts ...grpc.CallOption) (*MachineOperationResponse, error)
 	GetState(ctx context.Context, in *GetStateRequest, opts ...grpc.CallOption) (*State, error)
-	WatchState(ctx context.Context, in *WatchStateRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[State], error)
-	// WatchSync is the daemon-wide durable change stream used by native
-	// clients. Views are rendered from the client projection rather than by
-	// opening per-view RPCs.
-	WatchSync(ctx context.Context, in *SyncRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SyncFrame], error)
+	// WatchChanges streams this machine's view to native clients: its replica of
+	// the account's shared records in the peer store's own order, plus the
+	// owner-only details and live activity of the conversations it runs. A
+	// client holds one stream per online machine and merges the shared records
+	// causally; no machine is attached or preferred.
+	WatchChanges(ctx context.Context, in *ChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ChangesFrame], error)
 	GetHarnesses(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HarnessCatalog, error)
 	GetSettings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Settings, error)
 	GetSettingsOptions(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*SettingsOptions, error)
@@ -299,6 +303,10 @@ type DieterServiceClient interface {
 	ListRemoteDesktopDisplayModes(ctx context.Context, in *RemoteDesktopRef, opts ...grpc.CallOption) (*RemoteDesktopDisplayModes, error)
 	SetRemoteDesktopDisplayMode(ctx context.Context, in *SetRemoteDesktopDisplayModeRequest, opts ...grpc.CallOption) (*RemoteDesktopDisplayModes, error)
 	RestoreRemoteDesktopDisplayMode(ctx context.Context, in *RemoteDesktopRef, opts ...grpc.CallOption) (*RemoteDesktopDisplayModes, error)
+	GetRemoteDesktopVirtualDisplay(ctx context.Context, in *RemoteDesktopRef, opts ...grpc.CallOption) (*RemoteDesktopVirtualDisplay, error)
+	SetRemoteDesktopVirtualDisplay(ctx context.Context, in *SetRemoteDesktopVirtualDisplayRequest, opts ...grpc.CallOption) (*RemoteDesktopVirtualDisplay, error)
+	ConfirmRemoteDesktopVirtualDisplay(ctx context.Context, in *ConfirmRemoteDesktopVirtualDisplayRequest, opts ...grpc.CallOption) (*RemoteDesktopVirtualDisplay, error)
+	RestoreRemoteDesktopVirtualDisplay(ctx context.Context, in *RemoteDesktopRef, opts ...grpc.CallOption) (*RemoteDesktopVirtualDisplay, error)
 	// Explicit, bounded permission test performed by the running daemon.
 	// Discards one encoded frame and never injects input or changes settings.
 	ProbeRemoteDesktopPermissions(ctx context.Context, in *ProbeRemoteDesktopPermissionsRequest, opts ...grpc.CallOption) (*RemoteDesktopPermissionProbe, error)
@@ -538,13 +546,13 @@ func (c *dieterServiceClient) GetState(ctx context.Context, in *GetStateRequest,
 	return out, nil
 }
 
-func (c *dieterServiceClient) WatchState(ctx context.Context, in *WatchStateRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[State], error) {
+func (c *dieterServiceClient) WatchChanges(ctx context.Context, in *ChangesRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ChangesFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[1], DieterService_WatchState_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[1], DieterService_WatchChanges_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &grpc.GenericClientStream[WatchStateRequest, State]{ClientStream: stream}
+	x := &grpc.GenericClientStream[ChangesRequest, ChangesFrame]{ClientStream: stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -555,26 +563,7 @@ func (c *dieterServiceClient) WatchState(ctx context.Context, in *WatchStateRequ
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type DieterService_WatchStateClient = grpc.ServerStreamingClient[State]
-
-func (c *dieterServiceClient) WatchSync(ctx context.Context, in *SyncRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SyncFrame], error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[2], DieterService_WatchSync_FullMethodName, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &grpc.GenericClientStream[SyncRequest, SyncFrame]{ClientStream: stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
-	return x, nil
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type DieterService_WatchSyncClient = grpc.ServerStreamingClient[SyncFrame]
+type DieterService_WatchChangesClient = grpc.ServerStreamingClient[ChangesFrame]
 
 func (c *dieterServiceClient) GetHarnesses(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*HarnessCatalog, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -958,7 +947,7 @@ func (c *dieterServiceClient) PollConversation(ctx context.Context, in *PollConv
 
 func (c *dieterServiceClient) WatchConversation(ctx context.Context, in *WatchConversationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ConversationUpdate], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[3], DieterService_WatchConversation_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[2], DieterService_WatchConversation_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1227,7 +1216,7 @@ func (c *dieterServiceClient) GetGitOperation(ctx context.Context, in *GitOperat
 
 func (c *dieterServiceClient) WatchGitOperation(ctx context.Context, in *WatchGitOperationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GitOperationFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[4], DieterService_WatchGitOperation_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[3], DieterService_WatchGitOperation_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1336,7 +1325,7 @@ func (c *dieterServiceClient) CreateTerminal(ctx context.Context, in *CreateTerm
 
 func (c *dieterServiceClient) WatchTerminal(ctx context.Context, in *WatchTerminalRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TerminalFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[5], DieterService_WatchTerminal_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[4], DieterService_WatchTerminal_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1425,7 +1414,7 @@ func (c *dieterServiceClient) GetExecution(ctx context.Context, in *ExecutionRef
 
 func (c *dieterServiceClient) WatchExecution(ctx context.Context, in *WatchExecutionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExecutionEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[6], DieterService_WatchExecution_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[5], DieterService_WatchExecution_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1532,6 +1521,46 @@ func (c *dieterServiceClient) RestoreRemoteDesktopDisplayMode(ctx context.Contex
 	return out, nil
 }
 
+func (c *dieterServiceClient) GetRemoteDesktopVirtualDisplay(ctx context.Context, in *RemoteDesktopRef, opts ...grpc.CallOption) (*RemoteDesktopVirtualDisplay, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoteDesktopVirtualDisplay)
+	err := c.cc.Invoke(ctx, DieterService_GetRemoteDesktopVirtualDisplay_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) SetRemoteDesktopVirtualDisplay(ctx context.Context, in *SetRemoteDesktopVirtualDisplayRequest, opts ...grpc.CallOption) (*RemoteDesktopVirtualDisplay, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoteDesktopVirtualDisplay)
+	err := c.cc.Invoke(ctx, DieterService_SetRemoteDesktopVirtualDisplay_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) ConfirmRemoteDesktopVirtualDisplay(ctx context.Context, in *ConfirmRemoteDesktopVirtualDisplayRequest, opts ...grpc.CallOption) (*RemoteDesktopVirtualDisplay, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoteDesktopVirtualDisplay)
+	err := c.cc.Invoke(ctx, DieterService_ConfirmRemoteDesktopVirtualDisplay_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) RestoreRemoteDesktopVirtualDisplay(ctx context.Context, in *RemoteDesktopRef, opts ...grpc.CallOption) (*RemoteDesktopVirtualDisplay, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoteDesktopVirtualDisplay)
+	err := c.cc.Invoke(ctx, DieterService_RestoreRemoteDesktopVirtualDisplay_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dieterServiceClient) ProbeRemoteDesktopPermissions(ctx context.Context, in *ProbeRemoteDesktopPermissionsRequest, opts ...grpc.CallOption) (*RemoteDesktopPermissionProbe, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RemoteDesktopPermissionProbe)
@@ -1544,7 +1573,7 @@ func (c *dieterServiceClient) ProbeRemoteDesktopPermissions(ctx context.Context,
 
 func (c *dieterServiceClient) StartRemoteDesktop(ctx context.Context, in *StartRemoteDesktopRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RemoteDesktopSignal], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[7], DieterService_StartRemoteDesktop_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[6], DieterService_StartRemoteDesktop_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1751,11 +1780,12 @@ type DieterServiceServer interface {
 	GetMachineInformation(context.Context, *emptypb.Empty) (*MachineInformation, error)
 	PerformMachineOperation(context.Context, *MachineOperationRequest) (*MachineOperationResponse, error)
 	GetState(context.Context, *GetStateRequest) (*State, error)
-	WatchState(*WatchStateRequest, grpc.ServerStreamingServer[State]) error
-	// WatchSync is the daemon-wide durable change stream used by native
-	// clients. Views are rendered from the client projection rather than by
-	// opening per-view RPCs.
-	WatchSync(*SyncRequest, grpc.ServerStreamingServer[SyncFrame]) error
+	// WatchChanges streams this machine's view to native clients: its replica of
+	// the account's shared records in the peer store's own order, plus the
+	// owner-only details and live activity of the conversations it runs. A
+	// client holds one stream per online machine and merges the shared records
+	// causally; no machine is attached or preferred.
+	WatchChanges(*ChangesRequest, grpc.ServerStreamingServer[ChangesFrame]) error
 	GetHarnesses(context.Context, *emptypb.Empty) (*HarnessCatalog, error)
 	GetSettings(context.Context, *emptypb.Empty) (*Settings, error)
 	GetSettingsOptions(context.Context, *emptypb.Empty) (*SettingsOptions, error)
@@ -1866,6 +1896,10 @@ type DieterServiceServer interface {
 	ListRemoteDesktopDisplayModes(context.Context, *RemoteDesktopRef) (*RemoteDesktopDisplayModes, error)
 	SetRemoteDesktopDisplayMode(context.Context, *SetRemoteDesktopDisplayModeRequest) (*RemoteDesktopDisplayModes, error)
 	RestoreRemoteDesktopDisplayMode(context.Context, *RemoteDesktopRef) (*RemoteDesktopDisplayModes, error)
+	GetRemoteDesktopVirtualDisplay(context.Context, *RemoteDesktopRef) (*RemoteDesktopVirtualDisplay, error)
+	SetRemoteDesktopVirtualDisplay(context.Context, *SetRemoteDesktopVirtualDisplayRequest) (*RemoteDesktopVirtualDisplay, error)
+	ConfirmRemoteDesktopVirtualDisplay(context.Context, *ConfirmRemoteDesktopVirtualDisplayRequest) (*RemoteDesktopVirtualDisplay, error)
+	RestoreRemoteDesktopVirtualDisplay(context.Context, *RemoteDesktopRef) (*RemoteDesktopVirtualDisplay, error)
 	// Explicit, bounded permission test performed by the running daemon.
 	// Discards one encoded frame and never injects input or changes settings.
 	ProbeRemoteDesktopPermissions(context.Context, *ProbeRemoteDesktopPermissionsRequest) (*RemoteDesktopPermissionProbe, error)
@@ -1956,11 +1990,8 @@ func (UnimplementedDieterServiceServer) PerformMachineOperation(context.Context,
 func (UnimplementedDieterServiceServer) GetState(context.Context, *GetStateRequest) (*State, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetState not implemented")
 }
-func (UnimplementedDieterServiceServer) WatchState(*WatchStateRequest, grpc.ServerStreamingServer[State]) error {
-	return status.Error(codes.Unimplemented, "method WatchState not implemented")
-}
-func (UnimplementedDieterServiceServer) WatchSync(*SyncRequest, grpc.ServerStreamingServer[SyncFrame]) error {
-	return status.Error(codes.Unimplemented, "method WatchSync not implemented")
+func (UnimplementedDieterServiceServer) WatchChanges(*ChangesRequest, grpc.ServerStreamingServer[ChangesFrame]) error {
+	return status.Error(codes.Unimplemented, "method WatchChanges not implemented")
 }
 func (UnimplementedDieterServiceServer) GetHarnesses(context.Context, *emptypb.Empty) (*HarnessCatalog, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetHarnesses not implemented")
@@ -2237,6 +2268,18 @@ func (UnimplementedDieterServiceServer) SetRemoteDesktopDisplayMode(context.Cont
 }
 func (UnimplementedDieterServiceServer) RestoreRemoteDesktopDisplayMode(context.Context, *RemoteDesktopRef) (*RemoteDesktopDisplayModes, error) {
 	return nil, status.Error(codes.Unimplemented, "method RestoreRemoteDesktopDisplayMode not implemented")
+}
+func (UnimplementedDieterServiceServer) GetRemoteDesktopVirtualDisplay(context.Context, *RemoteDesktopRef) (*RemoteDesktopVirtualDisplay, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetRemoteDesktopVirtualDisplay not implemented")
+}
+func (UnimplementedDieterServiceServer) SetRemoteDesktopVirtualDisplay(context.Context, *SetRemoteDesktopVirtualDisplayRequest) (*RemoteDesktopVirtualDisplay, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetRemoteDesktopVirtualDisplay not implemented")
+}
+func (UnimplementedDieterServiceServer) ConfirmRemoteDesktopVirtualDisplay(context.Context, *ConfirmRemoteDesktopVirtualDisplayRequest) (*RemoteDesktopVirtualDisplay, error) {
+	return nil, status.Error(codes.Unimplemented, "method ConfirmRemoteDesktopVirtualDisplay not implemented")
+}
+func (UnimplementedDieterServiceServer) RestoreRemoteDesktopVirtualDisplay(context.Context, *RemoteDesktopRef) (*RemoteDesktopVirtualDisplay, error) {
+	return nil, status.Error(codes.Unimplemented, "method RestoreRemoteDesktopVirtualDisplay not implemented")
 }
 func (UnimplementedDieterServiceServer) ProbeRemoteDesktopPermissions(context.Context, *ProbeRemoteDesktopPermissionsRequest) (*RemoteDesktopPermissionProbe, error) {
 	return nil, status.Error(codes.Unimplemented, "method ProbeRemoteDesktopPermissions not implemented")
@@ -2666,27 +2709,16 @@ func _DieterService_GetState_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DieterService_WatchState_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(WatchStateRequest)
+func _DieterService_WatchChanges_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ChangesRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(DieterServiceServer).WatchState(m, &grpc.GenericServerStream[WatchStateRequest, State]{ServerStream: stream})
+	return srv.(DieterServiceServer).WatchChanges(m, &grpc.GenericServerStream[ChangesRequest, ChangesFrame]{ServerStream: stream})
 }
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type DieterService_WatchStateServer = grpc.ServerStreamingServer[State]
-
-func _DieterService_WatchSync_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(SyncRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(DieterServiceServer).WatchSync(m, &grpc.GenericServerStream[SyncRequest, SyncFrame]{ServerStream: stream})
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type DieterService_WatchSyncServer = grpc.ServerStreamingServer[SyncFrame]
+type DieterService_WatchChangesServer = grpc.ServerStreamingServer[ChangesFrame]
 
 func _DieterService_GetHarnesses_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(emptypb.Empty)
@@ -4316,6 +4348,78 @@ func _DieterService_RestoreRemoteDesktopDisplayMode_Handler(srv interface{}, ctx
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DieterService_GetRemoteDesktopVirtualDisplay_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoteDesktopRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetRemoteDesktopVirtualDisplay(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetRemoteDesktopVirtualDisplay_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetRemoteDesktopVirtualDisplay(ctx, req.(*RemoteDesktopRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_SetRemoteDesktopVirtualDisplay_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetRemoteDesktopVirtualDisplayRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).SetRemoteDesktopVirtualDisplay(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_SetRemoteDesktopVirtualDisplay_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).SetRemoteDesktopVirtualDisplay(ctx, req.(*SetRemoteDesktopVirtualDisplayRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_ConfirmRemoteDesktopVirtualDisplay_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConfirmRemoteDesktopVirtualDisplayRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).ConfirmRemoteDesktopVirtualDisplay(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_ConfirmRemoteDesktopVirtualDisplay_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).ConfirmRemoteDesktopVirtualDisplay(ctx, req.(*ConfirmRemoteDesktopVirtualDisplayRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_RestoreRemoteDesktopVirtualDisplay_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoteDesktopRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).RestoreRemoteDesktopVirtualDisplay(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_RestoreRemoteDesktopVirtualDisplay_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).RestoreRemoteDesktopVirtualDisplay(ctx, req.(*RemoteDesktopRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DieterService_ProbeRemoteDesktopPermissions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ProbeRemoteDesktopPermissionsRequest)
 	if err := dec(in); err != nil {
@@ -5069,6 +5173,22 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DieterService_RestoreRemoteDesktopDisplayMode_Handler,
 		},
 		{
+			MethodName: "GetRemoteDesktopVirtualDisplay",
+			Handler:    _DieterService_GetRemoteDesktopVirtualDisplay_Handler,
+		},
+		{
+			MethodName: "SetRemoteDesktopVirtualDisplay",
+			Handler:    _DieterService_SetRemoteDesktopVirtualDisplay_Handler,
+		},
+		{
+			MethodName: "ConfirmRemoteDesktopVirtualDisplay",
+			Handler:    _DieterService_ConfirmRemoteDesktopVirtualDisplay_Handler,
+		},
+		{
+			MethodName: "RestoreRemoteDesktopVirtualDisplay",
+			Handler:    _DieterService_RestoreRemoteDesktopVirtualDisplay_Handler,
+		},
+		{
 			MethodName: "ProbeRemoteDesktopPermissions",
 			Handler:    _DieterService_ProbeRemoteDesktopPermissions_Handler,
 		},
@@ -5144,13 +5264,8 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 		{
-			StreamName:    "WatchState",
-			Handler:       _DieterService_WatchState_Handler,
-			ServerStreams: true,
-		},
-		{
-			StreamName:    "WatchSync",
-			Handler:       _DieterService_WatchSync_Handler,
+			StreamName:    "WatchChanges",
+			Handler:       _DieterService_WatchChanges_Handler,
 			ServerStreams: true,
 		},
 		{

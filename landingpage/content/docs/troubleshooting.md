@@ -21,6 +21,31 @@ heartbeat alone does not mean all workspace data has arrived.
 The gateway root returning **404 is expected**. `/healthz` is its health route;
 the public marketing and documentation site is a different service.
 
+## Setup fails or the service does not start
+
+Run `dieter setup` for the standard gateway, `https://gateway.getdieter.com`.
+Access requires an allowed GitHub account. For a self-hosted gateway, pass its
+actual HTTPS origin with `--gateway`. `dieter.example.com` is a documentation
+placeholder and must not be copied as a real address.
+
+If enrollment failed before authorization, correct the origin and rerun setup.
+Incomplete enrollment retries update the origin and machine name while keeping
+the original private key. Completed enrollments retain their existing identity;
+see [gateway migration](/docs/gateway/#moving-a-gateway-endpoint). Do not delete or manually edit
+`identity.json` or `identity-key.pem`.
+
+On macOS, setup uses Homebrew's background service. If an earlier
+`dieter daemon start` is still running in a terminal, stop that foreground process
+with Ctrl-C and rerun `dieter setup`. Two daemons cannot share the local API port.
+Setup reports the foreground process instead of accepting its local API as proof
+that the new service started.
+
+Check `dieter daemon status`: expect `homebrew (started)`, a healthy local API,
+and a connected gateway. If the service still fails, inspect `brew services list`
+and `dieter daemon logs`. Agent work can run without screen sharing; remote desktop
+also requires the daemon's Screen Recording and Accessibility permissions. Run
+`dieter daemon permissions --check` to verify them.
+
 ## A project is missing or duplicated
 
 `dieter setup` does not register projects. Use `dieter project open PATH` for an
@@ -57,7 +82,7 @@ dieter screen capabilities
 The result distinguishes ready, permission required, and unsupported. Grant
 permissions **on the target machine**, to the executable identified by setup.
 Mac app permissions and daemon permissions are separate. Linux needs an active
-graphical session and the [feature dependencies](https://github.com/dbpprt/dieter/blob/main/docs/linux-support.md).
+graphical session and the [screen host requirements](/docs/screens/#capture-on-linux).
 Wayland may require local portal consent when connecting.
 
 For network failures, check the configured STUN/TURN service. H.264 is the default;

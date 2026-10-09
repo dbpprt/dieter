@@ -9,122 +9,117 @@ struct SchedulesView: View {
     @State private var editorPresentation: ScheduleEditorPresentation?
 
     var body: some View {
-        HSplitView {
-            VStack(spacing: 0) {
-                FluidPaneChrome(background: DieterTheme.sidebar) {
-                    HStack(spacing: 8) {
-                        PaneTitleBlock(
-                            title: "Schedules", subtitle: model.subtitle, symbol: "calendar.badge.clock",
-                            prominent: true
-                        )
-                        Button {
-                            Task { await model.loadSchedules() }
-                        } label: {
-                            if model.schedulesLoading {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Image(systemName: "arrow.clockwise")
-                            }
-                        }
-                        .buttonStyle(DieterIconButtonStyle())
-                        .disabled(model.schedulesLoading)
-                        ProjectCheckoutMenu(projectID: context.target.projectID)
-                        Button {
-                            Task { await openEditor(scheduleID: nil, owner: "") }
-                        } label: {
-                            Label("New", systemImage: "plus")
-                        }
-                        .buttonStyle(DieterPrimaryButtonStyle()).accessibilityIdentifier("schedules.new").disabled(
-                            !model.isLive)
-                    }
+        DieterSectionScaffold {
+            DieterTitleCapsule(title: "Schedules", symbol: "calendar.badge.clock", detail: model.subtitle)
+        } trailing: {
+            Button {
+                Task { await model.loadSchedules() }
+            } label: {
+                if model.schedulesLoading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.clockwise").font(.system(size: 12.5, weight: .medium))
                 }
-                switch model.state {
-                case .failed:
-                    LoadFeedback(
-                        title: "Schedules", error: model.schedulesError,
-                        retry: { Task { await model.loadSchedules() } }
-                    )
-                    .accessibilityIdentifier("schedules.error")
-                case .empty:
-                    ContentUnavailableView(
-                        options.emptyTitle, systemImage: "calendar.badge.plus",
-                        description: Text(options.emptyDetail)
-                    )
-                    .accessibilityIdentifier("schedules.empty")
-                case .loaded:
-                    ScrollView {
-                        LazyVStack(spacing: 7) {
-                            ForEach(model.schedules, id: \.id) { schedule in
-                                Button {
-                                    Task { await model.selectSchedule(schedule.id) }
-                                } label: {
-                                    ScheduleRow(
-                                        schedule: schedule, row: model.rows[schedule.id] ?? ClientScheduleRow(),
-                                        selected: model.selectedScheduleID == schedule.id)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            if !model.schedulesNextPageToken.isEmpty {
-                                Button {
-                                    Task { await model.loadMoreSchedules() }
-                                } label: {
-                                    HStack(spacing: 8) {
-                                        if model.schedulesLoadingMore { ProgressView().controlSize(.small) }
-                                        Text(model.schedulesLoadingMore ? options.loadingMore : options.loadMore)
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                }
-                                .buttonStyle(DieterSecondaryButtonStyle())
-                                .disabled(model.schedulesLoadingMore)
-                                .accessibilityIdentifier("schedules.load-more")
-                            }
-                        }
-                        .padding(10)
-                    }
-                    .accessibilityIdentifier("schedules.list")
-                default:
-                    LoadFeedback(title: "Loading schedules…")
-                        .accessibilityIdentifier("schedules.loading")
+            }
+            .buttonStyle(DieterBarButtonStyle(shape: .circle))
+            .disabled(model.schedulesLoading)
+            .help("Refresh schedules")
+            ProjectCheckoutMenu(projectID: context.target.projectID)
+            Button {
+                Task { await openEditor(scheduleID: nil, owner: "") }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "plus").font(.system(size: 11, weight: .bold))
+                    Text("New schedule")
                 }
-            }.frame(minWidth: 280, idealWidth: 350, maxWidth: 440, maxHeight: .infinity, alignment: .top).background(
-                DieterTheme.sidebar)
-
-            if let schedule = model.selectedSchedule {
-                ScheduleDetail(
-                    model: model, schedule: schedule, row: model.rows[schedule.id] ?? ClientScheduleRow(),
-                    openCard: openCard,
-                    edit: { Task { await openEditor(scheduleID: schedule.id, owner: schedule.ownerDaemonID) } })
-            } else {
+            }
+            .buttonStyle(DieterBarButtonStyle())
+            .accessibilityIdentifier("schedules.new").disabled(!model.isLive)
+        } content: {
+            HSplitView {
                 VStack(spacing: 0) {
-                    FluidPaneChrome {
-                        PaneTitleBlock(
-                            title: "Schedule details",
-                            subtitle: "Select an automation to inspect its timing and run history",
-                            symbol: "calendar.badge.clock")
+                    switch model.state {
+                    case .failed:
+                        LoadFeedback(
+                            title: "Schedules", error: model.schedulesError,
+                            retry: { Task { await model.loadSchedules() } }
+                        )
+                        .accessibilityIdentifier("schedules.error")
+                    case .empty:
+                        ContentUnavailableView(
+                            options.emptyTitle, systemImage: "calendar.badge.plus",
+                            description: Text(options.emptyDetail)
+                        )
+                        .accessibilityIdentifier("schedules.empty")
+                    case .loaded:
+                        ScrollView {
+                            LazyVStack(spacing: 7) {
+                                ForEach(model.schedules, id: \.id) { schedule in
+                                    Button {
+                                        Task { await model.selectSchedule(schedule.id) }
+                                    } label: {
+                                        ScheduleRow(
+                                            schedule: schedule, row: model.rows[schedule.id] ?? ClientScheduleRow(),
+                                            selected: model.selectedScheduleID == schedule.id)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                if !model.schedulesNextPageToken.isEmpty {
+                                    Button {
+                                        Task { await model.loadMoreSchedules() }
+                                    } label: {
+                                        HStack(spacing: 8) {
+                                            if model.schedulesLoadingMore { ProgressView().controlSize(.small) }
+                                            Text(model.schedulesLoadingMore ? options.loadingMore : options.loadMore)
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                    }
+                                    .buttonStyle(DieterBarButtonStyle(size: 28))
+                                    .disabled(model.schedulesLoadingMore)
+                                    .accessibilityIdentifier("schedules.load-more")
+                                }
+                            }
+                            .padding(10)
+                        }
+                        .accessibilityIdentifier("schedules.list")
+                    default:
+                        LoadFeedback(title: "Loading schedules…")
+                            .accessibilityIdentifier("schedules.loading")
                     }
-                    ContentUnavailableView("Select a schedule", systemImage: "calendar.badge.clock")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }.frame(minWidth: 280, idealWidth: 350, maxWidth: 440, maxHeight: .infinity, alignment: .top)
+
+                if let schedule = model.selectedSchedule {
+                    ScheduleDetail(
+                        model: model, schedule: schedule, row: model.rows[schedule.id] ?? ClientScheduleRow(),
+                        openCard: openCard,
+                        edit: { Task { await openEditor(scheduleID: schedule.id, owner: schedule.ownerDaemonID) } })
+                } else {
+                    ContentUnavailableView(
+                        "Select a schedule", systemImage: "calendar.badge.clock",
+                        description: Text("Inspect an automation's timing and run history.")
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-            }
-        }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            .task(id: model.target.projectID) {
-                let target = model.target
-                guard await prepare(), !Task.isCancelled, model.target == target else { return }
-                await model.loadSchedules()
-            }
-            .alert(
-                "Schedules",
-                isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })
-            ) {
-                Button("OK") { model.errorMessage = nil }
-            } message: {
-                Text(model.errorMessage ?? "")
-            }
-            .sheet(item: $editorPresentation) { presentation in
-                ScheduleEditor(
-                    model: model, context: presentation.context, scheduleID: presentation.scheduleID,
-                    draft: presentation.draft)
-            }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .task(id: model.target.projectID) {
+            let target = model.target
+            guard await prepare(), !Task.isCancelled, model.target == target else { return }
+            await model.loadSchedules()
+        }
+        .alert(
+            "Schedules",
+            isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })
+        ) {
+            Button("OK") { model.errorMessage = nil }
+        } message: {
+            Text(model.errorMessage ?? "")
+        }
+        .sheet(item: $editorPresentation) { presentation in
+            ScheduleEditor(
+                model: model, context: presentation.context, scheduleID: presentation.scheduleID,
+                draft: presentation.draft)
+        }
     }
 
     private var options: ClientScheduleEditorOptions { .shared }
@@ -148,6 +143,7 @@ struct ScheduleRow: View {
     let schedule: Dieter_V1_Schedule
     let row: ClientScheduleRow
     let selected: Bool
+    @State private var hovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -167,15 +163,9 @@ struct ScheduleRow: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            selected ? DieterTheme.selection : DieterTheme.surface.opacity(0.5),
-            in: RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous).stroke(
-                selected ? .clear : DieterTheme.border)
-        )
+        .dieterTile(DieterTileState(selected: selected, hovering: hovering))
         .contentShape(RoundedRectangle(cornerRadius: DieterMetrics.cardRadius))
+        .onHover { hovering = $0 }
     }
 }
 
@@ -194,13 +184,16 @@ struct ScheduleDetail: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            FluidPaneChrome(background: DieterTheme.sidebar, spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
-                    PaneTitleBlock(
-                        title: schedule.name,
-                        subtitle: row.subtitle,
-                        symbol: "calendar.badge.clock"
-                    )
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(schedule.name).font(.system(size: 13.5, weight: .semibold)).lineLimit(1)
+                        if !row.subtitle.isEmpty {
+                            Text(row.subtitle).font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary)
+                                .lineLimit(1).truncationMode(.middle)
+                        }
+                    }
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                     Group {
                         Toggle(
                             "Enabled",
@@ -208,12 +201,11 @@ struct ScheduleDetail: View {
                                 get: { schedule.enabled }, set: { _ in Task { await model.toggleSchedule(schedule) } })
                         )
                         .labelsHidden().toggleStyle(.switch).controlSize(.small)
-                        Button("Edit", action: edit).buttonStyle(DieterSecondaryButtonStyle())
+                        Button("Edit", action: edit).buttonStyle(DieterBarButtonStyle(size: 28))
                         Button("Run now") { Task { await model.runSchedule(schedule) } }.buttonStyle(
-                            DieterPrimaryButtonStyle())
+                            DieterBarButtonStyle(prominent: true, size: 28))
                     }.disabled(!model.isLive)
                 }
-            } secondary: {
                 HStack(spacing: 8) {
                     Text(schedule.cron).font(.system(size: 11, design: .monospaced))
                     Text("·")
@@ -223,6 +215,7 @@ struct ScheduleDetail: View {
                 }
                 .font(DieterFont.subtitle).foregroundStyle(DieterTheme.tertiary)
             }
+            .padding(.horizontal, 16).padding(.top, DieterMetrics.headerTopPadding).padding(.bottom, 10)
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
@@ -243,10 +236,11 @@ struct ScheduleDetail: View {
                             StatusPill(text: row.effortLabel)
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(14).dieterSurface(radius: 10)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(14).dieterTile(radius: 10)
                     HStack {
                         Text("Recent runs").font(.system(size: 13, weight: .semibold)); Spacer();
                         Button("Delete schedule", role: .destructive) { Task { await model.deleteSchedule(schedule) } }
+                            .buttonStyle(DieterBarButtonStyle(destructive: true, size: 28))
                             .disabled(!model.isLive)
                     }
                     if model.scheduleRunsLoading && model.runRows.isEmpty {
@@ -267,9 +261,12 @@ struct ScheduleDetail: View {
                                     }
                                 }; Spacer();
                                 Text(run.trigger).font(.caption).foregroundStyle(.secondary);
-                                if !run.cardID.isEmpty { Button("Open card") { openCard(run.cardID) } }
+                                if !run.cardID.isEmpty {
+                                    Button("Open card") { openCard(run.cardID) }
+                                        .buttonStyle(DieterBarButtonStyle(size: 24))
+                                }
                             }
-                            .padding(10).dieterSurface(radius: 8)
+                            .padding(10).dieterTile(radius: 8)
                         }
                         if !model.scheduleRunsNextPageToken.isEmpty {
                             Button {
@@ -283,7 +280,7 @@ struct ScheduleDetail: View {
                                 }
                                 .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(DieterSecondaryButtonStyle())
+                            .buttonStyle(DieterBarButtonStyle(size: 28))
                             .disabled(model.scheduleRunsLoadingMore)
                             .accessibilityIdentifier("schedule-runs.load-more")
                         }
@@ -313,6 +310,6 @@ struct ScheduleMetric: View {
         VStack(alignment: .leading, spacing: 6) {
             Label(title, systemImage: symbol).font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary);
             Text(value).font(.system(size: 12, weight: .semibold)).lineLimit(2)
-        }.padding(12).frame(maxWidth: .infinity, alignment: .leading).dieterSurface(radius: 10)
+        }.padding(12).frame(maxWidth: .infinity, alignment: .leading).dieterTile(radius: 10)
     }
 }

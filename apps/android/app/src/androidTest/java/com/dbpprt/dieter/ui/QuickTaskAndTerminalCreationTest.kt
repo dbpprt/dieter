@@ -117,7 +117,7 @@ class QuickTaskAndTerminalCreationTest {
                 Surface {
                     TerminalProjectPicker(
                         projects = listOf(laptopProject, studioProject),
-                        projectReplicas = hosts,
+                        projectHosts = hosts,
                         selectedProjectId = selectedProjectId,
                         onProjectChange = { selectedProjectId = it },
                     )

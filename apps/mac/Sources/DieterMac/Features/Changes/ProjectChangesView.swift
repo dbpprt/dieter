@@ -3,19 +3,31 @@ import DieterAPI
 import DieterShared
 import SwiftUI
 
-private struct ProjectChangeRow: Identifiable {
-    let file: Dieter_V1_ChangedFile
-    let section: String
-    var id: ProjectChangeSelection { .init(path: file.path, section: section) }
+/// A path the user asked to discard: one file, or every change under a folder.
+private struct ProjectDiscardRequest: Identifiable {
+    let path: String
+    let folder: Bool
+    let fileCount: Int
+    var id: String { path }
+}
+
+private enum ProjectChangesMetrics {
+    static let rowHeight: CGFloat = 22
+    static let indent: CGFloat = 12
+    static let toolbarHeight: CGFloat = 38
 }
 
 struct ProjectChangesView: View {
     @Environment(DieterStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("DieterDiffViewMode") private var diffMode = "Inline"
+    @AppStorage("DieterChangesTreeView") private var treeView = true
     @State private var filter = ""
     @State private var showCompactDiff = false
-    @State private var discardPath: String?
+    @State private var discard: ProjectDiscardRequest?
+    /// Collapsed folders and sections, keyed "section|path" and "section".
+    @State private var collapsed: Set<String> = []
+    @State private var hovered: String?
     @FocusState private var fileListFocused: Bool
     private var injectedModel: ProjectChangesModel?
     private var injectedProjectName: String?
@@ -25,6 +37,8 @@ struct ProjectChangesView: View {
     private var model: ProjectChangesModel { injectedModel ?? store.projectChanges }
     private var projectName: String { injectedProjectName ?? store.selectedProject?.name ?? "Project" }
     private var connected: Bool { injectedModel == nil ? store.phase.isConnected : isLive }
+    /// The Changes section owns the window's header; a conversation tab sits below its own.
+    private var standalone: Bool { injectedModel == nil }
 
     init() {}
     init(model: ProjectChangesModel, projectName: String, active: Bool, isLive: Bool, bindingRevision: Int) {
@@ -50,30 +64,28 @@ struct ProjectChangesView: View {
     private var selectedFile: Dieter_V1_ChangedFile? { model.changes?.files.first { $0.path == model.selection?.path } }
 
     var body: some View {
-        GeometryReader { geometry in
-            let compact = geometry.size.width < 900
-            VStack(spacing: 0) {
-                if injectedModel == nil { ProjectCheckoutMenu(projectID: store.selectedProjectID).padding(8) }
-                if compact {
-                    if showCompactDiff, ready, model.selection != nil { diffPane(compact: true) } else { fileNavigator }
-                } else {
-                    HSplitView {
-                        fileNavigator.frame(minWidth: 280, idealWidth: 350, maxWidth: 380)
-                        diffPane(compact: false).frame(minWidth: 440)
+        Group {
+            if standalone {
+                DieterSectionScaffold {
+                    DieterTitleCapsule(title: "Changes", detail: headerSummary)
+                } trailing: {
+                    EmptyView()
+                } content: {
+                    VStack(spacing: 0) {
+                        changesToolbar
+                        Rectangle().fill(DieterTheme.hairline).frame(height: 1)
+                        changesContent
                     }
                 }
-                feedback
-            }
-            .onChange(of: compact) { _, compact in
-                if compact, model.selection != nil { showCompactDiff = true }
+            } else {
+                changesContent
             }
         }
         .foregroundStyle(DieterTheme.text)
-        .background(DieterTheme.background)
         .task(id: targetKey) {
             guard active, scenePhase == .active else { model.suspend(); return }
             if injectedModel == nil {
-                // The core reaches the checkout's machine whichever one is attached.
+                // The core reaches the checkout's machine.
                 guard let checkout = store.checkout(forProjectID: store.selectedProjectID) else {
                     model.suspend(); return
                 }
@@ -91,41 +103,146 @@ struct ProjectChangesView: View {
         .onChange(of: diffMode) { _, mode in model.setLayout(split: mode == "Split") }
         .onDisappear { model.suspend() }
         .confirmationDialog(
-            "Discard changes to \(discardPath ?? "this file")?",
-            isPresented: Binding(
-                get: { discardPath != nil }, set: { if !$0 { discardPath = nil } }
-            ), presenting: discardPath
-        ) { path in
+            discard.map { discardTitle($0) } ?? "Discard changes?",
+            isPresented: Binding(get: { discard != nil }, set: { if !$0 { discard = nil } }),
+            presenting: discard
+        ) { request in
             Button("Discard changes", role: .destructive) {
-                model.startOperation(kind: "discard_changes", path: path)
-                discardPath = nil
+                model.startOperation(kind: "discard_changes", path: request.path)
+                discard = nil
             }
             .accessibilityIdentifier("project-changes.confirm-discard")
             .smokeTarget("project-changes.confirm-discard")
-            Button("Cancel", role: .cancel) { discardPath = nil }
-        } message: { path in
+            Button("Cancel", role: .cancel) { discard = nil }
+        } message: { request in
             Text(
-                "Discard staged and unstaged changes to \(path). Dieter saves a recovery copy first, then restores the file to HEAD. Untracked files are removed."
+                request.folder
+                    ? "Discard staged and unstaged changes under \(request.path). Dieter saves a recovery copy first, then restores tracked files to HEAD. Untracked files in the folder are removed; ignored files stay."
+                    : "Discard staged and unstaged changes to \(request.path). Dieter saves a recovery copy first, then restores the file to HEAD. Untracked files are removed."
             )
         }
     }
 
-    private var navigatorHeader: some View {
-        HStack(spacing: 9) {
-            Text("Changes").font(.system(size: 17, weight: .semibold))
-            Text(projectName).font(.system(size: 12))
-                .foregroundStyle(DieterTheme.tertiary).lineLimit(1)
-            Spacer(minLength: 0)
-            Button {
-                Task { await model.refresh() }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(DieterIconButtonStyle()).disabled(model.refreshing).help("Refresh changes")
-            .accessibilityLabel("Refresh changes").accessibilityIdentifier("project-changes.refresh")
-            .smokeTarget("project-changes.refresh")
-        }.padding(.horizontal, 16).frame(height: 58)
+    private func discardTitle(_ request: ProjectDiscardRequest) -> String {
+        request.folder
+            ? "Discard changes to \(SharedRules.shared.count(count: Int32(clamping: request.fileCount), noun: "file", plural: "")) in \(request.path)?"
+            : "Discard changes to \(request.path)?"
     }
+
+    // MARK: Header
+
+    /// The file list beside the diff, or one of them while compact.
+    private var changesContent: some View {
+        GeometryReader { geometry in
+            let compact = geometry.size.width < 900
+            VStack(spacing: 0) {
+                if compact {
+                    if showCompactDiff, ready, model.selection != nil { diffPane(compact: true) } else { fileNavigator }
+                } else {
+                    HSplitView {
+                        fileNavigator.frame(minWidth: 260, idealWidth: 340, maxWidth: 520)
+                        diffPane(compact: false).frame(minWidth: 440)
+                    }
+                }
+                feedback
+            }
+            .onChange(of: compact) { _, compact in
+                if compact, model.selection != nil { showCompactDiff = true }
+            }
+        }
+    }
+
+    private var headerSummary: String {
+        guard ready, let changes = model.changes else { return projectName }
+        var parts = [projectName]
+        parts.append(
+            changes.files.isEmpty
+                ? "Working tree clean"
+                : SharedRules.shared.count(
+                    count: Int32(clamping: changes.files.count), noun: "changed file", plural: ""))
+        if changes.additions != 0 || changes.deletions != 0 {
+            parts.append("+\(changes.additions) −\(changes.deletions)")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private var changesToolbar: some View {
+        Group {
+            HStack(spacing: 8) {
+                ProjectCheckoutMenu(projectID: store.selectedProjectID, size: 28)
+                branchSummary
+                Spacer(minLength: 8)
+                ViewThatFits(in: .horizontal) {
+                    shipActions(iconOnly: false).fixedSize()
+                    shipActions(iconOnly: true).fixedSize()
+                }
+                refreshButton()
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+        }
+    }
+
+    private func refreshButton(size: CGFloat = 28) -> some View {
+        Button {
+            Task { await model.refresh() }
+        } label: {
+            Label("Refresh", systemImage: "arrow.clockwise").labelStyle(.iconOnly)
+        }
+        .buttonStyle(DieterBarButtonStyle(shape: .circle, size: size))
+        .disabled(model.refreshing).help("Refresh changes")
+        .accessibilityLabel("Refresh changes").accessibilityIdentifier("project-changes.refresh")
+        .smokeTarget("project-changes.refresh")
+    }
+
+    /// The branch, its base, and how far it has drifted from its upstream.
+    private var branchSummary: some View {
+        let changes = model.changes
+        let branch = changes?.branch.isEmpty == false ? changes!.branch : "Detached HEAD"
+        let base = changes?.baseBranch ?? ""
+        return HStack(spacing: 5) {
+            Image(systemName: "arrow.triangle.branch")
+            Text(branch).lineLimit(1).truncationMode(.middle)
+            if let changes, changes.ahead != 0 || changes.behind != 0 {
+                Text("↑\(changes.ahead) ↓\(changes.behind)").monospacedDigit()
+                    .foregroundStyle(DieterTheme.tertiary)
+            }
+        }
+        .font(.system(size: 11, design: .monospaced))
+        .foregroundStyle(DieterTheme.subtle)
+        .help(base.isEmpty || base == branch ? branch : "\(branch) → \(base)")
+        .opacity(ready && changes != nil ? 1 : 0)
+    }
+
+    private func shipActions(iconOnly: Bool, size: CGFloat = 28) -> some View {
+        HStack(spacing: 6) {
+            shipButton("Update", symbol: "arrow.down.circle", kind: "update", iconOnly: iconOnly, size: size)
+                .help("Fetch and rebase onto the base branch")
+            shipButton("Validate", symbol: "checkmark.seal", kind: "validate", iconOnly: iconOnly, size: size)
+                .help("Run the project's validation")
+            shipButton("Push", symbol: "arrow.up.circle", kind: "push", iconOnly: iconOnly, size: size)
+                .help("Push the current branch")
+        }
+    }
+
+    private func shipButton(_ title: String, symbol: String, kind: String, iconOnly: Bool, size: CGFloat)
+        -> some View
+    {
+        Button {
+            model.startOperation(kind: kind)
+        } label: {
+            if iconOnly {
+                Label(title, systemImage: symbol).labelStyle(.iconOnly)
+            } else {
+                Label(title, systemImage: symbol)
+            }
+        }
+        .buttonStyle(DieterBarButtonStyle(shape: iconOnly ? .circle : .capsule, size: size))
+        .disabled(!can(kind))
+        .accessibilityLabel(title)
+        .accessibilityIdentifier("project-changes.\(kind)").smokeTarget("project-changes.\(kind)")
+    }
+
+    // MARK: Navigator
 
     private var initialState: some View {
         Group {
@@ -135,7 +252,7 @@ struct ProjectChangesView: View {
                 } description: {
                     Text(error)
                 } actions: {
-                    Button("Retry") { Task { await model.refresh() } }
+                    Button("Retry") { Task { await model.refresh() } }.buttonStyle(DieterBarButtonStyle(size: 28))
                 }
             } else {
                 ProgressView("Reading changes…")
@@ -145,39 +262,16 @@ struct ProjectChangesView: View {
 
     private var fileNavigator: some View {
         VStack(spacing: 0) {
-            navigatorHeader
+            if !standalone { embeddedToolbar }
             if ready, model.changes != nil {
-                commitComposer.padding(.horizontal, 14)
-                branchStrip.padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 8)
-                shipActions.padding(.horizontal, 14).padding(.bottom, 8)
-                HStack(spacing: 7) {
-                    Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
-                    TextField(
-                        "Filter files", text: $filter,
-                        prompt: Text("Filter files").foregroundStyle(DieterTheme.tertiary)
-                    )
-                    .textFieldStyle(.plain).font(.system(size: 12))
-                    .accessibilityIdentifier("project-changes.filter").smokeTarget("project-changes.filter")
-                    if !filter.isEmpty {
-                        Button {
-                            filter = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                        }
-                        .buttonStyle(.plain).foregroundStyle(DieterTheme.tertiary).accessibilityLabel(
-                            "Clear file filter")
-                    }
-                }
-                .padding(.horizontal, 10).frame(height: 30)
-                .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 6))
-                .overlay { RoundedRectangle(cornerRadius: 6).stroke(DieterTheme.border) }
-                .padding(.horizontal, 14).padding(.bottom, 6)
+                commitComposer.padding(.horizontal, 10).padding(.top, 10).padding(.bottom, 8)
+                listToolbar.padding(.horizontal, 10).padding(.bottom, 4)
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 2) {
-                            fileSection("Staged", section: "staged", files: model.stagedFiles)
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            fileSection("Staged Changes", section: "staged", files: model.stagedFiles)
                             fileSection("Changes", section: "unstaged", files: model.unstagedFiles)
-                        }.padding(.horizontal, 10).padding(.bottom, 14)
+                        }.padding(.horizontal, 4).padding(.bottom, 10)
                     }
                     .focusable().focused($fileListFocused).focusEffectDisabled()
                     .onKeyPress(.downArrow) {
@@ -186,8 +280,11 @@ struct ProjectChangesView: View {
                     .onKeyPress(.upArrow) {
                         moveSelection(by: -1); return .handled
                     }
+                    .onKeyPress(.space) {
+                        toggleSelectedStage(); return .handled
+                    }
                     .onChange(of: model.selection) { _, selection in
-                        if let selection { proxy.scrollTo(selection) }
+                        if let selection { proxy.scrollTo(rowID(selection.section, selection.path)) }
                     }
                     .accessibilityElement(children: .contain).accessibilityLabel("Changed files")
                     .accessibilityIdentifier("project-changes.files").smokeTarget("project-changes.files")
@@ -198,52 +295,72 @@ struct ProjectChangesView: View {
         }.background(DieterTheme.sidebar)
     }
 
+    /// A conversation's review tab has no pane header, so its Git actions sit atop the list.
+    private var embeddedToolbar: some View {
+        HStack(spacing: 6) {
+            branchSummary
+            Spacer(minLength: 4)
+            shipActions(iconOnly: true, size: 26)
+            refreshButton(size: 26)
+        }
+        .padding(.horizontal, 12).frame(height: 34)
+        .overlay(alignment: .bottom) { Divider().overlay(DieterTheme.border) }
+    }
+
     private var commitComposer: some View {
         @Bindable var model = model
         let count = model.stagedFiles.count
-        return VStack(spacing: 8) {
+        let branch = model.changes?.branch ?? ""
+        return VStack(spacing: 6) {
             VStack(alignment: .leading, spacing: 0) {
-                TextField(
-                    "Commit subject", text: $model.commitSubject,
-                    prompt: Text("Commit subject").foregroundStyle(DieterTheme.tertiary)
-                )
-                .font(.system(size: 13, weight: .medium)).padding(.horizontal, 10).frame(height: 36)
-                .accessibilityIdentifier("project-changes.commit-subject").smokeTarget("project-changes.commit-subject")
-                Divider().overlay(DieterTheme.border)
+                HStack(spacing: 6) {
+                    TextField(
+                        "Commit subject", text: $model.commitSubject,
+                        prompt: Text(branch.isEmpty ? "Message (⌘↩ to commit)" : "Message (⌘↩ to commit on \(branch))")
+                            .foregroundStyle(DieterTheme.tertiary)
+                    )
+                    .font(.system(size: 12, weight: .medium))
+                    .accessibilityIdentifier("project-changes.commit-subject")
+                    .smokeTarget("project-changes.commit-subject")
+                    if model.commitSubject.count > 50 {
+                        Text("\(model.commitSubject.count)/72").monospacedDigit()
+                            .font(.system(size: 10))
+                            .foregroundStyle(model.commitSubject.count > 72 ? DieterTheme.amber : DieterTheme.tertiary)
+                    }
+                }
+                .padding(.horizontal, 8).frame(height: 26)
                 TextField(
                     "Description (optional)", text: $model.commitBody,
-                    prompt: Text("Description (optional)").foregroundStyle(DieterTheme.tertiary), axis: .vertical
+                    prompt: Text("Description").foregroundStyle(DieterTheme.tertiary), axis: .vertical
                 )
-                .font(.system(size: 12)).lineLimit(3...5).padding(10)
+                .font(.system(size: 11)).lineLimit(1...6).padding(.horizontal, 8).padding(.bottom, 6)
                 .accessibilityIdentifier("project-changes.commit-body").smokeTarget("project-changes.commit-body")
-                HStack {
-                    Text(count == 0 ? "Stage files to commit" : "Only staged changes will be committed")
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    Text("\(model.commitSubject.count)/72").monospacedDigit()
-                        .foregroundStyle(model.commitSubject.count > 72 ? DieterTheme.amber : DieterTheme.tertiary)
-                }.font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).padding(.horizontal, 10).padding(
-                    .bottom, 9)
             }
             .textFieldStyle(.plain).disabled(model.pendingKind == "commit")
-            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
-            .overlay { RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.border) }
+            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 6))
+            .overlay { RoundedRectangle(cornerRadius: 6).stroke(DieterTheme.border) }
             Button {
                 model.startOperation(kind: "commit", subject: model.commitSubject, body: model.commitBody)
             } label: {
                 HStack(spacing: 6) {
-                    if model.pendingKind == "commit" { ProgressView().controlSize(.mini) }
+                    if model.pendingKind == "commit" {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: "checkmark")
+                    }
                     Text(
                         model.pendingKind == "commit"
                             ? "Committing…"
                             : count == 0
-                                ? "Commit staged changes"
+                                ? "Commit"
                                 : "Commit \(SharedRules.shared.count(count: Int32(clamping: count), noun: "file", plural: ""))"
                     )
                 }.frame(maxWidth: .infinity)
             }
-            .buttonStyle(ChangesActionButtonStyle(prominent: true))
+            .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28))
+            .keyboardShortcut(.return, modifiers: .command)
             .disabled(!can("commit") || !commitReady)
+            .help(count == 0 ? "Stage files to commit" : "Commit staged changes (⌘↩)")
             .accessibilityIdentifier("project-changes.commit").smokeTarget("project-changes.commit")
         }
     }
@@ -258,146 +375,396 @@ struct ProjectChangesView: View {
             }.rulesData)
     }
 
-    private var branchStrip: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "arrow.triangle.branch")
-            Text(model.changes?.branch.isEmpty == false ? model.changes!.branch : "Detached HEAD")
-                .lineLimit(1).truncationMode(.middle)
-            Spacer(minLength: 0)
-            if let base = model.changes?.baseBranch, !base.isEmpty, base != model.changes?.branch {
-                Text("→ \(base)").lineLimit(1)
+    private var listToolbar: some View {
+        HStack(spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: "line.3.horizontal.decrease").font(.system(size: 10))
+                    .foregroundStyle(DieterTheme.tertiary)
+                TextField(
+                    "Filter files", text: $filter,
+                    prompt: Text("Filter files").foregroundStyle(DieterTheme.tertiary)
+                )
+                .textFieldStyle(.plain).font(.system(size: 11))
+                .accessibilityIdentifier("project-changes.filter").smokeTarget("project-changes.filter")
+                if !filter.isEmpty {
+                    Button {
+                        filter = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain).foregroundStyle(DieterTheme.tertiary)
+                    .accessibilityLabel("Clear file filter")
+                }
             }
-        }.font(.system(size: 10, design: .monospaced)).foregroundStyle(DieterTheme.tertiary)
+            .padding(.horizontal, 7).frame(height: 24)
+            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 5))
+            .overlay { RoundedRectangle(cornerRadius: 5).stroke(DieterTheme.border) }
+            if treeView {
+                listIconButton(
+                    allCollapsed ? "Expand all folders" : "Collapse all folders",
+                    symbol: allCollapsed ? "plus.square.on.square" : "minus.square",
+                    identifier: "project-changes.collapse-all"
+                ) { toggleAllFolders() }
+            }
+            listIconButton(
+                treeView ? "View as list" : "View as tree",
+                symbol: treeView ? "list.bullet" : "list.bullet.indent",
+                identifier: "project-changes.view-mode"
+            ) { treeView.toggle() }
+        }
     }
 
-    private var shipActions: some View {
-        HStack(spacing: 7) {
-            Button("Update") { model.startOperation(kind: "update") }
-                .disabled(!can("update"))
-                .accessibilityIdentifier("project-changes.update").smokeTarget("project-changes.update")
-            Button("Validate") { model.startOperation(kind: "validate") }
-                .disabled(!can("validate"))
-                .accessibilityIdentifier("project-changes.validate").smokeTarget("project-changes.validate")
-            Button("Push") { model.startOperation(kind: "push") }
-                .disabled(!can("push"))
-                .accessibilityIdentifier("project-changes.push").smokeTarget("project-changes.push")
+    private func listIconButton(
+        _ title: String, symbol: String, identifier: String, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
         }
-        .buttonStyle(ChangesActionButtonStyle(prominent: false))
+        .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 24))
+        .help(title).accessibilityLabel(title).accessibilityIdentifier(identifier)
     }
+
+    // MARK: Rows
+
+    private func visible(_ files: [Dieter_V1_ChangedFile]) -> [Dieter_V1_ChangedFile] {
+        filter.isEmpty ? files : files.filter { $0.path.localizedCaseInsensitiveContains(filter) }
+    }
+
+    private func treeRows(section: String, files: [Dieter_V1_ChangedFile]) -> [ChangeTreeRow] {
+        let paths = visible(files).map(\.path)
+        guard treeView else {
+            return paths.map {
+                ChangeTreeRow(
+                    kind: .file, path: $0, name: ClientChangedFileLabel.of($0).filename, depth: 0, fileCount: 1)
+            }
+        }
+        let folded = Set(
+            collapsed.compactMap { key in key.hasPrefix("\(section)|") ? String(key.dropFirst(section.count + 1)) : nil
+            })
+        return ChangeTree.rows(paths: paths, collapsed: folded)
+    }
+
+    private var allFolderKeys: Set<String> {
+        let staged = ChangeTree.folders(paths: visible(model.stagedFiles).map(\.path)).map { "staged|\($0)" }
+        let unstaged = ChangeTree.folders(paths: visible(model.unstagedFiles).map(\.path)).map { "unstaged|\($0)" }
+        return Set(staged).union(unstaged)
+    }
+
+    private var allCollapsed: Bool {
+        let keys = allFolderKeys
+        return !keys.isEmpty && keys.isSubset(of: collapsed)
+    }
+
+    private func toggleAllFolders() {
+        let keys = allFolderKeys
+        if allCollapsed { collapsed.subtract(keys) } else { collapsed.formUnion(keys) }
+    }
+
+    private func rowID(_ section: String, _ path: String) -> String { "\(section)|\(path)" }
 
     private func fileSection(_ title: String, section: String, files: [Dieter_V1_ChangedFile]) -> some View {
-        Section {
-            let visible = files.filter { filter.isEmpty || $0.path.localizedCaseInsensitiveContains(filter) }
-            if visible.isEmpty {
-                Text(
-                    files.isEmpty ? (section == "staged" ? "No staged files" : "No local changes") : "No matching files"
-                )
-                .font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
-                .padding(.leading, 24).padding(.vertical, 8)
-            }
-            ForEach(visible.map { ProjectChangeRow(file: $0, section: section) }) { row in
-                fileRow(row.file, section: section).id(row.id)
+        let staged = section == "staged"
+        let folded = collapsed.contains(section)
+        let rows = folded ? [] : treeRows(section: section, files: files)
+        let byPath = Dictionary(files.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
+        return Section {
+            if !folded {
+                if rows.isEmpty {
+                    Text(files.isEmpty ? (staged ? "No staged files" : "No local changes") : "No matching files")
+                        .font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
+                        .padding(.leading, 22).frame(height: ProjectChangesMetrics.rowHeight)
+                }
+                ForEach(rows, id: \.self) { row in
+                    switch row.kind {
+                    case .folder: folderRow(row, section: section).id(rowID(section, "/" + row.path))
+                    case .file:
+                        if let file = byPath[row.path] {
+                            fileRow(file, row: row, section: section).id(rowID(section, row.path))
+                        }
+                    }
+                }
             }
         } header: {
-            HStack(spacing: 6) {
-                Text(title.uppercased()).tracking(0.8)
-                Text("\(files.count)").monospacedDigit()
-                Spacer()
-                if !files.isEmpty {
-                    Button(section == "staged" ? "Unstage all" : "Stage all") {
-                        model.startOperation(kind: section == "staged" ? "unstage" : "stage")
-                    }
-                    .buttonStyle(.plain).font(.system(size: 10)).disabled(
-                        !can(section == "staged" ? "unstage" : "stage")
-                    )
-                    .accessibilityIdentifier("project-changes.\(section == "staged" ? "unstage" : "stage")-all")
-                    .smokeTarget("project-changes.\(section == "staged" ? "unstage" : "stage")-all")
-                }
-            }.font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.tertiary)
-                .padding(.horizontal, 8).padding(.top, 14).padding(.bottom, 5)
+            sectionHeader(title, section: section, files: files, folded: folded)
         }
     }
 
-    private func moveSelection(by offset: Int) {
-        let choices =
-            model.stagedFiles.map { ProjectChangeSelection(path: $0.path, section: "staged") }
-            + model.unstagedFiles.map { ProjectChangeSelection(path: $0.path, section: "unstaged") }
-        let visible = choices.filter { filter.isEmpty || $0.path.localizedCaseInsensitiveContains(filter) }
-        guard !visible.isEmpty else { return }
-        let index = model.selection.flatMap { visible.firstIndex(of: $0) } ?? (offset > 0 ? -1 : 0)
-        model.select(visible[min(max(index + offset, 0), visible.count - 1)])
+    private func sectionHeader(_ title: String, section: String, files: [Dieter_V1_ChangedFile], folded: Bool)
+        -> some View
+    {
+        let staged = section == "staged"
+        let kind = staged ? "unstage" : "stage"
+        let id = "header|\(section)"
+        return HStack(spacing: 4) {
+            Button {
+                if folded { collapsed.remove(section) } else { collapsed.insert(section) }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold))
+                        .rotationEffect(.degrees(folded ? 0 : 90)).frame(width: 12)
+                    Text(title.uppercased()).tracking(0.6)
+                    Spacer(minLength: 0)
+                }.contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(title), \(files.count)")
+            if !files.isEmpty {
+                rowAction(
+                    staged ? "Unstage all" : "Stage all", symbol: staged ? "minus" : "plus", kind: kind, path: "",
+                    identifier: "project-changes.\(kind)-all", emphasized: hovered == id)
+            }
+            Text("\(files.count)").monospacedDigit()
+                .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 15)
+                .background(DieterTheme.elevated, in: Capsule())
+        }
+        .font(.system(size: 10, weight: .semibold)).foregroundStyle(DieterTheme.subtle)
+        .padding(.leading, 2).padding(.trailing, 8).frame(height: 24)
+        .padding(.top, staged ? 2 : 8)
+        .background(DieterTheme.sidebar)
+        .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
     }
 
-    private func fileRow(_ file: Dieter_V1_ChangedFile, section: String) -> some View {
+    private func indent(_ depth: Int) -> some View {
+        Color.clear.frame(width: CGFloat(depth) * ProjectChangesMetrics.indent, height: 1)
+    }
+
+    private func folderRow(_ row: ChangeTreeRow, section: String) -> some View {
+        let staged = section == "staged"
+        let key = rowID(section, row.path)
+        let folded = collapsed.contains(key)
+        let id = "folder|\(key)"
+        let emphasized = hovered == id
+        return HStack(spacing: 2) {
+            Button {
+                if folded { collapsed.remove(key) } else { collapsed.insert(key) }
+            } label: {
+                HStack(spacing: 4) {
+                    indent(row.depth)
+                    Image(systemName: "chevron.right").font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(DieterTheme.tertiary)
+                        .rotationEffect(.degrees(folded ? 0 : 90)).frame(width: 12)
+                    Image(systemName: folded ? "folder.fill" : "folder").font(.system(size: 11))
+                        .foregroundStyle(DieterTheme.shell).frame(width: 15)
+                    Text(row.name).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, minHeight: ProjectChangesMetrics.rowHeight).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).help(row.path)
+            .accessibilityLabel("Folder \(row.path), \(row.fileCount) files")
+            .accessibilityValue(folded ? "Collapsed" : "Expanded")
+            .accessibilityIdentifier("project-changes.folder.\(section).\(row.path)")
+            if emphasized {
+                if standalone {
+                    rowIconButton("Open folder in Files", symbol: "arrow.up.forward.square") {
+                        openInFiles(row.path, directory: true)
+                    }
+                }
+                if !staged {
+                    rowIconButton("Discard changes in folder", symbol: "arrow.uturn.backward") {
+                        discard = .init(path: row.path, folder: true, fileCount: row.fileCount)
+                    }
+                    .disabled(!can("discard_changes"))
+                }
+            }
+            rowAction(
+                staged ? "Unstage folder" : "Stage folder", symbol: staged ? "minus" : "plus",
+                kind: staged ? "unstage" : "stage", path: row.path,
+                identifier: "project-changes.\(staged ? "unstage" : "stage")-folder.\(row.path)", emphasized: emphasized
+            )
+            Text("\(row.fileCount)").font(.system(size: 10)).monospacedDigit()
+                .foregroundStyle(DieterTheme.tertiary).frame(minWidth: 16, alignment: .trailing)
+        }
+        .padding(.leading, 4).padding(.trailing, 8)
+        .background(emphasized ? DieterTheme.raised : .clear, in: RoundedRectangle(cornerRadius: 4))
+        .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
+        .contextMenu { folderMenu(row, section: section, folded: folded) }
+    }
+
+    @ViewBuilder private func folderMenu(_ row: ChangeTreeRow, section: String, folded: Bool) -> some View {
+        let staged = section == "staged"
+        Button(staged ? "Unstage Folder" : "Stage Folder") {
+            model.startOperation(kind: staged ? "unstage" : "stage", path: row.path)
+        }.disabled(!can(staged ? "unstage" : "stage"))
+        Button("Discard Changes in Folder…", role: .destructive) {
+            discard = .init(path: row.path, folder: true, fileCount: row.fileCount)
+        }.disabled(!can("discard_changes"))
+        Divider()
+        if standalone {
+            Button("Open in Files") { openInFiles(row.path, directory: true) }
+        }
+        Button("Copy Path") { copy(row.path) }
+        Divider()
+        Button(folded ? "Expand" : "Collapse") {
+            let key = rowID(section, row.path)
+            if folded { collapsed.remove(key) } else { collapsed.insert(key) }
+        }
+        Button("Collapse All") { collapsed.formUnion(allFolderKeys) }
+    }
+
+    private func fileRow(_ file: Dieter_V1_ChangedFile, row: ChangeTreeRow, section: String) -> some View {
         let status = section == "staged" ? file.indexStatus : file.worktreeStatus
         let stage = section != "staged"
         let selection = ProjectChangeSelection(path: file.path, section: section)
         let selected = model.selection == selection
+        let id = "file|\(rowID(section, file.path))"
+        let emphasized = hovered == id || selected
         let label = ClientChangedFileLabel.of(
             file.path, status: status, conflicted: file.conflicted, untracked: status == "untracked")
-        return HStack(spacing: 7) {
-            Button {
-                model.startOperation(kind: stage ? "stage" : "unstage", path: file.path)
-            } label: {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 3).fill(stage ? .clear : DieterTheme.reviewAccent)
-                    RoundedRectangle(cornerRadius: 3).stroke(
-                        stage ? DieterTheme.strongBorder : DieterTheme.reviewAccent)
-                    if !stage {
-                        Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(
-                            Color.black.opacity(0.8))
-                    }
-                }.frame(width: 14, height: 14).padding(3).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain).disabled(!can(stage ? "stage" : "unstage"))
-            .opacity(can(stage ? "stage" : "unstage") ? 1 : 0.45)
-            .help("\(stage ? "Stage" : "Unstage") \(file.path)")
-            .accessibilityLabel("\(stage ? "Stage" : "Unstage") \(file.path)")
-            .accessibilityIdentifier("project-changes.\(stage ? "stage" : "unstage").\(file.path)")
-            .smokeTarget("project-changes.\(stage ? "stage" : "unstage").\(file.path)")
+        return HStack(spacing: 2) {
             Button {
                 fileListFocused = true
                 model.select(selection)
                 showCompactDiff = true
             } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: "doc").font(.system(size: 11)).foregroundStyle(DieterTheme.tertiary)
-                    Text(label.filename).font(.system(size: 12, weight: .medium))
+                HStack(spacing: 4) {
+                    indent(row.depth)
+                    Color.clear.frame(width: treeView ? 12 : 0, height: 1)
+                    Image(systemName: FilePresentation.symbol(name: label.filename)).font(.system(size: 10))
+                        .foregroundStyle(DieterTheme.tertiary).frame(width: 15)
+                    Text(label.filename).font(.system(size: 12))
+                        .foregroundStyle(nameColor(status, conflicted: file.conflicted))
+                        .strikethrough(status == "deleted", color: DieterTheme.coral.opacity(0.7))
                         .lineLimit(1).layoutPriority(1)
-                    if !label.directory.isEmpty {
-                        Text(label.directory).font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
-                            .truncationMode(.middle)
+                    if !treeView, !label.directory.isEmpty {
+                        Text(label.directory).font(.system(size: 10.5)).foregroundStyle(DieterTheme.tertiary)
+                            .lineLimit(1).truncationMode(.head)
                     }
                     Spacer(minLength: 0)
-                    if file.staged && file.unstaged {
-                        Image(systemName: "circle.lefthalf.filled").font(.system(size: 10)).foregroundStyle(
-                            DieterTheme.tertiary
-                        )
-                        .help("This file has both staged and unstaged edits")
-                    }
-                    Text(label.badge)
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(
-                            statusColor(status)
-                        ).frame(width: 12)
-                }.frame(maxWidth: .infinity, minHeight: 32).contentShape(Rectangle())
+                }
+                .frame(maxWidth: .infinity, minHeight: ProjectChangesMetrics.rowHeight).contentShape(Rectangle())
             }
             .buttonStyle(.plain).help(file.path)
-            .accessibilityLabel("\(section.capitalized) \(file.path)").accessibilityAddTraits(
-                selected ? .isSelected : []
-            )
-            .accessibilityIdentifier("project-changes.\(section).\(file.path)").smokeTarget(
-                "project-changes.\(section).\(file.path)")
+            .accessibilityLabel("\(section.capitalized) \(file.path)")
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityIdentifier("project-changes.\(section).\(file.path)")
+            .smokeTarget("project-changes.\(section).\(file.path)")
+            if emphasized {
+                if standalone, status != "deleted" {
+                    rowIconButton("Open file in Files", symbol: "arrow.up.forward.square") {
+                        openInFiles(file.path, directory: false)
+                    }
+                }
+                if stage {
+                    rowIconButton("Discard changes", symbol: "arrow.uturn.backward") {
+                        discard = .init(path: file.path, folder: false, fileCount: 1)
+                    }
+                    .disabled(!can("discard_changes"))
+                }
+            }
+            rowAction(
+                stage ? "Stage \(file.path)" : "Unstage \(file.path)", symbol: stage ? "plus" : "minus",
+                kind: stage ? "stage" : "unstage", path: file.path,
+                identifier: "project-changes.\(stage ? "stage" : "unstage").\(file.path)", emphasized: emphasized)
+            if file.staged && file.unstaged {
+                Image(systemName: "circle.lefthalf.filled").font(.system(size: 8))
+                    .foregroundStyle(DieterTheme.tertiary)
+                    .help("This file has both staged and unstaged edits")
+            }
+            Text(label.badge)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(statusColor(status)).frame(width: 14)
+                .help(label.title)
         }
-        .padding(.horizontal, 6)
-        .background(selected ? DieterTheme.elevated : .clear, in: RoundedRectangle(cornerRadius: 5))
+        .padding(.leading, 4).padding(.trailing, 8)
+        .background(
+            selected ? DieterTheme.selection : (emphasized ? DieterTheme.raised : .clear),
+            in: RoundedRectangle(cornerRadius: 4)
+        )
         .overlay(alignment: .leading) {
             if selected {
-                RoundedRectangle(cornerRadius: 1).fill(DieterTheme.reviewAccent).frame(width: 2).padding(.vertical, 6)
+                RoundedRectangle(cornerRadius: 1).fill(DieterTheme.reviewAccent).frame(width: 2).padding(.vertical, 4)
             }
         }
-        .contextMenu {
-            Button("Discard changes…", role: .destructive) { discardPath = file.path }
-                .disabled(!can("discard_changes"))
+        .onHover { hovered = $0 ? id : (hovered == id ? nil : hovered) }
+        .contextMenu { fileMenu(file, status: status, stage: stage) }
+    }
+
+    @ViewBuilder private func fileMenu(_ file: Dieter_V1_ChangedFile, status: String, stage: Bool) -> some View {
+        if standalone, status != "deleted" {
+            Button("Open in Files") { openInFiles(file.path, directory: false) }
+            Divider()
+        }
+        Button(stage ? "Stage Changes" : "Unstage Changes") {
+            model.startOperation(kind: stage ? "stage" : "unstage", path: file.path)
+        }.disabled(!can(stage ? "stage" : "unstage"))
+        Button("Discard Changes…", role: .destructive) {
+            discard = .init(path: file.path, folder: false, fileCount: 1)
+        }.disabled(!can("discard_changes"))
+        Divider()
+        Button("Copy Path") { copy(file.path) }
+        Button("Copy File Name") { copy(ClientChangedFileLabel.of(file.path).filename) }
+        if let root = store.selectedProject?.path, standalone, !root.isEmpty {
+            Button("Copy Absolute Path") { copy((root as NSString).appendingPathComponent(file.path)) }
+        }
+    }
+
+    /// Stages or unstages a path; the row's primary action stays visible so it can be pressed directly.
+    private func rowAction(
+        _ title: String, symbol: String, kind: String, path: String, identifier: String, emphasized: Bool
+    ) -> some View {
+        Button {
+            model.startOperation(kind: kind, path: path)
+        } label: {
+            Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
+                .frame(width: 20, height: 18).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(emphasized ? DieterTheme.text : DieterTheme.tertiary.opacity(0.7))
+        .disabled(!can(kind)).opacity(can(kind) ? 1 : 0.4)
+        .help(title).accessibilityLabel(title)
+        .accessibilityIdentifier(identifier).smokeTarget(identifier)
+    }
+
+    private func rowIconButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
+                .frame(width: 20, height: 18).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).foregroundStyle(DieterTheme.subtle)
+        .help(title).accessibilityLabel(title)
+    }
+
+    private func openInFiles(_ path: String, directory: Bool) {
+        let projectID = store.selectedProjectID
+        Task { await store.openProjectPath(projectID, path: path, directory: directory) }
+    }
+
+    private func copy(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    /// Selectable files in on-screen order, skipping collapsed folders and sections.
+    private var orderedSelections: [ProjectChangeSelection] {
+        ["staged", "unstaged"].flatMap { section -> [ProjectChangeSelection] in
+            guard !collapsed.contains(section) else { return [] }
+            let files = section == "staged" ? model.stagedFiles : model.unstagedFiles
+            return treeRows(section: section, files: files).filter { $0.kind == .file }
+                .map { ProjectChangeSelection(path: $0.path, section: section) }
+        }
+    }
+
+    private func moveSelection(by offset: Int) {
+        let visible = orderedSelections
+        guard !visible.isEmpty else { return }
+        let index = model.selection.flatMap { visible.firstIndex(of: $0) } ?? (offset > 0 ? -1 : 0)
+        model.select(visible[min(max(index + offset, 0), visible.count - 1)])
+    }
+
+    private func toggleSelectedStage() {
+        guard let selection = model.selection else { return }
+        let kind = selection.section == "staged" ? "unstage" : "stage"
+        guard can(kind) else { return }
+        model.startOperation(kind: kind, path: selection.path)
+    }
+
+    private func nameColor(_ status: String, conflicted: Bool) -> Color {
+        if conflicted { return DieterTheme.coral }
+        switch status {
+        case "added", "untracked": return DieterTheme.diffAddition
+        case "deleted": return DieterTheme.coral
+        default: return DieterTheme.text
         }
     }
 
@@ -409,6 +776,8 @@ struct ProjectChangesView: View {
         }
     }
 
+    // MARK: Diff
+
     private func diffPane(compact: Bool) -> some View {
         VStack(spacing: 0) {
             if ready, let selection = model.selection {
@@ -417,7 +786,7 @@ struct ProjectChangesView: View {
                 if let error = model.diffError {
                     HStack {
                         Label(error, systemImage: "exclamationmark.triangle").lineLimit(2); Spacer()
-                        Button("Retry") { model.retryDiff() }
+                        Button("Retry") { model.retryDiff() }.buttonStyle(DieterBarButtonStyle(size: 26))
                     }.font(.callout).padding(12).foregroundStyle(DieterTheme.coral)
                 }
                 if let diff = model.diff {
@@ -456,94 +825,138 @@ struct ProjectChangesView: View {
     private func diffToolbar(selection: ProjectChangeSelection, compact: Bool) -> some View {
         let staged = selection.section == "staged"
         let status = (staged ? selectedFile?.indexStatus : selectedFile?.worktreeStatus) ?? "modified"
-        return GeometryReader { geometry in
-            HStack(spacing: 10) {
-                if compact {
-                    Button {
-                        showCompactDiff = false
-                    } label: {
-                        Image(systemName: "chevron.left")
-                    }
-                    .buttonStyle(DieterIconButtonStyle()).help("Back to files").accessibilityLabel("Back to files")
-                    .accessibilityIdentifier("project-changes.back").smokeTarget("project-changes.back")
-                }
-                Image(systemName: "doc").font(.system(size: 12)).foregroundStyle(DieterTheme.tertiary)
-                Text(ClientChangedFileLabel.of(selection.path).filename).font(
-                    .system(size: 12, weight: .semibold, design: .monospaced)
-                ).lineLimit(1).truncationMode(.middle)
-                    .help(selection.path)
-                if geometry.size.width > 900 {
-                    Text(ClientChangedFileLabel.of(selection.path).directory)
-                        .font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary).lineLimit(1).truncationMode(
-                            .middle)
-                }
-                if geometry.size.width > 680 {
-                    Text(
-                        ClientChangedFileLabel.of(selection.path, status: status, untracked: status == "untracked")
-                            .title
-                    ).font(.system(size: 10, weight: .semibold)).foregroundStyle(
-                        statusColor(status)
-                    )
-                    .padding(.horizontal, 6).padding(.vertical, 4).background(
-                        statusColor(status).opacity(0.12), in: RoundedRectangle(cornerRadius: 4)
-                    )
-                    .fixedSize()
-                }
-                Spacer(minLength: 0)
-                if geometry.size.width > 680, let file = selectedFile {
-                    let additions = staged ? file.stagedAdditions : file.unstagedAdditions
-                    let deletions = staged ? file.stagedDeletions : file.unstagedDeletions
-                    if additions != 0 || deletions != 0 {
-                        HStack(spacing: 5) {
-                            Text("+\(additions)").foregroundStyle(DieterTheme.diffAddition)
-                            Text("−\(deletions)").foregroundStyle(DieterTheme.coral)
-                        }.font(.system(size: 10, design: .monospaced)).fixedSize()
-                    }
-                }
-                HStack(spacing: 2) {
-                    ForEach(["Inline", "Split"], id: \.self) { mode in
-                        Button {
-                            diffMode = mode
-                        } label: {
-                            Text(mode).font(.system(size: 11, weight: .medium)).frame(width: 44, height: 25)
-                                .foregroundStyle(diffMode == mode ? DieterTheme.text : DieterTheme.tertiary)
-                                .background(
-                                    diffMode == mode ? DieterTheme.elevated : .clear,
-                                    in: RoundedRectangle(cornerRadius: 4))
-                        }.buttonStyle(.plain).accessibilityLabel("\(mode) diff").accessibilityAddTraits(
-                            diffMode == mode ? .isSelected : []
-                        )
-                        .accessibilityIdentifier("project-changes.diff-mode.\(mode.lowercased())")
-                        .smokeTarget("project-changes.diff-mode.\(mode.lowercased())")
-                    }
-                }.padding(2).background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 6))
-                    .overlay { RoundedRectangle(cornerRadius: 6).stroke(DieterTheme.border) }
-                    .accessibilityIdentifier("project-changes.diff-mode").smokeTarget("project-changes.diff-mode")
-                Button("Discard") { discardPath = selection.path }
-                    .buttonStyle(ChangesActionButtonStyle()).foregroundStyle(DieterTheme.coral)
-                    .disabled(!can("discard_changes"))
-                    .help("Discard all changes to this file")
-                    .accessibilityIdentifier("project-changes.discard").smokeTarget("project-changes.discard")
-                Button(staged ? "Unstage file" : "Stage file") {
-                    model.startOperation(kind: staged ? "unstage" : "stage", path: selection.path)
-                }
-                .buttonStyle(ChangesActionButtonStyle(prominent: true)).disabled(!can(staged ? "unstage" : "stage"))
-                .accessibilityIdentifier("project-changes.stage-file").smokeTarget("project-changes.stage-file")
-                Menu {
-                    Button("Copy path") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(selection.path, forType: .string)
-                    }
-                    Button("Discard changes…", role: .destructive) { discardPath = selection.path }
-                        .disabled(!can("discard_changes"))
-                } label: {
-                    Image(systemName: "ellipsis")
-                }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                .accessibilityLabel("File actions").accessibilityIdentifier("project-changes.file-actions")
-            }.padding(.horizontal, 14).frame(height: 58).background(DieterTheme.sidebar)
-        }.frame(height: 58)
+        let label = ClientChangedFileLabel.of(selection.path, status: status, untracked: status == "untracked")
+        let position = orderedSelections.firstIndex(of: selection)
+        let total = orderedSelections.count
+        return ViewThatFits(in: .horizontal) {
+            diffToolbarContent(
+                selection: selection, label: label, status: status, position: position, total: total,
+                compact: compact, wide: true)
+            diffToolbarContent(
+                selection: selection, label: label, status: status, position: position, total: total,
+                compact: compact, wide: false)
+        }
+        .padding(.horizontal, 10).frame(height: ProjectChangesMetrics.toolbarHeight)
+        .background(DieterTheme.sidebar)
     }
+
+    private func diffToolbarContent(
+        selection: ProjectChangeSelection, label: ClientChangedFileLabel, status: String, position: Int?, total: Int,
+        compact: Bool, wide: Bool
+    ) -> some View {
+        let staged = selection.section == "staged"
+        return HStack(spacing: 8) {
+            if compact {
+                Button {
+                    showCompactDiff = false
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Back to files").accessibilityLabel(
+                    "Back to files"
+                )
+                .accessibilityIdentifier("project-changes.back").smokeTarget("project-changes.back")
+            }
+            Image(systemName: FilePresentation.symbol(name: label.filename)).font(.system(size: 11))
+                .foregroundStyle(DieterTheme.tertiary)
+            HStack(spacing: 0) {
+                if wide, !label.directory.isEmpty {
+                    Text(label.directory + "/").foregroundStyle(DieterTheme.tertiary)
+                        .lineLimit(1).truncationMode(.head)
+                }
+                Text(label.filename).fontWeight(.semibold).lineLimit(1).layoutPriority(1)
+            }
+            .font(.system(size: 12, design: .monospaced))
+            .help(selection.path).textSelection(.enabled)
+            Text(wide ? "\(label.title) · \(staged ? "Staged" : "Unstaged")" : label.badge)
+                .font(.system(size: 10, weight: .semibold)).foregroundStyle(statusColor(status))
+                .padding(.horizontal, 6).padding(.vertical, 3)
+                .background(statusColor(status).opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+                .fixedSize()
+            if let file = selectedFile {
+                let additions = staged ? file.stagedAdditions : file.unstagedAdditions
+                let deletions = staged ? file.stagedDeletions : file.unstagedDeletions
+                if additions != 0 || deletions != 0 {
+                    HStack(spacing: 5) {
+                        Text("+\(additions)").foregroundStyle(DieterTheme.diffAddition)
+                        Text("−\(deletions)").foregroundStyle(DieterTheme.coral)
+                    }.font(.system(size: 10, design: .monospaced)).fixedSize()
+                }
+            }
+            Spacer(minLength: 8)
+            fileStepper(position: position, total: total, wide: wide)
+            diffModePicker
+            Button("Discard") { discard = .init(path: selection.path, folder: false, fileCount: 1) }
+                .buttonStyle(DieterBarButtonStyle(destructive: true, size: 28))
+                .disabled(!can("discard_changes"))
+                .help("Discard all changes to this file")
+                .accessibilityIdentifier("project-changes.discard").smokeTarget("project-changes.discard")
+            Button(staged ? "Unstage" : "Stage") {
+                model.startOperation(kind: staged ? "unstage" : "stage", path: selection.path)
+            }
+            .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28)).disabled(!can(staged ? "unstage" : "stage"))
+            .help(staged ? "Unstage this file (Space)" : "Stage this file (Space)")
+            .accessibilityIdentifier("project-changes.stage-file").smokeTarget("project-changes.stage-file")
+            Menu {
+                if standalone, status != "deleted" {
+                    Button("Open in Files") { openInFiles(selection.path, directory: false) }
+                    Divider()
+                }
+                Button("Copy Path") { copy(selection.path) }
+                Button("Copy File Name") { copy(label.filename) }
+                Divider()
+                Button("Discard Changes…", role: .destructive) {
+                    discard = .init(path: selection.path, folder: false, fileCount: 1)
+                }
+                .disabled(!can("discard_changes"))
+            } label: {
+                DieterMenuLabel(symbol: "ellipsis", size: 28)
+            }
+            .dieterMenuChrome(.circle)
+            .accessibilityLabel("File actions").accessibilityIdentifier("project-changes.file-actions")
+        }
+    }
+
+    /// Steps through changed files in list order without leaving the diff.
+    private func fileStepper(position: Int?, total: Int, wide: Bool) -> some View {
+        HStack(spacing: 4) {
+            Button {
+                moveSelection(by: -1)
+            } label: {
+                Image(systemName: "chevron.up")
+            }
+            .disabled((position ?? 0) <= 0).help("Previous file (↑)").accessibilityLabel("Previous file")
+            .accessibilityIdentifier("project-changes.previous-file")
+            if wide, let position {
+                Text("\(position + 1)/\(total)").font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(DieterTheme.tertiary).fixedSize()
+            }
+            Button {
+                moveSelection(by: 1)
+            } label: {
+                Image(systemName: "chevron.down")
+            }
+            .disabled(position.map { $0 >= total - 1 } ?? true).help("Next file (↓)").accessibilityLabel("Next file")
+            .accessibilityIdentifier("project-changes.next-file")
+        }
+        .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 26))
+    }
+
+    private var diffModePicker: some View {
+        DieterSegmentTrack(height: 28) {
+            ForEach(["Inline", "Split"], id: \.self) { mode in
+                Button(mode) { diffMode = mode }
+                    .buttonStyle(DieterSegmentStyle(selected: diffMode == mode, height: 22))
+                    .accessibilityLabel("\(mode) diff").accessibilityAddTraits(diffMode == mode ? .isSelected : [])
+                    .accessibilityIdentifier("project-changes.diff-mode.\(mode.lowercased())")
+                    .smokeTarget("project-changes.diff-mode.\(mode.lowercased())")
+            }
+        }
+        .fixedSize()
+        .accessibilityIdentifier("project-changes.diff-mode").smokeTarget("project-changes.diff-mode")
+    }
+
+    // MARK: Status
 
     private var feedback: some View {
         HStack(spacing: 8) {
@@ -565,25 +978,9 @@ struct ProjectChangesView: View {
             Spacer(minLength: 0)
             Text(model.selection?.path ?? "").lineLimit(1).truncationMode(.middle)
         }
-        .font(.system(size: 10, design: .monospaced)).foregroundStyle(DieterTheme.tertiary).lineLimit(2)
-        .padding(.horizontal, 14).frame(minHeight: 30).background(DieterTheme.sidebar)
+        .font(.system(size: 10, design: .monospaced)).foregroundStyle(DieterTheme.tertiary).lineLimit(1)
+        .padding(.horizontal, 12).frame(minHeight: 22).background(DieterTheme.sidebar)
         .overlay(alignment: .top) { Divider().overlay(DieterTheme.border) }
         .accessibilityIdentifier("project-changes.status").smokeTarget("project-changes.status")
-    }
-}
-
-private struct ChangesActionButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-    var prominent = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12, weight: .semibold)).fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 11).frame(height: 31)
-            .foregroundStyle(prominent ? Color.black.opacity(0.82) : DieterTheme.text)
-            .background(prominent ? DieterTheme.reviewAccent : DieterTheme.input, in: RoundedRectangle(cornerRadius: 6))
-            .overlay { RoundedRectangle(cornerRadius: 6).stroke(prominent ? .clear : DieterTheme.border) }
-            .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
-            .contentShape(RoundedRectangle(cornerRadius: 6))
     }
 }

@@ -5,33 +5,33 @@ import com.dbpprt.dieter.api.v1.Checkout
 import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.core.runtime.CoreException
 import com.dbpprt.dieter.core.store.WorkspaceStore
-import com.dbpprt.dieter.core.sync.MachineSnapshot
+import com.dbpprt.dieter.core.sync.DirectoryProjection
 import com.dbpprt.dieter.core.testing.offlineSessions
+import com.dbpprt.dieter.core.testing.unreachableChoice
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.runTest
 
 class SchedulesTest {
     private fun store(): WorkspaceStore = WorkspaceStore().apply {
-        applyMachines(
-            listOf(
-                MachineSnapshot(
-                    "d1",
-                    projects = listOf(Project(id = "p", name = "Dieter", checkouts = listOf(Checkout(id = "c1", project_id = "p", daemon_id = "d1")))),
-                    boards = listOf(Board(id = "b1", project_id = "p"), Board(id = "b2", project_id = "p")),
-                    cards = emptyList(),
-                    chats = emptyList(),
-                ),
+        applyDirectory(
+            DirectoryProjection(
+                projects = mapOf("p" to Project(id = "p", name = "Dieter", checkouts = listOf(Checkout(id = "c1", project_id = "p", daemon_id = "d1")))),
+                boards = mapOf("p" to listOf(Board(id = "b1", project_id = "p"), Board(id = "b2", project_id = "p"))),
             ),
+            loaded = true,
         )
     }
 
+    private fun schedules(scope: CoroutineScope): Schedules = store().let { Schedules(offlineSessions(), it, unreachableChoice(it), scope) }
+
     @Test
     fun aNewDraftStartsOnTheProjectsBoardAndCheckout() = runTest {
-        val schedules = Schedules(offlineSessions(), store(), backgroundScope)
+        val schedules = schedules(backgroundScope)
         assertFailsWith<CoreException> { schedules.draft(null, null, null, "UTC") }
         schedules.bind("p")
         val draft = schedules.draft(null, null, "b2", "Europe/Berlin")
@@ -45,7 +45,7 @@ class SchedulesTest {
 
     @Test
     fun aFailedChangeIsTheViewsActionError() = runTest {
-        val schedules = Schedules(offlineSessions(), store(), backgroundScope)
+        val schedules = schedules(backgroundScope)
         schedules.bind("p")
         assertFailsWith<CoreException> { schedules.setEnabled("gone", enabled = false) }
         assertEquals("The schedule is no longer available.", schedules.view.value.actionError, "a schedule that is gone is reported like any failed change")
@@ -55,7 +55,7 @@ class SchedulesTest {
 
     @Test
     fun aPendingPreviewShowsUntilTheEditorCloses() = runTest {
-        val schedules = Schedules(offlineSessions(), store(), backgroundScope)
+        val schedules = schedules(backgroundScope)
         schedules.bind("p")
         schedules.preview("0 9 * * 1-5", "UTC")
         assertTrue(schedules.view.value.previewLoading)

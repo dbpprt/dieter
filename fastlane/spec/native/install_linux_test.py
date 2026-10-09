@@ -57,12 +57,13 @@ cp "$DIETER_TEST_ASSETS/${url##*/}" "$destination"
         )
         self._write_executable(
             "cosign",
-            "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >\"$DIETER_TEST_COSIGN_LOG\"\n",
+            '#!/bin/sh\nset -eu\nprintf \'%s\\n\' "$*" >"$DIETER_TEST_COSIGN_LOG"\n',
         )
         self._write_executable(
             "systemctl",
-            "#!/bin/sh\nset -eu\n[ \"${1:-}\" = --user ]\n[ \"${2:-}\" = show-environment ]\n",
+            '#!/bin/sh\nset -eu\n[ "${1:-}" = --user ]\n[ "${2:-}" = show-environment ]\n',
         )
+        self._write_executable("codesign", "#!/bin/sh\nset -eu\nexit 0\n")
 
     def _create_asset(self, system: str, architecture: str, include_capture: bool):
         package = self.temporary / f"dieter-{system}-{architecture}"
@@ -71,8 +72,8 @@ cp "$DIETER_TEST_ASSETS/${url##*/}" "$destination"
         daemon.write_text(
             "#!/bin/sh\n"
             "set -eu\n"
-            "if [ -n \"${DIETER_TEST_DAEMON_LOG:-}\" ]; then\n"
-            "    printf '%s\\n' \"$*\" >>\"$DIETER_TEST_DAEMON_LOG\"\n"
+            'if [ -n "${DIETER_TEST_DAEMON_LOG:-}" ]; then\n'
+            '    printf \'%s\\n\' "$*" >>"$DIETER_TEST_DAEMON_LOG"\n'
             "fi\n"
             "echo fixture\n",
             encoding="utf-8",
@@ -82,6 +83,21 @@ cp "$DIETER_TEST_ASSETS/${url##*/}" "$destination"
             capture = package / "dieter-capture"
             capture.write_text("#!/bin/sh\necho capture fixture\n", encoding="utf-8")
             capture.chmod(0o755)
+        if system == "darwin":
+            bundle = package / "DieterPrivacyHelper.app/Contents"
+            for name in (
+                "Info.plist",
+                "Library/LaunchDaemons/com.dbpprt.dieter.privacy.plist",
+                "_CodeSignature/CodeResources",
+            ):
+                path = bundle / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("fixture\n")
+                path.chmod(0o644)
+            (bundle / "MacOS").mkdir()
+            helper = bundle / "MacOS/dieter-privacy"
+            helper.write_text("#!/bin/sh\nexit 0\n")
+            helper.chmod(0o755)
         (package / "LICENSE").write_text("fixture\n", encoding="utf-8")
         (package / "VERSION").write_text("1.2.3\n", encoding="utf-8")
         archive = self.assets / f"{package.name}.tar.gz"
@@ -93,9 +109,7 @@ cp "$DIETER_TEST_ASSETS/${url##*/}" "$destination"
         for archive in sorted(self.assets.glob("*.tar.gz")):
             digest = hashlib.sha256(archive.read_bytes()).hexdigest()
             entries.append(f"{digest}  {archive.name}\n")
-        (self.assets / "SHA256SUMS").write_text(
-            "".join(entries), encoding="utf-8"
-        )
+        (self.assets / "SHA256SUMS").write_text("".join(entries), encoding="utf-8")
         (self.assets / "SHA256SUMS.sigstore.json").write_text(
             '{"fixture":true}\n', encoding="utf-8"
         )
@@ -183,12 +197,28 @@ cp "$DIETER_TEST_ASSETS/${url##*/}" "$destination"
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertTrue((self.install / "dieter").is_file())
         self.assertTrue((self.install / "dieter-capture").is_file())
+        self.assertTrue(
+            (self.install / "DieterPrivacyHelper.app/Contents/MacOS/dieter-privacy").is_file()
+        )
+        self.assertFalse((self.install / "dieter").is_symlink())
+        self.assertFalse((self.install / "dieter-capture").is_symlink())
+        self.assertFalse((self.install / "DieterDaemon.app").exists())
+        bundled = self.install / "DieterPrivacyHelper.app/Contents/MacOS"
+        self.assertEqual({path.name for path in bundled.iterdir()}, {"dieter-privacy"})
         self.assertIn("portable macOS install", result.stdout)
         urls = (self.temporary / "curl.log").read_text(encoding="utf-8")
-        self.assertIn(
-            "/releases/download/v1.2.3/dieter-darwin-arm64.tar.gz", urls
-        )
+        self.assertIn("/releases/download/v1.2.3/dieter-darwin-arm64.tar.gz", urls)
         self.assertFalse((self.temporary / "daemon.log").exists())
+
+    def test_mac_install_does_not_overwrite_an_existing_privacy_bundle(self):
+        existing = self.install / "DieterPrivacyHelper.app"
+        existing.mkdir(parents=True)
+        marker = existing / "operator-helper"
+        marker.write_text("preserve")
+        result = self.run_installer(system="Darwin", machine="arm64")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(marker.read_text(), "preserve")
+        self.assertFalse((self.install / "dieter").exists())
 
     def test_help_documents_targets_without_probing_host(self):
         result = self.run_installer("--help", system="unsupported", machine="unknown")

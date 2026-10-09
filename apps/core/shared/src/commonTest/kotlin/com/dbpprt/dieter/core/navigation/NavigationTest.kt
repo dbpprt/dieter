@@ -12,7 +12,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import kotlin.time.Clock
 import okio.ByteString
 import okio.ByteString.Companion.encodeUtf8
 import okio.Path.Companion.toPath
@@ -21,12 +20,9 @@ import okio.fakefilesystem.FakeFileSystem
 class NavigationTest {
     private val fileSystem = FakeFileSystem()
 
-    /** A namespace bound to an account but never connected: edits stay pending and project locally. */
-    private fun offlineKv(account: String = "acct"): SharedKv {
-        val storage = CoreStorage(fileSystem, "/state".toPath())
-        storage.write("kv-active-navigation.pb", KvActive.ADAPTER.encode(KvActive(account = account)))
-        return SharedKv("navigation", offlineSessions(), Clock.System, SilentLogger).also { it.bind(storage) }
-    }
+    /** A namespace bound to a gateway but never connected: edits stay pending and project locally. */
+    private fun offlineKv(): SharedKv =
+        SharedKv("navigation", offlineSessions(), acceptor = { null }, SilentLogger).also { it.bind(CoreStorage(fileSystem, "/state".toPath())) }
 
     private fun layout(kv: SharedKv) = NavigationLayout(kv.values.value)
 
@@ -144,14 +140,26 @@ class NavigationTest {
     }
 
     @Test
-    fun editsSurviveARestartAndNeedAnAccount() {
+    fun editsSurviveARestartAndNeedAGateway() {
         val kv = offlineKv()
         NavigationEditor(kv).setLaneDescending("b", "l", false)
         val restored = offlineKv()
         assertEquals(1, restored.status.value.pending)
         assertFalse(NavigationLayout(restored.values.value).laneDescending("b", "l"))
-        val anonymous = offlineKv(account = "")
-        assertFailsWith<CoreException> { NavigationEditor(anonymous).setLaneDescending("b", "l", false) }
+        val unbound = SharedKv("navigation", offlineSessions(), acceptor = { null }, SilentLogger)
+        assertFailsWith<CoreException> { NavigationEditor(unbound).setLaneDescending("b", "l", false) }
+    }
+
+    @Test
+    fun theAccountViewsEntriesShowUnderPendingEdits() {
+        val kv = offlineKv()
+        val entry = KVEntry(namespace = "navigation", key = "lane.b.l.sort", value_json = "\"ascending\"".encodeUtf8(), versions = listOf(PeerVersion(clock = mapOf("a" to 1L), rank = "r1")))
+        kv.apply(mapOf(entry.key to entry))
+        assertFalse(layout(kv).laneDescending("b", "l"))
+        NavigationEditor(kv).setLaneDescending("b", "l", true)
+        assertTrue(layout(kv).laneDescending("b", "l"), "a pending edit shows over the account view")
+        kv.apply(mapOf(entry.key to entry.copy(deleted = true, value_json = ByteString.EMPTY)))
+        assertTrue(layout(kv).laneDescending("b", "l"))
     }
 
     /** Ported from the Mac's `sidebarProjectPreferencesReorderAndReconcileAvailableProjects`. */

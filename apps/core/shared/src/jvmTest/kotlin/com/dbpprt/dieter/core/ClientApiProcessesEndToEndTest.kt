@@ -42,7 +42,7 @@ class ClientApiProcessesEndToEndTest : EndToEnd() {
         val cardId = runtime.outbox.view.await { local.id in it.resolutions }.resolve(local.id)
 
         // Search ranks the title match from the workspace; transcripts are not searched.
-        runtime.workspace.state.await(30.seconds) { it.card(cardId) != null }
+        runtime.awaitSynced(cardId)
         val hits = api.dispatch(Command(search = SearchCommand(query = "searchable serv"))).search_results!!.hits
         assertEquals(cardId, hits.firstOrNull()?.card_id, "hits: $hits")
 

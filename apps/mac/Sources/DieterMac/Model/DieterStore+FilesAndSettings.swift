@@ -8,18 +8,21 @@ import UserNotifications
 
 extension DieterStore {
     /// Points the files at the project's chosen checkout, or a conversation's
-    /// workspace, on the machine that holds it; the core reaches that machine
-    /// whichever one is attached.
+    /// workspace, on the machine that holds it. Without a chosen checkout,
+    /// the project's machine shows its own checkout.
     func resetFileSurface() {
         let checkout = fileScopeCardID == nil ? checkout(forProjectID: selectedProjectID) : nil
         let machine: String
         if let checkout {
             machine = endpointID(forDaemon: checkout.daemonID)
-        } else if let card = fileScopeCardID, filesModel.target.conversationID == card {
-            // A conversation's files stay on the machine they were opened from.
-            machine = filesModel.target.endpointID
+        } else if let cardID = fileScopeCardID {
+            // A conversation's files are on the machine that runs it.
+            machine =
+                filesModel.target.conversationID == cardID && !filesModel.target.endpointID.isEmpty
+                ? filesModel.target.endpointID
+                : synchronizedCardValues().first { $0.id == cardID }.map { endpointID(for: $0) } ?? ""
         } else {
-            machine = endpoint.id
+            machine = projectMachine(forProjectID: selectedProjectID)?.id ?? ""
         }
         filesModel.bind(
             target: WorkspaceTarget(
@@ -32,11 +35,10 @@ extension DieterStore {
         filesModel.isLive = filesAreLive
     }
 
-    /// Files can change while their machine is online.
+    /// Files can change while their machine is available.
     var filesAreLive: Bool {
         let machine = filesModel.target.endpointID
-        return selectedProjectIsLive
-            || (phase.isConnected && endpoints.contains { $0.id == machine && machineIsAvailable($0) })
+        return phase.isConnected && endpoints.contains { $0.id == machine && machineIsAvailable($0) }
     }
 
     @discardableResult func loadFiles(path: String? = nil) async -> Bool {
@@ -51,11 +53,15 @@ extension DieterStore {
         resetFileSurface(); await filesModel.createFile(name: name, directory: directory)
     }
 
+    /// Schedules change on their project's machines while one is available.
+    var schedulesAreLive: Bool { phase.isConnected && projectIsAvailable(selectedProjectID) }
+
     /// Shows the selected project's schedules; the core reaches each
-    /// schedule's machine whichever machine is attached.
+    /// schedule's machine.
     func bindSchedules() {
-        schedulesModel.bind(target: WorkspaceTarget(endpointID: endpoint.id, projectID: selectedProjectID), core: core)
-        schedulesModel.isLive = workspaceIsLive
+        let machine = projectMachine(forProjectID: selectedProjectID)?.id ?? ""
+        schedulesModel.bind(target: WorkspaceTarget(endpointID: machine, projectID: selectedProjectID), core: core)
+        schedulesModel.isLive = schedulesAreLive
         schedulesModel.catalog = { [weak self] daemonID in
             guard let self else { return nil }
             if self.machineMetadata[daemonID]?.loaded != true {
@@ -67,13 +73,15 @@ extension DieterStore {
     }
 
     var scheduleEditorContext: ScheduleEditorContext {
-        ScheduleEditorContext(
+        let checkout = checkout(forProjectID: selectedProjectID)
+        let machine = checkout?.daemonID ?? projectMachine(forProjectID: selectedProjectID)?.daemonID ?? ""
+        return ScheduleEditorContext(
             target: WorkspaceTarget(
                 endpointID: schedulesModel.target.endpointID, projectID: schedulesModel.target.projectID,
-                checkoutID: checkout(forProjectID: selectedProjectID)?.id ?? ""),
+                checkoutID: checkout?.id ?? ""),
             projectName: selectedProject?.name ?? "Project",
             boards: state.boards.filter { $0.projectID == selectedProjectID },
-            selectedBoardID: selectedBoardID, harnessCatalog: harnessCatalog,
+            selectedBoardID: selectedBoardID, harnessCatalog: harnessCatalog(forDaemon: machine),
             checkoutMachines: Dictionary(
                 (selectedProject?.checkouts ?? []).map { ($0.id, $0.daemonID) }, uniquingKeysWith: { first, _ in first }
             ))
@@ -84,14 +92,15 @@ extension DieterStore {
         bindSchedules(); return await schedulesModel.saveSchedule(id: id, draft: draft)
     }
 
-    func loadPromptSettings() async throws -> Dieter_V1_PromptSettings? {
-        guard let daemonID = endpoint.daemonID else { return nil }
-        return try await administer { $0.promptSettings = .with { $0.daemonID = daemonID } }.promptSettings
+    /// `daemonID`'s global prompt templates, which its agents use.
+    func loadPromptSettings(daemonID: String) async throws -> Dieter_V1_PromptSettings {
+        try await administer { $0.promptSettings = .with { $0.daemonID = daemonID } }.promptSettings
     }
 
-    func updatePromptSettings(_ value: Dieter_V1_PromptSettings) async throws -> Dieter_V1_PromptSettings? {
-        guard let daemonID = endpoint.daemonID else { return nil }
-        return try await administer {
+    func updatePromptSettings(_ value: Dieter_V1_PromptSettings, daemonID: String) async throws
+        -> Dieter_V1_PromptSettings
+    {
+        try await administer {
             $0.updatePromptSettings = .with {
                 $0.daemonID = daemonID
                 $0.context = value.promptTemplate

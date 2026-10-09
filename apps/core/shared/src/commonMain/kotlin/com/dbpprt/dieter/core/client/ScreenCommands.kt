@@ -6,10 +6,13 @@ import com.dbpprt.dieter.core.screens.ScreenRouteFactory
 import com.dbpprt.dieter.core.screens.ScreenSurface
 
 /**
- * Input is frequent and its effect arrives with the next update, so screen
- * commands have no result. [routes] resolves a machine's signaling route.
+ * Input is frequent and its effect arrives with the next update, so screen commands have no result.
+ * [routes] resolves a machine's signaling route.
  */
-internal suspend fun ScreenSurface.execute(command: ScreenCommand, routes: (daemonId: String) -> ScreenRouteFactory) {
+internal suspend fun ScreenSurface.execute(
+    command: ScreenCommand,
+    routes: (daemonId: String) -> ScreenRouteFactory,
+) {
     command.control?.let { session.transferControl(it.on) }
     command.clipboard?.let { session.requestClipboard(it.operation) }
     command.clipboard_enabled?.let { session.requestClipboardEnabled(it.on) }
@@ -19,8 +22,14 @@ internal suspend fun ScreenSurface.execute(command: ScreenCommand, routes: (daem
     command.preferences?.let { wanted ->
         session.setPreferences {
             it.copy(
-                codec = wanted.codec, maxFps = wanted.max_fps.takeIf { fps -> fps > 0 } ?: it.maxFps, quality = wanted.quality,
-                displayId = wanted.display_id.ifEmpty { null }, clipboard = wanted.clipboard,
+                codec = wanted.codec,
+                maxFps = wanted.max_fps.takeIf { fps -> fps > 0 } ?: it.maxFps,
+                quality = wanted.quality,
+                displayId = wanted.display_id.ifEmpty { null },
+                clipboard = wanted.clipboard,
+                virtualDisplay = wanted.virtual_display,
+                disablePhysical = wanted.disable_physical,
+                virtualScale = wanted.virtual_scale.takeIf { scale -> scale in 1..2 } ?: 2,
             )
         }
     }
@@ -29,7 +38,11 @@ internal suspend fun ScreenSurface.execute(command: ScreenCommand, routes: (daem
     command.sleep?.let { session.sleep() }
     command.focused?.let { session.setFocused(it.on) }
     command.match_display?.let {
-        matchDisplay(if (it.width > 0 && it.height > 0) DisplayMatching.Target(it.width, it.height, it.scale, it.refresh) else null)
+        matchDisplay(
+            if (it.width > 0 && it.height > 0)
+                DisplayMatching.Target(it.width, it.height, it.scale, it.refresh)
+            else null
+        )
     }
     command.refresh?.let { session.configure(refresh = true) }
 }

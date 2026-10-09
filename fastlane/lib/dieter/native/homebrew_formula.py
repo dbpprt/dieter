@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Render the daemon formula from the same revision as its release binaries."""
+
 import argparse
 import re
 from pathlib import Path
@@ -11,7 +12,7 @@ def render(version: str, sha256: str) -> str:
         raise ValueError("invalid release version")
     if not re.fullmatch(r"[0-9a-f]{64}", sha256):
         raise ValueError("invalid release SHA-256")
-    return '''class Dieter < Formula
+    return """class Dieter < Formula
   desc "Local daemon for durable AI coding-agent conversations"
   homepage "https://github.com/dbpprt/homebrew-tap"
   url "https://github.com/dbpprt/homebrew-tap/releases/download/vVERSION/dieter-darwin-arm64.tar.gz"
@@ -26,12 +27,14 @@ def render(version: str, sha256: str) -> str:
 
   def install
     bin.install "dieter", "dieter-capture"
+    libexec.install "DieterPrivacyHelper.app"
   end
 
   post_install_steps do
     mkdir_p "dieter/service", base: :var
     run "bin/dieter", base: :prefix,
-        args: ["__service-stage", "--root", "{{var}}/dieter/service"],
+        args: ["__service-stage", "--root", "{{var}}/dieter/service",
+               "--bundle-prefix", "../libexec"],
         writable_paths: ["dieter/service"], writable_base: :var
   end
 
@@ -49,7 +52,12 @@ def render(version: str, sha256: str) -> str:
   def caveats
     <<~EOS
       Complete GitHub authorization and start the service:
-        dieter setup /path/to/git-project
+        dieter setup
+
+      Setup also registers the background privacy helper. Approve Dieter Privacy
+      Helper in Login Items & Extensions and grant Input Monitoring when prompted.
+      Privacy stays off until explicitly enabled. Register projects separately:
+        dieter project open /path/to/git-project
 
       Upgrades stage a signed release without changing the running service.
       Activate the staged release and refresh the service definition with:
@@ -72,7 +80,7 @@ def render(version: str, sha256: str) -> str:
     assert_match "running daemon", shell_output("#{bin}/dieter screen permissions --help")
   end
 end
-'''.replace("VERSION", version).replace("SHA256", sha256)
+""".replace("VERSION", version).replace("SHA256", sha256)
 
 
 if __name__ == "__main__":

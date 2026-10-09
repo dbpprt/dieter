@@ -79,8 +79,9 @@ struct TimelineStepGroupsView: View {
                     let initial = Int(SharedRules.shared.timelineInitialGroups())
                     firstVisibleID = groups[max(0, start - initial)].id
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .font(.caption)
+                .foregroundStyle(DieterTheme.action)
                 .accessibilityIdentifier("conversation.message.earlier.\(row.messageIds.first ?? "")")
             }
             ForEach(groups.dropFirst(start), id: \.id) { group in
@@ -111,13 +112,14 @@ struct TimelineActivityStepsView: View {
     var subagentIDs: [String] = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 1) {
             ForEach(steps, id: \.id) { step in
                 if step.kind == .reasoning, let part = context.model.part(for: step) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Reasoning").font(.caption2.weight(.medium)).foregroundStyle(DieterTheme.tertiary)
                         Text(part.text).font(.caption).foregroundStyle(DieterTheme.subtle).lineSpacing(3)
                     }
+                    .padding(.horizontal, 8).padding(.vertical, 6)
                 } else {
                     TimelineStepView(step: step, subagentIDs: subagentIDs, inUserBubble: false)
                 }
@@ -149,13 +151,13 @@ struct TimelineStepView: View {
                         ConversationMarkdownView(source: part.text, inUserBubble: inUserBubble)
                     }
                     if !part.errorText.isEmpty, part.errorText != part.text {
-                        Text(part.errorText).font(.caption).foregroundStyle(DieterTheme.coral)
+                        Text(part.errorText).font(.caption).foregroundStyle(DieterTheme.failed)
                     }
                     if part.text.isEmpty && part.errorText.isEmpty {
                         Text(
                             part.state.isEmpty ? "Needs attention" : part.state.replacingOccurrences(of: "-", with: " ")
                         )
-                        .font(.caption).foregroundStyle(DieterTheme.amber)
+                        .font(.caption).foregroundStyle(DieterTheme.attention)
                     }
                 }
             default:
@@ -186,22 +188,23 @@ struct UserMessageBubble: View {
                             .foregroundStyle(DieterTheme.coral)
                         Spacer(minLength: 8)
                         Button("Retry") { Task { await context.retryOutboxItem(messageID) } }
+                            .buttonStyle(DieterBarButtonStyle(size: 24))
                         Button("Remove", role: .destructive) {
                             Task { await context.discardOutboxItem(messageID) }
                         }
+                        .buttonStyle(DieterBarButtonStyle(destructive: true, size: 24))
                         .accessibilityIdentifier("conversation.failed-message.remove.\(messageID)")
                     }
-                    .controlSize(.small)
                 }
             }
-            .padding(.leading, 13).padding(.trailing, 18).padding(.vertical, 10)
+            .padding(.leading, 14).padding(.trailing, 18).padding(.vertical, 9)
             .background(
                 DieterTheme.userMessageBackground,
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                in: RoundedRectangle(cornerRadius: DieterMetrics.bubbleRadius, style: .continuous)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(DieterTheme.strongBorder)
+                RoundedRectangle(cornerRadius: DieterMetrics.bubbleRadius, style: .continuous)
+                    .strokeBorder(DieterTheme.tileRim)
             }
             .frame(maxWidth: 620, alignment: .trailing)
         }

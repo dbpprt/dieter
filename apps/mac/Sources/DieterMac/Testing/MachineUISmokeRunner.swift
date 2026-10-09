@@ -99,6 +99,10 @@
                 writeReport(["window": "failed: Dieter window not found"], to: output)
                 return
             }
+            // SwiftUI publishes its real accessibility nodes lazily when an
+            // assistive client requests the enhanced interface. This runner is
+            // in-process, so make that AppKit request before observing labels.
+            NSApp.accessibilitySetValue(true, forAttribute: .init(rawValue: "AXEnhancedUserInterface"))
             window.setContentSize(NSSize(width: 1_380, height: 780))
             window.center()
             window.makeKeyAndOrderFront(nil)
@@ -143,6 +147,45 @@
                 fixtureEndpoint: NativeTestSupport.argument("--dieter-endpoint")),
                 store.fleet.selectedMachineID == machine.id
             {
+                let setupAction = await performPrivacyThroughUI(
+                    .privacySetup, store: store, window: window, output: output)
+                results["privacy-setup"] = setupAction ? "passed" : "failed: native setup action was not accepted"
+                _ = await waitUntil(timeout: 10) {
+                    store.fleet.machineOperations[machine.id]?.contains { $0.action == .privacyOn && $0.available }
+                        == true
+                }
+                let lockAction = await performPrivacyThroughUI(.privacyOn, store: store, window: window, output: output)
+                let closed = NativeUIAccessibility.press("machine.close", in: window)
+                let locked = await waitUntil(timeout: 10) {
+                    store.machineEntry(machine)?.privacyActive == true
+                        && store.machineEntry(machine)?.privacyStale == false
+                }
+                results["privacy-lock"] =
+                    lockAction && closed && locked
+                    ? "passed" : "failed: native Lock action or sidebar stream after closing details failed"
+                let badge = await waitUntil(timeout: 5) {
+                    NativeUIAccessibility.find("machine.\(machine.daemonID ?? machine.id)", in: window)?.text.contains(
+                        "Privacy mode on") == true
+                }
+                let rendered = capture(window: window, to: output.appendingPathComponent("privacy-sidebar.png"))
+                let accessibility = NativeUIAccessibility.elements(in: window).map {
+                    "\($0.identifier ?? "") \($0.text)"
+                }.joined(separator: "\n")
+                try? accessibility.write(
+                    to: output.appendingPathComponent("privacy-accessibility.txt"), atomically: true, encoding: .utf8)
+                results["privacy-render"] =
+                    badge && rendered
+                    ? "passed" : "failed: privacy sidebar badge was absent from accessibility or capture"
+                let reopened = NativeUIAccessibility.press("machine.\(machine.daemonID ?? machine.id)", in: window)
+                let unlockAction = await performPrivacyThroughUI(
+                    .privacyOff, store: store, window: window, output: output)
+                let unlocked = await waitUntil(timeout: 10) {
+                    store.machineEntry(machine)?.privacyActive == false
+                        && store.machineEntry(machine)?.privacyWarning == false
+                }
+                results["privacy-unlock"] =
+                    reopened && unlockAction && unlocked
+                    ? "passed" : "failed: native Unlock action or sidebar update failed"
                 await store.fleet.performMachineOperation(.updateDaemon)
                 results["daemon-update"] =
                     store.fleet.machineOperationMessage?.contains("reconnect") == true
@@ -167,6 +210,56 @@
 
         private static func outputDirectory() -> URL {
             NativeTestSupport.outputDirectory(flag: "--machine-ui-smoke-output")
+        }
+
+        private static func performPrivacyThroughUI(
+            _ action: Dieter_V1_MachineOperationAction, store: DieterStore, window: NSWindow, output: URL
+        ) async -> Bool {
+            let menuTitle =
+                action == .privacySetup
+                ? "Set Up Privacy Mode…" : (action == .privacyOn ? "Lock Local Screen…" : "Unlock Local Screen…")
+            let tracker = NativeContentMenuTracker()
+            defer { tracker.stop(); tracker.menu?.cancelTrackingWithoutAnimation() }
+            let ready = await NativeUIAccessibility.waitForInteractiveTarget(
+                "machine.actions", in: window, requiresEnabled: true)
+            let clicked = ready && NativeUIAccessibility.click("machine.actions", in: window)
+            let opened = await waitUntil(timeout: 5) {
+                tracker.menu?.items.contains { $0.title == menuTitle && $0.isEnabled } == true
+            }
+            guard clicked, opened, let menu = tracker.menu,
+                let index = menu.items.firstIndex(where: { $0.title == menuTitle && $0.isEnabled })
+            else {
+                let items = tracker.menu?.items.map { "\($0.title) enabled=\($0.isEnabled)" } ?? []
+                try? "ready=\(ready) clicked=\(clicked) items=\(items)".write(
+                    to: output.appendingPathComponent("privacy-menu-\(action.rawValue).txt"),
+                    atomically: true, encoding: .utf8)
+                return false
+            }
+            // Invoke the native menu item's action, just as accessibility does;
+            // it must present the actual confirmation before dispatching RPCs.
+            menu.cancelTrackingWithoutAnimation()
+            menu.performActionForItem(at: index)
+            let confirmation = await waitUntil(timeout: 5) {
+                NativeUIAccessibility.find("machine.confirm-operation", in: window.attachedSheet ?? window) != nil
+            }
+            guard confirmation,
+                NativeUIAccessibility.press("machine.confirm-operation", in: window.attachedSheet ?? window)
+            else { return false }
+            let accepted = await waitUntil(timeout: 10) {
+                store.fleet.machineOperationMessage?.contains(
+                    action == .privacySetup
+                        ? "Privacy helper setup requested"
+                        : (action == .privacyOn ? "Privacy mode is on" : "Privacy mode is off")) == true
+            }
+            let alert = await waitUntil(timeout: 5) {
+                NativeUIAccessibility.find("machine.operation-ok", in: window.attachedSheet ?? window) != nil
+            }
+            guard accepted, alert,
+                NativeUIAccessibility.press("machine.operation-ok", in: window.attachedSheet ?? window)
+            else { return false }
+            return await waitUntil(timeout: 5) {
+                store.fleet.machineOperationMessage == nil && window.attachedSheet == nil
+            }
         }
 
         private static func waitUntil(timeout: TimeInterval, condition: @escaping @MainActor () -> Bool) async -> Bool {

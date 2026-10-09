@@ -126,10 +126,14 @@ func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID s
 			streamFailed = true
 		}
 		runtimeStatus := conversation.Status
-		if runtimeStatus == "idle" {
-			// Session/capability outputs can follow the terminal UI chunk. The
-			// active-turn barrier stays up until those outputs and Run complete.
-			runtimeStatus = "running"
+		switch {
+		case runtimeStatus == "idle":
+			// The finish commit already recorded the complete reply. Session and
+			// capability outputs can still follow, and the active-turn barrier
+			// stays up until they and Run complete.
+			runtimeStatus = model.RuntimeFinishing
+		case ctx.Err() != nil && runtimeStatus == model.RuntimeRunning:
+			runtimeStatus = model.RuntimeCancelling
 		}
 		if err := retryWhileStoreBusy(ctx, func() error {
 			_, err := s.Store.UpdateCardCache(detail.Card.ID, store.CardCacheInput{Provider: request.Harness, Model: request.ConfiguredModel, Runtime: runtimeStatus})
@@ -395,12 +399,25 @@ func (s *Service) CancelCard(ref string) error {
 		}
 		return nil
 	}
-	active.cancel()
 	// Cancellation is an admission command, not a join. Some providers only
 	// return from an in-flight tool call after their own bounded cleanup. The
 	// owning runTurn goroutine keeps the active-turn barrier in place and starts
-	// the next queued message once that cleanup actually finishes.
-	return nil
+	// the next queued message once that cleanup actually finishes. Holding the
+	// lock orders the stopping state before the turn's final runtime write.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active[card.ID] != active || active.finishing {
+		return nil
+	}
+	active.cancel()
+	current, err := s.Store.ResolveCard(card.ID)
+	if err != nil {
+		return err
+	}
+	if current.Runtime == model.RuntimeStarting || current.Runtime == model.RuntimeRunning {
+		_, err = s.Store.UpdateCardCache(card.ID, store.CardCacheInput{Runtime: model.RuntimeCancelling})
+	}
+	return err
 }
 
 func (s *Service) clearActive(cardID, turnID string) {

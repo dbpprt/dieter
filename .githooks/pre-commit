@@ -1,0 +1,4 @@
+#!/bin/sh
+# Explicit --all-files in the dispatcher avoids pre-commit's stash/restore.
+# The configured hooks inspect the staged index themselves.
+exec python3 fastlane/lib/dieter/precommit.py run

@@ -42,11 +42,10 @@ struct ChatProjectGroup: View {
                         Image(systemName: collapsed ? "chevron.right" : "chevron.down").font(
                             .system(size: 8, weight: .bold)
                         ).foregroundStyle(DieterTheme.tertiary)
-                        Image(systemName: "folder").font(.system(size: 10)).foregroundStyle(
-                            DieterTheme.tertiary)
-                        Text(project.name.uppercased()).font(DieterFont.sectionLabel).tracking(0.8).lineLimit(1)
+                        Text(project.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
                             .foregroundStyle(DieterTheme.subtle)
-                        Text("· \(section.total)").font(.system(size: 10)).foregroundStyle(DieterTheme.tertiary)
+                        Text("\(section.total)").font(.system(size: 11, weight: .medium)).monospacedDigit()
+                            .foregroundStyle(DieterTheme.tertiary)
                         Spacer(minLength: 4)
 
                     }
@@ -69,8 +68,8 @@ struct ChatProjectGroup: View {
             .padding(.horizontal, 8)
             .frame(height: 24)
             .background(
-                dropTargeted ? DieterTheme.shellDeep.opacity(0.16) : .clear,
-                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                dropTargeted ? DieterTheme.tileSelected : .clear,
+                in: RoundedRectangle(cornerRadius: DieterMetrics.rowRadius, style: .continuous)
             )
             .contentShape(Rectangle())
             .draggable(SidebarProjectDragPayload(projectID: project.id).encoded) {
@@ -177,7 +176,7 @@ struct ChatNavigationFolderGroup: View {
                             .font(.system(size: 9.5, weight: .semibold))
                             .foregroundStyle(DieterTheme.tertiary)
                             .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(DieterTheme.surface, in: Capsule())
+                            .background(DieterTheme.tileHover, in: Capsule())
                         Spacer(minLength: 0)
                     }
                     .contentShape(Rectangle())
@@ -190,11 +189,9 @@ struct ChatNavigationFolderGroup: View {
                         Divider()
                         Button("Delete folder", systemImage: "trash", role: .destructive, action: delete)
                     } label: {
-                        Image(systemName: "ellipsis").frame(width: 18, height: 20)
+                        DieterMenuLabel(symbol: "ellipsis", size: 24)
                     }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
+                    .dieterMenuChrome(.circle)
                     .help("Folder options")
                 }
             }
@@ -204,12 +201,12 @@ struct ChatNavigationFolderGroup: View {
             .background(
                 dropTargeted
                     ? DieterTheme.shellDeep.opacity(0.18)
-                    : (hovering ? DieterTheme.surface.opacity(0.72) : DieterTheme.surface.opacity(0.42)),
+                    : (hovering ? DieterTheme.tileHover : DieterTheme.tile),
                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(dropTargeted ? DieterTheme.shell.opacity(0.55) : DieterTheme.border.opacity(0.6))
+                    .stroke(dropTargeted ? DieterTheme.shell.opacity(0.55) : DieterTheme.tileRim)
             )
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
@@ -266,7 +263,7 @@ struct ChatPageControls: View {
                 .disabled(!page.canGoForward)
                 .accessibilityLabel("Next chats")
         }
-        .buttonStyle(.plain)
+        .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 24))
         .padding(.horizontal, 8).padding(.vertical, 4)
     }
 }
@@ -312,7 +309,7 @@ struct ChatGroupCard<Footer: View>: View {
             footer
         }
         .padding(3)
-        .dieterSurface(radius: DieterMetrics.cardRadius)
+        .dieterTile(radius: DieterMetrics.cardRadius + 2)
     }
 }
 

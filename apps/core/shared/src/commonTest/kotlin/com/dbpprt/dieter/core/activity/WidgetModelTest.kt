@@ -48,17 +48,15 @@ class WidgetModelTest {
         assertEquals("Inbox", WidgetModel.TITLE)
     }
 
-    @Test fun newerArchivedCopyHidesStaleConversationCopies() {
-        val old = card("Old reply", minutes = 20)
-        val archived = old.copy(archived = true, updated_at = now.toString())
-        assertTrue(model(listOf(old, archived, old)).items().isEmpty())
+    @Test fun archivedConversationsLeaveTheWidget() {
+        assertTrue(model(listOf(card("Old reply", minutes = 20).copy(archived = true))).items().isEmpty())
     }
 
-    @Test fun readReceiptsMoveItemsOutOfAttentionWithoutDuplicatingThem() {
+    @Test fun readReceiptsMoveItemsOutOfAttention() {
         val unread = card("Reply", minutes = 3).copy(response_seq = 8, seen_response_seq = 7)
         assertEquals(WidgetModel.RowKind.WAITING, model(listOf(unread)).items().single().kind)
         val seen = unread.copy(seen_response_seq = 8, updated_at = now.toString())
-        assertEquals(WidgetModel.RowKind.CHAT, model(listOf(unread, seen)).items().single().kind)
+        assertEquals(WidgetModel.RowKind.CHAT, model(listOf(seen)).items().single().kind)
         assertEquals("1 recent conversation", model(listOf(seen)).summary)
     }
 

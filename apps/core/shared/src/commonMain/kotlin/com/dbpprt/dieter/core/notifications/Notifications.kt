@@ -2,7 +2,7 @@ package com.dbpprt.dieter.core.notifications
 
 import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
-import com.dbpprt.dieter.api.v1.ConversationSnapshot
+import com.dbpprt.dieter.api.v1.Conversation
 import com.dbpprt.dieter.api.v1.Project
 import com.dbpprt.dieter.api.v1.Subagent
 import com.dbpprt.dieter.core.admin.BackgroundMode
@@ -59,9 +59,10 @@ data class NotificationSettings(
 
 sealed interface NotificationEvent {
     val cardId: String
+    val card: Card
 
-    data class ChatFinished(override val cardId: String, val card: Card, val resultPreview: String?, val subagents: List<Subagent>) : NotificationEvent
-    data class ReadyForReview(override val cardId: String, val card: Card) : NotificationEvent
+    data class ChatFinished(override val cardId: String, override val card: Card, val resultPreview: String?, val subagents: List<Subagent>) : NotificationEvent
+    data class ReadyForReview(override val cardId: String, override val card: Card) : NotificationEvent
 }
 
 private fun normalizedRuntime(runtime: String): String = runtime.trim().lowercase().let { if (it == "canceled") "cancelled" else it }
@@ -73,27 +74,27 @@ private fun normalizedRuntime(runtime: String): String = runtime.trim().lowercas
  */
 class TransitionTracker {
     private var previous: Map<String, Card>? = null
-    private var conversations: Map<String, ConversationSnapshot> = emptyMap()
+    private var activities: Map<String, Conversation> = emptyMap()
 
     fun reset() {
         previous = null
-        conversations = emptyMap()
+        activities = emptyMap()
     }
 
-    fun update(cards: List<Card>, snapshots: Map<String, ConversationSnapshot>, settings: NotificationSettings): List<NotificationEvent> {
+    fun update(cards: List<Card>, current: Map<String, Conversation>, settings: NotificationSettings): List<NotificationEvent> {
         val before = previous
-        val beforeConversations = conversations
+        val beforeActivities = activities
         previous = cards.associateBy { it.id }
-        conversations = snapshots
+        activities = current
         before ?: return emptyList()
         val events = mutableListOf<NotificationEvent>()
         for (card in cards) {
             val old = before[card.id] ?: continue
             val chat = Cards.isChat(card)
             if (chat && Runtimes.isActive(old.runtime) && !Runtimes.isActive(card.runtime) && chatResultEnabled(card, settings)) {
-                val snapshot = snapshots[card.id] ?: beforeConversations[card.id]
-                val agents = (beforeConversations[card.id] ?: snapshots[card.id])?.conversation?.subagents.orEmpty()
-                events += NotificationEvent.ChatFinished(card.id, card, snapshot?.let(NotificationContent::resultPreview), agents)
+                val activity = current[card.id] ?: beforeActivities[card.id]
+                val agents = (beforeActivities[card.id] ?: current[card.id])?.subagents.orEmpty()
+                events += NotificationEvent.ChatFinished(card.id, card, activity?.let(NotificationContent::resultPreview), agents)
             }
             if (!chat && settings.enabled && settings.reviewCards && card.board_id in settings.boardIds &&
                 !Lanes.isReview(old.lane) && Lanes.isReview(card.lane)
@@ -139,8 +140,8 @@ data class NotificationContent(
 
     companion object {
         /** The last agent reply, keeping its closing words when long. */
-        fun resultPreview(snapshot: ConversationSnapshot): String? {
-            val message = snapshot.conversation?.messages?.lastOrNull { it.role.equals("assistant", ignoreCase = true) || it.role.equals("agent", ignoreCase = true) } ?: return null
+        fun resultPreview(conversation: Conversation): String? {
+            val message = conversation.messages.lastOrNull { it.role.equals("assistant", ignoreCase = true) || it.role.equals("agent", ignoreCase = true) } ?: return null
             val text = message.parts.filter { it.type == "text" && it.text.isNotBlank() }.joinToString("\n") { it.text }.trim()
             if (text.isEmpty()) return null
             return if (text.length > 320) "…" + text.takeLast(319).substringAfter(' ').trim() else text
@@ -303,15 +304,21 @@ class NotificationPlanner(private val sink: NotificationSink, private val settin
         fingerprints.clear()
     }
 
+    /**
+     * Applies one account view. Transitions of cards whose owner was not
+     * current before it ([replaying]) only advance the baseline: a machine
+     * catching up never replays its backlog as notifications.
+     */
     fun frame(
         cards: List<Card>,
-        snapshots: Map<String, ConversationSnapshot>,
+        activities: Map<String, Conversation>,
         settings: NotificationSettings,
         boardNames: Map<String, String>,
         runningDetail: (Card) -> String?,
         visibleConversationId: String? = null,
+        replaying: (Card) -> Boolean = { false },
     ) {
-        val events = tracker.update(cards, snapshots, settings)
+        val events = tracker.update(cards, activities, settings).filterNot { replaying(it.card) }
         val byId = cards.associateBy { it.id }
         // A dismissal lasts one running session; once the chat stops or leaves, it is over.
         dismissed.keys.filter { id -> byId[id]?.let { Cards.isChat(it) && Runtimes.isActive(it.runtime) } != true }.forEach(::clearDismissal)
@@ -412,12 +419,11 @@ data class BackgroundStatus(
             val subagents = items.sumOf { it.active_subagents.size }.takeIf { settings.liveStatus } ?: 0
             val title = when (phase) {
                 ConnectionPhase.CONNECTED -> "Connected to $name"
-                ConnectionPhase.SYNCING -> "Synchronizing Dieter"
                 ConnectionPhase.RECONNECTING -> "Reconnecting to Dieter"
                 ConnectionPhase.AUTH_REQUIRED -> "Sign in to Dieter"
                 ConnectionPhase.UPDATE_REQUIRED -> "Update Dieter"
-                ConnectionPhase.NO_MACHINE -> "No Dieter machine is online"
-                else -> if (sleeping) "Dieter Smart sync" else "Connecting to Dieter"
+                ConnectionPhase.CONNECTING -> "Connecting to Dieter"
+                ConnectionPhase.DISCONNECTED -> if (sleeping) "Dieter Smart sync" else "Connecting to Dieter"
             }
             val summary = when {
                 sleeping -> "Sleeping between checks · opens with an immediate refresh"

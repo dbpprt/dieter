@@ -475,6 +475,50 @@ public nonisolated enum Dieter_Gateway_V1_DaemonLinkFrameKind: SwiftProtobuf.Enu
 
 }
 
+/// Each lane uses its own authenticated connection and flow-control window.
+/// These are resource classes, not authorization scopes.
+public nonisolated enum Dieter_Gateway_V1_RelayLane: SwiftProtobuf.Enum, Swift.CaseIterable {
+  public typealias RawValue = Int
+  case control // = 0
+  case replication // = 1
+  case command // = 2
+  case subscription // = 3
+  case UNRECOGNIZED(Int)
+
+  public init() {
+    self = .control
+  }
+
+  public init?(rawValue: Int) {
+    switch rawValue {
+    case 0: self = .control
+    case 1: self = .replication
+    case 2: self = .command
+    case 3: self = .subscription
+    default: self = .UNRECOGNIZED(rawValue)
+    }
+  }
+
+  public var rawValue: Int {
+    switch self {
+    case .control: return 0
+    case .replication: return 1
+    case .command: return 2
+    case .subscription: return 3
+    case .UNRECOGNIZED(let i): return i
+    }
+  }
+
+  // The compiler won't synthesize support with the UNRECOGNIZED case.
+  public static let allCases: [Dieter_Gateway_V1_RelayLane] = [
+    .control,
+    .replication,
+    .command,
+    .subscription,
+  ]
+
+}
+
 public nonisolated struct Dieter_Gateway_V1_Account: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -947,6 +991,8 @@ public nonisolated struct Dieter_Gateway_V1_DaemonRoute: Sendable {
   public var daemonCertificatePem: Data = Data()
 
   public var controlWebrtc: Bool = false
+
+  public var relayLanes: [Dieter_Gateway_V1_RelayLaneStatus] = []
 
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
@@ -1649,6 +1695,32 @@ public nonisolated struct Dieter_Gateway_V1_ProviderQuotaResetResult: Sendable {
   fileprivate var _snapshot: Dieter_Gateway_V1_ProviderQuotaSnapshot? = nil
 }
 
+public nonisolated struct Dieter_Gateway_V1_RelayLaneStatus: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var lane: Dieter_Gateway_V1_RelayLane = .control
+
+  public var connected: Bool = false
+
+  public var activeCalls: UInt32 = 0
+
+  public var callLimit: UInt32 = 0
+
+  public var queuedBytes: UInt64 = 0
+
+  public var rejectedCalls: UInt64 = 0
+
+  public var lastResponseAt: String = String()
+
+  public var writeStalled: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
 public nonisolated struct Dieter_Gateway_V1_DaemonLinkFrame: @unchecked Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -1812,6 +1884,29 @@ public nonisolated struct Dieter_Gateway_V1_DaemonLinkFrame: @unchecked Sendable
     set {_uniqueStorage()._compatibility = newValue}
   }
 
+  public var lane: Dieter_Gateway_V1_RelayLane {
+    get {_storage._lane}
+    set {_uniqueStorage()._lane = newValue}
+  }
+
+  /// All lanes of one daemon process join this unpredictable session identity.
+  public var sessionID: String {
+    get {_storage._sessionID}
+    set {_uniqueStorage()._sessionID = newValue}
+  }
+
+  /// Fragmented payloads retain one logical message bound. Metadata is carried
+  /// only by the first fragment; offsets must be contiguous within a stream.
+  public var payloadSize: UInt32 {
+    get {_storage._payloadSize}
+    set {_uniqueStorage()._payloadSize = newValue}
+  }
+
+  public var payloadOffset: UInt32 {
+    get {_storage._payloadOffset}
+    set {_uniqueStorage()._payloadOffset = newValue}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
@@ -1857,6 +1952,10 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaFreshness: SwiftProtobuf._P
 
 nonisolated extension Dieter_Gateway_V1_DaemonLinkFrameKind: SwiftProtobuf._ProtoNameProviding {
   public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0DAEMON_LINK_FRAME_KIND_UNSPECIFIED\0\u{1}DAEMON_LINK_FRAME_KIND_HELLO\0\u{1}DAEMON_LINK_FRAME_KIND_HELLO_ACK\0\u{1}DAEMON_LINK_FRAME_KIND_HEARTBEAT\0\u{1}DAEMON_LINK_FRAME_KIND_ROUTES\0\u{1}DAEMON_LINK_FRAME_KIND_OPEN_RPC\0\u{1}DAEMON_LINK_FRAME_KIND_REQUEST_MESSAGE\0\u{1}DAEMON_LINK_FRAME_KIND_REQUEST_END\0\u{1}DAEMON_LINK_FRAME_KIND_CANCEL_RPC\0\u{1}DAEMON_LINK_FRAME_KIND_RESPONSE_HEADER\0\u{1}DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE\0\u{1}DAEMON_LINK_FRAME_KIND_RESPONSE_END\0\u{1}DAEMON_LINK_FRAME_KIND_RPC_ERROR\0\u{1}DAEMON_LINK_FRAME_KIND_WINDOW_UPDATE\0\u{1}DAEMON_LINK_FRAME_KIND_PING\0\u{1}DAEMON_LINK_FRAME_KIND_PONG\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_ACCOUNTS\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_REQUEST\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_REFRESH_RESULT\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_REQUEST\0\u{1}DAEMON_LINK_FRAME_KIND_PROVIDER_QUOTA_RESET_RESULT\0")
+}
+
+nonisolated extension Dieter_Gateway_V1_RelayLane: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0RELAY_LANE_CONTROL\0\u{1}RELAY_LANE_REPLICATION\0\u{1}RELAY_LANE_COMMAND\0\u{1}RELAY_LANE_SUBSCRIPTION\0")
 }
 
 nonisolated extension Dieter_Gateway_V1_Account: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
@@ -2871,7 +2970,7 @@ nonisolated extension Dieter_Gateway_V1_DirectCandidate: SwiftProtobuf.Message, 
 
 nonisolated extension Dieter_Gateway_V1_DaemonRoute: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DaemonRoute"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{3}relay_available\0\u{3}direct_candidates\0\u{1}generation\0\u{3}daemon_ca_pem\0\u{3}daemon_certificate_pem\0\u{3}control_webrtc\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{3}relay_available\0\u{3}direct_candidates\0\u{1}generation\0\u{3}daemon_ca_pem\0\u{3}daemon_certificate_pem\0\u{3}control_webrtc\0\u{3}relay_lanes\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -2886,6 +2985,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonRoute: SwiftProtobuf.Message, Swif
       case 5: try { try decoder.decodeSingularBytesField(value: &self.daemonCaPem) }()
       case 6: try { try decoder.decodeSingularBytesField(value: &self.daemonCertificatePem) }()
       case 7: try { try decoder.decodeSingularBoolField(value: &self.controlWebrtc) }()
+      case 8: try { try decoder.decodeRepeatedMessageField(value: &self.relayLanes) }()
       default: break
       }
     }
@@ -2913,6 +3013,9 @@ nonisolated extension Dieter_Gateway_V1_DaemonRoute: SwiftProtobuf.Message, Swif
     if self.controlWebrtc != false {
       try visitor.visitSingularBoolField(value: self.controlWebrtc, fieldNumber: 7)
     }
+    if !self.relayLanes.isEmpty {
+      try visitor.visitRepeatedMessageField(value: self.relayLanes, fieldNumber: 8)
+    }
     try unknownFields.traverse(visitor: &visitor)
   }
 
@@ -2924,6 +3027,7 @@ nonisolated extension Dieter_Gateway_V1_DaemonRoute: SwiftProtobuf.Message, Swif
     if lhs.daemonCaPem != rhs.daemonCaPem {return false}
     if lhs.daemonCertificatePem != rhs.daemonCertificatePem {return false}
     if lhs.controlWebrtc != rhs.controlWebrtc {return false}
+    if lhs.relayLanes != rhs.relayLanes {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -4313,9 +4417,74 @@ nonisolated extension Dieter_Gateway_V1_ProviderQuotaResetResult: SwiftProtobuf.
   }
 }
 
+nonisolated extension Dieter_Gateway_V1_RelayLaneStatus: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".RelayLaneStatus"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}lane\0\u{1}connected\0\u{3}active_calls\0\u{3}call_limit\0\u{3}queued_bytes\0\u{3}rejected_calls\0\u{3}last_response_at\0\u{3}write_stalled\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.lane) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.connected) }()
+      case 3: try { try decoder.decodeSingularUInt32Field(value: &self.activeCalls) }()
+      case 4: try { try decoder.decodeSingularUInt32Field(value: &self.callLimit) }()
+      case 5: try { try decoder.decodeSingularUInt64Field(value: &self.queuedBytes) }()
+      case 6: try { try decoder.decodeSingularUInt64Field(value: &self.rejectedCalls) }()
+      case 7: try { try decoder.decodeSingularStringField(value: &self.lastResponseAt) }()
+      case 8: try { try decoder.decodeSingularBoolField(value: &self.writeStalled) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.lane != .control {
+      try visitor.visitSingularEnumField(value: self.lane, fieldNumber: 1)
+    }
+    if self.connected != false {
+      try visitor.visitSingularBoolField(value: self.connected, fieldNumber: 2)
+    }
+    if self.activeCalls != 0 {
+      try visitor.visitSingularUInt32Field(value: self.activeCalls, fieldNumber: 3)
+    }
+    if self.callLimit != 0 {
+      try visitor.visitSingularUInt32Field(value: self.callLimit, fieldNumber: 4)
+    }
+    if self.queuedBytes != 0 {
+      try visitor.visitSingularUInt64Field(value: self.queuedBytes, fieldNumber: 5)
+    }
+    if self.rejectedCalls != 0 {
+      try visitor.visitSingularUInt64Field(value: self.rejectedCalls, fieldNumber: 6)
+    }
+    if !self.lastResponseAt.isEmpty {
+      try visitor.visitSingularStringField(value: self.lastResponseAt, fieldNumber: 7)
+    }
+    if self.writeStalled != false {
+      try visitor.visitSingularBoolField(value: self.writeStalled, fieldNumber: 8)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: Dieter_Gateway_V1_RelayLaneStatus, rhs: Dieter_Gateway_V1_RelayLaneStatus) -> Bool {
+    if lhs.lane != rhs.lane {return false}
+    if lhs.connected != rhs.connected {return false}
+    if lhs.activeCalls != rhs.activeCalls {return false}
+    if lhs.callLimit != rhs.callLimit {return false}
+    if lhs.queuedBytes != rhs.queuedBytes {return false}
+    if lhs.rejectedCalls != rhs.rejectedCalls {return false}
+    if lhs.lastResponseAt != rhs.lastResponseAt {return false}
+    if lhs.writeStalled != rhs.writeStalled {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
 nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".DaemonLinkFrame"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{3}stream_id\0\u{3}daemon_id\0\u{3}request_id\0\u{1}method\0\u{1}payload\0\u{3}payload_sha256\0\u{3}delegation_assertion\0\u{3}deadline_unix_millis\0\u{3}status_code\0\u{3}status_message\0\u{1}metadata\0\u{3}window_bytes\0\u{3}release_version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0\u{2}\u{2}capabilities\0\u{3}provider_account_correlation_key\0\u{3}provider_accounts\0\u{3}provider_quota_refresh_request\0\u{3}provider_quota_refresh_result\0\u{3}provider_quota_reset_request\0\u{3}provider_quota_reset_result\0\u{3}compatibility_policy\0\u{1}compatibility\0\u{b}api_version\0\u{c}\u{12}\u{1}")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}kind\0\u{3}stream_id\0\u{3}daemon_id\0\u{3}request_id\0\u{1}method\0\u{1}payload\0\u{3}payload_sha256\0\u{3}delegation_assertion\0\u{3}deadline_unix_millis\0\u{3}status_code\0\u{3}status_message\0\u{1}metadata\0\u{3}window_bytes\0\u{3}release_version\0\u{1}generation\0\u{3}direct_candidates\0\u{3}remote_desktop\0\u{2}\u{2}capabilities\0\u{3}provider_account_correlation_key\0\u{3}provider_accounts\0\u{3}provider_quota_refresh_request\0\u{3}provider_quota_refresh_result\0\u{3}provider_quota_reset_request\0\u{3}provider_quota_reset_result\0\u{3}compatibility_policy\0\u{1}compatibility\0\u{1}lane\0\u{3}session_id\0\u{4}\u{2}payload_size\0\u{3}payload_offset\0\u{b}api_version\0\u{c}\u{12}\u{1}\u{c}\u{1e}\u{1}")
 
   fileprivate class _StorageClass {
     var _kind: Dieter_Gateway_V1_DaemonLinkFrameKind = .unspecified
@@ -4344,6 +4513,10 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
     var _providerQuotaResetResult: Dieter_Gateway_V1_ProviderQuotaResetResult? = nil
     var _compatibilityPolicy: Dieter_Gateway_V1_CompatibilityPolicy? = nil
     var _compatibility: Dieter_Gateway_V1_CompatibilityStatus = .unspecified
+    var _lane: Dieter_Gateway_V1_RelayLane = .control
+    var _sessionID: String = String()
+    var _payloadSize: UInt32 = 0
+    var _payloadOffset: UInt32 = 0
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -4380,6 +4553,10 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       _providerQuotaResetResult = source._providerQuotaResetResult
       _compatibilityPolicy = source._compatibilityPolicy
       _compatibility = source._compatibility
+      _lane = source._lane
+      _sessionID = source._sessionID
+      _payloadSize = source._payloadSize
+      _payloadOffset = source._payloadOffset
     }
   }
 
@@ -4424,6 +4601,10 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
         case 25: try { try decoder.decodeSingularMessageField(value: &_storage._providerQuotaResetResult) }()
         case 26: try { try decoder.decodeSingularMessageField(value: &_storage._compatibilityPolicy) }()
         case 27: try { try decoder.decodeSingularEnumField(value: &_storage._compatibility) }()
+        case 28: try { try decoder.decodeSingularEnumField(value: &_storage._lane) }()
+        case 29: try { try decoder.decodeSingularStringField(value: &_storage._sessionID) }()
+        case 31: try { try decoder.decodeSingularUInt32Field(value: &_storage._payloadSize) }()
+        case 32: try { try decoder.decodeSingularUInt32Field(value: &_storage._payloadOffset) }()
         default: break
         }
       }
@@ -4514,6 +4695,18 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
       if _storage._compatibility != .unspecified {
         try visitor.visitSingularEnumField(value: _storage._compatibility, fieldNumber: 27)
       }
+      if _storage._lane != .control {
+        try visitor.visitSingularEnumField(value: _storage._lane, fieldNumber: 28)
+      }
+      if !_storage._sessionID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._sessionID, fieldNumber: 29)
+      }
+      if _storage._payloadSize != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._payloadSize, fieldNumber: 31)
+      }
+      if _storage._payloadOffset != 0 {
+        try visitor.visitSingularUInt32Field(value: _storage._payloadOffset, fieldNumber: 32)
+      }
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -4549,6 +4742,10 @@ nonisolated extension Dieter_Gateway_V1_DaemonLinkFrame: SwiftProtobuf.Message, 
         if _storage._providerQuotaResetResult != rhs_storage._providerQuotaResetResult {return false}
         if _storage._compatibilityPolicy != rhs_storage._compatibilityPolicy {return false}
         if _storage._compatibility != rhs_storage._compatibility {return false}
+        if _storage._lane != rhs_storage._lane {return false}
+        if _storage._sessionID != rhs_storage._sessionID {return false}
+        if _storage._payloadSize != rhs_storage._payloadSize {return false}
+        if _storage._payloadOffset != rhs_storage._payloadOffset {return false}
         return true
       }
       if !storagesAreEqual {return false}

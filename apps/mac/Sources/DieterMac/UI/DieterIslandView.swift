@@ -97,6 +97,10 @@ struct DieterIslandShape: Shape {
     }
 }
 
+/// The island is always dark, whatever the app's appearance, so its secondary
+/// controls take a neutral fill rather than the theme's control colours.
+private let islandControlTint = Color.white.opacity(0.1)
+
 struct DieterIslandView: View {
     @Environment(DieterStore.self) private var store
     @Bindable var presentation: DieterIslandPresentation
@@ -127,7 +131,8 @@ struct DieterIslandView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .dieterGlass(.regular, in: islandShape, solidColor: Color(white: 0.09))
+        .background(DieterTheme.usesTransparency ? Color.clear : Color(white: 0.09), in: islandShape)
+        .glassEffect(DieterTheme.usesTransparency ? .regular : .identity, in: islandShape)
         .animation(.spring(response: 0.36, dampingFraction: 0.84), value: presentation.expanded)
         .preferredColorScheme(.dark)
         .accessibilityElement(children: .contain)
@@ -221,7 +226,7 @@ struct DieterIslandView: View {
 
                 HStack(spacing: 6) {
                     Circle().fill(connectionColor).frame(width: 5, height: 5)
-                    Text(store.endpoint.name)
+                    Text(store.activeGateway.name)
                         .lineLimit(1)
                 }
                 .font(.system(size: 9.5, weight: .medium))
@@ -235,11 +240,9 @@ struct DieterIslandView: View {
                 } label: {
                     Image(systemName: "chevron.up")
                         .font(.system(size: 9.5, weight: .bold))
-                        .frame(width: 30, height: 30)
+                        .foregroundStyle(.white.opacity(0.62))
                 }
-                .buttonStyle(DieterGlassButtonStyle())
-                .buttonBorderShape(.circle)
-                .foregroundStyle(.white.opacity(0.62))
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, prominent: true, tint: islandControlTint, size: 30))
                 .accessibilityLabel("Collapse Dieter Island")
             }
             .font(.system(size: 10.5, weight: .medium))
@@ -318,7 +321,7 @@ struct DieterIslandView: View {
                 } label: {
                     Label("Open Inbox", systemImage: "arrow.up.right.square")
                 }
-                .buttonStyle(DieterGlassButtonStyle(prominent: true))
+                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28))
                 .accessibilityIdentifier("island.open-inbox")
                 .smokeTarget("island.open-inbox")
 
@@ -330,7 +333,7 @@ struct DieterIslandView: View {
                 } label: {
                     Label("Settings", systemImage: "gearshape")
                 }
-                .buttonStyle(DieterGlassButtonStyle())
+                .buttonStyle(DieterBarButtonStyle(prominent: true, tint: islandControlTint, size: 28))
 
                 displayPicker
 
@@ -338,7 +341,7 @@ struct DieterIslandView: View {
                 Button(action: onCaptureTask) {
                     Label("Capture task", systemImage: "viewfinder")
                 }
-                .buttonStyle(DieterGlassButtonStyle(prominent: true))
+                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28))
                 .help("Select a screen area and create a Quick Task")
                 .accessibilityIdentifier("island.capture-task")
                 .smokeTarget("island.capture-task")
@@ -368,9 +371,8 @@ struct DieterIslandView: View {
             displayPickerPresented = true
         } label: {
             Image(systemName: "display")
-                .frame(width: 18, height: 18)
         }
-        .buttonStyle(DieterGlassButtonStyle())
+        .buttonStyle(DieterBarButtonStyle(shape: .circle, prominent: true, tint: islandControlTint, size: 28))
         .quickHelp("Move to display")
         .accessibilityLabel("Move island to display")
         .accessibilityValue(presentation.currentDisplayID.flatMap { titles[$0] } ?? "Automatic")

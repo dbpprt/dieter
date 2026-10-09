@@ -121,7 +121,7 @@
             await task.value
         }
 
-        /// The scene is active (keeps the feed live) or in the background.
+        /// The scene is active (keeps the streams live) or in the background.
         /// Sent in order once the core has started.
         func setForeground(_ foreground: Bool) {
             let previous = foregroundTail
@@ -277,11 +277,6 @@
         }
 
         // MARK: - Machines and cards
-
-        /// Attaches the workspace feed to a machine.
-        func attachMachine(_ daemonID: String) async {
-            await perform { $0.attachMachine = .with { $0.daemonID = daemonID } }
-        }
 
         /// The conversation on screen, or none; the core marks it read as its
         /// replies arrive. Sent in order once the core has started.

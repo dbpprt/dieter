@@ -2,22 +2,46 @@ package gateway
 
 import (
 	"context"
+	"encoding/base64"
 	"io"
 	"testing"
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/relaypolicy"
 	"github.com/dbpprt/dieter/internal/rpcraw"
+	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
+
+func TestRelayMetadataAndStatusValidation(t *testing.T) {
+	binary := string([]byte{0xff, 0, 0x80})
+	values := frameMetadata(map[string]string{"trace-bin": base64.StdEncoding.EncodeToString([]byte(binary)), "invalid-bin": "!", "result": "retained", "Authorization": "secret", "X-Dieter-Operator-Subject": "secret"})
+	if len(values) != 2 || values.Get("trace-bin")[0] != binary || values.Get("result")[0] != "retained" {
+		t.Fatalf("relay metadata changed or leaked credentials: %v", values)
+	}
+	// A mismatched rich status cannot override the canonical terminal status.
+	raw, err := proto.Marshal(&statuspb.Status{Code: int32(codes.PermissionDenied), Message: "different"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := &gatewayv1.DaemonLinkFrame{StatusCode: int32(codes.InvalidArgument), StatusMessage: "record rejected"}
+	err = relayFrameStatus(frame, frameMetadata(map[string]string{"grpc-status-details-bin": base64.StdEncoding.EncodeToString(raw)}))
+	if status.Code(err) != codes.InvalidArgument || status.Convert(err).Message() != "record rejected" {
+		t.Fatalf("mismatched rich status overrode terminal status: %v", err)
+	}
+}
 
 func TestRelayCanceledOpenDoesNotWaitForSharedSendQueue(t *testing.T) {
 	hub, link := newTestRelayHub(t)
-	for range cap(link.send) {
-		link.send <- &gatewayv1.DaemonLinkFrame{}
+	reserved := int64(relaypolicy.BufferedBytes) - link.budget.Used()
+	if !link.budget.Reserve(reserved) {
+		t.Fatal("cannot fill outbound byte budget")
 	}
+	defer func() { link.budget.Release(reserved) }()
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() {
@@ -108,9 +132,11 @@ func TestRelayCancellationReleasesOnlyItsStreamWithFullSendQueue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for len(link.send) < cap(link.send) {
-		link.send <- &gatewayv1.DaemonLinkFrame{}
+	reserved := int64(relaypolicy.BufferedBytes) - link.budget.Used()
+	if !link.budget.Reserve(reserved) {
+		t.Fatal("cannot fill outbound byte budget")
 	}
+	defer func() { link.budget.Release(reserved) }()
 	cancel()
 	finished := make(chan error, 1)
 	go func() { _, err := canceled.Recv(); finished <- err }()
@@ -130,6 +156,8 @@ func TestRelayCancellationReleasesOnlyItsStreamWithFullSendQueue(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("cancellation was not sent through the control queue")
 	}
+	link.budget.Release(reserved)
+	reserved = 0
 	link.dispatch(&gatewayv1.DaemonLinkFrame{Kind: gatewayv1.DaemonLinkFrameKind_DAEMON_LINK_FRAME_KIND_RESPONSE_MESSAGE, StreamId: healthy.id, Payload: []byte("healthy")})
 	frame, err := healthy.Recv()
 	if err != nil || string(frame.GetPayload()) != "healthy" {
@@ -142,5 +170,133 @@ func TestRelayClosedDaemonIsImmediatelyOffline(t *testing.T) {
 	hub.CloseDaemon(link.id)
 	if hub.Online(link.id) {
 		t.Fatal("closed daemon remains online until the heartbeat lease expires")
+	}
+}
+
+func TestRelayBoundsWatchesAndRequestsSeparately(t *testing.T) {
+	hub, link := newTestRelayHub(t)
+	open := func(method string) error {
+		stream, err := hub.Open(t.Context(), link.id, &gatewayv1.DaemonLinkFrame{Method: method})
+		if err == nil {
+			t.Cleanup(stream.Close)
+			drainTestRelayOpen(t, link)
+		}
+		return err
+	}
+	for range maxDaemonRelayStreams {
+		if err := open("/dieter.v1.DieterService/GetState"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := open("/dieter.v1.DieterService/GetState"); status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("request above its bound = %v", err)
+	}
+	for range maxDaemonWatchStreams {
+		if err := open("/dieter.v1.DieterService/WatchChanges"); err != nil {
+			t.Fatalf("watch beside exhausted requests = %v", err)
+		}
+	}
+	if err := open("/dieter.v1.DieterService/WatchConversation"); status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("watch above its bound = %v", err)
+	}
+}
+
+func TestAuthenticatedStreamsAreBoundedPerAccount(t *testing.T) {
+	var budget streamBudget
+	for range maxAccountStreams {
+		if !budget.acquire(1) {
+			t.Fatal("account stream below its bound was rejected")
+		}
+	}
+	if budget.acquire(1) {
+		t.Fatal("account exceeded its stream bound")
+	}
+	if !budget.acquire(2) {
+		t.Fatal("one account's streams exhausted another's")
+	}
+	budget.release(1)
+	if !budget.acquire(1) {
+		t.Fatal("released stream was not returned to its account")
+	}
+	for account := int64(3); budget.total < maxGatewayStreams; account++ {
+		for range maxAccountStreams {
+			if budget.total < maxGatewayStreams && !budget.acquire(account) {
+				t.Fatal("stream below the gateway bound was rejected")
+			}
+		}
+	}
+	if budget.acquire(1 << 40) {
+		t.Fatal("gateway exceeded its total stream bound")
+	}
+}
+
+func TestAuthenticatedSubscriptionCapacityReservesOtherTrafficClasses(t *testing.T) {
+	var budget streamBudget
+	for range maxAccountStreams {
+		if !budget.acquireLane(1, relaypolicy.Subscription) {
+			t.Fatal("subscription rejected below account ceiling")
+		}
+	}
+	if budget.acquireLane(1, relaypolicy.Subscription) {
+		t.Fatal("subscription ceiling exceeded")
+	}
+	for _, lane := range []relaypolicy.Lane{relaypolicy.Control, relaypolicy.Replication, relaypolicy.Command} {
+		if !budget.acquireLane(1, lane) {
+			t.Fatalf("subscriptions consumed %s capacity", lane)
+		}
+	}
+	for range maxAccountStreams {
+		budget.releaseLane(1, relaypolicy.Subscription)
+	}
+	if !budget.acquireLane(1, relaypolicy.Subscription) {
+		t.Fatal("subscription reservation was not released")
+	}
+}
+
+func TestRelaySessionJoinsRejectStaleProcessesAndPreserveReplacements(t *testing.T) {
+	hub := NewHub(nil, Config{})
+	link := func(lane relaypolicy.Lane, session string) *daemonLink {
+		b := relaypolicy.NewBudget(relaypolicy.BufferedBytes, nil)
+		l := &daemonLink{id: "daemon", lane: lane, sessionID: session, budget: b, outbound: relaypolicy.NewQueue(b), done: make(chan struct{}), streams: map[uint64]*relayFrameQueue{}}
+		l.markSeen(time.Now())
+		t.Cleanup(l.close)
+		return l
+	}
+	a := link(relaypolicy.Control, "session-a")
+	if err := hub.register(a); err != nil {
+		t.Fatal(err)
+	}
+	auxiliary := link(relaypolicy.Subscription, "session-a")
+	if err := hub.register(auxiliary); err != nil {
+		t.Fatal(err)
+	}
+	if err := hub.register(link(relaypolicy.Command, "unrelated-session")); status.Code(err) != codes.FailedPrecondition {
+		t.Fatal("unrelated process joined daemon lanes", err)
+	}
+	b := link(relaypolicy.Control, "session-b")
+	if err := hub.register(b); err != nil {
+		t.Fatal(err)
+	}
+	if a.isAlive(time.Now()) || auxiliary.isAlive(time.Now()) {
+		t.Fatal("replaced process retained a lane")
+	}
+	hub.unregister(a)
+	if !hub.Online("daemon") {
+		t.Fatal("old cleanup removed new control connection")
+	}
+	if err := hub.register(link(relaypolicy.Control, "session-a")); status.Code(err) != codes.FailedPrecondition {
+		t.Fatal("stale control resurrected old process", err)
+	}
+	if err := hub.register(link(relaypolicy.Subscription, "session-a")); status.Code(err) != codes.FailedPrecondition {
+		t.Fatal("stale subscription joined new process", err)
+	}
+	if err := hub.register(link(relaypolicy.Subscription, "session-b")); err != nil {
+		t.Fatal(err)
+	}
+	hub.CloseDaemon("daemon")
+	for _, lane := range hub.RelayLanes("daemon") {
+		if lane.Connected {
+			t.Fatal("revocation left authenticated lane alive")
+		}
 	}
 }

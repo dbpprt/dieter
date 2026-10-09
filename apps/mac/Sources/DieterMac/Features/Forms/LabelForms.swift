@@ -22,7 +22,7 @@ struct LabelsSheet: View {
                         .font(.caption).foregroundStyle(DieterTheme.tertiary)
                 }
                 Spacer()
-                Button("Done") { dismiss() }
+                Button("Done") { dismiss() }.buttonStyle(DieterBarButtonStyle())
             }
             .padding(20)
             .background(DieterTheme.sidebar)
@@ -57,19 +57,18 @@ struct LabelsSheet: View {
                         .font(.system(size: 12, design: .monospaced))
                         .lineLimit(1...4)
                         .padding(12).frame(height: 76)
-                        .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.border))
+                        .dieterInset(radius: 8)
                         HStack {
                             Text("The instruction is composed with global, project, and board prompts.")
                                 .font(.caption2).foregroundStyle(DieterTheme.tertiary)
                             Spacer()
                             Button("Create label") { Task { await createLabel() } }
-                                .buttonStyle(.borderedProminent)
+                                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 28))
                                 .disabled(
                                     creating || !SharedRules.shared.labelProblem(name: name, color: color).isEmpty)
                         }
                     }
-                    .padding(14).dieterSurface(radius: 10)
+                    .padding(14).dieterTile(radius: 10)
                 }
                 .padding(18)
             }
@@ -128,7 +127,8 @@ struct BoardLabelEditorRow: View {
                 Circle().fill(Color(hex: color) ?? DieterTheme.shellDeep).frame(width: 10, height: 10)
                 TextField("Label name", text: $name)
                 Button(role: .destructive, action: requestDelete) { Image(systemName: "trash") }
-                    .buttonStyle(.plain).help("Remove \(label.name)")
+                    .buttonStyle(DieterBarButtonStyle(shape: .circle, destructive: true, size: 26))
+                    .help("Remove \(label.name)")
             }
             LabelColorControl(color: $color)
             Text("AGENT INSTRUCTIONS").font(DieterFont.sectionLabel).tracking(0.8).foregroundStyle(DieterTheme.tertiary)
@@ -137,16 +137,16 @@ struct BoardLabelEditorRow: View {
                 .font(.system(size: 12, design: .monospaced))
                 .lineLimit(1...4)
                 .padding(12).frame(height: 76)
-                .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.border))
+                .dieterInset(radius: 8)
             HStack {
                 Text("Applied only to cards carrying this label").font(.caption2).foregroundStyle(DieterTheme.tertiary)
                 Spacer()
                 Button(saving ? "Saving…" : "Save changes") { Task { await save() } }
+                    .buttonStyle(DieterBarButtonStyle(size: 28))
                     .disabled(saving || !SharedRules.shared.labelProblem(name: name, color: color).isEmpty)
             }
         }
-        .padding(14).dieterSurface(radius: 10)
+        .padding(14).dieterTile(radius: 10)
     }
 
     private func save() async {

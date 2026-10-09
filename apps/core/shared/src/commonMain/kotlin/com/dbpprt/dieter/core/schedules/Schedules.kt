@@ -14,6 +14,7 @@ import com.dbpprt.dieter.client.v1.ScheduleRow
 import com.dbpprt.dieter.client.v1.ScheduleRunRow
 import com.dbpprt.dieter.core.composition.Creation
 import com.dbpprt.dieter.core.metadata.MachineMetadataStore
+import com.dbpprt.dieter.core.machines.MachineChoice
 import com.dbpprt.dieter.core.runtime.CoreException
 import com.dbpprt.dieter.core.runtime.Deadlines
 import com.dbpprt.dieter.core.runtime.FailureKind
@@ -72,7 +73,7 @@ data class SchedulesView(
 }
 
 /**
- * Schedules of one project. Lists come from any replica; full definitions,
+ * Schedules of one project. Lists come from any machine with the project; full definitions,
  * run history, and every mutation go to the machine that owns the schedule.
  * Results for a project that is no longer shown are dropped. [metadata]
  * supplies the agents a new draft starts with; without it, drafts start
@@ -81,6 +82,7 @@ data class SchedulesView(
 class Schedules(
     private val sessions: MachineSessions,
     private val store: WorkspaceStore,
+    private val choice: MachineChoice,
     private val scope: CoroutineScope,
     private val metadata: MachineMetadataStore? = null,
 ) {
@@ -108,11 +110,11 @@ class Schedules(
         mutableView.value = SchedulesView(projectId = projectId)
     }
 
-    private fun replica(projectId: String): String = store.directoryProjection.projectReplicas[projectId]
-        ?: throw CoreException(FailureKind.TRANSIENT, "This project’s machine is unavailable.")
+    private fun projectMachine(projectId: String): String = choice.project(projectId)
+        ?: throw CoreException(FailureKind.TRANSIENT, "No machine with this project is reachable.")
 
     /** The machine that owns [schedule]: its recorded owner, else its checkout's machine. */
-    private fun owner(schedule: Schedule): String = schedule.owner_daemon_id.ifEmpty { null }
+    private fun owner(schedule: Schedule): String = schedule.owner_daemon_id.ifEmpty { null }?.let(store.directoryProjection::machine)
         ?: store.directoryProjection.checkoutMachine(schedule.project_id, schedule.checkout_id)
         ?: throw CoreException(FailureKind.TRANSIENT, "This schedule’s machine is unavailable")
 
@@ -131,7 +133,7 @@ class Schedules(
         mutableView.update { if (more) it.copy(loadingMore = true) else it.copy(loading = true) }
         try {
             val token = if (more) view.value.nextPageToken else ""
-            val response = sessions.call(replica(projectId), Deadlines.CALL) { it.ListSchedules().execute(ListSchedulesRequest(project_id = projectId, page_size = PAGE_SIZE, page_token = token)) }
+            val response = sessions.call(projectMachine(projectId), Deadlines.CALL) { it.ListSchedules().execute(ListSchedulesRequest(project_id = projectId, page_size = PAGE_SIZE, page_token = token)) }
             if (bound != binding || request != listRequest) return
             mutableView.update { state ->
                 val schedules = if (more) state.schedules + response.schedules.filter { incoming -> state.schedules.none { it.id == incoming.id } } else response.schedules
@@ -183,7 +185,7 @@ class Schedules(
         }
     }
 
-    /** The owner's full definition; replicas only know a summary. */
+    /** The owner's full definition; other machines only know a summary. */
     suspend fun details(scheduleId: String): Schedule {
         val summary = view.value.schedules.firstOrNull { it.id == scheduleId } ?: throw CoreException(FailureKind.PERMANENT, "The schedule is no longer available.")
         val bound = binding
@@ -204,7 +206,7 @@ class Schedules(
         val projectId = view.value.projectId ?: throw CoreException(FailureKind.PERMANENT, "This project is no longer connected. Close the editor and reconnect.")
         val existing = scheduleId?.let { details(it) }
         val checkout = if (existing != null) null else store.directoryProjection.projects[projectId]?.let { Creation.checkout(it, checkoutId) }
-        val machine = if (existing != null) owner(existing) else checkout?.daemon_id?.ifEmpty { null } ?: store.directoryProjection.projectReplicas[projectId]
+        val machine = if (existing != null) owner(existing) else checkout?.daemon_id?.ifEmpty { null }?.let(store.directoryProjection::machine) ?: choice.project(projectId)
         val agents = machine?.let { harnesses(it) }.orEmpty()
         val boards = store.state.value.boards[projectId].orEmpty()
         val draft = ScheduleDrafts.make(existing, projectId, timezone.trim().ifEmpty { "UTC" }, boards, selectedBoardId, agents)
@@ -238,7 +240,7 @@ class Schedules(
         previewJob = scope.launch {
             delay(PREVIEW_DEBOUNCE)
             try {
-                val times = sessions.call(replica(projectId), Deadlines.CALL) { it.PreviewSchedule().execute(PreviewScheduleRequest(cron = cron.trim(), timezone = timezone.trim(), count = PREVIEW_COUNT)) }.times
+                val times = sessions.call(projectMachine(projectId), Deadlines.CALL) { it.PreviewSchedule().execute(PreviewScheduleRequest(cron = cron.trim(), timezone = timezone.trim(), count = PREVIEW_COUNT)) }.times
                 if (bound == binding && previewKey == key) mutableView.update { it.copy(preview = times, previewError = null, previewLoading = false) }
             } catch (error: Throwable) {
                 if (error is CancellationException) throw error

@@ -48,9 +48,8 @@ func TestRelayMethodPriorityKeepsCommandsAheadOfStreams(t *testing.T) {
 		}
 	}
 	for _, method := range []string{
-		"/dieter.v1.DieterService/WatchSync",
+		"/dieter.v1.DieterService/WatchChanges",
 		"/dieter.v1.DieterService/WatchConversation",
-		"/dieter.v1.DieterService/WatchState",
 		"/dieter.v1.DieterService/WatchTerminal",
 		"/dieter.v1.DieterService/WatchExecution",
 	} {

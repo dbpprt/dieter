@@ -119,6 +119,6 @@ final class MarkdownEditorSplitController: NSSplitViewController {
 
     private func sourceTextView(in view: NSView) -> NSTextView? {
         if let editor = view as? NSTextView { return editor }
-        return view.subviews.lazy.compactMap { self.sourceTextView(in: $0) }.first
+        return view.firstSubviewResult { self.sourceTextView(in: $0) }
     }
 }

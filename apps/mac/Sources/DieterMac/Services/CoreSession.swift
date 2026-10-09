@@ -31,7 +31,7 @@ extension AppSession {
                     }
                 } catch { self.show(error) }
             }
-            // The menu bar, Island, and notifications need the live feed while
+            // The menu bar, Island, and notifications need the live streams while
             // the app is in the background, so the Mac core always runs.
             _ = try? await self.core.dispatch { $0.setForeground = .with { $0.foreground = true } }
         }
@@ -63,7 +63,7 @@ extension AppSession {
             },
             SliceSubscription(client: core, slice: .metadata) { [weak self] update in
                 guard let self, case .metadata(let value) = update.value else { return }
-                self.machineMetadata = value.machines
+                self.coreMetadata = value
                 if !self.coreFoldsHeld { self.foldMetadata(value) }
             },
             SliceSubscription(client: core, slice: .activity) { [weak self] update in
@@ -94,7 +94,7 @@ extension AppSession {
         foldSession(session)
         foldWorkspace(coreWorkspace)
         foldOutbox(outboxState)
-        foldMetadata(.with { $0.machines = machineMetadata })
+        foldMetadata(coreMetadata)
         foldBoard(boardState)
     }
 
@@ -114,11 +114,9 @@ extension AppSession {
             MachineEndpoint(origin: entry.origin, name: entry.name)
         }
         if gatewayOrigins != origins { gatewayOrigins = origins.isEmpty ? [gateway] : origins }
+        if activeGateway != gateway { activeGateway = gateway }
         let machines = slice.machines.map { Self.machineEndpoint($0, gateway: gateway) }
         if endpoints != machines { endpoints = machines }
-        let attached = machines.first { !slice.attachedMachineID.isEmpty && $0.daemonID == slice.attachedMachineID }
-        let next = attached ?? gateway
-        if endpoint != next { endpoint = next }
 
         var entries: [String: ClientMachineEntry] = [:]
         for (entry, machine) in zip(slice.machines, machines) { entries[machine.id] = entry }
@@ -131,24 +129,27 @@ extension AppSession {
             }
             if gatewayInformation[gateway.credentialID] != build { gatewayInformation[gateway.credentialID] = build }
         }
-        let nextPhase = Self.phase(slice, attached: attached, hasLoadedWorkspace: hasLoadedWorkspace)
+        let nextPhase = Self.phase(slice, hasLoadedWorkspace: hasLoadedWorkspace)
         if phase != nextPhase { phase = nextPhase }
-        if workspaceIsLive != slice.workspaceLive { workspaceIsLive = slice.workspaceLive }
+        if workspaceIsLive != slice.synced { workspaceIsLive = slice.synced }
         let notice = slice.hasNotice ? slice.notice : nil
         if workspaceNotice != notice { workspaceNotice = notice }
-        if let applied = Date(epochMillis: slice.feed.lastAppliedAtMillis), lastSyncedAt != applied {
-            lastSyncedAt = applied
-        }
-        let connected = nextPhase.isConnected ? attached?.id : nil
-        if connectedMachineID != connected { connectedMachineID = connected }
-        // The attached machine's agents, settings choices, and runtime are
-        // read once it is connected, as the composer and settings need them.
-        if !nextPhase.isConnected { requestedMetadata = nil }
-        if nextPhase.isConnected, let daemonID = attached?.daemonID, requestedMetadata != daemonID {
-            requestedMetadata = daemonID
+        let updated = Date(epochMillis: slice.updatedAtMillis)
+        if lastSyncedAt != updated { lastSyncedAt = updated }
+        requestMetadata(slice.machines)
+    }
+
+    /// Reads the agents and runtime of every machine that can take work, once
+    /// per connection and again after a machine was away, as the composers,
+    /// schedules, and settings of its conversations and projects need them.
+    private func requestMetadata(_ entries: [ClientMachineEntry]) {
+        guard phase.isConnected else { return requestedMetadata.removeAll() }
+        let available = Set(entries.filter(\.available).map(\.id))
+        requestedMetadata.formIntersection(available)
+        for daemonID in available.subtracting(requestedMetadata).sorted() {
+            requestedMetadata.insert(daemonID)
             Task { await perform { $0.ensureMetadata = .with { $0.daemonID = daemonID } } }
         }
-        coreSessionChanged()
     }
 
     nonisolated static func gatewayEndpoint(_ slice: ClientSessionSlice) -> MachineEndpoint {
@@ -166,9 +167,7 @@ extension AppSession {
             remoteDesktopReason: entry.remoteDesktopReason, remoteDesktopPlatform: entry.platform)
     }
 
-    nonisolated static func phase(
-        _ slice: ClientSessionSlice, attached: MachineEndpoint?, hasLoadedWorkspace: Bool
-    ) -> ConnectionPhase {
+    nonisolated static func phase(_ slice: ClientSessionSlice, hasLoadedWorkspace: Bool) -> ConnectionPhase {
         switch slice.phase {
         case .disconnected: return .disconnected
         case .connecting: return .connecting
@@ -176,9 +175,7 @@ extension AppSession {
             // A first launch without any cached workspace reports why; later
             // interruptions keep the cached workspace and retry quietly.
             return hasLoadedWorkspace || slice.error.isEmpty ? .connecting : .failed(slice.error)
-        case .syncing, .connected: return .connected(version: attached?.releaseVersion ?? "")
-        case .noMachine:
-            return .failed(slice.error.isEmpty ? slice.phaseLabel : slice.error)
+        case .connected: return .connected
         case .authRequired: return .authenticationRequired
         case .updateRequired:
             return .incompatible(slice.error.isEmpty ? slice.phaseLabel : slice.error)
@@ -190,13 +187,15 @@ extension AppSession {
 
     func foldWorkspace(_ slice: ClientWorkspaceSlice) {
         coreWorkspace = slice
-        let replicas = slice.projectReplicas.mapValues { daemonID in endpointID(forDaemon: daemonID) }
-        replica.acceptCore(slice, replicaEndpointIDs: replicas, archivedChats: archivedChats)
-        if boardSettings != slice.settings { boardSettings = slice.settings }
+        replica.acceptCore(slice, archivedChats: archivedChats)
         if boardAttention != slice.boardAttention { boardAttention = slice.boardAttention }
         refreshPendingCards()
         updateSelectedState()
         refreshReplicaPresentation()
+        // A project's host can change with the workspace.
+        refreshLiveFlags()
+        // A conversation opened before its card arrived gets its draft now.
+        bindComposer()
     }
 
     func endpointID(forDaemon daemonID: String) -> String {
@@ -231,23 +230,24 @@ extension AppSession {
             if selectedCardID == local { selectedCardID = server }
             if selectedChatID == local { selectedChatID = server }
             if lastUsedChatID == local { lastUsedChatID = server }
-            composer.retarget(
-                from: WorkspaceTarget(endpointID: endpoint.id, projectID: "", conversationID: local),
-                to: WorkspaceTarget(endpointID: endpoint.id, projectID: "", conversationID: server))
+            composer.retarget(conversation: local, to: server)
         }
     }
 
     // MARK: - Metadata and board
 
     func foldMetadata(_ slice: ClientMetadataSlice) {
-        machineMetadata = slice.machines
-        let attached = endpoint.daemonID.flatMap { slice.machines[$0] }
-        let catalog = attached?.harnesses ?? Dieter_V1_HarnessCatalog()
-        if harnessCatalog != catalog { harnessCatalog = catalog }
-        let options = attached?.settingsOptions ?? Dieter_V1_SettingsOptions()
-        if settingsOptions != options { settingsOptions = options }
-        let status = attached?.runtime ?? Dieter_V1_RuntimeStatus()
-        if runtime != status { runtime = status }
+        if machineMetadata != slice.machines { machineMetadata = slice.machines }
+    }
+
+    /// The agents `daemonID` offers; empty until its metadata arrives.
+    func harnessCatalog(forDaemon daemonID: String) -> Dieter_V1_HarnessCatalog {
+        machineMetadata[daemonID].flatMap { $0.loaded ? $0.harnesses : nil } ?? Dieter_V1_HarnessCatalog()
+    }
+
+    /// The agents the selected conversation's machine offers.
+    var harnessCatalog: Dieter_V1_HarnessCatalog {
+        harnessCatalog(forDaemon: selectedCard?.ownerDaemonID ?? selectedDetail?.card.ownerDaemonID ?? "")
     }
 
     func foldBoard(_ slice: ClientBoardSlice) {
@@ -306,16 +306,6 @@ extension AppSession {
         quickTaskForm.adopt(slice)
     }
 
-    /// Values derived from the session that views read directly.
-    private func coreSessionChanged() {
-        var health = Dieter_V1_HealthResponse()
-        if phase.isConnected {
-            health.status = "ok"
-            health.releaseVersion = endpoint.releaseVersion
-        }
-        if self.health != health { self.health = health }
-    }
-
     // MARK: - Commands
 
     /// Runs `build` on the core and reports its failure; nil on failure.
@@ -345,9 +335,7 @@ extension AppSession {
 extension WorkspaceReplica {
     /// Replaces the replica with the core's merged, optimistic workspace.
     /// `archivedChats` are listed separately; live chats come from the core.
-    func acceptCore(
-        _ slice: ClientWorkspaceSlice, replicaEndpointIDs: [String: String], archivedChats: [Dieter_V1_Card]
-    ) {
+    func acceptCore(_ slice: ClientWorkspaceSlice, archivedChats: [Dieter_V1_Card]) {
         var directory: [String: Dieter_V1_Project] = [:]
         for project in slice.projects { directory[project.id] = project }
         var boards: [String: [Dieter_V1_Board]] = [:]
@@ -368,7 +356,7 @@ extension WorkspaceReplica {
         if projectDirectory != directory { projectDirectory = directory }
         let order = slice.projects.map(\.id)
         if projectOrder != order { projectOrder = order }
-        if projectReplicaEndpointIDs != replicaEndpointIDs { projectReplicaEndpointIDs = replicaEndpointIDs }
+        if projectHosts != slice.projectHosts { projectHosts = slice.projectHosts }
         if navigationBoards != boards { navigationBoards = boards }
         if navigationCards != cards { navigationCards = cards }
         if self.chats != chats { self.chats = chats }

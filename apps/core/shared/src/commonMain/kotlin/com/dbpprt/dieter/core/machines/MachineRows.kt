@@ -2,11 +2,13 @@ package com.dbpprt.dieter.core.machines
 
 import com.dbpprt.dieter.api.gateway.v1.CompatibilityStatus
 import com.dbpprt.dieter.api.v1.MachineInformation
+import com.dbpprt.dieter.api.v1.PeerSyncDiagnostic
 import com.dbpprt.dieter.client.v1.Tone
 import com.dbpprt.dieter.core.admin.PeerSyncHealth
 import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.connection.MachineSync
+import com.dbpprt.dieter.core.connection.SyncState
 import com.dbpprt.dieter.core.session.MachineRoute
-import com.dbpprt.dieter.core.sync.MachineFreshness
 import kotlin.time.Instant
 
 enum class MachineLink { PENDING, TRYING, CONNECTED, FAILED }
@@ -103,7 +105,7 @@ data class FleetTotals(val reporting: Int, val machines: Int, val agents: Long, 
 
 object MachineRows {
     /** [machine]'s row: connected over a route, else online or offline; an outdated release says so. */
-    fun of(machine: Machine, online: Boolean, route: MachineRoute?, attached: String?): MachineRow = MachineRow(
+    fun of(machine: Machine, online: Boolean, route: MachineRoute?): MachineRow = MachineRow(
         id = machine.id,
         label = machine.name.ifBlank { machine.id },
         address = machine.id,
@@ -115,7 +117,6 @@ object MachineRows {
         detail = when {
             !machine.compatible -> machine.incompatibilityDescription.orEmpty()
             route != null -> route.kind.label
-            machine.id == attached && online -> "Attached"
             else -> presence(online)
         },
         latencyMs = route?.latency?.inWholeMilliseconds,
@@ -139,7 +140,7 @@ object MachineRows {
         val shown = if (phase == ConnectionPhase.CONNECTED) rows else rows.map { row ->
             if (row.daemonId == null) row else row.copy(
                 phase = MachineLink.PENDING,
-                detail = if (phase == ConnectionPhase.SYNCING) "Synchronizing" else "Unavailable",
+                detail = "Unavailable",
                 latencyMs = null,
                 online = false,
             )
@@ -158,23 +159,22 @@ object MachineRows {
         rows.filter { it.daemonId != null }.distinctBy { it.id }.sortedWith(ORDER)
 
     /**
-     * [row]'s status line, first match wins: why it needs an update, the
-     * attached machine's connection failure, its shared-update warnings,
-     * "Synchronizing" while the workspace loads, "Unavailable" while cached
-     * presence cannot be trusted, "Offline", its route and latency
-     * ("Direct TLS · 12 ms"), else "Attached" or "Online". [row] is the
-     * machine's own row from [of], not the presented one; [feedLive] is the
-     * attached machine's feed with its projection applied.
+     * [row]'s status line, first match wins: why it needs an update, its
+     * shared-update warnings, "Unavailable" while cached presence cannot be
+     * trusted, "Offline", why its changes stopped arriving, "Synchronizing"
+     * while its view loads, its route and latency ("Direct TLS · 12 ms"),
+     * else "Online". [row] is the machine's own row from [of], not the
+     * presented one; [sync] is its stream's state.
      */
-    fun status(row: MachineRow, attached: Boolean, phase: ConnectionPhase, connectionError: String?, syncWarnings: List<String>, feedLive: Boolean): MachineStatus = when {
+    fun status(row: MachineRow, sync: MachineSync?, phase: ConnectionPhase, syncWarnings: List<String>): MachineStatus = when {
         !row.isCompatible -> MachineStatus(row.detail)
-        attached && !connectionError.isNullOrBlank() && phase in FAILING -> MachineStatus(connectionError.orEmpty())
         syncWarnings.isNotEmpty() -> MachineStatus(syncWarnings.joinToString("\n"))
-        phase == ConnectionPhase.SYNCING || (attached && phase == ConnectionPhase.CONNECTED && !feedLive) -> MachineStatus("Synchronizing")
         phase != ConnectionPhase.CONNECTED -> MachineStatus("Unavailable", showsLastSeen = true)
         !row.online -> MachineStatus("Offline", showsLastSeen = true)
+        sync?.state == SyncState.STALE -> MachineStatus(sync.error?.ifBlank { null } ?: "Not responding")
+        sync == null || sync.state == SyncState.CONNECTING || sync.state == SyncState.CATCHING_UP -> MachineStatus("Synchronizing")
         row.phase == MachineLink.CONNECTED -> MachineStatus("${row.detail} · ${row.latencyMs ?: 0} ms")
-        else -> MachineStatus(if (attached) "Attached" else "Online")
+        else -> MachineStatus("Online")
     }
 
     /** "2 of 3 machines online" over the enrolled [rows] as presented; "Discovering enrolled machines" before any is known. */
@@ -206,9 +206,6 @@ object MachineRows {
         return row.unavailableMessage
     }
 
-    /** Phases in which the attached machine's connection error explains its row. */
-    private val FAILING = setOf(ConnectionPhase.RECONNECTING, ConnectionPhase.NO_MACHINE, ConnectionPhase.UPDATE_REQUIRED)
-
     fun fleet(rows: List<MachineRow>, information: (String) -> MachineInformation?): FleetTotals {
         val measured = rows.mapNotNull { information(it.id) }
         return FleetTotals(
@@ -221,19 +218,19 @@ object MachineRows {
         )
     }
 
-    /** Every machine's current peer-sync warnings, each line once, named by the rows. */
-    fun syncWarnings(rows: List<MachineRow>, freshness: Map<String, MachineFreshness>, connected: Boolean, now: Instant): List<String> {
+    /** Every machine's current peer-sync warnings ([issues] by the machine that reports them), each line once, named by the rows. */
+    fun syncWarnings(rows: List<MachineRow>, issues: Map<String, List<PeerSyncDiagnostic>>, connected: Boolean, now: Instant): List<String> {
         val byId = rows.associateBy { it.id }
         val peers = rows.associate { it.id to (it.label to it.online) }
-        return freshness.flatMap { (daemonId, fresh) ->
+        return issues.flatMap { (daemonId, reported) ->
             val reporter = byId[daemonId]
-            PeerSyncHealth.warnings(reporter?.label ?: daemonId, reporter?.online == true, connected, fresh.peerSyncIssues, peers, now)
+            PeerSyncHealth.warnings(reporter?.label ?: daemonId, reporter?.online == true, connected, reported, peers, now)
         }.distinct()
     }
 
     /** [syncWarnings] by the machine that reports them, for each machine's own [status]; machines without warnings are left out. */
-    fun syncWarningsByMachine(rows: List<MachineRow>, freshness: Map<String, MachineFreshness>, connected: Boolean, now: Instant): Map<String, List<String>> =
-        freshness.mapValues { (daemonId, fresh) -> syncWarnings(rows, mapOf(daemonId to fresh), connected, now) }.filterValues { it.isNotEmpty() }
+    fun syncWarningsByMachine(rows: List<MachineRow>, issues: Map<String, List<PeerSyncDiagnostic>>, connected: Boolean, now: Instant): Map<String, List<String>> =
+        issues.mapValues { (daemonId, reported) -> syncWarnings(rows, mapOf(daemonId to reported), connected, now) }.filterValues { it.isNotEmpty() }
 
     /** Keeps [current] while it can host projects; else the first connected host, else any host, else "". */
     fun defaultHost(rows: List<MachineRow>, current: String): String =

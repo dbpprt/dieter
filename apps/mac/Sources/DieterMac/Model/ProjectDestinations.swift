@@ -38,10 +38,8 @@ struct ProjectDestinationGroup: Identifiable, Equatable {
 
 enum ProjectDestinationCatalog {
     /// `projects`' attached checkouts on the known machines, grouped and ordered by the core.
-    static func groups(
-        projects: [Dieter_V1_Project], endpoints: [MachineEndpoint], fallbackEndpoint: MachineEndpoint
-    ) -> [ProjectDestinationGroup] {
-        let machines = (endpoints + [fallbackEndpoint]).compactMap { endpoint -> ClientChatDestinationMachine? in
+    static func groups(projects: [Dieter_V1_Project], endpoints: [MachineEndpoint]) -> [ProjectDestinationGroup] {
+        let machines = endpoints.compactMap { endpoint -> ClientChatDestinationMachine? in
             guard let daemonID = endpoint.daemonID else { return nil }
             return .with {
                 $0.daemonID = daemonID
@@ -108,7 +106,6 @@ enum ProjectDestinationCatalog {
 
 extension DieterStore {
     func projectDestinationGroups(projects candidates: [Dieter_V1_Project]? = nil) -> [ProjectDestinationGroup] {
-        ProjectDestinationCatalog.groups(
-            projects: candidates ?? projects.filter { !$0.archived }, endpoints: endpoints, fallbackEndpoint: endpoint)
+        ProjectDestinationCatalog.groups(projects: candidates ?? projects.filter { !$0.archived }, endpoints: endpoints)
     }
 }

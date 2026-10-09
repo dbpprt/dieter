@@ -86,17 +86,16 @@ OpenH264 when installed. Raw desktop pixels remain in the helper.
 An active graphical login, the distro's GStreamer plugins, and the appropriate
 portal backend are required. A headless Linux daemon remains fully usable for
 agents, terminals, and remote execution while screen hosting reports an
-actionable degraded reason. See the **[Linux host guide](https://github.com/dbpprt/dieter/blob/main/docs/linux-support.md)**
-for distro packages, systemd graphical-session behavior, and current feature
-limits.
+actionable degraded reason. See [Installation](/docs/installation/#linux) for
+Linux service setup.
 
 ## Selecting a source
 
-| Variable | Effect |
-| --- | --- |
-| `DIETER_REMOTE_DESKTOP_HELPER` | Select another native helper for development or isolated diagnostics. |
-| `DIETER_REMOTE_DESKTOP_DISPLAY` | Select another capture source (display). |
-| `DIETER_REMOTE_DESKTOP_SOURCE=synthetic` | Reserved for isolated transport diagnostics. |
+| Variable                                 | Effect                                                                |
+| ---------------------------------------- | --------------------------------------------------------------------- |
+| `DIETER_REMOTE_DESKTOP_HELPER`           | Select another native helper for development or isolated diagnostics. |
+| `DIETER_REMOTE_DESKTOP_DISPLAY`          | Select another capture source (display).                              |
+| `DIETER_REMOTE_DESKTOP_SOURCE=synthetic` | Reserved for isolated transport diagnostics.                          |
 
 Wayland portal sources can be represented as a locally approved selection
 rather than a passively enumerable monitor. A viewer shows “waiting for approval
@@ -127,8 +126,24 @@ Take Control and Release Control actions.
 
 Capture is lazy and runs only while an admitted WebRTC session is connected. A
 clean viewer close stops it immediately; an ungraceful signaling or WebRTC
-disconnect gets a five-second reconnect grace, after which the daemon cancels
-and reaps the complete capture process group.
+disconnect gets a twenty-second reconnect grace, after which the daemon cancels
+and reaps the complete capture process group. The renewable session lease lasts
+thirty seconds; receiver feedback renews it only while signaling is authorized.
+
+Android, macOS, and iOS preserve the existing peer for up to fifteen seconds
+of temporary disconnection. Signaling reacquires an authenticated control route,
+verifies the pinned machine identity, and resubscribes with the same session
+nonce and offer. Delays are capped at five seconds, with up to fifteen seconds
+without a received signal. Permanent authorization or identity failures stop
+recovery.
+
+When the peer returns, the client requests a fresh frame. While the view is
+focused, a video stall also requests a fresh frame after ten seconds without a
+new presentation (three seconds when starting); only another twenty seconds
+without a frame triggers session replacement. Refresh probes preserve the
+adapted bitrate; configuration timeouts retry without discarding healthy video.
+A quiet desktop may receive a refresh probe without being disconnected. Failed
+peers are replaced with the existing bounded backoff.
 
 ## TURN configuration
 
@@ -152,5 +167,7 @@ is an optical input-to-photon measurement. RTP traffic counters exclude
 transport/control overhead. Quality settings and bitrate are adaptive ceilings.
 No matched Parsec or Moonlight performance claim is implied by codec support.
 
-For protocol fields, recovery/FEC details, clipboard commands, and qualification
-workloads, see the [screen engineering reference](https://github.com/dbpprt/dieter/blob/main/docs/screen-sharing.md).
+For protocol fields, see the
+[API schema](https://github.com/dbpprt/dieter/blob/main/api/proto/dieter/v1/dieter.proto).
+Development qualification commands are in the
+[pipeline guide](https://github.com/dbpprt/dieter/blob/main/fastlane/README.md#specialized-screen-measurements).

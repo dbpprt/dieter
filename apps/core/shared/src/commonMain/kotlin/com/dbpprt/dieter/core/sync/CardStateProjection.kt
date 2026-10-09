@@ -12,9 +12,9 @@ private const val MAX_CAUSAL_SIBLINGS = 16
 internal const val UNOBSERVED_JOIN = "unobserved-join"
 
 /**
- * Joins placement and runtime separately; transport order and wall clocks are
- * not revisions. Moved from apps/android `connection/CardStateProjection.kt`
- * (protobuf-lite); it also replaced the Apple apps' Swift projection.
+ * Joins two observations of one card, e.g. a conversation read from its
+ * owner and the account view: placement and runtime registers separately,
+ * since transport order and wall clocks are not revisions.
  */
 fun mergeCardState(incoming: Card, previous: Card?): Card {
     if (previous == null || previous.id != incoming.id) return incoming
@@ -53,27 +53,12 @@ fun mergeCardState(incoming: Card, previous: Card?): Card {
     return result
 }
 
-/**
- * Whether [incoming]'s runtime observation is strictly older than
- * [previous]'s: every incoming summary version is covered by a previous one,
- * but not the other way around.
- */
-fun hasOlderRuntime(incoming: Card, previous: Card): Boolean {
-    val old = previous.state_fields.firstOrNull { it.name == "summary" } ?: return false
-    val new = incoming.state_fields.firstOrNull { it.name == "summary" } ?: return false
-    return new.versions.all { candidate -> old.versions.any { covers(it.clock, candidate.clock) } } &&
-        !old.versions.all { candidate -> new.versions.any { covers(it.clock, candidate.clock) } }
-}
-
-internal fun covers(a: Map<String, Long>, b: Map<String, Long>): Boolean =
-    b.all { (actor, count) -> (a[actor] ?: 0L).toULong() >= count.toULong() }
-
 private fun join(old: CardStateField, new: CardStateField): CardStateField {
     val all: List<CardStateVersion> = old.versions + new.versions
     val versions = all.filterIndexed { i, version ->
         all.withIndex().none { (j, other) ->
-            i != j && covers(other.clock, version.clock) &&
-                (!covers(version.clock, other.clock) || other.rank > version.rank || (other.rank == version.rank && j < i))
+            i != j && Registers.covers(other.clock, version.clock) &&
+                (!Registers.covers(version.clock, other.clock) || other.rank > version.rank || (other.rank == version.rank && j < i))
         }
     }.sortedBy { it.rank }
     // Keep the last complete view until a daemon supplies a resolved register.

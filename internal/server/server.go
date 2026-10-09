@@ -17,6 +17,7 @@ import (
 	"github.com/dbpprt/dieter/internal/attachments"
 	"github.com/dbpprt/dieter/internal/changeset"
 	"github.com/dbpprt/dieter/internal/controlrtc"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/gen/dieter/v1/dieterv1connect"
 	"github.com/dbpprt/dieter/internal/gitops"
 	"github.com/dbpprt/dieter/internal/harness"
@@ -33,9 +34,15 @@ import (
 )
 
 type Server struct {
+	privacyMu               sync.Mutex
+	privacyDriver           remotedesktop.PrivacyDriver
+	privacyBootID           func(context.Context) (string, error)
+	privacySnapshot         *dieterv1.MachinePrivacy
+	privacyReadAt           time.Time
 	kvWatches               atomic.Int32
+	changeStreams           atomic.Int32
+	local                   *localChanges
 	controlRTC              *controlrtc.Manager
-	syncProjections         syncProjectionCache
 	store                   *store.Store
 	app                     *app.Service
 	workspaces              *workspace.Manager
@@ -65,6 +72,8 @@ type Server struct {
 // without weakening the authenticated RPC or its validation. An isolated
 // catalog can retain release choices without running provider discovery.
 type Options struct {
+	PrivacyDriver       remotedesktop.PrivacyDriver
+	PrivacyBootID       func(context.Context) (string, error)
 	ControlRTC          *controlrtc.Manager
 	Runner              harness.Runner
 	HarnessCatalog      func(context.Context, bool) []harness.Adapter
@@ -86,6 +95,12 @@ func NewWithOptions(data *store.Store, logger *slog.Logger, options Options) *Se
 	application := newServer(data, logger, options.Runner)
 	application.harnessCatalog = options.HarnessCatalog
 	application.controlRTC = options.ControlRTC
+	if options.PrivacyDriver != nil {
+		application.privacyDriver = options.PrivacyDriver
+	}
+	if options.PrivacyBootID != nil {
+		application.privacyBootID = options.PrivacyBootID
+	}
 	if options.RemoteDesktop != nil {
 		application.remoteDesktop = options.RemoteDesktop
 	}
@@ -113,7 +128,7 @@ func newServer(data *store.Store, logger *slog.Logger, runner harness.Runner) *S
 	s := &Server{
 		store: data, app: service, workspaces: service.Workspaces, schedules: scheduler.New(data, service), log: logger,
 		mux: http.NewServeMux(), terminals: terminal.NewPersistent(data.Root), executions: remoteexec.New(),
-		remoteDesktop: remotedesktop.New(remotedesktop.Options{Logger: logger, Source: remotedesktop.SourceOptions{ClipboardDirectory: filepath.Join(data.Root, "clipboard")}}),
+		remoteDesktop: remotedesktop.New(remotedesktop.Options{Logger: logger, Source: remotedesktop.SourceOptions{StateRoot: data.Root, ClipboardDirectory: filepath.Join(data.Root, "clipboard")}}),
 		machine:       machine.NewCollector(data.Root),
 		machineAction: func(ctx context.Context, operation machine.Operation) error {
 			return machine.ExecuteOperationAtRoot(ctx, data.Root, operation)
@@ -123,7 +138,10 @@ func newServer(data *store.Store, logger *slog.Logger, runner harness.Runner) *S
 		},
 		machineDelay: 750 * time.Millisecond, machineOperations: map[string]acceptedMachineOperation{},
 	}
+	privacy := remotedesktop.NewNativePrivacy(data.Root, "", false)
+	s.privacyDriver, s.privacyBootID = privacy, privacy.BootID
 	s.changesets = changeset.New(s.workspaces)
+	s.local = newLocalChanges(s)
 	service.BackgroundProcesses = s.backgroundProcess
 	if err := data.InterruptRunningGitOperations(); err != nil {
 		logger.Warn("could not reconcile interrupted Git operations", "error", err)
@@ -364,6 +382,7 @@ func run(ctx context.Context, addr string, data *store.Store, application *Serve
 			}
 		}
 	}()
+	application.restorePrivacy(ctx)
 	application.schedules.Start(ctx)
 	httpServer := &http.Server{Addr: addr, Handler: application.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: 90 * time.Second, MaxHeaderBytes: 1 << 20}
 	logger.Info("Dieter daemon is ready", "url", fmt.Sprintf("http://%s", addr), "store", data.Root)

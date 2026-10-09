@@ -378,6 +378,42 @@ func TestStartRequestRejectsUnsafeCaptureDimensions(t *testing.T) {
 	}
 }
 
+func TestManagerRetainsSessionAcrossTransientSignalingLoss(t *testing.T) {
+	manager, request, _ := testManagerAndRequest(t, "github:7")
+	viewer := testViewer(t, request)
+	defer viewer.Close()
+	subscription, err := manager.Start(request, "github:7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.mu.Lock()
+	session := manager.sessions[subscription.SessionID]
+	manager.mu.Unlock()
+	defer session.close("test complete")
+	subscription.Close()
+	// An eight-second outage used to exceed the five-second detach grace.
+	session.mu.Lock()
+	session.detachedAt = manager.options.Now().UTC().Add(-8 * time.Second)
+	expires := manager.options.Now().UTC().Sub(session.detachedAt) >= manager.options.DetachGrace
+	session.mu.Unlock()
+	if expires {
+		t.Fatal("transient outage would expire before the client can heal")
+	}
+	resumed, err := manager.Start(request, "github:7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resumed.Close()
+	if resumed.SessionID != subscription.SessionID {
+		t.Fatal("signaling recovery created another session")
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if !session.detachedAt.IsZero() {
+		t.Fatal("resubscription did not cancel detach expiry")
+	}
+}
+
 func TestManagerStopsCaptureWhenSignalingObserverDisconnects(t *testing.T) {
 	manager, request, _ := testManagerAndRequest(t, "github:7")
 	viewer := testViewer(t, request)

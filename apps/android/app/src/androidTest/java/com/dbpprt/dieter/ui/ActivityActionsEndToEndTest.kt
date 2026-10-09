@@ -32,8 +32,10 @@ class ActivityActionsEndToEndTest {
         val container = (compose.activity.application as DieterApplication).container
         val core = container.core
         fun serverCard(id: String) = runBlocking {
-            core.onMachine(IsolatedCore.daemonId(container)) { it.GetCard().execute(GetCardRequest(card_id = id)) }
+            core.onMachine(IsolatedCore.machineId) { it.GetCard().execute(GetCardRequest(card_id = id)) }
         }.card!!
+        // The view shows a change at once; the machine has it once no change to the card is in flight.
+        fun delivered(id: String) = core.board.view.value.operations[id] == null
         try {
             val connected = IsolatedCore.connect(container)
             val board = connected.boards.values.flatten().first { it.id == IsolatedCore.boardId }
@@ -52,7 +54,7 @@ class ActivityActionsEndToEndTest {
                 compose.onNodeWithTag("activity-rename-title-${card.id}").performTextReplacement(title)
                 compose.onNodeWithTag("activity-rename-confirm-${card.id}").performClick()
                 compose.waitUntil(15_000) {
-                    compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty()
+                    delivered(card.id) && compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty()
                 }
                 assertEquals(title, serverCard(card.id).title)
                 // A context action must not navigate into or acknowledge a transcript.
@@ -61,17 +63,17 @@ class ActivityActionsEndToEndTest {
                 if (Cards.isChat(card)) {
                     longPress(card.id)
                     compose.onNodeWithTag("activity-pin-${card.id}").performClick()
-                    compose.waitUntil(15_000) { core.workspace.state.value.chats.any { it.id == card.id && it.pinned } }
+                    compose.waitUntil(15_000) { delivered(card.id) && core.workspace.state.value.chats.any { it.id == card.id && it.pinned } }
                     assertTrue(serverCard(card.id).pinned)
                     longPress(card.id)
                     compose.onNodeWithText("Unpin").assertIsDisplayed()
                     compose.onNodeWithTag("activity-pin-${card.id}").performClick()
-                    compose.waitUntil(15_000) { core.workspace.state.value.chats.any { it.id == card.id && !it.pinned } }
+                    compose.waitUntil(15_000) { delivered(card.id) && core.workspace.state.value.chats.any { it.id == card.id && !it.pinned } }
                 }
                 longPress(card.id)
                 compose.onNodeWithTag("activity-archive-${card.id}").performClick()
                 compose.waitUntil(15_000) {
-                    compose.onAllNodesWithTag("activity-row-${card.id}").fetchSemanticsNodes().isEmpty()
+                    delivered(card.id) && compose.onAllNodesWithTag("activity-row-${card.id}").fetchSemanticsNodes().isEmpty()
                 }
                 assertTrue(serverCard(card.id).archived)
             }

@@ -16,11 +16,6 @@ struct ChatDetailPane: View {
             .environment(store.conversationContext)
         } else if showArchived {
             VStack(spacing: 0) {
-                FluidPaneChrome(background: .clear) {
-                    PaneTitleBlock(
-                        title: "Archived conversations", subtitle: "Select a chat to inspect or restore",
-                        symbol: "archivebox")
-                }
                 VStack(spacing: 10) {
                     Image(systemName: "archivebox").font(.system(size: 34)).foregroundStyle(.secondary)
                     Text("Archived chats").font(.title2.weight(.bold))
@@ -39,7 +34,8 @@ enum ChatPaneSizing {
     static let maximumWidth = DieterMetrics.browserMaximumWidth
     static let dividerHitWidth: CGFloat = 7
     static let dividerLineWidth: CGFloat = 1
-    static let minimumDetailWidth: CGFloat = 327
+    /// A 327-point conversation inside its floating panel.
+    static let minimumDetailWidth: CGFloat = 327 + DieterMetrics.panelHorizontalInset
 
     static func resolvedWidth(_ requestedWidth: CGFloat, workspaceWidth: CGFloat) -> CGFloat {
         // The resize target overlays the pane boundary, so it must not reserve
@@ -76,6 +72,7 @@ struct ChatPaneSplit<Browser: View, Detail: View>: View {
     let detail: Detail
     let layout: ChatPaneLayout
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dieterTitleBandLeadingInset) private var leadingInset
     @AppStorage private var storedWidth: Double
 
     init(
@@ -95,11 +92,15 @@ struct ChatPaneSplit<Browser: View, Detail: View>: View {
             browser: AnyView(
                 browser
                     .environment(\.colorScheme, colorScheme)
-                    .background { DieterPaneBackground(role: .navigation, extendsUnderTitlebar: true) }),
+                    .environment(\.dieterTitleBandLeadingInset, leadingInset)),
             detail: AnyView(
                 detail
                     .environment(\.colorScheme, colorScheme)
-                    .background { DieterPaneBackground(role: .content, extendsUnderTitlebar: true) }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .dieterConversationPanel()
+                    .padding(.leading, DieterMetrics.panelGap)
+                    .padding([.trailing, .vertical], DieterMetrics.windowInset)
+                    .ignoresSafeArea(.container, edges: .top)
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("\(layout.identifier).detail-pane")
                     .smokeTarget("\(layout.identifier).detail-pane")),
@@ -146,7 +147,7 @@ final class NativeChatPaneSplitController: NSSplitViewController {
         self.layout = layout
         preferredWidth = layout.defaultWidth
         super.init(nibName: nil, bundle: nil)
-        let split = NSSplitView()
+        let split = DieterSplitView()
         split.isVertical = true
         split.dividerStyle = .thin
         split.setAccessibilityIdentifier("\(layout.identifier).resize-divider")
@@ -155,6 +156,9 @@ final class NativeChatPaneSplitController: NSSplitViewController {
 
         browserHost.sizingOptions = []
         detailHost.sizingOptions = []
+        // The detail is a floating panel inset from the window edges, so the
+        // titlebar safe area must not push its content up or down inside it.
+        detailHost.safeAreaRegions = []
         let browserController = NSViewController()
         browserController.view = browserHost
         let detailController = NSViewController()
@@ -177,6 +181,16 @@ final class NativeChatPaneSplitController: NSSplitViewController {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+    override func splitView(
+        _ splitView: NSSplitView, effectiveRect proposedEffectiveRect: NSRect, forDrawnRect drawnRect: NSRect,
+        ofDividerAt dividerIndex: Int
+    ) -> NSRect {
+        DieterSplitView.effectiveRect(
+            super.splitView(
+                splitView, effectiveRect: proposedEffectiveRect, forDrawnRect: drawnRect, ofDividerAt: dividerIndex),
+            in: splitView)
+    }
 
     func configure(preferredWidth: CGFloat, onWidthChange: @escaping (CGFloat) -> Void) {
         loadViewIfNeeded()

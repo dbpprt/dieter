@@ -280,7 +280,9 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             throw CaptureError.invalidArgument("HEVC supports at most 1080p60/40000 kbps")
         }
         if options.synthetic {
-            let size = scaledSize(width: 1920, height: 1080)
+            let virtual = config.displayId == "virtual-synthetic"
+            let size =
+                virtual ? (width: config.maxWidth, height: config.maxHeight) : scaledSize(width: 1920, height: 1080)
             try stateQueue.sync {
                 outputWidth = size.width
                 outputHeight = size.height
@@ -295,12 +297,22 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             emitState()
             return
         }
-        let content = try await SCShareableContent.excludingDesktopWindows(
+        var content = try await SCShareableContent.excludingDesktopWindows(
             false, onScreenWindowsOnly: true)
+        // A newly published virtual display can precede ScreenCaptureKit's
+        // display catalog. Wait only while that exact display remains active.
+        let displayDeadline = ProcessInfo.processInfo.systemUptime + 3
+        while selectedDisplay(content.displays) == nil,
+            let id = CGDirectDisplayID(configuration.displayId), CGDisplayIsActive(id) != 0,
+            ProcessInfo.processInfo.systemUptime < displayDeadline
+        {
+            try await Task.sleep(for: .milliseconds(100))
+            content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        }
         guard let display = selectedDisplay(content.displays) else { throw CaptureError.noDisplay }
-        let mode = CGDisplayCopyDisplayMode(display.displayID)
+        let pixels = nativeDisplayPixelSize(display.displayID)
         let size = scaledSize(
-            width: mode?.pixelWidth ?? display.width, height: mode?.pixelHeight ?? display.height)
+            width: pixels.width, height: pixels.height)
         try stateQueue.sync {
             selectedDisplayID = display.displayID
             selectedDisplaySnapshot = nativeDisplays().first { $0.id == String(display.displayID) }
@@ -480,7 +492,9 @@ final class CaptureRunner: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         NativeState(
             width: outputWidth, height: outputHeight, fps: configuration.fps,
             bitrateKbps: configuration.bitrateKbps,
-            displayId: options.synthetic ? "synthetic" : String(selectedDisplayID),
+            displayId: options.synthetic
+                ? (configuration.displayId == "virtual-synthetic" ? "virtual-synthetic" : "synthetic")
+                : String(selectedDisplayID),
             displayGeneration: generation,
             encoder: options.codec == "H265"
                 ? "VideoToolbox HEVC Main"
@@ -1377,6 +1391,52 @@ func hardwareEncoderAvailable(_ codec: CMVideoCodecType = kCMVideoCodecType_H264
     private struct DieterCapture {
         static func main() async {
             do {
+                guard geteuid() != 0 else {
+                    throw PrivacyHIDError("The capture and desktop owner must run as the login user")
+                }
+                guard !CommandLine.arguments.contains(where: { $0.hasPrefix("--privacy-hid-") }) else {
+                    throw PrivacyHIDError("Privileged input actions belong to DieterPrivacyHelper.app")
+                }
+                if CommandLine.arguments.contains("--privacy-setup") {
+                    try PrivacyService.setup(dryRun: CommandLine.arguments.contains("--dry-run"))
+                    return
+                }
+                if CommandLine.arguments.contains("--privacy-capabilities") {
+                    PrivacyService.capabilities(dryRun: CommandLine.arguments.contains("--dry-run"))
+                    return
+                }
+                if CommandLine.arguments.contains("--privacy-service") {
+                    guard let index = CommandLine.arguments.firstIndex(of: "--privacy-directory"),
+                        index + 1 < CommandLine.arguments.count
+                    else { throw CaptureError.invalidArgument("privacy directory") }
+                    try PrivacyService.run(
+                        directory: CommandLine.arguments[index + 1], dryRun: CommandLine.arguments.contains("--dry-run")
+                    )
+                    return
+                }
+                if CommandLine.arguments.contains("--virtual-display-service")
+                    || CommandLine.arguments.contains("--virtual-display-watchdog")
+                {
+                    guard let index = CommandLine.arguments.firstIndex(of: "--state-root"),
+                        index + 1 < CommandLine.arguments.count
+                    else { throw CaptureError.invalidArgument("state root") }
+                    let root = CommandLine.arguments[index + 1]
+                    if CommandLine.arguments.contains("--virtual-display-watchdog") {
+                        guard let leaseIndex = CommandLine.arguments.firstIndex(of: "--lease-id"),
+                            leaseIndex + 1 < CommandLine.arguments.count
+                        else { throw CaptureError.invalidArgument("lease id") }
+                        let leaseID = CommandLine.arguments[leaseIndex + 1]
+                        try await Task.detached { try VirtualDisplayService.watchdog(root: root, leaseID: leaseID) }
+                            .value
+                    } else {
+                        let dryRun = CommandLine.arguments.contains("--dry-run")
+                        // CoreGraphics display notifications require a live main run loop.
+                        // This dedicated helper owns no asynchronous capture tasks.
+                        _ = NSApplication.shared
+                        try VirtualDisplayService.run(root: root, dryRun: dryRun)
+                    }
+                    return
+                }
                 if CommandLine.arguments.contains("--display-service") {
                     let dryRun = CommandLine.arguments.contains("--dry-run")
                     await Task.detached { DisplayModeService.run(dryRun: dryRun) }.value
@@ -1403,6 +1463,8 @@ func hardwareEncoderAvailable(_ codec: CMVideoCodecType = kCMVideoCodecType_H264
                     let granted = synthetic || CGPreflightScreenCaptureAccess()
                     let hevc = hardwareEncoderAvailable(kCMVideoCodecType_HEVC)
                     let value: [String: Any] = [
+                        "virtual_display_supported": VirtualDisplayService.supported,
+                        "virtual_display_disable_supported": VirtualDisplayService.disablingSupported,
                         "platform": "darwin", "helper_version": "native-v\(CaptureInputProtocol.version)",
                         "graphical_session_active": synthetic || !displays.isEmpty,
                         "capture_permission": granted ? "granted" : "denied",

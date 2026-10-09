@@ -23,14 +23,16 @@ import Testing
     #expect(store.navigationBoards[project.id]?.map(\.id) == [board.id])
 }
 
-@Test @MainActor func restoringABoardRefreshesTheWorkspaceOnce() async {
+@Test @MainActor func restoringABoardLeavesTheWorkspaceToTheStreams() async {
     let core = ScriptedCoreClient()
     var board = Dieter_V1_Board(); board.id = "board"; board.projectID = "project"
     core.handler = { _ in .with { $0.board = board } }
     let store = DieterStore(core: core, liveEnvironment: false)
-    store.phase = .connected(version: "fixture")
+    store.phase = .connected
     store.workspaceIsLive = true
     let before = store.stateRefreshCount
     await store.restoreBoard(board.id)
-    #expect(store.stateRefreshCount == before + 1)
+    // The core shows the result until every machine's stream reflects it.
+    #expect(store.stateRefreshCount == before)
+    #expect(store.errorMessage == nil)
 }

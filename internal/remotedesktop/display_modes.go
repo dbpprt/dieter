@@ -62,6 +62,9 @@ func (m *Manager) SetDisplayMode(ctx context.Context, r *dieterv1.SetRemoteDeskt
 	if m.controller != s {
 		return nil, ErrControlOwner
 	}
+	if m.virtualOwner != nil {
+		return nil, errors.New("restore the virtual display before changing a physical display mode")
+	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	s.mu.Lock()

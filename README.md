@@ -58,20 +58,35 @@ follow-ups from being lost when their provider session closes.
 - **Pick up from your phone.** Android provides Activity, boards, chats, files,
   terminals, and machine tools. iPhone and iPad support is in beta.
 - **Step in when needed.** Queue a follow-up, review a result, or open an
-  authenticated remote screen with explicit input control.
+  authenticated remote screen with explicit input control. Android, macOS, and
+  iOS repair transient screen interruptions within the existing session before
+  replacing it; see [screen recovery](landingpage/content/docs/screens.md#lifecycle).
+  The macOS daemon wakes the display before native capture and keeps it awake
+  until the capture process exits, without unlocking or changing sleep/security preferences.
+
+Experimental macOS virtual desktops are available behind the host environment
+option `DIETER_SCREEN_VIRTUAL_DISPLAY=1`. The viewer's **Virtual display** screen
+option uses its drawable pixels (within codec limits), with independent 1×/2× UI
+scaling. CLI automation uses `dieter screen virtual status|set|presented|restore`;
+see `dieter screen virtual --help`. Physical-screen disabling is a separate,
+hardware-qualified opt-in (`DIETER_SCREEN_VIRTUAL_DISABLE=1`), requires an identified
+physical main display, and waits for a presented frame. Temporary changes restore on
+session closure, control handoff, or failure. See the [CLI skill](.agents/skills/dieter-cli/SKILL.md#experimental-macos-virtual-desktop)
+for limits and recovery semantics.
 
 [See the native apps in action →](https://getdieter.com/docs/tour/)
 
 ## Quick start
 
 You need a configured agent account on the host and access to a Dieter gateway.
-Use your own gateway origin below; [self-hosting is documented](https://getdieter.com/docs/gateway/).
+Setup defaults to `https://gateway.getdieter.com` (an allowed account is required).
+For your own gateway, pass `--gateway https://YOUR-GATEWAY`; [self-hosting is documented](https://getdieter.com/docs/gateway/).
 
 On **Apple Silicon macOS**:
 
 ```sh
 brew install dbpprt/tap/dieter
-dieter setup --gateway https://dieter.example.com
+dieter setup
 dieter project open ~/Development/my-project
 
 brew install --cask dbpprt/tap/dieter-app
@@ -79,8 +94,11 @@ open -a Dieter
 ```
 
 Sign in to the same gateway in the app, open your project, and create a task.
-`setup` enrolls the machine and starts its service. `project open` separately
-registers an existing Git working tree.
+`setup` enrolls the machine, starts its Homebrew service, and registers the
+background privacy helper. Approve **Dieter Privacy Helper** in Login Items &
+Extensions and grant Input Monitoring when prompted; privacy remains off until
+enabled. The daemon and capture helper remain standalone executables.
+`project open` separately registers an existing Git working tree.
 
 The standard gateway is `https://gateway.getdieter.com`, with STUN/TURN at
 `turn.getdieter.com`. Access requires an allowed account. Existing installations
@@ -101,19 +119,28 @@ On **Linux amd64/arm64**, install Node.js 22.19+, npm, Git, and
 
 ```sh
 curl -fsSL https://github.com/dbpprt/dieter/releases/latest/download/install.sh | sh
-dieter setup --gateway https://dieter.example.com
+dieter setup
 dieter project open ~/Development/my-project
 dieter doctor
 ```
 
-| Client | Get it |
-| --- | --- |
-| macOS 26+, Apple Silicon | Homebrew cask above or [release downloads](https://github.com/dbpprt/dieter/releases/latest) |
-| Android 8+ | [Download the APK](https://github.com/dbpprt/dieter/releases/latest/download/Dieter-Android.apk) |
-| iOS 18+, iPhone and iPad | [Beta and source-build guide](apps/ios/README.md) |
+| Client                   | Get it                                                                                           |
+| ------------------------ | ------------------------------------------------------------------------------------------------ |
+| macOS 26+, Apple Silicon | Homebrew cask above or [release downloads](https://github.com/dbpprt/dieter/releases/latest)     |
+| Android 8+               | [Download the APK](https://github.com/dbpprt/dieter/releases/latest/download/Dieter-Android.apk) |
+| iOS 18+, iPhone and iPad | [Beta and source-build guide](apps/ios/README.md)                                                |
+
+Gateway relay traffic uses four independently authenticated connections for
+health/control, peer replication, commands, and subscriptions. A busy watch or
+stalled peer does not consume the other traffic classes' admission or byte
+budgets. `dieter machine route MACHINE` reports each relay channel's connectivity,
+active calls, limit, buffered bytes, rejected calls, and last response time.
+“Board and settings sync between … is delayed” refers to shared projects, boards,
+card placement, labels, and portable settings; repository files and conversation
+transcripts remain on their owner machine.
 
 The daemon supports headless Linux hosts. Screen hosting needs an active desktop
-and [platform dependencies](docs/linux-support.md).
+and [platform dependencies](landingpage/content/docs/installation.md#linux).
 [Full installation guide →](https://getdieter.com/docs/installation/)
 
 ## How it works
@@ -131,6 +158,14 @@ through it. Agents run with your user permissions, without a Dieter sandbox;
 cloud model providers may receive prompts and code according to their settings.
 Read the [security model](https://getdieter.com/docs/security/).
 
+OpenAI and Claude quota collectors read existing OAuth credentials and call the
+provider usage APIs directly. OpenAI polling does not launch Codex or refresh
+plugin marketplaces. Codex credentials remain read-only; expired tokens must be
+refreshed by Codex. OpenAI supports file credentials and profile-specific macOS
+Keychain entries; process-only and encrypted secret stores are unsupported.
+Claude quota polling runs every five minutes, with a ten-minute cooldown after
+failed requests. Account discovery and manual refresh share the same limit.
+
 There is no browser application or hosted agent runtime. The website is the
 project's documentation; your agents run on your machines.
 
@@ -142,24 +177,35 @@ Mac, Android, and CLI clients converge on the same Git state.
 
 ## Find your way
 
-| You want to… | Read |
-| --- | --- |
-| Run your first agent | [Quick start](https://getdieter.com/docs/quickstart/) |
-| Understand tasks, worktrees, and review | [Projects & tasks](https://getdieter.com/docs/projects/) |
-| Automate through the daemon | [CLI guide](https://getdieter.com/docs/cli/) |
-| Add machines or host a gateway | [Machines](https://getdieter.com/docs/machines/) · [Self-hosting](https://getdieter.com/docs/gateway/) |
-| Understand internals | [Architecture](https://getdieter.com/docs/architecture/) · [Technical index](docs/README.md) |
-| Fix a connection or setup problem | [Troubleshooting](https://getdieter.com/docs/troubleshooting/) |
+| You want to…                            | Read                                                                                                   |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Run your first agent                    | [Quick start](https://getdieter.com/docs/quickstart/)                                                  |
+| Understand tasks, worktrees, and review | [Projects & tasks](https://getdieter.com/docs/projects/)                                               |
+| Automate through the daemon             | [CLI guide](https://getdieter.com/docs/cli/)                                                           |
+| Add machines or host a gateway          | [Machines](https://getdieter.com/docs/machines/) · [Self-hosting](https://getdieter.com/docs/gateway/) |
+| Understand internals                    | [Architecture](https://getdieter.com/docs/architecture/)                                               |
+| Fix a connection or setup problem       | [Troubleshooting](https://getdieter.com/docs/troubleshooting/)                                         |
 
 ## Contribute
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, repository structure, and review
-expectations. Start local validation with:
+expectations. Shared local tools are declared in [mise.toml](mise.toml) and
+[mise.lock](mise.lock); follow the [setup guide](fastlane/README.md#setup-and-machine-configuration).
+After activating mise in your shell, start local validation with:
 
 ```sh
 just check-changed --dry-run
 just check-changed
 ```
+
+Install local formatting and secret checks with `just hooks` on each development
+checkout. Run `just format`, review and stage changes, then `just pre-commit`.
+The [hook guide](fastlane/README.md#local-commit-checks) covers Mac/Linux setup
+and safe partial commits.
+
+The default runs affected fast checks and lists related device/desktop work.
+Select specific native cases or add `--native`; avoid full-suite reruns between
+edits. Generic pipeline changes are verified through shared contracts.
 
 Run Android journeys with `just pipeline android e2e suite:smoke`, or macOS with
 `just pipeline mac e2e suite:smoke`, or iOS with
@@ -167,6 +213,9 @@ Run Android journeys with `just pipeline android e2e suite:smoke`, or macOS with
 [native test guide](tests/e2e/README.md) covers YAML cases, suite selection,
 shared lifecycle and failure evidence. [The pipeline guide](fastlane/README.md)
 covers local emulator/device profiles, builds, signing and dev/stable releases.
+`just pipeline ios_qualify profiles:ios-iphone,ios-ipad suite:smoke` builds and
+verifies simulator products once for both layouts. Main CI qualifies once before
+calling Release, preserving the existing immutable candidates and stable policy.
 
 [Mac](apps/mac/README.md) · [Android](apps/android/README.md) ·
 [iOS](apps/ios/README.md) · [Website](landingpage/README.md)
@@ -223,4 +272,33 @@ expired transport failures while keeping unresolved record rejections visible.
 when both directions finish. Retained shared records and replay receipts use
 paged SQLite access, so historical count does not exhaust a lifetime write quota.
 Tombstones remain available to protect against stale offline replicas. See
-[peer storage and retention](docs/peer-store.md).
+[peer storage and retention](landingpage/content/docs/architecture.md#shared-identity-local-execution).
+
+### macOS local privacy
+
+Use **Lock Local Screen…** in a Mac machine's Actions menu to blank its physical
+outputs and suppress local keyboard/mouse input while agents and remote control
+continue. Unlock explicitly or reboot to clear it. A small shield in the Mac
+sidebar shows the live state; stale and degraded protection are identified.
+
+```sh
+dieter --machine MACHINE_ID machine privacy status
+dieter --machine MACHINE_ID machine privacy setup
+dieter --machine MACHINE_ID machine privacy on --key UNIQUE_LOCK_ID
+dieter --machine MACHINE_ID machine privacy off --key UNIQUE_UNLOCK_ID
+```
+
+Omit `--machine` for the local daemon. **Set Up Privacy Mode…** registers the
+separate signed background privacy helper; an administrator must approve it in Login Items
+& Extensions and grant
+Input Monitoring on the target Mac. The Go daemon and capture helper remain standalone executables; only
+`DieterPrivacyHelper.app` contains the privileged input service. The main daemon
+stays unprivileged. Normal `dieter setup` handles helper registration on macOS;
+`--no-open` and `--no-start` defer it to `dieter machine privacy setup`. Requires
+Accessibility permission and compatible display transfer tables. Protection
+exclusively claims matched HID input devices, with a secondary session filter.
+Status includes the protected input-device count and whether setup is required.
+This protects the logged-in desktop; macOS login/FileVault and forced power/reboot
+remain separate. Lost protection is degraded; a requested Lock Screen shortcut
+does not establish a verified authentication lock. See
+[privacy implementation and verification](native/macos-capture/privacy-mode-research.md).

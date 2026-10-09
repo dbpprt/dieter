@@ -11,7 +11,11 @@ module Dieter
       raise PipelineError, "Unknown local options" unless (values.keys - %w[action profile output filter configuration platforms]).empty?
       action = values.fetch("action", "status")
       context = RunContext.new(Config.new(Runtime::ROOT), output: values["output"])
+      signals = {}
       begin
+        if component == "android" && action == "emulator_run"
+          %w[INT TERM].each { |name| signals[name] = Signal.trap(name) { raise Interrupt, "Emulator run stopped" } }
+        end
         case component
         when "mac" then mac(context, action, values)
         when "android" then android(context, action, values)
@@ -20,8 +24,15 @@ module Dieter
           SharedFramework.new(context).build(configuration: values.fetch("configuration", "debug"), platforms: values.fetch("platforms", "macos"))
         else raise PipelineError, "Unknown local component #{component}"
         end
+      rescue Interrupt
+        raise unless component == "android" && action == "emulator_run"
+        puts "Closing managed warm emulator."
       ensure
-        context.close
+        begin
+          context.close
+        ensure
+          signals.each { |name, handler| Signal.trap(name, handler) }
+        end
       end
     end
 
@@ -49,11 +60,29 @@ module Dieter
       target = context.config.profile(values["profile"] || context.config.default_profile("android"), component: "android", physical_explicit: values.key?("profile"))
       sdk = context.environment.fetch("ANDROID_HOME")
       adb = [File.join(sdk, "platform-tools/adb"), "-s", target.fetch("serial")]
+      if action == "emulator_setup"
+        raise PipelineError, "Emulator setup requires an emulator profile" unless target.fetch("kind") == "emulator"
+        AndroidEmulator.new(context, sdk, target).setup
+        return
+      end
+      if action == "emulator_run"
+        raise PipelineError, "Emulator run requires an emulator profile" unless target.fetch("kind") == "emulator"
+        emulator = AndroidEmulator.new(context, sdk, target)
+        context.with_lease("android-device", identity: target.fetch("serial")) { emulator.start(warm: true) }
+        puts "Warm emulator ready; other runs may borrow it. Use action:emulator_stop for owned cleanup."
+        emulator.run
+        return
+      end
       context.lease("android-device", identity: target.fetch("serial"))
+      if action == "emulator_stop"
+        raise PipelineError, "Emulator stop requires an emulator profile" unless target.fetch("kind") == "emulator"
+        AndroidEmulator.new(context, sdk, target).stop
+        return
+      end
       if action == "emulator_check"
         raise PipelineError, "Emulator health requires an emulator profile" unless target.fetch("kind") == "emulator"
         AndroidEmulator.new(context, sdk, target).start
-        puts "Emulator is healthy; owned lifecycle will save its snapshot and close. Evidence: #{context.output}"
+        puts "Emulator is healthy; owned lifecycle will close. Evidence: #{context.output}"
         return
       end
       if action == "status"
@@ -62,8 +91,7 @@ module Dieter
       end
       raise Unavailable, "Selected Android device is unavailable" unless context.command([*adb, "get-state"], timeout: 15, check: false).strip == "device"
       if target["kind"] == "emulator"
-        actual = context.command([*adb, "emu", "avd", "name"], timeout: 15).delete("\r").lines.first&.strip
-        raise Unavailable, "Selected serial belongs to a different AVD" unless actual == target.fetch("avd")
+        AndroidEmulator.new(context, sdk, target).verify_target!
       end
       shell = ->(args) { context.command([*adb, "shell", Shellwords.join(args)], timeout: 30) }
       case action

@@ -5,6 +5,7 @@ require "tmpdir"
 require_relative "../lib/dieter/pipeline/identity"
 require_relative "../lib/dieter/pipeline/candidate"
 require_relative "../lib/dieter/distribution/retention"
+require_relative "../lib/dieter/runtime"
 
 class ReleaseContractsTest < Minitest::Test
   def setup
@@ -31,6 +32,35 @@ class ReleaseContractsTest < Minitest::Test
     path = File.join(@root, "identity.json")
     @identity.write(path)
     assert_equal @identity.data, Dieter::ReleaseIdentity.load(path, policy: @policy).data
+  end
+
+  def test_release_workflow_identity_resolves_from_repository_while_fastlane_changes_directory
+    @identity.write(File.join(@root, "identity.json"))
+    lane_directory = File.join(@root, "fastlane")
+    FileUtils.mkdir_p(lane_directory)
+    File.write(File.join(lane_directory, "identity.json"), "invalid shadow identity")
+    context = Struct.new(:root, :closed) do
+      def close = self.closed = true
+    end.new(@root, false)
+    coordinator = Object.new
+    coordinator.define_singleton_method(:verify_retained) { :verified_exact_identity }
+    factory = lambda do |received_context, identity|
+      assert_same context, received_context
+      assert_equal @identity.data, identity.data
+      coordinator
+    end
+    Dieter::Config.stub(:new, Object.new) do
+      Dieter::RunContext.stub(:new, context) do
+        Dieter::GitHubDestination.stub(:new, Object.new) do
+          Dieter::ReleaseCoordinator.stub(:new, factory) do
+            Dir.chdir(lane_directory) do
+              assert_equal :verified_exact_identity, Dieter::Runtime.release({action: "verify", identity: "identity.json"})
+            end
+          end
+        end
+      end
+    end
+    assert context.closed
   end
 
   def test_identity_rejects_invalid_semver_counter_source_and_local_policy

@@ -64,6 +64,13 @@ New-worktree conversations own their Changes view. For project-directory work,
 open the project's **Files → Changes**. The same file can appear in both Staged
 and Changes when only part of its edits is staged.
 
+The list shows changes as a folder tree by default, or as a flat list. Hover a
+file or folder to stage (+), unstage (−), discard, or open it in Files; right-click
+for the full menu, including copying paths. Discarding a folder restores its
+tracked files to HEAD and removes its untracked files, after Dieter saves a
+recovery copy. Use ↑/↓ to step through files, Space to stage or unstage the
+selected file, and ⌘↩ to commit.
+
 ```sh
 dieter workspace changes WORKTREE_CARD_ID
 dieter workspace changes --project PROJECT_ID

@@ -22,10 +22,10 @@
         /// The machines that can report their state, in the core's order.
         private var machines: [ClientMachineEntry] { app.session.machines.filter(\.compatible) }
 
-        /// The chosen machine, else the one whose terminals are open, the
-        /// attached one, or the first that can report.
+        /// The chosen machine, else the one whose terminals are open, or the
+        /// first that can report.
         private var machineID: String? {
-            let candidates = [chosenMachineID, navigation.terminalMachineID, app.session.attachedMachineID]
+            let candidates = [chosenMachineID, navigation.terminalMachineID]
             if let id = candidates.compactMap({ $0 }).first(where: { id in machines.contains { $0.id == id } }) {
                 return id
             }
@@ -231,6 +231,9 @@
 
         private func operationSymbol(_ action: Dieter_V1_MachineOperationAction) -> String {
             switch action {
+            case .privacyOn: "lock.shield"
+            case .privacyOff: "lock.open"
+            case .privacySetup: "shield.lefthalf.filled"
             case .updateDaemon: "arrow.down.circle"
             case .restart: "arrow.clockwise.circle"
             case .shutdown: "power"

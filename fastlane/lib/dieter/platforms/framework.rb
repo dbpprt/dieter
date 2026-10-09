@@ -7,7 +7,7 @@ require_relative "../pipeline/artifacts"
 module Dieter
   class SharedFramework
     TARGETS = %w[MacosArm64 IosArm64 IosSimulatorArm64].freeze
-    SLICES = {"macos" => %w[MacosArm64], "ios-simulator" => %w[MacosArm64 IosSimulatorArm64], "all" => TARGETS}.freeze
+    SLICES = {"macos" => %w[MacosArm64], "ios-simulator" => %w[IosSimulatorArm64], "ios-device" => %w[IosArm64], "all" => TARGETS}.freeze
 
     def initialize(context)
       @context, @root = context, context.root

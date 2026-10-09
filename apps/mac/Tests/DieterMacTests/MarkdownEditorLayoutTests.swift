@@ -100,12 +100,12 @@ struct MarkdownEditorLayoutTests {
         if let split = view as? NSSplitView, let controller = split.delegate as? MarkdownEditorSplitController {
             return controller
         }
-        return view.subviews.lazy.compactMap { splitController(in: $0) }.first
+        return view.firstSubviewResult { splitController(in: $0) }
     }
 
     private func textView(in view: NSView) -> NSTextView? {
         if let editor = view as? NSTextView { return editor }
-        return view.subviews.lazy.compactMap { textView(in: $0) }.first
+        return view.firstSubviewResult { textView(in: $0) }
     }
 }
 

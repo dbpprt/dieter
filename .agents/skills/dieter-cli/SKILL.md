@@ -10,6 +10,10 @@ the running daemon; never edit `DIETER_HOME` or use project-repository metadata
 as a substitute. Every card or standalone chat is one durable harness
 conversation owned by its daemon.
 
+For repository builds, tests, signing, and CI/release work, use
+[Dieter pipelines](../dieter-pipelines/SKILL.md). Keep execution registered to the
+card and collect bounded results; the pipeline owns device and fixture cleanup.
+
 ## Choose the target
 
 Omit `--machine` to use the running daemon on this machine:
@@ -24,18 +28,21 @@ counts; it is the cheapest bounded directory overview for one machine.
 Use `dieter daemon status` when diagnosing this machine's process and gateway
 tunnel. Its `gatewayLastAcknowledgedAt` value is bidirectional liveness proof;
 a reconnect affects relay transports only and does not stop a running agent.
-State, conversation and KV watches wake on commit notifications; a two-second
+Change, conversation and KV watches wake on commit notifications; a two-second
 recovery check covers missed filesystem notifications and interrupted writers.
-`watch state --interval` bounds the rate of updates during bursts.
 `card watch --after-seq N` (also `chat watch`) immediately acknowledges an
 up-to-date cursor with current metadata and no unchanged messages. This initial
 frame counts toward `--count`; retain the cached transcript when applying it.
 A stale cursor receives the existing snapshot/delta recovery.
-`dieter watch sync --count 3` emits metadata, deltas, and transport-only
-heartbeats. A heartbeat or `observedCursor` is reachability evidence, not applied
-workspace data. Persist a cursor only with its complete projection, never from a
-heartbeat or a frame with `projectionPending=true`. Native resume falls back to
-an explicit reset when the exact projection identity is no longer retained.
+`dieter watch changes --count 3` emits one machine's change frames, naming its
+peer identity and account: its replica of the account's shared peer records
+(every causal sibling with its rank), then what only it knows: owner-only card
+details, its checkouts' paths and validation commands, live conversation
+activity and peer replication issues. `resetRecords`/`resetLocal` replace what was received
+for that half; `caughtUp` marks a complete view and heartbeats repeat the
+cursor. A frame is sent only when something changed, so an idle machine emits
+heartbeats alone. Native clients hold this stream for every online machine and
+merge the records; no machine is primary.
 
 For another enrolled machine, first enroll the local daemon, then pass the
 target's exact ID or unique name as a global option before the command. The CLI
@@ -43,11 +50,18 @@ uses the local daemon enrollment automatically and never stores a separate CLI
 login. An explicit global `--gateway` must match that enrollment:
 
 ```sh
-dieter setup --gateway https://dieter.example.com
+dieter setup
 dieter machine list --format jsonl
 dieter --machine <machine-id> status
 dieter --machine <machine-id> project list --format jsonl
 ```
+
+Setup defaults to `https://gateway.getdieter.com` (requires an allowed account).
+For self-hosting, use `dieter setup --gateway https://YOUR-GATEWAY`.
+An incomplete enrollment retry updates the origin and name while preserving the
+machine key. Completed enrollments retain their identity. Before managed-service
+setup, stop any foreground daemon in its terminal with Ctrl-C. Setup must report
+a connected gateway and a managed service before treating onboarding as complete.
 
 Remote commands prefer the daemon's authenticated direct TLS route, then try
 a data-only WebRTC route when supported, with bounded gateway relay fallback.
@@ -63,7 +77,12 @@ The gateway routes requests and stores only control-plane state plus normalized,
 credential-free provider quota snapshots. It does not store projects,
 transcripts, files, schedules, provider credentials, or harness credentials. Use
 `dieter machine show <machine-id>` and `dieter machine route <machine-id>` to
-inspect presence and advertised routes. Directory output includes the daemon's
+inspect presence and advertised routes. Route JSON also includes `relay_lanes`:
+control (0), replication (1), command (2), and subscription (3), with connectivity,
+active calls/limit, buffered bytes, rejections, last response time, and writer
+stall status. Presence alone does not prove every relay channel is ready. Each
+channel reconnects independently; a stalled watch cannot exhaust health or peer
+replication capacity. Directory output includes the daemon's
 release, gateway compatibility decision, and minimum required release. Route
 only to compatible machines; Update Required means the daemon must meet the
 published floor before it can re-enter the fleet.
@@ -78,7 +97,7 @@ optional Apple/NVIDIA/AMD GPU telemetry. Optional GPU fields are omitted when a
 driver cannot provide them; zero remains a real measurement.
 
 Accidental re-enrollment does not move conversation ownership. If a revoked
-original machine ID and its active replacement share the *same* Ed25519 key,
+original machine ID and its active replacement share the _same_ Ed25519 key,
 the original account owner can recover it with an updated gateway and CLI.
 First preserve `DIETER_HOME`, confirm the original transcripts remain on the
 owner host, and check the two gateway records and key identity. Then run on
@@ -124,11 +143,22 @@ dieter quota reset openai --account <opaque-key> --confirm RESET
 The table abbreviates opaque account keys. JSON retains the opaque key so it
 can be passed to account-specific commands; it is an owner-scoped HMAC, not a
 provider account ID. OpenAI rows may also include the bounded display email
-returned by the structured account API. Provider summaries choose the lowest remaining percentage
+returned by the provider usage API. Provider summaries choose the lowest remaining percentage
 across included account windows and never sum or average separate allowances.
 Use `quota include` or `quota exclude` to change summary membership. OpenAI
 `quota reset` consumes one reset credit, requires `--confirm RESET`, and is
 routed to an online daemon that currently has the exact account.
+
+OpenAI quota collection reads the configured Codex profile's existing OAuth
+credentials and calls the ChatGPT usage API directly, without launching Codex or
+refreshing plugin marketplaces. File credentials and profile-specific macOS
+Keychain entries are supported; process-only and encrypted secret stores are
+unsupported. Quota reads and resets never refresh or rewrite Codex-owned
+credentials. If its access token expires, run Codex to refresh the login.
+
+Claude usage is polled at most once every five minutes per profile, with a
+ten-minute cooldown after a failed probe. Discovery and explicit `quota refresh`
+share that cooldown; cached reads do not force another provider request.
 
 Machine restart, shutdown, and daemon update require the exact confirmation
 phrases shown by `--help` and are available only when the target daemon reports
@@ -270,6 +300,10 @@ dieter card create --project <project-id> --board <board-id> \
 
 `dieter setup` enrolls and starts the local daemon but never discovers or
 registers the current Git working tree, and it does not accept project paths.
+On macOS, normal setup also registers the signed background privacy helper
+through the running daemon and guides local approval and Input Monitoring.
+Privacy remains off. `--no-open` and `--no-start` defer helper registration to
+`dieter machine privacy setup`; setup is local-only and rejects `--machine`.
 Register each project explicitly with `dieter project open PATH` after setup.
 
 `card create` and `chat create` use the running local daemon when global
@@ -512,6 +546,10 @@ viewer cannot invalidate another viewer’s references. All renditions still use
 one native capture stream per physical display, with at most four encoders.
 Each viewer adapts independently and can change displays or disconnect without
 closing another session. Only one client controls mouse and keyboard at a time.
+The macOS daemon wakes the display before starting native capture and holds a
+display keep-awake assertion until that capture process exits. Matching viewers
+share that ownership; a failed start or last-viewer disconnect releases it.
+This does not unlock the console or change sleep/security preferences.
 The first control-capable client receives control; other clients use Take Control
 (or `dieter screen control take SESSION`). Release Control leaves the video open.
 Control handoff is part of the current contract; every viewer uses revocable grants.
@@ -639,7 +677,13 @@ an existing controlling session; they do not silently take control. Clipboard
 errors are surfaced separately; a broken clipboard channel reopens the screen
 session without replaying the interrupted paste. Transient connection failures
 retry while the screen tab stays open: 250 ms initially, capped at five seconds,
-with no attempt limit. Mac wake and Android resume reopen the authenticated route.
+with no attempt limit. Android, macOS, and iOS first retain a temporarily
+disconnected peer for fifteen seconds and resubscribe signaling with the same
+nonce and offer. The daemon allows twenty seconds of detach grace, bounded also
+by a thirty-second renewable lease; detached feedback cannot extend authorization.
+Video stalls request a refresh on the existing session after ten seconds (three
+at startup), with twenty more seconds allowed for a fresh presentation before
+replacement. Mac wake and Android resume reopen the authenticated route.
 Explicit Disconnect, closing the tab, and permanent permission/identity/policy
 errors stop recovery. Mac inactivity disconnect is optional and disabled by
 default; explicitly configured inactivity limits remain honored.
@@ -877,10 +921,45 @@ The response contains the gathered answer, session ID, expiry, state and mode.
 Mode is `unknown` before ICE selection and then `direct` or `turn`; candidate
 kinds describe the selected path without exposing addresses. A data-only peer
 must create the reliable ordered `dieter-control-tls-v1` channel and speak the
-bounded byte framing in `docs/webrtc-control-transport.md`. It carries the
+bounded byte framing in `internal/controlrtc/stream.go`. It carries the
 ordinary authenticated TLS/gRPC connection, not unencrypted protobuf RPCs.
 A close is transport-only. Existing agent turns, terminals and remote executions
 continue; callers resume eligible watches using their existing cursors.
+
+### macOS local privacy
+
+```sh
+dieter [--machine ID|NAME] machine privacy status
+dieter [--machine ID|NAME] machine privacy setup --key UNIQUE_SETUP_ID
+dieter [--machine ID|NAME] machine privacy on --key UNIQUE_ID
+dieter [--machine ID|NAME] machine privacy off --key DIFFERENT_ID
+```
+
+The authenticated owner daemon blanks physical display output and suppresses
+physical session input. Agents and remote captures retain desktop pixels.
+Protection stays on across viewer/CLI disconnects and daemon restarts; an
+explicit off or host reboot clears it. `status` emits requested/effective state,
+support, display count and failure reason. The owner change stream also carries
+privacy state so the native sidebar updates without telemetry polling.
+
+Requires the complete macOS daemon package, Accessibility permission and displays
+supporting verified transfer tables. `setup` registers the separate signed `DieterPrivacyHelper.app` input service.
+The Go daemon and native capture helper remain standalone executables, installed
+beside that background bundle. Complete administrator approval in Login Items & Extensions
+and grant Input Monitoring on the target Mac; setup never enables privacy itself.
+The daemon remains unprivileged. The helper exclusively opens matched keyboard,
+pointer, consumer-control and digitizer HID devices, including hot-plug additions.
+Status includes `inputDeviceCount` and `helperSetupRequired`. Failed device access
+or a restarted helper produces degraded protection. A best-effort Lock Screen
+shortcut is requested on lost protection; it is not verified authentication.
+This remains session privacy, not an authentication lock or a guarantee against
+power/reboot, every device/gesture pathway, permission loss or helper crashes.
+Never use it to unlock the macOS login screen or FileVault. For an uncertain
+operation, inspect `status` before retrying; `--key` can replay identical input
+only on the same daemon, within its bounded receipt retention. Local, verified
+direct TLS and gateway relay target selection behave like other commands.
+Never change privacy on an operator's host merely to test it; use isolated
+fixtures and the owned native privacy qualification.
 
 ### Shared projects and peer storage
 
@@ -918,7 +997,8 @@ Daemon synchronization needs no client. Initialized replicas accept offline edit
 credential discovery and RTC bootstrap may require the gateway. Paths, secrets,
 transcripts, queues, and executable validation stay on the owner. There are no
 parallel-agent caps; one conversation still has one active turn. Transport and
-storage bounds remain. Never edit DIETER_HOME directly. See docs/peer-store.md.
+storage bounds remain. Never edit DIETER_HOME directly. See the architecture guide in
+`landingpage/content/docs/architecture.md`.
 
 Gateway, daemon/CLI, and native clients report one canonical SemVer release. The
 gateway publishes minimum client and daemon releases and rejects software below
@@ -935,7 +1015,8 @@ account-scoped portable JSON. All use the daemon API and global `--machine`.
 Folders, membership, project ordering, pinned-project membership/order,
 pinned-chat ordering, disclosure, and lane sort direction share the `navigation`
 namespace across native clients. See
-`docs/client-navigation-folders.md` for keys and projection rules.
+`apps/core/shared/src/commonMain/kotlin/com/dbpprt/dieter/core/navigation/SharedKv.kt`
+for keys and projection rules.
 
 `kv put --namespace NS --key KEY --file value.json --revision REV` replaces the
 observed local revision (omit revision only for creation). `kv move` accepts
@@ -1015,9 +1096,46 @@ Success is local durability, not a global quorum. `peer status` includes bounded
 per-peer attempts, successful exchanges, route/direction, checkpoints, and
 sanitized blocking record identity. A successful exchange with one peer does
 not prove account-wide convergence. `peer status` retains historical failures;
-workspace warnings exclude offline/removed-peer transport failures, cancellations,
+workspace warnings say “Board and settings sync between …” and refer to shared metadata, not files or transcripts. They exclude offline/removed-peer transport failures, cancellations,
 and transport attempts older than five minutes. Record rejections are not aged
 out or suppressed because a peer is offline. Android names both machines and clears warnings on
 recovery, including when the selected machine returns unchanged workspace data. A warning alone is not permission to reset storage or checkpoints.
 Retained signed summaries containing the retired `commentCount` field remain
 valid; current writers and APIs omit it. Never rewrite foreign signed history.
+
+### Experimental macOS virtual desktop
+
+A host started with `DIETER_SCREEN_VIRTUAL_DISPLAY=1` can advertise
+`virtualDisplaySupported`. Screen options on Mac, iOS, and Android offer an
+experimental virtual display. The shared core uses drawable pixels within the
+codec envelope, with independent 1×/2× desktop scaling and debounced resizing.
+The daemon gives one controlling session the display lease.
+
+```sh
+dieter screen virtual status SESSION
+dieter screen virtual set SESSION --width 2560 --height 1440 --scale 2
+dieter screen virtual presented SESSION --display DISPLAY_ID --generation GENERATION
+dieter screen virtual restore SESSION
+```
+
+These RPCs support local, verified direct TLS, and gateway relay routes with
+`--machine ID|NAME`. `presented` is a receiver acknowledgment: send it only after
+rendering a frame from that exact display and media generation, never merely
+because `status` names it. Missing presentation restores after 15 seconds.
+H.264 supports up to 3840×2160 at 60 fps; HEVC retains its 1920×1080 envelope.
+Sizes must be even logical pixels (backing dimensions divisible by four at 2×).
+A resize restores the prior lease before creating the replacement.
+
+`--disable-physical` additionally requires `DIETER_SCREEN_VIRTUAL_DISABLE=1`
+and a qualified physical main display. It disables physical output only after
+presentation. This private macOS API is experimental; qualify normal restore,
+helper kill, and watchdog recovery on the exact hardware/OS before setting that
+second switch. Neither option enables itself or requires BetterDisplay.
+
+A separate helper owns app-scoped layout changes, an atomic recovery journal
+under `DIETER_HOME/virtual-display`, and an independent watchdog. Physical output
+is restored before the virtual display is destroyed. Control handoff, display
+selection, session closure, receiver-liveness loss, and local display changes
+end the lease. A failed restoration retains its journal; reconnect a missing
+original monitor and retry. Never remove the journal or restart the operator's
+live daemon to exercise these options. Use isolated pipeline fixtures.

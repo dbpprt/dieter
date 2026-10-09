@@ -83,50 +83,13 @@ func (api *grpcAPI) RenameBoard(_ context.Context, request *dieterv1.RenameBoard
 	return protoBoard(value), nil
 }
 
-func (api *grpcAPI) GetState(ctx context.Context, request *dieterv1.GetStateRequest) (result *dieterv1.State, resultErr error) {
-	defer func() {
-		if result == nil || resultErr != nil {
-			return
-		}
-		identity, err := api.server.store.PeerIdentity()
-		if err != nil {
-			return
-		}
-		diagnostics, err := api.server.store.PeerSyncDiagnostics(identity.Account)
-		if err != nil {
-			return
-		}
-		for _, value := range diagnostics {
-			if value.IsCurrentIssue(time.Now()) {
-				result.PeerSyncIssues = append(result.PeerSyncIssues, protoPeerDiagnostic(value))
-			}
-		}
-	}()
+func (api *grpcAPI) GetState(ctx context.Context, request *dieterv1.GetStateRequest) (*dieterv1.State, error) {
 	if request.GetAllProjects() {
-		// Conditional peer-directory reads need no workspace clone when the
-		// durable commit boundary is unchanged. Pending mutations must still
-		// cross the writer lock/recovery path below.
-		if unchanged := request.GetIfNotModified(); unchanged != nil {
-			cursor, _, err := api.server.store.SyncEvents(^uint64(0), 1)
-			if err != nil {
-				return nil, grpcFailure(err)
-			}
-			current := protoSyncCursor(cursor)
-			if unchanged.GetEpoch() == current.GetEpoch() && unchanged.GetSequence() == current.GetSequence() && unchanged.GetProjectionVersion() == current.GetProjectionVersion() && !api.server.store.SyncMutationPending() {
-				return &dieterv1.State{Cursor: current, NotModified: true}, nil
-			}
-		}
-		value, cursor, err := api.server.store.GlobalStateContext(ctx)
+		value, err := api.server.store.GlobalStateContext(ctx)
 		if err != nil {
 			return nil, grpcFailure(err)
 		}
-		protoCursor := protoSyncCursor(cursor)
-		if unchanged := request.GetIfNotModified(); unchanged != nil && unchanged.GetEpoch() == protoCursor.GetEpoch() && unchanged.GetSequence() == protoCursor.GetSequence() && unchanged.GetProjectionVersion() == protoCursor.GetProjectionVersion() {
-			return &dieterv1.State{Cursor: protoCursor, NotModified: true}, nil
-		}
-		result := protoState(value)
-		result.Cursor = protoCursor
-		return result, nil
+		return protoState(value), nil
 	}
 	value, err := api.server.store.State(request.GetProjectId(), store.CardFilter{
 		Board: request.GetBoardId(), Lane: request.GetLane(), Runtime: request.GetRuntime(),
@@ -136,55 +99,6 @@ func (api *grpcAPI) GetState(ctx context.Context, request *dieterv1.GetStateRequ
 		return nil, grpcFailure(err)
 	}
 	return protoState(value), nil
-}
-
-func (api *grpcAPI) watchState(ctx context.Context, request *dieterv1.WatchStateRequest, send func(*dieterv1.State) error) error {
-	wake := newChangeWait(api.server.store)
-	defer wake.close()
-	if request.GetIntervalMs() > 0 {
-		wake.minimumInterval = boundedInterval(request.GetIntervalMs(), time.Second)
-	}
-	filter := request.GetFilter()
-	if filter == nil {
-		filter = &dieterv1.GetStateRequest{}
-	}
-	var previous *dieterv1.State
-	var revision store.SyncCursor
-	sendChanged := func() error {
-		nextRevision, err := api.server.store.MetadataCursor()
-		if err != nil {
-			return err
-		}
-		if previous != nil && nextRevision == revision && !api.server.store.SyncMutationPending() {
-			return nil
-		}
-		value, err := api.GetState(ctx, filter)
-		if err != nil {
-			return err
-		}
-		if proto.Equal(value, previous) {
-			revision = nextRevision
-			return nil
-		}
-		revision = nextRevision
-		previous = value
-		return send(value)
-	}
-	if err := sendChanged(); err != nil {
-		return grpcFailure(err)
-	}
-	for {
-		if err := wake.wait(ctx); err != nil {
-			return err
-		}
-		if err := sendChanged(); err != nil {
-			return grpcFailure(err)
-		}
-	}
-}
-
-func (api *grpcAPI) WatchState(request *dieterv1.WatchStateRequest, stream dieterv1.DieterService_WatchStateServer) error {
-	return api.watchState(stream.Context(), request, stream.Send)
 }
 
 func (api *grpcAPI) GetHarnesses(ctx context.Context, _ *emptypb.Empty) (*dieterv1.HarnessCatalog, error) {
@@ -696,7 +610,7 @@ func (api *grpcAPI) ListChats(_ context.Context, request *dieterv1.ListChatsRequ
 	}
 	for _, value := range chats {
 		chat := protoCard(value)
-		if value.Runtime == "running" || value.Runtime == "starting" {
+		if model.RuntimeHoldsTurn(value.Runtime) {
 			conversation, conversationErr := api.conversation(value.ID)
 			if conversationErr != nil {
 				return nil, grpcFailure(conversationErr)
@@ -1228,7 +1142,7 @@ func (api *grpcAPI) StartCard(_ context.Context, request *dieterv1.StartCardRequ
 		return nil, status.Error(codes.FailedPrecondition, "only board cards can be started")
 	}
 	if card.InitialPromptSentAt != "" {
-		if card.Runtime == "starting" || card.Runtime == "running" || card.Runtime == "working" || card.Runtime == "streaming" {
+		if model.RuntimeHoldsTurn(card.Runtime) {
 			if saveErr := api.server.store.SaveCommandResult(clientID, commandID, store.CommandResult{Kind: "start_card", CardID: card.ID}); saveErr != nil {
 				return nil, grpcFailure(saveErr)
 			}

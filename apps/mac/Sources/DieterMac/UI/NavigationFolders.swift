@@ -72,9 +72,9 @@ struct NavigationFolderNameSheet: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
+                Button("Cancel") { dismiss() }.buttonStyle(DieterBarButtonStyle())
                 Button(editor.folderID == nil ? "Create folder" : "Rename") { submit() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(DieterBarButtonStyle(prominent: true))
                     .disabled(!problem.isEmpty)
                     .accessibilityIdentifier("navigation-folder.confirm")
             }

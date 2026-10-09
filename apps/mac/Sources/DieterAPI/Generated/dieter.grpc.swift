@@ -281,29 +281,16 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
-        /// Namespace for "WatchState" metadata.
-        public enum WatchState: Sendable {
-            /// Request type for "WatchState".
-            public typealias Input = Dieter_V1_WatchStateRequest
-            /// Response type for "WatchState".
-            public typealias Output = Dieter_V1_State
-            /// Descriptor for "WatchState".
+        /// Namespace for "WatchChanges" metadata.
+        public enum WatchChanges: Sendable {
+            /// Request type for "WatchChanges".
+            public typealias Input = Dieter_V1_ChangesRequest
+            /// Response type for "WatchChanges".
+            public typealias Output = Dieter_V1_ChangesFrame
+            /// Descriptor for "WatchChanges".
             public static let descriptor = GRPCCore.MethodDescriptor(
                 service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
-                method: "WatchState",
-                type: .serverStreaming
-            )
-        }
-        /// Namespace for "WatchSync" metadata.
-        public enum WatchSync: Sendable {
-            /// Request type for "WatchSync".
-            public typealias Input = Dieter_V1_SyncRequest
-            /// Response type for "WatchSync".
-            public typealias Output = Dieter_V1_SyncFrame
-            /// Descriptor for "WatchSync".
-            public static let descriptor = GRPCCore.MethodDescriptor(
-                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
-                method: "WatchSync",
+                method: "WatchChanges",
                 type: .serverStreaming
             )
         }
@@ -1503,6 +1490,58 @@ public enum Dieter_V1_DieterService: Sendable {
                 type: .unary
             )
         }
+        /// Namespace for "GetRemoteDesktopVirtualDisplay" metadata.
+        public enum GetRemoteDesktopVirtualDisplay: Sendable {
+            /// Request type for "GetRemoteDesktopVirtualDisplay".
+            public typealias Input = Dieter_V1_RemoteDesktopRef
+            /// Response type for "GetRemoteDesktopVirtualDisplay".
+            public typealias Output = Dieter_V1_RemoteDesktopVirtualDisplay
+            /// Descriptor for "GetRemoteDesktopVirtualDisplay".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "GetRemoteDesktopVirtualDisplay",
+                type: .unary
+            )
+        }
+        /// Namespace for "SetRemoteDesktopVirtualDisplay" metadata.
+        public enum SetRemoteDesktopVirtualDisplay: Sendable {
+            /// Request type for "SetRemoteDesktopVirtualDisplay".
+            public typealias Input = Dieter_V1_SetRemoteDesktopVirtualDisplayRequest
+            /// Response type for "SetRemoteDesktopVirtualDisplay".
+            public typealias Output = Dieter_V1_RemoteDesktopVirtualDisplay
+            /// Descriptor for "SetRemoteDesktopVirtualDisplay".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "SetRemoteDesktopVirtualDisplay",
+                type: .unary
+            )
+        }
+        /// Namespace for "ConfirmRemoteDesktopVirtualDisplay" metadata.
+        public enum ConfirmRemoteDesktopVirtualDisplay: Sendable {
+            /// Request type for "ConfirmRemoteDesktopVirtualDisplay".
+            public typealias Input = Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest
+            /// Response type for "ConfirmRemoteDesktopVirtualDisplay".
+            public typealias Output = Dieter_V1_RemoteDesktopVirtualDisplay
+            /// Descriptor for "ConfirmRemoteDesktopVirtualDisplay".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "ConfirmRemoteDesktopVirtualDisplay",
+                type: .unary
+            )
+        }
+        /// Namespace for "RestoreRemoteDesktopVirtualDisplay" metadata.
+        public enum RestoreRemoteDesktopVirtualDisplay: Sendable {
+            /// Request type for "RestoreRemoteDesktopVirtualDisplay".
+            public typealias Input = Dieter_V1_RemoteDesktopRef
+            /// Response type for "RestoreRemoteDesktopVirtualDisplay".
+            public typealias Output = Dieter_V1_RemoteDesktopVirtualDisplay
+            /// Descriptor for "RestoreRemoteDesktopVirtualDisplay".
+            public static let descriptor = GRPCCore.MethodDescriptor(
+                service: GRPCCore.ServiceDescriptor(fullyQualifiedService: "dieter.v1.DieterService"),
+                method: "RestoreRemoteDesktopVirtualDisplay",
+                type: .unary
+            )
+        }
         /// Namespace for "ProbeRemoteDesktopPermissions" metadata.
         public enum ProbeRemoteDesktopPermissions: Sendable {
             /// Request type for "ProbeRemoteDesktopPermissions".
@@ -1759,8 +1798,7 @@ public enum Dieter_V1_DieterService: Sendable {
             GetMachineInformation.descriptor,
             PerformMachineOperation.descriptor,
             GetState.descriptor,
-            WatchState.descriptor,
-            WatchSync.descriptor,
+            WatchChanges.descriptor,
             GetHarnesses.descriptor,
             GetSettings.descriptor,
             GetSettingsOptions.descriptor,
@@ -1853,6 +1891,10 @@ public enum Dieter_V1_DieterService: Sendable {
             ListRemoteDesktopDisplayModes.descriptor,
             SetRemoteDesktopDisplayMode.descriptor,
             RestoreRemoteDesktopDisplayMode.descriptor,
+            GetRemoteDesktopVirtualDisplay.descriptor,
+            SetRemoteDesktopVirtualDisplay.descriptor,
+            ConfirmRemoteDesktopVirtualDisplay.descriptor,
+            RestoreRemoteDesktopVirtualDisplay.descriptor,
             ProbeRemoteDesktopPermissions.descriptor,
             StartRemoteDesktop.descriptor,
             SendRemoteDesktopSignal.descriptor,
@@ -2285,48 +2327,31 @@ extension Dieter_V1_DieterService {
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_State>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
-        /// Call the "WatchState" method.
-        ///
-        /// - Parameters:
-        ///   - request: A request containing a single `Dieter_V1_WatchStateRequest` message.
-        ///   - serializer: A serializer for `Dieter_V1_WatchStateRequest` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_State` messages.
-        ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
-        /// - Returns: The result of `handleResponse`.
-        func watchState<Result>(
-            request: GRPCCore.ClientRequest<Dieter_V1_WatchStateRequest>,
-            serializer: some GRPCCore.MessageSerializer<Dieter_V1_WatchStateRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_State>,
-            options: GRPCCore.CallOptions,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_State>) async throws -> Result
-        ) async throws -> Result where Result: Sendable
-
-        /// Call the "WatchSync" method.
+        /// Call the "WatchChanges" method.
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > WatchSync is the daemon-wide durable change stream used by native
-        /// > clients. Views are rendered from the client projection rather than by
-        /// > opening per-view RPCs.
+        /// > WatchChanges streams this machine's view to native clients: its replica of
+        /// > the account's shared records in the peer store's own order, plus the
+        /// > owner-only details and live activity of the conversations it runs. A
+        /// > client holds one stream per online machine and merges the shared records
+        /// > causally; no machine is attached or preferred.
         ///
         /// - Parameters:
-        ///   - request: A request containing a single `Dieter_V1_SyncRequest` message.
-        ///   - serializer: A serializer for `Dieter_V1_SyncRequest` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_SyncFrame` messages.
+        ///   - request: A request containing a single `Dieter_V1_ChangesRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ChangesRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ChangesFrame` messages.
         ///   - options: Options to apply to this RPC.
         ///   - handleResponse: A closure which handles the response, the result of which is
         ///       returned to the caller. Returning from the closure will cancel the RPC if it
         ///       hasn't already finished.
         /// - Returns: The result of `handleResponse`.
-        func watchSync<Result>(
-            request: GRPCCore.ClientRequest<Dieter_V1_SyncRequest>,
-            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SyncRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_SyncFrame>,
+        func watchChanges<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ChangesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ChangesRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ChangesFrame>,
             options: GRPCCore.CallOptions,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_SyncFrame>) async throws -> Result
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ChangesFrame>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
         /// Call the "GetHarnesses" method.
@@ -4116,6 +4141,82 @@ extension Dieter_V1_DieterService {
             onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopDisplayModes>) async throws -> Result
         ) async throws -> Result where Result: Sendable
 
+        /// Call the "GetRemoteDesktopVirtualDisplay" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopVirtualDisplay` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func getRemoteDesktopVirtualDisplay<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RemoteDesktopRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopVirtualDisplay>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopVirtualDisplay>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "SetRemoteDesktopVirtualDisplay" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_SetRemoteDesktopVirtualDisplayRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_SetRemoteDesktopVirtualDisplayRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopVirtualDisplay` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func setRemoteDesktopVirtualDisplay<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_SetRemoteDesktopVirtualDisplayRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SetRemoteDesktopVirtualDisplayRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopVirtualDisplay>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopVirtualDisplay>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "ConfirmRemoteDesktopVirtualDisplay" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopVirtualDisplay` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func confirmRemoteDesktopVirtualDisplay<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopVirtualDisplay>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopVirtualDisplay>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
+        /// Call the "RestoreRemoteDesktopVirtualDisplay" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopVirtualDisplay` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        func restoreRemoteDesktopVirtualDisplay<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RemoteDesktopRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopVirtualDisplay>,
+            options: GRPCCore.CallOptions,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopVirtualDisplay>) async throws -> Result
+        ) async throws -> Result where Result: Sendable
+
         /// Call the "ProbeRemoteDesktopPermissions" method.
         ///
         /// > Source IDL Documentation:
@@ -5093,61 +5194,35 @@ extension Dieter_V1_DieterService {
             )
         }
 
-        /// Call the "WatchState" method.
-        ///
-        /// - Parameters:
-        ///   - request: A request containing a single `Dieter_V1_WatchStateRequest` message.
-        ///   - serializer: A serializer for `Dieter_V1_WatchStateRequest` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_State` messages.
-        ///   - options: Options to apply to this RPC.
-        ///   - handleResponse: A closure which handles the response, the result of which is
-        ///       returned to the caller. Returning from the closure will cancel the RPC if it
-        ///       hasn't already finished.
-        /// - Returns: The result of `handleResponse`.
-        public func watchState<Result>(
-            request: GRPCCore.ClientRequest<Dieter_V1_WatchStateRequest>,
-            serializer: some GRPCCore.MessageSerializer<Dieter_V1_WatchStateRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_State>,
-            options: GRPCCore.CallOptions = .defaults,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_State>) async throws -> Result
-        ) async throws -> Result where Result: Sendable {
-            try await self.client.serverStreaming(
-                request: request,
-                descriptor: Dieter_V1_DieterService.Method.WatchState.descriptor,
-                serializer: serializer,
-                deserializer: deserializer,
-                options: options,
-                onResponse: handleResponse
-            )
-        }
-
-        /// Call the "WatchSync" method.
+        /// Call the "WatchChanges" method.
         ///
         /// > Source IDL Documentation:
         /// >
-        /// > WatchSync is the daemon-wide durable change stream used by native
-        /// > clients. Views are rendered from the client projection rather than by
-        /// > opening per-view RPCs.
+        /// > WatchChanges streams this machine's view to native clients: its replica of
+        /// > the account's shared records in the peer store's own order, plus the
+        /// > owner-only details and live activity of the conversations it runs. A
+        /// > client holds one stream per online machine and merges the shared records
+        /// > causally; no machine is attached or preferred.
         ///
         /// - Parameters:
-        ///   - request: A request containing a single `Dieter_V1_SyncRequest` message.
-        ///   - serializer: A serializer for `Dieter_V1_SyncRequest` messages.
-        ///   - deserializer: A deserializer for `Dieter_V1_SyncFrame` messages.
+        ///   - request: A request containing a single `Dieter_V1_ChangesRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ChangesRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_ChangesFrame` messages.
         ///   - options: Options to apply to this RPC.
         ///   - handleResponse: A closure which handles the response, the result of which is
         ///       returned to the caller. Returning from the closure will cancel the RPC if it
         ///       hasn't already finished.
         /// - Returns: The result of `handleResponse`.
-        public func watchSync<Result>(
-            request: GRPCCore.ClientRequest<Dieter_V1_SyncRequest>,
-            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SyncRequest>,
-            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_SyncFrame>,
+        public func watchChanges<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ChangesRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ChangesRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_ChangesFrame>,
             options: GRPCCore.CallOptions = .defaults,
-            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_SyncFrame>) async throws -> Result
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ChangesFrame>) async throws -> Result
         ) async throws -> Result where Result: Sendable {
             try await self.client.serverStreaming(
                 request: request,
-                descriptor: Dieter_V1_DieterService.Method.WatchSync.descriptor,
+                descriptor: Dieter_V1_DieterService.Method.WatchChanges.descriptor,
                 serializer: serializer,
                 deserializer: deserializer,
                 options: options,
@@ -7946,6 +8021,126 @@ extension Dieter_V1_DieterService {
             )
         }
 
+        /// Call the "GetRemoteDesktopVirtualDisplay" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopVirtualDisplay` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func getRemoteDesktopVirtualDisplay<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RemoteDesktopRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopVirtualDisplay>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopVirtualDisplay>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.GetRemoteDesktopVirtualDisplay.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "SetRemoteDesktopVirtualDisplay" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_SetRemoteDesktopVirtualDisplayRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_SetRemoteDesktopVirtualDisplayRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopVirtualDisplay` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func setRemoteDesktopVirtualDisplay<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_SetRemoteDesktopVirtualDisplayRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_SetRemoteDesktopVirtualDisplayRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopVirtualDisplay>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopVirtualDisplay>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.SetRemoteDesktopVirtualDisplay.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "ConfirmRemoteDesktopVirtualDisplay" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest` message.
+        ///   - serializer: A serializer for `Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopVirtualDisplay` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func confirmRemoteDesktopVirtualDisplay<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopVirtualDisplay>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopVirtualDisplay>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.ConfirmRemoteDesktopVirtualDisplay.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
+        /// Call the "RestoreRemoteDesktopVirtualDisplay" method.
+        ///
+        /// - Parameters:
+        ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
+        ///   - serializer: A serializer for `Dieter_V1_RemoteDesktopRef` messages.
+        ///   - deserializer: A deserializer for `Dieter_V1_RemoteDesktopVirtualDisplay` messages.
+        ///   - options: Options to apply to this RPC.
+        ///   - handleResponse: A closure which handles the response, the result of which is
+        ///       returned to the caller. Returning from the closure will cancel the RPC if it
+        ///       hasn't already finished.
+        /// - Returns: The result of `handleResponse`.
+        public func restoreRemoteDesktopVirtualDisplay<Result>(
+            request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
+            serializer: some GRPCCore.MessageSerializer<Dieter_V1_RemoteDesktopRef>,
+            deserializer: some GRPCCore.MessageDeserializer<Dieter_V1_RemoteDesktopVirtualDisplay>,
+            options: GRPCCore.CallOptions = .defaults,
+            onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopVirtualDisplay>) async throws -> Result = { response in
+                try response.message
+            }
+        ) async throws -> Result where Result: Sendable {
+            try await self.client.unary(
+                request: request,
+                descriptor: Dieter_V1_DieterService.Method.RestoreRemoteDesktopVirtualDisplay.descriptor,
+                serializer: serializer,
+                deserializer: deserializer,
+                options: options,
+                onResponse: handleResponse
+            )
+        }
+
         /// Call the "ProbeRemoteDesktopPermissions" method.
         ///
         /// > Source IDL Documentation:
@@ -9007,53 +9202,32 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
-    /// Call the "WatchState" method.
-    ///
-    /// - Parameters:
-    ///   - request: A request containing a single `Dieter_V1_WatchStateRequest` message.
-    ///   - options: Options to apply to this RPC.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
-    /// - Returns: The result of `handleResponse`.
-    public func watchState<Result>(
-        request: GRPCCore.ClientRequest<Dieter_V1_WatchStateRequest>,
-        options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_State>) async throws -> Result
-    ) async throws -> Result where Result: Sendable {
-        try await self.watchState(
-            request: request,
-            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_WatchStateRequest>(),
-            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_State>(),
-            options: options,
-            onResponse: handleResponse
-        )
-    }
-
-    /// Call the "WatchSync" method.
+    /// Call the "WatchChanges" method.
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > WatchSync is the daemon-wide durable change stream used by native
-    /// > clients. Views are rendered from the client projection rather than by
-    /// > opening per-view RPCs.
+    /// > WatchChanges streams this machine's view to native clients: its replica of
+    /// > the account's shared records in the peer store's own order, plus the
+    /// > owner-only details and live activity of the conversations it runs. A
+    /// > client holds one stream per online machine and merges the shared records
+    /// > causally; no machine is attached or preferred.
     ///
     /// - Parameters:
-    ///   - request: A request containing a single `Dieter_V1_SyncRequest` message.
+    ///   - request: A request containing a single `Dieter_V1_ChangesRequest` message.
     ///   - options: Options to apply to this RPC.
     ///   - handleResponse: A closure which handles the response, the result of which is
     ///       returned to the caller. Returning from the closure will cancel the RPC if it
     ///       hasn't already finished.
     /// - Returns: The result of `handleResponse`.
-    public func watchSync<Result>(
-        request: GRPCCore.ClientRequest<Dieter_V1_SyncRequest>,
+    public func watchChanges<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ChangesRequest>,
         options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_SyncFrame>) async throws -> Result
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ChangesFrame>) async throws -> Result
     ) async throws -> Result where Result: Sendable {
-        try await self.watchSync(
+        try await self.watchChanges(
             request: request,
-            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_SyncRequest>(),
-            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_SyncFrame>(),
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ChangesRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_ChangesFrame>(),
             options: options,
             onResponse: handleResponse
         )
@@ -11390,6 +11564,106 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
+    /// Call the "GetRemoteDesktopVirtualDisplay" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getRemoteDesktopVirtualDisplay<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopVirtualDisplay>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.getRemoteDesktopVirtualDisplay(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_RemoteDesktopRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopVirtualDisplay>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetRemoteDesktopVirtualDisplay" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_SetRemoteDesktopVirtualDisplayRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setRemoteDesktopVirtualDisplay<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_SetRemoteDesktopVirtualDisplayRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopVirtualDisplay>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.setRemoteDesktopVirtualDisplay(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_SetRemoteDesktopVirtualDisplayRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopVirtualDisplay>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ConfirmRemoteDesktopVirtualDisplay" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func confirmRemoteDesktopVirtualDisplay<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopVirtualDisplay>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.confirmRemoteDesktopVirtualDisplay(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopVirtualDisplay>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RestoreRemoteDesktopVirtualDisplay" method.
+    ///
+    /// - Parameters:
+    ///   - request: A request containing a single `Dieter_V1_RemoteDesktopRef` message.
+    ///   - options: Options to apply to this RPC.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func restoreRemoteDesktopVirtualDisplay<Result>(
+        request: GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>,
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopVirtualDisplay>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        try await self.restoreRemoteDesktopVirtualDisplay(
+            request: request,
+            serializer: GRPCProtobuf.ProtobufSerializer<Dieter_V1_RemoteDesktopRef>(),
+            deserializer: GRPCProtobuf.ProtobufDeserializer<Dieter_V1_RemoteDesktopVirtualDisplay>(),
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
     /// Call the "ProbeRemoteDesktopPermissions" method.
     ///
     /// > Source IDL Documentation:
@@ -12440,40 +12714,15 @@ extension Dieter_V1_DieterService.ClientProtocol {
         )
     }
 
-    /// Call the "WatchState" method.
-    ///
-    /// - Parameters:
-    ///   - message: request message to send.
-    ///   - metadata: Additional metadata to send, defaults to empty.
-    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
-    ///   - handleResponse: A closure which handles the response, the result of which is
-    ///       returned to the caller. Returning from the closure will cancel the RPC if it
-    ///       hasn't already finished.
-    /// - Returns: The result of `handleResponse`.
-    public func watchState<Result>(
-        _ message: Dieter_V1_WatchStateRequest,
-        metadata: GRPCCore.Metadata = [:],
-        options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_State>) async throws -> Result
-    ) async throws -> Result where Result: Sendable {
-        let request = GRPCCore.ClientRequest<Dieter_V1_WatchStateRequest>(
-            message: message,
-            metadata: metadata
-        )
-        return try await self.watchState(
-            request: request,
-            options: options,
-            onResponse: handleResponse
-        )
-    }
-
-    /// Call the "WatchSync" method.
+    /// Call the "WatchChanges" method.
     ///
     /// > Source IDL Documentation:
     /// >
-    /// > WatchSync is the daemon-wide durable change stream used by native
-    /// > clients. Views are rendered from the client projection rather than by
-    /// > opening per-view RPCs.
+    /// > WatchChanges streams this machine's view to native clients: its replica of
+    /// > the account's shared records in the peer store's own order, plus the
+    /// > owner-only details and live activity of the conversations it runs. A
+    /// > client holds one stream per online machine and merges the shared records
+    /// > causally; no machine is attached or preferred.
     ///
     /// - Parameters:
     ///   - message: request message to send.
@@ -12483,17 +12732,17 @@ extension Dieter_V1_DieterService.ClientProtocol {
     ///       returned to the caller. Returning from the closure will cancel the RPC if it
     ///       hasn't already finished.
     /// - Returns: The result of `handleResponse`.
-    public func watchSync<Result>(
-        _ message: Dieter_V1_SyncRequest,
+    public func watchChanges<Result>(
+        _ message: Dieter_V1_ChangesRequest,
         metadata: GRPCCore.Metadata = [:],
         options: GRPCCore.CallOptions = .defaults,
-        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_SyncFrame>) async throws -> Result
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.StreamingClientResponse<Dieter_V1_ChangesFrame>) async throws -> Result
     ) async throws -> Result where Result: Sendable {
-        let request = GRPCCore.ClientRequest<Dieter_V1_SyncRequest>(
+        let request = GRPCCore.ClientRequest<Dieter_V1_ChangesRequest>(
             message: message,
             metadata: metadata
         )
-        return try await self.watchSync(
+        return try await self.watchChanges(
             request: request,
             options: options,
             onResponse: handleResponse
@@ -15193,6 +15442,122 @@ extension Dieter_V1_DieterService.ClientProtocol {
             metadata: metadata
         )
         return try await self.restoreRemoteDesktopDisplayMode(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "GetRemoteDesktopVirtualDisplay" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func getRemoteDesktopVirtualDisplay<Result>(
+        _ message: Dieter_V1_RemoteDesktopRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopVirtualDisplay>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.getRemoteDesktopVirtualDisplay(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "SetRemoteDesktopVirtualDisplay" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func setRemoteDesktopVirtualDisplay<Result>(
+        _ message: Dieter_V1_SetRemoteDesktopVirtualDisplayRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopVirtualDisplay>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_SetRemoteDesktopVirtualDisplayRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.setRemoteDesktopVirtualDisplay(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "ConfirmRemoteDesktopVirtualDisplay" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func confirmRemoteDesktopVirtualDisplay<Result>(
+        _ message: Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopVirtualDisplay>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_ConfirmRemoteDesktopVirtualDisplayRequest>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.confirmRemoteDesktopVirtualDisplay(
+            request: request,
+            options: options,
+            onResponse: handleResponse
+        )
+    }
+
+    /// Call the "RestoreRemoteDesktopVirtualDisplay" method.
+    ///
+    /// - Parameters:
+    ///   - message: request message to send.
+    ///   - metadata: Additional metadata to send, defaults to empty.
+    ///   - options: Options to apply to this RPC, defaults to `.defaults`.
+    ///   - handleResponse: A closure which handles the response, the result of which is
+    ///       returned to the caller. Returning from the closure will cancel the RPC if it
+    ///       hasn't already finished.
+    /// - Returns: The result of `handleResponse`.
+    public func restoreRemoteDesktopVirtualDisplay<Result>(
+        _ message: Dieter_V1_RemoteDesktopRef,
+        metadata: GRPCCore.Metadata = [:],
+        options: GRPCCore.CallOptions = .defaults,
+        onResponse handleResponse: @Sendable @escaping (GRPCCore.ClientResponse<Dieter_V1_RemoteDesktopVirtualDisplay>) async throws -> Result = { response in
+            try response.message
+        }
+    ) async throws -> Result where Result: Sendable {
+        let request = GRPCCore.ClientRequest<Dieter_V1_RemoteDesktopRef>(
+            message: message,
+            metadata: metadata
+        )
+        return try await self.restoreRemoteDesktopVirtualDisplay(
             request: request,
             options: options,
             onResponse: handleResponse

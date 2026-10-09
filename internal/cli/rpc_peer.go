@@ -46,7 +46,7 @@ func (c *CLI) rpcPeer(args []string) error {
 	case "list":
 		usage += "  [--account HASH] [--after KEY --snapshot REVISION]\nReturn up to 64 records. Pass nextKey and snapshotRevision for the next page.\n"
 	case "put":
-		usage += "  --kind KIND --id ENTITY.FIELD --file FILE [--revision HASH]\nFILE contains the JSON value for the typed shared field. See docs/peer-store.md for the explicit field allowlist.\nOmit revision only for a new record. Resolve conflicts by supplying the current revision.\n"
+		usage += "  --kind KIND --id ENTITY.FIELD --file FILE [--revision HASH]\nFILE contains the JSON value for the typed shared field. Prefer project/board commands for normal edits; the daemon rejects unrecognized kinds and fields.\nOmit revision only for a new record. Resolve conflicts by supplying the current revision.\n"
 	case "delete":
 		usage += "  --kind KIND --id ID --revision HASH\nPersist a tombstone; concurrent unseen writes remain visible as conflicts.\n"
 	case "merge":

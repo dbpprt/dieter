@@ -26,16 +26,25 @@ class TestFlightRecoveryTest < Minitest::Test
     def fetch_builds = members
   end
 
-  class Build
-    attr_accessor :processing_state, :expired, :fail_group
-    attr_reader :id, :additions
+  class Build < Spaceship::ConnectAPI::Build
+    attr_accessor :fail_group
+    attr_reader :additions
     def initialize
-      @id, @processing_state, @expired, @additions = "exact-build", "VALID", false, []
+      super("exact-build", { "processingState" => "VALID", "expired" => false })
+      @additions = []
+      self.build_beta_detail =
+        Spaceship::ConnectAPI::BuildBetaDetail.new(
+          "beta-detail",
+          { "internalBuildState" => "READY_FOR_BETA_TESTING" }
+        )
     end
-    def ready_for_internal_testing? = processing_state == "VALID"
     def add_beta_groups(client:, beta_groups:)
       raise Dieter::PipelineError, "group transport failed" if @fail_group
-      beta_groups.each { |group| group.members << self; additions << group.name }
+      beta_groups.each do |group|
+        group.members << self
+        additions << group.name
+      end
+      build_beta_detail.internal_build_state = "IN_BETA_TESTING"
     end
   end
 
@@ -46,7 +55,7 @@ class TestFlightRecoveryTest < Minitest::Test
       @path, @records, @downloads, @previous, @draft = path, [], [], [], false
     end
     def with_claim(*) = yield
-    def release(*) = {"draft" => draft, "prerelease" => true}
+    def release(*) = { "draft" => draft, "prerelease" => true }
     def receipts(*) = previous + records
     def receipt(_identity, _destination, value) = records << value
     def download(_identity, name, output)
@@ -62,14 +71,17 @@ class TestFlightRecoveryTest < Minitest::Test
     @ipa = File.join(@root, "input.ipa")
     File.write(@ipa, "exact retained bytes")
     @hash = Dieter::ArtifactSet.sha256(@ipa)
-    @identity = OpenStruct.new(version: "0.4.413", build: "413", apple_build: "1.4.12", tag: "v0.4.413")
+    @identity =
+      OpenStruct.new(version: "0.4.413", build: "413", apple_build: "1.4.12", tag: "v0.4.413")
     @github = Destination.new(@ipa)
     @group = Group.new("Developers")
     @groups, @builds, @uploads, @queries = [@group], [], [], []
-    @policy = {"testflight" => true, "testflight_groups" => ["Developers"]}
+    @policy = { "testflight" => true, "testflight_groups" => ["Developers"] }
     @coordinator = Object.new
     policy, hash = @policy, @hash
-    @coordinator.define_singleton_method(:verify_retained) { [{"policy" => {"channels" => {"dev" => policy}}}, {"Dieter-iOS.ipa" => hash}] }
+    @coordinator.define_singleton_method(:verify_retained) do
+      [{ "policy" => { "channels" => { "dev" => policy } } }, { "Dieter-iOS.ipa" => hash }]
+    end
     @app = OpenStruct.new(id: "app-1", bundle_id: "com.dbpprt.dieter.ios")
     groups = @groups
     @app.define_singleton_method(:get_beta_groups) { |**| groups }
@@ -78,7 +90,10 @@ class TestFlightRecoveryTest < Minitest::Test
     @app_model.define_singleton_method(:find) { |*, **| app }
     @build_model = Object.new
     builds, queries = @builds, @queries
-    @build_model.define_singleton_method(:all) { |**options| queries << options; builds.dup }
+    @build_model.define_singleton_method(:all) do |**options|
+      queries << options
+      builds.dup
+    end
     @actions = Object.new
     uploads = @uploads
     @actions.define_singleton_method(:upload_to_testflight) do |**options|
@@ -87,7 +102,12 @@ class TestFlightRecoveryTest < Minitest::Test
     end
     @store = OpenStruct.new
     @old_env = {}
-    {"IOS_APP_STORE_CONNECT_KEY_BASE64" => Base64.strict_encode64("private-key"), "IOS_APP_STORE_CONNECT_KEY_ID" => "KEY", "IOS_APP_STORE_CONNECT_ISSUER_ID" => "ISSUER", "IOS_BUNDLE_ID" => @app.bundle_id}.each do |name, value|
+    {
+      "IOS_APP_STORE_CONNECT_KEY_BASE64" => Base64.strict_encode64("private-key"),
+      "IOS_APP_STORE_CONNECT_KEY_ID" => "KEY",
+      "IOS_APP_STORE_CONNECT_ISSUER_ID" => "ISSUER",
+      "IOS_BUNDLE_ID" => @app.bundle_id
+    }.each do |name, value|
       @old_env[name] = ENV[name]
       ENV[name] = value
     end
@@ -99,7 +119,17 @@ class TestFlightRecoveryTest < Minitest::Test
   end
 
   def runner
-    Dieter::TestFlightDestination.new(@context, @identity, actions: @actions, store: @store, github: @github, coordinator: @coordinator, app_model: @app_model, build_model: @build_model, token_factory: ->(**) { "authentication-fixture" })
+    Dieter::TestFlightDestination.new(
+      @context,
+      @identity,
+      actions: @actions,
+      store: @store,
+      github: @github,
+      coordinator: @coordinator,
+      app_model: @app_model,
+      build_model: @build_model,
+      token_factory: ->(**) { "authentication-fixture" }
+    )
   end
 
   def test_uploads_exact_ipa_then_confirms_processing_and_group_membership
@@ -108,7 +138,8 @@ class TestFlightRecoveryTest < Minitest::Test
     assert_equal @hash, Dieter::ArtifactSet.sha256(@uploads.first.fetch(:ipa))
     assert @uploads.first.fetch(:skip_submission)
     refute @uploads.first.fetch(:distribute_external)
-    assert_equal %w[uploading accepted processing group-delivered completed], @github.records.map { |value| value.fetch("state") }
+    assert_equal %w[uploading accepted processing group-delivered completed],
+                 @github.records.map { |value| value.fetch("state") }
     assert_equal ["exact-build"], @group.members.map(&:id)
     assert_equal "1.4.12", @queries.first.fetch(:build_number)
     assert_equal "0.4.413", @queries.first.fetch(:version)
@@ -129,7 +160,7 @@ class TestFlightRecoveryTest < Minitest::Test
   end
 
   def test_accepted_upload_resumes_group_delivery_without_reupload
-    @github.previous = [{"state" => "accepted", "ipa_sha256" => @hash}]
+    @github.previous = [{ "state" => "accepted", "ipa_sha256" => @hash }]
     @builds << Build.new
     runner.deliver
     assert_empty @uploads
@@ -148,7 +179,7 @@ class TestFlightRecoveryTest < Minitest::Test
   end
 
   def test_remote_rejection_and_duplicate_identity_fail_without_upload
-    @github.previous = [{"state" => "accepted", "ipa_sha256" => @hash}]
+    @github.previous = [{ "state" => "accepted", "ipa_sha256" => @hash }]
     @builds << Build.new
     @builds.first.processing_state = "INVALID"
     assert_raises(Dieter::PipelineError) { runner.deliver }
@@ -158,7 +189,7 @@ class TestFlightRecoveryTest < Minitest::Test
   end
 
   def test_receipt_for_different_bytes_and_draft_release_are_rejected
-    @github.previous = [{"state" => "accepted", "ipa_sha256" => "0" * 64}]
+    @github.previous = [{ "state" => "accepted", "ipa_sha256" => "0" * 64 }]
     assert_raises(Dieter::PipelineError) { runner.deliver }
     @github.draft = true
     assert_raises(Dieter::PipelineError) { runner.deliver }
@@ -178,6 +209,8 @@ class TestFlightRecoveryTest < Minitest::Test
 
   def test_live_promotion_verifies_receipt_identity_validity_and_actual_group_membership
     runner.deliver
+    refute @builds.first.ready_for_internal_testing?
+    assert_equal "IN_BETA_TESTING", @builds.first.build_beta_detail.internal_build_state
     assert_equal @builds.first, runner.verify_live_delivery!(@hash)
     assert_raises(Dieter::Unavailable) { runner.verify_live_delivery!("0" * 64) }
     @builds.first.expired = true
@@ -192,5 +225,26 @@ class TestFlightRecoveryTest < Minitest::Test
     @builds.first.processing_state = "VALID"
     @builds << Build.new
     assert_raises(Dieter::Unavailable) { runner.verify_live_delivery!(@hash) }
+  end
+
+  def test_live_promotion_rejects_unavailable_internal_testing_states
+    runner.deliver
+    detail = @builds.first.build_beta_detail
+    %w[
+      PROCESSING
+      PROCESSING_EXCEPTION
+      MISSING_EXPORT_COMPLIANCE
+      EXPIRED
+      IN_EXPORT_COMPLIANCE_REVIEW
+      UNKNOWN
+    ].each do |state|
+      detail.internal_build_state = state
+      assert_raises(Dieter::Unavailable, state) { runner.verify_live_delivery!(@hash) }
+      assert_raises(Dieter::PipelineError, state) { runner.deliver }
+    end
+    @builds.first.build_beta_detail = nil
+    assert_raises(Dieter::Unavailable) { runner.verify_live_delivery!(@hash) }
+    assert_raises(Dieter::PipelineError) { runner.deliver }
+    assert_equal 1, @uploads.length
   end
 end

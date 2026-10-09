@@ -156,6 +156,7 @@ type nativeHelperSource struct {
 	multiplex                               bool
 	referenceRecovery                       bool
 	ready                                   chan struct{}
+	displayActivity                         displayActivityFactory
 
 	mu            sync.Mutex
 	writes        chan nativeWrite
@@ -340,6 +341,45 @@ func translateNativeInput(value *dieterv1.RemoteDesktopInput) (*nativeInputPaylo
 }
 
 func (s *nativeHelperSource) Stream(ctx context.Context, emit func(media.Sample) error) (result error) {
+	// Startup failures (including power acquisition) must unblock multiplexed
+	// viewers with their real cause rather than leaving them waiting for ready.
+	defer func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.writes == nil {
+			s.stoppedErr = result
+		}
+		if s.ready != nil {
+			select {
+			case <-s.ready:
+			default:
+				close(s.ready)
+			}
+		}
+	}()
+	releaseActivity, err := s.beginDisplayActivity(ctx)
+	if releaseActivity != nil {
+		defer func() {
+			if err := releaseActivity(); err != nil {
+				// Retry once without losing the assertion ID; cleanup failures
+				// remain visible even if that retry succeeds.
+				err = errors.Join(err, releaseActivity())
+				if errors.Is(result, errCaptureProbeComplete) {
+					// Completion is a control signal, not a successful cleanup.
+					// ProbeCapture must not hide a failed power release.
+					result = err
+				} else {
+					result = errors.Join(result, err)
+				}
+				if s.logger != nil {
+					s.logger.Error("native capture display activity cleanup failed", "error", err)
+				}
+			}
+		}()
+	}
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
 	config := s.currentConfigurationLocked()
 	s.mu.Unlock()

@@ -15,10 +15,7 @@ import (
 )
 
 func protoState(value model.State) *dieterv1.State {
-	result := &dieterv1.State{StorePath: value.StorePath, Archives: &dieterv1.SharedArchives{ProjectIds: value.ArchivedProjectIDs, ItemIds: value.ArchivedItemIDs}}
-	for _, board := range value.RetiredBoards {
-		result.Archives.RetiredBoards = append(result.Archives.RetiredBoards, protoBoard(board))
-	}
+	result := &dieterv1.State{StorePath: value.StorePath}
 	for _, item := range value.Projects {
 		result.Projects = append(result.Projects, protoProject(item))
 	}

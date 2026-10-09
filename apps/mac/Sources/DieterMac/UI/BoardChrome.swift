@@ -3,11 +3,13 @@ import DieterAPI
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct BoardHeader: View {
+/// The board's glass top bar in the window's title band: the board picker,
+/// filter segments, search, view controls, and New Task.
+struct BoardTopBar: View {
     @Environment(DieterStore.self) private var store
-    var usesTitlebarSpace = false
-    var active = true
+    @Environment(\.dieterTitleBandLeadingInset) private var leadingInset
     @State private var quickTaskPresented = false
+    @State private var deleteBoardPresented = false
 
     private var workspacePresented: Bool {
         guard let cardID = store.selectedCardID else { return false }
@@ -18,237 +20,254 @@ struct BoardHeader: View {
     /// The core's board view of the selected board.
     private var view: ClientBoardViewSlice { store.boardProjection.view }
 
-    private func machineFilterMenu(iconOnly: Bool) -> some View {
-        Menu {
-            machineFilterOptions
-        } label: {
-            if iconOnly {
-                Label("Machine", systemImage: "desktopcomputer")
-                    .labelStyle(.iconOnly)
-            } else {
-                Text(
-                    store.machineFilter.isEmpty
-                        ? "All machines"
-                        : (store.endpoints.first { $0.daemonID == store.machineFilter }?.name
-                            ?? store.machineFilter))
-            }
-        }
-        .menuStyle(.button)
-        .tint(store.machineFilter.isEmpty ? nil : Color.accentColor)
-        .accessibilityIdentifier("board.filter.machine")
-        .help("Filter cards by their execution machine")
-    }
-
-    private var stateFilterTitle: String {
-        view.stateTitle.isEmpty ? "All states" : view.stateTitle
-    }
+    private var hasActiveFilters: Bool { store.stateFilter != .all || !store.machineFilter.isEmpty }
 
     var body: some View {
-        FluidPaneChrome(background: .clear, spacing: 7) {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(store.selectedBoard?.name ?? "Board")
-                        .font(DieterFont.paneTitle).lineLimit(1)
-                    Text(view.summary)
-                        .font(DieterFont.subtitle)
-                        .foregroundStyle(DieterTheme.tertiary).lineLimit(1)
-                }
-                .layoutPriority(1)
-                Spacer(minLength: 8)
-                if workspacePresented && store.kanbanPresentedAlongsideConversation {
-                    Button {
-                        store.kanbanPresentedAlongsideConversation = false
-                    } label: {
-                        ConversationWorkspaceSymbol(
-                            systemName: "rectangle.3.group",
-                            selected: true,
-                            frameSize: ConversationWorkspaceChromeMetrics.actionSize
-                        )
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("Hide Kanban")
-                    .accessibilityLabel("Hide Kanban")
-                    .accessibilityIdentifier("board.kanban-toggle")
-                }
-            }
-        } secondary: {
+        DieterGlassBar {
+            boardPicker
             ViewThatFits(in: .horizontal) {
-                fullToolbar.fixedSize(horizontal: true, vertical: false)
-                compactToolbar.fixedSize(horizontal: true, vertical: false)
-                collapsedToolbar.fixedSize(horizontal: true, vertical: false)
+                HStack(spacing: 8) {
+                    filterTrack(showsLabels: true)
+                    Spacer(minLength: 8)
+                    trailing(searchWidth: 220)
+                }
+                HStack(spacing: 8) {
+                    filterTrack(showsLabels: true)
+                    Spacer(minLength: 8)
+                    trailing(searchWidth: 150)
+                }
+                HStack(spacing: 8) {
+                    filterTrack(showsLabels: false)
+                    Spacer(minLength: 8)
+                    trailing(searchWidth: 0)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .font(.callout)
-            .controlSize(.regular)
-            .buttonStyle(.bordered)
         }
+        .padding(.leading, 14 + leadingInset)
+        .padding(.trailing, DieterMetrics.windowInset + 4)
+        .padding(.top, DieterMetrics.titleBandTop)
+        .frame(height: DieterMetrics.titleBandHeight, alignment: .top)
+        .background(DieterTitleBandRegion())
         .onChange(of: store.selectedBoard?.labels.map(\.id) ?? [], initial: true) { _, labels in
             if !store.labelFilter.isEmpty && !labels.contains(store.labelFilter) {
                 store.labelFilter = ""
             }
         }
-    }
-
-    private var fullToolbar: some View {
-        HStack(spacing: 8) {
-            if store.selectedBoard?.labels.isEmpty == false {
-                allCardsButton(compact: false)
+        .confirmationDialog(
+            "Delete \(store.selectedBoard?.name ?? "board") from Dieter?",
+            isPresented: $deleteBoardPresented,
+            titleVisibility: .visible
+        ) {
+            Button("Delete board", role: .destructive) {
+                if let board = store.selectedBoard { Task { await store.retireBoard(board) } }
             }
-            labelShelf
-            stateFilterMenu(iconOnly: false)
-            machineFilterMenu(iconOnly: false)
-            boardSettingsButton
-            Button {
-                store.labelsPresented = true
-            } label: {
-                Label("Labels", systemImage: "tag")
-            }
-            .help("Manage board labels")
-            newCardButton(iconOnly: false)
-            quickTaskButton
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "Only empty boards can be deleted. Move or remove all cards, including archived cards, and schedules first. The board and its settings are preserved and can be restored."
+            )
         }
     }
 
-    private var compactToolbar: some View {
-        HStack(spacing: 8) {
-            if store.selectedBoard?.labels.isEmpty == false {
-                allCardsButton(compact: true)
-                labelFilterMenu
-            }
-            stateFilterMenu(iconOnly: true)
-            machineFilterMenu(iconOnly: true)
-            boardSettingsButton.labelStyle(.iconOnly)
-            newCardButton(iconOnly: true)
-            quickTaskButton.labelStyle(.iconOnly)
-        }
-    }
+    // MARK: Board picker
 
-    private var collapsedToolbar: some View {
-        HStack(spacing: 8) {
-            Menu {
-                if store.selectedBoard?.labels.isEmpty == false {
-                    labelFilterOptions
-                    Divider()
-                }
-                stateFilterOptions
-                Divider()
-                machineFilterOptions
-                Divider()
-                Button("Manage labels…", systemImage: "tag") { store.labelsPresented = true }
-            } label: {
-                Label("Filters", systemImage: "line.3.horizontal.decrease")
-                    .labelStyle(.iconOnly)
-            }
-            .menuStyle(.button)
-            .tint(hasActiveFilters ? Color.accentColor : nil)
-            .help("Filter cards")
-            .accessibilityIdentifier("board.filters")
-            boardSettingsButton.labelStyle(.iconOnly)
-            newCardButton(iconOnly: true)
-            quickTaskButton.labelStyle(.iconOnly)
-        }
-    }
-
-    private var hasActiveFilters: Bool {
-        !store.labelFilter.isEmpty || store.stateFilter != .all || !store.machineFilter.isEmpty
-    }
-
-    private func stateFilterMenu(iconOnly: Bool) -> some View {
-        Menu {
-            stateFilterOptions
-        } label: {
-            if iconOnly {
-                Label("State", systemImage: "line.3.horizontal.decrease")
-                    .labelStyle(.iconOnly)
-            } else {
-                Text(stateFilterTitle)
-            }
-        }
-        .menuStyle(.button)
-        .tint(store.stateFilter == .all ? nil : Color.accentColor)
-        .accessibilityIdentifier("board.filter.state")
-        .help("Filter cards by state")
-    }
-
-    private var labelFilterMenu: some View {
-        Menu {
-            labelFilterOptions
-            Divider()
-            Button("Manage labels…", systemImage: "tag") { store.labelsPresented = true }
-        } label: {
-            Label("Labels", systemImage: "tag")
-                .labelStyle(.iconOnly)
-        }
-        .menuStyle(.button)
-        .tint(store.labelFilter.isEmpty ? nil : Color.accentColor)
-        .help("Filter cards by label")
-        .accessibilityIdentifier("board.filter.labels")
-    }
-
-    private func newCardButton(iconOnly: Bool) -> some View {
-        Button {
-            store.createConversationPresented = true
-        } label: {
-            if iconOnly {
-                Label("New card", systemImage: "rectangle.badge.plus")
-                    .labelStyle(.iconOnly)
-            } else {
-                Label("New card", systemImage: "rectangle.badge.plus")
-            }
-        }
-        .help("New card")
-        .accessibilityIdentifier("board.new-card")
-    }
-
-    private var boardSettingsButton: some View {
-        Button {
-            store.archivePolicyPresented = true
-        } label: {
-            Label("Board settings", systemImage: "gearshape")
-        }
-        .fixedSize()
-        .help("Board settings")
-        .accessibilityIdentifier("board.settings")
-        .smokeTarget("board.settings")
-    }
-
-    private func allCardsButton(compact: Bool) -> some View {
-        Button {
-            store.labelFilter = ""
-        } label: {
-            HStack(spacing: 5) {
-                if store.labelFilter.isEmpty {
-                    Image(systemName: "checkmark")
-                }
-                Text("\(compact ? "All" : "All cards") · \(view.total)")
-                    .lineLimit(1)
-            }
-        }
-        .tint(store.labelFilter.isEmpty ? Color.accentColor : nil)
-        .fixedSize()
-        .accessibilityIdentifier("board.filter.all")
-        .accessibilityValue(store.labelFilter.isEmpty ? "Selected" : "Not selected")
-    }
-
-    @ViewBuilder private var labelShelf: some View {
-        if let board = store.selectedBoard, !board.labels.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(board.labels, id: \.id) { label in
-                        BoardLabelShelfChip(
-                            label: label, boardID: board.id,
-                            count: Int(view.labelCounts[label.id, default: 0]),
-                            selected: store.labelFilter == label.id
-                        ) {
-                            store.labelFilter = store.labelFilter == label.id ? "" : label.id
-                        }
+    private var boardPicker: some View {
+        let projectID = store.selectedProjectID
+        let boards = store.boards(for: projectID)
+        return Menu {
+            ForEach(boards, id: \.id) { board in
+                Button {
+                    store.openBoard(board.id, projectID: projectID)
+                } label: {
+                    let attention = Int(store.boardAttention[board.id] ?? 0)
+                    let title = attention > 0 ? "\(board.name)  ·  \(attention) need you" : board.name
+                    if board.id == store.selectedBoardID {
+                        Label(title, systemImage: "checkmark")
+                    } else {
+                        Text(title)
                     }
                 }
             }
-            .frame(minWidth: 74, maxWidth: .infinity, alignment: .leading)
+            if !boards.isEmpty { Divider() }
+            Button("New board…", systemImage: "plus") { store.presentNewBoard(projectID: projectID) }
+                .disabled(!store.projectIsAvailable(projectID))
+            if let board = store.selectedBoard {
+                Button("Rename board…", systemImage: "pencil") { store.presentRenameBoard(boardID: board.id) }
+                Button("New card…", systemImage: "rectangle.badge.plus") { store.createConversationPresented = true }
+                Divider()
+                Button("Delete board…", systemImage: "trash", role: .destructive) { deleteBoardPresented = true }
+                    .disabled(!store.projectIsAvailable(board.projectID))
+            }
+        } label: {
+            HStack(spacing: 7) {
+                Text(store.selectedBoard?.name ?? store.selectedProject?.name ?? "Board")
+                    .font(.system(size: 13.5, weight: .semibold))
+                    .foregroundStyle(DieterTheme.text)
+                    .lineLimit(1)
+                if store.selectedBoard != nil {
+                    Text("\(view.total)")
+                        .font(.system(size: 12, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(DieterTheme.tertiary)
+                }
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(DieterTheme.tertiary)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: DieterMetrics.capsuleHeight)
+            .contentShape(Capsule())
         }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .dieterCapsuleChrome()
+        .help(view.summary)
+        .accessibilityLabel("Board \(store.selectedBoard?.name ?? ""), \(view.summary)")
+        .accessibilityIdentifier("board.picker")
+    }
+
+    // MARK: Filters
+
+    @ViewBuilder private func filterTrack(showsLabels: Bool) -> some View {
+        let labels = store.selectedBoard?.labels ?? []
+        let waiting = store.stateFilter == .waiting
+        DieterSegmentTrack {
+            Button {
+                store.labelFilter = ""
+                if waiting { store.stateFilter = .all }
+            } label: {
+                Text("All")
+            }
+            .buttonStyle(DieterSegmentStyle(selected: store.labelFilter.isEmpty && !waiting))
+            .accessibilityIdentifier("board.filter.all")
+            .accessibilityValue(store.labelFilter.isEmpty && !waiting ? "Selected" : "Not selected")
+            .help("All cards · \(view.total)")
+            if showsLabels, let board = store.selectedBoard {
+                ForEach(labels, id: \.id) { label in
+                    BoardLabelSegment(
+                        label: label, boardID: board.id,
+                        count: Int(view.labelCounts[label.id, default: 0]),
+                        selected: store.labelFilter == label.id
+                    ) {
+                        store.labelFilter = store.labelFilter == label.id ? "" : label.id
+                    }
+                }
+            }
+            Button {
+                store.stateFilter = waiting ? .all : .waiting
+            } label: {
+                Text("Needs you")
+            }
+            .buttonStyle(DieterSegmentStyle(selected: waiting))
+            .accessibilityIdentifier("board.filter.needs-you")
+            .accessibilityValue(waiting ? "Selected" : "Not selected")
+        }
+        .fixedSize()
+    }
+
+    // MARK: Trailing controls
+
+    private func trailing(searchWidth: CGFloat) -> some View {
+        HStack(spacing: 8) {
+            if !(store.selectedBoard?.conflictKeys ?? []).isEmpty {
+                SharedConflictsButton(keys: store.selectedBoard?.conflictKeys ?? [])
+                    .buttonStyle(DieterBarButtonStyle())
+            }
+            if store.selectedBoard?.retirementBlocked == true {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(DieterTheme.attention)
+                    .frame(width: DieterMetrics.capsuleHeight, height: DieterMetrics.capsuleHeight)
+                    .dieterCircleChrome()
+                    .help("This board remains available because it has references or a conflicting retirement change.")
+            }
+            if searchWidth > 0 {
+                DieterSearchCapsule(width: searchWidth)
+            } else {
+                Button {
+                    store.commandPalettePresented = true
+                } label: {
+                    Image(systemName: "magnifyingglass").font(.system(size: 13, weight: .medium))
+                }
+                .buttonStyle(DieterBarButtonStyle(shape: .circle))
+                .help("Search and commands (⌘K)")
+                .accessibilityLabel("Search and commands")
+            }
+            viewControls
+            quickTaskButton
+        }
+        .fixedSize()
+    }
+
+    private var viewControls: some View {
+        HStack(spacing: 0) {
+            Menu {
+                stateFilterOptions
+                if view.machineIds.count > 1 || !store.machineFilter.isEmpty {
+                    Divider()
+                    machineFilterOptions
+                }
+                if !(store.selectedBoard?.labels ?? []).isEmpty {
+                    Divider()
+                    labelFilterOptions
+                }
+            } label: {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(hasActiveFilters ? DieterTheme.action : DieterTheme.text)
+                    .frame(width: 34, height: DieterMetrics.capsuleHeight)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+            .help("Filter cards")
+            .accessibilityLabel("Filter cards")
+            .accessibilityIdentifier("board.filters")
+            Button {
+                store.labelsPresented = true
+            } label: {
+                Image(systemName: "tag")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 34, height: DieterMetrics.capsuleHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Manage board labels")
+            .accessibilityLabel("Labels")
+            .accessibilityIdentifier("board.filter.labels")
+            Button {
+                store.archivePolicyPresented = true
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 34, height: DieterMetrics.capsuleHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Board settings")
+            .accessibilityLabel("Board settings")
+            .accessibilityIdentifier("board.settings")
+            .smokeTarget("board.settings")
+            if workspacePresented && store.kanbanPresentedAlongsideConversation {
+                Button {
+                    store.kanbanPresentedAlongsideConversation = false
+                } label: {
+                    Image(systemName: "rectangle.3.group")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 34, height: DieterMetrics.capsuleHeight)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Hide Kanban")
+                .accessibilityLabel("Hide Kanban")
+                .accessibilityIdentifier("board.kanban-toggle")
+            }
+        }
+        .foregroundStyle(DieterTheme.text)
+        .padding(.horizontal, 4)
+        .dieterCapsuleChrome(interactive: false)
+        .disabled(store.selectedBoard == nil)
     }
 
     private var stateFilterOptions: some View {
@@ -260,6 +279,7 @@ struct BoardHeader: View {
             }
         }
         .pickerStyle(.inline)
+        .accessibilityIdentifier("board.filter.state")
     }
 
     private var labelFilterOptions: some View {
@@ -284,6 +304,7 @@ struct BoardHeader: View {
             }
         }
         .pickerStyle(.inline)
+        .accessibilityIdentifier("board.filter.machine")
     }
 
     private var quickTaskButton: some View {
@@ -291,12 +312,17 @@ struct BoardHeader: View {
             store.quickTaskForm.selectBoardContext(projectID: store.selectedProjectID, boardID: store.selectedBoardID)
             quickTaskPresented = true
         } label: {
-            Label("Quick task", systemImage: "sparkles")
+            HStack(spacing: 5) {
+                Image(systemName: "plus").font(.system(size: 11, weight: .bold))
+                Text("New Task")
+            }
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(DieterBarButtonStyle(prominent: true))
         .help("Create a task from its story")
+        .accessibilityLabel("Quick task")
         .accessibilityIdentifier("board.quick-task")
         .smokeTarget("board.quick-task")
+        .disabled(store.selectedBoard == nil)
         .popover(isPresented: $quickTaskPresented, arrowEdge: .top) {
             QuickTaskPopover(isPresented: $quickTaskPresented, draft: store.quickTaskForm)
                 .environment(store)
@@ -304,7 +330,8 @@ struct BoardHeader: View {
     }
 }
 
-struct BoardLabelShelfChip: View {
+/// A label filter segment that can also be dragged onto a card to assign it.
+struct BoardLabelSegment: View {
     let label: Dieter_V1_Label
     let boardID: String
     let count: Int
@@ -316,25 +343,128 @@ struct BoardLabelShelfChip: View {
     var body: some View {
         Button(action: select) {
             HStack(spacing: 5) {
-                if selected {
-                    Image(systemName: "checkmark").foregroundStyle(color)
-                } else {
-                    Circle().fill(color).frame(width: 6, height: 6)
+                Text("#\(label.name)").foregroundStyle(selected ? DieterTheme.text : color.opacity(0.95))
+                if count > 0 {
+                    Text("\(count)").foregroundStyle(DieterTheme.tertiary).monospacedDigit()
                 }
-                Text(label.name).lineLimit(1)
-                Text("· \(count)").foregroundStyle(.secondary)
-            }
-            .draggable(BoardLabelDragPayload(labelID: label.id, boardID: boardID).encoded) {
-                BoardLabelDragPreview(label: label)
             }
         }
-        .buttonStyle(.bordered)
-        .tint(selected ? color : nil)
-        .fixedSize()
-        .help("Click to filter · Drag onto a card to assign")
+        .buttonStyle(DieterSegmentStyle(selected: selected))
+        .overlay {
+            BoardLabelDragSource(
+                payload: BoardLabelDragPayload(labelID: label.id, boardID: boardID).encoded,
+                help: "Click to filter · Drag onto a card to assign",
+                preview: { [label] in BoardLabelDragPreview(label: label) },
+                select: select)
+        }
         .accessibilityLabel("\(label.name), \(count) cards")
         .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityHint("Click to filter. Drag onto a card to assign this label.")
+    }
+}
+
+/// The top bar sits in the window's title-bar strip, which the window server
+/// drags as part of the title bar: a press that moves never reaches the app.
+/// While the pointer is over a label segment this layer makes the window
+/// immovable, so the press arrives here; it then starts the label drag itself
+/// or forwards a click to the segment.
+struct BoardLabelDragSource<Preview: View>: NSViewRepresentable {
+    let payload: String
+    let help: String
+    let preview: () -> Preview
+    let select: () -> Void
+
+    func makeNSView(context: Context) -> BoardLabelDragSourceView { BoardLabelDragSourceView() }
+
+    func updateNSView(_ view: BoardLabelDragSourceView, context: Context) {
+        view.payload = payload
+        view.toolTip = help
+        view.select = select
+        let preview = preview
+        view.renderPreview = { scale in
+            let renderer = ImageRenderer(content: preview())
+            renderer.scale = scale
+            return renderer.nsImage
+        }
+    }
+}
+
+final class BoardLabelDragSourceView: NSView, NSDraggingSource {
+    var payload = ""
+    var select: () -> Void = {}
+    var renderPreview: (CGFloat) -> NSImage? = { _ in nil }
+    private var hoverArea: NSTrackingArea?
+    /// The window's movability before the pointer entered, restored on exit.
+    private var heldMovable: Bool?
+
+    override var mouseDownCanMoveWindow: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(
+            rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+        addTrackingArea(area)
+        hoverArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        guard let window, heldMovable == nil else { return }
+        heldMovable = window.isMovable
+        window.isMovable = false
+    }
+
+    override func mouseExited(with event: NSEvent) { releaseWindow() }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        releaseWindow()
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    private func releaseWindow() {
+        if let heldMovable { window?.isMovable = heldMovable }
+        heldMovable = nil
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        follow(event) { [weak self] in self?.window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) }
+    }
+
+    /// Follows one press: moving past the threshold starts the label drag, and
+    /// a release inside the segment selects it.
+    func follow(_ press: NSEvent, next: () -> NSEvent?) {
+        while let event = next() {
+            if event.type == .leftMouseUp {
+                if bounds.contains(convert(event.locationInWindow, from: nil)) { select() }
+                return
+            }
+            let from = press.locationInWindow, to = event.locationInWindow
+            if hypot(to.x - from.x, to.y - from.y) >= 3 {
+                beginLabelDrag(from: press)
+                return
+            }
+        }
+    }
+
+    private func beginLabelDrag(from press: NSEvent) {
+        let item = NSPasteboardItem()
+        item.setString(payload, forType: .string)
+        let draggingItem = NSDraggingItem(pasteboardWriter: item)
+        let image = renderPreview(window?.backingScaleFactor ?? 2) ?? NSImage(size: bounds.size)
+        let anchor = convert(press.locationInWindow, from: nil)
+        draggingItem.setDraggingFrame(
+            NSRect(
+                x: anchor.x - image.size.width / 2, y: anchor.y - image.size.height / 2,
+                width: image.size.width, height: image.size.height),
+            contents: image)
+        beginDraggingSession(with: [draggingItem], event: press, source: self)
+    }
+
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext)
+        -> NSDragOperation
+    {
+        context == .withinApplication ? [.copy, .move, .generic] : []
     }
 }
 
@@ -352,8 +482,8 @@ struct BoardLabelDragPreview: View {
         }
         .padding(.horizontal, 12).frame(minWidth: 220, minHeight: 38)
         .fixedSize(horizontal: true, vertical: true)
-        .background(DieterTheme.elevated, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(color.opacity(0.48)))
+        .background(DieterTheme.panelSolid, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(color.opacity(0.48)))
         .shadow(color: Color.black.opacity(0.42), radius: 16, y: 7)
     }
 }

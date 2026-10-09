@@ -191,7 +191,7 @@ struct RemoteDesktopVideoSurface: NSViewRepresentable {
                             ? "⌘⇧Esc releases input" : session.controller.keyboardCaptureStatus
                     )
                     .font(.system(size: 11)).foregroundStyle(.secondary)
-                    ScreenShareOptions(controller: session.controller)
+                    ScreenShareOptions(controller: session.controller, size: 28)
                 }.padding(.horizontal, 6))
         default: return nil
         }
@@ -215,10 +215,12 @@ private struct DetachedScreenShareView: View {
                     if case .permissionRequired(let reason) = session.controller.phase {
                         Text(reason).multilineTextAlignment(.center)
                         Button("Check Again") { session.reconnect() }
+                            .buttonStyle(DieterBarButtonStyle(prominent: true))
                     } else if session.keepsConnectionOpen {
                         ProgressView().controlSize(.small)
                     } else {
                         Button("Reconnect") { session.reconnect() }
+                            .buttonStyle(DieterBarButtonStyle(prominent: true))
                     }
                 }
                 .padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))

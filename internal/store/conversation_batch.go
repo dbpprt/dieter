@@ -21,15 +21,15 @@ func (s *Store) AppendUIChunks(cardRef, turnID string, chunks []json.RawMessage)
 		return nil, model.Conversation{}, fmt.Errorf("UI chunk batch must contain 1–%d events", MaxUIChunkBatchEvents)
 	}
 	size := 0
-	writeKind := "conversation_changed"
+	writeKind := conversationChange
 	events := make([]model.ConversationEvent, len(chunks))
 	for i, chunk := range chunks {
 		size += len(chunk)
 		if size > MaxUIChunkBatchBytes || !json.Valid(chunk) {
 			return nil, model.Conversation{}, fmt.Errorf("UI chunk batch must contain valid JSON within %d bytes", MaxUIChunkBatchBytes)
 		}
-		if conversationEventWriteKind("ui-chunk", chunk) == "store_changed" {
-			writeKind = "store_changed"
+		if conversationEventWriteKind("ui-chunk", chunk) == metadataChange {
+			writeKind = metadataChange
 		}
 		events[i] = model.ConversationEvent{Type: "ui-chunk", TurnID: turnID, Data: chunk}
 	}

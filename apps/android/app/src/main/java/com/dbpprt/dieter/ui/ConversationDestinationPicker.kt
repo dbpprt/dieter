@@ -94,7 +94,7 @@ internal fun CaptureDestinationSheet(
                 if (project != null) {
                     ListItem(
                         headlineContent = { Text(project.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                        supportingContent = { Text(CaptureDestinations.projectInfo(project, boards.size, state.presentedProjectReplicas[project.id]?.online == false)) },
+                        supportingContent = { Text(CaptureDestinations.projectInfo(project, boards.size, state.presentedProjectHosts[project.id]?.online == false)) },
                         leadingContent = { CaptureProjectIcon(project) },
                         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
                         modifier = Modifier.padding(horizontal = 16.dp).clip(MaterialTheme.shapes.medium),
@@ -128,7 +128,7 @@ internal fun CaptureDestinationSheet(
                             CaptureDestinationRow(
                                 title = candidate.name,
                                 detail = candidate.summary.ifBlank { candidate.path }.takeIf(String::isNotBlank),
-                                metadata = CaptureDestinations.projectInfo(candidate, count, state.presentedProjectReplicas[candidate.id]?.online == false),
+                                metadata = CaptureDestinations.projectInfo(candidate, count, state.presentedProjectHosts[candidate.id]?.online == false),
                                 selected = candidate.id == draft.project_id,
                                 enabled = CaptureDestinations.selectable(draft, candidate.id),
                                 tag = "capture-project-${candidate.id}",

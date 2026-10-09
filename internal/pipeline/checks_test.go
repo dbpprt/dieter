@@ -23,19 +23,24 @@ func TestAffectedCheckOwnership(t *testing.T) {
 		{"scripts/new_tool.py", []string{"core"}, false},
 		{"apps/android/app/src/test/java/Test.kt", []string{"android"}, false},
 		{"apps/android/app/src/main/java/Conversation.kt", []string{"android"}, true},
-		{"native/android-webrtc/build_sdk.py", []string{"android"}, true},
+		{"native/android-webrtc/build_sdk.py", []string{"android", "compose_android"}, true},
 		{"apps/mac/Tests/DieterMacTests/Test.swift", []string{"macos"}, false},
 		{"apps/mac/Sources/DieterMac/UI/BoardView.swift", []string{"macos"}, true},
 		{"apps/ios/DieterIOSApp/DieterIOSApp.swift", []string{"ios"}, true},
 		{"apps/mac/Sources/DieterIOS/UI/Root.swift", []string{"ios"}, true},
-		{"apps/mac/Sources/DieterTransport/ControlRTCBridge.swift", []string{"macos", "ios"}, true},
+		{"apps/mac/Sources/DieterTransport/ControlRTCBridge.swift", []string{"macos", "ios", "compose_ios"}, true},
 		{"apps/mac/MarkdownPreview/src/chart.js", []string{"core", "macos"}, true},
-		{"fastlane/lib/dieter/platforms/ios.rb", []string{"core", "ios"}, true},
+		{"fastlane/lib/dieter/platforms/ios.rb", []string{"core", "ios", "compose_ios"}, true},
 		{"fastlane/lib/dieter/platforms/android.rb", []string{"core", "android"}, true},
 		{"fastlane/lib/dieter/distribution/apple.rb", []string{"core"}, false},
 		{"tests/e2e/cases/android/machines.telemetry.yaml", []string{"core", "android"}, true},
 		{"tests/e2e/cases/ios/ios.credentials.yaml", []string{"core", "ios"}, true},
 		{"internal/pipeline/result_test.go", []string{"core"}, false},
+		{"apps/mobile/README.md", nil, false},
+		{"apps/mobile/android/app/src/main/kotlin/SpikeActivity.kt", []string{"compose_android"}, true},
+		{"apps/mobile/ios/App/DieterComposeSpikeApp.swift", []string{"compose_ios"}, true},
+		{"apps/mac/Sources/DieterComposeHost/ComposeHost.swift", []string{"compose_ios"}, true},
+		{"apps/core/mobile/src/commonMain/kotlin/MobileApp.kt", []string{"compose_core", "compose_android", "compose_ios"}, true},
 	} {
 		t.Run(test.path, func(t *testing.T) {
 			plan := planChecks([]string{test.path}, nil, "base")
@@ -52,6 +57,49 @@ func TestAffectedCheckOwnership(t *testing.T) {
 				t.Fatal("documentation selected compilers")
 			}
 		})
+	}
+}
+
+func TestComposeChecksTrackReusedDependenciesWithoutReplacingShippingChecks(t *testing.T) {
+	for _, path := range []string{"apps/android/app/src/main/java/com/dbpprt/dieter/settings/DieterPalette.kt", "apps/android/app/src/main/java/com/dbpprt/dieter/ui/BoardCardDrag.kt"} {
+		plan := planChecks([]string{path}, nil, "base")
+		for _, component := range []string{"android", "compose_core", "compose_android", "compose_ios"} {
+			if !plan.CI[component] {
+				t.Fatalf("%s omitted %s", path, component)
+			}
+		}
+	}
+	for _, path := range []string{"native/android-webrtc/sdk.gradle", "apps/android/app/src/main/java/com/dbpprt/dieter/screens/ScreenCanvasHost.kt", "apps/android/app/src/main/java/com/dbpprt/dieter/ui/RemoteTerminalView.kt", "apps/android/app/src/main/java/com/dbpprt/dieter/ui/ComposerAttachments.kt"} {
+		plan := planChecks([]string{path}, nil, "base")
+		if !plan.CI["android"] || !plan.CI["compose_android"] {
+			t.Fatalf("%s missed Android host: %v", path, plan.CI)
+		}
+	}
+	for _, path := range []string{"apps/core/shared/src/commonMain/kotlin/CoreRuntime.kt", "api/proto/dieter/v1/dieter.proto", "tools/fixtures/gateway/compose_fixture.go"} {
+		plan := planChecks([]string{path}, nil, "base")
+		for _, component := range []string{"kmp", "android", "ios", "macos", "compose_core", "compose_android", "compose_ios"} {
+			if !plan.CI[component] {
+				t.Fatalf("%s omitted %s", path, component)
+			}
+		}
+	}
+	plan := planChecks([]string{"apps/android/app/src/main/java/com/dbpprt/dieter/data/AndroidCredentials.kt"}, nil, "base")
+	if !plan.CI["android"] || !plan.CI["compose_android"] || plan.CI["compose_ios"] {
+		t.Fatalf("shared Android credentials scope = %v", plan.CI)
+	}
+	plan = planChecks([]string{".github/workflows/compose-mobile-deliver.yml"}, nil, "base")
+	for _, component := range []string{"core", "compose_core", "compose_android", "compose_ios"} {
+		if !plan.CI[component] {
+			t.Fatalf("workflow omitted %s", component)
+		}
+	}
+	for _, path := range []string{"fastlane/lib/dieter/fixtures/gateway.rb", "internal/harness/runtime/bridge.js", ".github/actions/pipeline-setup/action.yml"} {
+		plan := planChecks([]string{path}, nil, "base")
+		for _, component := range []string{"compose_core", "compose_android", "compose_ios"} {
+			if !plan.CI[component] {
+				t.Fatalf("%s omitted %s", path, component)
+			}
+		}
 	}
 }
 func TestSharedCoreCheckParity(t *testing.T) {
@@ -80,6 +128,34 @@ func TestSharedCoreCheckParity(t *testing.T) {
 		}
 		if ios != 2 {
 			t.Fatal("iPhone and iPad both required")
+		}
+	}
+}
+
+func TestPrivacyPackagingSelectsItsIsolatedNativeGate(t *testing.T) {
+	for _, path := range []string{"native/macos-privacy/package.sh", "native/macos-privacy/PrivacyHIDService.swift", "native/macos-capture/PrivacyService.swift", "internal/serviceruntime/runtime.go"} {
+		plan := planChecks([]string{path}, nil, "base")
+		if !checkExists(plan, "mac", "privacy_native_test") {
+			t.Fatalf("%s omitted privacy package qualification: %v", path, plan.Checks)
+		}
+	}
+}
+
+func TestOrchestrationContractsDoNotRequireLocalNativeCompilation(t *testing.T) {
+	for _, path := range []string{"fastlane/lib/dieter/pipeline/process.rb", "fastlane/lib/dieter/pipeline/evidence.rb", "fastlane/lib/dieter/ci.rb", "fastlane/lib/dieter/config.rb"} {
+		plan := planChecks([]string{path}, nil, "")
+		if !checkExists(plan, "portable", "contracts") {
+			t.Fatalf("missing contracts for %s", path)
+		}
+		for _, check := range plan.Checks {
+			if check.Component != "portable" {
+				t.Fatalf("orchestration selected native work: %v", plan.Checks)
+			}
+		}
+		for _, component := range ciComponents {
+			if !plan.CI[component] {
+				t.Fatalf("shared orchestration omitted CI component %s", component)
+			}
 		}
 	}
 }
@@ -115,6 +191,33 @@ func TestAffectedGoIncludesEmbeddedDeletedAndTestOnlyImporters(t *testing.T) {
 	}
 	if len(affectedGo("/repo", []string{"go.sum"}, packages)) != 4 {
 		t.Fatal("module changes must broaden")
+	}
+}
+func TestGoInventoryReadsOnlyStdout(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is unavailable")
+	}
+	root := t.TempDir()
+	if output, err := exec.Command(git, "-C", root, "init").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %s: %v", output, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// A cold module cache makes go report downloads on stderr.
+	bin := t.TempDir()
+	fake := "#!/bin/sh\necho 'go: downloading example.com/module v1.0.0' >&2\necho '{\"ImportPath\":\"example.com/root\"}'\n"
+	if err := os.WriteFile(filepath.Join(bin, "go"), []byte(fake), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+filepath.Dir(git))
+	packages, err := goPackages(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(packages) != 1 || packages[0].ImportPath != "example.com/root" {
+		t.Fatalf("packages = %+v", packages)
 	}
 }
 func TestPlannerDoesNotLoadGoForNativeOrDocumentation(t *testing.T) {

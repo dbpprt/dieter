@@ -6,11 +6,11 @@ import UniformTypeIdentifiers
 
 extension ClientBoardAgentStatus {
     /// The status dot's colour.
-    var color: Color {
+    @MainActor var color: Color {
         switch self {
-        case .running: .green
-        case .failed: .orange
-        default: .white
+        case .running: DieterTheme.running
+        case .failed: DieterTheme.failed
+        default: DieterTheme.tertiary
         }
     }
 }
@@ -36,9 +36,9 @@ struct BoardCardDragPreview: View {
             Spacer(minLength: 8)
         }
         .padding(12).frame(width: 240)
-        .background(DieterTheme.elevated, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(DieterTheme.panelSolid, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.shell.opacity(0.4))
+            RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.tileRimSelected)
         )
         .shadow(color: Color.black.opacity(0.42), radius: 18, y: 8)
     }
@@ -73,57 +73,134 @@ struct BoardCardClickStyle: PrimitiveButtonStyle {
 /// Selection changes only redraw decoration, not every visible card's rich content.
 struct BoardCardBackground: View {
     @Environment(DieterStore.self) private var store
-    var usesTitlebarSpace = false
-    var active = true
     let cardID: String
     let hovering: Bool
     var body: some View {
         RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous)
             .fill(
                 store.selectedCardID == cardID
-                    ? DieterTheme.elevated.opacity(0.82)
-                    : (hovering ? DieterTheme.raised.opacity(0.9) : DieterTheme.surface))
+                    ? DieterTheme.tileSelected
+                    : (hovering ? DieterTheme.tileHover : DieterTheme.tile))
     }
 }
 
 struct BoardCardBorder: View {
     @Environment(DieterStore.self) private var store
-    var usesTitlebarSpace = false
-    var active = true
     let cardID: String
     let labelDropTargeted: Bool
     var body: some View {
         RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous)
-            .stroke(
+            .strokeBorder(
                 labelDropTargeted
-                    ? DieterTheme.eyes.opacity(0.9)
-                    : (store.selectedCardID == cardID ? DieterTheme.shell.opacity(0.45) : DieterTheme.border),
+                    ? DieterTheme.action.opacity(0.8)
+                    : (store.selectedCardID == cardID ? DieterTheme.tileRimSelected : DieterTheme.tileRim),
                 lineWidth: labelDropTargeted ? 1.5 : 1)
     }
 }
 
 /// Presence timestamps and harness directory refreshes must not invalidate the
 /// entire rich card. These small subviews own the corresponding observations.
-struct BoardCardMachineBadge: View {
+struct BoardCardMachineName: View {
     @Environment(DieterStore.self) private var store
-    var usesTitlebarSpace = false
-    var active = true
     let card: Dieter_V1_Card
 
     var body: some View {
         if let machine = store.machine(for: card) {
-            ProjectMachineBadge(
-                machine: machine, online: store.machineIsAvailable(machine),
-                compact: false, alignsWithStatus: true
-            )
+            let online = store.machineIsAvailable(machine)
+            Text(machine.name)
+                .font(.system(size: 11))
+                .foregroundStyle(online ? DieterTheme.tertiary : DieterTheme.tertiary.opacity(0.6))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help("Hosted on \(machine.name) · \(SharedRules.shared.machinePresence(online: online))")
+                .accessibilityLabel("Hosted on \(machine.name), \(online ? "online" : "offline")")
+        }
+    }
+}
+
+/// "Codex · gpt-5", from the card's machine's harness directory.
+struct BoardCardHarnessChip: View {
+    @Environment(DieterStore.self) private var store
+    let card: Dieter_V1_Card
+
+    var body: some View {
+        if !card.provider.isEmpty {
+            let harness = store.machineMetadata[card.ownerDaemonID]?.harnesses.harnesses.first {
+                $0.id == card.provider
+            }
+            let provider = harness?.name ?? card.provider
+            let model = card.model.isEmpty ? "" : (harness?.models.first { $0.id == card.model }?.name ?? card.model)
+            DieterChip(text: model.isEmpty ? provider : "\(provider) · \(model)")
+                .layoutPriority(-1)
+        }
+    }
+}
+
+/// The branch line and the mono footer: diff stats, agents, and the age. The
+/// age joins the branch line when there are no stats, so no row is mostly empty.
+struct BoardCardFooter: View {
+    let card: Dieter_V1_Card
+    let flags: ClientBoardCardFlags
+    let reservesRunAction: Bool
+
+    var body: some View {
+        let summary = card.workspace
+        let branch = summary.branch.isEmpty ? card.workspaceBranch : summary.branch
+        let badge = WorkspaceBadge.of(card)
+        let hasStats =
+            summary.additions > 0 || summary.deletions > 0 || summary.changedFiles > 0
+            || !card.activeSubagents.isEmpty
+        let age = SharedRules.shared.cardAge(
+            updatedAt: card.updatedAt, lastActivityAt: card.lastActivityAt, nowMillis: Date.now.epochMillis)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                if badge.conflicted {
+                    DieterBranchLabel(text: badge.fullTitle).foregroundStyle(DieterTheme.failed)
+                } else if !branch.isEmpty {
+                    DieterBranchLabel(text: branch)
+                } else if flags.tone != .attention, !flags.runtimeLabel.isEmpty {
+                    Text(flags.runtimeLabel.lowercased())
+                        .font(DieterFont.mono)
+                        .foregroundStyle(flags.tone == .active ? DieterTheme.running : DieterTheme.tertiary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                if !hasStats { ageText(age) }
+                if !hasStats && reservesRunAction { Color.clear.frame(width: 24, height: 14) }
+            }
+            .help(badge.shown ? badge.accessibilityLabel : "")
+            if hasStats {
+                HStack(spacing: 8) {
+                    if summary.additions > 0 || summary.deletions > 0 || summary.changedFiles > 0 {
+                        DieterDiffStat(
+                            additions: Int(summary.additions), deletions: Int(summary.deletions),
+                            files: Int(summary.changedFiles))
+                    }
+                    if !card.activeSubagents.isEmpty {
+                        Text("\(card.activeSubagents.count) agents")
+                            .font(DieterFont.mono).foregroundStyle(DieterTheme.tertiary)
+                    }
+                    Spacer(minLength: 0)
+                    ageText(age)
+                    if reservesRunAction { Color.clear.frame(width: 24, height: 14) }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private func ageText(_ age: String) -> some View {
+        if !age.isEmpty {
+            Text(age)
+                .font(DieterFont.mono)
+                .fixedSize()
+                .foregroundStyle(DieterTheme.tertiary)
+                .accessibilityLabel("Last activity \(age)")
         }
     }
 }
 
 struct BoardCardAvailability: ViewModifier {
     @Environment(DieterStore.self) private var store
-    var usesTitlebarSpace = false
-    var active = true
     let projectID: String
 
     func body(content: Content) -> some View {
@@ -133,8 +210,6 @@ struct BoardCardAvailability: ViewModifier {
 
 struct BoardCardHelp: ViewModifier {
     @Environment(DieterStore.self) private var store
-    var usesTitlebarSpace = false
-    var active = true
     let card: Dieter_V1_Card
     let flags: ClientBoardCardFlags
     let labels: [Dieter_V1_Label]
@@ -184,8 +259,6 @@ struct BoardCardHelp: ViewModifier {
 
 struct BoardCardView: View {
     @Environment(DieterStore.self) private var store
-    var usesTitlebarSpace = false
-    var active = true
     let card: Dieter_V1_Card
     let board: Dieter_V1_Board?
     /// The lane the card shows in; a card dropped on it lands there, above it.
@@ -254,57 +327,58 @@ struct BoardCardView: View {
                     if store.selectedCardID != card.id { await store.openConversation(cardID: card.id) }
                 }
             } label: {
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack(alignment: .top) {
-                        Text(card.title.isEmpty ? "Untitled card" : card.title).font(
-                            .system(size: 13, weight: .semibold)
-                        ).multilineTextAlignment(.leading).lineLimit(3)
-                        Spacer(minLength: 4)
-                        Circle().fill(flags.agent.color).frame(width: 6, height: 6).padding(
-                            .top, 5
-                        )
-                        .accessibilityLabel(flags.agentLabel)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: 7) {
+                        if let dot = statusColor(flags) {
+                            DieterStatusDot(color: dot)
+                                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                        }
+                        Text(card.title.isEmpty ? "Untitled card" : card.title)
+                            .font(.system(size: 13.5, weight: .semibold))
+                            .foregroundStyle(DieterTheme.text)
+                            .multilineTextAlignment(.leading).lineLimit(2)
+                        Spacer(minLength: 0)
+                    }
+                    .accessibilityLabel(flags.agentLabel)
+                    if flags.tone == .attention {
+                        DieterCallout(text: flags.runtimeLabel)
                     }
                     if !card.summary.isEmpty {
-                        Text(card.summary).font(.system(size: 11)).foregroundStyle(DieterTheme.subtle)
-                            .lineLimit(3).multilineTextAlignment(.leading)
-                    }
-                    if !labels.isEmpty {
-                        FlowLabels(labels: labels)
+                        Text(card.summary).font(.system(size: 12)).foregroundStyle(DieterTheme.subtle)
+                            .lineLimit(2).multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     HStack(spacing: 7) {
-                        StatusPill(text: flags.runtimeLabel, color: toneColor(flags.tone))
-                        BoardCardMachineBadge(card: card)
-                            .layoutPriority(-1)
-                        Spacer(minLength: 0)
-                        let age = SharedRules.shared.cardAge(
-                            updatedAt: card.updatedAt, lastActivityAt: card.lastActivityAt,
-                            nowMillis: Date.now.epochMillis)
-                        if !age.isEmpty {
-                            Text(age)
-                                .font(.system(size: 10, weight: .medium))
-                                .fixedSize()
-                                .foregroundStyle(DieterTheme.tertiary)
-                                .accessibilityLabel("Last activity \(age)")
+                        BoardCardHarnessChip(card: card)
+                        ForEach(labels.prefix(2), id: \.id) { label in
+                            Text("#\(label.name)")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Color(hex: label.color) ?? DieterTheme.subtle)
+                                .lineLimit(1)
                         }
-                        if !card.activeSubagents.isEmpty {
-                            Label("\(card.activeSubagents.count)", systemImage: "person.2").font(
-                                .system(size: 10)
-                            ).foregroundStyle(DieterTheme.shell)
-                        }
-                        if showsRunAction { Color.clear.frame(width: 24, height: 24) }
+                        Spacer(minLength: 4)
+                        BoardCardMachineName(card: card)
                     }
+                    BoardCardFooter(card: card, flags: flags, reservesRunAction: showsRunAction)
                 }
-                .padding(12)
+                .padding(.horizontal, 12).padding(.top, 11).padding(.bottom, 10)
                 .padding(.bottom, card.mergedIntoCardID.isEmpty ? 0 : 28)
                 .background { BoardCardBackground(cardID: card.id, hovering: hovering) }
+                .overlay(alignment: .bottom) {
+                    if flags.tone == .active {
+                        // A running agent: a thin line along the bottom edge.
+                        Capsule().fill(DieterTheme.running.opacity(0.85)).frame(height: 2)
+                            .padding(.horizontal, 10).padding(.bottom, 0.5)
+                            .accessibilityHidden(true)
+                    }
+                }
                 .overlay { BoardCardBorder(cardID: card.id, labelDropTargeted: labelDropTargeted) }
                 .overlay(alignment: .topTrailing) {
                     if labelDropTargeted {
                         Image(systemName: "tag.fill")
-                            .font(.system(size: 10, weight: .bold)).foregroundStyle(DieterTheme.eyes)
+                            .font(.system(size: 10, weight: .bold)).foregroundStyle(DieterTheme.action)
                             .padding(7)
-                            .background(DieterTheme.background.opacity(0.9), in: Circle())
+                            .background(DieterTheme.panelSolid, in: Circle())
                             .padding(5)
                             .transition(.scale.combined(with: .opacity))
                     } else if store.labelUpdatingCardIDs.contains(card.id) {
@@ -348,9 +422,13 @@ struct BoardCardView: View {
                         .foregroundStyle(DieterTheme.text)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(
-                            DieterTheme.background.opacity(0.95), in: RoundedRectangle(cornerRadius: 12)
+                            DieterTheme.panelSolid.opacity(0.96),
+                            in: RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous)
                         )
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(DieterTheme.eyes, lineWidth: 2))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: DieterMetrics.cardRadius, style: .continuous)
+                                .strokeBorder(DieterTheme.action, lineWidth: 2)
+                        )
                         .allowsHitTesting(false)
                         .accessibilityLabel("Release to merge the initial request and move the source to Done")
                         .accessibilityIdentifier("card-merge.\(card.id)")
@@ -391,15 +469,15 @@ struct BoardCardView: View {
                     }
                     .foregroundStyle(.white)
                     .frame(width: 24, height: 24)
-                    .background(DieterTheme.shellDeep, in: Circle())
                     .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .dieterCircleChrome(prominent: true)
                 .disabled(starting)
                 .quickHelp(starting ? "Starting task" : "Run task")
                 .accessibilityLabel(starting ? "Starting \(runTitle)" : "Run \(runTitle)")
                 .accessibilityIdentifier("card-run.\(card.id)")
-                .padding(.trailing, 12).padding(.bottom, 12)
+                .padding(.trailing, 10).padding(.bottom, 8)
                 .transition(.scale(scale: 0.85).combined(with: .opacity))
             }
         }
@@ -417,6 +495,16 @@ struct BoardCardView: View {
         .accessibilityIdentifier("card.\(card.id)")
         .accessibilityHint("Click to open chat. Double-click to edit.")
         .smokeTarget("card.\(card.id)")
+    }
+
+    /// A leading dot only while the agent works, waits, or failed.
+    private func statusColor(_ flags: ClientBoardCardFlags) -> Color? {
+        switch flags.tone {
+        case .active: DieterTheme.running
+        case .attention: DieterTheme.attention
+        case .failed: DieterTheme.failed
+        default: nil
+        }
     }
 
     private func openEditor() {
@@ -504,13 +592,14 @@ struct BoardCardContextMenu: ViewModifier {
                     HStack {
                         Spacer()
                         Button("Cancel") { renamePresented = false }
+                            .buttonStyle(DieterBarButtonStyle())
                             .smokeTarget("card-editor.cancel")
                         Button("Rename") {
                             Task {
                                 await store.rename(card, title: renameText)
                                 renamePresented = false
                             }
-                        }.buttonStyle(.borderedProminent).disabled(
+                        }.buttonStyle(DieterBarButtonStyle(prominent: true)).disabled(
                             renameText.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }.padding(22).frame(width: 440)
@@ -519,23 +608,6 @@ struct BoardCardContextMenu: ViewModifier {
             .sheet(isPresented: $editPresented) {
                 EditCardSheet(card: card).environment(store)
             }
-    }
-}
-
-struct FlowLabels: View {
-    let labels: [Dieter_V1_Label]
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(labels.prefix(3), id: \.id) { label in
-                HStack(spacing: 4) {
-                    Circle().fill(Color(hex: label.color) ?? DieterTheme.shellDeep).frame(width: 5, height: 5)
-                    Text(label.name)
-                }
-                .font(.system(size: 10, weight: .medium)).foregroundStyle(DieterTheme.subtle)
-                .padding(.horizontal, 7).padding(.vertical, 3)
-                .background(DieterTheme.raised, in: Capsule())
-            }
-        }
     }
 }
 

@@ -1,0 +1,25 @@
+name: Apple qualification cache
+description: Reuse unsigned compiler state; release producers never consume this cache
+inputs:
+  component:
+    description: Qualification component (mac or ios)
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        # Separate toolchains, dependency graphs, platform and revisions. Restore
+        # compatible prior state; Swift/Xcode and product contracts validate it.
+        key: apple-check-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.5-java21-${{ inputs.component }}-${{ hashFiles('apps/mac/Package.resolved', 'apps/ios/**/Package.resolved', 'apps/core/gradle/libs.versions.toml', 'apps/core/gradle/wrapper/gradle-wrapper.properties') }}-${{ github.sha }}
+        restore-keys: |
+          apple-check-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.5-java21-${{ inputs.component }}-${{ hashFiles('apps/mac/Package.resolved', 'apps/ios/**/Package.resolved', 'apps/core/gradle/libs.versions.toml', 'apps/core/gradle/wrapper/gradle-wrapper.properties') }}-
+        path: |
+          ~/.konan
+          apps/mac/.build/dieter-tests
+          apps/mac/.build/dieter-ios-policy
+          apps/mac/Frameworks/DieterShared.xcframework
+          apps/mac/Frameworks/.DieterShared.inputs
+          apps/ios/.build/DerivedData/SourcePackages
+          apps/ios/.build/DerivedData/ModuleCache.noindex
+          apps/ios/.build/DerivedData/Build/Intermediates.noindex

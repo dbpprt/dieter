@@ -64,19 +64,3 @@ object MachinePresence {
         .filter { it > now }
         .minOrNull()
 }
-
-/** Which machine the client attaches its feed to. */
-object MachineSelection {
-    /**
-     * Online, compatible machines by name, with [preferredId] first. An
-     * explicit selection is honored only while that machine is online.
-     */
-    fun candidates(machines: List<Machine>, preferredId: String?, explicit: Boolean, now: Instant): List<Machine> {
-        val online = machines.filter { it.online(now) }
-        if (explicit && preferredId != null) return online.filter { it.id == preferredId }
-        val sorted = online.filter { it.compatible }
-            .sortedWith(compareBy<Machine> { it.name.lowercase() }.thenBy { it.id })
-        val preferred = sorted.firstOrNull { it.id == preferredId } ?: return sorted
-        return listOf(preferred) + (sorted - preferred)
-    }
-}

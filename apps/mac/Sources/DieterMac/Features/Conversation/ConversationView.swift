@@ -67,10 +67,15 @@ struct ConversationView: View {
                     ConversationContentPane(model: context.content)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea(.container, edges: .top)
             } else {
                 ConversationContentSplit(presented: workspacePresented, singleWorkspace: singleWorkspace) {
-                    conversationBody(workspacePresented: workspacePresented)
+                    VStack(spacing: 0) {
+                        ConversationPanelHeader(
+                            model: context.content, role: workspacePresented ? .chatBesideWorkspace : .unified
+                        )
+                        .padding(.horizontal, ConversationPaneTitlebar<EmptyView>.horizontalInset)
+                        conversationBody(workspacePresented: workspacePresented)
+                    }
                 } content: {
                     ConversationContentPane(model: context.content)
                 }
@@ -112,12 +117,9 @@ struct ConversationView: View {
         @Bindable var content = context.content
         let tab = content.conversationTab
         return VStack(spacing: 0) {
-            ConversationChrome(
-                compact: compact, standalone: standalone, tab: $content.conversationTab)
-
             Group {
                 if context.conversationLoading {
-                    DeferredConversationLoadFeedback()
+                    ConversationLoadingView(standalone: standalone)
                 } else if let error = context.conversationError, context.conversation == nil {
                     LoadFeedback(
                         title: "Conversation", error: error,
@@ -209,29 +211,6 @@ struct ConversationView: View {
         // onPasteCommand here too can append the same clipboard image twice.
         .attachmentPasteCatcher { pasteboard in
             context.attachPasteboard(pasteboard)
-        }
-    }
-}
-
-private struct DeferredConversationLoadFeedback: View {
-    @State private var visible = false
-
-    var body: some View {
-        ZStack {
-            Color.clear
-            if visible {
-                LoadFeedback(title: "Loading conversation…")
-                    .transition(.opacity)
-            }
-        }
-        .task {
-            do {
-                try await DieterTaskSleep.milliseconds(180)
-            } catch {
-                return
-            }
-            guard !Task.isCancelled else { return }
-            visible = true
         }
     }
 }

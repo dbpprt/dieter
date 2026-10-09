@@ -22,17 +22,18 @@ object OpenRequests {
     /**
      * Resolves a request for [cardId] against the [cards] shown now. [inInbox]
      * opens it beside the inbox (a widget row), otherwise where it belongs. A
-     * missing conversation waits while the workspace is still [loading] or the
-     * connection is on its way; after that the request falls back to the inbox.
+     * missing conversation waits while the workspace is still [loading], the
+     * connection is on its way, or a reachable machine is still catching up
+     * ([catchingUp]); after that the request falls back to the inbox.
      */
-    fun resolve(cardId: String, cards: List<Card>, inInbox: Boolean, loading: Boolean, phase: ConnectionPhase): OpenTarget {
+    fun resolve(cardId: String, cards: List<Card>, inInbox: Boolean, loading: Boolean, phase: ConnectionPhase, catchingUp: Boolean): OpenTarget {
         val card = cards.firstOrNull { it.id == cardId && !it.archived }
         return when {
             card != null -> OpenTarget.Conversation(card, if (inInbox) Destination.ACTIVITY else destination(card))
-            cardId.isNotBlank() && (loading || phase in SETTLING) -> OpenTarget.Wait
+            cardId.isNotBlank() && (loading || catchingUp || phase in SETTLING) -> OpenTarget.Wait
             else -> OpenTarget.Inbox
         }
     }
 
-    private val SETTLING = setOf(ConnectionPhase.CONNECTING, ConnectionPhase.SYNCING, ConnectionPhase.RECONNECTING)
+    private val SETTLING = setOf(ConnectionPhase.CONNECTING, ConnectionPhase.RECONNECTING)
 }

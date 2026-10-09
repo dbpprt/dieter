@@ -62,6 +62,7 @@ struct ConversationContentRenderer: View {
             Text("Save a copy of \(document.name) to open it in another app.")
         } actions: {
             Button("Save a Copy…", systemImage: "square.and.arrow.down") { saveCopy(document) }
+                .buttonStyle(DieterBarButtonStyle(size: 30))
                 .accessibilityIdentifier("conversation.content.download")
                 .smokeTarget("conversation.content.download")
         }
@@ -153,15 +154,16 @@ private struct ConversationImageRenderer: View {
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
                 Button("Zoom out", systemImage: "minus.magnifyingglass") { zoom = max(0.25, zoom / 1.25) }
+                    .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
                     .disabled(zoom <= 0.25)
                 Button("Fit") { zoom = 1 }
+                    .buttonStyle(DieterBarButtonStyle(size: 28))
                     .help("Fit image to the pane")
                 Button("Zoom in", systemImage: "plus.magnifyingglass") { zoom = min(8, zoom * 1.25) }
+                    .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28))
                     .disabled(zoom >= 8)
             }
             .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
-            .controlSize(.small)
             .font(.caption)
             .padding(.horizontal, 12)
             .frame(height: 34)

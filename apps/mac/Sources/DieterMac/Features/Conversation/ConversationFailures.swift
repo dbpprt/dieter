@@ -35,9 +35,7 @@ struct TurnFailureBanner: View {
                     .background(DieterTheme.coral.opacity(0.13), in: Capsule())
                 Spacer(minLength: 10)
                 Button("View log", action: onViewLog)
-                    .buttonStyle(.plain)
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(DieterTheme.primary)
+                    .buttonStyle(DieterBarButtonStyle(size: 26))
                     .accessibilityIdentifier("conversation.failure.view-log")
                     .smokeTarget("conversation.failure.view-log")
                 Button(action: onRetry) {
@@ -46,15 +44,13 @@ struct TurnFailureBanner: View {
                         Text(retrying ? "Retry queued…" : "Retry turn")
                     }
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(DieterTheme.elevated)
-                .foregroundStyle(DieterTheme.text)
+                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 26))
                 .disabled(retrying || !failure.retryable)
                 .accessibilityIdentifier("conversation.failure.retry")
             }
         }
         .padding(16)
-        .background(DieterTheme.surface.opacity(0.92), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(DieterTheme.failed.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(DieterTheme.coral.opacity(0.45), lineWidth: 1)
@@ -102,12 +98,10 @@ struct CreationFailureBanner: View {
                     .background(DieterTheme.coral.opacity(0.13), in: Capsule())
                 Spacer(minLength: 10)
                 Button("Discard", role: .destructive, action: onDiscard)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(DieterBarButtonStyle(destructive: true, size: 26))
                     .accessibilityIdentifier("conversation.creation-failure.discard")
                 Button("Retry creation", action: onRetry)
-                    .buttonStyle(.borderedProminent)
-                    .tint(DieterTheme.elevated)
-                    .foregroundStyle(DieterTheme.text)
+                    .buttonStyle(DieterBarButtonStyle(prominent: true, size: 26))
                     .accessibilityIdentifier("conversation.creation-failure.retry")
             }
         }
@@ -131,6 +125,7 @@ struct TurnFailureLogSheet: View {
                 }
                 Spacer()
                 Button("Done") { dismiss() }
+                    .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("conversation.failure.done")
                     .smokeTarget("conversation.failure.done")
@@ -143,13 +138,14 @@ struct TurnFailureLogSheet: View {
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                     .padding(12)
             }
-            .background(DieterTheme.background, in: RoundedRectangle(cornerRadius: 10))
+            .background(DieterTheme.inset, in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(DieterTheme.border))
             HStack {
                 Button("Copy log") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(log, forType: .string)
                 }
+                .buttonStyle(DieterBarButtonStyle(size: 30))
                 Spacer()
             }
         }

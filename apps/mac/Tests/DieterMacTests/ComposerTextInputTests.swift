@@ -71,11 +71,11 @@ struct ComposerTextInputTests {
     }
 
     private func textView(in view: NSView) -> NSTextView? {
-        (view as? NSTextView) ?? view.subviews.lazy.compactMap { textView(in: $0) }.first
+        (view as? NSTextView) ?? view.firstSubviewResult { textView(in: $0) }
     }
 
     private func textField(in view: NSView) -> NSTextField? {
-        (view as? NSTextField) ?? view.subviews.lazy.compactMap { textField(in: $0) }.first
+        (view as? NSTextField) ?? view.firstSubviewResult { textField(in: $0) }
     }
 }
 

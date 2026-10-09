@@ -329,10 +329,8 @@ func (c *CLI) rpc(ctx context.Context) (dieterv1.DieterServiceClient, context.Co
 	if err != nil {
 		return nil, ctx, err
 	}
-	rpcCtx := transport.context(ctx)
-	_, err = transport.client.Health(rpcCtx, &emptypb.Empty{})
-	if err != nil {
-		return nil, ctx, err
-	}
-	return transport.client, rpcCtx, nil
+	// Every RPC authenticates and enforces release compatibility itself. A
+	// redundant health preflight would make independent relay lanes depend on
+	// control recovery, even when the requested command can still succeed.
+	return transport.client, transport.context(ctx), nil
 }

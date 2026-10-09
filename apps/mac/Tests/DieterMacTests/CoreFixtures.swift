@@ -7,7 +7,7 @@ import SharedCore
 extension AppSession {
     /// Folds `state` as the shared core's workspace slice, as a sync would
     /// deliver it. View and selection tests use this instead of a network.
-    func foldFixture(_ state: Dieter_V1_State, retiredBoards: [Dieter_V1_Board] = [], daemonID: String = "fixture") {
+    func foldFixture(_ state: Dieter_V1_State, retiredBoards: [Dieter_V1_Board] = []) {
         var projects = state.projects
         if state.hasProject, !state.project.id.isEmpty, !projects.contains(where: { $0.id == state.project.id }) {
             projects.append(state.project)
@@ -16,9 +16,8 @@ extension AppSession {
         slice.projects = projects
         slice.boards = state.boards
         slice.cards = state.cards + state.chats
-        slice.retiredBoards = retiredBoards + state.archives.retiredBoards
+        slice.retiredBoards = retiredBoards
         slice.loaded = true
-        slice.projectReplicas = Dictionary(projects.map { ($0.id, daemonID) }, uniquingKeysWith: { first, _ in first })
         foldWorkspace(slice)
     }
 }

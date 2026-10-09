@@ -21,7 +21,13 @@ import kotlinx.coroutines.launch
 class ScreenSessionViewModel(application: Application) : AndroidViewModel(application) {
     private var host: ScreenHost? = null
 
-    fun host(): ScreenHost = host ?: ScreenHost(getApplication(), (getApplication<Application>() as DieterApplication).container.core).also { host = it }
+    fun host(): ScreenHost =
+        host
+            ?: ScreenHost(
+                    getApplication(),
+                    (getApplication<Application>() as DieterApplication).container.core,
+                )
+                .also { host = it }
 
     fun leave() {
         host?.close()
@@ -32,22 +38,24 @@ class ScreenSessionViewModel(application: Application) : AndroidViewModel(applic
 }
 
 /**
- * The Screens view's handle on one core [ScreenSession]. Every call is made
- * on the main thread and hops, in order, onto the core dispatcher that owns
- * the session. The canvas geometry is view state and stays on the main thread.
+ * The Screens view's handle on one core [ScreenSession]. Every call is made on the main thread and
+ * hops, in order, onto the core dispatcher that owns the session. The canvas geometry is view state
+ * and stays on the main thread.
  */
-class ScreenHost internal constructor(
+class ScreenHost
+internal constructor(
     context: Context,
     private val core: CoreRuntime,
-    val media: AndroidScreenMedia = AndroidScreenMedia(context),
+    override val media: AndroidScreenMedia = AndroidScreenMedia(context),
     /** How a machine's screen is reached; tests substitute an isolated native fixture. */
     private val routes: (String) -> ScreenRouteFactory = core::screenRoutes,
-) : AutoCloseable {
+) : ScreenCanvasHost, AutoCloseable {
     // Construction has no side effects; everything after it runs on the core dispatcher.
-    private val session: ScreenSession = core.screen(media, ScreenConfig("Android", ViewportPolicy.Fixed), AndroidClipboard(context))
+    private val session: ScreenSession =
+        core.screen(media, ScreenConfig("Android", ViewportPolicy.Fixed), AndroidClipboard(context))
     val view: StateFlow<ScreenView> = session.view
     val stats: StateFlow<ScreenMediaStats> = media.stats
-    val canvas = ScreenCanvas()
+    override val canvas = ScreenCanvas()
     private var closed = false
 
     init {
@@ -60,26 +68,46 @@ class ScreenHost internal constructor(
     }
 
     fun connect(daemonId: String) = onCore { connect(daemonId, routes(daemonId)) }
+
     fun disconnect() = onCore { disconnect() }
-    fun resume() = onCore { resume() }
-    fun focus(focused: Boolean) = onCore { setFocused(focused) }
-    fun refresh() = onCore { configure(refresh = true) }
+
+    override fun resume() = onCore { resume() }
+
+    override fun focus(focused: Boolean) = onCore { setFocused(focused) }
+
+    override fun refresh() = onCore { configure(refresh = true) }
+
     fun selectDisplay(id: String) = onCore { setPreferences { it.copy(displayId = id) } }
+
     fun selectQuality(quality: RemoteDesktopQuality) = onCore { setQuality(quality) }
-    fun selectCodec(codec: RemoteDesktopCodecPreference) = onCore { setPreferences { it.copy(codec = codec) } }
+
+    fun selectCodec(codec: RemoteDesktopCodecPreference) = onCore {
+        setPreferences { it.copy(codec = codec) }
+    }
+
     fun selectMaxFps(fps: Int) = onCore { setPreferences { it.copy(maxFps = fps) } }
-    fun holdCursor(holding: Boolean) = onCore { holdingCursor = holding }
+
+    override fun holdCursor(holding: Boolean) = onCore { holdingCursor = holding }
 
     fun pointer(x: Double, y: Double) = onCore { pointer(x, y) }
-    fun key(hid: Int, down: Boolean, modifiers: Int = 0, repeat: Boolean = false) = onCore { key(hid, down, repeat, modifiers) }
-    fun text(value: String, modifiers: Int = 0) = onCore { text(value, modifiers) }
-    fun releaseInput() = onCore { releaseInput() }
-    /** The input a [ScreenCommand] carries, as the core's touch input produces it. */
-    fun send(command: ScreenCommand) = onCore { applyInput(command) }
 
-    fun copy() = onCore { performClipboard("copy") }
-    fun cut() = onCore { performClipboard("cut") }
-    fun paste() = onCore { performClipboard("paste") }
+    override fun key(hid: Int, down: Boolean, modifiers: Int, repeat: Boolean) = onCore {
+        key(hid, down, repeat, modifiers)
+    }
+
+    override fun text(value: String, modifiers: Int) = onCore { text(value, modifiers) }
+
+    override fun releaseInput() = onCore { releaseInput() }
+
+    /** The input a [ScreenCommand] carries, as the core's touch input produces it. */
+    override fun send(command: ScreenCommand) = onCore { applyInput(command) }
+
+    override fun copy() = onCore { performClipboard("copy") }
+
+    override fun cut() = onCore { performClipboard("cut") }
+
+    override fun paste() = onCore { performClipboard("paste") }
+
     fun setClipboardEnabled(enabled: Boolean) = onCore { setClipboardEnabled(enabled) }
 
     fun transferControl(take: Boolean) = onCore { transferControl(take) }

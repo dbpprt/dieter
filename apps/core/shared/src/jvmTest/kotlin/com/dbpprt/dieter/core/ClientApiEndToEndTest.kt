@@ -37,6 +37,7 @@ import com.dbpprt.dieter.client.v1.ForkCard
 import com.dbpprt.dieter.client.v1.ListArchivedCards
 import com.dbpprt.dieter.client.v1.ListDrafts
 import com.dbpprt.dieter.client.v1.MachineEntry
+import com.dbpprt.dieter.client.v1.MachineSyncState
 import com.dbpprt.dieter.client.v1.MetadataSlice
 import com.dbpprt.dieter.client.v1.MoveCard
 import com.dbpprt.dieter.client.v1.MoveProject
@@ -89,6 +90,7 @@ import com.dbpprt.dieter.core.client.ClientApi
 import com.dbpprt.dieter.core.client.ClientFailure
 import com.dbpprt.dieter.core.client.ClientSubscription
 import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.connection.SyncState
 import com.dbpprt.dieter.core.navigation.NavigationLayout
 import com.dbpprt.dieter.core.outbox.OutboxPolicy
 import com.dbpprt.dieter.core.testing.EndToEnd
@@ -150,10 +152,15 @@ class ClientApiEndToEndTest : EndToEnd() {
         val invalid = assertFailsWith<ClientFailure> { api.dispatch(Command(adopt_session = AdoptSession(gateway_url = fixture.url, session_token = ""))) }
         assertEquals(Failure.Kind.KIND_INVALID, invalid.failure.kind)
         api.dispatch(Command(adopt_session = AdoptSession(gateway_url = fixture.url, session_token = fixture.token, name = "Isolated")))
-        val session = mirror.session.await(30.seconds, describe = { "connected: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_CONNECTED }!!
-        assertEquals(fixture.daemonId, session.attached_machine_id)
+        val session = mirror.session.await(30.seconds, describe = { "connected: ${mirror.session.value}" }) {
+            it?.phase == SessionSlice.Phase.PHASE_CONNECTED && it.machines.any { machine -> machine.id == fixture.daemonId && machine.sync_state == MachineSyncState.MACHINE_SYNC_STATE_LIVE }
+        }!!
         assertTrue(session.machines.any { it.id == fixture.daemonId && it.online })
         mirror.workspace.await(describe = { "project" }) { slice -> slice?.projects?.any { it.id == fixture.projectId } == true }
+        // The project's work and reads go to the machine with its checkout.
+        mirror.workspace.await(describe = { "project host: ${mirror.workspace.value?.project_hosts}" }) { slice ->
+            slice?.project_hosts?.get(fixture.projectId) == fixture.daemonId
+        }
 
         val created = api.dispatch(
             Command(
@@ -166,15 +173,20 @@ class ClientApiEndToEndTest : EndToEnd() {
             ),
         ).card!!
         mirror.workspace.await(describe = { "created card" }) { slice -> slice?.cards?.any { it.title == "From the client contract" } == true }
+        // The machine's copy, not the acknowledged create still pending on this device.
         val serverId = mirror.workspace.await(30.seconds, describe = { "synced card" }) { slice ->
-            slice?.cards?.any { OutboxPolicy.isServerBacked(it.id) && it.title == "From the client contract" } == true
+            slice?.cards?.any { OutboxPolicy.isServerBacked(it.id) && it.id !in slice.pending_card_ids && it.title == "From the client contract" } == true
         }!!.cards.first { it.title == "From the client contract" }.id
         assertTrue(created.id.isNotEmpty())
         api.dispatch(Command(rename_card = RenameCard(card_id = serverId, title = "Renamed through bytes")))
-        mirror.workspace.await(describe = { "renamed" }) { slice -> slice?.cards?.any { it.id == serverId && it.title == "Renamed through bytes" } == true }
+        // Once the rename synced, nothing else changes.
+        mirror.workspace.await(30.seconds, describe = { "renamed" }) { slice ->
+            slice != null && serverId !in slice.pending_card_ids && slice.cards.any { it.id == serverId && it.title == "Renamed through bytes" }
+        }
         val fresh = MutableStateFlow<WorkspaceSlice?>(null)
         val snapshot = api.observe(Slice.SLICE_WORKSPACE, "") { update -> if (fresh.value == null) fresh.value = update.workspace }
-        assertEquals(mirror.workspace.value, fresh.await { it != null }, "folded deltas equal a fresh snapshot")
+        val expected = fresh.await { it != null }
+        mirror.workspace.await(describe = { "folded deltas equal a fresh snapshot: ${mirror.workspace.value} != $expected" }) { it == expected }
         snapshot.close()
         subscriptions.forEach { it.close() }
     }
@@ -197,7 +209,7 @@ class ClientApiEndToEndTest : EndToEnd() {
 
         // A change queued while the machine is away is this account's, and is dropped with it.
         fixture.daemonOffline()
-        runtime.connection.state.await(describe = { "offline: ${runtime.connection.state.value}" }) { it.phase == ConnectionPhase.NO_MACHINE }
+        runtime.awaitSync(fixture.daemonId, SyncState.OFFLINE)
         runtime.createConversation(
             CreateConversationRequest(project_id = fixture.projectId, board_id = fixture.boardId, lane = "todo", title = "Never delivered", prompt = "p", defer_start = true, workspace_mode = "project"),
             chat = false,
@@ -234,16 +246,18 @@ class ClientApiEndToEndTest : EndToEnd() {
 
         // A machine that returns is reached at once rather than at the next retry.
         fixture.daemonOffline()
-        mirror.session.await(30.seconds, describe = { "offline: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_NO_MACHINE }
+        mirror.session.await(30.seconds, describe = { "offline: ${mirror.session.value}" }) {
+            it?.machines?.any { machine -> machine.id == fixture.daemonId && machine.sync_state == MachineSyncState.MACHINE_SYNC_STATE_OFFLINE } == true
+        }
         fixture.daemonOnline()
         api.dispatch(Command(reconnect = Reconnect()))
-        mirror.session.await(30.seconds, describe = { "back: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_CONNECTED && it.workspace_live }
+        mirror.session.await(30.seconds, describe = { "back: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_CONNECTED && it.synced }
 
         // Reconnecting also undoes a disconnect the person chose.
         api.dispatch(Command(set_connected = SetConnected(connected = false)))
         mirror.session.await(30.seconds, describe = { "disconnected: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_DISCONNECTED }
         api.dispatch(Command(reconnect = Reconnect()))
-        mirror.session.await(30.seconds, describe = { "reconnected: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_CONNECTED && it.workspace_live }
+        mirror.session.await(30.seconds, describe = { "reconnected: ${mirror.session.value}" }) { it?.phase == SessionSlice.Phase.PHASE_CONNECTED && it.synced }
         assertTrue(mirror.session.value!!.gateways.single { it.active }.connect, "the gateway is wanted connected again")
         subscription.close()
     }
@@ -287,21 +301,24 @@ class ClientApiEndToEndTest : EndToEnd() {
 
     private suspend fun Contract.connect(): SessionSlice {
         api.dispatch(Command(adopt_session = AdoptSession(gateway_url = fixture.url, session_token = fixture.token, name = "Isolated")))
-        val session = mirror.session.await(30.seconds, describe = { "live feed: ${mirror.session.value}" }) {
-            it?.phase == SessionSlice.Phase.PHASE_CONNECTED && it.workspace_live
+        val session = mirror.session.await(30.seconds, describe = { "synced: ${mirror.session.value}" }) {
+            it?.phase == SessionSlice.Phase.PHASE_CONNECTED && it.synced
         }!!
         val machine = session.machines.single { it.id == fixture.daemonId }
         assertTrue(machine.compatible)
         assertTrue(machine.last_seen_at.isNotEmpty() || machine.online)
         assertEquals(machine.route == "Local", machine.local, "a loopback plane marks the machine as this device: ${machine.route}")
-        assertTrue(session.feed!!.last_applied_at_millis > 0)
+        assertTrue(session.updated_at_millis > 0)
+        assertEquals(MachineSyncState.MACHINE_SYNC_STATE_LIVE, machine.sync_state)
+        assertEquals("Live", machine.sync_label)
+        assertEquals(0L, machine.stale_since_millis)
         // The core words the connection and the machine rows, in name order.
         assertEquals("Connected", session.phase_label)
         assertEquals(null, session.notice)
         assertEquals(session.machines.sortedWith(compareBy<MachineEntry> { it.name.lowercase() }.thenBy { it.id }), session.machines)
         assertTrue(machine.available && machine.can_share_screen && machine.unavailable_message.isEmpty(), "$machine")
         assertEquals(false, machine.show_last_seen)
-        assertTrue(if (machine.route.isEmpty()) machine.detail == "Attached" else machine.detail.startsWith("${machine.route} · "), machine.detail)
+        assertTrue(if (machine.route.isEmpty()) machine.detail == "Online" else machine.detail.startsWith("${machine.route} · "), machine.detail)
         board.await(describe = { "board slice" }) { it != null }
         return session
     }
@@ -323,7 +340,7 @@ class ClientApiEndToEndTest : EndToEnd() {
     }
 
     private suspend fun Contract.editNavigation() {
-        // Layout edits show at once and drain to the attached machine.
+        // Layout edits show at once and drain to a reachable machine.
         val navigation = MutableStateFlow<NavigationSlice?>(null)
         val navigationWatch = api.observe(Slice.SLICE_NAVIGATION, "") { navigation.value = Update.ADAPTER.decode(it.encode()).navigation }
         step("project order", Command(set_project_order = SetProjectOrder(project_ids = listOf(fixture.projectId))))
@@ -533,7 +550,7 @@ class ClientApiEndToEndTest : EndToEnd() {
             ),
         ).card!!
         val todoId = mirror.workspace.await(30.seconds, describe = { "synced draft" }) { slice ->
-            slice?.cards?.any { OutboxPolicy.isServerBacked(it.id) && it.title == "Draft" } == true
+            slice?.cards?.any { OutboxPolicy.isServerBacked(it.id) && it.id !in slice.pending_card_ids && it.title == "Draft" } == true
         }!!.cards.first { it.title == "Draft" }.id
         assertTrue(todo.id.isNotEmpty())
         step("edit draft", Command(update_card_draft = UpdateCardDraft(card_id = todoId, title = "Edited draft", prompt = "second draft")))
@@ -616,7 +633,7 @@ class ClientApiEndToEndTest : EndToEnd() {
         creation.await(describe = { "creation: ${creation.value}" }) {
             it?.project_id == fixture.projectId && it.boards[fixture.projectId] == fixture.boardId && it.workspace_mode == "project"
         }
-        // The checkout a new conversation runs on is the attached machine's.
+        // The checkout a new conversation runs on is the project's only one.
         val checkoutId = creation.await(describe = { "checkouts: ${creation.value}" }) { it?.checkouts?.get(fixture.projectId)?.isNotEmpty() == true }!!.checkouts.getValue(fixture.projectId)
         assertEquals(fixture.daemonId, mirror.workspace.value!!.projects.single { it.id == fixture.projectId }.checkouts.single { it.id == checkoutId }.daemon_id)
         creationWatch.close()
@@ -668,8 +685,8 @@ class ClientApiEndToEndTest : EndToEnd() {
         // with nothing new to send.
         delay(2.seconds)
         step("resync", Command(resync = Resync()))
-        mirror.workspace.await(30.seconds, describe = { "resynced: ${mirror.workspace.value?.project_replicas}" }) { slice ->
-            slice?.loaded == true && slice.cards.any { it.id == forked.id } && slice.project_replicas[fixture.projectId] == fixture.daemonId
+        mirror.workspace.await(30.seconds, describe = { "resynced: ${mirror.workspace.value?.projects}" }) { slice ->
+            slice?.loaded == true && slice.cards.any { it.id == forked.id } && slice.projects.any { it.id == fixture.projectId }
         }
         // Creating right after a clean sync reaches the project's machine.
         val afterResync = step(

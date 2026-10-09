@@ -1,64 +1,23 @@
-name: Native E2E
+name: Native qualification
 on:
   workflow_dispatch:
     inputs:
-      platform:
-        description: Native client
-        type: choice
-        default: android
-        options: [android, mac, ios]
-      target:
-        description: Emulator/simulators or exact configured physical device
-        type: choice
-        default: virtual
-        options: [virtual, device]
       suite:
-        description: Existing catalog suite (incompatible selections fail admission)
+        description: iOS simulator catalog suite
         type: choice
         default: functional
-        options: [smoke, functional, sync, performance, sdk, screens]
+        options: [smoke, functional, screens]
 permissions:
   contents: read
 concurrency:
-  group: native-e2e-${{ inputs.platform }}-${{ inputs.target }}
+  group: native-e2e-ios
   cancel-in-progress: false
 jobs:
-  android:
-    if: inputs.platform == 'android' && github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: android
-      runner: ${{ (inputs.target == 'virtual' || inputs.suite == 'screens') && 'android-mac-hardware' || 'android-hardware' }}
-      native_only: true
-      native_profile: ${{ inputs.target == 'device' && 'android-device' || 'android-emulator' }}
-      native_suite: ${{ inputs.suite }}
-  mac:
-    if: inputs.platform == 'mac' && github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: mac
-      runner: mac-hardware
-      native_only: true
-      native_suite: ${{ inputs.suite }}
   ios:
-    if: inputs.platform == 'ios' && inputs.target == 'virtual'
-    strategy:
-      fail-fast: false
-      matrix:
-        profile: [ios-iphone, ios-ipad]
     uses: ./.github/workflows/component-check.yml
     with:
       component: ios
       runner: macos-26
       native_only: true
-      native_profile: ${{ matrix.profile }}
-      native_suite: ${{ inputs.suite }}
-  ios-device:
-    if: inputs.platform == 'ios' && inputs.target == 'device' && github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: ios
-      runner: ios-hardware
-      native_only: true
-      native_profile: ios-device
+      native_profiles: ios-iphone,ios-ipad
       native_suite: ${{ inputs.suite }}

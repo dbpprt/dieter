@@ -44,13 +44,18 @@ final class ComposerModel {
         }
     }
 
-    func retarget(from old: WorkspaceTarget, to new: WorkspaceTarget) {
-        guard let value = drafts.removeValue(forKey: old) else { return }
-        store?.retarget(from: old, to: new)
-        let store = store
-        value.observeTextChanges { store?.update($0, for: new) }
-        drafts[new] = value
-        if target == old { target = new; draft = value }
+    /// A created conversation got its server ID: its drafts follow it.
+    func retarget(conversation old: String, to new: String) {
+        guard old != new else { return }
+        store?.retarget(conversation: old, to: new)
+        for (from, value) in drafts where from.conversationID == old {
+            let to = WorkspaceTarget(endpointID: from.endpointID, projectID: from.projectID, conversationID: new)
+            drafts.removeValue(forKey: from)
+            let store = store
+            value.observeTextChanges { store?.update($0, for: to) }
+            drafts[to] = value
+            if target == from { target = to; draft = value }
+        }
     }
 
     private func makeDraft(for target: WorkspaceTarget) -> ConversationDraft {

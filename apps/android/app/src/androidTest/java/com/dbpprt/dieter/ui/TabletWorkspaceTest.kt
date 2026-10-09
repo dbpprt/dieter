@@ -77,7 +77,7 @@ class TabletWorkspaceTest {
 
     @Before fun setup() {
         check(context.packageName.endsWith(".e2e")) { "Tablet tests require the isolated E2E package" }
-        core = TestCore(navigationAccount = "component-fixture")
+        core = TestCore()
         compose.runOnUiThread {
             model = core.viewModel(withCaptures = true)
             lifecycle.put("tablet", model)
@@ -290,20 +290,23 @@ class TabletWorkspaceTest {
         compose.setContent { TabletTestSurface {
             val density = LocalDensity.current
             SideEffect { titlePadding = with(density) { 16.dp.toPx() } }
-            DieterTheme(palette = DieterPalette.ULTRAVIOLET_RELAY, darkTheme = true) {
-                Surface(Modifier.fillMaxSize()) {
-                    Row {
-                        TabletNavigationRail(Destination.ACTIVITY, false, false, 1, "2 of 2 machines online", {}, {}, {}, {}, {})
-                        val feed: @Composable (Modifier) -> Unit = { modifier ->
-                            ActivityFeed(fixture, modifier, { opened = it }, {}, {}, {}, now,
-                                tablet = true)
-                        }
-                        Box(Modifier.weight(1f).fillMaxHeight()) {
-                            TabletListDetail(dividerTag = "activity-pane-divider", list = feed, detail = { modifier ->
-                                Box(modifier.testTag("inbox-detail")) {
-                                    CardDetailScreen(fixture.copy(selectedCardId = "review", conversation = snapshot("review")), model, Modifier.fillMaxSize(), showBack = false)
-                                }
-                            })
+            // The tablet workspace provides this to every pane; the inbox detail shows its owner there.
+            CompositionLocalProvider(LocalTabletWorkspace provides true) {
+                DieterTheme(palette = DieterPalette.ULTRAVIOLET_RELAY, darkTheme = true) {
+                    Surface(Modifier.fillMaxSize()) {
+                        Row {
+                            TabletNavigationRail(Destination.ACTIVITY, false, false, 1, "2 of 2 machines online", {}, {}, {}, {}, {})
+                            val feed: @Composable (Modifier) -> Unit = { modifier ->
+                                ActivityFeed(fixture, modifier, { opened = it }, {}, {}, {}, now,
+                                    tablet = true)
+                            }
+                            Box(Modifier.weight(1f).fillMaxHeight()) {
+                                TabletListDetail(dividerTag = "activity-pane-divider", list = feed, detail = { modifier ->
+                                    Box(modifier.testTag("inbox-detail")) {
+                                        CardDetailScreen(fixture.copy(selectedCardId = "review", conversation = snapshot("review")), model, Modifier.fillMaxSize(), showBack = false)
+                                    }
+                                })
+                            }
                         }
                     }
                 }

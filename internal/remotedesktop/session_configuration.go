@@ -90,22 +90,31 @@ func (m *Manager) UpdateSession(ctx context.Context, r *dieterv1.UpdateRemoteDes
 			return nil, errors.New("capture backend does not support live configuration")
 		}
 		s.configurationMu.Lock()
+		m.controlMu.Lock()
 		s.mu.Lock()
 		displayChanged := s.status.Configuration.GetDisplayId() != config.DisplayId
 		s.mu.Unlock()
 		if displayChanged {
-			m.controlMu.Lock()
 			var restoreErr error
+			if m.virtualOwner == s {
+				_, restoreErr = m.restoreVirtualLocked(ctx)
+			}
 			if m.displayOwner == s {
 				_, restoreErr = m.restoreDisplayLocked(ctx)
 			}
-			m.controlMu.Unlock()
 			if restoreErr != nil {
+				m.controlMu.Unlock()
 				s.configurationMu.Unlock()
 				return nil, restoreErr
 			}
 		}
-		s.releaseInput()
+		if m.controller == s {
+			if err := s.releaseNativeInput(ctx); err != nil {
+				m.controlMu.Unlock()
+				s.configurationMu.Unlock()
+				return nil, err
+			}
+		}
 		applied := nativeConfiguration(config)
 		if s.pacer != nil {
 			percent := int(s.pacer.fecPercent.Load())
@@ -124,6 +133,7 @@ func (m *Manager) UpdateSession(ctx context.Context, r *dieterv1.UpdateRemoteDes
 			s.configurationRevision++
 			s.mu.Unlock()
 		}
+		m.controlMu.Unlock()
 		s.configurationMu.Unlock()
 		if err != nil {
 			return nil, err

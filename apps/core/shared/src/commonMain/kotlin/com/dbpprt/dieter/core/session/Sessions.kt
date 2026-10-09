@@ -76,7 +76,7 @@ class GatewaySession(
         return response.daemons.map { Machine.from(it, receivedAt) }
     }
 
-    /** Presence updates; advisory, so callers retry independently of the feed. */
+    /** Presence updates; advisory, so callers retry them independently of the machines' streams. */
     fun presence(heartbeat: Duration): Flow<List<Machine>> = flow {
         coroutineScope {
             val call = client.WatchDaemons()
@@ -113,9 +113,9 @@ class GatewaySession(
 data class MachineRoute(val kind: RouteKind, val latency: Duration)
 
 /**
- * One shared data plane per daemon. Every feature that talks to a machine
- * uses it, so opening a card on another machine never moves the feed or
- * reconnects the app. Confined to the core dispatcher.
+ * One shared data plane per daemon. Every feature that talks to a machine,
+ * its change stream included, uses it, so opening a card never reconnects
+ * anything. Confined to the core dispatcher.
  */
 class MachineSessions(private val selector: RouteSelector, private val scope: CoroutineScope) {
     private var gateway: GatewaySession? = null

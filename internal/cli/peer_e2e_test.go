@@ -153,7 +153,7 @@ func testPeerMachines(t *testing.T, wantRoute string) {
 	}()
 	defer func() { stopTunnel(); <-tunnelDone }()
 	deadline := time.Now().Add(5 * time.Second)
-	for !gatewayServer.Hub.Online(b.ID) && time.Now().Before(deadline) {
+	for !gatewayServer.Hub.RelayReady(b.ID) && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if !gatewayServer.Hub.Online(b.ID) {

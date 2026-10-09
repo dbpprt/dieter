@@ -17,7 +17,7 @@ func TestConversationActivityCoalescesOnlyTokens(t *testing.T) {
 		if shouldPublishConversationActivity(at.Add(-time.Millisecond).Format(time.RFC3339Nano), event) == tokens {
 			t.Errorf("wrong publication policy for %s", kind)
 		}
-		if !shouldPublishConversationActivity(at.Add(-250*time.Millisecond).Format(time.RFC3339Nano), event) {
+		if !shouldPublishConversationActivity(at.Add(-streamedActivityInterval).Format(time.RFC3339Nano), event) {
 			t.Errorf("activity must advance at bounded intervals: %s", kind)
 		}
 	}

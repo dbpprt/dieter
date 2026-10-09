@@ -271,6 +271,11 @@ func (s *sharedSource) Stream(ctx context.Context, emit func(media.Sample) error
 	s.running = true
 	v := s.variant
 	s.pool.mu.Unlock()
+	if waker, ok := v.source.(DisplayWaker); ok {
+		if err := waker.WakeDisplay(ctx); err != nil {
+			return err
+		}
+	}
 	v.start()
 	s.RequestKeyFrame()
 	for {

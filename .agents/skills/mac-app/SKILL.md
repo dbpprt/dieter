@@ -9,6 +9,14 @@ Run the repository's `just pipeline mac` lanes from the repository root. Reuse o
 packaged app process, observe native UI state after every interaction, and leave
 no task-owned `DieterMac` process behind.
 
+For pipeline changes, read [dieter-pipelines](../dieter-pipelines/SKILL.md).
+Inspect `just check-changed --dry-run`; run focused affected checks once after
+implementation, using specific native cases for lifecycle/integration changes.
+Do not rerun full Mac/Apple suites between edits. `ios test_unit` uses the small
+iOS policy graph and `apps/mac/.build/dieter-ios-policy`, rather than the full Mac
+test package. `ios_qualify` shares one verified build across explicit iPhone/iPad
+simulator profiles under the existing Apple lease.
+
 ## Preserve the environment
 
 Use these canonical paths:
@@ -67,7 +75,8 @@ be incremental. If it is not, compare the Xcode version, configuration,
 anything. Never point builds at `dieter-tests` or tests at `dieter-local`.
 Shared-core framework preparation uses a cross-process publication lease,
 hashes production sources/schema/toolchains, and preserves identical framework
-bytes and timestamps. `ios-simulator` builds only macOS and simulator slices;
+bytes and timestamps. `ios-simulator` requests only the simulator slice;
+`ios-device` requests only the device slice;
 Mac refreshes retain any existing slices of the same configuration. Test and
 documentation edits do not replace the framework.
 

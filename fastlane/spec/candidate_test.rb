@@ -75,6 +75,20 @@ class CandidateRecoveryTest < Minitest::Test
     assert @context.closed
   end
 
+  def test_relative_workflow_inputs_resolve_from_repository_while_fastlane_changes_directory
+    lane_directory = File.join(@root, "fastlane")
+    FileUtils.mkdir_p(lane_directory)
+    # A same-named input inside Fastlane must not shadow the workflow input.
+    File.write(File.join(lane_directory, "identity.json"), "invalid shadow identity")
+    Dir.chdir(lane_directory) do
+      pipeline = Dieter::CandidatePipeline.new(@context, "android", {identity: "identity.json", phase: "retain", products: "producer"}, github: @destination)
+      assert_equal @manifest, pipeline.run
+    end
+    assert_equal "original signed bytes", @destination.uploads.first.last
+    assert_equal [%w[git rev-parse HEAD]], @context.commands
+    assert @context.closed
+  end
+
   def test_failed_payload_upload_does_not_commit_candidate_manifest
     @destination.fail_upload = "Dieter-Android.apk"
     assert_raises(Dieter::PipelineError) { runner("retain").run }
@@ -135,5 +149,39 @@ class CandidateRecoveryTest < Minitest::Test
     assert_raises(Dieter::Unavailable) { second.run }
     assert_equal 1, calls
     assert @context.closed
+  end
+
+  def test_checkpoint_recovery_accepts_ci_and_manual_release_only_on_the_exact_main_source
+    artifact_name = "producer-#{@identity.tag}-android"
+    source, commands = @producer, @context.commands
+    @context.define_singleton_method(:command) do |argv, **|
+      commands << argv
+      raise "Unexpected command" unless argv[0..2] == %w[gh run download]
+      FileUtils.cp_r(Dir.glob(File.join(source, "*")), argv.last)
+    end
+    @destination.define_singleton_method(:repository) { "dbpprt/dieter" }
+    workflows = [
+      [".github/workflows/ci.yml", "main", @identity.source, true],
+      [".github/workflows/release.yml", "main", @identity.source, true],
+      [".github/workflows/native-e2e.yml", "main", @identity.source, false],
+      [".github/workflows/ci.yml", "feature", @identity.source, false],
+      [".github/workflows/ci.yml", "main", "b" * 40, false]
+    ]
+    workflows.each_with_index do |(path, branch, revision, accepted), index|
+      identity_source = @identity.source
+      @destination.define_singleton_method(:api) do |endpoint, **|
+        if endpoint.start_with?("actions/artifacts?")
+          {"artifacts" => [{"id" => 1, "name" => artifact_name, "expired" => false, "workflow_run" => {"id" => 42, "head_sha" => identity_source}}]}
+        else
+          {"id" => 42, "path" => path, "head_branch" => branch, "head_sha" => revision}
+        end
+      end
+      output = File.join(@root, "recovered-#{index}")
+      Dir.mkdir(output)
+      commands.clear
+      recovered = runner("prepare").send(:recover_producer, "android", output, "candidate-android.json")
+      accepted ? assert_equal(@manifest, recovered) : assert_nil(recovered)
+      assert_equal accepted ? 1 : 0, commands.length
+    end
   end
 end

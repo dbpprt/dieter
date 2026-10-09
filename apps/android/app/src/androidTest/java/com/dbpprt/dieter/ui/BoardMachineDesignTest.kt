@@ -81,7 +81,7 @@ class BoardMachineDesignTest {
         val project = Project(id = "project", name = "nmt-aigency", checkouts = listOf(Checkout(id = "office", project_id = "project", daemon_id = "office", name = "nmt-aigency"), Checkout(id = "laptop", project_id = "project", daemon_id = "laptop", name = "nmt-aigency")))
         var current by mutableStateOf(state.copy(
             projects = listOf(project), creationCheckoutId = "office", harnessesEndpointId = "office",
-            projectReplicas = mapOf(project.id to "home"),
+            projectHosts = mapOf(project.id to "home"),
             endpointConnections = listOf(
                 MachineRow("home", "mini-home", "", daemonId = "home"),
                 MachineRow("office", "mini-office", "", daemonId = "office"),
@@ -107,7 +107,7 @@ class BoardMachineDesignTest {
         compose.onNodeWithText("mini-home", substring = true).assertDoesNotExist()
         capture("project-checkouts-dark.png")
         compose.runOnIdle {
-            current = current.copy(projectReplicas = mapOf(project.id to "office"))
+            current = current.copy(projectHosts = mapOf(project.id to "office"))
             dark = false
         }
         compose.onNodeWithText("1 board · mini-office · mbp-office (offline)").assertIsDisplayed()

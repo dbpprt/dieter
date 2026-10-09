@@ -625,7 +625,8 @@
             }
             let originalWidth = column.frame.width
             let widths: [CGFloat] =
-                scope == "card" ? [460, 320] : [conversationContentWidth(split: split, column: column)]
+                scope == "card"
+                ? [460, BoardConversationSizing.minimumWidth] : [conversationContentWidth(split: split, column: column)]
             let controls = store.conversationContext.agentControls ?? ClientAgentControlsState()
             var identifiers = [
                 "conversation.composer", "conversation.attach", "conversation.provider",
@@ -851,7 +852,10 @@
         private static func runOtherProviderOptionsChecks(
             store: DieterStore, window: NSWindow, results: inout [String: String], output: URL
         ) async {
-            guard let index = store.harnessCatalog.harnesses.firstIndex(where: { $0.id == "omp" }),
+            // The composer shows the agents of the machine that runs the conversation.
+            let owner = store.selectedCard?.ownerDaemonID ?? ""
+            guard let original = store.machineMetadata[owner],
+                let index = store.harnessCatalog.harnesses.firstIndex(where: { $0.id == "omp" }),
                 store.harnessCatalog.harnesses[index].options.contains(where: { $0.id == "advisor" }),
                 let anchor = NativeUIAccessibility.find("conversation.composer-shell", in: window)?.object as? NSView,
                 let (split, column) = conversationColumn(containing: anchor)
@@ -859,11 +863,10 @@
                 results["omp-provider-options"] = "failed: Advisor or native conversation fixture unavailable"
                 return
             }
-            let originalCatalog = store.harnessCatalog
             let originalWidth = column.frame.width
             defer {
                 window.makeFirstResponder(nil)
-                store.harnessCatalog = originalCatalog
+                store.machineMetadata[owner] = original
                 store.conversationModel.agentFixture = nil
                 setColumnWidth(originalWidth, split: split, column: column)
             }
@@ -892,7 +895,7 @@
             fast.type = "boolean"
             fast.defaultValue = "false"
             fast.mutable = true
-            store.harnessCatalog.harnesses[index].options.append(contentsOf: [mode, note, fast])
+            store.machineMetadata[owner]?.harnesses.harnesses[index].options.append(contentsOf: [mode, note, fast])
             let harness = store.harnessCatalog.harnesses[index]
             // The core knows the machine's real catalog only; show the pickers over this one.
             store.conversationModel.agentFixture = AgentControlFields.controls(
@@ -901,9 +904,9 @@
                     $0.model = harness.defaultModel
                     $0.providerOptions = ["fast_mode": "false"]
                 }, catalog: store.harnessCatalog)
-            setConversationContentWidth(320, split: split, column: column)
+            setConversationContentWidth(BoardConversationSizing.minimumWidth, split: split, column: column)
             let resized = await NativeUIAccessibility.wait(timeout: 5) {
-                abs(conversationContentWidth(split: split, column: column) - 320) < 2
+                abs(conversationContentWidth(split: split, column: column) - BoardConversationSizing.minimumWidth) < 2
             }
             guard resized else {
                 results["omp-provider-options"] =
@@ -2056,7 +2059,9 @@
         }
 
         private static func installSyntheticFixture(_ store: DieterStore) async -> String? {
-            guard let project = store.projects.first else { return nil }
+            // Like every conversation, the fixture runs on the machine that
+            // hosts its project; its composer and agents follow that machine.
+            guard let project = store.projects.first, let owner = store.projectHosts[project.id] else { return nil }
             // The renderer fixture replaces the live conversation. Cancel its
             // transport lease so a late snapshot cannot overwrite the fixture.
             store.closeConversation()
@@ -2066,6 +2071,7 @@
             card.id = syntheticFixtureID
             card.scope = "chat"
             card.projectID = project.id
+            card.ownerDaemonID = owner
             card.title = "Conversation renderer fixture"
             card.runtime = "idle"
             card.updatedAt = Date().formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))

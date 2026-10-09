@@ -63,6 +63,30 @@
             try await service.createCard(request: .init(message: request), options: Self.bounded)
         }
 
+        func renameCard(cardID: String, title: String) async throws -> Dieter_V1_Card {
+            try await service.renameCard(
+                request: .init(
+                    message: .with {
+                        $0.cardID = cardID; $0.title = title
+                    }), options: Self.bounded)
+        }
+
+        func markConversationRead(cardID: String, responseSeq: Int64) async throws -> Dieter_V1_Card {
+            try await service.markConversationRead(
+                request: .init(
+                    message: .with {
+                        $0.cardID = cardID; $0.responseSeq = responseSeq
+                    }), options: Self.bounded)
+        }
+
+        func archiveCard(cardID: String) async throws -> Dieter_V1_Card {
+            try await service.archiveCard(
+                request: .init(
+                    message: .with {
+                        $0.cardID = cardID; $0.archived = true
+                    }), options: Self.bounded)
+        }
+
         func workspace(cardID: String) async throws -> Dieter_V1_Workspace {
             try await service.getWorkspace(request: .init(message: .with { $0.cardID = cardID }), options: Self.bounded)
         }
@@ -183,19 +207,20 @@
         }
     }
 
-    /// One relayed fixture client for the attached machine, opened on demand
-    /// and replaced when that machine changes.
+    /// One relayed fixture client for the fixture's machine, the first that
+    /// can take work, opened on demand and replaced when that machine changes.
     @MainActor final class SmokeFixturePlane {
         static let shared = SmokeFixturePlane()
         private var plane: (machineID: String, client: SmokeFixtureClient)?
 
         func client(for store: DieterStore) -> SmokeFixtureClient? {
-            guard store.phase.isConnected, let daemonID = store.endpoint.daemonID else { return nil }
-            let machine = store.endpoint
+            guard store.phase.isConnected, let machine = store.machines.first(where: store.machineIsAvailable),
+                let daemonID = machine.daemonID
+            else { return nil }
             if let plane, plane.machineID == machine.id { return plane.client }
             plane?.client.shutdown()
             plane = nil
-            let gateway = machine.gatewayEndpoint
+            let gateway = store.activeGateway
             guard let token = store.accessToken(for: gateway),
                 let client = try? SmokeFixtureClient(origin: gateway.address, token: token, daemonID: daemonID)
             else { return nil }
@@ -205,7 +230,7 @@
     }
 
     extension DieterStore {
-        /// A client to the attached machine; see `SmokeFixtureClient`.
+        /// A client to the fixture's machine; see `SmokeFixtureClient`.
         func fixtureRPC() async -> SmokeFixtureClient? { SmokeFixturePlane.shared.client(for: self) }
 
         /// The launch's `--dieter-access-token-file` session, else the one the

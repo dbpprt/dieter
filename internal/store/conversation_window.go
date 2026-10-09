@@ -43,3 +43,27 @@ func (s *Store) ConversationWindowByID(cardID string, limit int, before *int32) 
 	result.Conversation = conversation
 	return result, err
 }
+
+// ActivityConversation is the latest turn of a conversation this machine
+// runs: the last user message and what followed it, at most limit messages.
+// Execution state (session, fork seed) is never part of it.
+func (s *Store) ActivityConversation(cardID string, limit int) (model.Conversation, error) {
+	if !validFileID(cardID) {
+		return model.Conversation{}, fmt.Errorf("card %q: %w", cardID, ErrNotFound)
+	}
+	limit = max(1, limit)
+	return s.loadConversationView(cardID, func(c model.Conversation) model.Conversation {
+		start := 0
+		for index := len(c.Messages) - 1; index >= 0; index-- {
+			if c.Messages[index].Role == "user" {
+				start = index
+				break
+			}
+		}
+		start = max(start, len(c.Messages)-limit)
+		c.Messages = c.Messages[start:]
+		c.ForkSeed = nil
+		c.Session = nil
+		return cloneConversation(c)
+	})
+}

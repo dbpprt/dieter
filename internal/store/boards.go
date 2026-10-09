@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Public mutations retain the central Store write lock and journal transaction.
+// Public mutations retain the central Store write lock and change-count transaction.
 // Unexported projection helpers run within their caller's existing lock boundary.
 
 type CreateBoardInput struct {

@@ -187,7 +187,7 @@ Global options:
   --version                Print the version
 
 Commands:
-  machine      List, route, rename, revoke, inspect, or control machines
+  machine      List, route, rename, revoke, inspect, control, or privately lock machines
   status       Show target daemon health, runtime, route, and state counts
   harness      List target daemon harnesses, models, and options
   quota        Show, summarize, refresh, and reset provider-account quotas
@@ -199,16 +199,16 @@ Commands:
   file         Browse and edit project/workspace files with revision checks
   terminal     Create, attach, control, and close daemon-host PTYs
   remote       Run resumable commands and native shells on a daemon host
-  screen       Share screens/clipboard, tune quality, inspect latency and recovery
+  screen       Share screens/clipboard, configure virtual displays, inspect latency
   schedule     Create, preview, dispatch, pause, and inspect schedules
   kv           Shared portable JSON, ordering, and live account subscriptions
   peer         Inspect and edit account peer settings (leaderless sync)
   settings     Inspect and update prompt and daemon settings
   prompt       Inspect, update, scope, and preview prompt templates
-  watch        Stream daemon state or sync frames as JSON Lines
+  watch        Stream this machine's change frames as JSON Lines
   storage      Print the target daemon's central storage path
   doctor       Check local Linux/macOS runtime and service prerequisites
-  setup        Authorize, enroll, and install this local daemon service
+  setup        Authorize, enroll, and install the daemon and macOS privacy helper
   daemon       Start, enroll, recover, inspect, or manage this local daemon service
   serve        Alias for "dieter daemon start"
   version      Print the version
@@ -432,8 +432,8 @@ its current address. Status reports the selected network endpoint.
 		if err != nil {
 			return err
 		}
-		if executable != filepath.Join(*runtimePath, "bin", "dieter") {
-			return errors.New("--runtime must be started directly from its fixed bin/dieter executable")
+		if executable != serviceruntime.PlatformRuntime(*runtimePath).DaemonExecutable() {
+			return errors.New("--runtime must be started directly from its fixed daemon executable")
 		}
 		startupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		var reexec bool
@@ -730,6 +730,8 @@ func (c *CLI) daemonEnroll(args []string) error {
 	const usage = `Usage: dieter daemon enroll [--gateway URL] [--name NAME] [--no-open]
 
 Enroll this machine with the GitHub account configured by the Dieter gateway.
+Retry incomplete enrollment with --gateway to correct the origin without changing
+the machine key. Completed enrollments retain their identity.
 Gateway URLs require HTTPS; HTTP is allowed only on literal loopback addresses.
 `
 	set := flags("daemon enroll")
@@ -750,9 +752,10 @@ Gateway URLs require HTTPS; HTTP is allowed only on literal loopback addresses.
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
+	fmt.Fprintf(c.Out, "Enrollment gateway: %s\n", identity.GatewayURL)
 	enrollment, err := dieterdaemon.BeginEnrollment(ctx, identity)
 	if err != nil {
-		return err
+		return fmt.Errorf("begin enrollment at %s: %w", identity.GatewayURL, err)
 	}
 	fmt.Fprintf(c.Out, "Authorize this daemon with GitHub:\n%s\n\nCode: %s\n", enrollment.GetVerificationUrl(), enrollment.GetUserCode())
 	if !*noOpen {

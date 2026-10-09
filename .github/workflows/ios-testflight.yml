@@ -14,6 +14,7 @@ jobs:
   distribute:
     if: github.event_name == 'release' || github.ref == 'refs/heads/main'
     permissions:
+      actions: read
       contents: write
     uses: ./.github/workflows/release-distribute.yml
     with:

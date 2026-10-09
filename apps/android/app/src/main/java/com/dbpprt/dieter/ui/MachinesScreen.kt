@@ -29,6 +29,8 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Computer
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Lan
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.PowerSettingsNew
@@ -94,29 +96,42 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 
 /**
- * [machine]'s status line as the core words it, followed by when it was last
- * seen when the core asks for that. The core judges the machine's own row,
- * not the presented one.
+ * [machine]'s status line as the core words it, followed by when it was last seen when the core
+ * asks for that. The core judges the machine's own row, not the presented one.
  */
 internal fun DieterUiState.machineStatusLine(machine: MachineRow, now: Instant): String {
     val own = endpointConnections.firstOrNull { it.id == machine.id } ?: machine
-    return MachineRows.status(own, own.id == attachedMachineId, connectionPhase, connectionError, machineSyncWarnings[own.id].orEmpty(), feedLive)
+    return MachineRows.status(
+            own,
+            machineSyncs[own.id],
+            connectionPhase,
+            machineSyncWarnings[own.id].orEmpty(),
+        )
         .line(own.lastSeenAt, now)
 }
 
 private val MachineOperationAction.icon: ImageVector
-    get() = when (this) {
-        MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART -> Icons.Outlined.RestartAlt
-        MachineOperationAction.MACHINE_OPERATION_ACTION_SHUTDOWN -> Icons.Outlined.PowerSettingsNew
-        else -> Icons.Outlined.SystemUpdateAlt
-    }
+    get() =
+        when (this) {
+            MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_ON -> Icons.Outlined.Lock
+            MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_OFF -> Icons.Outlined.LockOpen
+            MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_SETUP -> Icons.Outlined.Lock
+            MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART -> Icons.Outlined.RestartAlt
+            MachineOperationAction.MACHINE_OPERATION_ACTION_SHUTDOWN ->
+                Icons.Outlined.PowerSettingsNew
+            else -> Icons.Outlined.SystemUpdateAlt
+        }
 
 private val MachineOperationAction.tag: String
-    get() = when (this) {
-        MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART -> "restart"
-        MachineOperationAction.MACHINE_OPERATION_ACTION_SHUTDOWN -> "shutdown"
-        else -> "update"
-    }
+    get() =
+        when (this) {
+            MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_ON -> "privacy-on"
+            MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_OFF -> "privacy-off"
+            MachineOperationAction.MACHINE_OPERATION_ACTION_PRIVACY_SETUP -> "privacy-setup"
+            MachineOperationAction.MACHINE_OPERATION_ACTION_RESTART -> "restart"
+            MachineOperationAction.MACHINE_OPERATION_ACTION_SHUTDOWN -> "shutdown"
+            else -> "update"
+        }
 
 @Composable
 fun MachinesScreen(
@@ -155,7 +170,10 @@ internal fun MachinesContent(
     onDismissOperationMessage: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val machines = remember(state.presentedEndpointConnections) { MachineRows.listed(state.presentedEndpointConnections) }
+    val machines =
+        remember(state.presentedEndpointConnections) {
+            MachineRows.listed(state.presentedEndpointConnections)
+        }
     val selected = machines.firstOrNull { it.id == state.selectedMachineId }
 
     BackHandler(!expanded && selected != null, onClose)
@@ -236,19 +254,24 @@ private fun MachineList(
     val now = Clock.System.now()
     LazyColumn(
         modifier = modifier.fillMaxSize().testTag("machines-list"),
-        contentPadding = PaddingValues(
-            start = 14.dp,
-            top = contentPadding.calculateTopPadding() + 10.dp,
-            end = 14.dp,
-            bottom = contentPadding.calculateBottomPadding() + 18.dp,
-        ),
+        contentPadding =
+            PaddingValues(
+                start = 14.dp,
+                top = contentPadding.calculateTopPadding() + 10.dp,
+                end = 14.dp,
+                bottom = contentPadding.calculateBottomPadding() + 18.dp,
+            ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item("header") {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Machines", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Machines",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
                         Text(
                             MachineFormats.count(machines.size, "machine"),
                             color = DieterMuted,
@@ -260,7 +283,10 @@ private fun MachineList(
                         description = MachineRows.onlineSummary(machines),
                         anyOnline = machines.any { it.online },
                     )
-                    IconButton(onClick = onRefresh, modifier = Modifier.testTag("machines-refresh")) {
+                    IconButton(
+                        onClick = onRefresh,
+                        modifier = Modifier.testTag("machines-refresh"),
+                    ) {
                         Icon(Icons.Outlined.Refresh, "Refresh machines")
                     }
                 }
@@ -284,7 +310,12 @@ private fun MachineList(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.padding(28.dp),
                     ) {
-                        Icon(Icons.Outlined.Computer, null, Modifier.size(30.dp), tint = DieterMuted)
+                        Icon(
+                            Icons.Outlined.Computer,
+                            null,
+                            Modifier.size(30.dp),
+                            tint = DieterMuted,
+                        )
                         Text("No enrolled machines", fontWeight = FontWeight.SemiBold)
                         Text(
                             "Connect to a gateway with an enrolled Dieter daemon.",
@@ -305,7 +336,9 @@ private fun MachineList(
                 )
             }
             item("fleet") {
-                FleetSummary(MachineRows.fleet(machines) { state.machineSnapshots[it]?.information })
+                FleetSummary(
+                    MachineRows.fleet(machines) { state.machineSnapshots[it]?.information }
+                )
             }
         }
     }
@@ -337,10 +370,12 @@ private fun MachineListItem(
         onClick = onClick,
         color = if (selected) DieterShellTint else DieterSurface,
         shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, if (selected) DieterShell.copy(alpha = 0.45f) else DieterOutline),
-        modifier = Modifier.fillMaxWidth().testTag("machine-row-${machine.id}")
-            .semantics {
-                contentDescription = "Machine ${machine.label}, ${if (machine.online) "online" else "offline"}, $status"
+        border =
+            BorderStroke(1.dp, if (selected) DieterShell.copy(alpha = 0.45f) else DieterOutline),
+        modifier =
+            Modifier.fillMaxWidth().testTag("machine-row-${machine.id}").semantics {
+                contentDescription =
+                    "Machine ${machine.label}, ${if (machine.online) "online" else "offline"}, $status"
             },
     ) {
         Row(
@@ -355,17 +390,34 @@ private fun MachineListItem(
                     modifier = Modifier.size(46.dp),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.Computer, null, Modifier.size(23.dp), tint = DieterShell)
+                        Icon(
+                            Icons.Outlined.Computer,
+                            null,
+                            Modifier.size(23.dp),
+                            tint = DieterShell,
+                        )
                     }
                 }
                 Box(
-                    Modifier.size(12.dp).clip(CircleShape)
-                        .background(if (machine.online) DieterEyes else DieterMuted),
+                    Modifier.size(12.dp)
+                        .clip(CircleShape)
+                        .background(if (machine.online) DieterEyes else DieterMuted)
                 )
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(machine.label, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(status, color = DieterMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    machine.label,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    status,
+                    color = DieterMuted,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             if (agents > 0) {
                 Surface(color = DieterShellTint, shape = CircleShape) {
@@ -393,7 +445,13 @@ private fun FleetSummary(fleet: FleetTotals) {
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("FLEET", color = DieterMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp)
+                Text(
+                    "FLEET",
+                    color = DieterMuted,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.4.sp,
+                )
                 Spacer(Modifier.weight(1f))
                 Text(fleet.reportingLabel, color = DieterMuted, fontSize = 10.sp)
             }
@@ -410,7 +468,13 @@ private fun FleetSummary(fleet: FleetTotals) {
 @Composable
 private fun FleetMetric(value: String, label: String) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(value, color = DieterShell, fontWeight = FontWeight.Bold, fontSize = 16.sp, fontFamily = FontFamily.Monospace)
+        Text(
+            value,
+            color = DieterShell,
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp,
+            fontFamily = FontFamily.Monospace,
+        )
         Text(label, color = DieterMuted, fontSize = 9.sp)
     }
 }
@@ -425,7 +489,11 @@ private fun MachineSelectionPrompt(modifier: Modifier = Modifier) {
         Icon(Icons.Outlined.Computer, null, Modifier.size(42.dp), tint = DieterMuted)
         Spacer(Modifier.height(12.dp))
         Text("Select a machine", fontWeight = FontWeight.SemiBold)
-        Text("View live telemetry and available host actions.", color = DieterMuted, fontSize = 12.sp)
+        Text(
+            "View live telemetry and available host actions.",
+            color = DieterMuted,
+            fontSize = 12.sp,
+        )
     }
 }
 
@@ -451,12 +519,13 @@ private fun MachineDetail(
 
     LazyColumn(
         modifier = modifier.fillMaxSize().testTag("machine-detail"),
-        contentPadding = PaddingValues(
-            start = if (expanded) 22.dp else 14.dp,
-            top = contentPadding.calculateTopPadding() + 10.dp,
-            end = if (expanded) 22.dp else 14.dp,
-            bottom = contentPadding.calculateBottomPadding() + 22.dp,
-        ),
+        contentPadding =
+            PaddingValues(
+                start = if (expanded) 22.dp else 14.dp,
+                top = contentPadding.calculateTopPadding() + 10.dp,
+                end = if (expanded) 22.dp else 14.dp,
+                bottom = contentPadding.calculateBottomPadding() + 22.dp,
+            ),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item("identity") {
@@ -494,7 +563,12 @@ private fun MachineDetail(
                     }
                 }
                 information.gpu?.let { gpuTelemetry ->
-                    item("gpu-title") { MachineSectionHeader("GPU", MachineFormats.count(gpuTelemetry.devices.size, "device")) }
+                    item("gpu-title") {
+                        MachineSectionHeader(
+                            "GPU",
+                            MachineFormats.count(gpuTelemetry.devices.size, "device"),
+                        )
+                    }
                     if (gpuTelemetry.devices.isEmpty()) {
                         item("gpu-unavailable") {
                             MachinePanel {
@@ -517,25 +591,32 @@ private fun MachineDetail(
                     MachineFooter(machine, information, onOpenTerminals)
                 }
             }
-            loading -> item("loading") {
-                MachineCenteredState {
-                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                    Text("Reading machine information…", color = DieterMuted, fontSize = 12.sp)
-                }
-            }
-            else -> item("unavailable") {
-                MachineCenteredState {
-                    Icon(Icons.Outlined.Computer, null, Modifier.size(30.dp), tint = if (machine.online) DieterAmber else DieterMuted)
-                    Text(
-                        MachineFormats.informationUnavailable(machine, error),
-                        color = DieterMuted,
-                        fontSize = 12.sp,
-                    )
-                    if (machine.unavailableMessage == null) {
-                        Button(onClick = onRefresh) { Text("Try again") }
+            loading ->
+                item("loading") {
+                    MachineCenteredState {
+                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                        Text("Reading machine information…", color = DieterMuted, fontSize = 12.sp)
                     }
                 }
-            }
+            else ->
+                item("unavailable") {
+                    MachineCenteredState {
+                        Icon(
+                            Icons.Outlined.Computer,
+                            null,
+                            Modifier.size(30.dp),
+                            tint = if (machine.online) DieterAmber else DieterMuted,
+                        )
+                        Text(
+                            MachineFormats.informationUnavailable(machine, error),
+                            color = DieterMuted,
+                            fontSize = 12.sp,
+                        )
+                        if (machine.unavailableMessage == null) {
+                            Button(onClick = onRefresh) { Text("Try again") }
+                        }
+                    }
+                }
         }
     }
 
@@ -553,7 +634,9 @@ private fun MachineDetail(
                         onOperation(action)
                     },
                     modifier = Modifier.testTag("machine-operation-confirm"),
-                ) { Text(copy.button, color = if (copy.destructive) DieterCoral else DieterShell) }
+                ) {
+                    Text(copy.button, color = if (copy.destructive) DieterCoral else DieterShell)
+                }
             },
         )
     }
@@ -566,7 +649,9 @@ private fun MachineDetail(
                 TextButton(
                     onClick = onDismissOperationMessage,
                     modifier = Modifier.testTag("machine-operation-result"),
-                ) { Text("OK") }
+                ) {
+                    Text("OK")
+                }
             },
         )
     }
@@ -589,20 +674,32 @@ private fun MachineIdentity(
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, if (expanded) "Clear machine selection" else "Back to machines")
+                Icon(
+                    Icons.AutoMirrored.Outlined.ArrowBack,
+                    if (expanded) "Clear machine selection" else "Back to machines",
+                )
             }
-            Text("Machines", color = DieterMuted, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            Text(
+                "Machines",
+                color = DieterMuted,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
             IconButton(
                 onClick = onRefresh,
                 enabled = machine.online && !loading,
                 modifier = Modifier.testTag("machine-refresh"),
-            ) { Icon(Icons.Outlined.Refresh, "Refresh machine information") }
+            ) {
+                Icon(Icons.Outlined.Refresh, "Refresh machine information")
+            }
             Box {
                 IconButton(
                     onClick = { onActionsOpenChange(true) },
                     enabled = machine.online && information != null && !operationInFlight,
                     modifier = Modifier.testTag("machine-actions"),
-                ) { Icon(Icons.Outlined.MoreVert, "Machine actions") }
+                ) {
+                    Icon(Icons.Outlined.MoreVert, "Machine actions")
+                }
                 DropdownMenu(actionsOpen, { onActionsOpenChange(false) }) {
                     MachineOperations.availability(information).forEach { option ->
                         DropdownMenuItem(
@@ -613,20 +710,30 @@ private fun MachineIdentity(
                                 onActionsOpenChange(false)
                                 onAction(option.action)
                             },
-                            modifier = Modifier.testTag("machine-action-${option.action.tag}")
+                            modifier = Modifier.testTag("machine-action-${option.action.tag}"),
                         )
                     }
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(13.dp), verticalAlignment = Alignment.Top) {
-            Surface(color = DieterShellTint, shape = RoundedCornerShape(15.dp), modifier = Modifier.size(56.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(13.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Surface(
+                color = DieterShellTint,
+                shape = RoundedCornerShape(15.dp),
+                modifier = Modifier.size(56.dp),
+            ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(Icons.Outlined.Computer, null, Modifier.size(28.dp), tint = DieterShell)
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     Text(
                         machine.label,
                         style = MaterialTheme.typography.headlineSmall,
@@ -637,9 +744,17 @@ private fun MachineIdentity(
                     )
                     OnlineBadge(machine.online)
                 }
-                Text(MachineFormats.subtitle(machine, information), color = DieterMuted, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                Text(
+                    MachineFormats.subtitle(machine, information),
+                    color = DieterMuted,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                )
                 if (machine.online) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
                         Icon(Icons.Outlined.Lan, null, Modifier.size(14.dp), tint = DieterMuted)
                         Text(status, color = DieterMuted, fontSize = 11.sp)
                     }
@@ -671,7 +786,11 @@ private fun OnlineBadge(online: Boolean) {
 }
 
 @Composable
-private fun MachineCpuPanel(information: MachineInformation, history: List<Double>, modifier: Modifier = Modifier) {
+private fun MachineCpuPanel(
+    information: MachineInformation,
+    history: List<Double>,
+    modifier: Modifier = Modifier,
+) {
     MachinePanel(modifier.testTag("machine-cpu")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("CPU", color = DieterMuted, fontWeight = FontWeight.Bold, fontSize = 11.sp)
@@ -685,7 +804,10 @@ private fun MachineCpuPanel(information: MachineInformation, history: List<Doubl
             )
         }
         MachineUsageGraph(
-            values = information.cpu_core_usage_percent.ifEmpty { history.ifEmpty { listOf(information.cpu_usage_percent) } },
+            values =
+                information.cpu_core_usage_percent.ifEmpty {
+                    history.ifEmpty { listOf(information.cpu_usage_percent) }
+                },
             description = "CPU usage ${MachineFormats.percentage(information.cpu_usage_percent)}",
         )
         Text(
@@ -730,16 +852,23 @@ private fun MachineMemoryPanel(information: MachineInformation, modifier: Modifi
 private fun MachineUsageGraph(values: List<Double>, description: String) {
     val barColor = DieterShell
     val track = DieterSurfaceHigh
-    Canvas(
-        Modifier.fillMaxWidth().height(46.dp).semantics { contentDescription = description },
-    ) {
+    Canvas(Modifier.fillMaxWidth().height(46.dp).semantics { contentDescription = description }) {
         val count = values.size.coerceAtLeast(1)
         val gap = 4.dp.toPx()
         val barWidth = ((size.width - gap * (count - 1)) / count).coerceAtLeast(3.dp.toPx())
         values.forEachIndexed { index, value ->
             val x = index * (barWidth + gap)
-            drawLine(track, androidx.compose.ui.geometry.Offset(x, size.height), androidx.compose.ui.geometry.Offset(x + barWidth, size.height), strokeWidth = 3.dp.toPx(), cap = StrokeCap.Round)
-            val height = (size.height * (value.coerceIn(0.0, 100.0) / 100.0)).toFloat().coerceAtLeast(4.dp.toPx())
+            drawLine(
+                track,
+                androidx.compose.ui.geometry.Offset(x, size.height),
+                androidx.compose.ui.geometry.Offset(x + barWidth, size.height),
+                strokeWidth = 3.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+            val height =
+                (size.height * (value.coerceIn(0.0, 100.0) / 100.0))
+                    .toFloat()
+                    .coerceAtLeast(4.dp.toPx())
             drawRoundRect(
                 color = barColor.copy(alpha = if (index == values.lastIndex) 1f else 0.52f),
                 topLeft = androidx.compose.ui.geometry.Offset(x, size.height - height),
@@ -756,13 +885,18 @@ private fun MachineMemoryBar(information: MachineInformation) {
     val used = (information.memory_used_bytes / total).coerceIn(0f, 1f)
     val cached = (information.memory_cached_bytes / total).coerceIn(0f, 1f - used)
     Row(
-        Modifier.fillMaxWidth().height(10.dp).clip(CircleShape).background(DieterSurfaceHigh)
+        Modifier.fillMaxWidth()
+            .height(10.dp)
+            .clip(CircleShape)
+            .background(DieterSurfaceHigh)
             .semantics {
-                contentDescription = "Memory used ${MachineFormats.bytes(information.memory_used_bytes)} of ${MachineFormats.bytes(information.memory_total_bytes)}"
-            },
+                contentDescription =
+                    "Memory used ${MachineFormats.bytes(information.memory_used_bytes)} of ${MachineFormats.bytes(information.memory_total_bytes)}"
+            }
     ) {
         if (used > 0f) Box(Modifier.weight(used).fillMaxHeight().background(DieterEyes))
-        if (cached > 0f) Box(Modifier.weight(cached).fillMaxHeight().background(DieterShell.copy(alpha = 0.72f)))
+        if (cached > 0f)
+            Box(Modifier.weight(cached).fillMaxHeight().background(DieterShell.copy(alpha = 0.72f)))
         val remaining = (1f - used - cached).coerceAtLeast(0.001f)
         Spacer(Modifier.weight(remaining))
     }
@@ -771,11 +905,19 @@ private fun MachineMemoryBar(information: MachineInformation) {
 @Composable
 private fun MachineLegend(label: String, value: Long, color: Color) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
             Box(Modifier.size(6.dp).clip(CircleShape).background(color))
             Text(label, color = DieterMuted, fontSize = 9.sp)
         }
-        Text(MachineFormats.bytes(value), color = DieterText, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+        Text(
+            MachineFormats.bytes(value),
+            color = DieterText,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 10.sp,
+        )
     }
 }
 
@@ -803,14 +945,24 @@ private fun MachineGpuPanel(device: GPUDevice, history: List<Double>) {
             )
         }
         device.utilization_percent?.let { utilization ->
-            MachineUsageGraph(history.ifEmpty { listOf(utilization) }, "GPU usage ${MachineFormats.percentage(utilization)}")
+            MachineUsageGraph(
+                history.ifEmpty { listOf(utilization) },
+                "GPU usage ${MachineFormats.percentage(utilization)}",
+            )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             if (device.memory_used_bytes != null || device.memory_total_bytes != null) {
                 MachineIconMetric(Icons.Outlined.Memory, MachineFormats.gpuMemory(device))
             }
-            device.temperature_celsius?.let { MachineIconMetric(Icons.Outlined.Thermostat, MachineFormats.temperature(it)) }
-            device.power_watts?.let { MachineIconMetric(Icons.Outlined.Bolt, MachineFormats.power(it)) }
+            device.temperature_celsius?.let {
+                MachineIconMetric(Icons.Outlined.Thermostat, MachineFormats.temperature(it))
+            }
+            device.power_watts?.let {
+                MachineIconMetric(Icons.Outlined.Bolt, MachineFormats.power(it))
+            }
         }
     }
 }
@@ -834,10 +986,18 @@ private fun MachineSoftwarePanel(machine: MachineRow, information: MachineInform
                 modifier = Modifier.padding(13.dp),
             ) {
                 Icon(Icons.Outlined.Dns, null, Modifier.size(19.dp), tint = DieterMuted)
-                Text("Dieter daemon", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text(
+                    "Dieter daemon",
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
                 val build = information.daemon_build
                 Text(
-                    MachineFormats.daemonVersion(build?.release_version.orEmpty(), machine.releaseVersion, build?.source_revision.orEmpty()),
+                    MachineFormats.daemonVersion(
+                        build?.release_version.orEmpty(),
+                        machine.releaseVersion,
+                        build?.source_revision.orEmpty(),
+                    ),
                     color = DieterMuted,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 9.sp,
@@ -853,7 +1013,10 @@ private fun MachineProcessesPanel(information: MachineInformation) {
         Modifier.fillMaxWidth().testTag("machine-processes"),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        MachineSectionHeader("DIETER PROCESSES", MachineFormats.activeAgents(information.active_agent_count))
+        MachineSectionHeader(
+            "DIETER PROCESSES",
+            MachineFormats.activeAgents(information.active_agent_count),
+        )
         Surface(
             color = DieterSurface,
             shape = RoundedCornerShape(14.dp),
@@ -862,11 +1025,17 @@ private fun MachineProcessesPanel(information: MachineInformation) {
         ) {
             Column {
                 if (information.processes.size == 0) {
-                    Text("No Dieter processes reported.", color = DieterMuted, fontSize = 12.sp, modifier = Modifier.padding(14.dp))
+                    Text(
+                        "No Dieter processes reported.",
+                        color = DieterMuted,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(14.dp),
+                    )
                 } else {
                     information.processes.forEachIndexed { index, process ->
                         MachineProcessRow(process)
-                        if (index < information.processes.size - 1) HorizontalDivider(color = DieterDivider)
+                        if (index < information.processes.size - 1)
+                            HorizontalDivider(color = DieterDivider)
                     }
                 }
             }
@@ -882,13 +1051,19 @@ private fun MachineProcessRow(process: MachineProcess) {
         modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
     ) {
         Icon(
-            if (MachineFormats.isAgentProcess(process.kind)) Icons.Outlined.Refresh else Icons.Outlined.Terminal,
+            if (MachineFormats.isAgentProcess(process.kind)) Icons.Outlined.Refresh
+            else Icons.Outlined.Terminal,
             null,
             Modifier.size(18.dp),
             tint = if (MachineFormats.isAgentProcess(process.kind)) DieterShell else DieterMuted,
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(process.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                process.name,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Text(
                 MachineFormats.processDetail(process.pid, process.detail),
                 color = DieterMuted,
@@ -898,19 +1073,48 @@ private fun MachineProcessRow(process: MachineProcess) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Text(MachineFormats.percentage(process.cpu_usage_percent), color = DieterMuted, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
-        Text(MachineFormats.bytes(process.memory_bytes), color = DieterEyes, fontFamily = FontFamily.Monospace, fontSize = 10.sp)
+        Text(
+            MachineFormats.percentage(process.cpu_usage_percent),
+            color = DieterMuted,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 10.sp,
+        )
+        Text(
+            MachineFormats.bytes(process.memory_bytes),
+            color = DieterEyes,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 10.sp,
+        )
     }
 }
 
 @Composable
-private fun MachineFooter(machine: MachineRow, information: MachineInformation, onOpenTerminals: () -> Unit) {
+private fun MachineFooter(
+    machine: MachineRow,
+    information: MachineInformation,
+    onOpenTerminals: () -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            MachineIconMetric(Icons.Outlined.Storage, MachineFormats.disk(information.disk_free_bytes))
-            MachineIconMetric(Icons.Outlined.Lan, MachineFormats.network(information.network_receive_bytes_per_second, information.network_send_bytes_per_second))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MachineIconMetric(
+                Icons.Outlined.Storage,
+                MachineFormats.disk(information.disk_free_bytes),
+            )
+            MachineIconMetric(
+                Icons.Outlined.Lan,
+                MachineFormats.network(
+                    information.network_receive_bytes_per_second,
+                    information.network_send_bytes_per_second,
+                ),
+            )
             if (information.temperature_celsius > 0) {
-                MachineIconMetric(Icons.Outlined.Thermostat, MachineFormats.temperature(information.temperature_celsius))
+                MachineIconMetric(
+                    Icons.Outlined.Thermostat,
+                    MachineFormats.temperature(information.temperature_celsius),
+                )
             }
         }
         Button(
@@ -927,7 +1131,10 @@ private fun MachineFooter(machine: MachineRow, information: MachineInformation, 
 
 @Composable
 private fun MachineIconMetric(icon: ImageVector, value: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
         Icon(icon, null, Modifier.size(14.dp), tint = DieterMuted)
         Text(value, color = DieterMuted, fontFamily = FontFamily.Monospace, fontSize = 9.sp)
     }
@@ -936,14 +1143,25 @@ private fun MachineIconMetric(icon: ImageVector, value: String) {
 @Composable
 private fun MachineSectionHeader(title: String, trailing: String? = null) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(title, color = DieterMuted, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.2.sp)
+        Text(
+            title,
+            color = DieterMuted,
+            fontWeight = FontWeight.Bold,
+            fontSize = 10.sp,
+            letterSpacing = 1.2.sp,
+        )
         Spacer(Modifier.weight(1f))
-        trailing?.let { Text(it, color = DieterMuted, fontSize = 10.sp, fontFamily = FontFamily.Monospace) }
+        trailing?.let {
+            Text(it, color = DieterMuted, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+        }
     }
 }
 
 @Composable
-private fun MachinePanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+private fun MachinePanel(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Surface(
         color = DieterSurface,
         shape = RoundedCornerShape(15.dp),
@@ -967,4 +1185,3 @@ private fun MachineCenteredState(content: @Composable ColumnScope.() -> Unit) {
         content = content,
     )
 }
-

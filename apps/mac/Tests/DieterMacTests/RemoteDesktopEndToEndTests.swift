@@ -840,7 +840,9 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
         contentRect: NSRect(x: 80, y: 80, width: 1100, height: 800), styleMask: [.titled, .closable, .resizable],
         backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false; window.title = "Dieter — Undock Integration"
-    let root = NSHostingView(rootView: ScreensView(model: model, machines: [], initialMachineID: "fixture"))
+    let root = NSHostingView(
+        rootView: ScreensView(model: model, machines: [], initialMachineID: "fixture")
+            .environment(DieterStore(liveEnvironment: false)))
     root.sizingOptions = []; window.contentView = root
     window.makeKeyAndOrderFront(nil); application.activate(ignoringOtherApps: true)
     defer { model.closeSession(session.id); window.contentView = nil; window.close() }
@@ -1012,5 +1014,114 @@ private final class NativeScreenPixelBufferProbe: RTCCVPixelBuffer, @unchecked S
     try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]).write(
         to: output.appending(path: "results.json"))
     print("Undocked screen result: \(report)")
+    await core.close()
+}
+
+@Test(
+    .enabled(
+        if: ProcessInfo.processInfo.environment["DIETER_TEST_SCREEN_VIRTUAL"] == "1",
+        "Requires the isolated virtual display screen fixture"))
+@MainActor func remoteDesktopVirtualDisplayEndToEnd() async throws {
+    let env = ProcessInfo.processInfo.environment
+    let helper = try #require(env["DIETER_TEST_CAPTURE_HELPER"])
+    let executable = try #require(env["DIETER_TEST_SCREEN_FIXTURE"])
+    let output = FileManager.default.temporaryDirectory.appending(path: "dieter-virtual-viewer-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+    let log = output.appending(path: "fixture.log")
+    FileManager.default.createFile(atPath: log.path, contents: nil)
+    let handle = try FileHandle(forWritingTo: log)
+    var environment = env
+    environment["DIETER_SCREEN_VIRTUAL_DISPLAY"] = "1"
+    environment["DIETER_SCREEN_VIRTUAL_DISABLE"] = "1"
+    environment["DIETER_TEST_CAPTURE_INPUT_PATTERN"] = "1"
+    // Real encoder, transport, decoder and renderer; the helper's display
+    // driver is disposable. Physical WindowServer recovery has its own gate.
+    let (process, fixture) = try await startScreenFixture(
+        executable: executable, arguments: ["--helper", helper, "--source", "native-synthetic", "--authenticate"],
+        environment: environment, output: output, log: handle)
+    defer {
+        if process.isRunning { process.terminate(); process.waitUntilExit() }
+        try? handle.close()
+        print("Virtual display viewer evidence: \(output.path)")
+    }
+    let clipboard = NSPasteboard(name: .init("com.dbpprt.dieter.virtual-viewer.\(UUID().uuidString)"))
+    defer { clipboard.releaseGlobally() }
+    let core = try ScreenFixtureCore(
+        fixture,
+        clipboard: CoreScreenClipboard(pasteboard: clipboard, stagingDirectory: output.appending(path: "clipboard")))
+    let controller = core.controller()
+    defer {
+        print(
+            "Virtual viewer final phase: \(controller.phase), error: \(controller.errorMessage ?? "none"), presented: \(controller.renderer.framesPresented)"
+        )
+    }
+    let app = NSApplication.shared; app.setActivationPolicy(.regular)
+    let window = NSWindow(
+        contentRect: NSRect(x: 60, y: 60, width: 1280, height: 720), styleMask: [.titled, .closable],
+        backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    let surface = RemoteDesktopInputView(renderer: controller.renderer, controller: controller)
+    window.contentView = surface; window.makeKeyAndOrderFront(nil); app.activate(ignoringOtherApps: true)
+    surface.layoutSubtreeIfNeeded(); surface.layout()
+    defer { controller.close(); window.contentView = nil; window.close() }
+    func captureVirtual(_ name: String) throws {
+        guard let path = env["DIETER_TEST_SCREEN_VIRTUAL_EVIDENCE"] else { return }
+        try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+        let shot = Process()
+        shot.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        shot.arguments = ["-x", "-l", String(window.windowNumber), path + "/" + name + ".png"]
+        try shot.run(); shot.waitUntilExit()
+        #expect(shot.terminationStatus == 0)
+    }
+    window.makeFirstResponder(surface); controller.inputFocused = true
+    controller.connect(daemonID: "fixture", machineName: "Virtual display fixture")
+    try await screenWait("initial video and control", timeout: 25) {
+        (controller.controlActive && controller.renderer.framesPresented > 5) || controller.errorMessage != nil
+    }
+    try #require(controller.errorMessage == nil, "\(controller.errorMessage ?? "")")
+    try #require(controller.capabilities.virtualDisplaySupported)
+    let before = controller.sessionState.displayGeneration
+    controller.setViewport(CGSize(width: 1280, height: 720), scale: 1)
+    controller.session.setPreferences {
+        $0.virtualDisplay = true; $0.virtualScale = 1; $0.disablePhysical = true
+    }
+    try await screenWait("virtual desktop frame presented and confirmed", timeout: 20) {
+        controller.sessionState.virtualDisplay.physicalDisabled && controller.controlActive
+            && controller.sessionState.displayGeneration > before
+    }
+    #expect(controller.sessionState.virtualDisplay.pixelWidth == 1280)
+    #expect(controller.sessionState.virtualDisplay.pixelHeight == 720)
+    #expect(controller.sessionState.displayID == controller.sessionState.virtualDisplay.displayID)
+    #expect(controller.sessionState.mediaGeneration == controller.sessionState.displayGeneration)
+    try captureVirtual("01-virtual-presented")
+    let ordinal = controller.sessionState.lastInputOrdinal
+    controller.sendPointerButton(.left, down: true, clickCount: 1, x: 0.75, y: 0.25, modifiers: [])
+    controller.sendPointerButton(.left, down: false, clickCount: 1, x: 0.75, y: 0.25, modifiers: [])
+    try await screenWait("input on virtual display", timeout: 5) { controller.sessionState.lastInputOrdinal > ordinal }
+    controller.setViewport(CGSize(width: 1024, height: 768), scale: 1)
+    controller.session.setPreferences { $0.virtualScale = 2 }
+    try await screenWait("resized HiDPI virtual display presented", timeout: 20) {
+        controller.sessionState.virtualDisplay.pixelWidth == 1024
+            && controller.sessionState.virtualDisplay.pixelHeight == 768
+            && controller.sessionState.virtualDisplay.scale == 2
+            && controller.sessionState.virtualDisplay.physicalDisabled && controller.controlActive
+    }
+    #expect(controller.session.preferences.virtualDisplay)
+    try captureVirtual("02-virtual-hidpi-resized")
+    controller.session.setPreferences {
+        $0.virtualDisplay = false; $0.disablePhysical = false
+    }
+    try await screenWait("physical display restored and presented", timeout: 15) {
+        !controller.sessionState.virtualDisplay.active && controller.controlActive
+            && controller.sessionState.configuration.displayID == "primary"
+    }
+    try captureVirtual("03-restored")
+    controller.close()
+    let rpc = try screenFixtureRPC(fixture); defer { rpc.shutdown() }
+    for _ in 0..<50 {
+        if try await rpc.remoteDesktopSessions().sessions.isEmpty { break }
+        try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(try await rpc.remoteDesktopSessions().sessions.isEmpty)
     await core.close()
 }

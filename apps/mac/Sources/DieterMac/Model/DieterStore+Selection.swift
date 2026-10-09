@@ -31,19 +31,19 @@ extension DieterStore {
             ?? ""
     }
 
-    /// The core's feed keeps the workspace live; a manual refresh reconnects
-    /// when offline and rereads the attached machine's agents and the open
-    /// conversation otherwise.
+    /// Every machine's stream keeps the workspace live; a manual refresh
+    /// reconnects when offline and otherwise rereads the open conversation
+    /// and its machine's agents.
     func refreshState() async {
         stateRefreshCount &+= 1
         guard phase.isConnected else {
             await connect()
             return
         }
-        if let daemonID = endpoint.daemonID {
+        if let card = selectedCard ?? selectedDetail?.card, !card.ownerDaemonID.isEmpty {
             await perform {
                 $0.ensureMetadata = .with {
-                    $0.daemonID = daemonID
+                    $0.daemonID = card.ownerDaemonID
                     $0.refresh = true
                 }
             }

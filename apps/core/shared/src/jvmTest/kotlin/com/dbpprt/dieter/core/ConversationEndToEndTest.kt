@@ -2,7 +2,7 @@ package com.dbpprt.dieter.core
 
 import com.dbpprt.dieter.api.v1.CreateConversationRequest
 import com.dbpprt.dieter.core.composition.DraftKey
-import com.dbpprt.dieter.core.connection.ConnectionPhase
+import com.dbpprt.dieter.core.connection.SyncState
 import com.dbpprt.dieter.core.conversation.ConversationConfig
 import com.dbpprt.dieter.core.conversation.ConversationSession
 import com.dbpprt.dieter.core.outbox.OutboxPolicy
@@ -97,7 +97,7 @@ class ConversationEndToEndTest : EndToEnd() {
         session.awaitReplies(1)
 
         fixture.daemonOffline()
-        runtime.connection.state.await { it.phase == ConnectionPhase.NO_MACHINE }
+        runtime.awaitSync(fixture.daemonId, SyncState.OFFLINE)
         session.view.await(20.seconds, describe = { "syncing: ${session.view.value}" }) { it.syncing }
         assertEquals(listOf("before"), session.texts("user"), "cached messages stay readable")
         runtime.onConversation(session) { send(listOf(com.dbpprt.dieter.api.v1.MessagePart(type = "text", text = "after"))) }

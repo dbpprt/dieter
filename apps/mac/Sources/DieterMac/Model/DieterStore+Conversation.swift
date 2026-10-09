@@ -38,7 +38,6 @@ extension DieterStore {
     func openConversation(cardID: String, chat: Bool = false, fromInbox: Bool = false) async {
         let previousConversationID = selectedCardID ?? selectedChatID
         conversationSelectionGeneration &+= 1
-        let selectionGeneration = conversationSelectionGeneration
         let knownChat =
             chats.first(where: { $0.id == cardID })
             ?? state.chats.first(where: { $0.id == cardID })
@@ -78,11 +77,6 @@ extension DieterStore {
         bindConversation()
         conversationModel.observe(cardID)
         await perform { $0.setVisibleConversation = .with { $0.cardID = cardID } }
-        // The composer's agents and the machine settings are the attached
-        // machine's, so follow the conversation to its machine.
-        guard selectionGeneration == conversationSelectionGeneration, let card, isConversationServerBacked(cardID)
-        else { return }
-        _ = await ensureConversationConnection(card, reportOffline: false)
     }
 
     func bindConversation() {

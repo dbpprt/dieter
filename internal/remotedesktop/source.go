@@ -43,6 +43,14 @@ type ControlledFrameSource interface {
 	SetBitrateKbps(int)
 }
 
+// DisplayWaker is implemented by a native host source that can report remote
+// user activity before a viewer starts consuming the shared desktop. The
+// capture pool invokes it once per logical connection, even when peers share
+// one encoder.
+type DisplayWaker interface {
+	WakeDisplay(context.Context) error
+}
+
 // InputSink is implemented by the signed native helper source. The daemon
 // validates protobuf input before forwarding this deliberately small command
 // representation to the helper that owns macOS event-posting permission.
@@ -52,6 +60,7 @@ type InputSink interface {
 }
 
 type SourceOptions struct {
+	StateRoot  string // Central DIETER_HOME (or disposable fixture root) for native display recovery.
 	RecoveryID string // private encoder identity for acknowledged references; capture stays shared
 	// Optional named pasteboard for isolated native fixtures; empty uses the system clipboard.
 	ClipboardDirectory string

@@ -14,7 +14,7 @@
     /// attached under the view's scope before the slice is observed there.
     @MainActor
     @Observable
-    final class IOSScreenController {
+    final class IOSScreenController: IOSScreenCanvasController {
         let session: ScreenSessionModel
         private(set) var cursorImage: UIImage?
         /// The normalized host cursor position; the view adopts it unless a

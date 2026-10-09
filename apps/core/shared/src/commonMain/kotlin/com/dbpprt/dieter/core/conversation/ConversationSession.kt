@@ -123,7 +123,6 @@ class ConversationSession internal constructor(
     private val logger: CoreLogger,
     parent: CoroutineScope,
     private val cached: TranscriptState?,
-    private val liveTailCurrent: (daemonId: String, cardId: String) -> Boolean,
     private val onTranscript: (String, TranscriptState) -> Unit,
     /** A machine's agent catalog once it has loaded, else null. */
     private val catalog: (daemonId: String) -> List<Harness>? = { null },
@@ -173,9 +172,8 @@ class ConversationSession internal constructor(
     private suspend fun watch() {
         val owner = daemonId ?: return
         val id = cardId
-        // A healthy feed that carries this conversation lets the stream resume quietly from its tail.
-        val current = transcript.snapshot != null && liveTailCurrent(owner, id)
-        var requireSnapshot = !current
+        // A transcript this device already shows resumes quietly after its last event.
+        var requireSnapshot = transcript.snapshot == null
         var failures = 0
         var delivered = false
         val hedge = if (requireSnapshot) scope.launch { hedgedRead(owner, id) { delivered } } else null
@@ -242,10 +240,9 @@ class ConversationSession internal constructor(
         adopt()
     }
 
-    /** Folds what the owner reported into the shared workspace and settles pending sends. */
+    /** Settles pending sends with what the owner reported. */
     private fun adopt() {
         val snapshot = transcript.snapshot ?: return
-        snapshot.detail?.card?.let { store.foldCard(it, daemonId) }
         outbox.reconcileConversation(snapshot)
         onTranscript(cardId, transcript)
         publish()
@@ -578,8 +575,7 @@ class ConversationSession internal constructor(
         val directory = store.directoryProjection
         val card = directory.item(id) ?: cached?.snapshot?.detail?.card
             ?: throw CoreException(FailureKind.PERMANENT, "The conversation is no longer available.")
-        return directory.owner(card) ?: directory.projectReplicas[card.project_id]
-            ?: throw CoreException(FailureKind.TRANSIENT, "The conversation's machine is unavailable.")
+        return directory.owner(card) ?: throw CoreException(FailureKind.TRANSIENT, "The conversation's machine is unavailable.")
     }
 
     companion object {

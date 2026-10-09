@@ -29,7 +29,7 @@ func TestGlobalStateNeverCachesPreparedDomainMutation(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
 	defer cancel()
-	_, _, err = s.GlobalStateContext(ctx)
+	_, err = s.GlobalStateContext(ctx)
 	if !errors.Is(err, context.DeadlineExceeded) {
 		release()
 		t.Fatalf("active writer read: %v", err)
@@ -86,7 +86,7 @@ func TestPendingMutationRecoveredByReader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	event, err := s.prepareSyncMutation("conversation_changed")
+	pending, err := s.prepareSyncMutation(conversationChange)
 	if err != nil {
 		release()
 		t.Fatal(err)
@@ -97,9 +97,13 @@ func TestPendingMutationRecoveredByReader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state, cursor, err := s.GlobalStateContext(context.Background())
-	if err != nil || state.Cards[0].Title != card.Title || cursor.Sequence != event.Sequence {
-		t.Fatalf("recovery: %+v %+v %v", state, cursor, err)
+	state, err := s.GlobalStateContext(context.Background())
+	if err != nil || state.Cards[0].Title != card.Title {
+		t.Fatalf("recovery: %+v %v", state, err)
+	}
+	// A recovered write counts as metadata even if it started as text.
+	if changes, metadata := changeCounters(t, s); changes != pending.Sequence || metadata != pending.Sequence {
+		t.Fatalf("recovered counters %d/%d, want %d", changes, metadata, pending.Sequence)
 	}
 	if s.SyncMutationPending() {
 		t.Fatal("pending marker survived successful recovery")
@@ -316,46 +320,11 @@ func TestKilledWriterRecovery(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	state, _, err := data.GlobalStateContext(ctx)
+	state, err := data.GlobalStateContext(ctx)
 	if err != nil || state.Cards[0].Title != "committed before process death" {
 		t.Fatalf("killed writer lost update: %+v %v", state, err)
 	}
 	if data.SyncMutationPending() {
 		t.Fatal("recovery left pending revision")
-	}
-}
-
-func TestSyncJournalCacheTracksAppendAndReplacement(t *testing.T) {
-	data := New(t.TempDir())
-	if err := data.Ensure(); err != nil {
-		t.Fatal(err)
-	}
-	for range 3 {
-		release, err := data.beginWrite()
-		if err != nil {
-			t.Fatal(err)
-		}
-		release()
-	}
-	first, events, err := data.SyncEvents(1, 1)
-	if err != nil || len(events) != 1 || events[0].Sequence != 2 {
-		t.Fatalf("first: %+v %v", events, err)
-	}
-	offset := data.syncJournal.offset
-	release, err := data.beginWrite()
-	if err != nil {
-		t.Fatal(err)
-	}
-	release()
-	next, events, err := data.SyncEvents(first.Sequence, 10)
-	if err != nil || len(events) != 1 || events[0].Sequence != 4 || data.syncJournal.offset <= offset {
-		t.Fatalf("append: %+v %v", events, err)
-	}
-	if err := data.compactSyncJournal(2); err != nil {
-		t.Fatal(err)
-	}
-	replaced, events, err := data.SyncEvents(0, 10)
-	if err != nil || replaced.Epoch == next.Epoch || len(events) != 2 || events[0].Sequence != 3 {
-		t.Fatalf("replacement: %+v %+v %v", replaced, events, err)
 	}
 }

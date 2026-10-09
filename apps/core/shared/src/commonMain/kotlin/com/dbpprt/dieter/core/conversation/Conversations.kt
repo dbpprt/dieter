@@ -8,7 +8,6 @@ import com.dbpprt.dieter.core.platform.DeviceSettings
 import com.dbpprt.dieter.core.runtime.CoreLogger
 import com.dbpprt.dieter.core.session.MachineSessions
 import com.dbpprt.dieter.core.store.WorkspaceStore
-import com.dbpprt.dieter.core.sync.FeedStatus
 import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,7 +26,6 @@ class Conversations(
     private val outbox: Outbox,
     private val board: BoardOperations,
     private val drafts: ConversationDrafts,
-    private val feed: StateFlow<FeedStatus>,
     private val config: ConversationConfig,
     private val clock: Clock,
     private val logger: CoreLogger,
@@ -56,10 +54,8 @@ class Conversations(
             open[id] = existing
             return existing
         }
-        val cached = cache[id] ?: store.state.value.conversations[id]?.let { TranscriptState(snapshot = it) }
         val session = ConversationSession(
-            id, sessions, store, outbox, board, drafts, config, clock, logger, scope, cached,
-            liveTailCurrent = { daemonId, card -> feed.value.let { it.live && it.daemonId == daemonId } && store.state.value.conversations.containsKey(card) },
+            id, sessions, store, outbox, board, drafts, config, clock, logger, scope, cache[id],
             onTranscript = ::remember,
             catalog = catalog,
         )

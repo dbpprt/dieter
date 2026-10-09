@@ -19,24 +19,23 @@ long-running preview/build processes with `start_background_process` or
 
 `just site build` generates `landingpage/public`. `just site check` builds, then
 checks rendered local links, fragments, assets, search entries, image alt text,
-and maintained repository documentation links. Dated engineering records retain
-their historical evidence paths and are excluded from that last check. Also check the page in a real browser at
-both desktop and phone widths, including keyboard navigation and search.
+and maintained repository documentation links. Also check the page in a real
+browser at both desktop and phone widths, including keyboard navigation and search.
 
 ## Source layout
 
-| Location | Contents |
-| --- | --- |
-| `content/docs` | Canonical user guides, one Markdown file per topic |
-| `layouts/index.html` | Product landing page |
-| `layouts/partials/docs-*.html` | Sidebar, content shell, table of contents, next/previous |
-| `layouts/partials/search.html` | Build-time JSON index and native search dialog |
-| `layouts/shortcodes/screenshot.html` | Captioned, full-size-linked product captures |
-| `assets/css/main.css` | Responsive site and documentation styles |
-| `assets/js/main.js` | Navigation, copy buttons, local search, keyboard controls |
-| `data/landing.yaml` | Supported harness names; models stay in the host catalog |
-| `static/images/screenshots` | Curated native screenshots shared by site and GitHub README |
-| `static/fonts` | Self-hosted Sora font; body and code use system fonts |
+| Location                             | Contents                                                    |
+| ------------------------------------ | ----------------------------------------------------------- |
+| `content/docs`                       | Canonical user guides, one Markdown file per topic          |
+| `layouts/index.html`                 | Product landing page                                        |
+| `layouts/partials/docs-*.html`       | Sidebar, content shell, table of contents, next/previous    |
+| `layouts/partials/search.html`       | Build-time JSON index and native search dialog              |
+| `layouts/shortcodes/screenshot.html` | Captioned, full-size-linked product captures                |
+| `assets/css/main.css`                | Responsive site and documentation styles                    |
+| `assets/js/main.js`                  | Navigation, copy buttons, local search, keyboard controls   |
+| `data/landing.yaml`                  | Supported harness names; models stay in the host catalog    |
+| `static/images/screenshots`          | Curated native screenshots shared by site and GitHub README |
+| `static/fonts`                       | Self-hosted Sora font; body and code use system fonts       |
 
 Do not edit or commit generated `public/` or `resources/` output. The site needs
 no client framework, external search service, analytics, or external font request.
@@ -55,12 +54,14 @@ repository Markdown. Hugo render hooks make root-relative links and image URLs
 work when the site is mounted under a GitHub Pages subpath. Search indexes titles,
 descriptions, and rendered guide text locally at build time.
 
-Use the screenshot shortcode with meaningful alt text and a caption. See
-[screenshot provenance](../docs/screenshots/README.md) for the capture environment
-and privacy rules. Use real native captures; do not fabricate product UI.
+Use the screenshot shortcode with meaningful alt text and a caption. Capture
+the current native app with disposable fixture accounts and record the platform,
+app version, and capture conditions in the change. Remove private transcripts,
+credentials, and personal data. Use real native captures; do not fabricate
+product UI. Historical design renders belong in their labeled reference directory.
 
-Dated `docs/` investigations are historical evidence. Keep their original paths
-and link current user guidance from [the technical index](../docs/README.md).
+Keep current user guidance in `content/docs`; component READMEs and the pipeline
+guide hold development details.
 
 ## Sharing image
 

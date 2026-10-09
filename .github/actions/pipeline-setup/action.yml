@@ -6,10 +6,10 @@ inputs:
     default: portable
   fixture:
     description: Install the pinned local mock harness dependencies
-    default: 'false'
+    default: "false"
   native:
     description: Prepare pinned native CI runtime when required
-    default: 'false'
+    default: "false"
 runs:
   using: composite
   steps:
@@ -20,32 +20,32 @@ runs:
     - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8
       with:
         ruby-version: .ruby-version
-        bundler: '2.6.9'
+        bundler: "2.6.9"
         bundler-cache: true
     - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       with:
-        just-version: '1.58.0'
+        just-version: "1.58.0"
     - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       if: inputs.component == 'portable' || inputs.fixture == 'true'
       with:
-        node-version: '22'
+        node-version: "22"
         cache: npm
         cache-dependency-path: internal/harness/runtime/package-lock.json
     - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
       if: inputs.component == 'android' || (inputs.component == 'core' || inputs.component == 'core-apple') || inputs.component == 'mac' || inputs.component == 'ios'
       with:
         distribution: temurin
-        java-version: '21'
+        java-version: "21"
     - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
       if: inputs.component == 'android' || (inputs.component == 'core' || inputs.component == 'core-apple') || inputs.component == 'mac' || inputs.component == 'ios'
     - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
       if: inputs.component == 'android' && runner.os == 'Linux'
       with:
-        packages: ''
+        packages: ""
     - uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b
       if: inputs.component == 'portable'
       with:
-        version: '35.1'
+        version: "36.1"
         repo-token: ${{ github.token }}
     - name: Prepare component environment
       shell: bash

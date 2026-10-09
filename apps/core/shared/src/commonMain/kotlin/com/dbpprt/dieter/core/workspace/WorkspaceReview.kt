@@ -17,7 +17,6 @@ import com.dbpprt.dieter.api.v1.StartGitOperationRequest
 import com.dbpprt.dieter.api.v1.UpdateConversationWorkspaceRequest
 import com.dbpprt.dieter.api.v1.WatchGitOperationRequest
 import com.dbpprt.dieter.api.v1.Workspace
-import com.dbpprt.dieter.api.v1.WorkspaceSummary
 import com.dbpprt.dieter.core.board.BoardOperations
 import com.dbpprt.dieter.core.board.Lanes
 import com.dbpprt.dieter.core.composition.WorkspaceMode
@@ -218,26 +217,12 @@ class WorkspaceReview(
             mutableView.update {
                 it.copy(workspace = workspace, changeset = changeset, comments = comments, scm = scm, loading = false, error = null, needsReconciliation = false, surfaceRemoved = false)
             }
-            acceptSummary(workspace)
             resolveSelection(revisionChanged)
             GitOperations.reconciliationId(workspace.current_operation_id, view.value.operation, cardId)?.let { resume(it) }
         } catch (error: Throwable) {
             if (error is CancellationException) throw error
             if (owns(bound)) mutableView.update { it.copy(loading = false, error = Failures.message(error)) }
         }
-    }
-
-    /** The board card shows the workspace summary the owner just reported. */
-    private fun acceptSummary(workspace: Workspace) {
-        val cardId = view.value.cardId ?: return
-        val card = store.directoryProjection.item(cardId) ?: return
-        val summary = WorkspaceSummary(
-            mode = workspace.mode, state = workspace.state, branch = workspace.branch, base_branch = workspace.base_branch,
-            head_sha = workspace.head_sha, base_sha = workspace.base_sha, revision = workspace.revision, changed_files = workspace.changed_files,
-            additions = workspace.additions, deletions = workspace.deletions, ahead = workspace.ahead, behind = workspace.behind,
-            current_operation_id = workspace.current_operation_id,
-        )
-        if (card.workspace != summary) store.foldCard(card.copy(workspace = summary), view.value.daemonId)
     }
 
     private suspend fun resolveSelection(revisionChanged: Boolean) {
@@ -526,7 +511,7 @@ class WorkspaceReview(
     suspend fun updateSettings(mode: WorkspaceMode, branch: String = "", baseBranch: String = "", baseRemote: String = "", publishMode: String = "") {
         val (cardId, daemonId) = target()
         val worktree = mode == WorkspaceMode.WORKTREE
-        val card = sessions.call(daemonId, Deadlines.READ) {
+        sessions.call(daemonId, Deadlines.READ) {
             it.UpdateConversationWorkspace().execute(
                 UpdateConversationWorkspaceRequest(
                     card_id = cardId, mode = mode.wire, branch = if (worktree) branch.trim() else "", base_branch = if (worktree) baseBranch.trim() else "",
@@ -534,7 +519,6 @@ class WorkspaceReview(
                 ),
             )
         }
-        store.foldCard(card, daemonId)
         refresh()
     }
 

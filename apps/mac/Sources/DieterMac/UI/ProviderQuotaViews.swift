@@ -9,11 +9,10 @@ private struct ProviderQuotaCompactAccount: Identifiable {
     var id: String { "\(provider.rawValue):\(account.accountKey)" }
 }
 
+/// The sidebar's quota meters, one row per included account.
 struct ProviderQuotaCompactView: View {
     @Environment(DieterStore.self) private var store
     @State private var presented = false
-    var embeddedInToolbar = false
-    var embeddedInSidebar = false
 
     private var groups: [ClientQuotaGroupRow] {
         store.quotas.providerQuotaRows.filter { !$0.accounts.isEmpty }
@@ -34,19 +33,12 @@ struct ProviderQuotaCompactView: View {
             } label: {
                 Group {
                     if groups.isEmpty {
-                        ProgressView()
-                            .controlSize(.mini)
-                            .providerQuotaCompactChrome(
-                                embeddedInToolbar: embeddedInToolbar,
-                                embeddedInSidebar: embeddedInSidebar)
+                        ProgressView().controlSize(.mini)
                     } else if accounts.isEmpty {
                         Label("Quotas", systemImage: "gauge.with.dots.needle.0percent")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(DieterTheme.tertiary)
-                            .providerQuotaCompactChrome(
-                                embeddedInToolbar: embeddedInToolbar,
-                                embeddedInSidebar: embeddedInSidebar)
-                    } else if embeddedInSidebar {
+                    } else {
                         VStack(alignment: .leading, spacing: 4) {
                             ForEach(accounts) { item in
                                 ProviderQuotaAccountCompactLabel(
@@ -58,25 +50,9 @@ struct ProviderQuotaCompactView: View {
                             }
                         }
                         .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        HStack(alignment: .center, spacing: embeddedInToolbar ? 10 : 6) {
-                            ForEach(accounts) { item in
-                                ProviderQuotaAccountCompactLabel(
-                                    provider: item.provider,
-                                    account: item.account
-                                )
-                                .providerQuotaCompactChrome(
-                                    embeddedInToolbar: embeddedInToolbar,
-                                    embeddedInSidebar: false)
-                            }
-                        }
                     }
                 }
-                .frame(
-                    maxWidth: embeddedInSidebar ? .infinity : nil,
-                    minHeight: 30,
-                    alignment: embeddedInSidebar ? .leading : .center)
+                .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Global provider quotas by account")
@@ -91,68 +67,58 @@ struct ProviderQuotaCompactView: View {
     }
 }
 
+/// The quota panel below the machines. It keeps its place while quotas load
+/// or when no provider account is signed in, so the sidebar never jumps.
 struct ProviderQuotaSidebarBlock: View {
     @Environment(DieterStore.self) private var store
+    @State private var presented = false
 
-    private var visible: Bool {
-        store.quotas.providerQuotasLoading || store.quotas.providerQuotaRows.contains { !$0.accounts.isEmpty }
-    }
+    private var hasAccounts: Bool { store.quotas.providerQuotaRows.contains { !$0.accounts.isEmpty } }
 
     var body: some View {
-        if visible {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("QUOTAS")
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text("Quotas")
                     .smokeTarget("sidebar.quotas-title")
-                    .font(DieterFont.sectionLabel)
-                    .tracking(0.8)
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DieterTheme.tertiary)
-                ProviderQuotaCompactView(embeddedInSidebar: true)
+                Spacer(minLength: 4)
+                if store.quotas.providerQuotasLoading {
+                    ProgressView().controlSize(.mini).accessibilityLabel("Loading quotas")
+                }
             }
-            .padding(8)
-            .background(
-                DieterTheme.surface.opacity(0.72),
-                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-            )
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(DieterTheme.border))
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("sidebar.provider-quotas")
+            .padding(.horizontal, 8).frame(height: 22)
+            if hasAccounts {
+                ProviderQuotaCompactView()
+                    .padding(.horizontal, 8)
+            } else {
+                Button {
+                    presented = true
+                } label: {
+                    Text(
+                        store.quotas.providerQuotasLoading
+                            ? "Loading provider accounts…"
+                            : (store.quotas.providerQuotaError ?? "No provider accounts")
+                    )
+                    .font(.system(size: 11))
+                    .foregroundStyle(DieterTheme.tertiary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 8).padding(.bottom, 2)
+                .accessibilityIdentifier("global.provider-quotas")
+                .popover(isPresented: $presented, arrowEdge: .trailing) {
+                    ProviderQuotaDetailsView()
+                        .environment(store)
+                        .frame(width: 390)
+                        .padding(16)
+                }
+            }
         }
-    }
-}
-
-private struct ProviderQuotaCompactChrome: ViewModifier {
-    let embeddedInToolbar: Bool
-    let embeddedInSidebar: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .padding(.horizontal, embeddedInSidebar ? 0 : embeddedInToolbar ? 4 : 8)
-            .frame(
-                maxWidth: embeddedInSidebar ? .infinity : nil,
-                minHeight: 24,
-                alignment: embeddedInSidebar ? .leading : .center
-            )
-            .background {
-                if !embeddedInToolbar && !embeddedInSidebar {
-                    RoundedRectangle(cornerRadius: embeddedInSidebar ? 7 : 12, style: .continuous)
-                        .fill(DieterTheme.raised)
-                }
-            }
-            .overlay {
-                if !embeddedInToolbar && !embeddedInSidebar {
-                    RoundedRectangle(cornerRadius: embeddedInSidebar ? 7 : 12, style: .continuous)
-                        .stroke(DieterTheme.border)
-                }
-            }
-    }
-}
-
-private extension View {
-    func providerQuotaCompactChrome(embeddedInToolbar: Bool, embeddedInSidebar: Bool = false) -> some View {
-        modifier(
-            ProviderQuotaCompactChrome(
-                embeddedInToolbar: embeddedInToolbar,
-                embeddedInSidebar: embeddedInSidebar))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("sidebar.provider-quotas")
     }
 }
 
@@ -165,25 +131,24 @@ private struct ProviderQuotaAccountCompactLabel: View {
         let warning = SharedRules.shared.quotaWarning(
             unavailable: account.unavailable, freshUntilMillis: account.freshUntilMillis,
             nowMillis: Date.now.epochMillis)
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             Image(systemName: ProviderQuotaPresentation.symbol(provider))
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(tint)
+                .frame(width: 14)
             Text(account.label)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(DieterTheme.subtle)
+                .font(.system(size: 11.5))
+                .foregroundStyle(DieterTheme.text.opacity(0.88))
                 .lineLimit(1)
                 .frame(minWidth: 42, maxWidth: .infinity, alignment: .leading)
             if account.remaining >= 0 {
+                ProviderQuotaMeter(fraction: Double(account.remaining) / 100, tint: tint)
+                    .frame(width: 44, height: 4)
                 Text("\(account.remaining)%")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(tint)
+                    .font(DieterFont.monoSmall)
+                    .foregroundStyle(DieterTheme.subtle)
                     .monospacedDigit()
-                ProgressView(value: Double(account.remaining), total: 100)
-                    .progressViewStyle(.linear)
-                    .tint(tint)
-                    .frame(minWidth: 36, maxWidth: 84)
-                    .layoutPriority(1)
+                    .frame(minWidth: 30, alignment: .trailing)
             } else {
                 Text("—").font(.caption2)
             }
@@ -235,6 +200,7 @@ struct ProviderQuotaDetailsView: View {
                         Label("Refresh", systemImage: "arrow.clockwise")
                     }
                 }
+                .buttonStyle(DieterBarButtonStyle(size: 28))
                 .disabled(store.quotas.providerQuotasLoading)
                 .accessibilityIdentifier("provider-quotas.refresh")
                 .smokeTarget("provider-quotas.refresh")
@@ -328,7 +294,7 @@ struct ProviderQuotaDetailsView: View {
                     ForEach(account.machines, id: \.daemonID) { machine in
                         HStack(spacing: 6) {
                             Circle()
-                                .fill(machine.online ? DieterTheme.eyes : DieterTheme.tertiary)
+                                .fill(machine.online ? DieterTheme.running : DieterTheme.tertiary)
                                 .frame(width: 6, height: 6)
                             Image(systemName: "server.rack")
                                 .font(.system(size: 9, weight: .medium))
@@ -339,7 +305,7 @@ struct ProviderQuotaDetailsView: View {
                             Spacer()
                             Text(machine.state)
                                 .font(.caption2)
-                                .foregroundStyle(machine.online ? DieterTheme.eyes : DieterTheme.tertiary)
+                                .foregroundStyle(machine.online ? DieterTheme.running : DieterTheme.tertiary)
                         }
                         .accessibilityElement(children: .combine)
                     }
@@ -396,8 +362,7 @@ struct ProviderQuotaDetailsView: View {
             .accessibilityIdentifier("provider-quotas.include.\(account.accountKey)")
             if account.canReset {
                 Button("Use reset credit…") { resetConfirmationAccountKey = account.accountKey }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .buttonStyle(DieterBarButtonStyle(size: 26))
                     .disabled(store.quotas.providerQuotaMutatingAccounts.contains(account.accountKey))
                     .accessibilityIdentifier("provider-quotas.reset.\(account.accountKey)")
             }
@@ -406,8 +371,23 @@ struct ProviderQuotaDetailsView: View {
             }
         }
         .padding(10)
-        .background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(DieterTheme.border))
+        .dieterTile(radius: 10)
+    }
+}
+
+/// A thin capsule meter for the remaining share of a quota window.
+private struct ProviderQuotaMeter: View {
+    let fraction: Double
+    let tint: Color
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(DieterTheme.hairline)
+                Capsule().fill(tint).frame(width: geometry.size.width * min(max(fraction, 0), 1))
+            }
+        }
+        .accessibilityHidden(true)
     }
 }
 

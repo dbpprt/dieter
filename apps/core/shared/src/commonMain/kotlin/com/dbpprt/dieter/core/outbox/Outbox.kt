@@ -2,6 +2,7 @@ package com.dbpprt.dieter.core.outbox
 
 import com.dbpprt.dieter.api.v1.Board
 import com.dbpprt.dieter.api.v1.Card
+import com.dbpprt.dieter.api.v1.Conversation
 import com.dbpprt.dieter.api.v1.ConversationSnapshot
 import com.dbpprt.dieter.api.v1.CreateConversationRequest
 import com.dbpprt.dieter.api.v1.HarnessSelection
@@ -14,6 +15,7 @@ import com.dbpprt.dieter.core.journal.OutboxJournal
 import com.dbpprt.dieter.core.journal.OutboxKind
 import com.dbpprt.dieter.core.journal.OutboxPlacement
 import com.dbpprt.dieter.core.journal.OutboxState
+import com.dbpprt.dieter.core.machines.MachineChoice
 import com.dbpprt.dieter.core.outbox.OutboxPolicy.accepted
 import com.dbpprt.dieter.core.outbox.OutboxPolicy.createsConversation
 import com.dbpprt.dieter.core.runtime.CoreException
@@ -80,6 +82,7 @@ class Outbox(
     private val clientId: String,
     private val sessions: MachineSessions,
     private val store: WorkspaceStore,
+    private val choice: MachineChoice,
     private val clock: Clock,
     private val logger: CoreLogger,
 ) {
@@ -264,8 +267,8 @@ class Outbox(
 
     /**
      * Delivers until cancelled. [reachable] lists machines that can take
-     * commands now, attached machine first. Nothing is replayed after a
-     * definitive rejection, and a cancelled delivery is retried as-is.
+     * commands now. Nothing is replayed after a definitive rejection, and a
+     * cancelled delivery is retried as-is.
      */
     suspend fun run(reachable: Flow<List<String>>) = coroutineScope {
         val targets = MutableStateFlow<List<String>>(emptyList())
@@ -301,7 +304,6 @@ class Outbox(
                                 "The conversation was saved, but its first turn was not started. Check the machine's available storage and update its daemon before retrying.",
                             )
                         }
-                        store.foldCard(card, entry.daemon_id)
                         card.id
                     }
                     OutboxKind.OUTBOX_KIND_SEND_MESSAGE ->
@@ -309,7 +311,6 @@ class Outbox(
                     OutboxKind.OUTBOX_KIND_START_CARD -> {
                         val request = StartCardRequest.ADAPTER.decode(entry.request)
                         val response = client.StartCard().execute(request)
-                        response.card?.let { store.foldCard(it, entry.daemon_id) }
                         response.card?.id?.ifEmpty { null } ?: request.card_id
                     }
                     else -> throw CoreException(FailureKind.PERMANENT, "Unknown pending command.")
@@ -360,10 +361,11 @@ class Outbox(
     // --- Reconciliation and presentation ---------------------------------
 
     /**
-     * Correlates creates that sync already shows, then removes accepted
-     * commands that sync reflects. Call after the directory changes.
+     * Correlates creates the account view already shows, then removes
+     * accepted commands it reflects, sends by their owners' activity. Call
+     * after the account view changes.
      */
-    fun reconcile(conversations: Map<String, ConversationSnapshot> = store.state.value.conversations) {
+    fun reconcile(activities: Map<String, Conversation> = store.state.value.activities) {
         if (storage == null) return
         if (entries.isEmpty()) return publish(view.value.storageError)
         val directory = store.directoryProjection
@@ -380,7 +382,7 @@ class Outbox(
                     accept(entries, resolutions, entry.optimistic_id, serverId)
                 }
                 entries.removeAll { entry ->
-                    entry.accepted && (OutboxPolicy.isSynced(entry, cards, conversations) || now - entry.accepted_at_millis > ACCEPTED_RETENTION.inWholeMilliseconds)
+                    entry.accepted && (OutboxPolicy.isSynced(entry, cards, activities) || now - entry.accepted_at_millis > ACCEPTED_RETENTION.inWholeMilliseconds)
                 }
             }
         }.onFailure { logger.warn(TAG, "could not reconcile pending changes", it) }
@@ -389,8 +391,9 @@ class Outbox(
 
     /** An opened conversation is evidence too: its messages settle pending sends. */
     fun reconcileConversation(snapshot: ConversationSnapshot) {
-        val id = snapshot.detail?.card?.id?.ifEmpty { null } ?: snapshot.conversation?.card_id ?: return
-        reconcile(store.state.value.conversations + (id to snapshot))
+        val conversation = snapshot.conversation ?: return
+        val id = snapshot.detail?.card?.id?.ifEmpty { null } ?: conversation.card_id.ifEmpty { return }
+        reconcile(store.state.value.activities + (id to conversation))
     }
 
     /** Local sends and a pending chat's first message, merged into [snapshot]. */
@@ -447,17 +450,18 @@ class Outbox(
             return directory.checkoutMachine(request.project_id, request.checkout_id)
                 ?: throw CoreException(FailureKind.TRANSIENT, "The checkout's machine is unavailable; keep the draft and reconnect.")
         }
-        return directory.projectReplicas[request.project_id]
-            ?: throw CoreException(FailureKind.TRANSIENT, "The project's machine is unavailable; keep the draft and reconnect.")
+        if (directory.projects[request.project_id] == null) {
+            throw CoreException(FailureKind.TRANSIENT, "The project is not available yet; keep the draft and reconnect.")
+        }
+        return choice.checkout(request.project_id) ?: throw CoreException(FailureKind.PERMANENT, "This project has no checkout to run on.")
     }
 
     private fun daemonForCard(cardId: String): String {
         entries.firstOrNull { it.createsConversation && cardId in OutboxPolicy.conversationIds(it) }?.let { return it.daemon_id }
         val directory = store.directoryProjection
-        val card = directory.allItems.firstOrNull { it.id == cardId }
+        val card = directory.item(cardId)
             ?: throw CoreException(FailureKind.PERMANENT, "The conversation is no longer available.")
-        return directory.owner(card) ?: directory.projectReplicas[card.project_id]
-            ?: throw CoreException(FailureKind.TRANSIENT, "The conversation's machine is unavailable; reconnect and try again.")
+        return directory.owner(card) ?: throw CoreException(FailureKind.TRANSIENT, "The conversation's machine is unavailable; reconnect and try again.")
     }
 
     private fun OutboxEntry.rearmed() = copy(state = OutboxState.OUTBOX_STATE_QUEUED, attempts = 0, last_error = "", next_attempt_at_millis = 0)

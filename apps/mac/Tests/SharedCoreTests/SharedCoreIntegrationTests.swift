@@ -122,7 +122,10 @@ struct SharedCoreIntegrationTests {
         }
         try await wait("connected") { folded.session.phase == .connected }
         try await wait("project") { folded.workspace.projects.contains { $0.id == project } }
-        #expect(folded.session.attachedMachineID == daemon)
+        // Every machine streams at once; the fixture's is live.
+        try await wait("machine live") {
+            folded.session.machines.contains { $0.id == daemon && $0.syncState == .live } && folded.session.synced
+        }
         // The daemon's loopback TLS route is pinned by the Swift bridge.
         try await wait("direct route") {
             folded.session.machines.contains { $0.id == daemon && ["Local", "Direct TLS"].contains($0.route) }
@@ -207,7 +210,7 @@ struct SharedCoreIntegrationTests {
             refolded.workspace.cards.contains { $0.id == cardID && $0.title == "Renamed on the Mac" }
         }
         try await restarted.client.dispatch { $0.setForeground = .with { $0.foreground = true } }
-        try await wait("signed in again") { [.syncing, .connected].contains(refolded.session.phase) }
+        try await wait("signed in again") { refolded.session.phase == .connected }
         refolded.close()
         await restarted.shutdown()
     }

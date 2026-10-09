@@ -1034,7 +1034,7 @@ internal fun ProjectPickerSheet(
             )
             state.projects.forEach { project ->
                 val selected = project.id == state.selectedProjectId
-                val projectOnline = state.presentedProjectReplicas[project.id]?.online != false
+                val projectOnline = state.presentedProjectHosts[project.id]?.online != false
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
                         .then(

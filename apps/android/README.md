@@ -30,15 +30,20 @@ build/evidence manifests are printed under `tmp/app-pipelines/UUID`.
 
 ## Emulator and physical devices
 
-The default profile selects visible `Pixel_9_API_37_1` at `emulator-5554`, normal
-`default_boot` snapshots and host GLES. Tests borrow a healthy existing emulator or
-manage one they launch. An owned run validates boot, renderer, unlocked launcher,
-XML and PNG, then saves a healthy snapshot and gracefully closes its own process.
-No wipe, cold-boot, software-renderer, headless or no-snapshot shortcuts are allowed.
-Read [agent lifecycle instructions](agents.md) before diagnosis or repair.
+The default profile selects headless `Dieter_AOSP_API_35` at `emulator-5554`,
+automatic rendering and no snapshots. Its emulator, image and userdata
+live in ignored `.android/`. Fastlane creates a missing AVD from the installed
+API 35 image, borrows healthy running emulators, and closes only its
+own processes, including failed boots. It preserves existing AVDs and userdata.
+Use `android local action:emulator_run` as a registered background process to
+keep an emulator warm for repeated tests and manual operations; run
+`android local action:emulator_stop` after
+borrowers finish. Set `visible: true` for a window. Read the canonical
+[Fastlane configuration/lifecycle guide](../../fastlane/README.md).
 
 ```sh
 just pipeline android local action:status
+just pipeline android local action:emulator_setup # once: project-local runtime/image
 just pipeline android local action:emulator_check
 just pipeline android e2e profile:android-emulator suite:smoke
 just pipeline android e2e suite:functional

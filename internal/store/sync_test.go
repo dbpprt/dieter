@@ -1,19 +1,32 @@
 package store
 
 import (
-	"os"
 	"sync"
 	"testing"
 )
 
-func TestSyncEventsAreDurableAndGloballyMonotonic(t *testing.T) {
+// changeCounters reads the committed change counter and its metadata part.
+func changeCounters(t *testing.T, s *Store) (changes, metadata uint64) {
+	t.Helper()
+	changes, err := readCounter(s.syncHighwaterPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata, err = readCounter(s.syncMetadataPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return changes, metadata
+}
+
+func TestChangeCounterIsDurableAndMonotonic(t *testing.T) {
 	data := New(t.TempDir())
 	if err := data.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	initial, events, err := data.SyncEvents(0, 256)
-	if err != nil || initial.Epoch == "" || initial.Sequence != 0 || len(events) != 0 {
-		t.Fatalf("initial cursor=%#v events=%#v err=%v", initial, events, err)
+	initial, err := data.MetadataRevision()
+	if err != nil || initial.Epoch == "" || initial.Sequence != 0 {
+		t.Fatalf("initial revision=%#v err=%v", initial, err)
 	}
 
 	const writers = 24
@@ -36,29 +49,17 @@ func TestSyncEventsAreDurableAndGloballyMonotonic(t *testing.T) {
 	for writerErr := range errors {
 		t.Fatal(writerErr)
 	}
-
-	cursor, events, err := data.SyncEvents(0, 256)
-	if err != nil {
-		t.Fatal(err)
+	if changes, metadata := changeCounters(t, data); changes != writers || metadata != writers {
+		t.Fatalf("counters changes=%d metadata=%d", changes, metadata)
 	}
-	if cursor.Epoch != initial.Epoch || cursor.Sequence != writers || len(events) != writers {
-		t.Fatalf("cursor=%#v events=%d", cursor, len(events))
-	}
-	for index, event := range events {
-		want := uint64(index + 1)
-		if event.Sequence != want || event.Kind != "store_changed" || event.CreatedAt == "" {
-			t.Fatalf("event[%d]=%#v want sequence %d", index, event, want)
-		}
-	}
-
 	reopened := New(data.Root)
-	resumed, tail, err := reopened.SyncEvents(writers-1, 10)
-	if err != nil || resumed != cursor || len(tail) != 1 || tail[0].Sequence != writers {
-		t.Fatalf("reopened cursor=%#v tail=%#v err=%v", resumed, tail, err)
+	revision, err := reopened.MetadataRevision()
+	if err != nil || revision != (StoreRevision{Epoch: initial.Epoch, Sequence: writers}) {
+		t.Fatalf("reopened revision=%#v err=%v", revision, err)
 	}
 }
 
-func TestSyncEventsAtCurrentCursorDoesNotReadJournal(t *testing.T) {
+func TestChangeCounterAdvancesOnlyAfterCommit(t *testing.T) {
 	data := New(t.TempDir())
 	if err := data.Ensure(); err != nil {
 		t.Fatal(err)
@@ -67,70 +68,49 @@ func TestSyncEventsAtCurrentCursorDoesNotReadJournal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if changes, _ := changeCounters(t, data); changes != 0 || !data.SyncMutationPending() {
+		release()
+		t.Fatalf("prepared write changed=%d pending=%v", changes, data.SyncMutationPending())
+	}
 	release()
-	cursor, _, err := data.SyncEvents(0, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(data.syncEventsPath()); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(data.syncEventsPath(), 0o700); err != nil {
-		t.Fatal(err)
-	}
-
-	current, events, err := data.SyncEvents(cursor.Sequence, 10)
-	if err != nil || current != cursor || len(events) != 0 {
-		t.Fatalf("current cursor=%#v events=%#v err=%v", current, events, err)
+	if changes, metadata := changeCounters(t, data); changes != 1 || metadata != 1 || data.SyncMutationPending() {
+		t.Fatalf("committed changes=%d metadata=%d pending=%v", changes, metadata, data.SyncMutationPending())
 	}
 }
 
-func TestSyncEventPublishesAfterMutation(t *testing.T) {
+func TestConversationTextAdvancesOnlyTheChangeCounter(t *testing.T) {
 	data := New(t.TempDir())
 	if err := data.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	release, err := data.beginWrite()
+	release, err := data.beginWriteKind(conversationChange)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cursor, events, err := data.SyncEvents(0, 10)
-	if err != nil || cursor.Sequence != 0 || len(events) != 0 {
-		release()
-		t.Fatalf("prepared cursor=%#v events=%#v err=%v", cursor, events, err)
-	}
 	release()
-
-	resumed, events, err := data.SyncEvents(0, 10)
-	if err != nil || resumed.Sequence != 1 || len(events) != 1 {
-		t.Fatalf("committed cursor=%#v events=%#v err=%v", resumed, events, err)
+	if changes, metadata := changeCounters(t, data); changes != 1 || metadata != 0 {
+		t.Fatalf("text changes=%d metadata=%d", changes, metadata)
 	}
 }
 
-func TestSyncCompactionChangesEpochAndRetainsTail(t *testing.T) {
+func TestRecoveredWriteCountsAsMetadataChange(t *testing.T) {
 	data := New(t.TempDir())
 	if err := data.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	for range 7 {
-		release, err := data.beginWrite()
-		if err != nil {
-			t.Fatal(err)
-		}
+	release, err := data.beginWriteLock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = data.prepareSyncMutation(conversationChange); err != nil {
 		release()
-	}
-	before, _, err := data.SyncEvents(0, 20)
-	if err != nil {
 		t.Fatal(err)
 	}
-	if err := data.compactSyncJournal(3); err != nil {
+	release() // a writer killed before its commit
+	if err := data.WaitForWriter(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	after, events, err := data.SyncEvents(0, 20)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after.Epoch == before.Epoch || after.Sequence != 7 || len(events) != 3 || events[0].Sequence != 5 || events[2].Sequence != 7 {
-		t.Fatalf("before=%#v after=%#v events=%#v", before, after, events)
+	if changes, metadata := changeCounters(t, data); changes != 1 || metadata != 1 || data.SyncMutationPending() {
+		t.Fatalf("recovered changes=%d metadata=%d pending=%v", changes, metadata, data.SyncMutationPending())
 	}
 }

@@ -48,8 +48,11 @@ func TestBoardRetirementReceiptPersistenceAndRestore(t *testing.T) {
 		t.Fatal("created on retired board")
 	}
 	state, err := s.GlobalState()
-	if err != nil || len(state.Boards) != 1 || state.Boards[0].ID != original.ID || state.Projects[0].BoardCount != 1 || len(state.RetiredBoards) != 1 {
+	if err != nil || len(state.Boards) != 1 || state.Boards[0].ID != original.ID || state.Projects[0].BoardCount != 1 {
 		t.Fatalf("state: %+v %v", state, err)
+	}
+	if page, err := s.ListRetiredBoards(p.ID, "", "", 10); err != nil || len(page.Boards) != 1 || page.Boards[0].ID != duplicate.ID {
+		t.Fatalf("retired boards: %+v %v", page, err)
 	}
 	reopened := New(s.Root)
 	got, err := reopened.SetBoardRetired(input)

@@ -5,194 +5,36 @@ on:
   pull_request:
   workflow_dispatch:
   schedule:
-    - cron: '17 4 * * 1'
+    - cron: "17 4 * * 1"
 permissions:
   contents: read
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  changes:
-    name: Detect affected components
-    runs-on: ubuntu-latest
-    outputs:
-      core: ${{ steps.select.outputs.core }}
-      macos: ${{ steps.select.outputs.macos }}
-      ios: ${{ steps.select.outputs.ios }}
-      android: ${{ steps.select.outputs.android }}
-      kmp: ${{ steps.select.outputs.kmp }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/pipeline-setup
-        with:
-          component: report
-      - name: Select affected components through the shared planner
-        id: select
-        env:
-          CI_CHANGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: just check-changed --ci
-  core_checks:
-    name: Validate Go and harness runtime
-    needs: changes
-    if: needs.changes.outputs.core == 'true'
-    uses: ./.github/workflows/component-check.yml
+  qualification:
+    name: Qualification
+    uses: ./.github/workflows/qualification.yml
     with:
-      component: portable
-      runner: ubuntu-latest
-  core:
-    name: Go and harness runtime
-    needs: [changes, core_checks]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/pipeline-setup
-        with:
-          component: report
-      - name: Require selected component qualification
-        env:
-          PIPELINE_CHECK_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.core != 'true' || needs.core_checks.result == 'success') && 'success' || 'failure' }}
-        run: just pipeline ci action:result component:portable
-  kmp_checks:
-    name: Validate Shared Kotlin core
-    needs: changes
-    if: needs.changes.outputs.kmp == 'true'
-    uses: ./.github/workflows/component-check.yml
+      full: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+  release:
+    name: Development release
+    needs: qualification
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      actions: read
+      contents: write
+      packages: write
+      id-token: write
+    uses: ./.github/workflows/release.yml
     with:
-      component: core
-      runner: ubuntu-latest
-  kmp:
-    name: Shared Kotlin core
-    needs: [changes, kmp_checks]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/pipeline-setup
-        with:
-          component: report
-      - name: Require selected component qualification
-        env:
-          PIPELINE_CHECK_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.kmp != 'true' || needs.kmp_checks.result == 'success') && 'success' || 'failure' }}
-        run: just pipeline ci action:result component:portable
-  kmp-apple_checks:
-    name: Validate Shared Kotlin core on Apple
-    needs: changes
-    if: needs.changes.outputs.kmp == 'true'
-    uses: ./.github/workflows/component-check.yml
+      channel: dev
+    secrets: inherit
+  compose-previews:
+    name: Deliver Compose previews
+    needs: qualification
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (needs.qualification.outputs.compose_android_preview != '' || needs.qualification.outputs.compose_ios_preview != '')
+    uses: ./.github/workflows/compose-mobile-deliver.yml
     with:
-      component: core-apple
-      runner: macos-26
-  kmp-apple:
-    name: Shared Kotlin core on Apple
-    needs: [changes, kmp-apple_checks]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/pipeline-setup
-        with:
-          component: report
-      - name: Require selected component qualification
-        env:
-          PIPELINE_CHECK_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.kmp != 'true' || needs.kmp-apple_checks.result == 'success') && 'success' || 'failure' }}
-        run: just pipeline ci action:result component:portable
-  macos_checks:
-    name: Validate macOS client
-    needs: changes
-    if: needs.changes.outputs.macos == 'true'
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: mac
-      runner: macos-26
-      native_cases: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && 'mac.core,mac.board' || '' }}
-      native_suite: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'functional' || '' }}
-  macos:
-    name: macOS client
-    needs: [changes, macos_checks]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/pipeline-setup
-        with:
-          component: report
-      - name: Require selected component qualification
-        env:
-          PIPELINE_CHECK_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.macos != 'true' || needs.macos_checks.result == 'success') && 'success' || 'failure' }}
-        run: just pipeline ci action:result component:portable
-  ios_quick_checks:
-    name: Validate iOS quick checks
-    needs: changes
-    if: needs.changes.outputs.ios == 'true'
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: ios
-      runner: macos-26
-  ios_quick:
-    name: iOS quick checks
-    needs: [changes, ios_quick_checks]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/pipeline-setup
-        with:
-          component: report
-      - name: Require selected component qualification
-        env:
-          PIPELINE_CHECK_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.ios != 'true' || needs.ios_quick_checks.result == 'success') && 'success' || 'failure' }}
-        run: just pipeline ci action:result component:portable
-  android_checks:
-    name: Validate Android client
-    needs: changes
-    if: needs.changes.outputs.android == 'true'
-    uses: ./.github/workflows/component-check.yml
-    with:
-      component: android
-      runner: ubuntu-latest
-  android:
-    name: Android client
-    needs: [changes, android_checks]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/pipeline-setup
-        with:
-          component: report
-      - name: Require selected component qualification
-        env:
-          PIPELINE_CHECK_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.android != 'true' || needs.android_checks.result == 'success') && 'success' || 'failure' }}
-        run: just pipeline ci action:result component:portable
-  ios:
-    name: iPhone and iPad client
-    needs: [changes, ios_quick_checks]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/pipeline-setup
-        with:
-          component: report
-      - name: Require both-layout build and portable iOS assertions
-        env:
-          PIPELINE_CHECK_RESULT: ${{ needs.changes.result == 'success' && (needs.changes.outputs.ios != 'true' || needs.ios_quick_checks.result == 'success') && 'success' || 'failure' }}
-        run: just pipeline ci action:result component:portable
+      android_artifact: ${{ needs.qualification.outputs.compose_android_preview }}
+      ios_artifact: ${{ needs.qualification.outputs.compose_ios_preview }}

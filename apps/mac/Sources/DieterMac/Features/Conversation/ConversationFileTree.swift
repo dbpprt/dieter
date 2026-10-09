@@ -144,16 +144,16 @@ struct ConversationFileNavigator: View {
                         isOn: Binding(
                             get: { tab.tree.showHidden }, set: { tab.tree.showHidden = $0 }))
                 } label: {
-                    Image(systemName: "ellipsis")
+                    DieterMenuLabel(symbol: "ellipsis", size: 28)
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .dieterMenuChrome(.circle)
                 .help("File options")
                 Button {
                     Task { await tab.tree.refresh() }
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
-                .buttonStyle(.borderless).help("Refresh files")
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Refresh files")
                 .accessibilityIdentifier("conversation.content.files.refresh")
                 .smokeTarget("conversation.content.files.refresh")
             }
@@ -165,7 +165,7 @@ struct ConversationFileNavigator: View {
                     .smokeTarget("conversation.content.files.filter")
             }
             .font(.system(size: 11)).padding(7)
-            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+            .dieterCapsuleChrome(interactive: false)
             .padding(.horizontal, 8).padding(.bottom, 8)
             Divider()
             if tab.tree.folders.isEmpty, tab.tree.loading.contains("") {
@@ -202,7 +202,7 @@ struct ConversationFileNavigator: View {
             .padding(.horizontal, 10).frame(height: 28)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DieterTheme.sidebar.opacity(0.65))
+
         .accessibilityIdentifier("conversation.content.files.navigator")
         .smokeTarget("conversation.content.files.navigator")
         .task(id: tab.transportRevision) { await tab.tree.reveal(selectedPath) }
@@ -227,7 +227,8 @@ struct ConversationFileNavigator: View {
             .padding(.leading, CGFloat(row.depth * 12 + 4)).padding(.trailing, 5)
             .frame(height: 27)
             .contentShape(Rectangle())
-            .background(selectedPath == row.id ? DieterTheme.selection : .clear, in: RoundedRectangle(cornerRadius: 5))
+            .background(
+                selectedPath == row.id ? DieterTheme.tileSelected : .clear, in: RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(row.entry.name)

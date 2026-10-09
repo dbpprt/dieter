@@ -10,7 +10,7 @@ import UserNotifications
 
 extension DieterStore {
     /// Runs an administration command on the machine that holds what it
-    /// changes; the core routes it, whichever machine is attached.
+    /// changes; the core routes it.
     func administer(_ build: (inout ClientAdminCommand) -> Void) async throws -> ClientResult {
         var admin = ClientAdminCommand()
         build(&admin)
@@ -28,7 +28,7 @@ extension DieterStore {
         let card = selectedCard ?? selectedDetail?.card
         worktreeChanges.bind(
             target: WorkspaceTarget(
-                endpointID: card.map { endpointID(for: $0) } ?? endpoint.id,
+                endpointID: card.map { endpointID(for: $0) } ?? "",
                 projectID: card?.projectID ?? selectedProjectID,
                 conversationID: selectedCardID ?? selectedChatID ?? ""),
             core: core, card: card
@@ -180,9 +180,7 @@ extension DieterStore {
     func listProjectDirectories(path: String, machineID: String) async throws
         -> Dieter_V1_DirectoryListing
     {
-        guard
-            let machine = machines.first(where: { $0.id == machineID })
-                ?? (endpoint.id == machineID ? endpoint : nil), let daemonID = machine.daemonID
+        guard let machine = machines.first(where: { $0.id == machineID }), let daemonID = machine.daemonID
         else {
             throw CoreFailure(kind: .permanent, message: SharedRules.shared.unenrolledMachineMessage())
         }
@@ -195,26 +193,15 @@ extension DieterStore {
         }.directoryListing
     }
 
-    func createProject(_ draft: ProjectSetupDraft, machineID: String? = nil, operationID: String = UUID().uuidString)
+    /// Creates a project with a checkout on `machineID`'s machine.
+    func createProject(_ draft: ProjectSetupDraft, machineID: String, operationID: String = UUID().uuidString)
         async throws
         -> Dieter_V1_CreateProjectResponse
     {
-        let target: MachineEndpoint
-        if let machineID {
-            guard
-                let selected = machines.first(where: { $0.id == machineID })
-                    ?? (endpoint.id == machineID ? endpoint : nil)
-            else {
-                throw CoreFailure(kind: .permanent, message: SharedRules.shared.unenrolledMachineMessage())
-            }
-            target = selected
-        } else {
-            target = endpoint
-        }
-        if let reason = unavailableReason(target) { throw CoreFailure(kind: .transient, message: reason) }
-        guard let daemonID = target.daemonID else {
+        guard let target = machines.first(where: { $0.id == machineID }), let daemonID = target.daemonID else {
             throw CoreFailure(kind: .permanent, message: SharedRules.shared.unenrolledMachineMessage())
         }
+        if let reason = unavailableReason(target) { throw CoreFailure(kind: .transient, message: reason) }
         // The core keeps one operation per intent, so a retry never creates twice.
         let request = draft.request()
         let response = try await administer {
@@ -231,11 +218,9 @@ extension DieterStore {
             }
         }.createdProject
 
-        if target.id != endpoint.id { await connect(to: target) }
         selectedProjectID = response.project.id
         selectedBoardID = response.board.id
         section = .board
-        await refreshState()
         return response
     }
 
@@ -247,7 +232,6 @@ extension DieterStore {
                     $0.archived = archived
                 }
             }
-            await refreshState()
             await loadArchive()
         } catch { show(error) }
     }
@@ -263,7 +247,6 @@ extension DieterStore {
                 }
             }
             renameProjectPresented = false
-            await refreshState()
         } catch { show(error) }
     }
 
@@ -280,7 +263,6 @@ extension DieterStore {
                 }
             }
             projectContextPresented = false
-            await refreshState()
             return true
         } catch {
             show(error)
@@ -307,7 +289,6 @@ extension DieterStore {
             createBoardPresented = false
             selectedBoardID = board.id
             section = .board
-            await refreshState()
         } catch { show(error) }
     }
 
@@ -346,7 +327,6 @@ extension DieterStore {
             }
             renameBoardPresented = false
             renameBoardTargetID = ""
-            await refreshState()
             return true
         } catch {
             show(error)
@@ -364,7 +344,6 @@ extension DieterStore {
                 }
             }
             archivePolicyPresented = false
-            await refreshState()
         } catch { show(error) }
     }
 
@@ -391,7 +370,6 @@ extension DieterStore {
                     $0.publishMode = publishMode
                 }
             }
-            await refreshState()
             return true
         } catch {
             show(error)
@@ -449,7 +427,6 @@ extension DieterStore {
                     $0.retired = true
                 }
             }
-            await refreshState()
         } catch { show(error) }
     }
 
@@ -461,7 +438,6 @@ extension DieterStore {
                     $0.retired = false
                 }
             }
-            await refreshState()
         } catch { show(error) }
     }
 }

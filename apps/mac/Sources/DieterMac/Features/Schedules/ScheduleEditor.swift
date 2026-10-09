@@ -101,8 +101,7 @@ struct ScheduleEditor: View {
             HStack(spacing: 14) {
                 Image(systemName: "calendar.badge.clock")
                     .font(.system(size: 20, weight: .semibold)).foregroundStyle(DieterTheme.shell)
-                    .frame(width: 42, height: 42).background(
-                        DieterTheme.elevated, in: RoundedRectangle(cornerRadius: 11))
+                    .frame(width: 42, height: 42).dieterTile(radius: 11)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(scheduleID == nil ? "NEW AUTOMATION" : "EDIT AUTOMATION")
                         .font(DieterFont.sectionLabel).tracking(1.2).foregroundStyle(DieterTheme.tertiary)
@@ -113,9 +112,9 @@ struct ScheduleEditor: View {
                 }
                 Spacer()
                 Toggle("Enabled", isOn: $draft.enabled).toggleStyle(.switch).controlSize(.small)
-                Button("Cancel") { dismiss() }.buttonStyle(DieterSecondaryButtonStyle())
+                Button("Cancel") { dismiss() }.buttonStyle(DieterBarButtonStyle(size: 30))
                 Button(saving ? "Saving…" : "Save schedule") { Task { await save() } }
-                    .buttonStyle(DieterPrimaryButtonStyle()).disabled(!canSave)
+                    .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30)).disabled(!canSave)
                     .accessibilityIdentifier("schedule-editor.save")
             }
             .padding(.horizontal, 22).padding(.vertical, 17).background(DieterTheme.sidebar)
@@ -206,22 +205,16 @@ struct ScheduleEditor: View {
 
     private var timing: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker(
-                "Repeats",
-                selection: Binding(get: { cadence.kind.rawValue }, set: { switchKind(to: $0) })
-            ) {
-                ForEach(options.cadences, id: \.key) { Text($0.title).tag(Int($0.key) ?? 0) }
-            }
-            .pickerStyle(.segmented).labelsHidden()
+            DieterSegmentedPicker(
+                "Repeats", selection: Binding(get: { cadence.kind.rawValue }, set: { switchKind(to: $0) }),
+                options: options.cadences.map { Int($0.key) ?? 0 }, fillsWidth: true,
+                optionTitle: { kind in options.cadences.first { (Int($0.key) ?? 0) == kind }?.title ?? "" })
 
             if cadence.kind == .weekly {
-                Picker(
-                    "Day",
-                    selection: Binding(get: { cadence.weekday }, set: { update(weekday: $0) })
-                ) {
-                    ForEach(options.weekdays, id: \.key) { Text($0.title).tag(Int32($0.key) ?? 1) }
-                }
-                .pickerStyle(.segmented).labelsHidden()
+                DieterSegmentedPicker(
+                    "Day", selection: Binding(get: { cadence.weekday }, set: { update(weekday: $0) }),
+                    options: options.weekdays.map { Int32($0.key) ?? 1 }, fillsWidth: true,
+                    optionTitle: { day in options.weekdays.first { (Int32($0.key) ?? 1) == day }?.title ?? "" })
             }
 
             if cadence.kind == .custom {
@@ -292,18 +285,18 @@ struct ScheduleEditor: View {
                 let labels = Set(selectedBoard?.labels.map(\.id) ?? [])
                 draft.labelIds.removeAll { !labels.contains($0) }
             }
-            Picker("Placement", selection: $draft.action) {
-                ForEach(options.placements, id: \.key) { Text($0.title).tag($0.key) }
+            DieterSegmentedPicker(
+                "Placement", selection: $draft.action, options: options.placements.map(\.key), fillsWidth: true,
+                optionTitle: { action in options.placements.first { $0.key == action }?.title ?? action }
+            )
+            .accessibilityIdentifier("schedule-editor.placement")
+            LabeledContent("Workspace") {
+                DieterSegmentedPicker(
+                    "Workspace", selection: $draft.workspaceMode, options: SharedRules.shared.workspaceModes(),
+                    optionTitle: { SharedRules.shared.workspaceModeChoiceTitle(mode: $0) }
+                )
+                .accessibilityIdentifier("schedule-editor.workspace")
             }
-            .pickerStyle(.segmented).labelsHidden().accessibilityIdentifier(
-                "schedule-editor.placement")
-            Picker("Workspace", selection: $draft.workspaceMode) {
-                ForEach(SharedRules.shared.workspaceModes(), id: \.self) { mode in
-                    Text(SharedRules.shared.workspaceModeChoiceTitle(mode: mode)).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("schedule-editor.workspace")
             Label(
                 options.placements.first { $0.key == draft.action }?.detail ?? "",
                 systemImage: draft.action == "run" ? "bolt.fill" : "tray.full.fill"
@@ -321,10 +314,9 @@ struct ScheduleEditor: View {
                                 draft.labelIds.append(label.id)
                             }
                         }
-                        .buttonStyle(.bordered).controlSize(.small)
-                        .tint(
-                            draft.labelIds.contains(label.id)
-                                ? DieterTheme.shell : DieterTheme.tertiary)
+                        .buttonStyle(
+                            DieterBarButtonStyle(
+                                prominent: draft.labelIds.contains(label.id), tint: DieterTheme.shell, size: 24))
                     }
                 }
             }
@@ -356,8 +348,7 @@ struct ScheduleEditor: View {
                             .padding(.horizontal, 12).padding(.vertical, 15).allowsHitTesting(false)
                     }
                 }
-                .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 7))
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(DieterTheme.strongBorder))
+                .dieterInset(radius: 7)
                 .accessibilityIdentifier("schedule-editor.prompt-template")
                 TemplateVariableButtons { variable in insert(variable, into: .prompt) }
             }
@@ -371,7 +362,7 @@ struct ScheduleEditor: View {
                     .font(.system(size: 12)).foregroundStyle(DieterTheme.subtle).lineLimit(5)
             }
             .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-            .background(DieterTheme.raised, in: RoundedRectangle(cornerRadius: 9))
+            .dieterInset(radius: 9)
         }
     }
 

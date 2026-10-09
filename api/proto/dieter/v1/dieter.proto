@@ -37,11 +37,12 @@ service DieterService {
   rpc GetMachineInformation(google.protobuf.Empty) returns (MachineInformation);
   rpc PerformMachineOperation(MachineOperationRequest) returns (MachineOperationResponse);
   rpc GetState(GetStateRequest) returns (State);
-  rpc WatchState(WatchStateRequest) returns (stream State);
-  // WatchSync is the daemon-wide durable change stream used by native
-  // clients. Views are rendered from the client projection rather than by
-  // opening per-view RPCs.
-  rpc WatchSync(SyncRequest) returns (stream SyncFrame);
+  // WatchChanges streams this machine's view to native clients: its replica of
+  // the account's shared records in the peer store's own order, plus the
+  // owner-only details and live activity of the conversations it runs. A
+  // client holds one stream per online machine and merges the shared records
+  // causally; no machine is attached or preferred.
+  rpc WatchChanges(ChangesRequest) returns (stream ChangesFrame);
   rpc GetHarnesses(google.protobuf.Empty) returns (HarnessCatalog);
   rpc GetSettings(google.protobuf.Empty) returns (Settings);
   rpc GetSettingsOptions(google.protobuf.Empty) returns (SettingsOptions);
@@ -160,6 +161,10 @@ service DieterService {
   rpc ListRemoteDesktopDisplayModes(RemoteDesktopRef) returns (RemoteDesktopDisplayModes);
   rpc SetRemoteDesktopDisplayMode(SetRemoteDesktopDisplayModeRequest) returns (RemoteDesktopDisplayModes);
   rpc RestoreRemoteDesktopDisplayMode(RemoteDesktopRef) returns (RemoteDesktopDisplayModes);
+  rpc GetRemoteDesktopVirtualDisplay(RemoteDesktopRef) returns (RemoteDesktopVirtualDisplay);
+  rpc SetRemoteDesktopVirtualDisplay(SetRemoteDesktopVirtualDisplayRequest) returns (RemoteDesktopVirtualDisplay);
+  rpc ConfirmRemoteDesktopVirtualDisplay(ConfirmRemoteDesktopVirtualDisplayRequest) returns (RemoteDesktopVirtualDisplay);
+  rpc RestoreRemoteDesktopVirtualDisplay(RemoteDesktopRef) returns (RemoteDesktopVirtualDisplay);
   // Explicit, bounded permission test performed by the running daemon.
   // Discards one encoded frame and never injects input or changes settings.
   rpc ProbeRemoteDesktopPermissions(ProbeRemoteDesktopPermissionsRequest)
@@ -236,6 +241,7 @@ message MachineInformation {
   BuildInformation daemon_build = 28;
   GPUTelemetry gpu = 29;
   repeated MachineOperationCapability operation_capabilities = 30;
+  MachinePrivacy privacy = 31;
 }
 
 message BuildInformation {
@@ -308,6 +314,28 @@ enum MachineOperationAction {
   MACHINE_OPERATION_ACTION_RESTART = 1;
   MACHINE_OPERATION_ACTION_SHUTDOWN = 2;
   MACHINE_OPERATION_ACTION_UPDATE_DAEMON = 3;
+  MACHINE_OPERATION_ACTION_PRIVACY_ON = 4;
+  MACHINE_OPERATION_ACTION_PRIVACY_OFF = 5;
+  // Register the optional privileged input helper; macOS administrator approval
+  // and Input Monitoring must be completed on the target Mac.
+  MACHINE_OPERATION_ACTION_PRIVACY_SETUP = 6;
+}
+
+// Owner-only, current-boot physical display/input protection. It is independent
+// of viewer sessions and is never replicated as an account setting.
+message MachinePrivacy {
+  enum State {
+    STATE_OFF = 0;
+    STATE_ON = 1;
+    STATE_DEGRADED = 2;
+  }
+  bool supported = 1;
+  bool requested = 2;
+  State state = 3;
+  string reason = 4;
+  uint32 display_count = 5;
+  uint32 input_device_count = 6;
+  bool helper_setup_required = 7;
 }
 
 message MachineOperationRequest {
@@ -342,115 +370,81 @@ message GetStateRequest {
   string query = 5;
   string label_id = 6;
   int32 limit = 7;
-  // all_projects requests the daemon-wide active metadata directory in one
-  // bounded RPC. Native clients use it for inactive machines instead of
-  // issuing one GetState request per project.
+  // all_projects returns this machine's whole active metadata directory in
+  // one bounded read instead of one project at a time.
   bool all_projects = 8;
-  // When this cursor still matches the daemon, an all_projects response may
-  // omit metadata and set not_modified. The epoch prevents a compacted sync
-  // journal from making an old sequence look current.
-  SyncCursor if_not_modified = 9;
-}
-
-message WatchStateRequest {
-  GetStateRequest filter = 1;
-  int32 interval_ms = 2;
-}
-
-// Explicit shared archive state distinguishes deletion from a lagging replica's
-// missing dependency. Empty presence clears previous archive state after restore.
-message SharedArchives {
-  repeated string project_ids = 1;
-  repeated string item_ids = 2;
-  // Full causal lifecycle evidence prevents stale replicas resurrecting boards.
-  repeated Board retired_boards = 3;
 }
 
 message State {
+  reserved 9, 10;
+  reserved "archives", "peer_sync_issues";
+
   string store_path = 1;
   repeated Project projects = 2;
   Project project = 3;
   repeated Board boards = 4;
   repeated Card cards = 5;
   repeated Card chats = 6;
-  SyncCursor cursor = 7;
-  bool not_modified = 8;
-  SharedArchives archives = 9;
-  // Operational diagnostics, outside the durable workspace cursor. Conditional
-  // GetState replies include them even when metadata is not_modified.
-  repeated PeerSyncDiagnostic peer_sync_issues = 10;
 }
 
-message SyncCursor {
-  string epoch = 1;
-  uint64 sequence = 2;
-  int32 projection_version = 3;
-  // Opaque, bounded server projection cache identity. Missing/evicted identities
-  // explicitly reset; a sequence alone never proves a client has the same data.
-  string projection_id = 4;
+// A position in one machine's change stream. Records follow the machine's
+// peer-store log for the account. Local data follows this daemon process's
+// index of the conversations it runs; its epoch changes when the process
+// restarts. Each half resets independently.
+message ChangesCursor {
+  string records_epoch = 1;
+  uint64 records_sequence = 2;
+  string local_epoch = 3;
+  uint64 local_sequence = 4;
 }
 
-message SyncRequest {
-  SyncCursor after = 1;
-  int32 conversation_limit = 2;
-  int32 heartbeat_ms = 3;
-  // When set together with conversation_limit, the stream stays bounded: it
-  // carries conversation snapshots only for cards with an active runtime plus
-  // the most recently active conversations up to this count, and conversation
-  // changes ride the delta frames instead of full snapshots.
-  int32 recent_conversation_limit = 4;
-  reserved 5;
-  reserved "protocol_version";
+message ChangesRequest {
+  // Empty starts both halves from the beginning.
+  ChangesCursor after = 1;
+  // Heartbeats repeat the current cursor; 15 s by default, at least 1 s.
+  int32 heartbeat_ms = 2;
 }
 
-message SyncEvent {
-  uint64 sequence = 1;
-  string kind = 2;
-  string created_at = 3;
-  string command_id = 4;
+// One step of a machine's change stream. reset_records (reset_local) means:
+// drop everything held from this machine for that half, then apply the frame.
+// The cursor covers everything up to and including this frame.
+message ChangesFrame {
+  // This machine's peer identity: the owner its records and owned cards name.
+  string daemon_id = 1;
+  // The peer account its records belong to; KV mutations name it.
+  string account = 13;
+  ChangesCursor cursor = 2;
+  bool reset_records = 3;
+  bool reset_local = 4;
+  // Nothing this machine held when the frame was built remains unsent.
+  bool caught_up = 5;
+  // A heartbeat carries no data; it proves the stream is current.
+  bool heartbeat = 6;
+  // Shared registers of this machine's replica with every causal sibling.
+  // Versions carry their presentation rank; proofs stay with the daemons.
+  repeated PeerRecord records = 7;
+  // Owner-only details of the live cards and chats this machine runs: prompt,
+  // workspace, pull request, token usage and agent options. Shared fields come
+  // from records.
+  repeated Card owned_cards = 8;
+  repeated string removed_owned_card_ids = 9;
+  // This machine's attached checkouts with their paths and validation
+  // commands, which only it knows. Registrations come from records.
+  repeated Checkout owned_checkouts = 14;
+  repeated string removed_owned_checkout_ids = 15;
+  // The latest turn of each active or recently active conversation this
+  // machine runs, without payload bodies: enough for live activity, result
+  // previews and delivery confirmation. Full transcripts come from
+  // WatchConversation.
+  repeated Conversation activities = 10;
+  repeated string removed_activity_ids = 11;
+  // Present when this machine's peer replication diagnostics changed.
+  PeerSyncStatus peer_sync = 12;
+  // Present on initial/reset and whenever this owner's privacy state changes.
+  MachinePrivacy privacy = 16;
 }
 
-// GlobalSnapshot is deliberately bounded. Clients that request a zero
-// conversation_limit receive only workspace metadata here and use
-// WatchConversation for the currently visible conversation.
-message GlobalSnapshot {
-  State state = 1;
-  repeated ConversationSnapshot conversations = 2;
-  Settings settings = 5;
-}
-
-// GlobalDelta carries only changed metadata after the initial bootstrap.
-// Removed IDs make the delta independently applicable to a persisted client
-// projection. Conversation content appears here only for clients that opt in
-// via recent_conversation_limit; everyone else uses WatchConversation.
-message GlobalDelta {
-  repeated Project projects = 1;
-  repeated string removed_project_ids = 2;
-  repeated Board boards = 3;
-  repeated string removed_board_ids = 4;
-  repeated Card cards = 5;
-  repeated string removed_card_ids = 6;
-  repeated Card chats = 7;
-  repeated string removed_chat_ids = 8;
-  Settings settings = 13;
-  repeated ConversationSnapshot conversations = 14;
-  repeated string removed_conversation_ids = 15;
-  SharedArchives archives = 16;
-}
-
-message SyncFrame {
-  SyncCursor cursor = 1;
-  SyncEvent event = 2;
-  GlobalSnapshot snapshot = 3;
-  bool reset = 4;
-  bool heartbeat = 5;
-  repeated SyncEvent events = 6;
-  GlobalDelta delta = 7;
-  // Observed durable highwater is diagnostic only; never persist as applied.
-  SyncCursor observed_cursor = 8;
-  bool transport_only = 9;
-  bool projection_pending = 10;
-}
+message PeerSyncStatus { repeated PeerSyncDiagnostic issues = 1; }
 
 message ProjectsResponse {
   repeated Project projects = 1;
@@ -1823,6 +1817,9 @@ message RemoteDesktopCapabilities {
   bool display_mode_switching_supported = 29;
   // Linux portal consent is requested interactively when a session starts.
   RemoteDesktopAvailability availability = 30;
+  // Experimental, explicitly enabled on the host. Physical disabling is separately qualified.
+  bool virtual_display_supported = 31;
+  bool virtual_display_disable_supported = 32;
 }
 
 // Physical desktop modes, independent of the encoded stream's size limits.
@@ -1851,6 +1848,31 @@ message SetRemoteDesktopDisplayModeRequest {
   string mode_id = 3;
   // Reject stale mode lists or a display changed locally after discovery.
   string expected_current_mode_id = 4;
+}
+
+// One temporary virtual display owned by the controlling screen session.
+message RemoteDesktopVirtualDisplay {
+  bool active = 1;
+  string display_id = 2;
+  int32 pixel_width = 3;
+  int32 pixel_height = 4;
+  int32 scale = 5;
+  bool awaiting_presentation = 6;
+  bool physical_disabled = 7;
+  string original_display_id = 8;
+}
+message SetRemoteDesktopVirtualDisplayRequest {
+  string session_id = 1;
+  int32 pixel_width = 2;
+  int32 pixel_height = 3;
+  int32 scale = 4; // Exactly 1 or 2; backing pixels are independent of UI scale.
+  bool disable_physical = 5;
+}
+message ConfirmRemoteDesktopVirtualDisplayRequest {
+  string session_id = 1;
+  string display_id = 2;
+  // Acknowledge only after presenting a frame from this exact display/media generation.
+  uint64 display_generation = 3;
 }
 
 message RemoteDesktopCodecMode {
@@ -2125,6 +2147,7 @@ message RemoteDesktopSessionState {
   uint32 content_samples = 55;
   string content_class = 56; // Applied controller classification, not a visual-quality score.
   RemoteDesktopRecoveryDiagnostics recovery_diagnostics = 57;
+  RemoteDesktopVirtualDisplay virtual_display = 58;
 }
 
 // Session-local history counters, not proof of successful decode repair.
@@ -2461,12 +2484,18 @@ message PeerVersion {
   bytes value_json = 2;
   bool deleted = 3;
   bytes provenance_json = 4;
+  // Deterministic presentation order among concurrent siblings; the highest
+  // rank is shown. Set on WatchChanges records.
+  string rank = 5;
 }
 message PeerRecord {
   string kind = 1;
   string id = 2;
   repeated PeerVersion versions = 3;
   string revision = 4;
+  // Revision of the causal values without proofs, as compare-and-swap
+  // requests on shared card fields expect it. Set on WatchChanges records.
+  string value_revision = 5;
 }
 message PeerStoreStatus {
   string account = 1;

@@ -34,6 +34,7 @@ import (
 	"github.com/dbpprt/dieter/internal/fixtureturn"
 	"github.com/dbpprt/dieter/internal/gateway"
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	dieterv1 "github.com/dbpprt/dieter/internal/gen/dieter/v1"
 	"github.com/dbpprt/dieter/internal/harness"
 	"github.com/dbpprt/dieter/internal/machine"
 	"github.com/dbpprt/dieter/internal/model"
@@ -65,6 +66,7 @@ func main() {
 	daemonRestartTrigger := flag.String("daemon-restart-trigger", "", "optional file whose creation restarts the isolated daemon API and gateway tunnel")
 	boardStressFixture := flag.Bool("board-stress-fixture", false, "seed a 100-card board with 85 variable-height cards in one lane")
 	inboxFixture := flag.Bool("inbox-fixture", false, "seed deterministic Inbox activity and real conversations")
+	composeFixture := flag.Bool("compose-mobile-fixture", false, "seed a small persisted mobile workspace for the Compose spike")
 	usageFixture := flag.Bool("usage-fixture", false, "publish deterministic provider usage without provider credentials")
 	directRoute := flag.String("direct-route", "", `advertise a loopback direct TLS route for the primary daemon: "live" serves it, "dead" advertises a closed port`)
 	flag.Parse()
@@ -72,13 +74,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, `error: -direct-route must be "live" or "dead"`)
 		os.Exit(2)
 	}
-	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *directRoute, *boardStressFixture, *inboxFixture, *usageFixture); err != nil {
+	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *directRoute, *boardStressFixture, *inboxFixture, *usageFixture, *composeFixture); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string, boardStressFixture, inboxFixture, usageFixture bool) error {
+func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string, boardStressFixture, inboxFixture, usageFixture, composeFixture bool) error {
 	// The mock harness answers every prompt deterministically, so end-to-end
 	// turns complete without real provider credentials.
 	if err := os.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1"); err != nil {
@@ -225,6 +227,11 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 			return err
 		}
 	}
+	if composeFixture {
+		if err := seedComposeFixture(data, project, board); err != nil {
+			return err
+		}
+	}
 	if os.Getenv("DIETER_PERFORMANCE_SWEEP") == "1" {
 		if err := seedChatPerformanceFixture(data, project); err != nil {
 			return err
@@ -258,7 +265,9 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 		runner := newIsolatedRunner(harness.NewSubprocessRunner(fixtureData.Root))
 		runner.logger = logger
 		value := server.NewWithOptions(fixtureData, logger, server.Options{
-			Runner: runner,
+			Runner:        runner,
+			PrivacyDriver: &isolatedPrivacy{},
+			PrivacyBootID: func(context.Context) (string, error) { return "isolated-boot", nil },
 			// Keep the real release choices without triggering provider CLI/network
 			// discovery or runtime installation in each disposable fixture home.
 			HarnessCatalog: func(_ context.Context, includeMock bool) []harness.Adapter {
@@ -884,4 +893,24 @@ func isolatedGitEnvironment(environment []string) []string {
 		}
 	}
 	return append(result, "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1", "GIT_TEMPLATE_DIR=", "GIT_TERMINAL_PROMPT=0")
+}
+
+// Presentation fixtures never blank the operator desktop.
+type isolatedPrivacy struct{ enabled, setup bool }
+
+func (f *isolatedPrivacy) Setup(ctx context.Context) (*dieterv1.MachinePrivacy, error) {
+	f.setup = true
+	return f.Snapshot(ctx)
+}
+
+func (f *isolatedPrivacy) Snapshot(context.Context) (*dieterv1.MachinePrivacy, error) {
+	state := dieterv1.MachinePrivacy_STATE_OFF
+	if f.enabled {
+		state = dieterv1.MachinePrivacy_STATE_ON
+	}
+	return &dieterv1.MachinePrivacy{Supported: f.setup, HelperSetupRequired: !f.setup, Requested: f.enabled, State: state, DisplayCount: 1, InputDeviceCount: 2}, nil
+}
+func (f *isolatedPrivacy) Set(ctx context.Context, enabled bool) (*dieterv1.MachinePrivacy, error) {
+	f.enabled = enabled
+	return f.Snapshot(ctx)
 }

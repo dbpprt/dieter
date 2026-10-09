@@ -29,7 +29,7 @@ struct ScheduleEditorSection<Content: View>: View {
             }
             content
         }
-        .padding(15).frame(maxWidth: .infinity, alignment: .leading).dieterSurface(radius: 12)
+        .padding(15).frame(maxWidth: .infinity, alignment: .leading).dieterTile(radius: 12)
     }
 }
 
@@ -39,9 +39,13 @@ struct TemplateVariableButtons: View {
     var body: some View {
         HStack(spacing: 5) {
             ForEach(ClientScheduleEditorOptions.shared.variables, id: \.key) { variable in
-                Button(variable.title) { insert(variable.key) }
-                    .buttonStyle(.bordered).controlSize(.mini).font(.system(size: 10, design: .monospaced))
-                    .help(variable.detail)
+                Button {
+                    insert(variable.key)
+                } label: {
+                    Text(variable.title).font(.system(size: 10, design: .monospaced))
+                }
+                .buttonStyle(DieterBarButtonStyle(size: 22))
+                .help(variable.detail)
             }
         }
     }

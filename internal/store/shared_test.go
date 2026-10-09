@@ -550,25 +550,25 @@ func TestReplicaArchivesRemainExplicitWithOwnerOffline(t *testing.T) {
 	if _, err = b.ArchiveCard(item.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	state, _, err := b.GlobalStateContext(context.Background())
+	state, err := b.GlobalStateContext(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(state.ArchivedItemIDs) != 1 || state.ArchivedItemIDs[0] != item.ID || len(state.Chats) != 0 {
-		t.Fatalf("archive projection: %+v", state)
+	if archived, err := b.ResolveCard(item.ID); err != nil || !archived.Archived || len(state.Chats) != 0 {
+		t.Fatalf("archive projection: %+v %+v %v", state, archived, err)
 	}
 	if _, err = b.ArchiveCard(item.ID, false); err != nil {
 		t.Fatal(err)
 	}
-	state, _, err = b.GlobalStateContext(context.Background())
-	if err != nil || len(state.ArchivedItemIDs) != 0 || len(state.Chats) != 1 {
+	state, err = b.GlobalStateContext(context.Background())
+	if err != nil || len(state.Chats) != 1 || state.Chats[0].ID != item.ID {
 		t.Fatalf("restore projection: %+v %v", state, err)
 	}
 	if _, err = b.ArchiveProject(project.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	state, _, err = b.GlobalStateContext(context.Background())
-	if err != nil || len(state.ArchivedProjectIDs) != 1 || len(state.Projects) != 0 {
+	state, err = b.GlobalStateContext(context.Background())
+	if err != nil || len(state.Projects) != 0 || len(state.Chats) != 0 {
 		t.Fatalf("project archive: %+v %v", state, err)
 	}
 }

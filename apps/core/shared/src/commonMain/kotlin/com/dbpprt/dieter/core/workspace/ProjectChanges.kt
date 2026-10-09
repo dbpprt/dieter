@@ -1,5 +1,9 @@
 package com.dbpprt.dieter.core.workspace
 
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.async
+import com.dbpprt.dieter.core.machines.MachineChoice
 import com.dbpprt.dieter.api.v1.ChangedFile
 import com.dbpprt.dieter.api.v1.Changeset
 import com.dbpprt.dieter.api.v1.FileDiff
@@ -389,23 +393,34 @@ data class ProjectWorkspacesView(
     }
 }
 
-/** A project's conversation workspaces across its checkouts, with cleanup and discard. */
-class ProjectWorkspaces(private val sessions: MachineSessions, private val store: WorkspaceStore) {
+/**
+ * A project's conversation workspaces across its checkouts, with cleanup and
+ * discard. Each machine lists its own; they are read from every reachable
+ * machine with a checkout of the project and listed together.
+ */
+class ProjectWorkspaces(private val sessions: MachineSessions, private val store: WorkspaceStore, private val choice: MachineChoice) {
     private val mutableView = MutableStateFlow(ProjectWorkspacesView())
     val view: StateFlow<ProjectWorkspacesView> = mutableView.asStateFlow()
 
     suspend fun load(projectId: String) {
-        val daemon = store.directoryProjection.projectReplicas[projectId] ?: throw CoreException(FailureKind.TRANSIENT, "The project's machine is unavailable.")
+        val directory = store.directoryProjection
+        val holders = directory.projects[projectId]?.checkouts.orEmpty().filterNot { it.detached }.mapTo(HashSet()) { directory.machine(it.daemon_id) }
+        val machines = choice.reachable().filter { it in holders }
+        if (machines.isEmpty()) throw CoreException(FailureKind.TRANSIENT, "No machine with a checkout of this project is reachable.")
         mutableView.update { if (it.projectId == projectId) it.copy(loading = true) else ProjectWorkspacesView(projectId, loading = true) }
-        try {
-            val workspaces = sessions.call(daemon, Deadlines.READ) { it.ListProjectWorkspaces().execute(ProjectRef(project_id = projectId)) }.workspaces
-            val cards = store.state.value
-            val titles = workspaces.mapNotNull { workspace -> cards.card(workspace.card_id)?.title?.ifBlank { null }?.let { workspace.card_id to it } }.toMap()
-            if (view.value.projectId == projectId) mutableView.update { it.copy(workspaces = workspaces, loading = false, error = null, titles = titles) }
-        } catch (error: Throwable) {
-            if (error is CancellationException) throw error
-            if (view.value.projectId == projectId) mutableView.update { it.copy(loading = false, error = Failures.message(error)) }
+        val results = coroutineScope {
+            machines.map { daemon ->
+                async {
+                    runCatching { sessions.call(daemon, Deadlines.READ) { it.ListProjectWorkspaces().execute(ProjectRef(project_id = projectId)) }.workspaces }
+                        .onFailure { if (it is CancellationException) throw it }
+                }
+            }.awaitAll()
         }
+        val workspaces = results.flatMap { it.getOrDefault(emptyList()) }.sortedBy { it.card_id }
+        val error = results.firstNotNullOfOrNull { it.exceptionOrNull() }?.let(Failures::message)
+        val cards = store.state.value
+        val titles = workspaces.mapNotNull { workspace -> cards.card(workspace.card_id)?.title?.ifBlank { null }?.let { workspace.card_id to it } }.toMap()
+        if (view.value.projectId == projectId) mutableView.update { it.copy(workspaces = workspaces, loading = false, error = error, titles = titles) }
     }
 
     /** Cleans up or discards a worktree workspace on its conversation's machine, waiting for the result. */
@@ -413,8 +428,7 @@ class ProjectWorkspaces(private val sessions: MachineSessions, private val store
         val cardId = workspace.card_id
         if (cardId in view.value.pending) return
         val card = store.directoryProjection.item(cardId)
-        val daemon = card?.let(store.directoryProjection::owner) ?: store.directoryProjection.projectReplicas[workspace.project_id]
-            ?: throw CoreException(FailureKind.TRANSIENT, "The workspace's machine is unavailable.")
+        val daemon = card?.let(store.directoryProjection::owner) ?: throw CoreException(FailureKind.TRANSIENT, "The workspace's machine is unavailable.")
         mutableView.update { it.copy(pending = it.pending + cardId, errors = it.errors - cardId) }
         try {
             val started = sessions.call(daemon, Deadlines.READ) { it.StartGitOperation().execute(StartGitOperationRequest(card_id = cardId, kind = if (discard) "discard" else "cleanup", expected_revision = workspace.revision)) }
@@ -444,6 +458,7 @@ object ProjectWorkspaceSettings {
     suspend fun update(
         sessions: MachineSessions,
         store: WorkspaceStore,
+        choice: MachineChoice,
         project: Project,
         baseRemote: String,
         baseBranch: String,
@@ -455,8 +470,8 @@ object ProjectWorkspaceSettings {
         val checkout = checkoutId?.let { id -> project.checkouts.firstOrNull { it.id == id } }
         val current = checkout?.validation_commands.orEmpty().map(ValidationCommandDraft::from)
         val changed = validation != null && checkout != null && validation != current
-        val daemon = if (changed) checkout.daemon_id else store.directoryProjection.projectReplicas[project.id]
-            ?: throw CoreException(FailureKind.TRANSIENT, "The project's machine is unavailable.")
+        val daemon = if (changed) store.directoryProjection.machine(checkout.daemon_id) else choice.project(project.id)
+            ?: throw CoreException(FailureKind.TRANSIENT, "No machine with this project is reachable.")
         val request = UpdateProjectWorkspaceSettingsRequest(
             project_id = project.id, base_remote = baseRemote.trim(), base_branch = baseBranch.trim(),
             checkout_id = if (changed) checkout.id else "", validation_commands = if (changed) validation.map { it.toCommand() } else emptyList(),

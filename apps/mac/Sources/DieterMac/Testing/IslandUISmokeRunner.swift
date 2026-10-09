@@ -486,7 +486,7 @@
                         $0.shownAtMillis = $0.atMillis
                     }
                 })
-            store.phase = .connected(version: "island-smoke")
+            store.phase = .connected
             store.workspaceIsLive = true
         }
 

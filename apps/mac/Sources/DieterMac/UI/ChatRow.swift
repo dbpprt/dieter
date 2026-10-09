@@ -199,9 +199,9 @@ struct ChatContextMenu: ViewModifier {
                         .onSubmit { rename() }
                     HStack {
                         Spacer()
-                        Button("Cancel") { renamePresented = false }
+                        Button("Cancel") { renamePresented = false }.buttonStyle(DieterBarButtonStyle())
                         Button("Rename") { rename() }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(DieterBarButtonStyle(prominent: true))
                             .disabled(renameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             .accessibilityIdentifier("chat.rename.confirm")
                     }
@@ -231,7 +231,7 @@ struct ChatRowBackground: View {
         RoundedRectangle(cornerRadius: 7, style: .continuous)
             .fill(
                 store.selectedChatID == cardID
-                    ? DieterTheme.selection : (hovering ? DieterTheme.raised.opacity(0.75) : .clear)
+                    ? DieterTheme.tileSelected : (hovering ? DieterTheme.tileHover : .clear)
             )
             .onHover { hovering = $0 }
     }

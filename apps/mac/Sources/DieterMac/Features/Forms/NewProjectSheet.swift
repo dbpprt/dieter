@@ -16,12 +16,8 @@ struct NewProjectSheet: View {
     @State private var suggestedName = ""
     @State private var workspaceSettingsExpanded = false
 
-    private var availableMachines: [MachineEndpoint] {
-        store.machines.isEmpty ? [store.endpoint] : store.machines
-    }
-
     private var selectedMachine: MachineEndpoint? {
-        availableMachines.first { $0.id == machineID }
+        store.machines.first { $0.id == machineID }
     }
 
     private var selectedMachineAvailable: Bool {
@@ -48,20 +44,17 @@ struct NewProjectSheet: View {
                 } label: {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .bold))
                 }
-                .buttonStyle(DieterIconButtonStyle()).help("Close").disabled(submitting)
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Close").disabled(submitting)
             }
             .padding(.horizontal, 24).padding(.top, 22).padding(.bottom, 15)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 17) {
                     if existingProjectID.isEmpty {
-                        Picker("Project type", selection: $draft.mode) {
-                            ForEach(ProjectSetupMode.allCases) { mode in
-                                Text(mode.title).tag(mode)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
+                        DieterSegmentedPicker(
+                            "Project type", selection: $draft.mode, options: ProjectSetupMode.allCases,
+                            fillsWidth: true, optionTitle: { $0.title }
+                        )
                         .accessibilityIdentifier("new-project.mode")
                     }
 
@@ -72,7 +65,7 @@ struct NewProjectSheet: View {
                     }
                     projectLabel("Checkout machine")
                     Menu {
-                        ForEach(availableMachines) { machine in
+                        ForEach(store.machines) { machine in
                             Button {
                                 if store.machineIsAvailable(machine) { machineID = machine.id }
                             } label: {
@@ -105,10 +98,10 @@ struct NewProjectSheet: View {
                                 DieterTheme.tertiary)
                         }
                         .foregroundStyle(DieterTheme.subtle).padding(.horizontal, 13).frame(height: 48)
-                        .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
-                        .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.strongBorder))
+                        .contentShape(RoundedRectangle(cornerRadius: 9))
+                        .dieterInset(radius: 9)
                     }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                    .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
                     Text(
                         "The repository path and every agent process belong to this host. This placement choice does not filter the combined workspace."
                     )
@@ -123,7 +116,7 @@ struct NewProjectSheet: View {
                         } label: {
                             Label("Browse…", systemImage: "folder")
                         }
-                        .buttonStyle(DieterSecondaryButtonStyle())
+                        .buttonStyle(DieterBarButtonStyle(size: 30))
                         .accessibilityIdentifier("new-project.browse")
                         .smokeTarget("new-project.browse")
                         .disabled(submitting || machineID.isEmpty || !selectedMachineAvailable)
@@ -172,10 +165,10 @@ struct NewProjectSheet: View {
                                     }
                                     .font(.system(size: 13, weight: .medium)).foregroundStyle(DieterTheme.subtle)
                                     .padding(.horizontal, 12).frame(height: 40)
-                                    .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
-                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.strongBorder))
+                                    .contentShape(RoundedRectangle(cornerRadius: 8))
+                                    .dieterInset(radius: 8)
                                 }
-                                .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
                                 .accessibilityIdentifier("new-project.workflow")
                             }
                         }
@@ -219,8 +212,7 @@ struct NewProjectSheet: View {
                             .font(.system(size: 13)).lineSpacing(3).lineLimit(1...5)
                             .padding(.horizontal, 12).padding(.vertical, 13)
                             .frame(height: 105)
-                            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 9))
-                            .overlay(RoundedRectangle(cornerRadius: 9).stroke(DieterTheme.strongBorder))
+                            .dieterInset(radius: 9)
                             .accessibilityIdentifier("new-project.instructions")
                         Text("Stored centrally and included in every new card conversation for this project.")
                             .font(.caption2).foregroundStyle(DieterTheme.tertiary)
@@ -246,7 +238,7 @@ struct NewProjectSheet: View {
             HStack(spacing: 10) {
                 Spacer()
                 Button("Cancel") { dismiss() }
-                    .buttonStyle(DieterSecondaryButtonStyle())
+                    .buttonStyle(DieterBarButtonStyle(size: 30))
                     .disabled(submitting)
                 Button {
                     submit()
@@ -263,7 +255,7 @@ struct NewProjectSheet: View {
                             existingProjectID.isEmpty ? draft.mode.submitTitle : "Attach checkout", systemImage: "plus")
                     }
                 }
-                .buttonStyle(DieterPrimaryButtonStyle())
+                .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
                 .disabled(submitting || !canSubmit || !selectedMachineAvailable)
                 .accessibilityIdentifier("new-project.submit")
             }
@@ -273,9 +265,10 @@ struct NewProjectSheet: View {
         .background(DieterTheme.background)
         .task {
             if machineID.isEmpty {
+                // This Mac's machine, else the first that can take work.
                 machineID =
-                    availableMachines.first(where: { $0.id == store.endpoint.id })?.id ?? availableMachines.first(
-                        where: \.online)?.id ?? ""
+                    store.localMachine.flatMap { store.machineIsAvailable($0) ? $0.id : nil }
+                    ?? store.machines.first(where: store.machineIsAvailable)?.id ?? ""
             }
         }
         .onChange(of: existingProjectID) { _, value in
@@ -350,7 +343,6 @@ struct NewProjectSheet: View {
         TextField(placeholder, text: text)
             .textFieldStyle(.plain).font(.system(size: 13))
             .padding(.horizontal, 12).frame(height: 40)
-            .background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.strongBorder))
+            .dieterInset(radius: 8)
     }
 }

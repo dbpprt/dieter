@@ -295,7 +295,7 @@ func (s *Store) OrphanedTurnCards() ([]model.Card, error) {
 		if statusErr != nil {
 			return nil, statusErr
 		}
-		if card.Runtime == "running" || card.Runtime == "starting" || status == "running" || status == "starting" {
+		if model.RuntimeHoldsTurn(card.Runtime) || status == "running" || status == "starting" {
 			orphaned = append(orphaned, card)
 		}
 	}
@@ -332,7 +332,7 @@ func (s *Store) OrphanedTurnCards() ([]model.Card, error) {
 		if err != nil {
 			return nil, err
 		}
-		if current.Runtime == "running" || current.Runtime == "starting" || status == "running" || status == "starting" {
+		if model.RuntimeHoldsTurn(current.Runtime) || status == "running" || status == "starting" {
 			verified = append(verified, current)
 		}
 	}

@@ -7,15 +7,18 @@ require_relative "../errors"
 module Dieter
   class OwnedProcess
     LIMIT = 4 * 1024 * 1024
+    LINE_LIMIT = 64 * 1024
     attr_reader :pid, :status, :argv
 
-    def initialize(root, argv, environment: {}, input: nil, binary: false, log: nil, secrets: [], output_limit: nil)
+    def initialize(root, argv, environment: {}, input: nil, binary: false, log: nil, secrets: [], output_limit: nil, stream: nil, chdir: nil)
       raise PipelineError, "Expected nonempty exact argv" unless argv.is_a?(Array) && argv.all? { |v| v.is_a?(String) && !v.include?("\0") } && !argv.empty?
       @argv, @root, @binary, @log, @secrets = argv, root, binary, log, secrets
+      # Fixture readiness and structured/binary stdout must remain private.
+      @stream = stream.nil? ? !binary && !log.nil? : stream && !binary
       @limit = output_limit || (binary ? 32 * 1024 * 1024 : LIMIT)
       @stdout, @stderr, @overflow = "".b, "".b, false
       @mutex = Mutex.new
-      @stdin, stdout, stderr, @waiter = Open3.popen3(environment, *argv, chdir: root, pgroup: true)
+      @stdin, stdout, stderr, @waiter = Open3.popen3(environment, *argv, chdir: chdir || root, pgroup: true)
       @pid = @waiter.pid
       @readers = [read(stdout, :@stdout), read(stderr, :@stderr)]
       @writer = Thread.new do
@@ -77,14 +80,15 @@ module Dieter
     end
 
     def stop
-      # Signal only the process group created by this instance. The waiter keeps
-      # our child from being reaped/reused before its identity is inspected.
-      return finish_io unless running?
-      raise CleanupError, "Owned child #{@pid} changed its process group" unless Process.getpgid(@pid) == @pid
+      # The group remains ours while descendants keep its pipes open, even if
+      # the leader has exited (for example Fastlane's timed-out settings query).
+      # A live leader must still prove the exact group identity before signaling.
+      return finish_io if !running? && io_finished?
+      raise CleanupError, "Owned child #{@pid} changed its process group" if running? && Process.getpgid(@pid) != @pid
       signal("INT")
-      return finish_io if @waiter.join(15)
+      return finish_io if wait_for_exit(15)
       signal("TERM")
-      return finish_io if @waiter.join(10)
+      return finish_io if wait_for_exit(10)
       raise CleanupError, "Owned child #{@pid} did not exit; preserve resources and diagnostics"
     rescue Errno::ESRCH
       finish_io
@@ -102,9 +106,24 @@ module Dieter
       nil
     end
 
+    def io_finished?
+      [@writer, *@readers].none?(&:alive?)
+    end
+
+    def wait_for_exit(seconds)
+      deadline = clock + seconds
+      until !running? && io_finished?
+        return false if clock >= deadline
+        sleep 0.05
+      end
+      true
+    end
+
     def read(io, variable)
       Thread.new do
         io.binmode
+        pending = "".b
+        dropping = false
         loop do
           chunk = io.readpartial(16 * 1024)
           @mutex.synchronize do
@@ -112,12 +131,31 @@ module Dieter
             @overflow ||= value.bytesize > @limit
             instance_variable_set(variable, value.byteslice(-@limit, @limit) || value)
           end
+          next unless @stream
+          pending << chunk
+          while (newline = pending.index("\n"))
+            line = pending.slice!(0, newline + 1)
+            emit(variable, line) unless dropping || line.bytesize > LINE_LIMIT
+            dropping = false
+          end
+          if pending.bytesize > LINE_LIMIT
+            # Never print a partial secret split across pipe reads or long lines.
+            emit(variable, "<oversized output line omitted>\n") unless dropping
+            pending.clear
+            dropping = true
+          end
         end
       rescue EOFError, IOError
+        emit(variable, pending) if @stream && !dropping && pending && !pending.empty?
         nil
       ensure
         io.close rescue nil
       end
+    end
+
+    def emit(variable, value)
+      $stdout.write("  #{variable == :@stdout ? 'stdout' : 'stderr'}: #{redact(value)}")
+      $stdout.flush
     end
 
     def finish_io

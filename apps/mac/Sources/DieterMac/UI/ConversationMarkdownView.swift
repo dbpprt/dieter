@@ -13,7 +13,7 @@ struct ConversationMarkdownView: View {
                 source: preview, color: inUserBubble ? DieterTheme.userMessageForeground : DieterTheme.text)
             if preview != source {
                 Button("Open full text…") { showingFullText = true }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.plain).foregroundStyle(DieterTheme.action)
                     .accessibilityIdentifier("conversation.full-text").smokeTarget("conversation.full-text")
             }
         }
@@ -38,9 +38,10 @@ private struct FullConversationText: View {
             HStack {
                 Text("Full message").font(.headline)
                 Spacer()
-                Button("Done") { dismiss() }.accessibilityIdentifier("conversation.full-text.done")
-                    .smokeTarget(
-                        "conversation.full-text.done")
+                Button("Done") { dismiss() }
+                    .buttonStyle(DieterBarButtonStyle(prominent: true, size: 30))
+                    .accessibilityIdentifier("conversation.full-text.done")
+                    .smokeTarget("conversation.full-text.done")
             }.padding(14)
             FullConversationTextEditor(source: source)
                 .environment(

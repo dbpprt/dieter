@@ -1,0 +1,70 @@
+name: Compose mobile check
+on:
+  workflow_call:
+    inputs:
+      component:
+        description: core, android or ios
+        type: string
+        required: true
+      retain_preview:
+        description: Retain tested preview bytes for the post-qualification delivery job
+        type: boolean
+        default: false
+    outputs:
+      preview_name:
+        description: Exact staging artifact, including its producer run attempt
+        value: ${{ inputs.retain_preview && jobs.check.outputs.preview_name || '' }}
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ${{ inputs.component == 'ios' && 'macos-26' || 'ubuntu-latest' }}
+    timeout-minutes: 90
+    outputs:
+      preview_name: ${{ steps.check.outputs.preview_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/pipeline-setup
+        with:
+          component: ${{ inputs.component }}
+          fixture: "true"
+          native: ${{ inputs.component == 'ios' }}
+      - uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        if: inputs.component == 'ios'
+        with:
+          key: compose-check-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.5-java21-${{ hashFiles('apps/mac/Package.resolved', 'apps/mobile/ios/**/Package.resolved', 'apps/core/mobile/build.gradle.kts', 'apps/core/gradle/libs.versions.toml', 'apps/core/gradle/wrapper/gradle-wrapper.properties') }}-${{ github.sha }}
+          restore-keys: |
+            compose-check-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.5-java21-${{ hashFiles('apps/mac/Package.resolved', 'apps/mobile/ios/**/Package.resolved', 'apps/core/mobile/build.gradle.kts', 'apps/core/gradle/libs.versions.toml', 'apps/core/gradle/wrapper/gradle-wrapper.properties') }}-
+          path: |
+            ~/.konan
+            apps/mobile/ios/.build/DerivedData/SourcePackages
+            apps/mobile/ios/.build/DerivedData/ModuleCache.noindex
+            apps/mobile/ios/.build/DerivedData/Build/Intermediates.noindex
+      - name: Check shared code or native app and stage preview
+        id: check
+        env:
+          PIPELINE_COMPONENT: ${{ inputs.component }}
+        run: just pipeline compose_ci action:check component:"$PIPELINE_COMPONENT" output:tmp/app-pipelines/compose-check
+      - name: Retain tested preview for delivery
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: inputs.retain_preview && inputs.component != 'core'
+        with:
+          name: ${{ steps.check.outputs.preview_name }}
+          path: tmp/app-pipelines/compose-check/preview/
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+      - name: Collect bounded diagnostic evidence
+        if: always()
+        run: just pipeline ci action:evidence component:report output:tmp/compose-evidence
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        continue-on-error: true
+        with:
+          name: compose-check-${{ inputs.component }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tmp/compose-evidence/
+          retention-days: 14
+          if-no-files-found: error

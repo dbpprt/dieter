@@ -73,7 +73,9 @@ module Dieter
 
     def environment
       mapping = {"java_home" => "JAVA_HOME", "android_sdk" => "ANDROID_HOME", "developer_dir" => "DEVELOPER_DIR", "swift_jobs" => "DIETER_SWIFT_JOBS"}
-      mapping.each_with_object({}) do |(key, variable), result|
+      # Bundler's vendor/bundle is not a Go vendor tree. Resolve the authoritative
+      # module graph on local runs as well as CI, without changing global flags.
+      mapping.each_with_object({"GOFLAGS" => [ENV["GOFLAGS"], "-mod=mod"].compact.join(" ")}) do |(key, variable), result|
         configured = data.fetch("toolchains")[key]
         if configured.nil?
           inherited = ENV[variable]

@@ -32,7 +32,7 @@ struct MessagePartView: View {
                         Text(part.mediaType).font(.caption2).foregroundStyle(DieterTheme.tertiary)
                     }
                 }
-                .padding(10).background(DieterTheme.surface, in: RoundedRectangle(cornerRadius: 8))
+                .padding(10).dieterTile(radius: 10)
             }
         default:
             if !part.text.isEmpty {
@@ -82,12 +82,14 @@ struct AttachmentImageButton: View {
 /// input and output load when expanded.
 struct ToolCallView: View {
     @Environment(ConversationContext.self) private var context
+    @Environment(\.conversationToolsGrouped) private var grouped
     let messageID: String
     let part: Dieter_V1_MessagePart
     let step: ClientTimelineStep
     @State private var expanded = false
     @State private var output: Dieter_V1_ToolOutput?
     @State private var loading = false
+    @State private var hovering = false
 
     private var completed: Bool { step.toolStatus == .completed }
     private var needsAttention: Bool { step.toolAttention }
@@ -100,31 +102,44 @@ struct ToolCallView: View {
                 withAnimation(.easeInOut(duration: 0.16)) { expanded.toggle() }
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(DieterTheme.tertiary)
                     Image(
                         systemName: needsAttention
-                            ? "exclamationmark.circle" : (completed ? "checkmark.circle" : "terminal")
-                    ).font(
-                        .system(size: 11, weight: .medium)
-                    ).foregroundStyle(
-                        needsAttention ? DieterTheme.amber : (completed ? DieterTheme.eyes : DieterTheme.shell))
-                    Text(step.toolTitle).font(
-                        .caption.monospaced().weight(.medium)
-                    ).lineLimit(1)
-                    Spacer()
+                            ? "exclamationmark.triangle" : (completed ? "checkmark" : "terminal")
+                    )
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(
+                        needsAttention
+                            ? DieterTheme.attention : (completed ? DieterTheme.running : DieterTheme.tertiary)
+                    )
+                    .frame(width: 14)
+                    Text(step.toolTitle)
+                        .font(DieterFont.mono)
+                        .foregroundStyle(DieterTheme.text.opacity(0.9))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 6)
                     if loading {
                         ProgressView().controlSize(.mini)
                     } else {
-                        Text(statusLabel).font(.caption2).foregroundStyle(DieterTheme.tertiary)
+                        Text(statusLabel).font(DieterFont.monoSmall).foregroundStyle(DieterTheme.tertiary)
                     }
+                    Image(systemName: "chevron.right").font(.system(size: 7.5, weight: .bold))
+                        .foregroundStyle(DieterTheme.tertiary)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                        .opacity(hovering || expanded ? 1 : 0)
                 }
-                .padding(.horizontal, 10).frame(height: 34)
+                .padding(.horizontal, 8).frame(height: grouped ? 26 : 32)
+                .background(
+                    hovering ? DieterTheme.tileHover : .clear,
+                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                )
                 .contentShape(Rectangle())
-            }.buttonStyle(.plain)
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
 
             if !step.routine, !part.errorText.isEmpty {
-                Text(part.errorText).font(.caption.monospaced()).foregroundStyle(DieterTheme.coral)
+                Text(part.errorText).font(DieterFont.mono).foregroundStyle(DieterTheme.failed)
                     .padding(.horizontal, 10).padding(.bottom, 10)
             }
             if expanded {
@@ -135,13 +150,23 @@ struct ToolCallView: View {
                     if !result.isEmpty { CodeBlock(title: "Output", value: result) }
                     let error = output?.errorText ?? part.errorText
                     if !error.isEmpty, !(!step.routine && error == part.errorText) {
-                        Text(error).font(.caption.monospaced()).foregroundStyle(DieterTheme.coral)
+                        Text(error).font(DieterFont.mono).foregroundStyle(DieterTheme.failed)
                     }
                 }
-                .padding(.horizontal, 10).padding(.bottom, 10)
+                .padding(.leading, 30).padding(.trailing, 8).padding(.vertical, 6)
             }
         }
-        .background(DieterTheme.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 8))
+        .padding(grouped ? 0 : 2)
+        .background {
+            if !grouped {
+                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(DieterTheme.inset)
+            }
+        }
+        .overlay {
+            if !grouped {
+                RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(DieterTheme.insetRim)
+            }
+        }
         .onChange(of: expanded) { _, value in if value && output == nil { Task { await load() } } }
     }
 
@@ -171,7 +196,8 @@ struct CodeBlock: View {
                     .lineSpacing(3)
             }
         }
-        .padding(10).background(DieterTheme.input, in: RoundedRectangle(cornerRadius: 7))
+        .padding(10)
+        .background(DieterTheme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -180,12 +206,10 @@ struct PendingToolRow: View {
     var body: some View {
         HStack(spacing: 9) {
             ProgressView().controlSize(.mini)
-            Text(tool.toolName.isEmpty ? "Running command" : tool.toolName).font(.caption.monospaced())
-            Spacer(); Text("Running…").font(.caption2).foregroundStyle(DieterTheme.primary)
+            Text(tool.toolName.isEmpty ? "Running command" : tool.toolName).font(DieterFont.mono)
+            Spacer(); Text("Running…").font(DieterFont.monoSmall).foregroundStyle(DieterTheme.running)
         }
-        .padding(.horizontal, 11).frame(height: 36)
-        .background(DieterTheme.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(DieterTheme.primary.opacity(0.18)))
+        .padding(.horizontal, 8).frame(height: 26)
     }
 }
 
@@ -201,10 +225,11 @@ struct PendingToolGroupView: View {
                 withAnimation(.easeInOut(duration: 0.16)) { expanded.toggle() }
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 8, weight: .bold))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(DieterTheme.tertiary)
-                    Text(title).font(.caption.weight(.medium)).foregroundStyle(DieterTheme.subtle)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                    Text(title).font(.system(size: 12)).foregroundStyle(DieterTheme.tertiary)
                     ProgressView().controlSize(.mini)
                     Spacer(minLength: 0)
                 }
@@ -215,11 +240,14 @@ struct PendingToolGroupView: View {
             .accessibilityLabel("\(expanded ? "Collapse" : "Expand") running \(title)")
 
             if expanded {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 1) {
                     ForEach(tools, id: \.id) { tool in
                         PendingToolRow(tool: tool)
                     }
                 }
+                .padding(.horizontal, 6).padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .dieterInset(radius: 10)
                 .padding(.leading, 14)
             }
         }

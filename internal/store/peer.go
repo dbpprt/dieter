@@ -181,11 +181,11 @@ func (s *Store) MergePeerRecords(identity PeerIdentity, records []peerstore.Reco
 	if len(page) > peerstore.MaxPageBytes {
 		return peerstore.ErrCapacity
 	}
-	release, err := s.beginWrite()
+	write, err := s.beginConditionalWrite()
 	if err != nil {
 		return err
 	}
-	defer release()
+	defer write.finish()
 	if err = s.checkPeerIdentity(identity); err != nil {
 		return err
 	}
@@ -213,8 +213,12 @@ func (s *Store) MergePeerRecords(identity PeerIdentity, records []peerstore.Reco
 			changed = true
 		}
 	}
+	// A page that merges nothing records no change.
 	if !changed {
 		return data.Err()
+	}
+	if err = write.prepare(metadataChange); err != nil {
+		return err
 	}
 	return s.savePeerData(identity.Account, data)
 }

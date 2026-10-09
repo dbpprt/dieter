@@ -11,12 +11,9 @@ extension DieterStore {
         guard (selectedCardID ?? selectedChatID) == cardID, phase.isConnected else {
             return .unavailable("This conversation's machine is unavailable.", isFile: !isWeb)
         }
-        let endpointID = endpoint.id
-        let generation = connectionGeneration
         let isCurrent: @MainActor () -> Bool = { [weak self] in
             guard let self else { return false }
-            return (self.selectedCardID ?? self.selectedChatID) == cardID
-                && self.endpoint.id == endpointID && self.connectionGeneration == generation
+            return (self.selectedCardID ?? self.selectedChatID) == cardID && self.phase.isConnected
         }
         if isWeb {
             guard case .web = try? ConversationContentLink.resolve(url, workspaceRoot: "") else {
@@ -37,9 +34,8 @@ extension DieterStore {
         }
         do {
             let scope = try await conversationContext.content.prepareScope(cardID)
-            guard isCurrent(), scope.target.endpointID == endpointID,
-                scope.target.conversationID == cardID
-            else { return .unavailable("This conversation's machine is no longer selected.") }
+            guard isCurrent(), scope.target.conversationID == cardID
+            else { return .unavailable("This conversation is no longer selected.") }
             guard case .file(let path, _) = try ConversationContentLink.resolve(url, workspaceRoot: scope.rootPath)
             else {
                 return .unavailable("This link does not identify a workspace file.")

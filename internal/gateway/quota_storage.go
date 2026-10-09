@@ -8,6 +8,7 @@ import (
 	"time"
 
 	gatewayv1 "github.com/dbpprt/dieter/internal/gen/dieter/gateway/v1"
+	"github.com/dbpprt/dieter/internal/providerquota/policy"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -317,7 +318,7 @@ func (s *Store) SaveProviderQuotaSnapshot(githubID int64, daemonID string, snaps
 	copy := proto.Clone(snapshot).(*gatewayv1.ProviderQuotaSnapshot)
 	copy.RefreshedAt = now.Format(time.RFC3339Nano)
 	copy.LastSuccessAt = copy.RefreshedAt
-	copy.NextRefreshAt = now.Add(providerQuotaRefreshInterval).Format(time.RFC3339Nano)
+	copy.NextRefreshAt = now.Add(policy.RefreshInterval(copy.GetProvider())).Format(time.RFC3339Nano)
 	copy.FreshUntil = copy.NextRefreshAt
 	copy.RefreshState = gatewayv1.ProviderQuotaRefreshState_PROVIDER_QUOTA_REFRESH_STATE_IDLE
 	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(copy)
@@ -334,7 +335,7 @@ func (s *Store) SaveProviderQuotaSnapshot(githubID int64, daemonID string, snaps
 		githubID, copy.GetProvider(), copy.GetAccountKey(), daemonID).Scan(&sourceCount); err != nil || sourceCount != 1 {
 		return errors.New("provider quota result source is not eligible")
 	}
-	stamp, freshUntil := now.Format(time.RFC3339Nano), now.Add(providerQuotaRefreshInterval).Format(time.RFC3339Nano)
+	stamp, freshUntil := copy.RefreshedAt, copy.FreshUntil
 	// Presence is authoritative for availability. A refresh result can arrive
 	// after a newer presence frame marks its source unavailable, so do not let
 	// the older in-flight result make the account appear available again.

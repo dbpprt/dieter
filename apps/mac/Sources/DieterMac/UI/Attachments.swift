@@ -436,7 +436,7 @@ struct AttachmentImagePreview: View {
                 } label: {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .bold))
                 }
-                .buttonStyle(DieterIconButtonStyle()).help("Close preview")
+                .buttonStyle(DieterBarButtonStyle(shape: .circle, size: 28)).help("Close preview")
             }
             .padding(.horizontal, 18).frame(height: 56)
             Divider().overlay(DieterTheme.border)

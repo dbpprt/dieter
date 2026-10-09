@@ -207,17 +207,8 @@ class ConversationCreationPreferencesEndToEndTest {
             assertEquals("todo", quickCreated.lane)
             assertEquals(listOf(attachment), IsolatedCore.conversation(container, quickCreated.id, quickCreated.owner_daemon_id).conversation?.draft_attachments)
 
-            // Reproduce opening a project chat while the app is currently
-            // routed to a different machine. The creation screen must route
-            // back to this project's checkout before exposing its catalog.
-            val otherDaemon = core.connection.machines.value.let { directory ->
-                directory.all.firstOrNull { candidate -> candidate.online(directory.evaluatedAt) && candidate.id != checkout.daemon_id }?.id
-            }
-            otherDaemon?.let {
-                runBlocking { core.attachMachine(it) }
-                IsolatedCore.harnesses(container, it)
-            }
-
+            // A new project chat loads the catalog of the machine with the
+            // project's checkout before exposing it, whichever machines stream.
             composeRule.onNodeWithTag("nav-chats").performClick()
             composeRule.waitUntil(10_000) {
                 composeRule.onAllNodesWithTag("new-chat").fetchSemanticsNodes().isNotEmpty()

@@ -1,12 +1,15 @@
 # frozen_string_literal: true
 
+require "shellwords"
 require_relative "identity"
+require_relative "action"
 require_relative "artifacts"
 require_relative "../distribution/github"
 require_relative "../distribution/apple"
 require_relative "../distribution/gateway"
 require_relative "../platforms/server"
 require_relative "../platforms/apple_build"
+require_relative "../platforms/framework"
 
 module Dieter
   class CandidatePipeline
@@ -16,7 +19,7 @@ module Dieter
       raise PipelineError, "Unknown candidate options" unless (@options.keys - %w[identity profile output phase products]).empty?
       @phase = @options.fetch("phase", "full")
       raise PipelineError, "Candidate phase must be prepare, retain or full" unless %w[prepare retain full].include?(@phase)
-      @identity = ReleaseIdentity.load(@options.fetch("identity"), policy: context.config.policy)
+      @identity = ReleaseIdentity.load(File.expand_path(@options.fetch("identity"), context.root), policy: context.config.policy)
       @github = github || GitHubDestination.new(context)
     end
 
@@ -122,7 +125,7 @@ module Dieter
       matching = values.select { |artifact| artifact["name"] == artifact_name && !artifact["expired"] && artifact.dig("workflow_run", "head_sha") == @identity.source }
       matching.sort_by { |artifact| artifact.fetch("id") }.reverse_each do |artifact|
         workflow = @github.api("actions/runs/#{artifact.fetch('workflow_run').fetch('id')}")
-        next unless workflow["path"] == ".github/workflows/release.yml" && workflow["head_branch"] == "main" && workflow["head_sha"] == @identity.source
+        next unless %w[.github/workflows/ci.yml .github/workflows/release.yml].include?(workflow["path"]) && workflow["head_branch"] == "main" && workflow["head_sha"] == @identity.source
         @context.command(["gh", "run", "download", artifact.fetch("workflow_run").fetch("id").to_s, "--repo", @github.repository, "--name", artifact_name, "--dir", directory], timeout: 600)
         manifest = read_manifest(File.join(directory, manifest_name))
         self.class.validate(manifest, @identity, directory, expected: name)
@@ -190,7 +193,7 @@ module Dieter
 
     def ios_candidate(signer)
       @context.lease("apple-build")
-      SharedFramework.new(@context).build(configuration: "release", platforms: "all")
+      SharedFramework.new(@context).build(configuration: "release", platforms: "ios-device")
       metadata = JSON.parse(@context.command(["python3", "-c", "import os,json; from fastlane.lib.dieter.native.ios_metadata import load_material; m=load_material(os.environ); print(json.dumps({'app':m.metadata,'share':m.share_metadata}))"], timeout: 120, binary: true))
       app, share = metadata.values_at("app", "share")
       certificate = signer.decoded("IOS_DISTRIBUTION_CERTIFICATE_BASE64", "ios-distribution.p12")
@@ -198,13 +201,16 @@ module Dieter
       signer.with_profiles(profiles) do
         signer.keychain(certificate: certificate, password: signer.secret("IOS_DISTRIBUTION_CERTIFICATE_PASSWORD"), kind: "Apple Distribution") do |_keychain, identity|
           archive = File.join(@context.output, "Dieter.xcarchive")
-          @context.command(["xcodebuild", *AppleBuild.jobs(@context, tool: :xcode), "-skipPackagePluginValidation", "-project", "apps/ios/DieterIOS.xcodeproj", "-scheme", "DieterIOS", "-configuration", "Release", "-destination", "generic/platform=iOS", "-derivedDataPath", File.join(@context.root, "apps/ios/.build/DerivedData"), "-archivePath", archive, "archive", "MARKETING_VERSION=#{@identity.version}", "CURRENT_PROJECT_VERSION=#{@identity.apple_build}", "DIETER_RELEASE_VERSION=#{@identity.version}", "DIETER_IOS_BUNDLE_ID=#{app.fetch('bundle_id')}", "DIETER_IOS_TEAM_ID=#{app.fetch('team_id')}", "DIETER_IOS_SIGN_STYLE=Manual", "DIETER_IOS_SIGN_IDENTITY=#{identity}", "DIETER_IOS_PROFILE_SPECIFIER=#{app.fetch('profile_uuid')}", "DIETER_IOS_SHARE_PROFILE_SPECIFIER=#{share.fetch('profile_uuid')}"], timeout: 2400, log: File.join(@context.output, "archive.log"))
-          @context.command(["python3", "-c", "from pathlib import Path; import sys; from fastlane.lib.dieter.native.ios_metadata import validate_archive; validate_archive(Path(sys.argv[1]),sys.argv[2],sys.argv[3],sys.argv[4],signed=True)", archive, @identity.version, @identity.apple_build, app.fetch("bundle_id")], timeout: 120)
           options = {"method" => "app-store-connect", "destination" => "export", "signingStyle" => "manual", "teamID" => app.fetch("team_id"), "signingCertificate" => identity, "provisioningProfiles" => {app.fetch("bundle_id") => app.fetch("profile_uuid"), share.fetch("bundle_id") => share.fetch("profile_uuid")}, "manageAppVersionAndBuildNumber" => false, "uploadSymbols" => true}
-          spec = File.join(@context.private_dir, "ExportOptions.plist")
-          @context.command(["python3", "-c", "import sys,json,plistlib; from pathlib import Path; Path(sys.argv[1]).write_bytes(plistlib.dumps(json.load(sys.stdin)))", spec], input: JSON.generate(options), timeout: 30)
           export = File.join(@context.private_dir, "Export")
-          @context.command(["xcodebuild", "-exportArchive", "-archivePath", archive, "-exportPath", export, "-exportOptionsPlist", spec], timeout: 1200, log: File.join(@context.output, "export.log"))
+          settings = [*AppleBuild.jobs(@context, tool: :xcode), "-skipPackagePluginValidation", "MARKETING_VERSION=#{@identity.version}", "CURRENT_PROJECT_VERSION=#{@identity.apple_build}", "DIETER_RELEASE_VERSION=#{@identity.version}", "DIETER_IOS_BUNDLE_ID=#{app.fetch('bundle_id')}", "DIETER_IOS_TEAM_ID=#{app.fetch('team_id')}", "DIETER_IOS_SIGN_STYLE=Manual", "DIETER_IOS_SIGN_IDENTITY=#{identity}", "DIETER_IOS_PROFILE_SPECIFIER=#{app.fetch('profile_uuid')}", "DIETER_IOS_SHARE_PROFILE_SPECIFIER=#{share.fetch('profile_uuid')}"]
+          NativeAction.run(@context, "build_app", {
+            project: "apps/ios/DieterIOS.xcodeproj", scheme: "DieterIOS", configuration: "Release", destination: "generic/platform=iOS",
+            derived_data_path: File.join(@context.root, "apps/ios/.build/DerivedData"), archive_path: archive,
+            output_directory: export, output_name: "Dieter-iOS.ipa", export_options: options, skip_profile_detection: true,
+            buildlog_path: @context.private_dir, xcodebuild_formatter: "", xcargs: Shellwords.join(settings)
+          }, timeout: 3600, log: File.join(@context.output, "archive.log"))
+          @context.command(["python3", "-c", "from pathlib import Path; import sys; from fastlane.lib.dieter.native.ios_metadata import validate_archive; validate_archive(Path(sys.argv[1]),sys.argv[2],sys.argv[3],sys.argv[4],signed=True)", archive, @identity.version, @identity.apple_build, app.fetch("bundle_id")], timeout: 120)
           ipa = @context.command(["python3", "-c", "from pathlib import Path; import sys; from fastlane.lib.dieter.native.ios_metadata import validate_ipa; print(validate_ipa(Path(sys.argv[1]),sys.argv[2],sys.argv[3],sys.argv[4]))", export, @identity.version, @identity.apple_build, app.fetch("bundle_id")], timeout: 120).strip
           destination = File.join(@context.output, "Dieter-iOS.ipa")
           FileUtils.cp(ipa, destination)

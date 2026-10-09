@@ -22,12 +22,9 @@ func TestUpdateCardCacheNoopDoesNotPublishMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, _, err := s.SyncEvents(0, 256)
-	if err != nil {
-		t.Fatal(err)
-	}
+	beforeChanges, beforeMetadata := changeCounters(t, s)
 	files := map[string][]byte{}
-	for _, path := range []string{s.syncMetadataPath(), s.syncHighwaterPath(), s.syncEventsPath()} {
+	for _, path := range []string{s.syncMetadataPath(), s.syncHighwaterPath()} {
 		files[path], err = os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -39,9 +36,8 @@ func TestUpdateCardCacheNoopDoesNotPublishMutation(t *testing.T) {
 			t.Fatalf("unchanged cache: card=%+v err=%v", got, err)
 		}
 	}
-	after, events, err := s.SyncEvents(before.Sequence, 256)
-	if err != nil || after != before || len(events) != 0 || s.SyncMutationPending() {
-		t.Fatalf("no-op published a mutation: before=%+v after=%+v events=%+v err=%v", before, after, events, err)
+	if changes, metadata := changeCounters(t, s); changes != beforeChanges || metadata != beforeMetadata || s.SyncMutationPending() {
+		t.Fatalf("no-op recorded a change: before=%d/%d after=%d/%d", beforeChanges, beforeMetadata, changes, metadata)
 	}
 	for path, want := range files {
 		got, err := os.ReadFile(path)
@@ -59,9 +55,8 @@ func TestUpdateCardCacheNoopDoesNotPublishMutation(t *testing.T) {
 	if err != nil || changed.TitleRevision != card.TitleRevision+1 || changed.Runtime != "idle" || changed.ProviderAccountKey != "" || len(changed.ProviderOptions) != 0 {
 		t.Fatalf("real change lost: %+v %v", changed, err)
 	}
-	after, events, err = s.SyncEvents(before.Sequence, 256)
-	if err != nil || after.Sequence != before.Sequence+1 || len(events) != 1 || events[0].Kind != "store_changed" {
-		t.Fatalf("real mutation publication: %+v %+v %v", after, events, err)
+	if changes, metadata := changeCounters(t, s); changes != beforeChanges+1 || metadata != changes {
+		t.Fatalf("real change recorded %d/%d, want %d/%d", changes, metadata, beforeChanges+1, beforeChanges+1)
 	}
 }
 
@@ -75,7 +70,7 @@ func TestUpdateCardCacheNoopRecoversPendingMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	event, err := s.prepareSyncMutation()
+	pending, err := s.prepareSyncMutation(metadataChange)
 	if err == nil {
 		card.Title = "recovered"
 		err = s.writeCard(card)
@@ -88,9 +83,8 @@ func TestUpdateCardCacheNoopRecoversPendingMutation(t *testing.T) {
 	if err != nil || got.Title != card.Title || s.SyncMutationPending() {
 		t.Fatalf("no-op skipped recovery: %+v %v", got, err)
 	}
-	cursor, _, err := s.SyncEvents(0, 256)
-	if err != nil || cursor.Sequence != event.Sequence {
-		t.Fatalf("recovery added an empty transaction: %+v %v", cursor, err)
+	if changes, _ := changeCounters(t, s); changes != pending.Sequence {
+		t.Fatalf("recovery added an empty transaction: changes=%d want %d", changes, pending.Sequence)
 	}
 }
 
