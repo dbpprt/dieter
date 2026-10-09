@@ -16,7 +16,7 @@ enum FilePresentation {
         }
     }
 
-    /// How a document renders: PDF, image, unsupported binary, Markdown, or text.
+    /// How a document renders: PDF, image, unsupported binary, Markdown, HTML, or text.
     static func renderer(_ document: Dieter_V1_FileDocument) -> ClientFileRenderer {
         let value = SharedRules.shared.fileRenderer(
             path: document.name, mimeType: document.mimeType, binary: document.binary)

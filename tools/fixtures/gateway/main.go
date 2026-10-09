@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/dbpprt/dieter/internal/buildinfo"
+	"github.com/dbpprt/dieter/internal/claudedesign"
 	"github.com/dbpprt/dieter/internal/controlrtc"
 	"github.com/dbpprt/dieter/internal/daemon"
 	"github.com/dbpprt/dieter/internal/fixtureturn"
@@ -273,6 +274,7 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 			Runner:        runner,
 			PrivacyDriver: &isolatedPrivacy{},
 			PrivacyBootID: func(context.Context) (string, error) { return "isolated-boot", nil },
+			ClaudeDesign:  &isolatedClaudeDesign{},
 			// Keep the real release choices without triggering provider CLI/network
 			// discovery or runtime installation in each disposable fixture home.
 			HarnessCatalog: func(_ context.Context, includeMock bool) []harness.Adapter {
@@ -903,6 +905,43 @@ func isolatedGitEnvironment(environment []string) []string {
 	}
 	return append(result, "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1", "GIT_TEMPLATE_DIR=", "GIT_TERMINAL_PROMPT=0")
 }
+
+// Claude Design fixtures never reach claude.ai or the operator's Claude login.
+// The manual sign-in accepts only isolatedClaudeDesignCode.
+const isolatedClaudeDesignCode = "DIETER-FIXTURE-CODE"
+
+type isolatedClaudeDesign struct {
+	mu       sync.Mutex
+	signedIn bool
+}
+
+func (f *isolatedClaudeDesign) Status(context.Context) (claudedesign.Status, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return claudedesign.Status{RuntimeReady: true, Version: "fixture", Available: true, SignedIn: f.signedIn, CanSignIn: true}, nil
+}
+
+func (f *isolatedClaudeDesign) SignIn(ctx context.Context, codes <-chan string, event func(claudedesign.Event) error) error {
+	if err := event(claudedesign.Event{Kind: "pages", URL: "https://claude.invalid/design/sign-in?flow=browser", ManualURL: "https://claude.invalid/design/sign-in?flow=code"}); err != nil {
+		return err
+	}
+	for {
+		select {
+		case code := <-codes:
+			if code != isolatedClaudeDesignCode {
+				continue
+			}
+			f.mu.Lock()
+			f.signedIn = true
+			f.mu.Unlock()
+			return event(claudedesign.Event{Kind: "done", OK: true, Message: "Signed in to Claude Design."})
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (f *isolatedClaudeDesign) SetGrant(context.Context, bool) (string, error) { return "fixture", nil }
 
 // Presentation fixtures never blank the operator desktop.
 type isolatedPrivacy struct{ enabled, setup bool }

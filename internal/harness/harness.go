@@ -525,6 +525,9 @@ type Request struct {
 	// Environment is added to the worker after the allowlist, so commands the
 	// agent runs inherit it. Values never enter the stdin request.
 	Environment map[string]string `json:"-"`
+	// ClaudeDesignEnabled allows Claude Code's native Claude Design tools in
+	// this turn. Without it the worker denies them before the turn starts.
+	ClaudeDesignEnabled bool `json:"claudeDesignEnabled,omitempty"`
 	// RuntimeDigest pins only this active turn to an immutable installed
 	// harness runtime. Completed conversations deliberately do not retain it:
 	// their next turn resolves the then-current runtime and resumes the opaque
@@ -570,7 +573,7 @@ type Suspender interface {
 	Suspend(sessionID, runtimeRoot string) error
 }
 
-//go:embed runtime/package.json runtime/package-lock.json runtime/runner.mjs runtime/content-presentation.mjs runtime/background-processes.mjs runtime/dsh-discovery.mjs runtime/dsh-models.mjs runtime/omp-discovery.mjs runtime/omp-models.mjs runtime/claude-resilience.mjs runtime/claude-runtime.mjs runtime/local-attachments.mjs runtime/local-sandbox.mjs runtime/codex-runtime.mjs runtime/capabilities.mjs runtime/stream-reconciliation.mjs runtime/omp-capabilities-hook.mjs runtime/omp-resilience.mjs runtime/provider-options.mjs runtime/harness-errors.mjs runtime/usage-metadata.mjs runtime/quota-openai.mjs runtime/quota-claude.mjs
+//go:embed runtime/package.json runtime/package-lock.json runtime/runner.mjs runtime/content-presentation.mjs runtime/background-processes.mjs runtime/dsh-discovery.mjs runtime/dsh-models.mjs runtime/omp-discovery.mjs runtime/omp-models.mjs runtime/claude-resilience.mjs runtime/claude-runtime.mjs runtime/claude-design.mjs runtime/claude-design-host.mjs runtime/local-attachments.mjs runtime/local-sandbox.mjs runtime/codex-runtime.mjs runtime/capabilities.mjs runtime/stream-reconciliation.mjs runtime/omp-capabilities-hook.mjs runtime/omp-resilience.mjs runtime/provider-options.mjs runtime/harness-errors.mjs runtime/usage-metadata.mjs runtime/quota-openai.mjs runtime/quota-claude.mjs
 var runtimeAssets embed.FS
 
 type SubprocessRunner struct {

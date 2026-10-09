@@ -90,6 +90,7 @@ message Command {
     ChooseAgent choose_agent = 77;
     SignOut sign_out = 78;
     Reconnect reconnect = 79;
+    ClaudeDesignCommand claude_design = 81;
   }
 }
 
@@ -1238,6 +1239,8 @@ enum Slice {
   SLICE_CHATS = 23;
   // Scoped by the form's surface key (CreationPreviewCommand).
   SLICE_CREATION_PREVIEW = 24;
+  // One surface: the machine Claude Design settings show.
+  SLICE_CLAUDE_DESIGN = 25;
 }
 
 message Update {
@@ -1272,6 +1275,7 @@ message Update {
     BoardViewSlice board_view = 33;
     ChatsSlice chats = 34;
     CreationPreview creation_preview = 35;
+    ClaudeDesignSlice claude_design = 36;
     // The view's surface could not open, e.g. screen sharing on a device
     // without it. Sent once; nothing follows.
     Failure failure = 9;
@@ -1665,6 +1669,28 @@ message ConversationState {
   // the conversation's agent, against the conversation machine's catalog.
   // Unset until the conversation's card is known.
   AgentControlsState agent = 30;
+  // The latest file or page the agent presented; unset when there is none or
+  // it is invalid.
+  PresentedContentView presented_content = 31;
+}
+
+// What the agent presented (`Conversation.presented_content`), as a chip that
+// opens it: a page in the browser, a file in the workspace's file viewer.
+message PresentedContentView {
+  string id = 1;
+  // The agent's title, else "Claude Design project", the file name, or the
+  // page's host.
+  string title = 2;
+  // E.g. "claude.ai/design" or "docs/report.md · line 12".
+  string subtitle = 3;
+  // An HTTP(S) page; empty for a file.
+  string url = 4;
+  // A workspace-relative file; empty for a page.
+  string path = 5;
+  int32 line = 6;
+  // The page needs the user's own browser session, e.g. Claude Design.
+  bool system_browser = 7;
+  bool claude_design = 8;
 }
 
 // ---------------------------------------------------------------------------
@@ -2227,6 +2253,9 @@ enum FileRenderer {
   FILE_RENDERER_IMAGE = 3;
   FILE_RENDERER_PDF = 4;
   FILE_RENDERER_UNSUPPORTED = 5;
+  // An HTML document: a sandboxed preview that loads only the workspace's
+  // files (FilePaths.htmlResource), with its source editable as text.
+  FILE_RENDERER_HTML = 6;
 }
 
 // A listing row's icon: a folder, an image, Markdown, a file in a language
@@ -3213,6 +3242,73 @@ message MachineOperationCopy {
   string explanation = 4;
   // Confirm with a destructive button: restart and shut down.
   bool destructive = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Claude Design: one machine's sign-in and whether its Claude Code turns may
+// use Claude Design. Claude Code keeps every credential on that machine.
+
+message ClaudeDesignCommand {
+  oneof action {
+    // Shows a machine and reads its status; switching machines cancels a
+    // running sign-in. Empty shows none.
+    ClaudeDesignSelect select = 1;
+    Step refresh = 2;
+    // Starts a sign-in on the shown machine. Its code can be submitted while
+    // the machine stays shown, even after the progress stream dropped.
+    Step sign_in = 3;
+    Step cancel_sign_in = 4;
+    // The code the manual sign-in page shows.
+    ClaudeDesignCode submit_code = 5;
+    ClaudeDesignAccess set_access = 6;
+  }
+}
+
+message ClaudeDesignSelect { string daemon_id = 1; }
+message ClaudeDesignCode { string code = 1; }
+message ClaudeDesignAccess {
+  bool enabled = 1;
+  // With enabled false, also revoke the Claude account's agent access for
+  // every Claude Code session, not only Dieter's.
+  bool revoke_grant = 2;
+}
+
+message ClaudeDesignSlice {
+  string daemon_id = 1;
+  // Unset until read.
+  dieter.v1.ClaudeDesignStatus status = 2;
+  bool loading = 3;
+  // Why the status could not be read or an access change failed.
+  string error = 4;
+  // Unset when no sign-in ran since the machine was shown.
+  ClaudeDesignSignIn sign_in = 5;
+  bool access_pending = 6;
+  // What every client shows: e.g. "Signed in", and a sentence about it.
+  string headline = 7;
+  string detail = 8;
+  string access_detail = 9;
+  bool can_sign_in = 10;
+  bool can_change_access = 11;
+}
+
+message ClaudeDesignSignIn {
+  enum Phase {
+    PHASE_STARTING = 0;
+    // Installing the pinned Claude Code release on the machine.
+    PHASE_PREPARING = 1;
+    // The page is ready: open it, and paste its code when code_required.
+    PHASE_WAITING = 2;
+    PHASE_CHECKING_CODE = 3;
+    PHASE_SUCCEEDED = 4;
+    PHASE_FAILED = 5;
+  }
+  Phase phase = 1;
+  // The page to open: the browser page that finishes by itself on the
+  // machine when it is this device, else the page that shows a code.
+  string open_url = 2;
+  bool code_required = 3;
+  string message = 4;
+  bool active = 5;
 }
 
 // ---------------------------------------------------------------------------

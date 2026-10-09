@@ -12,6 +12,7 @@ import com.dbpprt.dieter.api.v1.TaskPlan
 import com.dbpprt.dieter.api.v1.TaskPlanItem
 import com.dbpprt.dieter.api.v1.UiMessage
 import com.dbpprt.dieter.client.v1.ConversationState
+import com.dbpprt.dieter.client.v1.PresentedContentView
 import com.dbpprt.dieter.core.board.CardOperation
 import com.dbpprt.dieter.core.board.CardPolicy
 import com.dbpprt.dieter.core.board.Cards
@@ -73,6 +74,8 @@ data class ConversationPresentation(
     private val pendingIds: Set<String>,
     private val acceptedIds: Set<String>,
     private val failedIds: Set<String>,
+    /** The latest file or page the agent presented, as a chip that opens it. */
+    val presentedContent: PresentedContentView? = null,
 ) {
     val hasUnsentDraft: Boolean get() = unsentTask != null || draftAttachments.isNotEmpty()
 
@@ -169,6 +172,7 @@ object ConversationPresenter {
             pendingIds = outbox.pendingMessageIds,
             acceptedIds = outbox.acceptedIds,
             failedIds = outbox.failedIds,
+            presentedContent = PresentedContents.view(conversation?.presented_content),
         )
     }
 
@@ -207,6 +211,7 @@ object ConversationPresenter {
         context_percent = presented.contextUsage?.percent ?: 0, context_near_limit = presented.contextUsage?.nearLimit == true,
         pending_tools_summary = presented.pendingToolsSummary.orEmpty(), pending_tool_ids = presented.pendingTools.map { it.id },
         can_halt = presented.canHalt, chat = presented.chat, show_reasoning = presented.showReasoning,
+        presented_content = presented.presentedContent,
     )
 
     const val CLAUDE_CODE = "claude-code"

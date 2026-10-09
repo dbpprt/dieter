@@ -40,6 +40,13 @@ struct ConversationContentRenderer: View {
             )
             .id(navigationID)
             .accessibilityIdentifier("conversation.content.code")
+        case .html:
+            HTMLFileView(
+                session: files.fileEditorSession, documentKey: files.documentKey,
+                text: document.content, filename: document.name, path: document.path, read: files.htmlPreviewRead,
+                active: active, editable: false, requestedLine: line
+            )
+            .accessibilityIdentifier("conversation.content.html")
         case .image:
             ConversationImageDocumentRenderer(data: bytes(document)) {
                 unsupported(document, title: "This image could not be displayed")

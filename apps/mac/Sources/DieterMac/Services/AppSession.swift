@@ -93,6 +93,8 @@ final class AppSession {
         core: core, reportError: { [weak self] in self?.show($0) })
     var gatewayInformation: [String: Dieter_Gateway_V1_GatewayInformation] = [:]
     @ObservationIgnored lazy var quotas = CoreProviderQuotas(core: core)
+    /// Claude Design settings for the machine Settings shows.
+    @ObservationIgnored lazy var claudeDesign = ClaudeDesignModel(core: core)
     var archivedProjects: [Dieter_V1_Project] = []
     var archivedCards: [Dieter_V1_Card] = []
     /// Archived chats, which the core's live workspace omits.

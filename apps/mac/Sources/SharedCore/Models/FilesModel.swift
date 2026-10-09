@@ -161,6 +161,15 @@ package final class FilesSurfaceModel<Editor: FileEditorBuffer> {
         }
     }
 
+    /// Reads this target's files for an HTML preview, through the core.
+    package var htmlPreviewRead: HTMLPreviewRead {
+        let target = target
+        return { [weak self] path in
+            guard let core = self?.core else { throw CancellationError() }
+            return try await core.htmlPreviewRead(target: target)(path)
+        }
+    }
+
     /// Runs a files command and folds the surface it returns, so callers read
     /// its effect at once. A failure shows on the folder, or on the document
     /// for document commands; a save conflict keeps the editor's text.

@@ -168,20 +168,20 @@ object FilePaths {
 
     fun bytes(document: FileDocument): ByteString = if (document.binary) document.data_ else document.content.encodeUtf8()
 
-    enum class Renderer { PDF, IMAGE, UNSUPPORTED, MARKDOWN, TEXT }
+    enum class Renderer { PDF, IMAGE, UNSUPPORTED, MARKDOWN, HTML, TEXT }
 
     fun renderer(document: FileDocument): Renderer = renderer(document.name, document.mime_type, document.binary)
 
-    /** Text and Markdown files open in the editor; images, PDFs, and other binaries are view-only. */
+    /** Text, Markdown, and HTML open in the editor; images, PDFs, and other binaries are view-only. */
     fun editable(document: FileDocument): Boolean = editable(document.name, document.mime_type, document.binary)
 
     fun editable(path: String, mimeType: String, binary: Boolean): Boolean =
-        renderer(path, mimeType, binary).let { it == Renderer.TEXT || it == Renderer.MARKDOWN }
+        renderer(path, mimeType, binary).let { it == Renderer.TEXT || it == Renderer.MARKDOWN || it == Renderer.HTML }
 
     /**
      * How a file is shown, from its name or path and media type: a PDF, then
-     * an image, then any other binary file is unsupported, then Markdown,
-     * else text.
+     * an image, then any other binary file is unsupported, then Markdown, then
+     * HTML ([HtmlPreview]), else text.
      */
     fun renderer(path: String, mimeType: String, binary: Boolean): Renderer {
         val name = path.substringAfterLast('/')
@@ -192,6 +192,7 @@ object FilePaths {
             isImage(name, mime) -> Renderer.IMAGE
             binary -> Renderer.UNSUPPORTED
             codeLanguageForPath(name) == CodeLanguage.MARKDOWN -> Renderer.MARKDOWN
+            extension == "html" || extension == "htm" || mime == "text/html" -> Renderer.HTML
             else -> Renderer.TEXT
         }
     }

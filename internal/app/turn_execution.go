@@ -67,6 +67,13 @@ func (filter *capabilityProgressFilter) shouldPersist(capability json.RawMessage
 }
 
 func (s *Service) runTurn(ctx context.Context, detail model.CardDetail, turnID string, request harness.Request, updates chan TurnUpdate, done chan struct{}) {
+	// Resolve Claude Design per run, including recovered turns, so revoking
+	// access applies to the next worker start.
+	if request.Adapter == "claude-code" {
+		if access, err := s.Store.ClaudeDesignAccess(); err == nil {
+			request.ClaudeDesignEnabled = access.Enabled
+		}
+	}
 	if s.BackgroundProcesses != nil {
 		request.BackgroundProcessesEnabled = true
 		request.BackgroundProcess = func(ctx context.Context, call harness.ProcessCall) (json.RawMessage, error) {

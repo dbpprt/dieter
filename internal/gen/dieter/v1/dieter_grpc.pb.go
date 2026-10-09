@@ -50,6 +50,10 @@ const (
 	DieterService_SetProjectPromptTemplate_FullMethodName           = "/dieter.v1.DieterService/SetProjectPromptTemplate"
 	DieterService_SetBoardPromptTemplate_FullMethodName             = "/dieter.v1.DieterService/SetBoardPromptTemplate"
 	DieterService_PreviewPrompt_FullMethodName                      = "/dieter.v1.DieterService/PreviewPrompt"
+	DieterService_GetClaudeDesignStatus_FullMethodName              = "/dieter.v1.DieterService/GetClaudeDesignStatus"
+	DieterService_SignInClaudeDesign_FullMethodName                 = "/dieter.v1.DieterService/SignInClaudeDesign"
+	DieterService_SubmitClaudeDesignSignInCode_FullMethodName       = "/dieter.v1.DieterService/SubmitClaudeDesignSignInCode"
+	DieterService_SetClaudeDesignAccess_FullMethodName              = "/dieter.v1.DieterService/SetClaudeDesignAccess"
 	DieterService_ListDirectories_FullMethodName                    = "/dieter.v1.DieterService/ListDirectories"
 	DieterService_ConsolidateProject_FullMethodName                 = "/dieter.v1.DieterService/ConsolidateProject"
 	DieterService_AttachCheckout_FullMethodName                     = "/dieter.v1.DieterService/AttachCheckout"
@@ -215,6 +219,18 @@ type DieterServiceClient interface {
 	SetProjectPromptTemplate(ctx context.Context, in *SetScopedPromptTemplateRequest, opts ...grpc.CallOption) (*Project, error)
 	SetBoardPromptTemplate(ctx context.Context, in *SetScopedPromptTemplateRequest, opts ...grpc.CallOption) (*Board, error)
 	PreviewPrompt(ctx context.Context, in *PreviewPromptRequest, opts ...grpc.CallOption) (*PromptPreview, error)
+	// Claude Design (claude.ai/design) belongs to this daemon host's Claude
+	// account. Claude Code keeps the claude.ai login and the design credential
+	// in its own secure storage on the host; Dieter only records whether its
+	// Claude Code turns on this machine may use the Claude Design tools.
+	GetClaudeDesignStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ClaudeDesignStatus, error)
+	// SignInClaudeDesign starts Claude Code's design sign-in and streams its
+	// progress. The sign-in outlives the stream, so a code from the manual page
+	// still completes it after a client lost its connection; it ends when Claude
+	// Code finishes, after about five minutes, or when a newer sign-in replaces it.
+	SignInClaudeDesign(ctx context.Context, in *SignInClaudeDesignRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ClaudeDesignSignInEvent], error)
+	SubmitClaudeDesignSignInCode(ctx context.Context, in *SubmitClaudeDesignSignInCodeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	SetClaudeDesignAccess(ctx context.Context, in *SetClaudeDesignAccessRequest, opts ...grpc.CallOption) (*ClaudeDesignStatus, error)
 	ListDirectories(ctx context.Context, in *ListDirectoriesRequest, opts ...grpc.CallOption) (*DirectoryListing, error)
 	ConsolidateProject(ctx context.Context, in *ConsolidateProjectRequest, opts ...grpc.CallOption) (*Project, error)
 	AttachCheckout(ctx context.Context, in *AttachCheckoutRequest, opts ...grpc.CallOption) (*Checkout, error)
@@ -684,6 +700,55 @@ func (c *dieterServiceClient) PreviewPrompt(ctx context.Context, in *PreviewProm
 	return out, nil
 }
 
+func (c *dieterServiceClient) GetClaudeDesignStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ClaudeDesignStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClaudeDesignStatus)
+	err := c.cc.Invoke(ctx, DieterService_GetClaudeDesignStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) SignInClaudeDesign(ctx context.Context, in *SignInClaudeDesignRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ClaudeDesignSignInEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[2], DieterService_SignInClaudeDesign_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[SignInClaudeDesignRequest, ClaudeDesignSignInEvent]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DieterService_SignInClaudeDesignClient = grpc.ServerStreamingClient[ClaudeDesignSignInEvent]
+
+func (c *dieterServiceClient) SubmitClaudeDesignSignInCode(ctx context.Context, in *SubmitClaudeDesignSignInCodeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, DieterService_SubmitClaudeDesignSignInCode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *dieterServiceClient) SetClaudeDesignAccess(ctx context.Context, in *SetClaudeDesignAccessRequest, opts ...grpc.CallOption) (*ClaudeDesignStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ClaudeDesignStatus)
+	err := c.cc.Invoke(ctx, DieterService_SetClaudeDesignAccess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *dieterServiceClient) ListDirectories(ctx context.Context, in *ListDirectoriesRequest, opts ...grpc.CallOption) (*DirectoryListing, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DirectoryListing)
@@ -976,7 +1041,7 @@ func (c *dieterServiceClient) PollConversation(ctx context.Context, in *PollConv
 
 func (c *dieterServiceClient) WatchConversation(ctx context.Context, in *WatchConversationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ConversationUpdate], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[2], DieterService_WatchConversation_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[3], DieterService_WatchConversation_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1245,7 +1310,7 @@ func (c *dieterServiceClient) GetGitOperation(ctx context.Context, in *GitOperat
 
 func (c *dieterServiceClient) WatchGitOperation(ctx context.Context, in *WatchGitOperationRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GitOperationFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[3], DieterService_WatchGitOperation_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[4], DieterService_WatchGitOperation_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1354,7 +1419,7 @@ func (c *dieterServiceClient) CreateTerminal(ctx context.Context, in *CreateTerm
 
 func (c *dieterServiceClient) WatchTerminal(ctx context.Context, in *WatchTerminalRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TerminalFrame], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[4], DieterService_WatchTerminal_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[5], DieterService_WatchTerminal_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1443,7 +1508,7 @@ func (c *dieterServiceClient) GetExecution(ctx context.Context, in *ExecutionRef
 
 func (c *dieterServiceClient) WatchExecution(ctx context.Context, in *WatchExecutionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ExecutionEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[5], DieterService_WatchExecution_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[6], DieterService_WatchExecution_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1602,7 +1667,7 @@ func (c *dieterServiceClient) ProbeRemoteDesktopPermissions(ctx context.Context,
 
 func (c *dieterServiceClient) StartRemoteDesktop(ctx context.Context, in *StartRemoteDesktopRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[RemoteDesktopSignal], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[6], DieterService_StartRemoteDesktop_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DieterService_ServiceDesc.Streams[7], DieterService_StartRemoteDesktop_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1954,6 +2019,18 @@ type DieterServiceServer interface {
 	SetProjectPromptTemplate(context.Context, *SetScopedPromptTemplateRequest) (*Project, error)
 	SetBoardPromptTemplate(context.Context, *SetScopedPromptTemplateRequest) (*Board, error)
 	PreviewPrompt(context.Context, *PreviewPromptRequest) (*PromptPreview, error)
+	// Claude Design (claude.ai/design) belongs to this daemon host's Claude
+	// account. Claude Code keeps the claude.ai login and the design credential
+	// in its own secure storage on the host; Dieter only records whether its
+	// Claude Code turns on this machine may use the Claude Design tools.
+	GetClaudeDesignStatus(context.Context, *emptypb.Empty) (*ClaudeDesignStatus, error)
+	// SignInClaudeDesign starts Claude Code's design sign-in and streams its
+	// progress. The sign-in outlives the stream, so a code from the manual page
+	// still completes it after a client lost its connection; it ends when Claude
+	// Code finishes, after about five minutes, or when a newer sign-in replaces it.
+	SignInClaudeDesign(*SignInClaudeDesignRequest, grpc.ServerStreamingServer[ClaudeDesignSignInEvent]) error
+	SubmitClaudeDesignSignInCode(context.Context, *SubmitClaudeDesignSignInCodeRequest) (*emptypb.Empty, error)
+	SetClaudeDesignAccess(context.Context, *SetClaudeDesignAccessRequest) (*ClaudeDesignStatus, error)
 	ListDirectories(context.Context, *ListDirectoriesRequest) (*DirectoryListing, error)
 	ConsolidateProject(context.Context, *ConsolidateProjectRequest) (*Project, error)
 	AttachCheckout(context.Context, *AttachCheckoutRequest) (*Checkout, error)
@@ -2194,6 +2271,18 @@ func (UnimplementedDieterServiceServer) SetBoardPromptTemplate(context.Context, 
 }
 func (UnimplementedDieterServiceServer) PreviewPrompt(context.Context, *PreviewPromptRequest) (*PromptPreview, error) {
 	return nil, status.Error(codes.Unimplemented, "method PreviewPrompt not implemented")
+}
+func (UnimplementedDieterServiceServer) GetClaudeDesignStatus(context.Context, *emptypb.Empty) (*ClaudeDesignStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetClaudeDesignStatus not implemented")
+}
+func (UnimplementedDieterServiceServer) SignInClaudeDesign(*SignInClaudeDesignRequest, grpc.ServerStreamingServer[ClaudeDesignSignInEvent]) error {
+	return status.Error(codes.Unimplemented, "method SignInClaudeDesign not implemented")
+}
+func (UnimplementedDieterServiceServer) SubmitClaudeDesignSignInCode(context.Context, *SubmitClaudeDesignSignInCodeRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method SubmitClaudeDesignSignInCode not implemented")
+}
+func (UnimplementedDieterServiceServer) SetClaudeDesignAccess(context.Context, *SetClaudeDesignAccessRequest) (*ClaudeDesignStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetClaudeDesignAccess not implemented")
 }
 func (UnimplementedDieterServiceServer) ListDirectories(context.Context, *ListDirectoriesRequest) (*DirectoryListing, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListDirectories not implemented")
@@ -3092,6 +3181,71 @@ func _DieterService_PreviewPrompt_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DieterServiceServer).PreviewPrompt(ctx, req.(*PreviewPromptRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_GetClaudeDesignStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).GetClaudeDesignStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_GetClaudeDesignStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).GetClaudeDesignStatus(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_SignInClaudeDesign_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(SignInClaudeDesignRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(DieterServiceServer).SignInClaudeDesign(m, &grpc.GenericServerStream[SignInClaudeDesignRequest, ClaudeDesignSignInEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DieterService_SignInClaudeDesignServer = grpc.ServerStreamingServer[ClaudeDesignSignInEvent]
+
+func _DieterService_SubmitClaudeDesignSignInCode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitClaudeDesignSignInCodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).SubmitClaudeDesignSignInCode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_SubmitClaudeDesignSignInCode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).SubmitClaudeDesignSignInCode(ctx, req.(*SubmitClaudeDesignSignInCodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DieterService_SetClaudeDesignAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetClaudeDesignAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DieterServiceServer).SetClaudeDesignAccess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DieterService_SetClaudeDesignAccess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DieterServiceServer).SetClaudeDesignAccess(ctx, req.(*SetClaudeDesignAccessRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -5305,6 +5459,18 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DieterService_PreviewPrompt_Handler,
 		},
 		{
+			MethodName: "GetClaudeDesignStatus",
+			Handler:    _DieterService_GetClaudeDesignStatus_Handler,
+		},
+		{
+			MethodName: "SubmitClaudeDesignSignInCode",
+			Handler:    _DieterService_SubmitClaudeDesignSignInCode_Handler,
+		},
+		{
+			MethodName: "SetClaudeDesignAccess",
+			Handler:    _DieterService_SetClaudeDesignAccess_Handler,
+		},
+		{
 			MethodName: "ListDirectories",
 			Handler:    _DieterService_ListDirectories_Handler,
 		},
@@ -5766,6 +5932,11 @@ var DieterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "WatchChanges",
 			Handler:       _DieterService_WatchChanges_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "SignInClaudeDesign",
+			Handler:       _DieterService_SignInClaudeDesign_Handler,
 			ServerStreams: true,
 		},
 		{

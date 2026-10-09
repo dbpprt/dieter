@@ -19,12 +19,45 @@ import WebKit
     override var targetFrame: WKFrameInfo? { nil }
 }
 
+@Test @MainActor func claudeBrowserTabsStayOnClaudeAndShowArtifactFrames() throws {
+    let browser = ConversationBrowserModel()
+    browser.session = .claude
+    var opened: [URL] = []
+    browser.shouldOpenExternally = { url, session in
+        ExternalBrowserRules.opensExternally(url, session: session, entries: [])
+    }
+    browser.openExternally = { opened.append($0) }
+    func policy(_ address: String, kind: WKNavigationType, main: Bool) throws -> WKNavigationActionPolicy {
+        browser.navigationPolicy(
+            for: try #require(URL(string: address)), userInitiated: kind == .linkActivated, mainFrame: main)
+    }
+
+    #expect(try policy("https://claude.ai/login", kind: .other, main: true) == .allow)
+    #expect(try policy("https://claude.ai/code/artifacts", kind: .linkActivated, main: true) == .allow)
+    #expect(
+        try policy("https://abc.claudeusercontent.com/index.html", kind: .other, main: false) == .allow,
+        "An artifact renders in a frame from its own site")
+    #expect(try policy("https://example.com/docs", kind: .other, main: true) == .cancel)
+    #expect(opened.isEmpty)
+    #expect(browser.failure?.contains("outside claude.ai") == true)
+    #expect(try policy("https://example.com/docs", kind: .linkActivated, main: true) == .cancel)
+    #expect(opened.map(\.absoluteString) == ["https://example.com/docs"])
+}
+
+@Test @MainActor func onlyClaudeTabsUseThePersistentClaudeSession() {
+    let claude = ConversationBrowserModel()
+    claude.session = .claude
+    #expect(claude.webView.configuration.websiteDataStore.isPersistent)
+    #expect(claude.webView.configuration.websiteDataStore === ClaudeBrowserSession.dataStore)
+    #expect(!ConversationBrowserModel().webView.configuration.websiteDataStore.isPersistent)
+}
+
 @Test @MainActor func conversationBrowserOnlyLaunchesExternalNavigationForClickedLinks() throws {
     let destination = try #require(URL(string: "https://example.com/docs"))
     for kind in [WKNavigationType.other, .linkActivated] {
         let browser = ConversationBrowserModel()
         var opened: [URL] = []
-        browser.shouldOpenExternally = { $0 == destination }
+        browser.shouldOpenExternally = { url, _ in url == destination }
         browser.openExternally = { opened.append($0) }
         let action = ConversationBrowserNavigationAction(destination: destination, kind: kind)
         var policy: WKNavigationActionPolicy?
@@ -45,7 +78,7 @@ import WebKit
     let browser = ConversationBrowserModel()
     let destination = try #require(URL(string: "https://example.com/docs"))
     var opened: [URL] = []
-    browser.shouldOpenExternally = { $0 == destination }
+    browser.shouldOpenExternally = { url, _ in url == destination }
     browser.openExternally = { opened.append($0) }
 
     browser.open(destination)
