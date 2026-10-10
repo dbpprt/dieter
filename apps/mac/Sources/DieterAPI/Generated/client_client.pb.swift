@@ -325,6 +325,9 @@ public nonisolated enum ClientSlice: SwiftProtobuf.Enum, Swift.CaseIterable {
 
   /// Scoped by the form's surface key (CreationPreviewCommand).
   case creationPreview // = 24
+
+  /// One surface: the machine Claude Design settings show.
+  case claudeDesign // = 25
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -357,6 +360,7 @@ public nonisolated enum ClientSlice: SwiftProtobuf.Enum, Swift.CaseIterable {
     case 22: self = .boardView
     case 23: self = .chats
     case 24: self = .creationPreview
+    case 25: self = .claudeDesign
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -387,6 +391,7 @@ public nonisolated enum ClientSlice: SwiftProtobuf.Enum, Swift.CaseIterable {
     case .boardView: return 22
     case .chats: return 23
     case .creationPreview: return 24
+    case .claudeDesign: return 25
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -417,6 +422,7 @@ public nonisolated enum ClientSlice: SwiftProtobuf.Enum, Swift.CaseIterable {
     .boardView,
     .chats,
     .creationPreview,
+    .claudeDesign,
   ]
 
 }
@@ -903,6 +909,10 @@ public nonisolated enum ClientFileRenderer: SwiftProtobuf.Enum, Swift.CaseIterab
   case image // = 3
   case pdf // = 4
   case unsupported // = 5
+
+  /// An HTML document: a sandboxed preview that loads only the workspace's
+  /// files (FilePaths.htmlResource), with its source editable as text.
+  case html // = 6
   case UNRECOGNIZED(Int)
 
   public init() {
@@ -917,6 +927,7 @@ public nonisolated enum ClientFileRenderer: SwiftProtobuf.Enum, Swift.CaseIterab
     case 3: self = .image
     case 4: self = .pdf
     case 5: self = .unsupported
+    case 6: self = .html
     default: self = .UNRECOGNIZED(rawValue)
     }
   }
@@ -929,6 +940,7 @@ public nonisolated enum ClientFileRenderer: SwiftProtobuf.Enum, Swift.CaseIterab
     case .image: return 3
     case .pdf: return 4
     case .unsupported: return 5
+    case .html: return 6
     case .UNRECOGNIZED(let i): return i
     }
   }
@@ -941,6 +953,7 @@ public nonisolated enum ClientFileRenderer: SwiftProtobuf.Enum, Swift.CaseIterab
     .image,
     .pdf,
     .unsupported,
+    .html,
   ]
 
 }
@@ -1759,6 +1772,14 @@ public nonisolated struct ClientCommand: Sendable {
     set {command = .reconnect(newValue)}
   }
 
+  public var claudeDesign: ClientClaudeDesignCommand {
+    get {
+      if case .claudeDesign(let v)? = command {return v}
+      return ClientClaudeDesignCommand()
+    }
+    set {command = .claudeDesign(newValue)}
+  }
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public nonisolated enum OneOf_Command: Equatable, Sendable {
@@ -1834,6 +1855,7 @@ public nonisolated struct ClientCommand: Sendable {
     case chooseAgent(ClientChooseAgent)
     case signOut(ClientSignOut)
     case reconnect(ClientReconnect)
+    case claudeDesign(ClientClaudeDesignCommand)
 
   }
 
@@ -5790,6 +5812,14 @@ public nonisolated struct ClientUpdate: @unchecked Sendable {
     set {_uniqueStorage()._value = .creationPreview(newValue)}
   }
 
+  public var claudeDesign: ClientClaudeDesignSlice {
+    get {
+      if case .claudeDesign(let v)? = _storage._value {return v}
+      return ClientClaudeDesignSlice()
+    }
+    set {_uniqueStorage()._value = .claudeDesign(newValue)}
+  }
+
   /// The view's surface could not open, e.g. screen sharing on a device
   /// without it. Sent once; nothing follows.
   public var failure: ClientFailure {
@@ -5828,6 +5858,7 @@ public nonisolated struct ClientUpdate: @unchecked Sendable {
     case boardView(ClientBoardViewSlice)
     case chats(ClientChatsSlice)
     case creationPreview(ClientCreationPreview)
+    case claudeDesign(ClientClaudeDesignSlice)
     /// The view's surface could not open, e.g. screen sharing on a device
     /// without it. Sent once; nothing follows.
     case failure(ClientFailure)
@@ -6920,11 +6951,56 @@ public nonisolated struct ClientConversationState: @unchecked Sendable {
   /// Clears the value of `agent`. Subsequent reads from it will return its default value.
   public mutating func clearAgent() {_uniqueStorage()._agent = nil}
 
+  /// The latest file or page the agent presented; unset when there is none or
+  /// it is invalid.
+  public var presentedContent: ClientPresentedContentView {
+    get {_storage._presentedContent ?? ClientPresentedContentView()}
+    set {_uniqueStorage()._presentedContent = newValue}
+  }
+  /// Returns true if `presentedContent` has been explicitly set.
+  public var hasPresentedContent: Bool {_storage._presentedContent != nil}
+  /// Clears the value of `presentedContent`. Subsequent reads from it will return its default value.
+  public mutating func clearPresentedContent() {_uniqueStorage()._presentedContent = nil}
+
   public var unknownFields = SwiftProtobuf.UnknownStorage()
 
   public init() {}
 
   fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+/// What the agent presented (`Conversation.presented_content`), as a chip that
+/// opens it: a page in the browser, a file in the workspace's file viewer.
+public nonisolated struct ClientPresentedContentView: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var id: String = String()
+
+  /// The agent's title, else "Claude Design project", the file name, or the
+  /// page's host.
+  public var title: String = String()
+
+  /// E.g. "claude.ai/design" or "docs/report.md · line 12".
+  public var subtitle: String = String()
+
+  /// An HTTP(S) page; empty for a file.
+  public var url: String = String()
+
+  /// A workspace-relative file; empty for a page.
+  public var path: String = String()
+
+  public var line: Int32 = 0
+
+  /// The page needs the user's own browser session, e.g. Claude Design.
+  public var systemBrowser: Bool = false
+
+  public var claudeDesign: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
 }
 
 /// One transcript row: a user or assistant message, or a run of routine agent
@@ -11013,6 +11089,281 @@ public nonisolated struct ClientMachineOperationCopy: Sendable {
   public init() {}
 }
 
+public nonisolated struct ClientClaudeDesignCommand: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var action: ClientClaudeDesignCommand.OneOf_Action? = nil
+
+  /// Shows a machine and reads its status; switching machines cancels a
+  /// running sign-in. Empty shows none.
+  public var select: ClientClaudeDesignSelect {
+    get {
+      if case .select(let v)? = action {return v}
+      return ClientClaudeDesignSelect()
+    }
+    set {action = .select(newValue)}
+  }
+
+  public var refresh: ClientStep {
+    get {
+      if case .refresh(let v)? = action {return v}
+      return ClientStep()
+    }
+    set {action = .refresh(newValue)}
+  }
+
+  /// Starts a sign-in on the shown machine. Its code can be submitted while
+  /// the machine stays shown, even after the progress stream dropped.
+  public var signIn: ClientStep {
+    get {
+      if case .signIn(let v)? = action {return v}
+      return ClientStep()
+    }
+    set {action = .signIn(newValue)}
+  }
+
+  public var cancelSignIn: ClientStep {
+    get {
+      if case .cancelSignIn(let v)? = action {return v}
+      return ClientStep()
+    }
+    set {action = .cancelSignIn(newValue)}
+  }
+
+  /// The code the manual sign-in page shows.
+  public var submitCode: ClientClaudeDesignCode {
+    get {
+      if case .submitCode(let v)? = action {return v}
+      return ClientClaudeDesignCode()
+    }
+    set {action = .submitCode(newValue)}
+  }
+
+  public var setAccess: ClientClaudeDesignAccess {
+    get {
+      if case .setAccess(let v)? = action {return v}
+      return ClientClaudeDesignAccess()
+    }
+    set {action = .setAccess(newValue)}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public nonisolated enum OneOf_Action: Equatable, Sendable {
+    /// Shows a machine and reads its status; switching machines cancels a
+    /// running sign-in. Empty shows none.
+    case select(ClientClaudeDesignSelect)
+    case refresh(ClientStep)
+    /// Starts a sign-in on the shown machine. Its code can be submitted while
+    /// the machine stays shown, even after the progress stream dropped.
+    case signIn(ClientStep)
+    case cancelSignIn(ClientStep)
+    /// The code the manual sign-in page shows.
+    case submitCode(ClientClaudeDesignCode)
+    case setAccess(ClientClaudeDesignAccess)
+
+  }
+
+  public init() {}
+}
+
+public nonisolated struct ClientClaudeDesignSelect: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var daemonID: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientClaudeDesignCode: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var code: String = String()
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientClaudeDesignAccess: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var enabled: Bool = false
+
+  /// With enabled false, also revoke the Claude account's agent access for
+  /// every Claude Code session, not only Dieter's.
+  public var revokeGrant: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+}
+
+public nonisolated struct ClientClaudeDesignSlice: @unchecked Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var daemonID: String {
+    get {_storage._daemonID}
+    set {_uniqueStorage()._daemonID = newValue}
+  }
+
+  /// Unset until read.
+  public var status: Dieter_V1_ClaudeDesignStatus {
+    get {_storage._status ?? Dieter_V1_ClaudeDesignStatus()}
+    set {_uniqueStorage()._status = newValue}
+  }
+  /// Returns true if `status` has been explicitly set.
+  public var hasStatus: Bool {_storage._status != nil}
+  /// Clears the value of `status`. Subsequent reads from it will return its default value.
+  public mutating func clearStatus() {_uniqueStorage()._status = nil}
+
+  public var loading: Bool {
+    get {_storage._loading}
+    set {_uniqueStorage()._loading = newValue}
+  }
+
+  /// Why the status could not be read or an access change failed.
+  public var error: String {
+    get {_storage._error}
+    set {_uniqueStorage()._error = newValue}
+  }
+
+  /// Unset when no sign-in ran since the machine was shown.
+  public var signIn: ClientClaudeDesignSignIn {
+    get {_storage._signIn ?? ClientClaudeDesignSignIn()}
+    set {_uniqueStorage()._signIn = newValue}
+  }
+  /// Returns true if `signIn` has been explicitly set.
+  public var hasSignIn: Bool {_storage._signIn != nil}
+  /// Clears the value of `signIn`. Subsequent reads from it will return its default value.
+  public mutating func clearSignIn() {_uniqueStorage()._signIn = nil}
+
+  public var accessPending: Bool {
+    get {_storage._accessPending}
+    set {_uniqueStorage()._accessPending = newValue}
+  }
+
+  /// What every client shows: e.g. "Signed in", and a sentence about it.
+  public var headline: String {
+    get {_storage._headline}
+    set {_uniqueStorage()._headline = newValue}
+  }
+
+  public var detail: String {
+    get {_storage._detail}
+    set {_uniqueStorage()._detail = newValue}
+  }
+
+  public var accessDetail: String {
+    get {_storage._accessDetail}
+    set {_uniqueStorage()._accessDetail = newValue}
+  }
+
+  public var canSignIn: Bool {
+    get {_storage._canSignIn}
+    set {_uniqueStorage()._canSignIn = newValue}
+  }
+
+  public var canChangeAccess: Bool {
+    get {_storage._canChangeAccess}
+    set {_uniqueStorage()._canChangeAccess = newValue}
+  }
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public init() {}
+
+  fileprivate var _storage = _StorageClass.defaultInstance
+}
+
+public nonisolated struct ClientClaudeDesignSignIn: Sendable {
+  // SwiftProtobuf.Message conformance is added in an extension below. See the
+  // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
+  // methods supported on all messages.
+
+  public var phase: ClientClaudeDesignSignIn.Phase = .starting
+
+  /// The page to open: the browser page that finishes by itself on the
+  /// machine when it is this device, else the page that shows a code.
+  public var openURL: String = String()
+
+  public var codeRequired: Bool = false
+
+  public var message: String = String()
+
+  public var active: Bool = false
+
+  public var unknownFields = SwiftProtobuf.UnknownStorage()
+
+  public nonisolated enum Phase: SwiftProtobuf.Enum, Swift.CaseIterable {
+    public typealias RawValue = Int
+    case starting // = 0
+
+    /// Installing the pinned Claude Code release on the machine.
+    case preparing // = 1
+
+    /// The page is ready: open it, and paste its code when code_required.
+    case waiting // = 2
+    case checkingCode // = 3
+    case succeeded // = 4
+    case failed // = 5
+    case UNRECOGNIZED(Int)
+
+    public init() {
+      self = .starting
+    }
+
+    public init?(rawValue: Int) {
+      switch rawValue {
+      case 0: self = .starting
+      case 1: self = .preparing
+      case 2: self = .waiting
+      case 3: self = .checkingCode
+      case 4: self = .succeeded
+      case 5: self = .failed
+      default: self = .UNRECOGNIZED(rawValue)
+      }
+    }
+
+    public var rawValue: Int {
+      switch self {
+      case .starting: return 0
+      case .preparing: return 1
+      case .waiting: return 2
+      case .checkingCode: return 3
+      case .succeeded: return 4
+      case .failed: return 5
+      case .UNRECOGNIZED(let i): return i
+      }
+    }
+
+    // The compiler won't synthesize support with the UNRECOGNIZED case.
+    public static let allCases: [ClientClaudeDesignSignIn.Phase] = [
+      .starting,
+      .preparing,
+      .waiting,
+      .checkingCode,
+      .succeeded,
+      .failed,
+    ]
+
+  }
+
+  public init() {}
+}
+
 public nonisolated struct ClientQuotasCommand: Sendable {
   // SwiftProtobuf.Message conformance is added in an extension below. See the
   // `Message` and `Message+*Additions` files in the SwiftProtobuf library for
@@ -12484,7 +12835,7 @@ nonisolated extension ClientTerminalKey: SwiftProtobuf._ProtoNameProviding {
 }
 
 nonisolated extension ClientSlice: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SLICE_UNSPECIFIED\0\u{1}SLICE_SESSION\0\u{1}SLICE_WORKSPACE\0\u{1}SLICE_OUTBOX\0\u{1}SLICE_ACTIVITY\0\u{1}SLICE_CONVERSATION\0\u{1}SLICE_METADATA\0\u{1}SLICE_BOARD\0\u{1}SLICE_NAVIGATION\0\u{1}SLICE_CREATION\0\u{1}SLICE_FILES\0\u{1}SLICE_FILE_TREE\0\u{1}SLICE_TERMINALS\0\u{1}SLICE_TERMINAL_OVERVIEW\0\u{1}SLICE_SCHEDULES\0\u{1}SLICE_REVIEW\0\u{1}SLICE_PROJECT_CHANGES\0\u{2}\u{2}SLICE_TELEMETRY\0\u{1}SLICE_QUOTAS\0\u{1}SLICE_PROCESSES\0\u{1}SLICE_SCREEN\0\u{1}SLICE_BOARD_VIEW\0\u{1}SLICE_CHATS\0\u{1}SLICE_CREATION_PREVIEW\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0SLICE_UNSPECIFIED\0\u{1}SLICE_SESSION\0\u{1}SLICE_WORKSPACE\0\u{1}SLICE_OUTBOX\0\u{1}SLICE_ACTIVITY\0\u{1}SLICE_CONVERSATION\0\u{1}SLICE_METADATA\0\u{1}SLICE_BOARD\0\u{1}SLICE_NAVIGATION\0\u{1}SLICE_CREATION\0\u{1}SLICE_FILES\0\u{1}SLICE_FILE_TREE\0\u{1}SLICE_TERMINALS\0\u{1}SLICE_TERMINAL_OVERVIEW\0\u{1}SLICE_SCHEDULES\0\u{1}SLICE_REVIEW\0\u{1}SLICE_PROJECT_CHANGES\0\u{2}\u{2}SLICE_TELEMETRY\0\u{1}SLICE_QUOTAS\0\u{1}SLICE_PROCESSES\0\u{1}SLICE_SCREEN\0\u{1}SLICE_BOARD_VIEW\0\u{1}SLICE_CHATS\0\u{1}SLICE_CREATION_PREVIEW\0\u{1}SLICE_CLAUDE_DESIGN\0")
 }
 
 nonisolated extension ClientMachineSyncState: SwiftProtobuf._ProtoNameProviding {
@@ -12524,7 +12875,7 @@ nonisolated extension ClientBoardAgentStatus: SwiftProtobuf._ProtoNameProviding 
 }
 
 nonisolated extension ClientFileRenderer: SwiftProtobuf._ProtoNameProviding {
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0FILE_RENDERER_UNSPECIFIED\0\u{1}FILE_RENDERER_TEXT\0\u{1}FILE_RENDERER_MARKDOWN\0\u{1}FILE_RENDERER_IMAGE\0\u{1}FILE_RENDERER_PDF\0\u{1}FILE_RENDERER_UNSUPPORTED\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0FILE_RENDERER_UNSPECIFIED\0\u{1}FILE_RENDERER_TEXT\0\u{1}FILE_RENDERER_MARKDOWN\0\u{1}FILE_RENDERER_IMAGE\0\u{1}FILE_RENDERER_PDF\0\u{1}FILE_RENDERER_UNSUPPORTED\0\u{1}FILE_RENDERER_HTML\0")
 }
 
 nonisolated extension ClientFileIconKind: SwiftProtobuf._ProtoNameProviding {
@@ -12545,7 +12896,7 @@ nonisolated extension ClientQuotaSeverity: SwiftProtobuf._ProtoNameProviding {
 
 nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Command"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}adopt_session\0\u{3}begin_sign_in\0\u{3}complete_sign_in\0\u{4}\u{2}select_gateway\0\u{4}\u{2}set_connected\0\u{3}set_foreground\0\u{4}\u{2}create_conversation\0\u{3}send_message\0\u{3}start_card\0\u{3}move_card\0\u{3}finish_card\0\u{3}set_card_labels\0\u{3}set_card_pinned\0\u{3}rename_card\0\u{3}archive_card\0\u{3}cancel_card\0\u{3}mark_card_read\0\u{3}retry_pending\0\u{3}discard_pending\0\u{3}restore_card\0\u{3}add_card_label\0\u{3}update_card_draft\0\u{3}merge_card\0\u{3}fork_card\0\u{3}list_archived_cards\0\u{4}\u{2}load_earlier_messages\0\u{3}return_to_latest\0\u{3}refresh_conversation\0\u{3}set_visible_conversation\0\u{3}load_later_messages\0\u{3}retry_failed_turn\0\u{3}remove_queued_message\0\u{3}steer_conversation\0\u{3}load_tool_output\0\u{4}\u{2}rename_machine\0\u{3}revoke_machine\0\u{3}ensure_metadata\0\u{3}use_gateway\0\u{1}resync\0\u{3}set_project_order\0\u{4}\u{3}set_project_expanded\0\u{3}set_chat_section_collapsed\0\u{3}set_chats_show_all\0\u{3}set_lane_descending\0\u{3}set_folders\0\u{3}list_drafts\0\u{3}set_draft_text\0\u{3}remember_creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}admin\0\u{1}telemetry\0\u{1}quotas\0\u{1}processes\0\u{1}search\0\u{1}screen\0\u{4}\u{2}set_show_reasoning\0\u{3}board_view\0\u{2}\u{2}chats\0\u{1}navigation\0\u{3}creation_preview\0\u{3}choose_agent\0\u{3}sign_out\0\u{1}reconnect\0\u{3}remove_gateway\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}adopt_session\0\u{3}begin_sign_in\0\u{3}complete_sign_in\0\u{4}\u{2}select_gateway\0\u{4}\u{2}set_connected\0\u{3}set_foreground\0\u{4}\u{2}create_conversation\0\u{3}send_message\0\u{3}start_card\0\u{3}move_card\0\u{3}finish_card\0\u{3}set_card_labels\0\u{3}set_card_pinned\0\u{3}rename_card\0\u{3}archive_card\0\u{3}cancel_card\0\u{3}mark_card_read\0\u{3}retry_pending\0\u{3}discard_pending\0\u{3}restore_card\0\u{3}add_card_label\0\u{3}update_card_draft\0\u{3}merge_card\0\u{3}fork_card\0\u{3}list_archived_cards\0\u{4}\u{2}load_earlier_messages\0\u{3}return_to_latest\0\u{3}refresh_conversation\0\u{3}set_visible_conversation\0\u{3}load_later_messages\0\u{3}retry_failed_turn\0\u{3}remove_queued_message\0\u{3}steer_conversation\0\u{3}load_tool_output\0\u{4}\u{2}rename_machine\0\u{3}revoke_machine\0\u{3}ensure_metadata\0\u{3}use_gateway\0\u{1}resync\0\u{3}set_project_order\0\u{4}\u{3}set_project_expanded\0\u{3}set_chat_section_collapsed\0\u{3}set_chats_show_all\0\u{3}set_lane_descending\0\u{3}set_folders\0\u{3}list_drafts\0\u{3}set_draft_text\0\u{3}remember_creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{3}project_workspaces\0\u{1}admin\0\u{1}telemetry\0\u{1}quotas\0\u{1}processes\0\u{1}search\0\u{1}screen\0\u{4}\u{2}set_show_reasoning\0\u{3}board_view\0\u{2}\u{2}chats\0\u{1}navigation\0\u{3}creation_preview\0\u{3}choose_agent\0\u{3}sign_out\0\u{1}reconnect\0\u{3}remove_gateway\0\u{3}claude_design\0")
 
   public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
     while let fieldNumber = try decoder.nextFieldNumber() {
@@ -13476,6 +13827,19 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
           self.command = .removeGateway(v)
         }
       }()
+      case 81: try {
+        var v: ClientClaudeDesignCommand?
+        var hadOneofValue = false
+        if let current = self.command {
+          hadOneofValue = true
+          if case .claudeDesign(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.command = .claudeDesign(v)
+        }
+      }()
       default: break
       }
     }
@@ -13770,6 +14134,10 @@ nonisolated extension ClientCommand: SwiftProtobuf.Message, SwiftProtobuf._Messa
     case .removeGateway?: try {
       guard case .removeGateway(let v)? = self.command else { preconditionFailure() }
       try visitor.visitSingularMessageField(value: v, fieldNumber: 80)
+    }()
+    case .claudeDesign?: try {
+      guard case .claudeDesign(let v)? = self.command else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 81)
     }()
     case nil: break
     }
@@ -20669,7 +21037,7 @@ nonisolated extension ClientReply: SwiftProtobuf.Message, SwiftProtobuf._Message
 
 nonisolated extension ClientUpdate: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".Update"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}slice\0\u{1}scope\0\u{1}sequence\0\u{2}\u{6}failure\0\u{1}session\0\u{1}workspace\0\u{3}workspace_delta\0\u{1}outbox\0\u{1}activity\0\u{1}conversation\0\u{3}conversation_delta\0\u{1}metadata\0\u{1}board\0\u{1}navigation\0\u{1}creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{2}\u{2}telemetry\0\u{1}quotas\0\u{1}processes\0\u{1}screen\0\u{3}board_view\0\u{1}chats\0\u{3}creation_preview\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}slice\0\u{1}scope\0\u{1}sequence\0\u{2}\u{6}failure\0\u{1}session\0\u{1}workspace\0\u{3}workspace_delta\0\u{1}outbox\0\u{1}activity\0\u{1}conversation\0\u{3}conversation_delta\0\u{1}metadata\0\u{1}board\0\u{1}navigation\0\u{1}creation\0\u{1}files\0\u{3}file_tree\0\u{1}terminals\0\u{3}terminal_overview\0\u{1}schedules\0\u{1}review\0\u{3}project_changes\0\u{2}\u{2}telemetry\0\u{1}quotas\0\u{1}processes\0\u{1}screen\0\u{3}board_view\0\u{1}chats\0\u{3}creation_preview\0\u{3}claude_design\0")
 
   fileprivate class _StorageClass {
     var _slice: ClientSlice = .unspecified
@@ -21049,6 +21417,19 @@ nonisolated extension ClientUpdate: SwiftProtobuf.Message, SwiftProtobuf._Messag
             _storage._value = .creationPreview(v)
           }
         }()
+        case 36: try {
+          var v: ClientClaudeDesignSlice?
+          var hadOneofValue = false
+          if let current = _storage._value {
+            hadOneofValue = true
+            if case .claudeDesign(let m) = current {v = m}
+          }
+          try decoder.decodeSingularMessageField(value: &v)
+          if let v = v {
+            if hadOneofValue {try decoder.handleConflictingOneOf()}
+            _storage._value = .claudeDesign(v)
+          }
+        }()
         default: break
         }
       }
@@ -21174,6 +21555,10 @@ nonisolated extension ClientUpdate: SwiftProtobuf.Message, SwiftProtobuf._Messag
       case .creationPreview?: try {
         guard case .creationPreview(let v)? = _storage._value else { preconditionFailure() }
         try visitor.visitSingularMessageField(value: v, fieldNumber: 35)
+      }()
+      case .claudeDesign?: try {
+        guard case .claudeDesign(let v)? = _storage._value else { preconditionFailure() }
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 36)
       }()
       case nil: break
       }
@@ -22570,7 +22955,7 @@ nonisolated extension ClientConversationSlice: SwiftProtobuf.Message, SwiftProto
 
 nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
   public static let protoMessageName: String = _protobuf_package + ".ConversationState"
-  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}runtime\0\u{3}active_turn\0\u{1}working\0\u{3}live_activity\0\u{3}live_reasoning\0\u{3}turn_started_at_millis\0\u{3}responding_model\0\u{3}unsent_task\0\u{3}steerable_id\0\u{4}\u{3}can_start\0\u{1}starting\0\u{3}context_used_tokens\0\u{3}context_window_tokens\0\u{3}unsent_attachments\0\u{3}context_percent\0\u{3}context_near_limit\0\u{3}pending_tools_summary\0\u{3}pending_tool_ids\0\u{3}can_halt\0\u{1}chat\0\u{3}show_reasoning\0\u{2}\u{7}agent\0")
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}runtime\0\u{3}active_turn\0\u{1}working\0\u{3}live_activity\0\u{3}live_reasoning\0\u{3}turn_started_at_millis\0\u{3}responding_model\0\u{3}unsent_task\0\u{3}steerable_id\0\u{4}\u{3}can_start\0\u{1}starting\0\u{3}context_used_tokens\0\u{3}context_window_tokens\0\u{3}unsent_attachments\0\u{3}context_percent\0\u{3}context_near_limit\0\u{3}pending_tools_summary\0\u{3}pending_tool_ids\0\u{3}can_halt\0\u{1}chat\0\u{3}show_reasoning\0\u{2}\u{7}agent\0\u{3}presented_content\0")
 
   fileprivate class _StorageClass {
     var _runtime: String = String()
@@ -22595,6 +22980,7 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
     var _chat: Bool = false
     var _showReasoning: Bool = false
     var _agent: ClientAgentControlsState? = nil
+    var _presentedContent: ClientPresentedContentView? = nil
 
       // This property is used as the initial default value for new instances of the type.
       // The type itself is protecting the reference to its storage via CoW semantics.
@@ -22627,6 +23013,7 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
       _chat = source._chat
       _showReasoning = source._showReasoning
       _agent = source._agent
+      _presentedContent = source._presentedContent
     }
   }
 
@@ -22667,6 +23054,7 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
         case 22: try { try decoder.decodeSingularBoolField(value: &_storage._chat) }()
         case 23: try { try decoder.decodeSingularBoolField(value: &_storage._showReasoning) }()
         case 30: try { try decoder.decodeSingularMessageField(value: &_storage._agent) }()
+        case 31: try { try decoder.decodeSingularMessageField(value: &_storage._presentedContent) }()
         default: break
         }
       }
@@ -22745,6 +23133,9 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
       try { if let v = _storage._agent {
         try visitor.visitSingularMessageField(value: v, fieldNumber: 30)
       } }()
+      try { if let v = _storage._presentedContent {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 31)
+      } }()
     }
     try unknownFields.traverse(visitor: &visitor)
   }
@@ -22776,10 +23167,76 @@ nonisolated extension ClientConversationState: SwiftProtobuf.Message, SwiftProto
         if _storage._chat != rhs_storage._chat {return false}
         if _storage._showReasoning != rhs_storage._showReasoning {return false}
         if _storage._agent != rhs_storage._agent {return false}
+        if _storage._presentedContent != rhs_storage._presentedContent {return false}
         return true
       }
       if !storagesAreEqual {return false}
     }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientPresentedContentView: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".PresentedContentView"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}id\0\u{1}title\0\u{1}subtitle\0\u{1}url\0\u{1}path\0\u{1}line\0\u{3}system_browser\0\u{3}claude_design\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.id) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.title) }()
+      case 3: try { try decoder.decodeSingularStringField(value: &self.subtitle) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.url) }()
+      case 5: try { try decoder.decodeSingularStringField(value: &self.path) }()
+      case 6: try { try decoder.decodeSingularInt32Field(value: &self.line) }()
+      case 7: try { try decoder.decodeSingularBoolField(value: &self.systemBrowser) }()
+      case 8: try { try decoder.decodeSingularBoolField(value: &self.claudeDesign) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.id.isEmpty {
+      try visitor.visitSingularStringField(value: self.id, fieldNumber: 1)
+    }
+    if !self.title.isEmpty {
+      try visitor.visitSingularStringField(value: self.title, fieldNumber: 2)
+    }
+    if !self.subtitle.isEmpty {
+      try visitor.visitSingularStringField(value: self.subtitle, fieldNumber: 3)
+    }
+    if !self.url.isEmpty {
+      try visitor.visitSingularStringField(value: self.url, fieldNumber: 4)
+    }
+    if !self.path.isEmpty {
+      try visitor.visitSingularStringField(value: self.path, fieldNumber: 5)
+    }
+    if self.line != 0 {
+      try visitor.visitSingularInt32Field(value: self.line, fieldNumber: 6)
+    }
+    if self.systemBrowser != false {
+      try visitor.visitSingularBoolField(value: self.systemBrowser, fieldNumber: 7)
+    }
+    if self.claudeDesign != false {
+      try visitor.visitSingularBoolField(value: self.claudeDesign, fieldNumber: 8)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientPresentedContentView, rhs: ClientPresentedContentView) -> Bool {
+    if lhs.id != rhs.id {return false}
+    if lhs.title != rhs.title {return false}
+    if lhs.subtitle != rhs.subtitle {return false}
+    if lhs.url != rhs.url {return false}
+    if lhs.path != rhs.path {return false}
+    if lhs.line != rhs.line {return false}
+    if lhs.systemBrowser != rhs.systemBrowser {return false}
+    if lhs.claudeDesign != rhs.claudeDesign {return false}
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
@@ -29882,6 +30339,430 @@ nonisolated extension ClientMachineOperationCopy: SwiftProtobuf.Message, SwiftPr
     if lhs.unknownFields != rhs.unknownFields {return false}
     return true
   }
+}
+
+nonisolated extension ClientClaudeDesignCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ClaudeDesignCommand"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}select\0\u{1}refresh\0\u{3}sign_in\0\u{3}cancel_sign_in\0\u{3}submit_code\0\u{3}set_access\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try {
+        var v: ClientClaudeDesignSelect?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .select(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .select(v)
+        }
+      }()
+      case 2: try {
+        var v: ClientStep?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .refresh(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .refresh(v)
+        }
+      }()
+      case 3: try {
+        var v: ClientStep?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .signIn(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .signIn(v)
+        }
+      }()
+      case 4: try {
+        var v: ClientStep?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .cancelSignIn(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .cancelSignIn(v)
+        }
+      }()
+      case 5: try {
+        var v: ClientClaudeDesignCode?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .submitCode(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .submitCode(v)
+        }
+      }()
+      case 6: try {
+        var v: ClientClaudeDesignAccess?
+        var hadOneofValue = false
+        if let current = self.action {
+          hadOneofValue = true
+          if case .setAccess(let m) = current {v = m}
+        }
+        try decoder.decodeSingularMessageField(value: &v)
+        if let v = v {
+          if hadOneofValue {try decoder.handleConflictingOneOf()}
+          self.action = .setAccess(v)
+        }
+      }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    // The use of inline closures is to circumvent an issue where the compiler
+    // allocates stack space for every if/case branch local when no optimizations
+    // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+    // https://github.com/apple/swift-protobuf/issues/1182
+    switch self.action {
+    case .select?: try {
+      guard case .select(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 1)
+    }()
+    case .refresh?: try {
+      guard case .refresh(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+    }()
+    case .signIn?: try {
+      guard case .signIn(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 3)
+    }()
+    case .cancelSignIn?: try {
+      guard case .cancelSignIn(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 4)
+    }()
+    case .submitCode?: try {
+      guard case .submitCode(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+    }()
+    case .setAccess?: try {
+      guard case .setAccess(let v)? = self.action else { preconditionFailure() }
+      try visitor.visitSingularMessageField(value: v, fieldNumber: 6)
+    }()
+    case nil: break
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientClaudeDesignCommand, rhs: ClientClaudeDesignCommand) -> Bool {
+    if lhs.action != rhs.action {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientClaudeDesignSelect: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ClaudeDesignSelect"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.daemonID) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.daemonID.isEmpty {
+      try visitor.visitSingularStringField(value: self.daemonID, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientClaudeDesignSelect, rhs: ClientClaudeDesignSelect) -> Bool {
+    if lhs.daemonID != rhs.daemonID {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientClaudeDesignCode: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ClaudeDesignCode"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}code\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularStringField(value: &self.code) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if !self.code.isEmpty {
+      try visitor.visitSingularStringField(value: self.code, fieldNumber: 1)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientClaudeDesignCode, rhs: ClientClaudeDesignCode) -> Bool {
+    if lhs.code != rhs.code {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientClaudeDesignAccess: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ClaudeDesignAccess"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}enabled\0\u{3}revoke_grant\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularBoolField(value: &self.enabled) }()
+      case 2: try { try decoder.decodeSingularBoolField(value: &self.revokeGrant) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.enabled != false {
+      try visitor.visitSingularBoolField(value: self.enabled, fieldNumber: 1)
+    }
+    if self.revokeGrant != false {
+      try visitor.visitSingularBoolField(value: self.revokeGrant, fieldNumber: 2)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientClaudeDesignAccess, rhs: ClientClaudeDesignAccess) -> Bool {
+    if lhs.enabled != rhs.enabled {return false}
+    if lhs.revokeGrant != rhs.revokeGrant {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientClaudeDesignSlice: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ClaudeDesignSlice"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{3}daemon_id\0\u{1}status\0\u{1}loading\0\u{1}error\0\u{3}sign_in\0\u{3}access_pending\0\u{1}headline\0\u{1}detail\0\u{3}access_detail\0\u{3}can_sign_in\0\u{3}can_change_access\0")
+
+  fileprivate class _StorageClass {
+    var _daemonID: String = String()
+    var _status: Dieter_V1_ClaudeDesignStatus? = nil
+    var _loading: Bool = false
+    var _error: String = String()
+    var _signIn: ClientClaudeDesignSignIn? = nil
+    var _accessPending: Bool = false
+    var _headline: String = String()
+    var _detail: String = String()
+    var _accessDetail: String = String()
+    var _canSignIn: Bool = false
+    var _canChangeAccess: Bool = false
+
+      // This property is used as the initial default value for new instances of the type.
+      // The type itself is protecting the reference to its storage via CoW semantics.
+      // This will force a copy to be made of this reference when the first mutation occurs;
+      // hence, it is safe to mark this as `nonisolated(unsafe)`.
+      static nonisolated(unsafe) let defaultInstance = _StorageClass()
+
+    private init() {}
+
+    init(copying source: _StorageClass) {
+      _daemonID = source._daemonID
+      _status = source._status
+      _loading = source._loading
+      _error = source._error
+      _signIn = source._signIn
+      _accessPending = source._accessPending
+      _headline = source._headline
+      _detail = source._detail
+      _accessDetail = source._accessDetail
+      _canSignIn = source._canSignIn
+      _canChangeAccess = source._canChangeAccess
+    }
+  }
+
+  fileprivate mutating func _uniqueStorage() -> _StorageClass {
+    if !isKnownUniquelyReferenced(&_storage) {
+      _storage = _StorageClass(copying: _storage)
+    }
+    return _storage
+  }
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    _ = _uniqueStorage()
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      while let fieldNumber = try decoder.nextFieldNumber() {
+        // The use of inline closures is to circumvent an issue where the compiler
+        // allocates stack space for every case branch when no optimizations are
+        // enabled. https://github.com/apple/swift-protobuf/issues/1034
+        switch fieldNumber {
+        case 1: try { try decoder.decodeSingularStringField(value: &_storage._daemonID) }()
+        case 2: try { try decoder.decodeSingularMessageField(value: &_storage._status) }()
+        case 3: try { try decoder.decodeSingularBoolField(value: &_storage._loading) }()
+        case 4: try { try decoder.decodeSingularStringField(value: &_storage._error) }()
+        case 5: try { try decoder.decodeSingularMessageField(value: &_storage._signIn) }()
+        case 6: try { try decoder.decodeSingularBoolField(value: &_storage._accessPending) }()
+        case 7: try { try decoder.decodeSingularStringField(value: &_storage._headline) }()
+        case 8: try { try decoder.decodeSingularStringField(value: &_storage._detail) }()
+        case 9: try { try decoder.decodeSingularStringField(value: &_storage._accessDetail) }()
+        case 10: try { try decoder.decodeSingularBoolField(value: &_storage._canSignIn) }()
+        case 11: try { try decoder.decodeSingularBoolField(value: &_storage._canChangeAccess) }()
+        default: break
+        }
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    try withExtendedLifetime(_storage) { (_storage: _StorageClass) in
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every if/case branch local when no optimizations
+      // are enabled. https://github.com/apple/swift-protobuf/issues/1034 and
+      // https://github.com/apple/swift-protobuf/issues/1182
+      if !_storage._daemonID.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._daemonID, fieldNumber: 1)
+      }
+      try { if let v = _storage._status {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 2)
+      } }()
+      if _storage._loading != false {
+        try visitor.visitSingularBoolField(value: _storage._loading, fieldNumber: 3)
+      }
+      if !_storage._error.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._error, fieldNumber: 4)
+      }
+      try { if let v = _storage._signIn {
+        try visitor.visitSingularMessageField(value: v, fieldNumber: 5)
+      } }()
+      if _storage._accessPending != false {
+        try visitor.visitSingularBoolField(value: _storage._accessPending, fieldNumber: 6)
+      }
+      if !_storage._headline.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._headline, fieldNumber: 7)
+      }
+      if !_storage._detail.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._detail, fieldNumber: 8)
+      }
+      if !_storage._accessDetail.isEmpty {
+        try visitor.visitSingularStringField(value: _storage._accessDetail, fieldNumber: 9)
+      }
+      if _storage._canSignIn != false {
+        try visitor.visitSingularBoolField(value: _storage._canSignIn, fieldNumber: 10)
+      }
+      if _storage._canChangeAccess != false {
+        try visitor.visitSingularBoolField(value: _storage._canChangeAccess, fieldNumber: 11)
+      }
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientClaudeDesignSlice, rhs: ClientClaudeDesignSlice) -> Bool {
+    if lhs._storage !== rhs._storage {
+      let storagesAreEqual: Bool = withExtendedLifetime((lhs._storage, rhs._storage)) { (_args: (_StorageClass, _StorageClass)) in
+        let _storage = _args.0
+        let rhs_storage = _args.1
+        if _storage._daemonID != rhs_storage._daemonID {return false}
+        if _storage._status != rhs_storage._status {return false}
+        if _storage._loading != rhs_storage._loading {return false}
+        if _storage._error != rhs_storage._error {return false}
+        if _storage._signIn != rhs_storage._signIn {return false}
+        if _storage._accessPending != rhs_storage._accessPending {return false}
+        if _storage._headline != rhs_storage._headline {return false}
+        if _storage._detail != rhs_storage._detail {return false}
+        if _storage._accessDetail != rhs_storage._accessDetail {return false}
+        if _storage._canSignIn != rhs_storage._canSignIn {return false}
+        if _storage._canChangeAccess != rhs_storage._canChangeAccess {return false}
+        return true
+      }
+      if !storagesAreEqual {return false}
+    }
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientClaudeDesignSignIn: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {
+  public static let protoMessageName: String = _protobuf_package + ".ClaudeDesignSignIn"
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{1}phase\0\u{3}open_url\0\u{3}code_required\0\u{1}message\0\u{1}active\0")
+
+  public mutating func decodeMessage<D: SwiftProtobuf.Decoder>(decoder: inout D) throws {
+    while let fieldNumber = try decoder.nextFieldNumber() {
+      // The use of inline closures is to circumvent an issue where the compiler
+      // allocates stack space for every case branch when no optimizations are
+      // enabled. https://github.com/apple/swift-protobuf/issues/1034
+      switch fieldNumber {
+      case 1: try { try decoder.decodeSingularEnumField(value: &self.phase) }()
+      case 2: try { try decoder.decodeSingularStringField(value: &self.openURL) }()
+      case 3: try { try decoder.decodeSingularBoolField(value: &self.codeRequired) }()
+      case 4: try { try decoder.decodeSingularStringField(value: &self.message) }()
+      case 5: try { try decoder.decodeSingularBoolField(value: &self.active) }()
+      default: break
+      }
+    }
+  }
+
+  public func traverse<V: SwiftProtobuf.Visitor>(visitor: inout V) throws {
+    if self.phase != .starting {
+      try visitor.visitSingularEnumField(value: self.phase, fieldNumber: 1)
+    }
+    if !self.openURL.isEmpty {
+      try visitor.visitSingularStringField(value: self.openURL, fieldNumber: 2)
+    }
+    if self.codeRequired != false {
+      try visitor.visitSingularBoolField(value: self.codeRequired, fieldNumber: 3)
+    }
+    if !self.message.isEmpty {
+      try visitor.visitSingularStringField(value: self.message, fieldNumber: 4)
+    }
+    if self.active != false {
+      try visitor.visitSingularBoolField(value: self.active, fieldNumber: 5)
+    }
+    try unknownFields.traverse(visitor: &visitor)
+  }
+
+  public static func ==(lhs: ClientClaudeDesignSignIn, rhs: ClientClaudeDesignSignIn) -> Bool {
+    if lhs.phase != rhs.phase {return false}
+    if lhs.openURL != rhs.openURL {return false}
+    if lhs.codeRequired != rhs.codeRequired {return false}
+    if lhs.message != rhs.message {return false}
+    if lhs.active != rhs.active {return false}
+    if lhs.unknownFields != rhs.unknownFields {return false}
+    return true
+  }
+}
+
+nonisolated extension ClientClaudeDesignSignIn.Phase: SwiftProtobuf._ProtoNameProviding {
+  public static let _protobuf_nameMap = SwiftProtobuf._NameMap(bytecode: "\0\u{2}\0PHASE_STARTING\0\u{1}PHASE_PREPARING\0\u{1}PHASE_WAITING\0\u{1}PHASE_CHECKING_CODE\0\u{1}PHASE_SUCCEEDED\0\u{1}PHASE_FAILED\0")
 }
 
 nonisolated extension ClientQuotasCommand: SwiftProtobuf.Message, SwiftProtobuf._MessageImplementationBase, SwiftProtobuf._ProtoNameProviding {

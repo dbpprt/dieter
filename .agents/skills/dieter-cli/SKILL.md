@@ -1003,6 +1003,45 @@ existing member after comparing the codes both machines print. `vault join
 rotates; `vault rotate --recovery-key` replaces the recovery key. `vault audit`
 shows this machine's access log without secret values.
 
+### Claude Design
+
+```sh
+dieter [--machine ID|NAME] design status
+dieter [--machine ID|NAME] design login [--json]
+dieter [--machine ID|NAME] design code SIGN_IN_ID CODE
+dieter [--machine ID|NAME] design access on
+dieter [--machine ID|NAME] design access off [--revoke]
+```
+
+Claude Design (claude.ai/design) belongs to the Claude account signed in on each
+daemon machine. `status` emits `available`, `signedIn`, `canSignIn`,
+`accessEnabled`, `runtimeReady`, `claudeCodeVersion`, `signInActive` and a
+`reason` when Claude Code gives one. Everything runs through the pinned Claude
+Code CLI on the target machine; Claude Code keeps the claude.ai login and design
+credential in its own secure storage. Dieter stores only the machine-local access
+switch, never replicates it, and never sends credentials to the gateway.
+
+`login` streams until the sign-in finishes or fails. The sign-in itself stays
+open on the machine for about five minutes even when the stream ends, so a code
+can still complete it with `design code`; a newer sign-in replaces it. The first page completes in a browser on the target
+machine. The manual page works from any device and shows a code: paste it at the
+prompt, or with `--json` read `signInId` from the first event and run
+`design code` while the stream is open. The first sign-in installs the pinned
+Claude Code release when no Claude Code turn has done so yet (`preparing`).
+
+Access is off by default; Claude Code turns then run without the `ClaudeDesign`
+and `DesignSync` tools. `access on` also grants the Claude account's agent access
+to Design projects, which headless turns cannot confirm. `access off` takes effect
+at the next worker start; `--revoke` additionally withdraws the account-wide
+grant for every Claude Code session of that account, so ask the user first. With
+access on, Claude Code turns also get Claude's artifact tools (`Artifact`,
+`ArtifactComments`, `ArtifactData`, `ArtifactCheck`), where Claude Design now
+lives, and agents present artifact URLs (`https://claude.ai/artifact/<id>`,
+`https://claude.ai/code/artifact/<uuid>`) or project URLs
+(`https://claude.ai/design/p/<id>`) with `present_content`. The macOS app shows
+them in a workspace tab with its own claude.ai session. Never sign in, grant or revoke on an operator's machine merely
+to test it; tests use the isolated `ClaudeDesign` host fixture.
+
 ### Shared projects and peer storage
 
 One project can have checkouts on many machines. Use `project attach --name NAME

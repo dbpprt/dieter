@@ -52,6 +52,18 @@ service DieterService {
   rpc SetProjectPromptTemplate(SetScopedPromptTemplateRequest) returns (Project);
   rpc SetBoardPromptTemplate(SetScopedPromptTemplateRequest) returns (Board);
   rpc PreviewPrompt(PreviewPromptRequest) returns (PromptPreview);
+  // Claude Design (claude.ai/design) belongs to this daemon host's Claude
+  // account. Claude Code keeps the claude.ai login and the design credential
+  // in its own secure storage on the host; Dieter only records whether its
+  // Claude Code turns on this machine may use the Claude Design tools.
+  rpc GetClaudeDesignStatus(google.protobuf.Empty) returns (ClaudeDesignStatus);
+  // SignInClaudeDesign starts Claude Code's design sign-in and streams its
+  // progress. The sign-in outlives the stream, so a code from the manual page
+  // still completes it after a client lost its connection; it ends when Claude
+  // Code finishes, after about five minutes, or when a newer sign-in replaces it.
+  rpc SignInClaudeDesign(SignInClaudeDesignRequest) returns (stream ClaudeDesignSignInEvent);
+  rpc SubmitClaudeDesignSignInCode(SubmitClaudeDesignSignInCodeRequest) returns (google.protobuf.Empty);
+  rpc SetClaudeDesignAccess(SetClaudeDesignAccessRequest) returns (ClaudeDesignStatus);
 
   rpc ListDirectories(ListDirectoriesRequest) returns (DirectoryListing);
   rpc ConsolidateProject(ConsolidateProjectRequest) returns (Project);
@@ -906,6 +918,60 @@ message Settings {
   string board_skill_template = 6;
   string chat_skill_template = 7;
   string updated_at = 4;
+}
+
+// Claude Design on one daemon host. Never replicated: the Claude login, the
+// design credential and the account's agent-access grant belong to the host.
+message ClaudeDesignStatus {
+  // Claude Design is enabled for the host's Claude account and Claude Code build.
+  bool available = 1;
+  // Claude Design sign-in stored a design credential on the host.
+  bool signed_in = 2;
+  // This host can run the Claude Design sign-in.
+  bool can_sign_in = 3;
+  // Claude Code turns on this machine may use the Claude Design tools.
+  bool access_enabled = 4;
+  string access_updated_at = 5;
+  // Why Claude Design is unavailable or cannot sign in, when Claude Code says.
+  string reason = 6;
+  // The pinned Claude Code release Dieter uses on this machine.
+  string claude_code_version = 7;
+  // False until the first sign-in or Claude Code turn installs that release.
+  bool runtime_ready = 8;
+  bool sign_in_active = 9;
+}
+
+message SignInClaudeDesignRequest {}
+
+// The first event carries only sign_in_id. A preparing event reports that the
+// pinned Claude Code release is being installed. A pages event carries url,
+// which completes in a browser on the daemon host, and manual_url, whose page
+// shows an authorization code to submit with SubmitClaudeDesignSignInCode from
+// any client. The last event has done set and the refreshed status.
+message ClaudeDesignSignInEvent {
+  string sign_in_id = 1;
+  bool preparing = 2;
+  string url = 3;
+  string manual_url = 4;
+  bool manual_first = 5;
+  bool done = 6;
+  bool ok = 7;
+  string message = 8;
+  ClaudeDesignStatus status = 9;
+}
+
+message SubmitClaudeDesignSignInCodeRequest {
+  string sign_in_id = 1;
+  string code = 2;
+}
+
+message SetClaudeDesignAccessRequest {
+  // Enabling also grants the Claude account's agent access to Design projects,
+  // which headless Claude Code turns cannot confirm interactively.
+  bool enabled = 1;
+  // With enabled false, also revoke that account-wide grant. This affects every
+  // Claude Code session of the account, not only Dieter.
+  bool revoke_grant = 2;
 }
 
 message SettingsOptions {

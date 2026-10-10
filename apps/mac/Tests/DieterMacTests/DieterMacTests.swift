@@ -768,8 +768,20 @@ private func terminalKeyEvent(
     #expect(AppSection.allCases.contains(.settings))
     #expect(
         DieterSettingsSection.allCases.map(\.rawValue) == [
-            "General", "Browser", "Connection", "Usage", "Prompts", "Notifications", "Island", "Agents", "Experimental",
+            "General", "Browser", "Connection", "Usage", "Prompts", "Notifications", "Island", "Agents",
+            "Claude Design", "Experimental",
         ])
+    #expect(DieterSettingsSection.claudeDesign.identifier == "settings.claude-design")
+    #expect(DieterSettingsSection.experimental.identifier == "settings.experimental")
+}
+
+@Test func htmlDocumentsRenderAsSandboxedPreviews() {
+    var document = Dieter_V1_FileDocument()
+    document.name = "Landing page.html"
+    #expect(FilePresentation.renderer(document) == .html)
+    document.name = "notes.md"
+    #expect(FilePresentation.renderer(document) == .markdown)
+    #expect(HTMLFileMode.allCases == [.preview, .source])
 }
 
 @Test func machineInformationUsesAPopupInsteadOfANavigationDestination() {

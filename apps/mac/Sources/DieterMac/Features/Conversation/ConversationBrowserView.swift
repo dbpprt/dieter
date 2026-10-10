@@ -114,9 +114,44 @@ struct ConversationBrowserView: View {
     }
 }
 
+/// The WebKit session a workspace browser tab uses.
+enum ConversationBrowserSession: Equatable {
+    /// A private session that keeps no cookies or site data.
+    case ephemeral
+    /// The user's claude.ai session for Claude artifacts and designs, shared by
+    /// every such tab and kept until they sign out in Settings.
+    case claude
+}
+
+/// The persistent website data behind `ConversationBrowserSession.claude`. It
+/// holds only claude.ai's own data: that session never navigates elsewhere.
+@MainActor
+enum ClaudeBrowserSession {
+    static let identifier = UUID(uuidString: "6B7C1F0E-3D52-4C1A-9E3B-2A4D5C6E7F81")!
+    static let home = URL(string: "https://claude.ai/code/artifacts")!
+    private static var store: WKWebsiteDataStore?
+
+    static var dataStore: WKWebsiteDataStore {
+        if let store { return store }
+        let created = WKWebsiteDataStore(forIdentifier: identifier)
+        store = created
+        return created
+    }
+
+    /// Signs the workspace browser out of claude.ai by removing all of its data.
+    static func signOut() async {
+        let store = dataStore
+        let types = WKWebsiteDataStore.allWebsiteDataTypes()
+        let records = await store.dataRecords(ofTypes: types)
+        await store.removeData(ofTypes: types, for: records)
+    }
+}
+
 @MainActor @Observable
 final class ConversationBrowserModel: NSObject, WKNavigationDelegate, WKUIDelegate {
     var allowsLoopback = true
+    /// Set before the tab first loads; the WebKit view keeps the session it started with.
+    var session = ConversationBrowserSession.ephemeral
     // SwiftUI may construct discarded State initial values during parent updates.
     // Only the retained model ever creates a WebKit process and observation set.
     @ObservationIgnored private(set) lazy var webView = makeWebView()
@@ -129,24 +164,28 @@ final class ConversationBrowserModel: NSObject, WKNavigationDelegate, WKUIDelega
     @ObservationIgnored private var requestedURL: URL?
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
     @ObservationIgnored var openExternally: @MainActor (URL) -> Void = { NSWorkspace.shared.open($0) }
-    @ObservationIgnored var shouldOpenExternally: @MainActor (URL) -> Bool = {
-        ExternalBrowserRules.matches($0, entries: ExternalBrowserRules.entries())
+    @ObservationIgnored var shouldOpenExternally: @MainActor (URL, ConversationBrowserSession) -> Bool = {
+        ExternalBrowserRules.opensExternally($0, session: $1, entries: ExternalBrowserRules.entries())
     }
 
     private func routeExternally(_ url: URL, userInitiated: Bool, showsFallback: Bool = true) -> Bool {
-        guard shouldOpenExternally(url) else { return false }
+        guard shouldOpenExternally(url, session) else { return false }
         if userInitiated {
             openExternally(url)
         } else if showsFallback {
             currentURL = url
-            failure = "Open this address using the default browser button."
+            failure =
+                session == .claude
+                ? "This page is outside claude.ai. Open it using the default browser button."
+                : ExternalBrowserRules.systemBrowserNotice(url)
+                    ?? "Open this address using the default browser button."
         }
         return true
     }
 
     private func makeWebView() -> WKWebView {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
+        configuration.websiteDataStore = session == .claude ? ClaudeBrowserSession.dataStore : .nonPersistent()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
@@ -265,27 +304,30 @@ final class ConversationBrowserModel: NSObject, WKNavigationDelegate, WKUIDelega
         _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
     ) {
-        guard let destination = navigationAction.request.url, accepts(destination) else {
-            if navigationAction.targetFrame?.isMainFrame != false {
-                failure =
-                    "This link cannot be opened here. Use a reachable HTTP or HTTPS address; remote localhost forwarding is not available."
-            }
-            decisionHandler(.cancel)
-            return
-        }
-        if routeExternally(
-            destination, userInitiated: navigationAction.navigationType == .linkActivated,
-            showsFallback: navigationAction.targetFrame?.isMainFrame != false)
-        {
-            decisionHandler(.cancel)
-            return
-        }
-        if navigationAction.targetFrame == nil {
+        let policy = navigationPolicy(
+            for: navigationAction.request.url, userInitiated: navigationAction.navigationType == .linkActivated,
+            mainFrame: navigationAction.targetFrame?.isMainFrame != false)
+        if policy == .allow, navigationAction.targetFrame == nil {
             webView.load(navigationAction.request)
             decisionHandler(.cancel)
         } else {
-            decisionHandler(.allow)
+            decisionHandler(policy)
         }
+    }
+
+    /// Whether a navigation to `destination` may proceed in this tab.
+    func navigationPolicy(for destination: URL?, userInitiated: Bool, mainFrame: Bool) -> WKNavigationActionPolicy {
+        guard let destination, accepts(destination) else {
+            if mainFrame {
+                failure =
+                    "This link cannot be opened here. Use a reachable HTTP or HTTPS address; remote localhost forwarding is not available."
+            }
+            return .cancel
+        }
+        // A claude.ai page shows artifacts in frames from their own sites.
+        if session == .claude, !mainFrame { return .allow }
+        if routeExternally(destination, userInitiated: userInitiated, showsFallback: mainFrame) { return .cancel }
+        return .allow
     }
 
     func webView(

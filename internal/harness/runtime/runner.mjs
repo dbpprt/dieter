@@ -26,6 +26,7 @@ import { promptWithLocalAttachments } from './local-attachments.mjs';
 import { harnessDiagnosticErrorMessage } from './harness-errors.mjs';
 import { createContentPresentationTool, contentPresentationInstructions } from './content-presentation.mjs';
 import { createProcessHostBridge, createBackgroundProcessTools, backgroundProcessInstructions } from './background-processes.mjs';
+import { claudeDesignEnvironment, claudeDesignInactiveTools, claudeDesignInstructions } from './claude-design.mjs';
 import { createMessageMetadataTracker } from './usage-metadata.mjs';
 import {
   createClaudeDiagnosticTracker,
@@ -190,7 +191,7 @@ switch (adapter) {
     });
     break;
   case 'claude-code':
-    harness = createLocalClaudeCode({ effort: request.effort || undefined });
+    harness = createLocalClaudeCode({ effort: request.effort || undefined, env: claudeDesignEnvironment(request, adapter) });
     break;
   case 'pi':
     harness = createPi({
@@ -335,13 +336,15 @@ try {
   const contentTools = request.contentPresentationEnabled
     ? { present_content: createContentPresentationTool(request, send) } : {};
   const processTools = processBridge ? createBackgroundProcessTools(request, processBridge.call) : {};
-  const instructions = [request.instructions, taskPlanInstructions, request.contentPresentationEnabled ? contentPresentationInstructions : '', processBridge ? backgroundProcessInstructions : ''].filter(Boolean).join('\n\n');
+  const instructions = [request.instructions, taskPlanInstructions, request.contentPresentationEnabled ? contentPresentationInstructions : '', processBridge ? backgroundProcessInstructions : '', claudeDesignInstructions(request, adapter)].filter(Boolean).join('\n\n');
+  const inactiveTools = claudeDesignInactiveTools(request, adapter);
   const createAgent = (candidateHarness, model) => new HarnessAgent({
     harness: observeHarnessCapabilities(candidateHarness, capabilityCollector),
     sandbox,
     model,
     instructions: instructions || undefined,
     tools: { ...contentTools, ...processTools, ...(adapter === 'pi' ? { board_task_plan: piTaskPlanTool } : {}) },
+    ...(inactiveTools ? { inactiveTools } : {}),
     permissionMode: 'allow-all',
     sandboxConfig: { workDir: sandboxWorkDir },
   });

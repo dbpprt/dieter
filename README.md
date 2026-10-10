@@ -319,3 +319,35 @@ This protects the logged-in desktop; macOS login/FileVault and forced power/rebo
 remain separate. Lost protection is degraded; a requested Lock Screen shortcut
 does not establish a verified authentication lock. See
 [privacy implementation and verification](native/macos-capture/privacy-mode-research.md).
+
+### Claude Design
+
+Claude Code turns can use [Claude Design](https://claude.ai/design) for
+prototypes, decks and design systems that you keep editing on its canvas. It
+belongs to the Claude account signed in on each daemon machine, so connect it per
+machine in **Settings → Claude Design** on macOS, or with the `dieter design`
+commands below: **Sign In**, then turn on **Allow in Claude Code turns**.
+
+```sh
+dieter --machine MACHINE_ID design status
+dieter --machine MACHINE_ID design login
+dieter --machine MACHINE_ID design access on
+dieter --machine MACHINE_ID design access off [--revoke]
+```
+
+Sign-in runs the pinned Claude Code CLI on the target machine. One page finishes
+in a browser on that machine; the other works from any device and shows a code to
+paste into Dieter. Claude Code keeps the claude.ai login and the design credential
+in its own secure storage there; Dieter stores only the machine-local access
+switch and never sends either to the gateway. Access is off by default. Turning
+it on also grants the Claude account's agent access to Design projects, because
+headless turns cannot confirm it; `--revoke` withdraws that account-wide grant.
+With access on, Claude Code turns also get Claude's artifact tools, where Claude
+Design now lives, and agents present `claude.ai/artifact/…` or `claude.ai/design`
+links. On macOS they render in a workspace tab with its own persistent claude.ai
+session: sign in there once with your email address. That tab never leaves
+claude.ai, other workspace pages stay private, and **Settings → Claude Design →
+Sign Out of claude.ai in Dieter** removes the session. HTML exports in a
+workspace render in a sandboxed preview in the macOS file viewer.
+Claude Design is a research preview on paid Claude plans; status explains when it
+is unavailable.

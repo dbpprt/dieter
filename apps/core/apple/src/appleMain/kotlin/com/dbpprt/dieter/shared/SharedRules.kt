@@ -165,6 +165,20 @@ object SharedRules {
     /** A `FileIconKind` value. */
     fun fileIconKind(name: String, directory: Boolean): Int = FileExports.iconKind(name, directory).value
 
+    /** The `dieter-preview:` URL a sandboxed HTML preview loads [documentPath] from. */
+    fun htmlPreviewDocumentUrl(documentPath: String): String = FileExports.htmlPreviewDocumentUrl(documentPath)
+
+    /** The workspace file an HTML preview request reads; "" when it must fail. */
+    fun htmlPreviewResource(url: String): String = FileExports.htmlPreviewResource(url)
+
+    fun htmlPreviewMimeType(path: String, reported: String): String = FileExports.htmlPreviewMimeType(path, reported)
+
+    /** The Content-Security-Policy every HTML preview response carries: no network, frames, or form posts. */
+    fun htmlPreviewContentSecurityPolicy(): String = FileExports.HTML_PREVIEW_CONTENT_SECURITY_POLICY
+
+    /** Requests one HTML preview may serve, the document included. */
+    fun htmlPreviewMaxResources(): Int = FileExports.HTML_PREVIEW_MAX_RESOURCES
+
     // --- Screens ------------------------------------------------------------------
 
     /** An encoded `ScreenToolbarKeys`: the modifier toggles and special keys a touch screen's toolbar offers. */
@@ -245,6 +259,15 @@ object SharedRules {
     fun normalizeExternalBrowserRule(input: String): String = LinkExports.normalizeExternalBrowserRule(input)
 
     fun isLoopbackBrowserHost(host: String): Boolean = LinkExports.isLoopbackBrowserHost(host)
+
+    /** Why [url] always opens in the system browser, e.g. Claude Design; "" when the embedded browser may show it. */
+    fun systemBrowserNotice(url: String): String = LinkExports.systemBrowserNotice(url)
+
+    /** Whether [url] is a Claude artifact or design, shown in the claude.ai browser session. */
+    fun isClaudeDesign(url: String): Boolean = LinkExports.isClaudeDesign(url)
+
+    /** Whether [url] is a claude.ai page the claude.ai browser session may navigate to. */
+    fun isClaudeAccountPage(url: String): Boolean = LinkExports.isClaudeAccountPage(url)
 
     /** Whether an image link may name a workspace file; the files surface's `open` resolves it. */
     fun isWorkspaceImage(destination: String): Boolean = LinkExports.isWorkspaceImage(destination)
