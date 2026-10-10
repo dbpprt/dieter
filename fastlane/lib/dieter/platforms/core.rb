@@ -6,8 +6,9 @@ module Dieter
       @context = context
     end
 
+    # The client core and the Compose UI the Android and iOS apps share.
     def unit(_options = {})
-      gradle(%w[:shared:jvmTest])
+      gradle(%w[:shared:jvmTest :mobile:jvmTest])
     end
 
     def apple_test(options = {})
@@ -23,7 +24,17 @@ module Dieter
     private
 
     def gradle(tasks)
-      @context.command([File.join(@context.root, "apps/core/gradlew"), "--project-dir", "apps/core", "--console=plain", *tasks], timeout: 3600, log: File.join(@context.output, "core.log"))
+      @context.command(
+        [
+          File.join(@context.root, "apps/core/gradlew"),
+          "--project-dir",
+          "apps/core",
+          "--console=plain",
+          *tasks
+        ],
+        timeout: 3600,
+        log: File.join(@context.output, "core.log")
+      )
     end
   end
 end

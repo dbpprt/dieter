@@ -39,7 +39,6 @@ func TestBrandPackIsWiredIntoReleaseSurfaces(t *testing.T) {
 		"assets/brand/assets/png/favicon-32.png":                                {X: 32, Y: 32},
 		"assets/brand/assets/social/og-image.png":                               {X: 1200, Y: 630},
 		"apps/android/app/src/main/res/drawable-nodpi/ic_dieter_monochrome.png": {X: 1024, Y: 1024},
-		"apps/android/app/src/main/res/drawable-nodpi/ic_notification.png":      {X: 192, Y: 192},
 	}
 	for name, want := range images {
 		assertImageSize(t, filepath.Join(root, name), want)
@@ -58,13 +57,7 @@ func TestBrandPackIsWiredIntoReleaseSurfaces(t *testing.T) {
 		`android:drawable="@drawable/ic_dieter_foreground_monochrome_layer"`,
 		`android:drawable="@drawable/ic_dieter_monochrome_layer"`,
 	)
-	assertContains(t, filepath.Join(root, "apps/android/app/src/main/java/com/dbpprt/dieter/ui/theme/Theme.kt"),
-		"val DieterShellDeep get() = Color(activeTokens.shellEnd)",
-		"val DieterShell get() = Color(if (activeDarkTheme) activeTokens.shellStart else activeTokens.shellEnd)",
-		"val DieterLive get() = Color(activeTokens.paneEnd)",
-		"val DieterEyes get() = Color(if (activeDarkTheme) activeTokens.eyes else activeTokens.shellEnd)",
-	)
-	assertContains(t, filepath.Join(root, "apps/android/app/src/main/java/com/dbpprt/dieter/settings/DieterPalette.kt"),
+	assertContainsIgnoringWhitespace(t, filepath.Join(root, "apps/core/mobile/src/commonMain/kotlin/com/dbpprt/dieter/settings/DieterPalette.kt"),
 		"DieterPaletteTokens(0xFF0D1B24, 0xFF193A49, 0xFF8DD8E8, 0xFF3D6E85",
 		"0xFF62B6CB, 0xFFBCEAF1, 0xFFF5FBFD, 0xFF081116",
 		"val DEFAULT = MONOCHROME",
@@ -159,7 +152,7 @@ func assertContains(t *testing.T, path string, values ...string) {
 	}
 }
 
-// Swift formatting may wrap a palette initializer without changing its tokens.
+// Swift and Kotlin formatting may wrap a palette initializer without changing its tokens.
 func assertContainsIgnoringWhitespace(t *testing.T, path string, values ...string) {
 	t.Helper()
 	data, err := os.ReadFile(path)

@@ -53,8 +53,6 @@ class RenderTests(unittest.TestCase):
             [
                 "dieter-mac://oauth/callback",
                 "dieter-android://oauth/callback",
-                "dieter-compose://oauth/callback",
-                "dieter-compose-ios://oauth/callback",
             ],
         )
         self.assertIn(

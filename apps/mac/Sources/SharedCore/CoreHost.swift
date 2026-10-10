@@ -79,21 +79,6 @@ package struct CoreHostPlatform: @unchecked Sendable {
             notifications: CoreUserNotifications(isEnabled: notificationsEnabled),
             clipboard: clipboard)
     }
-
-    /// iPhone and iPad: sessions in the Keychain, remote routes only, compact
-    /// transcripts, and touch screens. `screenClientName` is "iPhone" or "iPad".
-    package static func iOS(
-        screenClientName: String, notificationsEnabled: @escaping @Sendable () -> Bool,
-        secureStore: any NativeSecureStore = CoreKeychainSecureStore(),
-        clipboard: (any NativeClipboard)? = nil
-    ) -> CoreHostPlatform {
-        CoreHostPlatform(
-            secureStore: secureStore, includeLoopbackRoutes: false, compactTranscripts: true,
-            screenClientName: screenClientName, desktopScreens: false, clientIDPrefix: "ios",
-            oauthRedirectURI: nativeOAuthRedirectURI,
-            notifications: CoreUserNotifications(isEnabled: notificationsEnabled),
-            clipboard: clipboard)
-    }
 }
 
 /// Screen sharing's native side: the WebRTC engine and, for an isolated

@@ -9,26 +9,44 @@ class IOSMediaOwnershipTest < Minitest::Test
     @root = Dir.mktmpdir("ios-media-")
     @journal = File.join(@root, "owner.json")
     @id = "com.example.dieter.e2e"
-    @owner = {"udid" => "exact-phone", "owner_pid" => Process.pid, "packages" => [@id, @id + ".uitests.xctrunner"]}
+    @owner = {
+      "udid" => "exact-phone",
+      "owner_pid" => Process.pid,
+      "packages" => [@id, @id + ".uitests.xctrunner"]
+    }
     Dieter::Atomic.json(@journal, @owner)
-    image = File.join(@root, "apps/android/design/reference/phone-board.png")
+    image = File.join(@root, "assets/brand/assets/png/app-icon-light-1024.png")
     FileUtils.mkdir_p(File.dirname(image))
     File.write(image, "owned PNG fixture")
     @commands = []
     commands = @commands
-    info = {"CFBundleIdentifier" => @id, "CFBundleDisplayName" => "Dieter E2E", "UIFileSharingEnabled" => true, "LSSupportsOpeningDocumentsInPlace" => true}
+    info = {
+      "CFBundleIdentifier" => @id,
+      "CFBundleDisplayName" => "Dieter E2E",
+      "UIFileSharingEnabled" => true,
+      "LSSupportsOpeningDocumentsInPlace" => true
+    }
     @info = info
     @context = Object.new
     root = @root
     @context.define_singleton_method(:root) { root }
     @context.define_singleton_method(:output) { root }
-    @context.define_singleton_method(:command) { |argv, **| commands << argv; argv.first == "plutil" ? JSON.generate(info) : "" }
+    @context.define_singleton_method(:command) do |argv, **|
+      commands << argv
+      argv.first == "plutil" ? JSON.generate(info) : ""
+    end
   end
 
   def teardown = FileUtils.remove_entry_secure(@root)
 
   def fixture(id: @id, device: "exact-phone")
-    Dieter::IOSMediaFixture.new(@context, {"kind" => "device", "udid" => device}, app: File.join(@root, "Dieter.app"), bundle_id: id, journal: @journal)
+    Dieter::IOSMediaFixture.new(
+      @context,
+      { "kind" => "device", "udid" => device },
+      app: File.join(@root, "Dieter.app"),
+      bundle_id: id,
+      journal: @journal
+    )
   end
 
   def test_no_device_mutation_without_matching_live_ownership_and_e2e_identity
@@ -60,20 +78,35 @@ class IOSMediaOwnershipTest < Minitest::Test
 
   def test_simulator_media_stays_inside_the_exact_owned_container
     simulator = "owned-simulator"
-    Dieter::Atomic.json(@journal, {"ID" => simulator, "Name" => "Dieter Pipeline share"})
+    Dieter::Atomic.json(@journal, { "ID" => simulator, "Name" => "Dieter Pipeline share" })
     home = File.realpath(@root)
-    container = File.join(home, "Library/Developer/CoreSimulator/Devices", simulator, "data/Containers/Data/Application/owned-app")
+    container =
+      File.join(
+        home,
+        "Library/Developer/CoreSimulator/Devices",
+        simulator,
+        "data/Containers/Data/Application/owned-app"
+      )
     FileUtils.mkdir_p(container)
     original = @context.method(:command)
     @context.define_singleton_method(:command) do |argv, **options|
       output = original.call(argv, **options)
       argv.include?("get_app_container") ? container : output
     end
-    media = Dieter::IOSMediaFixture.new(@context, {"kind" => "simulator"}, app: File.join(@root, "Dieter.app"), bundle_id: @id, journal: @journal, simulator: simulator)
+    media =
+      Dieter::IOSMediaFixture.new(
+        @context,
+        { "kind" => "simulator" },
+        app: File.join(@root, "Dieter.app"),
+        bundle_id: @id,
+        journal: @journal,
+        simulator: simulator
+      )
     Dir.stub(:home, home) do
       name = media.stage
       assert_equal "owned PNG fixture", File.read(File.join(container, "Documents", name))
-      assert_equal ["xcrun", "simctl", "get_app_container", simulator, @id, "data"], @commands.find { |argv| argv.include?("get_app_container") }
+      assert_equal ["xcrun", "simctl", "get_app_container", simulator, @id, "data"],
+                   @commands.find { |argv| argv.include?("get_app_container") }
       FileUtils.rm_r(File.join(container, "Documents"))
       escaped = File.join(@root, "operator-container")
       FileUtils.mkdir_p(escaped)
@@ -83,7 +116,10 @@ class IOSMediaOwnershipTest < Minitest::Test
       refute File.exist?(File.join(escaped, "Documents"))
     end
     @commands.clear
-    Dieter::Atomic.json(@journal, {"ID" => "another-simulator", "Name" => "Dieter Pipeline share"})
+    Dieter::Atomic.json(
+      @journal,
+      { "ID" => "another-simulator", "Name" => "Dieter Pipeline share" }
+    )
     assert_raises(Dieter::PipelineError) { media.stage }
     assert_empty @commands
   end

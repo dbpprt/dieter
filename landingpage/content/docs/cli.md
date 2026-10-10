@@ -99,7 +99,8 @@ dieter card queue remove CARD_ID --message MESSAGE_ID
 
 Queue removal returns the complete payload and selection so a caller can restore a draft for editing.
 
-Completed, unseen replies appear in **Needs attention** on Mac and Android.
+Completed, unseen replies appear in **Needs attention** on Mac and under
+**Needs you** in the Android and iOS Inbox.
 Viewing the latest reply acknowledges it across clients. Automation can use
 `dieter card read --response-seq SEQ CARD_ID` with the `responseSeq` returned by
 `card show` after displaying that response. This also works with `chat read`

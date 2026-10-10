@@ -26,7 +26,7 @@ for Java path configuration and shell activation. Native SDKs remain separate:
 | Daemon / gateway | Go                                           | `just build`                                                                       |
 | macOS            | macOS 26+, Xcode 26.5+                       | [Mac guide](https://github.com/dbpprt/dieter/blob/main/apps/mac/README.md)         |
 | Android          | Android SDK and Android Studio's bundled JBR | [Android guide](https://github.com/dbpprt/dieter/blob/main/apps/android/README.md) |
-| iOS beta         | Xcode; signing for physical devices          | [iOS guide](https://github.com/dbpprt/dieter/blob/main/apps/ios/README.md)         |
+| iOS beta         | Xcode and Java; signing for physical devices | [iOS guide](https://github.com/dbpprt/dieter/blob/main/apps/ios/README.md)         |
 | Website          | Hugo extended 0.164+                         | `just site serve`                                                                  |
 
 ```sh
@@ -48,6 +48,7 @@ helper dependencies. Local build lanes never replace an operator service.
 | ------------------------------------------------- | ------------------------------------------------------------ |
 | `cmd`, `internal`                                 | Daemon, CLI, gateway, storage, transports, harnesses         |
 | `api/proto`                                       | Authoritative RPC schema and stable package namespaces       |
+| `apps/core`                                       | Shared Kotlin client core and the Android/iOS Compose UI     |
 | `apps/mac`, `apps/ios`, `apps/android`            | Native clients and their fixtures                            |
 | `native`                                          | Platform screen capture and WebRTC integration               |
 | `config`                                          | Embedded harness registry                                    |
@@ -77,10 +78,12 @@ Explicit full validation remains available:
 
 ```sh
 just check
+just pipeline core_test
 just pipeline mac test_unit
 just pipeline android test_unit
-just pipeline ios e2e profile:ios-iphone suite:smoke
-just pipeline ios e2e profile:ios-ipad suite:smoke
+just pipeline android e2e profile:android-emulator
+just pipeline ios e2e profile:ios-iphone
+just pipeline ios e2e profile:ios-ipad
 ```
 
 Use `just pipeline lanes` to discover component operations. Configure ignored

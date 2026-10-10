@@ -77,7 +77,7 @@ provider configuration and `dieter doctor` for host diagnostics.
 
 ## Provider quotas
 
-Mac and Android can show remaining account allowance and reset windows. Separate
+Mac, Android, and iOS can show remaining account allowance and reset windows. Separate
 accounts and windows stay separate. A provider summary takes the lowest remaining
 percentage among included accounts; it never adds or averages allowances.
 

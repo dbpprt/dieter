@@ -14,7 +14,7 @@ to sleep pauses its work; switching clients does not transfer execution.
 
 ## Interactive terminals
 
-Mac and Android terminal workspaces connect to daemon-owned PTYs. A shell can
+Mac, Android, and iOS terminals connect to daemon-owned PTYs. A shell can
 start inside a project or in the selected machine user's home. Closing the app
 or leaving a terminal removes its observer, not the shell. Only an explicit
 Close terminal action or process exit ends the session during normal use.

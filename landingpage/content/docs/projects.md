@@ -26,10 +26,10 @@ replica can still show shared project metadata.
 
 ## Pick an execution workspace
 
-| Mode | Where the agent works | Where changes appear |
-| --- | --- | --- |
-| New worktree | A daemon-managed Git branch and directory for the conversation | That conversation's Changes surface |
-| Project directory | The registered checkout, including its current branch and edits | Project **Files → Changes** |
+| Mode              | Where the agent works                                           | Where changes appear                |
+| ----------------- | --------------------------------------------------------------- | ----------------------------------- |
+| New worktree      | A daemon-managed Git branch and directory for the conversation  | That conversation's Changes surface |
+| Project directory | The registered checkout, including its current branch and edits | Project **Files → Changes**         |
 
 Project directory mode does not switch branches. Multiple conversations may use
 that same checkout concurrently, so use separate worktrees when their edits need
@@ -95,8 +95,8 @@ dieter card move CARD_ID --lane review
 
 Boards own their labels. Filter and assign by label ID in automation. Archives
 are reversible; retention settings can automatically archive Done cards.
-Mac and Android synchronize project/chat folders, ordering, sort choices, and
-expansion state, including queued offline edits.
+Mac, Android, and iOS synchronize project/chat folders, ordering, sort choices,
+and expansion state, including queued offline edits.
 
 **Merge request** moves an idle source card's original request and attachments
 into a started target conversation on the same board. It retains both histories

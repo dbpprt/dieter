@@ -50,7 +50,9 @@ open -a Dieter
 
 Sign in to the same gateway. On Android, install the
 [release APK](https://github.com/dbpprt/dieter/releases/latest/download/Dieter-Android.apk)
-and sign in to that origin instead. Your shared projects appear across clients.
+and sign in to that origin instead; iPhone and iPad use the same app through the
+[beta](/docs/installation/#iphone-and-ipad-beta). Your shared projects appear
+across clients.
 
 ## 4. Create a task
 

@@ -51,14 +51,16 @@ Named profiles in ignored `fastlane/local.json` select exact targets. CI ignores
 that file and uses tracked defaults on GitHub-hosted workers. Android, Mac desktop,
 and physical-device journeys use explicit local profiles.
 Never choose an arbitrary phone, replace an operator app, delete leases, clean
-build caches, or restart the live daemon. Use the Mac/Android skills when operating
-their devices. `ios_qualify` builds once and verifies products before each explicit
+build caches, or restart the live daemon. Use the Mac skill when operating the Mac
+app; Android and iOS devices go through their pipeline lanes. `ios_qualify` builds
+once and verifies products before each explicit
 simulator layout; physical tests use `ios e2e` with exact profiles and existing
 development signing/TLS fixtures.
 
 The reusable qualification workflow owns affected PR/main checks and full
-scheduled/manual checks. Routine iOS uses policies and both-layout connection
-journeys. Full catalogs remain available through scheduled/manual qualification.
+scheduled/manual checks. iOS checks run the `ios.journey` case on both simulator
+layouts and `ios.share` on iPhone; Android checks compile `android.journey` and
+`android.share`, which run locally on the emulator. Full catalogs remain available through scheduled/manual qualification.
 Main qualifies once, then CI
 calls Release. Manual releases qualify first. Keep one canonical SemVer, exact
 producer checkpoints, byte-preserving reruns, retained-IPA TestFlight delivery,

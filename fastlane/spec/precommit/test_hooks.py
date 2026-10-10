@@ -173,7 +173,7 @@ class PrecommitTest(unittest.TestCase):
         # Keep a different configuration in the live checkout.
         self.put("apps/mac/.swift-format", (ROOT / "apps/mac/.swift-format").read_bytes())
         source = b"struct Example {\n  let value: Int\n}\n"
-        for name in ("apps/ios/DieterIOSShare/Example.swift", "native/macos-capture/Example.swift"):
+        for name in ("apps/ios/App/Example.swift", "native/macos-capture/Example.swift"):
             self.staged(name, source)
         self.module.check()
         self.assertEqual(

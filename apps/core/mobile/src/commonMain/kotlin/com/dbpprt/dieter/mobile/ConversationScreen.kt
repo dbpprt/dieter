@@ -164,6 +164,19 @@ private fun Transcript(
     val coroutine = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
     var attachments by remember(selected) { mutableStateOf<List<MessagePart>>(emptyList()) }
+    val shares by store.composerShares.collectAsState()
+    // Items shared from another app wait here for this conversation's composer.
+    LaunchedEffect(selected, shares[selected]) {
+        store.takeComposerShare(selected)?.let { shared ->
+            com.dbpprt.dieter.core.composition.Attachments.appending(
+                    attachments,
+                    shared.attachments,
+                )
+                .fold({ attachments = it }, { store.error.value = it.message.orEmpty() })
+            if (shared.text.isNotBlank())
+                draft = listOf(draft, shared.text).filter { it.isNotBlank() }.joinToString("\n")
+        }
+    }
     val pick =
         rememberAttachmentPicker(
             { added ->

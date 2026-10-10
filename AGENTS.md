@@ -83,19 +83,16 @@ immutable checkpoints; never upload DerivedData, app bundles, archives or produc
 copies as diagnostics. Diagnostic upload outages do not require rerunning passed
 tests. Required assertions, cleanup and producer retention still fail closed.
 
-Android emulator E2E is currently flaky and is actively being worked on. A
+The Android device gate is the `android.journey` and `android.share` cases
+(`just pipeline android e2e profile:android-emulator`). CI compiles them but runs
+no emulator, so run it locally for Android or shared mobile UI changes. A
 software-rendered boot can leave a System UI ANR dialog that steals test focus.
 Locally, keep one warm emulator (`just pipeline android local action:emulator_run`
 as its own registered process) so runs borrow a booted device. Between runs, if
 that emulator shows a System UI "isn't responding" dialog, tap **Wait** (for
 example `uiautomator dump`, then `input tap` on its bounds) and force-stop only
-the isolated `com.dbpprt.dieter.e2e` package an interrupted run left open.
-`conversation.task-capture` currently fails on the AOSP API 35 image: after
-"Preview screenshot.png" the attachment preview never shows "Close preview", and
-the system share chooser lists the test's alternative target under the same
-label and ignores taps while animating. Until it is fixed, the full Android gate
-cannot pass locally. Keep failed evidence and ownership journals; passing subsets
-do not qualify the full Android gate, and assertions must not be relaxed to hide
+the isolated `com.dbpprt.dieter.e2e` package an interrupted run left open. Keep
+failed evidence and ownership journals; assertions must not be relaxed to hide
 emulator failures.
 
 Main produces **dev** prereleases with one reserved numeric SemVer across every
@@ -137,9 +134,10 @@ instead of disrupting a running operator app. Full checks below remain for CI
 and explicitly requested repository-wide validation.
 
 CI uses `.github/workflows/qualification.yml`: affected checks on PRs and main,
-full qualification on scheduled/manual runs. Routine iOS checks run portable
-policies and `ios.connecting` on both layouts; full runs retain the functional
-catalog. Measure cold builds, cache transfer and native execution separately;
+full qualification on scheduled/manual runs. iOS checks build the app and run
+the `ios.journey` case on iPhone and iPad simulators; Android checks lint, build
+and compile the journey without running it. Measure cold builds, cache transfer
+and native execution separately;
 the ten-minute feedback target is not a promise for full catalogs or TestFlight.
 CI calls Release after qualification passes; Release must
 not independently repeat those checks. Manual releases qualify first.
@@ -148,14 +146,16 @@ one build lease. Physical tests require their separate exact profile, existing
 development signing and authenticated fixtures; never reuse simulator bytes.
 
 The shared Kotlin client core in `apps/core` has its own checks: `just pipeline core_test` (JVM unit and isolated end-to-end tests over the OkHttp transport that
-Android shares) and, on macOS, `just pipeline core_apple_test`. See `apps/core/README.md`.
-All three native clients are presentation-only clients of the core; the macOS
-and iOS apps link it as `DieterShared` through `apps/mac/Sources/SharedCore`.
-Put rules in the core, not in an app. `just pipeline ios build` assembles the iOS
-framework slices (it needs a Java runtime) and compiles the iOS app and its test
-bundles; the iOS tests run through `just pipeline ios e2e`.
-`just pipeline ios test_unit` uses the small policy dependency graph and the
-canonical `apps/mac/.build/dieter-ios-policy` cache, without building the Mac app.
+Android shares, plus the shared mobile UI's JVM tests) and, on macOS,
+`just pipeline core_apple_test`. See `apps/core/README.md`.
+All three native clients are presentation-only clients of the core. Android and
+iOS share one Compose Multiplatform UI (`apps/core/mobile`, see its README) in
+thin native shells: `apps/android`, and `apps/ios` with its Swift host in
+`apps/mac/Sources/DieterIOS`. The macOS app links the core as `DieterShared`
+through `apps/mac/Sources/SharedCore`. Put rules in the core, not in an app or
+the shared UI. `just pipeline ios build` assembles the `DieterMobile` framework
+slice (it needs a Java runtime) and compiles the iOS app and its UI test bundle;
+the iOS journey runs through `just pipeline ios e2e`. There is no iOS unit lane.
 
 ```sh
 mise exec -- just check

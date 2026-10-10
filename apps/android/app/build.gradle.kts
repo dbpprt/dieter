@@ -31,7 +31,7 @@ android {
         targetSdk = 37
         versionCode = releaseVersionCode.get()
         versionName = releaseVersionName.get()
-        testInstrumentationRunner = "com.dbpprt.dieter.e2e.DieterTestRunner"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -46,6 +46,7 @@ android {
     }
 
     buildTypes {
+        // Journeys install a separate application, preserving the operator's app and session.
         create("e2e") {
             initWith(getByName("debug"))
             applicationIdSuffix = ".e2e"
@@ -56,19 +57,11 @@ android {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
-        create("performance") {
-            initWith(getByName("release"))
-            applicationIdSuffix = ".e2e.performance"
-            isDebuggable = false
-            signingConfig = signingConfigs.getByName("debug")
-            matchingFallbacks += listOf("release")
-        }
     }
 
-    // E2E and production-mode performance have separate test application IDs.
     testBuildType =
         providers.gradleProperty("dieter.testBuildType").orElse("debug").get().also {
-            require(it in listOf("debug", "e2e", "performance")) { "Unsupported test build type" }
+            require(it in listOf("debug", "e2e")) { "Unsupported test build type" }
         }
 
     buildFeatures {
@@ -85,55 +78,23 @@ android {
         // Dieter uses only Termux's pure-Java VT emulator and renderer. The
         // bundled local-process JNI bridge is unused and is not 16 KiB aligned.
         jniLibs.excludes += setOf("**/libtermux.so")
-        resources.excludes +=
-            setOf(
-                "META-INF/AL2.0",
-                "META-INF/LGPL2.1",
-                "META-INF/LICENSE.md",
-                "META-INF/NOTICE.md",
-            )
     }
 }
 
 dependencies {
-    // All client logic: sign-in, routing, sync, delivery, conversations, and features.
-    implementation("com.dbpprt.dieter:shared")
-    implementation(libs.bouncycastle)
-    implementation(libs.bouncycastle.tls)
+    // The shared Compose UI and, through it, all client logic in the core.
+    implementation("com.dbpprt.dieter:mobile")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(coreLibs.kotlinx.coroutines.android)
-    // These two reusable Termux terminal modules are Apache-2.0 licensed.
-    implementation(libs.termux.terminal.emulator)
-    implementation(libs.termux.terminal.view)
-
-    val composeBom = platform(libs.compose.bom)
-    implementation(composeBom)
-    androidTestImplementation(composeBom)
-    implementation(libs.compose.ui)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material3)
-    implementation(libs.compose.material.icons)
-    debugImplementation(libs.compose.ui.tooling)
-    constraints {
-        // The app does not use graphics-path; Compose's ui-graphics requests 1.0.1.
-        implementation("androidx.graphics:graphics-path:${libs.versions.graphicsPath.get()}") {
-            because("1.1.0 ships libandroidx.graphics.path.so 16 KiB page aligned")
-        }
-    }
+    implementation(coreLibs.kotlinx.coroutines.android)
+    implementation(libs.bouncycastle)
+    implementation(libs.bouncycastle.tls)
 
-    testImplementation(libs.junit)
-    // Tests reach the native screen fixture over plaintext HTTP/2 with the core's OkHttp.
-    androidTestImplementation(coreLibs.okhttp)
     androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.test.rules)
-    androidTestImplementation(libs.espresso.core)
+    androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.compose.ui.test.junit4)
-    debugImplementation(libs.compose.ui.test.manifest)
-    add("e2eImplementation", libs.compose.ui.test.manifest)
-    add("performanceImplementation", libs.compose.ui.test.manifest)
 }
 
 // The adapter uses a package-private injection seam. Pin the exact AAR, so an

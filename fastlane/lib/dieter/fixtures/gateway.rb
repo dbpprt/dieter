@@ -53,15 +53,15 @@ module Dieter
       end
       argv << "-board-stress-fixture" if @suite == "board"
       argv << "-inbox-fixture" if @suite == "inbox"
-      argv << "-compose-mobile-fixture" if @suite == "compose"
+      argv << "-mobile-fixture" if @suite == "mobile"
       argv << "-usage-fixture" if @usage
       @process =
         @context.start(
           argv,
           environment: {
             "DIETER_HARNESS_RUNTIME_DIR" => File.join(@context.root, "internal/harness/runtime"),
-            # Production daemons offer WebRTC control channels; Compose Android must use them too.
-            "DIETER_TEST_CONTROL_WEBRTC" => @suite == "compose" ? "1" : nil
+            # Production daemons offer WebRTC control channels; the Android journey uses them too.
+            "DIETER_TEST_CONTROL_WEBRTC" => @suite == "mobile" ? "1" : nil
           }.compact
         )
       # Seeding runs git and starts two daemons; a CI runner that just tore down a

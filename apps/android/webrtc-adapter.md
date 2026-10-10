@@ -24,23 +24,22 @@ adapter requests `KEY_LOW_LATENCY=1`. Configuration or start rejection releases 
 codec and retries exactly once with a fresh ordinary codec. Acceptance does not
 prove reduced latency. Missing support, software decoding and rejected settings
 are explicit diagnostics. The production default remains off until an advertising
-physical codec passes latency and lifecycle qualification; fixtures opt in explicitly.
+physical codec passes latency and lifecycle qualification.
 H.264 platform fallback and HEVC hardware admission
 retain the existing behavior.
 
-Reproduce with `just pipeline android test_unit`, then run the fixture using
-`just pipeline android e2e suite:screens profile:android-device`. For codec journeys select
-`cases:screens.screen-codec-end-to-end-test`. The app ID is
-`com.dbpprt.dieter.e2e`, separate from the operator app. Screen journeys need a
-macOS capture host. Mac companion measurements use the separate screen qualification composition.
-Use `DIETER_SCREEN_TEST_LOW_LATENCY=0` for the baseline and
-`DIETER_SCREEN_TEST_SURFACE=1` for the SurfaceView/EGL experiment.
+`just pipeline android build` verifies the pinned AAR, rebuilds the SDK extension
+and compiles the adapter against this contract. The low-latency request
+(`AndroidScreenMedia.lowLatencyDecoding`), the SurfaceView/EGL experiment
+(`surfacePresentation`) and direct MediaCodec output
+(`directSurfacePresentation`) are off by default, and nothing in the app turns
+them on. The instrumented codec, surface-ownership and recovery tests that
+exercised them on devices were removed with the previous Android app; the
+`android.journey` case does not cover screens. Add device instrumentation and
+qualify on an explicit physical profile (`profile:android-device`) before
+enabling any of these paths.
 
-`just pipeline android e2e suite:sdk profile:android-device` runs codec/ownership/icon checks
-without a daemon or capture-host fixture. The physical qualification command
-still requires an explicit physical serial and validates exact method results.
-
-`DIETER_SCREEN_TEST_DIRECT_SURFACE=1` selects the separate direct MediaCodec
+`directSurfacePresentation` selects the separate direct MediaCodec
 path. An SDK-private `MediaCodecSurfaceFrame` owns a real dequeued output index,
 not placeholder pixels. The existing JNI bridge retains that actual buffer for
 normal RTP timestamp matching, decode statistics and reference acknowledgements.
@@ -61,13 +60,11 @@ alone is **not direct MediaCodec output**.
 
 Feedback distinguishes `ANDROID_FRAME_RENDERED` from `EGL_SUBMITTED`.
 MediaCodec callbacks may be delayed/batched; neither endpoint means physical
-scanout. Tests require native `framesDecoded` to advance and reference ACKs only
-after actual output. Direct output, low-latency configuration and SurfaceView/EGL
-remain fixture-only pending physical latency/power/device qualification.
+scanout. Reference ACKs follow actual decoder output only. Direct output,
+low-latency configuration and SurfaceView/EGL remain disabled pending physical
+latency/power/device qualification.
 
 Actual MediaCodec output dequeue is also observed before a busy texture consumer
 may discard an already decoded frame. Reference ACKs deduplicate this identity
 against the ordinary frame callback (which also covers software fallback).
-Recovery instrumentation observes this real decode endpoint independently of
-rendering; it still requires the exact RTP timestamp of the dropped protected
-packet. No compressed-input or fabricated-frame callback satisfies that proof.
+No compressed-input or fabricated-frame callback counts as decoded output.

@@ -55,8 +55,9 @@ follow-ups from being lost when their provider session closes.
   background processes in the optional Mac conversation workspace.
 - **Work across machines.** One shared project can have checkouts on your laptop,
   workstation, and Linux server. Each conversation keeps its execution owner.
-- **Pick up from your phone.** Android provides Activity, boards, chats, files,
-  terminals, and machine tools. iPhone and iPad support is in beta.
+- **Pick up from your phone.** Android, iPhone, and iPad share one app with an
+  Inbox, boards, chats, files, Git review, schedules, terminals, and machine
+  tools. The iPhone and iPad app is in beta.
 - **Step in when needed.** Queue a follow-up, review a result, or open an
   authenticated remote screen with explicit input control. Android, macOS, and
   iOS repair transient screen interruptions within the existing session before
@@ -173,7 +174,7 @@ Changes behaves like a source-control panel, not a per-agent report. Project
 mode shows the shared checkout; worktree mode shows the conversation checkout.
 The daemon reads one lightweight status snapshot, loads diffs on selection, and
 owns stage, commit, update, validation, integration, and explicit publishing so
-Mac, Android, and CLI clients converge on the same Git state.
+Mac, Android, iOS, and CLI clients converge on the same Git state.
 
 ## Find your way
 
@@ -207,10 +208,10 @@ The default runs affected fast checks and lists related device/desktop work.
 Select specific native cases or add `--native`; avoid full-suite reruns between
 edits. Generic pipeline changes are verified through shared contracts.
 
-Run Android journeys with `just pipeline android e2e suite:smoke`, or macOS with
-`just pipeline mac e2e suite:smoke`, or iOS with
-`just pipeline ios e2e profile:ios-iphone suite:smoke` (also `profile:ios-ipad`). The
-[native test guide](tests/e2e/README.md) covers YAML cases, suite selection,
+Run the Android journey with `just pipeline android e2e profile:android-emulator`,
+macOS with `just pipeline mac e2e suite:smoke`, or iOS with
+`just pipeline ios e2e profile:ios-iphone` (also `profile:ios-ipad`). The
+[native test guide](tests/e2e/README.md) covers catalog cases, suite selection,
 shared lifecycle and failure evidence. [The pipeline guide](fastlane/README.md)
 covers local emulator/device profiles, builds, signing and dev/stable releases.
 `just pipeline ios_qualify profiles:ios-iphone,ios-ipad suite:smoke` builds and
@@ -224,8 +225,9 @@ Dieter is [MIT-licensed](LICENSE). Pronounced **DEE-ter**. Made in Berlin.
 
 ### Unseen model replies
 
-Activity on macOS and Android shows **Needs attention** for completed model
-replies that have not been viewed and for questions waiting for an answer.
+Activity on macOS (**Needs attention**) and the Android and iOS Inbox (**Needs
+you**) flag completed model replies that have not been viewed and questions
+waiting for an answer.
 Viewing the latest transcript in the foreground acknowledges that reply across
 clients. A Review lane alone does not imply an unread reply.
 

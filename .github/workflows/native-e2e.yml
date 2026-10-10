@@ -3,10 +3,10 @@ on:
   workflow_dispatch:
     inputs:
       suite:
-        description: iOS simulator catalog suite
+        description: iOS journey on the iPhone and iPad simulator layouts, and the share case on iPhone
         type: choice
         default: functional
-        options: [smoke, functional, screens]
+        options: [smoke, functional]
 permissions:
   contents: read
 concurrency:

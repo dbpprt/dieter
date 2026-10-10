@@ -34,7 +34,7 @@ type ContractRequest struct {
 
 func Contract(ctx context.Context, root string, args []string, input io.Reader, output io.Writer) error {
 	if len(args) != 1 || args[0] == "--help" || args[0] == "help" {
-		_, err := fmt.Fprintln(output, "pipeline-contract <lint|plan|qualify|report|extract|xctestrun|ios-console|mac-phases|screen-normalize|android-digest>\nBounded JSON request on stdin; JSON response on stdout. Pure planning, codecs and qualification; no builds, devices or case execution.")
+		_, err := fmt.Fprintln(output, "pipeline-contract <affected-checks|lint|plan|qualify|report|xctestrun|mac-phases|android-digest>\nBounded JSON request on stdin; JSON response on stdout. Pure planning, codecs and qualification; no builds, devices or case execution.")
 		return err
 	}
 	var request ContractRequest
@@ -104,7 +104,7 @@ func Contract(ctx context.Context, root string, args []string, input io.Reader, 
 		}
 		return emit(map[string]any{"version": 1, "platform": request.Platform, "device": request.Device, "cases": selected})
 	case "qualify":
-		if request.Case == nil || request.Case.Native == nil && request.Platform != "android" {
+		if request.Case == nil || request.Case.Native == nil {
 			return fmt.Errorf("native qualification requires an explicit case")
 		}
 		data, err := read(request.Path, 32<<20)
@@ -114,11 +114,7 @@ func Contract(ctx context.Context, root string, args []string, input io.Reader, 
 		status, reason := "failed", "unknown native result"
 		switch request.Platform {
 		case "android":
-			native := Native{Class: "com.dbpprt.dieter.e2e.FlowTest", Methods: []string{"runFlow"}}
-			if request.Case.Native != nil {
-				native = *request.Case.Native
-			}
-			status, reason = instrumentationResult(string(data), native)
+			status, reason = instrumentationResult(string(data), *request.Case.Native)
 		case "ios":
 			status, reason = iosTestResult(data, *request.Case.Native)
 		case "mac":
@@ -152,16 +148,7 @@ func Contract(ctx context.Context, root string, args []string, input io.Reader, 
 		if len(seen) != len(expected) {
 			return fmt.Errorf("report is missing required case results")
 		}
-		if err := writeReport(request.Output, *request.Report); err != nil {
-			return err
-		}
-		return writeSDKReport(request.Output, request.Report.Serial, request.Cases, request.Report.Results)
-	case "extract":
-		data, err := read(request.Path, 32<<20)
-		if err != nil {
-			return err
-		}
-		return extractEvidence(data, request.Output)
+		return writeReport(request.Output, *request.Report)
 	case "xctestrun":
 		data, err := read(request.Path, 4<<20)
 		if err != nil {
@@ -175,24 +162,12 @@ func Contract(ctx context.Context, root string, args []string, input io.Reader, 
 			return fmt.Errorf("expected exactly one XCTest target %s", request.Target)
 		}
 		return writeJSON(request.Output, value)
-	case "ios-console":
-		data, err := read(request.Path, 4<<20)
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprint(output, iosConsole(data, request.Kind, request.Values))
-		return err
 	case "mac-phases":
 		phases := []map[string]any{}
 		for _, phase := range macPhases(request.Suite, request.Output, request.Target) {
 			phases = append(phases, map[string]any{"name": phase.name, "report": phase.report, "argv": phase.args})
 		}
 		return emit(phases)
-	case "screen-normalize":
-		if request.Case == nil {
-			return fmt.Errorf("screen normalization requires a case")
-		}
-		return normalizeScreenEvidence(request.Output, *request.Case)
 	case "android-digest":
 		value, err := sourceDigest(ctx, root)
 		if err != nil {

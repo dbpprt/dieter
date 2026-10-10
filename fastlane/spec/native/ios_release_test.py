@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import plistlib
 import shlex
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -56,9 +57,9 @@ def fixture_env(runner_temp):
 
 def create_archive(path, version="1.2.3", build="42", bundle_id=META["bundle_id"]):
     app = path / "Products/Applications/Dieter.app"
-    framework = app / "Frameworks/DieterIOS.framework"
+    framework = app / "Frameworks/WebRTC.framework"
     framework.mkdir(parents=True)
-    (framework / "DieterIOS").write_bytes(b"framework fixture")
+    (framework / "WebRTC").write_bytes(b"framework fixture")
     (app / "Dieter").write_bytes(b"app fixture")
     share = app / "PlugIns/DieterShare.appex"
     share.mkdir(parents=True)
@@ -161,7 +162,7 @@ class FakeCommands:
                 with zipfile.ZipFile(directory / "Dieter.ipa", "w") as ipa:
                     ipa.writestr("Payload/Dieter.app/Info.plist", (app / "Info.plist").read_bytes())
                     ipa.writestr(
-                        "Payload/Dieter.app/Frameworks/DieterIOS.framework/DieterIOS",
+                        "Payload/Dieter.app/Frameworks/WebRTC.framework/WebRTC",
                         b"framework fixture",
                     )
                     ipa.writestr(
@@ -331,7 +332,7 @@ class ReleaseTests(unittest.TestCase):
                 elif defect == "executable":
                     (app / "Dieter").unlink()
                 elif defect == "framework":
-                    (app / "Frameworks/DieterIOS.framework/DieterIOS").unlink()
+                    shutil.rmtree(app / "Frameworks/WebRTC.framework")
                 elif defect == "share":
                     (app / "PlugIns/DieterShare.appex/DieterShare").unlink()
                 else:
@@ -372,7 +373,7 @@ class ReleaseTests(unittest.TestCase):
                         ipa.writestr("Payload/Dieter.app/Info.plist", plistlib.dumps(info))
                         if defect != "framework":
                             ipa.writestr(
-                                "Payload/Dieter.app/Frameworks/DieterIOS.framework/DieterIOS",
+                                "Payload/Dieter.app/Frameworks/WebRTC.framework/WebRTC",
                                 b"framework",
                             )
                         if defect != "share":

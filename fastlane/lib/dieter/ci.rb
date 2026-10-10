@@ -100,10 +100,7 @@ module Dieter
         "core-apple" => "kmp",
         "mac" => "macos",
         "ios" => "ios",
-        "android" => "android",
-        "compose-core" => "compose_core",
-        "compose-android" => "compose_android",
-        "compose-ios" => "compose_ios"
+        "android" => "android"
       }
       unless mapping.values.uniq.all? { |name| %w[true false].include?(selections[name]) }
         raise PipelineError, "Check selection outputs are missing or invalid"
@@ -301,28 +298,24 @@ module Dieter
         adapter = Android.new(context)
         adapter.unit({})
         adapter.build({})
-        # Compile both E2E variants without pretending to execute an emulator.
-        (full ? %w[e2e performance] : %w[e2e]).each do |variant|
-          diagnostics = HostedGradleDiagnostics.new(context, variant)
-          process =
-            context.start(
-              [
-                File.join(context.root, "apps/android/gradlew"),
-                "--project-dir",
-                "apps/android",
-                "--console=plain",
-                "-Pdieter.testBuildType=#{variant}",
-                ":app:assemble#{variant.capitalize}",
-                ":app:assemble#{variant.capitalize}AndroidTest"
-              ],
-              log: File.join(context.output, "#{variant}-build.log")
-            )
-          context.wait(process, timeout: 2400) { |running| diagnostics.progress(running) }
-        end
+        # Compile the journey without pretending to execute an emulator.
+        diagnostics = HostedGradleDiagnostics.new(context, "e2e")
+        process =
+          context.start(
+            [
+              File.join(context.root, "apps/android/gradlew"),
+              "--project-dir",
+              "apps/android",
+              "--console=plain",
+              "-Pdieter.testBuildType=e2e",
+              ":app:assembleE2e",
+              ":app:assembleE2eAndroidTest"
+            ],
+            log: File.join(context.output, "e2e-build.log")
+          )
+        context.wait(process, timeout: 2400) { |running| diagnostics.progress(running) }
       when "ios"
-        adapter = IOS.new(context)
-        adapter.unit({})
-        adapter.build({})
+        IOS.new(context).build({})
       when "mac"
         context.command(%w[bash apps/mac/scripts/format-swift.sh --check], timeout: 300)
         context.command(%w[bash apps/mac/scripts/sync-proto.sh --check], timeout: 300)

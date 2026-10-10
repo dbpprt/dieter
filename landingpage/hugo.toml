@@ -22,7 +22,7 @@ disableKinds = ["taxonomy", "term", "rss"]
   docs = "/docs/:slug/"
 
 [params]
-  description = "Run coding agents on always-on Macs and headless Linux hosts. Boards, conversations, terminals, and screens across your machines, from native Mac and Android clients."
+  description = "Run coding agents on always-on Macs and headless Linux hosts. Boards, conversations, terminals, and screens across your machines, from native Mac, Android, and iOS clients."
   tagline = "Many agents, many machines, one interface."
   subtitle = "Coding agents across all your machines."
   author = "Dieter contributors"

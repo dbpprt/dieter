@@ -2,6 +2,7 @@
 
 require "minitest/autorun"
 require "tmpdir"
+require "minitest/mock"
 require_relative "../lib/dieter/platforms/ios"
 
 class IOSBuildSimulatorTest < Minitest::Test
@@ -127,6 +128,79 @@ class IOSBuildSimulatorTest < Minitest::Test
                    ],
                    commands.first(3)
       refute File.exist?(journal)
+    end
+  end
+
+  def test_simulator_build_compiles_the_compose_app_with_the_ios_package_graph
+    Dir.mktmpdir do |root|
+      commands, leases, seen = [], [], {}
+      context =
+        Struct.new(:root, :output, :private_dir, :environment).new(
+          root,
+          root,
+          root,
+          { "DIETER_RELEASE_VERSION" => "0.4.413" }
+        )
+      context.define_singleton_method(:lease) { |name| leases << name }
+      context.define_singleton_method(:command) do |argv, **|
+        commands << argv
+        case argv[0..1]
+        when %w[xcrun simctl]
+          JSON.generate(
+            {
+              "devices" => {
+                "com.apple.CoreSimulator.SimRuntime.iOS-26-5" => [
+                  { "udid" => "operator", "isAvailable" => true }
+                ]
+              },
+              "runtimes" => RUNTIMES
+            }
+          )
+        when %w[git rev-parse]
+          "a" * 40
+        when %w[git ls-files]
+          ""
+        when %w[xcodebuild -version]
+          "Xcode 26.5"
+        else
+          raise "Unexpected command: #{argv.inspect}"
+        end
+      end
+      framework = Object.new
+      framework.define_singleton_method(:build) { |**options| seen[:framework] = options }
+      products = File.join(root, "apps/ios/.build/DerivedData/Build/Products")
+      action =
+        lambda do |action_context, name, options, timeout:, log:|
+          seen[:action] = [name, options, action_context.environment.dup]
+          FileUtils.mkdir_p(products)
+          File.write(File.join(products, "Dieter_iphonesimulator26.5-arm64.xctestrun"), "plan")
+        end
+      ios = Dieter::IOS.new(context)
+      plan =
+        Dieter::SharedFramework.stub(:new, ->(_context) { framework }) do
+          Dieter::NativeAction.stub(:run, action) { ios.build({}) }
+        end
+
+      assert_equal File.join(products, "Dieter_iphonesimulator26.5-arm64.xctestrun"), plan
+      assert_includes leases, "apple-build"
+      assert_equal({ configuration: "debug", platforms: "ios-simulator" }, seen[:framework])
+      name, options, environment = seen.fetch(:action)
+      assert_equal "run_tests", name
+      assert_equal "apps/ios/Dieter.xcodeproj", options.fetch(:project)
+      assert_equal "Dieter", options.fetch(:scheme)
+      assert_equal "generic/platform=iOS Simulator", options.fetch(:destination)
+      assert options.fetch(:build_for_testing)
+      assert_equal "ios", environment.fetch("DIETER_SWIFT_PACKAGE")
+      settings = Shellwords.split(options.fetch(:xcargs))
+      assert_includes settings, "CODE_SIGN_IDENTITY=-"
+      assert_includes settings, "DIETER_IOS_BUNDLE_ID=com.dbpprt.dieter.ios.e2e"
+      assert_includes settings, "DIETER_RELEASE_VERSION=0.4.413"
+      # The simulator app and Share extension share an E2E-only app group.
+      assert_includes settings, "DIETER_IOS_APP_GROUP_ID=group.com.dbpprt.dieter.ios.e2e"
+      refute settings.any? { |value| value.include?("SHARE_PROFILE") }
+      manifest = JSON.parse(File.read(File.join(root, "artifacts.json")))
+      assert_equal "ios", manifest.fetch("component")
+      assert_equal "iphonesimulator", manifest.fetch("toolchain").fetch("sdk")
     end
   end
 end

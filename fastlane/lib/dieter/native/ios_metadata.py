@@ -253,9 +253,8 @@ def validate_archive(archive, version, build, bundle_id, *, signed):
         or not (app / executable).is_file()
     ):
         raise ReleaseError("The archive is missing the Dieter executable.")
-    framework = app / "Frameworks/DieterIOS.framework"
-    if not framework.is_dir() or not (framework / "DieterIOS").is_file():
-        raise ReleaseError("The archive is missing its embedded DieterIOS framework.")
+    if not (app / "Frameworks/WebRTC.framework").is_dir():
+        raise ReleaseError("The archive is missing its embedded WebRTC framework.")
     share = app / "PlugIns/DieterShare.appex"
     try:
         share_info = plistlib.loads((share / "Info.plist").read_bytes())
@@ -303,8 +302,8 @@ def validate_ipa(directory, version, build, bundle_id):
         with zipfile.ZipFile(candidates[0]) as ipa:
             info = plistlib.loads(ipa.read("Payload/Dieter.app/Info.plist"))
             validate_info(info, version, build, bundle_id)
-            if "Payload/Dieter.app/Frameworks/DieterIOS.framework/DieterIOS" not in ipa.namelist():
-                raise ReleaseError("The exported IPA is missing its embedded DieterIOS framework.")
+            if "Payload/Dieter.app/Frameworks/WebRTC.framework/WebRTC" not in ipa.namelist():
+                raise ReleaseError("The exported IPA is missing its embedded WebRTC framework.")
             if "Payload/Dieter.app/PlugIns/DieterShare.appex/DieterShare" not in ipa.namelist():
                 raise ReleaseError("The exported IPA is missing its Share extension.")
     except (OSError, ValueError, KeyError, zipfile.BadZipFile, plistlib.InvalidFileException):

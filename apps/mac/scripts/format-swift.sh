@@ -6,7 +6,10 @@ arguments=(--configuration apps/mac/.swift-format --recursive)
 case "$mode" in
     --write) command=(format --in-place) ;;
     --check) command=(lint --strict) ;;
-    *) echo "Usage: $0 [--check|--write]" >&2; exit 2 ;;
+    *)
+        echo "Usage: $0 [--check|--write]" >&2
+        exit 2
+        ;;
 esac
 # These roots deliberately exclude generated clients, binary artifacts and Vendor.
 xcrun swift-format "${command[@]}" "${arguments[@]}" \
@@ -14,4 +17,4 @@ xcrun swift-format "${command[@]}" "${arguments[@]}" \
     apps/mac/Sources/SharedCore apps/mac/Sources/DieterTransport \
     apps/mac/Sources/DieterMac \
     apps/mac/Sources/DieterIOS apps/mac/Tests apps/mac/Tools \
-    apps/ios/DieterIOSApp/DieterIOSApp.swift apps/ios/DieterIOSUITests apps/ios/DieterIOSNativeTests
+    apps/ios/App apps/ios/Share apps/ios/Tests

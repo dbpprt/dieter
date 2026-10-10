@@ -23,11 +23,10 @@ from common import (
 FIELDS = "interfaceVersion project gatewayHost turnHost publicIPv4 turnIPv4 topology tls acmeEmail allowedUserIDs stateVolume installRoot configRoot runtimeRoot caddyData caddyConfig legacyHosts turn limits".split()
 SECRET_FIELDS = "githubClientID githubClientSecret authSecret turnSharedSecret".split()
 # Exact app callbacks; each native login is additionally bound to a PKCE challenge.
+# The Mac and iOS apps share the dieter-mac scheme.
 NATIVE_REDIRECT_URIS = (
     "dieter-mac://oauth/callback",
     "dieter-android://oauth/callback",
-    "dieter-compose://oauth/callback",
-    "dieter-compose-ios://oauth/callback",
 )
 
 

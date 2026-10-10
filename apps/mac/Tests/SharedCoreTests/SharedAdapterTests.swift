@@ -83,7 +83,7 @@ struct SharedAdapterTests {
         #expect(resolved.messages.map(\.id) == ["m2", "m3"])
     }
 
-    @Test func eachPlatformConfiguresTheCoreForItsDevice() throws {
+    @Test func theMacConfiguresTheCoreForTheDesktop() {
         let file = FileManager.default.temporaryDirectory.appending(path: "dieter-platform-\(UUID().uuidString).json")
         let mac = CoreHostPlatform.mac(credentialsFile: file, notificationsEnabled: { false })
         #expect(mac.secureStore is CoreFileSecureStore)
@@ -91,14 +91,6 @@ struct SharedAdapterTests {
         #expect(mac.screenClientName == "Mac" && mac.clientIDPrefix == "mac")
         #expect(mac.oauthRedirectURI == "dieter-mac://oauth/callback")
         #expect(mac.clipboard == nil)
-
-        let phone = CoreHostPlatform.iOS(screenClientName: "iPhone", notificationsEnabled: { false })
-        let keychain = try #require(phone.secureStore as? CoreKeychainSecureStore)
-        #expect(keychain.service == "com.dbpprt.dieter.ios.core")
-        #expect(!phone.includeLoopbackRoutes && phone.compactTranscripts && !phone.desktopScreens)
-        #expect(phone.screenClientName == "iPhone" && phone.clientIDPrefix == "ios")
-        #expect(phone.oauthRedirectURI == mac.oauthRedirectURI)
-        #expect(phone.notifications != nil)
     }
 
     @MainActor
@@ -117,29 +109,3 @@ struct SharedAdapterTests {
         #expect(model.slice.otherIds == ["core"])
     }
 }
-
-// Tests only a randomly named service: existing sessions are never read,
-// replaced, or enumerated. Keychain access needs the signed iOS test host.
-#if os(iOS)
-    @Test func keychainStoreSeparatesGatewaysAndRemovesOnlyTheSelectedOrigin() {
-        let service = "com.dbpprt.dieter.ios.tests.\(UUID().uuidString)"
-        let first = "https://first.invalid:443", second = "https://second.invalid:443"
-        let store = CoreKeychainSecureStore(service: service)
-        defer {
-            store.delete(key: first)
-            store.delete(key: second)
-        }
-        store.write(key: first, value: "first-token")
-        store.write(key: first, value: "updated-token")
-        store.write(key: second, value: "second-token")
-        let reloaded = CoreKeychainSecureStore(service: service)
-        #expect(reloaded.read(key: first) == "updated-token")
-        #expect(reloaded.read(key: second) == "second-token")
-        reloaded.delete(key: first)
-        #expect(reloaded.read(key: first) == nil)
-        #expect(reloaded.read(key: second) == "second-token")
-        reloaded.delete(key: first)
-        // Another service never sees these sessions.
-        #expect(CoreKeychainSecureStore(service: service + ".other").read(key: second) == nil)
-    }
-#endif

@@ -12,9 +12,9 @@ no task-owned `DieterMac` process behind.
 For pipeline changes, read [dieter-pipelines](../dieter-pipelines/SKILL.md).
 Inspect `just check-changed --dry-run`; run focused affected checks once after
 implementation, using specific native cases for lifecycle/integration changes.
-Do not rerun full Mac/Apple suites between edits. `ios test_unit` uses the small
-iOS policy graph and `apps/mac/.build/dieter-ios-policy`, rather than the full Mac
-test package. `ios_qualify` shares one verified build across explicit iPhone/iPad
+Do not rerun full Mac/Apple suites between edits. The iOS app is a separate
+package graph (`DIETER_SWIFT_PACKAGE=ios`) hosting the shared Compose UI; it has
+no unit lane. `ios_qualify` shares one verified build across explicit iPhone/iPad
 simulator profiles under the existing Apple lease.
 
 ## Preserve the environment
@@ -75,10 +75,11 @@ be incremental. If it is not, compare the Xcode version, configuration,
 anything. Never point builds at `dieter-tests` or tests at `dieter-local`.
 Shared-core framework preparation uses a cross-process publication lease,
 hashes production sources/schema/toolchains, and preserves identical framework
-bytes and timestamps. `ios-simulator` requests only the simulator slice;
-`ios-device` requests only the device slice;
-Mac refreshes retain any existing slices of the same configuration. Test and
-documentation edits do not replace the framework.
+bytes and timestamps. The Mac links `DieterShared.xcframework` (`macos`
+slice); the iOS app links `DieterMobile.xcframework`, where `ios-simulator` and
+`ios-device` request only their slice. Refreshes retain any existing slices of
+the same configuration. Test and documentation edits do not replace the
+framework.
 
 `just pipeline mac local action:run` refuses conflicting processes, launches without `open -n`, and
 requires exactly one canonical executable. If that app is already running, it

@@ -130,17 +130,20 @@ screen renderer stay native. `AppSession` owns the menu-bar lifetime and
 
 The package's modules:
 
-- `SharedCore`: the bridge to `DieterShared` both Apple apps use (`CoreHost`,
-  the platform services, the command/slice client), the adapter models both
-  present (chats, creation, files, terminals, fleet, quotas, drafts, and the
-  keyed delta folds), and the WebRTC screen engine, which draws through each
-  app's renderer.
+- `SharedCore`: the bridge to `DieterShared` (`CoreHost`, the platform
+  services, the command/slice client), the adapter models the Mac presents
+  (chats, creation, files, terminals, fleet, quotas, drafts, and the keyed
+  delta folds), and the WebRTC screen engine, which draws through each app's
+  renderer. The iOS host compiles only its Keychain store, platform services,
+  RPC bridge, control channels, and screen media.
 - `DieterTransport`: the native transport (the WebRTC control channel, daemon
   certificate pinning, and resolver targets), plus the screen key map and
   clipboard content that `native/macos-capture` also compiles by path.
 - `DieterAPI`: the generated protobuf and gRPC types.
-- `DieterMac` and `DieterIOS`: the two apps' presentation. The iOS app's
-  Xcode project is in `apps/ios`.
+- `DieterMac`: the Mac app's presentation.
+- `DieterIOS`: the iOS app's host for the shared Compose UI, in a separate
+  package graph selected with `DIETER_SWIFT_PACKAGE=ios`. The iOS app's Xcode
+  project is in `apps/ios`; see [its README](../ios/README.md).
 
 The Mac links grpc-swift directly only for its debug UI smoke fixtures.
 

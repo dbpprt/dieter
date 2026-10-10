@@ -90,12 +90,11 @@ strict HEVC may fail when either endpoint lacks support. Use `screen status SESS
 to inspect actual codec and stream state. Do not treat emulator timings as physical
 device latency measurements.
 
-## Android updates stop in the background
+## Phone updates stop in the background
 
-**Live** maintains a connection and partial wake lock. **Smart** stays live while
-work is running and performs best-effort idle checks. **App only** reconnects
-when opened. Android can defer idle background work, especially during Doze.
-The host's agent continues regardless of the phone's observation mode.
+The Android and iOS apps observe your workspace only while they are open. They
+have no background sync service, notifications, or widgets; reopening the app
+reconnects and catches up. The host's agent continues regardless.
 
 ## A terminal disappeared after a host restart
 

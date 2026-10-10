@@ -11,15 +11,16 @@ runs:
       with:
         # Separate toolchains, dependency graphs, platform and revisions. Restore
         # compatible prior state; Swift/Xcode and product contracts validate it.
-        key: apple-check-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.5-java21-${{ inputs.component }}-${{ hashFiles('apps/mac/Package.resolved', 'apps/ios/**/Package.resolved', 'apps/core/gradle/libs.versions.toml', 'apps/core/gradle/wrapper/gradle-wrapper.properties') }}-${{ github.sha }}
+        key: apple-check-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.5-java21-${{ inputs.component }}-${{ hashFiles('apps/mac/Package.resolved', 'apps/ios/**/Package.resolved', 'apps/core/mobile/build.gradle.kts', 'apps/core/gradle/libs.versions.toml', 'apps/core/gradle/wrapper/gradle-wrapper.properties') }}-${{ github.sha }}
         restore-keys: |
-          apple-check-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.5-java21-${{ inputs.component }}-${{ hashFiles('apps/mac/Package.resolved', 'apps/ios/**/Package.resolved', 'apps/core/gradle/libs.versions.toml', 'apps/core/gradle/wrapper/gradle-wrapper.properties') }}-
+          apple-check-v1-${{ runner.os }}-${{ runner.arch }}-xcode26.5-java21-${{ inputs.component }}-${{ hashFiles('apps/mac/Package.resolved', 'apps/ios/**/Package.resolved', 'apps/core/mobile/build.gradle.kts', 'apps/core/gradle/libs.versions.toml', 'apps/core/gradle/wrapper/gradle-wrapper.properties') }}-
         path: |
           ~/.konan
           apps/mac/.build/dieter-tests
-          apps/mac/.build/dieter-ios-policy
           apps/mac/Frameworks/DieterShared.xcframework
           apps/mac/Frameworks/.DieterShared.inputs
+          apps/mac/Frameworks/DieterMobile.xcframework
+          apps/mac/Frameworks/.DieterMobile.inputs
           apps/ios/.build/DerivedData/SourcePackages
           apps/ios/.build/DerivedData/ModuleCache.noindex
           apps/ios/.build/DerivedData/Build/Intermediates.noindex

@@ -18,18 +18,24 @@ Native test formats share selection, qualification, timing and evidence contract
 just pipeline catalog action:lint
 just pipeline catalog action:list
 just pipeline catalog action:plan platform:android suite:functional changed:true base:main
-just pipeline android e2e profile:android-emulator suite:smoke
-just pipeline android e2e profile:android-device suite:functional
-just pipeline android e2e cases:machines.telemetry
-just pipeline android e2e suite:sync
-just pipeline android e2e suite:performance
-just pipeline android e2e suite:sdk
-just pipeline ios e2e profile:ios-iphone suite:functional
-just pipeline ios e2e profile:ios-ipad suite:functional
-just pipeline ios_qualify profiles:ios-iphone,ios-ipad suite:smoke
+just pipeline android e2e profile:android-emulator
+just pipeline android e2e profile:android-device
+just pipeline ios e2e profile:ios-iphone
+just pipeline ios e2e profile:ios-ipad
+just pipeline ios_qualify profiles:ios-iphone,ios-ipad
 just pipeline mac e2e suite:functional
 just pipeline mac e2e cases:mac.navigation,mac.sidebar
 ```
+
+The Android and iOS apps share one Compose UI, and each catalog holds one native
+journey through it: `android.journey` (`com.dbpprt.dieter.JourneyTest`) and
+`ios.journey` (`DieterUITests/JourneyUITests`). Both are in the `smoke` and
+`functional` suites. Each starts a disposable gateway, enrolled daemon and mock
+harness, then walks Inbox, Projects, a board, a seeded task and its subagents,
+task creation with live first and follow-up replies, Review, Chats, Tools,
+Machines, Files, Markdown preview, Schedules and dark appearance, capturing a
+screenshot of each view. The fixture's `mobile` suite seeds that workspace and
+offers WebRTC control channels like production daemons.
 
 iOS requires macOS/Xcode and a configured exact installed runtime. Named iPhone
 and iPad profiles select layout and device type. One shared Fastlane stage loop
@@ -40,32 +46,25 @@ deletes it on exit and preserves existing operator simulators. Exact XCTest
 methods are qualified from structured xcresult; missing, skipped, duplicate,
 failed and interrupted methods fail. Physical `ios-device` execution additionally
 requires existing development signing, separate E2E identities and reachable TLS
-fixtures; unavailable prerequisites fail admission. Physical Share qualification
-uses owned media in the isolated app's Documents/Files provider. Hosted CI prepares its
+fixtures; unavailable prerequisites fail admission. Hosted CI prepares its
 pinned runtime explicitly; local tests never install a runtime automatically.
 
-Both layouts cover the remote-node, terminal, screen, connection-state, native
-Keychain, and shared-core adapter (`ios.adapters`) tests. The adapter tests live
-in `apps/mac/Tests/DieterIOSTests` and compile into the app-hosted
-`DieterIOSNativeTests` target. `ios.share-extension` declares `devices: [iphone]` because its
-Files share-sheet journey is phone-specific; it is excluded from iPad plans,
-not counted as a passing skip. Explicitly requesting it on iPad is an error.
-The `manual` case `ios.https-auth` requires `DIETER_IOS_TEST_HTTPS_GATEWAY` and
-performs only the existing invalid-session HTTPS probe. Credentials are injected
-through a private xctestrun file, never command arguments. Only sanitized test
-reports, console output and failure attachments are retained; private launch
-configuration and raw xcresult bundles are removed on cleanup.
+An iOS case may declare `devices: [iphone]` or `[ipad]`; it is then excluded from
+the other layout's plan, not counted as a passing skip, and explicitly requesting
+it there is an error. The fixture session reaches the app through a private
+xctestrun file, never command arguments. Only sanitized test reports, console
+output and failure attachments are retained; private launch configuration and
+raw xcresult bundles are removed on cleanup.
 
 Mac execution requires a logged-in macOS desktop and refuses any existing
 DieterMac process before packaging. It uses the canonical SwiftPM app cache,
-isolated preferences/state, disposable gateways, and a desktop lease. Android screen journeys need a macOS capture host;
-an unavailable host is reported as unavailable, never a pass. Mac companion screen qualification remains separate from this catalog.
+isolated preferences/state, disposable gateways, and a desktop lease. Mac
+companion screen qualification remains separate from this catalog.
 
-`functional` includes focused device component cases and full-stack journeys.
-`sync`, `performance`, and `screens` are explicit separate suites. All required
-native methods are listed; skipped, missing, duplicate, failed, and interrupted
-results fail the command. Native assertions remain native code. Ordinary journeys
-are YAML, interpreted by Compose; adding a flow does not require a new APK.
+All required native methods are listed; skipped, missing, duplicate, failed, and
+interrupted results fail the command. Native assertions remain native code.
+Android and iOS cases are native journeys; Mac cases are native suites or YAML
+navigation flows.
 
 Android's default profile pins `emulator-5554` and `Dieter_AOSP_API_35`, with
 headless automatic rendering and snapshots disabled. Runtime/image and
@@ -83,36 +82,27 @@ execute concurrently after serialized shared-build preparation. The runner valid
 one pair of app/test APKs, verifies hashes before reusing builds/installations,
 then runs each case in a fresh app process and fixture. Isolation takes priority
 over batching mutable state. The fixture binary and installed APKs are shared,
-not client caches, outbox data, identities, or conversations. Flow JSON and
-credentials are transferred to the fixture app's private files and removed on
-exit. No credentials are put in instrumentation argv.
+not client caches, outbox data, identities, or conversations. On Android the
+isolated gateway's port and disposable session token are written to the E2E
+app's private files with `run-as`, never passed as instrumentation arguments;
+the token is valid only for that run's fixture.
 
 Case format is version 1. One file declares a unique ID, platform, suites,
-components, fixture (`none`, `gateway`, `activity`, `screen`), timeout (1s–10m;
+components, fixture (`none` or `gateway`), timeout (1s–10m;
 iOS allows up to 20m including fresh simulator and XCTest setup),
-and either `steps`, an explicit native class/method list, or a Mac native
-`suite` with explicit phase-qualified `checks`. Missing or non-passing Mac
+and either an explicit native class/method list (iOS also names
+`target: DieterUITests`), a Mac native `suite` with explicit phase-qualified
+`checks`, or Mac navigation `steps`. Missing or non-passing Mac
 assertions fail, including incomplete multi-launch suites. The host rejects
 unknown fields, duplicate keys, ambiguous selectors, unsupported placeholders,
 YAML anchors/aliases, and multiple documents. At most 100 steps and 256 KiB per
 case. No shell, expressions, loops, arbitrary hooks, or recursive fragments.
 
-Steps are `launch: connected`, `tap`, `type`, `press: back`, `scroll`, `expect`,
-`screenshot`, and named `probe`. Targets use exactly one of `id`, `text`, or
-`description`. Text entry replaces the field. `expect.value` asserts editable
-text; `visible: false` currently means absent from the semantics tree. Mac navigation flows currently support `launch`, `tap`, `expect`, and
-`screenshot` through native accessibility; unsupported actions fail catalog
-validation. Advanced Mac interactions remain in native suites. Compose
-waits for conditions with bounded deadlines. Mutations dispatch once. A scroll
-uses the native container's bounded test action and the case deadline.
-
-Available variables are `fixture.endpointId`, `fixture.cardId`,
-`fixture.chatId`, and `fixture.activityPrefix`. The Activity fixture arranges
-real card/chat records through the API before navigation. The machine telemetry
-probe asserts daemon identity, CPU, memory, and process data through the native
-repository. Activity probes verify that completed card/chat replies need attention
-before opening them, and that viewing each reply synchronizes its read receipt
-and clears attention. These setup/probe operations do not replace UI actions under test.
+Mac navigation flows use the `gateway` fixture and support `launch: connected`,
+`tap`, `expect`, and `screenshot` through native accessibility. Targets use
+exactly one of `id`, `text`, or `description`. `expect.value` asserts editable
+text; `visible: false` currently means absent from the accessibility tree.
+Advanced Mac interactions remain in native suites.
 
 Artifacts are in `tmp/app-pipelines/<run>/`: `plan.json`, `results.json`, `junit.xml`,
 per-case native logs and captures, flow step events, and failure evidence. Use
@@ -127,62 +117,55 @@ runner is active, not that its assertions have passed. Gate on results, not
 the shell exit status of `am instrument`. The runner stops owned processes and
 removes only owned reverses; failed cleanup also fails qualification.
 
-`changed:true` uses current tracked/untracked changes and optional merge base. Known
-feature paths narrow cases; shared/unclassified Android inputs select broadly.
-A change to the shared core's sources (`apps/core`, outside its tests and
-`testing`) selects every Mac case and, unless it is Apple-only, every Android
-case. Renamed/deleted paths are included. Documentation and JVM-only edits need
-no device execution. `just check-changed` remains the normal development entry point.
+`changed:true` uses current tracked/untracked changes and optional merge base.
+App paths narrow cases: `apps/android` and `native/android-webrtc` select
+Android; `apps/ios` and `apps/mac/Sources/DieterIOS` select iOS; other Mac
+sources select Mac, and `SharedCore`, `DieterTransport`, `DieterAPI` and the
+package manifest select Mac and iOS. Mock-harness changes select both mobile
+journeys. A change to the shared core's sources (`apps/core`, outside its tests
+and `testing`) selects the apps that compile it: the shared mobile UI reaches
+Android and iOS, Apple-only code reaches Mac and iOS, and common code reaches
+all three. Shared pipeline, fixture and schema paths select every case.
+Renamed/deleted paths are included. Documentation and JVM-only edits need no
+device execution. `just check-changed` remains the normal development entry
+point.
 
-Retain native unit, codec, input, and performance assertions. Candidate signing and distribution share the pipeline foundation while retaining
+Candidate signing and distribution share the pipeline foundation while retaining
 their own artifact/destination contracts. Do not add another test launcher:
 add a case and, where necessary, a reusable fixture or native probe.
 
-The editor schema is `schema.json`; `just pipeline catalog action:lint` is authoritative and also
-checks native source references. `build: performance` requires a native Android
-case with no gateway fixture and runs non-debuggable `.e2e.performance` APKs.
-It is emulator-only and does not overwrite any operator package. The `sdk` suite
-runs codec/ownership/icon assertions without a macOS capture host. `manual`
-contains the screenshot widget seeder and is excluded from regression gates.
-
-All native journey orchestration uses `just pipeline android e2e`. The separate iOS Python
-launcher, Mac Swift driver, old smoke aliases, and cleanup recipes for retired
-evidence paths are removed. Native assertions, app/emulator lifecycle commands,
-SDK builds, signing, releases and specialized capture/codec fixtures remain.
-Retain the selected run's evidence until reviewed; cleanup does not require a
-platform-specific script.
+The editor schema is `schema.json`; `just pipeline catalog action:lint` is
+authoritative and also checks native source references. All native journey
+orchestration uses `just pipeline PLATFORM e2e`. Native assertions, app/emulator
+lifecycle commands, signing, releases and specialized capture fixtures remain
+in their own lanes. Retain the selected run's evidence until reviewed; cleanup
+does not require a platform-specific script.
 
 `just check` validates the catalog and both iOS layouts through `just pipeline check component:portable operation:contracts`,
-so CI and release use the same portable gate. `just pipeline ci action:check component:android` compiles the
-E2E apps/test drivers as well as running unit tests, debug assembly, and lint;
-`full:true` also compiles the performance variants for release qualification.
-Android device execution uses `just pipeline android e2e` with an explicit local
-profile. Install Just/Go/Node/JDK21/Android SDK and the API 35 AOSP system image
-for the host architecture, then run `android local action:emulator_setup` once.
-Fastlane keeps its runtime/image and AVD in ignored project `.android/`, creates
-a missing selected test AVD and boots without snapshots. Existing AVDs are never
-replaced or wiped. Mac journeys use the configured local desktop. The manual
-`Native qualification` workflow runs iPhone and iPad simulator profiles sequentially
-on one GitHub-hosted macOS worker, using one verified simulator build.
+so CI and release use the same portable gate. `just pipeline ci action:check component:android`
+runs lint and the debug build and compiles the journey's `e2e` app and test
+APKs. Android device execution uses `just pipeline android e2e` with an explicit
+local profile; hosted CI runs no emulator. Install Just/Go/Node/JDK21/Android SDK
+and the API 35 AOSP system image for the host architecture, then run
+`android local action:emulator_setup` once. Fastlane keeps its runtime/image and
+AVD in ignored project `.android/`, creates a missing selected test AVD and boots
+without snapshots. Existing AVDs are never replaced or wiped. Mac journeys use
+the configured local desktop. The manual `Native qualification` workflow runs
+iPhone and iPad simulator profiles sequentially on one GitHub-hosted macOS
+worker, using one verified simulator build.
 
-Android client logic (sign-in, routing, sync, the outbox, navigation,
-terminals, workspace review) lives in the shared KMP core and is covered by its
-JVM end-to-end tests against the same isolated gateway (`just pipeline core_test`). The
-Android cases exercise the app's native surfaces and platform bindings on top.
-The obsolete production-gateway restoration test was removed; owned fixture
-teardown replaces its cleanup role.
-`FlowTest.runFlow` is invoked by each YAML journey, not as an independent case.
-All other existing native regression methods are cataloged, including admission,
-queue, offline replay, background sync, codec ownership, and frame budgets.
+Client logic (sign-in, routing, sync, the outbox, navigation, terminals,
+workspace review) lives in the shared KMP core. Its JVM end-to-end tests and the
+shared mobile UI's JVM journey (`MobileJourneyTest`) run against the same
+isolated gateway (`just pipeline core_test`). The device journeys exercise the
+native shells and platform bindings on top.
 
 ## iOS adapter qualification
 
 The adapter's host-side lifecycle, configuration, redaction, catalog and result
 qualification tests run through `go test ./internal/pipeline ./tools/pipeline-contract ./tools/pipeline-support`. Build-only verification is
 `just pipeline ios build`. These checks do not establish simulator UI correctness. After
-pulling, colleagues should run both iOS smoke commands above and review each
+pulling, colleagues should run both iOS layout commands above and review each
 run's `results.json`, `junit.xml`, screenshots and failure console. Physical iOS
 needs its exact development-signed E2E profile and authenticated TLS fixture
-route. Share tests on a phone use only the named file staged in the owned E2E
-Documents container; `ios.share-owned-file` exercises that Files path on a
-disposable simulator. The default simulator share case uses the same owned Files fixture.
+route.

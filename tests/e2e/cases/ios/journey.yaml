@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: ios.journey
+platform: ios
+suites: [smoke, functional]
+components: [ios]
+fixture: gateway
+timeout: 15m
+# Inbox to review, a live reply, chats, tools, files, schedules and dark mode,
+# on the iPhone and iPad layouts of one simulator build.
+native:
+  target: DieterUITests
+  class: JourneyUITests
+  methods:
+    - testSharedTaskJourney

@@ -8,10 +8,11 @@ require_relative "../lib/dieter/platforms/ios"
 
 class IOSPhysicalOwnershipTest < Minitest::Test
   class Context
-    attr_reader :root, :private_dir, :commands, :cleanups, :installed
+    attr_reader :root, :private_dir, :commands, :cleanups, :installed, :environment
     attr_accessor :fail_uninstall
     def initialize(root)
       @root, @private_dir, @commands, @cleanups, @installed = root, root, [], [], Set.new
+      @environment = {}
     end
     def cleanup(&block) = cleanups << block
     def command(argv, **)
@@ -19,7 +20,10 @@ class IOSPhysicalOwnershipTest < Minitest::Test
       if argv.include?("--bundle-id")
         id = argv.last
         output = argv[argv.index("--json-output") + 1]
-        Dieter::Atomic.json(output, {result: {apps: installed.include?(id) ? [{bundleIdentifier: id}] : []}})
+        Dieter::Atomic.json(
+          output,
+          { result: { apps: installed.include?(id) ? [{ bundleIdentifier: id }] : [] } }
+        )
       elsif argv.include?("uninstall")
         raise Dieter::CleanupError, "device disconnected" if fail_uninstall
         installed.delete(argv.last)
@@ -35,11 +39,24 @@ class IOSPhysicalOwnershipTest < Minitest::Test
     @context = Context.new(@root)
     @app = "com.example.dieter.e2e"
     @runner = Dieter::IOS.new(@context)
-    @runner.instance_variable_set(:@target, {"kind" => "device", "udid" => "exact-device"})
-    @runner.instance_variable_set(:@signing, {"app_bundle_id" => @app})
+    @runner.instance_variable_set(:@target, { "kind" => "device", "udid" => "exact-device" })
+    @runner.instance_variable_set(:@signing, { "app_bundle_id" => @app })
   end
 
   def teardown = FileUtils.remove_entry_secure(@root)
+
+  def test_adapter_selects_the_ios_swift_package_graph
+    assert_equal({ "DIETER_SWIFT_PACKAGE" => "ios" }, @context.environment)
+  end
+
+  def test_journal_owns_exactly_the_app_and_its_ui_test_runner
+    @runner.send(:admit_device_packages)
+    journal = JSON.parse(File.read(@runner.instance_variable_get(:@device_journal)))
+    assert_equal "exact-device", journal.fetch("udid")
+    assert_equal [@app, "#{@app}.uitests.xctrunner"], journal.fetch("packages")
+    probed = @context.commands.select { |argv| argv.include?("--bundle-id") }.map(&:last)
+    assert_equal journal.fetch("packages"), probed
+  end
 
   def test_unowned_installed_fixture_app_is_preserved
     @context.installed << @app
@@ -68,7 +85,7 @@ class IOSPhysicalOwnershipTest < Minitest::Test
     journal = @runner.instance_variable_get(:@device_journal)
     assert File.file?(journal)
     @context.fail_uninstall = false
-    @runner.instance_variable_set(:@signing, {"app_bundle_id" => "com.another.e2e"})
+    @runner.instance_variable_set(:@signing, { "app_bundle_id" => "com.another.e2e" })
     assert_raises(Dieter::Unavailable) { @runner.send(:admit_device_packages) }
     assert_includes @context.installed, @app
   end
@@ -78,9 +95,22 @@ class IOSSimulatorOwnershipTest < Minitest::Test
   def test_simulator_inventory_resets_only_fixture_apps_and_rejects_invalid_inventory
     Dir.mktmpdir("ios-simulator-ownership-") do |root|
       commands = []
-      inventory = {"com.apple.Preferences" => {}, "com.dbpprt.dieter.ios" => {}, "com.example.operator" => {}}
+      inventory = {
+        "com.apple.Preferences" => {
+        },
+        "com.dbpprt.dieter.ios.e2e" => {
+        },
+        "com.dbpprt.dieter.ios.e2e.uitests.xctrunner" => {
+        },
+        "com.getdieter.ios" => {
+        },
+        "com.example.operator" => {
+        }
+      }
+      environment = {}
       context = Object.new
       context.define_singleton_method(:root) { root }
+      context.define_singleton_method(:environment) { environment }
       context.define_singleton_method(:output) { root }
       context.define_singleton_method(:private_dir) { root }
       context.define_singleton_method(:command) do |argv, **options|
@@ -98,11 +128,14 @@ class IOSSimulatorOwnershipTest < Minitest::Test
         end
       end
       adapter = Dieter::IOS.new(context)
-      adapter.instance_variable_set(:@target, {"kind" => "simulator"})
+      adapter.instance_variable_set(:@target, { "kind" => "simulator" })
       adapter.instance_variable_set(:@simulator, "owned-simulator")
       adapter.send(:reset_owned_packages)
-      assert_equal ["com.dbpprt.dieter.ios"], commands.select { |argv| argv.include?("uninstall") }.map(&:last)
-      assert_equal %w[com.apple.Preferences com.example.operator], inventory.keys.sort
+      # Only the E2E fixture app and its runner; the release app is the operator's.
+      assert_equal %w[com.dbpprt.dieter.ios.e2e com.dbpprt.dieter.ios.e2e.uitests.xctrunner],
+                   commands.select { |argv| argv.include?("uninstall") }.map(&:last)
+      assert_equal %w[com.apple.Preferences com.example.operator com.getdieter.ios],
+                   inventory.keys.sort
       inventory = nil
       commands.clear
       assert_raises(Dieter::PipelineError) { adapter.send(:reset_owned_packages) }

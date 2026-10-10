@@ -30,8 +30,7 @@ module Dieter
         raise PipelineError, "Invalid native CI component"
       end
       values.reject! { |_key, value| value == "" }
-      if values["suite"] &&
-           !%w[smoke functional sync performance sdk screens].include?(values["suite"])
+      if values["suite"] && !%w[smoke functional].include?(values["suite"])
         raise PipelineError, "Invalid native CI suite"
       end
       return ios_qualify(values, actions: actions) if component == "ios" && values["profiles"]
@@ -62,14 +61,7 @@ module Dieter
       Pipeline.new(context, request, adapter).run
     end
 
-    def self.ios_qualify(
-      options,
-      actions: nil,
-      parent: nil,
-      prepared: nil,
-      adapter_class: IOS,
-      planned_cases: nil
-    )
+    def self.ios_qualify(options, actions: nil, parent: nil, prepared: nil)
       values = options.transform_keys(&:to_s).reject { |_key, value| value == "" }
       unless (values.keys - %w[profiles suite cases changed base output]).empty?
         raise PipelineError, "Unknown iOS qualification options"
@@ -83,7 +75,7 @@ module Dieter
       begin
         group.environment["DIETER_RELEASE_VERSION"] ||= SourceIdentity.version(group)
         contract = Contract.new(group)
-        build_adapter = adapter_class.new(group, actions: actions)
+        build_adapter = IOS.new(group, actions: actions)
         selections =
           profiles.map do |name|
             request =
@@ -93,7 +85,7 @@ module Dieter
               raise PipelineError,
                     "iOS qualification requires simulator profiles; use ios e2e for an exact physical profile"
             end
-            plan = planned_cases || request.plan(group.config, contract)
+            plan = request.plan(group.config, contract)
             build_adapter.admit(target, plan) unless plan.empty?
             [name, request, plan]
           end
@@ -116,7 +108,7 @@ module Dieter
         selections.each do |name, request, plan|
           context =
             RunContext.new(group.config, output: File.join(group.output, name), parent: group)
-          adapter = adapter_class.new(context, actions: actions)
+          adapter = IOS.new(context, actions: actions)
           adapter.prepared_products(prepared)
           begin
             Pipeline.new(context, request, adapter, planned_cases: plan).run

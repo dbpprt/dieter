@@ -68,9 +68,3 @@ keystore.properties
 **/.swiftpm/configuration/
 **/.swiftpm/security/
 
-# Opt-in Compose mobile spike output
-/apps/mobile/android/.gradle/
-/apps/mobile/android/.kotlin/
-/apps/mobile/android/app/build/
-/apps/mobile/android/build/
-/apps/mobile/ios/.build/

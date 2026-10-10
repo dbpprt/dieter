@@ -1,0 +1,651 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		6B510AB2B1B8F5640E2D90B9 /* DieterIOS in Frameworks */ = {isa = PBXBuildFile; productRef = 8C0A88E841C8D1F6F10D9F9F /* DieterIOS */; };
+		A5E97AD9AA60295E2FD3D651 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 680628432D7A14F6CF867FA4 /* Foundation.framework */; };
+		AEC5FF7D3C717638EB2CBD21 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 680628432D7A14F6CF867FA4 /* Foundation.framework */; };
+		C6FDF377256BA9860F3598E0 /* JourneyUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AC2C8FF0F851E1A5DE17360 /* JourneyUITests.swift */; };
+		F66DEDA37FB215C874CFBFB4 /* DieterApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 855A3657AEB8368EABF88CA0 /* DieterApp.swift */; };
+		A11CE7A55E75A5E7A55E7A02 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A11CE7A55E75A5E7A55E7A01 /* Assets.xcassets */; };
+		5E0000000000000000000003 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E0000000000000000000002 /* ShareViewController.swift */; };
+		5E0000000000000000000004 /* DieterShare.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 5E0000000000000000000001 /* DieterShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		2383CF46C0D9CF4A0C80B05E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 2735DA3BC9A3CA6C79D8CD2F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9FF656E2A803E6B80443F987;
+			remoteInfo = Dieter;
+		};
+		5E000000000000000000000A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 2735DA3BC9A3CA6C79D8CD2F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5E000000000000000000000C;
+			remoteInfo = DieterShare;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		5E0000000000000000000008 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				5E0000000000000000000004 /* DieterShare.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		4E24B5887D043840677F023E /* Dieter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dieter.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		680628432D7A14F6CF867FA4 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		6AC2C8FF0F851E1A5DE17360 /* JourneyUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = JourneyUITests.swift; path = Tests/JourneyUITests.swift; sourceTree = "<group>"; };
+		855A3657AEB8368EABF88CA0 /* DieterApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DieterApp.swift; path = App/DieterApp.swift; sourceTree = "<group>"; };
+		BAE7188C7B28C543F65D13E0 /* DieterUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DieterUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A11CE7A55E75A5E7A55E7A01 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = App/Assets.xcassets; sourceTree = "<group>"; };
+		5E0000000000000000000001 /* DieterShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DieterShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		5E0000000000000000000002 /* ShareViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ShareViewController.swift; path = Share/ShareViewController.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		7129D8BC1711811427A64374 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AEC5FF7D3C717638EB2CBD21 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EDFDD4275AA762F3841D94D0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A5E97AD9AA60295E2FD3D651 /* Foundation.framework in Frameworks */,
+				6B510AB2B1B8F5640E2D90B9 /* DieterIOS in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5E0000000000000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		14B2574F87FD3119B58C6CB8 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				8A80C10AC1BC57096BC4F5BD /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		8767C35D0610BADE9B81D5EE /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4E24B5887D043840677F023E /* Dieter.app */,
+				BAE7188C7B28C543F65D13E0 /* DieterUITests.xctest */,
+				5E0000000000000000000001 /* DieterShare.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		8A80C10AC1BC57096BC4F5BD /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				680628432D7A14F6CF867FA4 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		EE3871CCFADAA66DB6BC1E6C = {
+			isa = PBXGroup;
+			children = (
+				8767C35D0610BADE9B81D5EE /* Products */,
+				14B2574F87FD3119B58C6CB8 /* Frameworks */,
+				855A3657AEB8368EABF88CA0 /* DieterApp.swift */,
+				A11CE7A55E75A5E7A55E7A01 /* Assets.xcassets */,
+				5E0000000000000000000002 /* ShareViewController.swift */,
+				6AC2C8FF0F851E1A5DE17360 /* JourneyUITests.swift */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0FC672E15C8D8F33831FA0B6 /* DieterUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0EA4B9A7C342FEAFB2DCD5BA /* Build configuration list for PBXNativeTarget "DieterUITests" */;
+			buildPhases = (
+				6A4C6F06CF2747702D18CB35 /* Sources */,
+				7129D8BC1711811427A64374 /* Frameworks */,
+				709026615991DB16F0ACB0E3 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				5EA02E974C77CD43F6C0A5A7 /* PBXTargetDependency */,
+			);
+			name = DieterUITests;
+			productName = DieterUITests;
+			productReference = BAE7188C7B28C543F65D13E0 /* DieterUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		9FF656E2A803E6B80443F987 /* Dieter */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D60336B30AEDE32E538735DC /* Build configuration list for PBXNativeTarget "Dieter" */;
+			buildPhases = (
+				D3C7E945ECB299B6438850C2 /* Sources */,
+				EDFDD4275AA762F3841D94D0 /* Frameworks */,
+				CE97D409992D5BF4820520E9 /* Resources */,
+				5E0000000000000000000008 /* Embed App Extensions */,
+				5E0000000000000000000009 /* Expose E2E media */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				5E000000000000000000000B /* PBXTargetDependency */,
+			);
+			name = Dieter;
+			packageProductDependencies = (
+				8C0A88E841C8D1F6F10D9F9F /* DieterIOS */,
+			);
+			productName = Dieter;
+			productReference = 4E24B5887D043840677F023E /* Dieter.app */;
+			productType = "com.apple.product-type.application";
+		};
+		5E000000000000000000000C /* DieterShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5E000000000000000000000F /* Build configuration list for PBXNativeTarget "DieterShare" */;
+			buildPhases = (
+				5E0000000000000000000005 /* Sources */,
+				5E0000000000000000000006 /* Frameworks */,
+				5E0000000000000000000007 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DieterShare;
+			productName = DieterShare;
+			productReference = 5E0000000000000000000001 /* DieterShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		2735DA3BC9A3CA6C79D8CD2F /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = F280185AB1381A4D08F26ACE /* Build configuration list for PBXProject "Dieter" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = EE3871CCFADAA66DB6BC1E6C;
+			minimizedProjectReferenceProxies = 0;
+			packageReferences = (
+				89266D46CAE11ADFF5C922D8 /* XCLocalSwiftPackageReference "mac" */,
+			);
+			preferredProjectObjectVersion = 100;
+			productRefGroup = 8767C35D0610BADE9B81D5EE /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				9FF656E2A803E6B80443F987 /* Dieter */,
+				0FC672E15C8D8F33831FA0B6 /* DieterUITests */,
+				5E000000000000000000000C /* DieterShare */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		709026615991DB16F0ACB0E3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CE97D409992D5BF4820520E9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A11CE7A55E75A5E7A55E7A02 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5E0000000000000000000007 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		5E0000000000000000000009 /* Expose E2E media */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)",
+				"$(SRCROOT)/../../fastlane/lib/dieter/native/ios_e2e_metadata.py",
+			);
+			name = "Expose E2E media";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -euo pipefail\n# Only the Debug .e2e journey app shares its own media through Files.\npython3 \"$SRCROOT/../../fastlane/lib/dieter/native/ios_e2e_metadata.py\" \"$TARGET_BUILD_DIR/$INFOPLIST_PATH\" \"$CONFIGURATION\" \"$PRODUCT_BUNDLE_IDENTIFIER\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		6A4C6F06CF2747702D18CB35 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C6FDF377256BA9860F3598E0 /* JourneyUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D3C7E945ECB299B6438850C2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F66DEDA37FB215C874CFBFB4 /* DieterApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5E0000000000000000000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5E0000000000000000000003 /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		5EA02E974C77CD43F6C0A5A7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = Dieter;
+			target = 9FF656E2A803E6B80443F987 /* Dieter */;
+			targetProxy = 2383CF46C0D9CF4A0C80B05E /* PBXContainerItemProxy */;
+		};
+		5E000000000000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5E000000000000000000000C /* DieterShare */;
+			targetProxy = 5E000000000000000000000A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		201EF0717F03CD5C6AA1E6D6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = DieterAppIcon;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = App/Dieter.entitlements;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				CODE_SIGN_IDENTITY = "$(DIETER_IOS_SIGN_IDENTITY)";
+				CODE_SIGN_STYLE = "$(DIETER_IOS_SIGN_STYLE)";
+				DEVELOPMENT_TEAM = "$(DIETER_IOS_TEAM_ID)";
+				PROVISIONING_PROFILE_SPECIFIER = "$(DIETER_IOS_PROFILE_SPECIFIER)";
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/Info.plist;
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = "$(DIETER_RELEASE_VERSION)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DIETER_IOS_BUNDLE_ID)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		23365483CEA07C94B8DCBD54 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_IDENTITY = "$(DIETER_IOS_SIGN_IDENTITY)";
+				CODE_SIGN_STYLE = "$(DIETER_IOS_SIGN_STYLE)";
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "$(DIETER_IOS_TEAM_ID)";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = "$(DIETER_RELEASE_VERSION)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DIETER_IOS_BUNDLE_ID).uitests";
+				PROVISIONING_PROFILE_SPECIFIER = "$(DIETER_IOS_TEST_PROFILE_SPECIFIER)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Dieter;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		39124080B265E3DA6DB5B5FF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DIETER_IOS_APP_GROUP_ID = "group.$(DIETER_IOS_BUNDLE_ID)";
+				DIETER_IOS_BUNDLE_ID = com.getdieter.ios;
+				DIETER_IOS_SIGN_IDENTITY = "Apple Development";
+				DIETER_IOS_SIGN_STYLE = Automatic;
+				DIETER_RELEASE_VERSION = "0.0.0-dev.0";
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		98068737FE3050B458D80C59 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DIETER_IOS_APP_GROUP_ID = "group.$(DIETER_IOS_BUNDLE_ID)";
+				DIETER_IOS_BUNDLE_ID = com.getdieter.ios;
+				DIETER_IOS_SIGN_IDENTITY = "Apple Development";
+				DIETER_IOS_SIGN_STYLE = Automatic;
+				DIETER_RELEASE_VERSION = "0.0.0-dev.0";
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A6C2805016CAF97B390A0D1D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_IDENTITY = "$(DIETER_IOS_SIGN_IDENTITY)";
+				CODE_SIGN_STYLE = "$(DIETER_IOS_SIGN_STYLE)";
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "$(DIETER_IOS_TEAM_ID)";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = "$(DIETER_RELEASE_VERSION)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DIETER_IOS_BUNDLE_ID).uitests";
+				PROVISIONING_PROFILE_SPECIFIER = "$(DIETER_IOS_TEST_PROFILE_SPECIFIER)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Dieter;
+			};
+			name = Debug;
+		};
+		E53B2BDDDC1DA78F0C35AA81 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = DieterAppIcon;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = App/Dieter.entitlements;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				CODE_SIGN_IDENTITY = "$(DIETER_IOS_SIGN_IDENTITY)";
+				CODE_SIGN_STYLE = "$(DIETER_IOS_SIGN_STYLE)";
+				DEVELOPMENT_TEAM = "$(DIETER_IOS_TEAM_ID)";
+				PROVISIONING_PROFILE_SPECIFIER = "$(DIETER_IOS_PROFILE_SPECIFIER)";
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/Info.plist;
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = "$(DIETER_RELEASE_VERSION)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DIETER_IOS_BUNDLE_ID)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		5E000000000000000000000D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Share/Share.entitlements;
+				CODE_SIGN_IDENTITY = "$(DIETER_IOS_SIGN_IDENTITY)";
+				CODE_SIGN_STYLE = "$(DIETER_IOS_SIGN_STYLE)";
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "$(DIETER_IOS_TEAM_ID)";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Share/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = "$(DIETER_RELEASE_VERSION)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DIETER_IOS_BUNDLE_ID).share";
+				PRODUCT_NAME = DieterShare;
+				PROVISIONING_PROFILE_SPECIFIER = "$(DIETER_IOS_SHARE_PROFILE_SPECIFIER)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		5E000000000000000000000E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Share/Share.entitlements;
+				CODE_SIGN_IDENTITY = "$(DIETER_IOS_SIGN_IDENTITY)";
+				CODE_SIGN_STYLE = "$(DIETER_IOS_SIGN_STYLE)";
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "$(DIETER_IOS_TEAM_ID)";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Share/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = "$(DIETER_RELEASE_VERSION)";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DIETER_IOS_BUNDLE_ID).share";
+				PRODUCT_NAME = DieterShare;
+				PROVISIONING_PROFILE_SPECIFIER = "$(DIETER_IOS_SHARE_PROFILE_SPECIFIER)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0EA4B9A7C342FEAFB2DCD5BA /* Build configuration list for PBXNativeTarget "DieterUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				23365483CEA07C94B8DCBD54 /* Release */,
+				A6C2805016CAF97B390A0D1D /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D60336B30AEDE32E538735DC /* Build configuration list for PBXNativeTarget "Dieter" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				201EF0717F03CD5C6AA1E6D6 /* Release */,
+				E53B2BDDDC1DA78F0C35AA81 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F280185AB1381A4D08F26ACE /* Build configuration list for PBXProject "Dieter" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				98068737FE3050B458D80C59 /* Debug */,
+				39124080B265E3DA6DB5B5FF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5E000000000000000000000F /* Build configuration list for PBXNativeTarget "DieterShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5E000000000000000000000E /* Release */,
+				5E000000000000000000000D /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		89266D46CAE11ADFF5C922D8 /* XCLocalSwiftPackageReference "mac" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../mac;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		8C0A88E841C8D1F6F10D9F9F /* DieterIOS */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 89266D46CAE11ADFF5C922D8 /* XCLocalSwiftPackageReference "mac" */;
+			productName = DieterIOS;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 2735DA3BC9A3CA6C79D8CD2F /* Project object */;
+}

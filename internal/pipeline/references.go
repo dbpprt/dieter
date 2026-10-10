@@ -12,8 +12,8 @@ import (
 // Native assertions remain compiled and executed by the platform test runner.
 func validateReferences(root string, cases []Case) error {
 	sources := map[string]string{}
-	// DieterIOSNativeTests also compiles the iOS adapter tests from DieterIOSTests.
-	for _, directory := range []string{"apps/android/app/src/androidTest", "apps/ios/DieterIOSUITests", "apps/ios/DieterIOSNativeTests", "apps/mac/Tests/DieterIOSTests"} {
+	// The Android and iOS journeys; Mac suites are checked against their runners below.
+	for _, directory := range []string{"apps/android/app/src/androidTest", "apps/ios/Tests"} {
 		err := filepath.WalkDir(filepath.Join(root, directory), func(path string, entry os.DirEntry, err error) error {
 			if err != nil {
 				return err

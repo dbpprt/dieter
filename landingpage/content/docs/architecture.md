@@ -15,9 +15,10 @@ slug: "architecture"
 | `dieter-gateway`        | Account sessions, enrolled machine identity, presence, route metadata, and normalized provider quota snapshots                    |
 | Native clients          | Presentation, local caches, drafts, and durable pending client commands                                                           |
 
-The Go daemon hosts agents on macOS and Linux. SwiftUI clients serve macOS and
-iOS; Kotlin/Jetpack Compose serves Android. The CLI uses the same daemon API as
-the apps. The public website is independent of the gateway and runs no agents.
+The Go daemon hosts agents on macOS and Linux. A SwiftUI client serves macOS;
+Android and iOS share one Compose Multiplatform interface inside thin native
+shells. Every client runs on the same Kotlin client core. The CLI uses the same
+daemon API as the apps. The public website is independent of the gateway and runs no agents.
 
 ## Shared identity, local execution
 

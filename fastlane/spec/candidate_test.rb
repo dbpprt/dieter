@@ -2,7 +2,10 @@
 
 require "minitest/autorun"
 require "tmpdir"
+require "minitest/mock"
 require_relative "../lib/dieter/pipeline/candidate"
+# candidate.rb resolves the iOS project constants from the adapter Runtime loads.
+require_relative "../lib/dieter/platforms/ios"
 
 class CandidateRecoveryTest < Minitest::Test
   class Context
@@ -26,13 +29,13 @@ class CandidateRecoveryTest < Minitest::Test
     def initialize(identity)
       @identity, @assets, @uploads, @records, @producer = identity, [], [], [], nil
     end
-    def release(*) = {"assets" => assets}
+    def release(*) = { "assets" => assets }
     def receipts(*) = records
     def with_claim(*) = yield
     def receipt(_identity, _name, value) = records << value
     def api(path, **)
       if path.start_with?("actions/artifacts?")
-        {"artifacts" => []}
+        { "artifacts" => [] }
       else
         raise "Unexpected API: #{path}"
       end
@@ -46,14 +49,41 @@ class CandidateRecoveryTest < Minitest::Test
   def setup
     @root = Dir.mktmpdir("candidate-recovery-")
     @policy = JSON.parse(File.read(File.expand_path("../release-policy.json", __dir__)))
-    @identity = Dieter::ReleaseIdentity.new({"schema_version" => 1, "repository" => @policy.fetch("repository"), "source_revision" => "a" * 40, "version" => "0.4.413", "tag" => "v0.4.413", "native_build" => 413, "reserved_at" => "2026-10-03T21:00:00Z", "policy_sha256" => Digest::SHA256.hexdigest(JSON.generate(@policy))})
+    @identity =
+      Dieter::ReleaseIdentity.new(
+        {
+          "schema_version" => 1,
+          "repository" => @policy.fetch("repository"),
+          "source_revision" => "a" * 40,
+          "version" => "0.4.413",
+          "tag" => "v0.4.413",
+          "native_build" => 413,
+          "reserved_at" => "2026-10-03T21:00:00Z",
+          "policy_sha256" => Digest::SHA256.hexdigest(JSON.generate(@policy))
+        }
+      )
     @identity_path = File.join(@root, "identity.json")
     @identity.write(@identity_path)
     @producer = File.join(@root, "producer")
     Dir.mkdir(@producer)
     @payload = File.join(@producer, "Dieter-Android.apk")
     File.write(@payload, "original signed bytes")
-    @manifest = {"schema_version" => 1, "component" => "android", "identity_sha256" => @identity.digest, "source_revision" => @identity.source, "release_version" => @identity.version, "native_build" => @identity.build, "qualification" => "passed", "artifacts" => [{"name" => File.basename(@payload), "sha256" => Dieter::ArtifactSet.sha256(@payload), "bytes" => File.size(@payload)}]}
+    @manifest = {
+      "schema_version" => 1,
+      "component" => "android",
+      "identity_sha256" => @identity.digest,
+      "source_revision" => @identity.source,
+      "release_version" => @identity.version,
+      "native_build" => @identity.build,
+      "qualification" => "passed",
+      "artifacts" => [
+        {
+          "name" => File.basename(@payload),
+          "sha256" => Dieter::ArtifactSet.sha256(@payload),
+          "bytes" => File.size(@payload)
+        }
+      ]
+    }
     Dieter::Atomic.json(File.join(@producer, "candidate-android.json"), @manifest)
     @output = File.join(@root, "output")
     Dir.mkdir(@output)
@@ -64,12 +94,17 @@ class CandidateRecoveryTest < Minitest::Test
   def teardown = FileUtils.remove_entry_secure(@root)
 
   def runner(phase)
-    Dieter::CandidatePipeline.new(@context, "android", {"identity" => @identity_path, "phase" => phase, "products" => @producer}, github: @destination)
+    Dieter::CandidatePipeline.new(
+      @context,
+      "android",
+      { "identity" => @identity_path, "phase" => phase, "products" => @producer },
+      github: @destination
+    )
   end
 
   def test_retention_consumes_exact_checkpoint_without_building_or_signing
     assert_equal @manifest, runner("retain").run
-    assert_equal ["Dieter-Android.apk", "candidate-android.json"], @destination.uploads.map(&:first)
+    assert_equal %w[Dieter-Android.apk candidate-android.json], @destination.uploads.map(&:first)
     assert_equal "original signed bytes", @destination.uploads.first.last
     assert_equal [%w[git rev-parse HEAD]], @context.commands
     assert @context.closed
@@ -81,7 +116,13 @@ class CandidateRecoveryTest < Minitest::Test
     # A same-named input inside Fastlane must not shadow the workflow input.
     File.write(File.join(lane_directory, "identity.json"), "invalid shadow identity")
     Dir.chdir(lane_directory) do
-      pipeline = Dieter::CandidatePipeline.new(@context, "android", {identity: "identity.json", phase: "retain", products: "producer"}, github: @destination)
+      pipeline =
+        Dieter::CandidatePipeline.new(
+          @context,
+          "android",
+          { identity: "identity.json", phase: "retain", products: "producer" },
+          github: @destination
+        )
       assert_equal @manifest, pipeline.run
     end
     assert_equal "original signed bytes", @destination.uploads.first.last
@@ -104,14 +145,14 @@ class CandidateRecoveryTest < Minitest::Test
   end
 
   def test_partial_release_without_producer_never_rebuilds
-    @destination.assets = [{"name" => "Dieter-Android.apk"}]
+    @destination.assets = [{ "name" => "Dieter-Android.apk" }]
     assert_raises(Dieter::Unavailable) { runner("prepare").run }
     assert_equal [%w[git rev-parse HEAD]], @context.commands
     assert_empty @destination.uploads
   end
 
   def test_recovered_checkpoint_is_qualified_and_preparation_has_no_upload
-    @destination.records << {"state" => "producing"}
+    @destination.records << { "state" => "producing" }
     pipeline = runner("prepare")
     manifest = @manifest
     source = @producer
@@ -171,17 +212,157 @@ class CandidateRecoveryTest < Minitest::Test
       identity_source = @identity.source
       @destination.define_singleton_method(:api) do |endpoint, **|
         if endpoint.start_with?("actions/artifacts?")
-          {"artifacts" => [{"id" => 1, "name" => artifact_name, "expired" => false, "workflow_run" => {"id" => 42, "head_sha" => identity_source}}]}
+          {
+            "artifacts" => [
+              {
+                "id" => 1,
+                "name" => artifact_name,
+                "expired" => false,
+                "workflow_run" => {
+                  "id" => 42,
+                  "head_sha" => identity_source
+                }
+              }
+            ]
+          }
         else
-          {"id" => 42, "path" => path, "head_branch" => branch, "head_sha" => revision}
+          { "id" => 42, "path" => path, "head_branch" => branch, "head_sha" => revision }
         end
       end
       output = File.join(@root, "recovered-#{index}")
       Dir.mkdir(output)
       commands.clear
-      recovered = runner("prepare").send(:recover_producer, "android", output, "candidate-android.json")
+      recovered =
+        runner("prepare").send(:recover_producer, "android", output, "candidate-android.json")
       accepted ? assert_equal(@manifest, recovered) : assert_nil(recovered)
       assert_equal accepted ? 1 : 0, commands.length
+    end
+  end
+end
+
+class IOSCandidateTest < Minitest::Test
+  APP = {
+    "team_id" => "FNGU8JFNPL",
+    "bundle_id" => "com.getdieter.ios",
+    "profile_uuid" => "01234567-89AB-CDEF-0123-456789ABCDEF",
+    "profile_name" => "Dedicated Dieter App Store",
+    "key_id" => "KLMNOPQRST",
+    "issuer_id" => "89abcdef-0123-4567-89ab-cdef01234567"
+  }.freeze
+  SHARE =
+    APP.merge(
+      "bundle_id" => "com.getdieter.ios.share",
+      "profile_uuid" => "FEDCBA98-7654-3210-FEDC-BA9876543210",
+      "profile_name" => "Dedicated Dieter Share App Store"
+    ).freeze
+
+  def test_ios_candidate_archives_the_app_and_share_extension_with_their_profiles
+    Dir.mktmpdir("ios-candidate-") do |root|
+      output, private_dir = File.join(root, "output"), File.join(root, "private")
+      [output, private_dir].each { |path| Dir.mkdir(path) }
+      exported = File.join(private_dir, "Export/Dieter-iOS.ipa")
+      context =
+        Struct.new(:root, :output, :private_dir, :environment, :commands, :leases).new(
+          root,
+          output,
+          private_dir,
+          {},
+          [],
+          []
+        )
+      context.define_singleton_method(:lease) { |name| leases << name }
+      context.define_singleton_method(:command) do |argv, **|
+        commands << argv
+        script = argv.fetch(2)
+        if script.include?("load_material")
+          JSON.generate({ "app" => APP, "share" => SHARE })
+        elsif script.include?("validate_archive")
+          ""
+        elsif script.include?("validate_ipa")
+          FileUtils.mkdir_p(File.dirname(exported))
+          File.write(exported, "signed ipa")
+          exported + "\n"
+        else
+          raise "Unexpected command: #{argv.inspect}"
+        end
+      end
+      seen = { decoded: [] }
+      signer = Object.new
+      signer.define_singleton_method(:decoded) do |name, file|
+        seen[:decoded] << name
+        File.join(private_dir, file)
+      end
+      signer.define_singleton_method(:secret) { |name| "secret #{name}" }
+      signer.define_singleton_method(:with_profiles) do |profiles, &block|
+        seen[:profiles] = profiles
+        block.call
+      end
+      signer.define_singleton_method(:keychain) do |kind:, **, &block|
+        seen[:kind] = kind
+        block.call("owned.keychain-db", "A" * 40)
+      end
+      framework = Object.new
+      framework.define_singleton_method(:build) { |**options| seen[:framework] = options }
+      action =
+        lambda do |action_context, name, options, timeout:, log:|
+          seen[:action] = [name, options, action_context.environment.dup]
+        end
+      identity = Struct.new(:version, :apple_build).new("0.4.413", "413")
+      pipeline = Dieter::CandidatePipeline.allocate
+      pipeline.instance_variable_set(:@context, context)
+      pipeline.instance_variable_set(:@identity, identity)
+      result =
+        Dieter::SharedFramework.stub(:new, ->(_context) { framework }) do
+          Dieter::NativeAction.stub(:run, action) { pipeline.send(:ios_candidate, signer) }
+        end
+
+      assert_equal File.join(output, "Dieter-iOS.ipa"), result
+      assert_equal "signed ipa", File.read(result)
+      assert_includes context.leases, "apple-build"
+      assert_equal({ configuration: "release", platforms: "ios-device" }, seen[:framework])
+      # The app and its Share extension each install their own App Store profile.
+      assert_equal %w[
+                     IOS_DISTRIBUTION_CERTIFICATE_BASE64
+                     IOS_PROVISIONING_PROFILE_BASE64
+                     IOS_SHARE_PROVISIONING_PROFILE_BASE64
+                   ],
+                   seen[:decoded]
+      assert_equal [APP.fetch("profile_uuid"), SHARE.fetch("profile_uuid")], seen[:profiles].keys
+      assert_equal "Apple Distribution", seen[:kind]
+      name, options, environment = seen.fetch(:action)
+      assert_equal "build_app", name
+      assert_equal "apps/ios/Dieter.xcodeproj", options.fetch(:project)
+      assert_equal "Dieter", options.fetch(:scheme)
+      assert_equal "Release", options.fetch(:configuration)
+      assert_equal "ios", environment.fetch("DIETER_SWIFT_PACKAGE")
+      assert_equal(
+        {
+          APP.fetch("bundle_id") => APP.fetch("profile_uuid"),
+          SHARE.fetch("bundle_id") => SHARE.fetch("profile_uuid")
+        },
+        options.fetch(:export_options).fetch("provisioningProfiles")
+      )
+      settings = Shellwords.split(options.fetch(:xcargs))
+      assert_includes settings, "DIETER_IOS_PROFILE_SPECIFIER=#{APP.fetch("profile_uuid")}"
+      assert_includes settings, "DIETER_IOS_BUNDLE_ID=#{APP.fetch("bundle_id")}"
+      assert_includes settings, "MARKETING_VERSION=0.4.413"
+      assert_includes settings, "CURRENT_PROJECT_VERSION=413"
+      assert_includes settings, "DIETER_IOS_SHARE_PROFILE_SPECIFIER=#{SHARE.fetch("profile_uuid")}"
+      archive = File.join(output, "Dieter.xcarchive")
+      assert_equal [
+                     ["load_material"],
+                     ["validate_archive", archive, "0.4.413", "413", APP.fetch("bundle_id")],
+                     [
+                       "validate_ipa",
+                       File.join(private_dir, "Export"),
+                       "0.4.413",
+                       "413",
+                       APP.fetch("bundle_id")
+                     ]
+                   ],
+                   context.commands.map { |argv|
+                     [argv[2][/load_material|validate_archive|validate_ipa/], *argv.drop(3)]
+                   }
     end
   end
 end

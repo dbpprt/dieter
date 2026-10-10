@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
@@ -36,9 +35,8 @@ func changedPaths(ctx context.Context, root, base string) ([]string, error) {
 	return strings.Split(tracked+untracked, "\x00"), nil
 }
 
-// Feature-specific paths narrow device work; shared and unknown app paths fail broad.
+// App-specific paths narrow device work; shared pipeline and fixture paths select every platform.
 func affected(cases []Case, paths []string) []Case {
-	components := map[string]bool{}
 	broad := false
 	macChanged := false
 	androidChanged := false
@@ -47,8 +45,7 @@ func affected(cases []Case, paths []string) []Case {
 		if p == "" || strings.HasSuffix(p, ".md") || strings.HasSuffix(p, ".txt") {
 			continue
 		}
-		// The iOS adapter tests in DieterIOSTests also run in the simulator.
-		if strings.HasPrefix(p, "apps/ios/") || strings.HasPrefix(p, "apps/mac/Sources/DieterIOS/") || strings.HasPrefix(p, "apps/mac/Tests/DieterIOSTests/") || strings.HasPrefix(p, "tests/e2e/cases/ios/") || p == "fastlane/lib/dieter/platforms/ios.rb" {
+		if strings.HasPrefix(p, "apps/ios/") || strings.HasPrefix(p, "apps/mac/Sources/DieterIOS/") || strings.HasPrefix(p, "tests/e2e/cases/ios/") || strings.HasPrefix(p, "fastlane/lib/dieter/native/ios_") || p == "fastlane/lib/dieter/platforms/ios.rb" {
 			iosChanged = true
 			continue
 		}
@@ -61,7 +58,13 @@ func affected(cases []Case, paths []string) []Case {
 			macChanged = true
 			continue
 		}
-		if strings.HasPrefix(p, "tests/e2e/cases/android/") || p == "fastlane/lib/dieter/platforms/android.rb" || p == "fastlane/lib/dieter/platforms/emulator.rb" {
+		// The Android and iOS journeys run real turns through the mock harness.
+		if strings.HasPrefix(p, "internal/harness/runtime/") || p == "config/harnesses.yaml" {
+			androidChanged = true
+			iosChanged = true
+			continue
+		}
+		if strings.HasPrefix(p, "tests/e2e/cases/android/") || strings.HasPrefix(p, "apps/android/") || strings.HasPrefix(p, "native/android-webrtc/") || p == "fastlane/lib/dieter/platforms/android.rb" || p == "fastlane/lib/dieter/platforms/emulator.rb" {
 			androidChanged = true
 			continue
 		}
@@ -73,52 +76,28 @@ func affected(cases []Case, paths []string) []Case {
 			macChanged = true
 			continue
 		}
-		// Android compiles the shared core from source and the Apple apps link
-		// it as DieterShared. Apple-only core code reaches only the Apple apps;
-		// code that only the core's own tests compile reaches none.
+		// Android compiles the core and its Compose UI from source; the iOS app
+		// links both, and the Mac links the core without the Compose UI.
+		// Code that only the core's own tests compile reaches none of them.
 		if strings.HasPrefix(p, "apps/core/") {
 			sourceSet := coreSourceSet(p)
 			if strings.HasPrefix(p, "apps/core/testing/") || strings.HasSuffix(sourceSet, "Test") {
 				continue
 			}
-			macChanged = true
-			iosChanged = true
-			if !strings.HasPrefix(p, "apps/core/apple/") && !strings.HasPrefix(sourceSet, "apple") {
+			if !strings.HasPrefix(sourceSet, "android") {
+				iosChanged = true
+			}
+			if !strings.HasPrefix(p, "apps/core/mobile/") && !strings.HasPrefix(sourceSet, "android") && !strings.HasPrefix(sourceSet, "ios") {
+				macChanged = true
+			}
+			if !strings.HasPrefix(p, "apps/core/apple/") && !strings.HasPrefix(sourceSet, "apple") && !strings.HasPrefix(sourceSet, "ios") && !strings.HasPrefix(sourceSet, "macos") {
 				androidChanged = true
 			}
-			continue
-		}
-		if p == "just/android.just" {
-			androidChanged = true
-			continue
-		}
-		if !strings.HasPrefix(p, "apps/android/") && !strings.HasPrefix(p, "native/android-webrtc/") {
-			continue
-		}
-		if strings.HasPrefix(p, "apps/android/app/src/test/") {
-			continue
-		}
-		lower := strings.ToLower(p)
-		found := false
-		for key, terms := range map[string][]string{"machines": {"machines", "machineinformation"}, "activity": {"activityscreen", "activityfeed"}, "screens": {"/screens/", "webrtc", "screensscreen"}, "schedules": {"schedule"}, "conversation": {"conversation", "composer", "message"}, "workspace": {"workspace", "project"}} {
-			for _, term := range terms {
-				if strings.Contains(lower, term) {
-					components[key] = true
-					found = true
-				}
-			}
-		}
-		if !found {
-			androidChanged = true
 		}
 	}
 	result := []Case{}
 	for _, c := range cases {
-		match := broad || (c.Platform == "ios" && iosChanged) || (c.Platform == "mac" && macChanged) || (c.Platform == "android" && androidChanged)
-		for _, component := range c.Components {
-			match = match || (c.Platform == "android" && components[component])
-		}
-		if match {
+		if broad || (c.Platform == "ios" && iosChanged) || (c.Platform == "mac" && macChanged) || (c.Platform == "android" && androidChanged) {
 			result = append(result, c)
 		}
 	}
@@ -169,18 +148,4 @@ func sourceDigest(ctx context.Context, root string) (string, error) {
 		h.Write(data)
 	}
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
-}
-func last(s string, n int) string {
-	if len(s) > n {
-		return s[len(s)-n:]
-	}
-	return s
-}
-func redact(s string, args map[string]string) string {
-	for k, v := range args {
-		if (strings.Contains(strings.ToLower(k), "token") || k == "screenFixture") && v != "" {
-			s = strings.ReplaceAll(s, v, "<redacted>")
-		}
-	}
-	return regexp.MustCompile(`isolated_[0-9a-fA-F]{48}`).ReplaceAllString(s, "<redacted>")
 }

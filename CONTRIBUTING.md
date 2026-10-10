@@ -1,7 +1,8 @@
 # Contributing to Dieter
 
 Dieter is a native workspace for coding agents, built from a Go daemon and
-gateway, SwiftUI macOS/iOS clients, and a Kotlin/Compose Android client.
+gateway, a SwiftUI macOS client, and Android and iOS apps that share one
+Compose Multiplatform UI.
 Small fixes, documentation, accessibility improvements, and focused feature
 contributions are welcome.
 
@@ -72,9 +73,10 @@ checks and lists related native checks separately. Run focused catalog cases for
 the behavior you changed, or use `--native` for every related device/desktop gate.
 Native integration is needed for related app, shared schema, or fixture changes;
 a documentation correction does not require a device suite.
-Shared Swift package, dependency-lock, vendor, and core/client test changes
-also select iOS validation. iOS sources and tests select iOS; policies in the
-shared Swift package additionally run their portable unit tests on the Mac host.
+Shared Swift package, dependency-lock, vendor, and `SharedCore` changes also
+select iOS validation. Core and shared mobile UI (`apps/core/mobile`) changes
+select the Android and iOS apps, and mock-harness changes select both mobile
+journeys.
 Installer changes select the release regression suite; Mac lifecycle changes
 select process-ownership tests before native qualification.
 The website has an explicit `just site check` for links and assets.

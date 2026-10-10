@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleDisplayName</key><string>Dieter</string>
+<key>DieterReleaseVersion</key><string>$(DIETER_RELEASE_VERSION)</string>
+<key>DieterAppGroupIdentifier</key><string>$(DIETER_IOS_APP_GROUP_ID)</string>
+<key>ITSAppUsesNonExemptEncryption</key><false/>
+<key>CADisableMinimumFrameDurationOnPhone</key><true/>
+<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>com.dbpprt.dieter.ios.oauth</string><key>CFBundleURLSchemes</key><array><string>dieter-mac</string></array></dict></array>
+<key>NSLocalNetworkUsageDescription</key><string>Connect securely to your enrolled Dieter nodes on the local network.</string>
+<key>NSCameraUsageDescription</key><string>Dieter includes camera-capable WebRTC components for remote screen viewing. Dieter does not capture or transmit camera video.</string>
+<key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
+<key>UISupportedInterfaceOrientations</key><array>
+<string>UIInterfaceOrientationPortrait</string>
+<string>UIInterfaceOrientationLandscapeLeft</string>
+<string>UIInterfaceOrientationLandscapeRight</string>
+</array>
+<key>UISupportedInterfaceOrientations~ipad</key><array>
+<string>UIInterfaceOrientationPortrait</string>
+<string>UIInterfaceOrientationPortraitUpsideDown</string>
+<string>UIInterfaceOrientationLandscapeLeft</string>
+<string>UIInterfaceOrientationLandscapeRight</string>
+</array>
+</dict></plist>

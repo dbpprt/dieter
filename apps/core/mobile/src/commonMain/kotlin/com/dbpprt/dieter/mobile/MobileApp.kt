@@ -277,6 +277,7 @@ internal fun RouteContent(store: MobileStore, route: MobileRoute, openUrl: (Stri
         is MobileRoute.Pane -> CardPaneScreen(store, card(route.cardId), route.pane, openUrl)
         is MobileRoute.Tool -> ToolScreen(store, route.page)
         is MobileRoute.NewTask -> CreationScreen(store, route.chat)
+        is MobileRoute.ShareTarget -> ShareTargetScreen(store, route.chat)
         is MobileRoute.FilePath ->
             FilesScreen(store, inConversation = route.cardId.isNotEmpty(), route = route)
         is MobileRoute.Machine -> MachineScreen(store, route.machineId)

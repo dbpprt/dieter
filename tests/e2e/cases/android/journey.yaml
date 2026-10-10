@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: android.journey
+platform: android
+suites: [smoke, functional]
+components: [android]
+fixture: gateway
+timeout: 10m
+# Inbox to review, a live reply, chats, tools, files, schedules and dark mode,
+# reaching the fixture daemon over WebRTC control channels like production.
+native:
+  class: com.dbpprt.dieter.JourneyTest
+  methods:
+    - sharedTaskJourney

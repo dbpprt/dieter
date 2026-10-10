@@ -624,11 +624,12 @@ Fullscreen keyboard capture needs local Mac Accessibility permission; Cmd-Shift-
 always releases capture. System shortcuts, including Cmd-Control-F, reach the remote
 while captured. Permission loss, secure local input, or tap interruption releases capture.
 
-Text, image and file clipboard sharing is available on updated Mac and Android viewers. Enable
-**Share clipboard** in Screen options (Mac) or the bottom bar (Android). Mac
+Text, image and file clipboard sharing is available on updated Mac, Android and iOS viewers. Enable
+**Share clipboard** in Screen options (Mac) or the screen menu (Android and iOS). Mac
 ⌘C/⌘X and remote app menus copy back to the local clipboard; ⌘V transfers the
-local content and then invokes the host paste shortcut. Android provides Copy and
-Paste buttons, IME clipboard actions and the host's ⌘V hardware shortcut.
+local content and then invokes the host paste shortcut. The mobile screen menu
+provides **Paste to machine**; Android also handles IME clipboard actions and
+the host's ⌘V hardware shortcut.
 Synchronization runs only for the focused controlling viewer. View-only viewers
 cannot read or write it. Connecting or taking control does not overwrite either
 clipboard; subsequent supported changes sync in both directions. Clipboard access can
@@ -869,10 +870,10 @@ for a parity group. Protection adds redundancy and cannot repair every loss burs
 For disposable-process A/B tests, `DIETER_SCREEN_LTR=0` disables reference recovery
 and `DIETER_SCREEN_FEC=0` disables FEC negotiation. Do not restart an operator daemon
 for these comparisons. `DIETER_TEST_SCREEN_RECOVERY=1 just pipeline check component:mac operation:screens_test`
-runs the native H.264/HEVC recovery matrix. Android coverage uses
-`just pipeline android e2e cases:screens.screen-recovery-end-to-end-test`.
-Both use authenticated disposable fixtures and targeted packet loss, without
-altering saved credentials or system network configuration.
+runs the native H.264/HEVC recovery matrix with authenticated disposable
+fixtures and targeted packet loss, without altering saved credentials or system
+network configuration. The Android and iOS catalogs currently have no screen
+recovery case.
 
 ### Screen performance diagnostics
 
@@ -896,10 +897,9 @@ Performance candidates remain isolated-process switches: Mac
 behavior until matched qualification. Never restart the live service to set them.
 The qualified one-credit fallback remains available with older helpers.
 
-`just pipeline catalog action:plan platform:android suite:screens` describes reproducible local/device evidence
-collection. The physical Android runner requires an exact serial and a separate
-fixture application ID; the original emulator-only runner remains unchanged in
-its device policy. Do not present a skipped/unavailable matrix cell as a pass.
+`just pipeline screens_qualify manifest:PATH output:PATH` collects reproducible
+Mac measurement evidence; there are no Android or iOS screen cells. Do not
+present a skipped/unavailable matrix cell as a pass.
 
 ### Data-only WebRTC control signaling
 
@@ -1048,8 +1048,9 @@ Production rollout updates/restarts are operator work, never a testing method.
 
 ### Unseen model replies
 
-Activity on macOS and Android shows **Needs attention** for completed model
-replies that have not been viewed and for questions waiting for an answer.
+Activity on macOS (**Needs attention**) and the Android and iOS Inbox (**Needs
+you**) flag completed model replies that have not been viewed and questions
+waiting for an answer.
 Viewing the latest transcript in the foreground acknowledges that reply across
 clients. A Review lane alone does not imply an unread reply.
 

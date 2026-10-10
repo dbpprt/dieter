@@ -59,6 +59,10 @@ class MobileStore(
     val creationPreview = MutableStateFlow(CreationPreview())
     val selectedCheckout = MutableStateFlow("")
     val creationIntent = MutableStateFlow(CreationIntent())
+    /** A share waiting for the person to choose its task or chat. */
+    val shareTarget = MutableStateFlow<SharedItems?>(null)
+    /** Shared items each conversation's composer takes when it opens. */
+    val composerShares = MutableStateFlow<Map<String, SharedItems>>(emptyMap())
     val files = MutableStateFlow(FilesSlice())
     val fileBuffers = MutableStateFlow<Map<String, MobileFileBuffer>>(emptyMap())
     val schedules = MutableStateFlow(SchedulesSlice())
@@ -99,6 +103,7 @@ class MobileStore(
     private var previewJob: Job? = null
     private val pendingAgentChoices = mutableListOf<AgentChoice>()
     private val draftJobs = mutableMapOf<String, Job>()
+    private var pendingShare: SharedItems? = null
     private val draftDaemons = mutableMapOf<String, String>()
 
     init {
@@ -121,6 +126,7 @@ class MobileStore(
             observe(Slice.SLICE_WORKSPACE, "") { update ->
                 update.workspace?.let { workspace.value = it }
                 update.workspace_delta?.let { workspace.value = fold(workspace.value, it) }
+                deliverShare()
             }
         subscriptions +=
             observe(Slice.SLICE_OUTBOX, "") { update ->
@@ -172,10 +178,14 @@ class MobileStore(
                 }
             }
         subscriptions +=
-            observe(
-                Slice.SLICE_CREATION_PREVIEW,
-                FORM_SCOPE,
-            ) {} // Responses are applied by the latest request below.
+            observe(Slice.SLICE_CREATION_PREVIEW, FORM_SCOPE) { update ->
+                // The core previews the bound form again when catalogs, presence or routes
+                // change, such as once agent models load. A request in flight answers for
+                // newer input instead; the form keeps its own intent either way.
+                update.creation_preview?.let {
+                    if (previewJob?.isActive != true) creationPreview.value = it
+                }
+            }
         subscriptions +=
             observe(Slice.SLICE_FILES, FILES_SCOPE) {
                 it.files?.let { value ->
@@ -658,6 +668,49 @@ class MobileStore(
         )
     }
 
+    /** Receives another app's share; it opens once the workspace has loaded. */
+    fun share(items: SharedItems) {
+        pendingShare = items
+        deliverShare()
+    }
+
+    private fun deliverShare() {
+        if (!workspace.value.loaded) return
+        val items = pendingShare ?: return
+        pendingShare = null
+        if (items.problem.isNotEmpty()) error.value = items.problem
+        val attachments =
+            com.dbpprt.dieter.core.composition.Attachments.appending(emptyList(), items.attachments)
+                .getOrElse {
+                    error.value = it.message.orEmpty()
+                    emptyList()
+                }
+        if (items.destination == ShareDestination.NEW_TASK) {
+            newConversation(chat = false)
+            preview(creationIntent.value.copy(prompt = items.text, attachments = attachments))
+            return
+        }
+        shareTarget.value = SharedItems(items.text, attachments, items.destination)
+        present(MobileRoute.ShareTarget(items.destination == ShareDestination.CHAT))
+    }
+
+    /** Sends the waiting share to [cardId]'s composer and opens that conversation. */
+    fun shareInto(cardId: String) {
+        val items = shareTarget.value ?: return
+        shareTarget.value = null
+        composerShares.value = composerShares.value + (cardId to items)
+        dismiss()
+        openConversation(cardId)
+    }
+
+    fun cancelShare() {
+        shareTarget.value = null
+        dismiss()
+    }
+
+    internal fun takeComposerShare(cardId: String): SharedItems? =
+        composerShares.value[cardId]?.also { composerShares.value = composerShares.value - cardId }
+
     fun preview(intent: CreationIntent, choice: AgentChoice? = null) {
         choice?.let { pendingAgentChoices += it }
         creationIntent.value = intent
@@ -689,7 +742,9 @@ class MobileStore(
                 ensureActive()
                 if (response != null) {
                     creationPreview.value = response
-                    creationIntent.value = response.intent ?: intent
+                    // Previews leave attachments out; the form keeps its own.
+                    creationIntent.value =
+                        (response.intent ?: intent).copy(attachments = intent.attachments)
                     repeat(choices.size) {
                         if (pendingAgentChoices.isNotEmpty()) pendingAgentChoices.removeAt(0)
                     }
@@ -1017,16 +1072,16 @@ class MobileStore(
     }
 
     companion object {
-        const val BOARD_SCOPE = "compose-mobile-board"
-        const val CHATS_SCOPE = "compose-mobile-chats"
-        const val FORM_SCOPE = "compose-mobile-creation"
-        const val FILES_SCOPE = "compose-mobile-files"
-        const val SCHEDULES_SCOPE = "compose-mobile-schedules"
-        const val REVIEW_SCOPE = "compose-mobile-review"
-        const val TERMINAL_SCOPE = "compose-mobile-terminals"
-        const val PROJECT_CHANGES_SCOPE = "compose-mobile-project-changes"
-        const val PROCESSES_SCOPE = "compose-mobile-processes"
-        const val SCREEN_SCOPE = "compose-mobile-screen"
+        const val BOARD_SCOPE = "mobile-board"
+        const val CHATS_SCOPE = "mobile-chats"
+        const val FORM_SCOPE = "mobile-creation"
+        const val FILES_SCOPE = "mobile-files"
+        const val SCHEDULES_SCOPE = "mobile-schedules"
+        const val REVIEW_SCOPE = "mobile-review"
+        const val TERMINAL_SCOPE = "mobile-terminals"
+        const val PROJECT_CHANGES_SCOPE = "mobile-project-changes"
+        const val PROCESSES_SCOPE = "mobile-processes"
+        const val SCREEN_SCOPE = "mobile-screen"
     }
 }
 

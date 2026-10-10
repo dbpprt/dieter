@@ -6,7 +6,6 @@ require "shellwords"
 require_relative "framework"
 require_relative "apple_build"
 require_relative "../fixtures/gateway"
-require_relative "../fixtures/screen"
 require_relative "../fixtures/device_route"
 require_relative "../fixtures/ios_media"
 require_relative "../pipeline/contract"
@@ -14,48 +13,22 @@ require_relative "../pipeline/action"
 require_relative "../pipeline/inputs"
 
 module Dieter
+  # The iOS app: a UIKit shell (apps/ios) hosting the shared Compose UI.
   class IOS
     UUID = /\A[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\z/
+    PROJECT = "apps/ios/Dieter.xcodeproj"
+    SCHEME = "Dieter"
+    # Selects the iOS graph of apps/mac/Package.swift during package resolution.
+    PACKAGE = { "DIETER_SWIFT_PACKAGE" => "ios" }.freeze
+    # Journeys install a separate application, preserving the operator's app.
+    E2E_BUNDLE_ID = "com.dbpprt.dieter.ios.e2e"
 
-    def initialize(
-      context,
-      actions: nil,
-      project: "apps/ios/DieterIOS.xcodeproj",
-      scheme: "DieterIOSE2E",
-      screenshots: false,
-      fixture_suite: "ios"
-    )
+    def initialize(context, actions: nil)
       @context, @root, @actions = context, context.root, actions
-      @project, @scheme, @screenshots = project, scheme, screenshots
-      @fixture_suite = fixture_suite
       @contract = Contract.new(context)
       @derived = File.join(@root, "apps/ios/.build/DerivedData")
       @products = File.join(@derived, "Build/Products")
-    end
-
-    def unit(options)
-      @context.lease("apple-build")
-      SharedFramework.new(@context).build
-      argv = [
-        "swift",
-        "test",
-        "--package-path",
-        "apps/mac",
-        "--scratch-path",
-        "apps/mac/.build/dieter-ios-policy",
-        "--only-use-versions-from-resolved-file",
-        "--disable-index-store",
-        *AppleBuild.jobs(@context, tool: :swift)
-      ]
-      argv += ["--filter", options.fetch("filter")] if options["filter"]
-      @context.command(
-        argv,
-        environment: {
-          "DIETER_SWIFT_TEST_SCOPE" => "ios-policy"
-        },
-        timeout: 1200,
-        log: File.join(@context.output, "ios-policy-tests.log")
-      )
+      @context.environment.merge!(PACKAGE)
     end
 
     def build(options)
@@ -65,7 +38,7 @@ module Dieter
       end
       @context.lease("apple-build")
       physical = @target && @target["kind"] == "device"
-      @bundle_id = physical ? @signing.fetch("app_bundle_id") : "com.dbpprt.dieter.ios.e2e"
+      @bundle_id = physical ? @signing.fetch("app_bundle_id") : E2E_BUNDLE_ID
       if physical
         @derived = File.join(@root, "apps/ios/.build/DerivedDataDevice")
         @products = File.join(@derived, "Build/Products")
@@ -90,7 +63,6 @@ module Dieter
             "DIETER_IOS_BUNDLE_ID=#{@signing.fetch("app_bundle_id")}",
             "DIETER_IOS_APP_GROUP_ID=#{@signing.fetch("app_group_id")}",
             "DIETER_IOS_TEAM_ID=#{@signing.fetch("team_id")}",
-            "DEVELOPMENT_TEAM=#{@signing.fetch("team_id")}",
             "DIETER_IOS_SIGN_STYLE=Manual",
             "DIETER_IOS_SIGN_IDENTITY=#{@profiles.fetch("certificate")}",
             "DIETER_IOS_PROFILE_SPECIFIER=#{@profiles.fetch("app")}",
@@ -109,8 +81,8 @@ module Dieter
           @context,
           "run_tests",
           {
-            project: @project,
-            scheme: @scheme,
+            project: PROJECT,
+            scheme: SCHEME,
             configuration: configuration.capitalize,
             destination: physical ? "generic/platform=iOS" : "generic/platform=iOS Simulator",
             derived_data_path: @derived,
@@ -138,11 +110,11 @@ module Dieter
     def record_products(configuration:, sdk:, xctestrun:)
       source = @context.command(%w[git rev-parse HEAD], timeout: 30).strip
       ArtifactSet.new(
-        component: product_component,
+        component: "ios",
         source: source,
         configuration: configuration,
         toolchain: {
-          "input_sha256" => BuildInputs.digest(@context, paths: build_input_paths),
+          "input_sha256" => BuildInputs.digest(@context),
           "sdk" => sdk,
           "xcode" => @context.command(%w[xcodebuild -version], timeout: 30)
         },
@@ -153,24 +125,15 @@ module Dieter
       ).write(File.join(@context.output, "artifacts.json"))
     end
 
-    def product_component = "ios"
-    def build_input_paths = BuildInputs::IOS
-    def simulator_bundle_id = "com.dbpprt.dieter.ios.e2e"
-
     def admit(target, plan)
       raise Unavailable, "iOS tests require macOS/Xcode" unless RUBY_PLATFORM.include?("darwin")
       @target = target
-      @share_files =
-        target.fetch("kind") == "device" ||
-          plan.any? do |test_case|
-            %w[ios.share-extension ios.share-owned-file].include?(test_case["id"])
-          end
       if target.fetch("kind") == "device"
         @context.lease("ios-device", identity: target.fetch("udid"))
         @context.lease("apple-build")
         @signing = @context.config.data.fetch("signing").fetch(target.fetch("signing"))
         app = @signing.fetch("app_bundle_id")
-        unless app && app.end_with?(".e2e") && @signing["share_bundle_id"] == app + ".share" &&
+        unless app&.end_with?(".e2e") && @signing["share_bundle_id"] == app + ".share" &&
                  @signing["app_group_id"] == "group." + app
           raise PipelineError, "Physical iOS requires isolated E2E bundle/app-group identities"
         end
@@ -295,20 +258,14 @@ module Dieter
       dir = File.join(@context.output, test_case.fetch("id"))
       FileUtils.mkdir_p(dir, mode: 0o700)
       state = Dir.mktmpdir("ios-case-", @context.private_dir)
-      fixture, screen, route = nil, nil, nil
+      fixture, route = nil, nil
       result = { "status" => "failed", "reason" => "", "setupMs" => 0, "executionMs" => 0 }
       begin
         environment = { "DIETER_IOS_TEST_LANDSCAPE" => target["layout"] == "ipad" ? "1" : "0" }
         if test_case.fetch("fixture") == "gateway"
           offline = File.join(state, "offline")
           fixture =
-            GatewayFixture.new(
-              @context,
-              @fixture_suite,
-              state,
-              evidence: dir,
-              offline_trigger: offline
-            )
+            GatewayFixture.new(@context, "mobile", state, evidence: dir, offline_trigger: offline)
           values = fixture.start
           %w[TOKEN DAEMON INCOMPATIBLE_DAEMON PROJECT BOARD].each do |key|
             value = values.fetch("DIETER_ISOLATED_#{key}")
@@ -329,35 +286,9 @@ module Dieter
             environment["DIETER_IOS_TEST_OFFLINE_TRIGGER"] = endpoint + "/_fixture/offline"
             environment["DIETER_IOS_TEST_CONTROL_TOKEN"] = route.control_token
           end
-        elsif test_case.fetch("fixture") == "screen"
-          screen = ScreenFixture.new(@context, state, dir, native_only: true)
-          values, = screen.start
-          environment["DIETER_IOS_TEST_SCREEN_FIXTURE"] = values.fetch("screenFixture")
-          if target["kind"] == "device"
-            descriptor = JSON.parse(Base64.strict_decode64(values.fetch("screenFixture")))
-            route = DeviceFixtureRoute.new(@context, target, state)
-            descriptor["url"] = route.start(
-              upstream: descriptor.fetch("url"),
-              token: descriptor.fetch("token"),
-              offline_file: File.join(state, "unused-offline")
-            )
-            descriptor["certificate"] = Base64.strict_encode64(route.certificate_pem)
-            environment["DIETER_IOS_TEST_SCREEN_FIXTURE"] = Base64.strict_encode64(
-              JSON.generate(descriptor)
-            )
-            @context.secrets << environment.fetch("DIETER_IOS_TEST_SCREEN_FIXTURE")
-          end
-        end
-        if test_case.fetch("id") == "ios.https-auth"
-          endpoint = ENV.fetch("DIETER_IOS_TEST_HTTPS_GATEWAY", "")
-          uri = URI.parse(endpoint)
-          unless uri.scheme == "https" && uri.host && !uri.user && !uri.query && !uri.fragment
-            raise Unavailable, "ios.https-auth requires a credential-free HTTPS endpoint"
-          end
-          environment["DIETER_IOS_TEST_HTTPS_GATEWAY"] = endpoint
         end
         reset_owned_packages
-        if %w[ios.share-extension ios.share-owned-file].include?(test_case["id"])
+        if test_case.fetch("id") == "ios.share"
           sdk = target["kind"] == "device" ? "iphoneos" : "iphonesimulator"
           media =
             IOSMediaFixture.new(
@@ -389,8 +320,8 @@ module Dieter
             @context,
             "run_tests",
             {
-              project: @project,
-              scheme: @scheme,
+              project: PROJECT,
+              scheme: SCHEME,
               derived_data_path: @derived,
               xctestrun: spec,
               destination: destination,
@@ -444,23 +375,21 @@ module Dieter
               "reason" => "XCTest process failed despite passing result fragments"
             )
           end
-          if @screenshots || result["status"] != "passed"
-            @context.command(
-              [
-                "xcrun",
-                "xcresulttool",
-                "export",
-                "attachments",
-                "--path",
-                bundle,
-                *(@screenshots ? [] : ["--only-failures"]),
-                "--output-path",
-                File.join(dir, "attachments")
-              ],
-              timeout: 60,
-              check: false
-            )
-          end
+          # Journeys attach screenshots of every screen they visit.
+          @context.command(
+            [
+              "xcrun",
+              "xcresulttool",
+              "export",
+              "attachments",
+              "--path",
+              bundle,
+              "--output-path",
+              File.join(dir, "attachments")
+            ],
+            timeout: 60,
+            check: false
+          )
         end
       rescue StandardError => error
         result["status"] = error.is_a?(Unavailable) ?
@@ -470,7 +399,7 @@ module Dieter
       ensure
         problems = []
         @context.during_cleanup do
-          [route, screen, fixture].compact.each do |owned|
+          [route, fixture].compact.each do |owned|
             owned.close
           rescue StandardError => error
             problems << error.message
@@ -498,20 +427,19 @@ module Dieter
       manifest =
         ArtifactSet.load(
           @prepared_manifest,
-          component: product_component,
+          component: "ios",
           source: @context.command(%w[git rev-parse HEAD], timeout: 30).strip
         ).manifest
       toolchain = manifest.fetch("toolchain")
       unless manifest["configuration"] == "debug" && toolchain["sdk"] == "iphonesimulator" &&
-               toolchain["input_sha256"] ==
-                 BuildInputs.digest(@context, paths: build_input_paths) &&
+               toolchain["input_sha256"] == BuildInputs.digest(@context) &&
                toolchain["xcode"] == @context.command(%w[xcodebuild -version], timeout: 30)
         raise PipelineError, "Prepared iOS inputs or toolchain changed"
       end
       product = manifest.fetch("products").find { |entry| entry["kind"] == "test-products" }
       raise PipelineError, "Prepared iOS test products are missing" unless product
       @products = product.fetch("path")
-      @bundle_id = simulator_bundle_id
+      @bundle_id = E2E_BUNDLE_ID
       puts "Reusing verified iOS test products for #{target.fetch("name")}"
     end
 
@@ -635,8 +563,8 @@ module Dieter
         JSON.parse(
           @context.command(%w[plutil -convert json -o - -- -], input: inventory, timeout: 30)
         ).keys
-      app = @bundle_id || "com.dbpprt.dieter.ios"
-      [app, app + ".native-tests", app + ".uitests.xctrunner"].each do |id|
+      app = @bundle_id || E2E_BUNDLE_ID
+      [app, app + ".uitests.xctrunner"].each do |id|
         next unless installed.include?(id)
         @context.command(
           ["xcrun", "simctl", "uninstall", @simulator, id],
@@ -648,7 +576,7 @@ module Dieter
 
     def admit_device_packages
       app = @signing.fetch("app_bundle_id")
-      @device_packages = [app, app + ".native-tests", app + ".uitests.xctrunner"]
+      @device_packages = [app, app + ".uitests.xctrunner"]
       identity = { "udid" => @target.fetch("udid"), "packages" => @device_packages }
       @device_journal =
         File.join(
@@ -724,7 +652,7 @@ module Dieter
           binary: true
         )
       input = File.join(state, "original.json")
-      output = File.join(state, "DieterIOS.xctestrun")
+      output = File.join(state, "Dieter.xctestrun")
       Atomic.write(input, original)
       @contract.call(
         "xctestrun",

@@ -195,6 +195,24 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
 
     fun dismissModal() = store.dismiss()
 
+    /**
+     * Items the share extension handed over: [message] is an encoded UiMessage of the files,
+     * [destination] "new-task", "task" or "chat", and [problem] what could not be read.
+     */
+    fun share(message: NSData, destination: String, problem: String) =
+        store.share(
+            SharedItems(
+                "",
+                com.dbpprt.dieter.api.v1.UiMessage.ADAPTER.decode(message.bytesArray()).parts,
+                when (destination) {
+                    "task" -> ShareDestination.TASK
+                    "chat" -> ShareDestination.CHAT
+                    else -> ShareDestination.NEW_TASK
+                },
+                problem,
+            )
+        )
+
     fun newTask() = store.newConversation(store.routes.value.tab == MobileTab.CHATS)
 
     fun reconnect() = store.retry()
@@ -204,9 +222,7 @@ class MobileHost(private val shared: DieterShared, private val nativeViews: Mobi
     fun setForeground(active: Boolean) = store.setForeground(active)
 
     fun adoptFixture(url: String, token: String) = store.action {
-        store.core.dispatch(
-            Command(adopt_session = AdoptSession(url, token, "Isolated Compose spike"))
-        )
+        store.core.dispatch(Command(adopt_session = AdoptSession(url, token, "Isolated journey")))
         store.agentSelection = com.dbpprt.dieter.api.v1.HarnessSelection("mock", "mock", "low")
     }
 

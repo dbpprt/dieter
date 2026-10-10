@@ -66,7 +66,7 @@ func main() {
 	daemonRestartTrigger := flag.String("daemon-restart-trigger", "", "optional file whose creation restarts the isolated daemon API and gateway tunnel")
 	boardStressFixture := flag.Bool("board-stress-fixture", false, "seed a 100-card board with 85 variable-height cards in one lane")
 	inboxFixture := flag.Bool("inbox-fixture", false, "seed deterministic Inbox activity and real conversations")
-	composeFixture := flag.Bool("compose-mobile-fixture", false, "seed a small persisted mobile workspace for the Compose spike")
+	mobileFixture := flag.Bool("mobile-fixture", false, "seed a small persisted workspace for the Android and iOS journeys")
 	usageFixture := flag.Bool("usage-fixture", false, "publish deterministic provider usage without provider credentials")
 	directRoute := flag.String("direct-route", "", `advertise a loopback direct TLS route for the primary daemon: "live" serves it, "dead" advertises a closed port`)
 	flag.Parse()
@@ -74,13 +74,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, `error: -direct-route must be "live" or "dead"`)
 		os.Exit(2)
 	}
-	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *directRoute, *boardStressFixture, *inboxFixture, *usageFixture, *composeFixture); err != nil {
+	if err := run(*address, *home, *offlineTrigger, *daemonRestartTrigger, *directRoute, *boardStressFixture, *inboxFixture, *usageFixture, *mobileFixture); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string, boardStressFixture, inboxFixture, usageFixture, composeFixture bool) error {
+func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string, boardStressFixture, inboxFixture, usageFixture, mobileFixture bool) error {
 	// The mock harness answers every prompt deterministically, so end-to-end
 	// turns complete without real provider credentials.
 	if err := os.Setenv("DIETER_ENABLE_MOCK_HARNESS", "1"); err != nil {
@@ -227,8 +227,8 @@ func run(address, home, offlineTrigger, daemonRestartTrigger, directRoute string
 			return err
 		}
 	}
-	if composeFixture {
-		if err := seedComposeFixture(data, project, board); err != nil {
+	if mobileFixture {
+		if err := seedMobileFixture(data, project, board); err != nil {
 			return err
 		}
 	}

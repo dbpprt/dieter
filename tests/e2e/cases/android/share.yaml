@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: android.share
+platform: android
+suites: [smoke, functional]
+components: [android, share]
+fixture: gateway
+timeout: 10m
+# Text and a screenshot shared from another app open a prefilled new task once,
+# survive recreation and start a conversation with the attachment.
+native:
+  class: com.dbpprt.dieter.JourneyTest
+  methods:
+    - sharedItemsStartATask

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://dieter.local/schemas/e2e-v1.json",
   "title": "Dieter native test case v1",
-  "description": "Editor assistance; just pipeline catalog action:lint is authoritative for source references, fixtures, durations, variables and native build compatibility.",
+  "description": "Editor assistance; just pipeline catalog action:lint is authoritative for source references, fixtures and durations.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -14,11 +14,7 @@
       "pattern": "^[a-z][a-z0-9.-]{0,100}$"
     },
     "platform": {
-      "enum": [
-        "android",
-        "ios",
-        "mac"
-      ]
+      "enum": ["android", "ios", "mac"]
     },
     "suites": {
       "type": "array",
@@ -37,15 +33,7 @@
       }
     },
     "fixture": {
-      "enum": [
-        "none",
-        "gateway",
-        "activity",
-        "screen"
-      ]
-    },
-    "build": {
-      "const": "performance"
+      "enum": ["none", "gateway"]
     },
     "timeout": {
       "type": "string",
@@ -92,49 +80,32 @@
           }
         },
         "target": {
-          "enum": [
-            "DieterIOSUITests",
-            "DieterIOSNativeTests"
-          ]
+          "const": "DieterUITests"
         }
       },
       "oneOf": [
         {
-          "required": [
-            "class",
-            "methods"
-          ],
+          "required": ["class", "methods"],
           "not": {
             "anyOf": [
               {
-                "required": [
-                  "suite"
-                ]
+                "required": ["suite"]
               },
               {
-                "required": [
-                  "checks"
-                ]
+                "required": ["checks"]
               }
             ]
           }
         },
         {
-          "required": [
-            "suite",
-            "checks"
-          ],
+          "required": ["suite", "checks"],
           "not": {
             "anyOf": [
               {
-                "required": [
-                  "class"
-                ]
+                "required": ["class"]
               },
               {
-                "required": [
-                  "methods"
-                ]
+                "required": ["methods"]
               }
             ]
           }
@@ -172,146 +143,14 @@
             "required": [],
             "oneOf": [
               {
-                "required": [
-                  "id"
-                ]
+                "required": ["id"]
               },
               {
-                "required": [
-                  "text"
-                ]
+                "required": ["text"]
               },
               {
-                "required": [
-                  "description"
-                ]
+                "required": ["description"]
               }
-            ]
-          },
-          "type": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "id": {
-                "type": "string",
-                "minLength": 1
-              },
-              "text": {
-                "type": "string",
-                "minLength": 1
-              },
-              "description": {
-                "type": "string",
-                "minLength": 1
-              },
-              "value": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "value"
-            ],
-            "oneOf": [
-              {
-                "required": [
-                  "id"
-                ]
-              },
-              {
-                "required": [
-                  "text"
-                ]
-              },
-              {
-                "required": [
-                  "description"
-                ]
-              }
-            ]
-          },
-          "press": {
-            "const": "back"
-          },
-          "scroll": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "within": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "text": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "description": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": [],
-                "oneOf": [
-                  {
-                    "required": [
-                      "id"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "text"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "description"
-                    ]
-                  }
-                ]
-              },
-              "until": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "text": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "description": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": [],
-                "oneOf": [
-                  {
-                    "required": [
-                      "id"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "text"
-                    ]
-                  },
-                  {
-                    "required": [
-                      "description"
-                    ]
-                  }
-                ]
-              }
-            },
-            "required": [
-              "within",
-              "until"
             ]
           },
           "expect": {
@@ -346,137 +185,62 @@
             "required": [],
             "oneOf": [
               {
-                "required": [
-                  "id"
-                ]
+                "required": ["id"]
               },
               {
-                "required": [
-                  "text"
-                ]
+                "required": ["text"]
               },
               {
-                "required": [
-                  "description"
-                ]
+                "required": ["description"]
               }
             ],
             "anyOf": [
               {
-                "required": [
-                  "visible"
-                ]
+                "required": ["visible"]
               },
               {
-                "required": [
-                  "enabled"
-                ]
+                "required": ["enabled"]
               },
               {
-                "required": [
-                  "selected"
-                ]
+                "required": ["selected"]
               },
               {
-                "required": [
-                  "value"
-                ]
+                "required": ["value"]
               }
             ]
           },
           "screenshot": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9.-]{0,100}$"
-          },
-          "probe": {
-            "enum": [
-              "machine-telemetry",
-              "activity-replies-unread",
-              "activity-card-seen",
-              "activity-chat-seen"
-            ]
           }
         },
         "required": [],
         "minProperties": 1,
         "maxProperties": 1
-      }
-    },
-    "arguments": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "idleSampleMillis": {
-          "type": "string",
-          "pattern": "^[0-9a-z]{1,12}$"
-        },
-        "idleSampleWindows": {
-          "type": "string",
-          "pattern": "^[0-9a-z]{1,12}$"
-        },
-        "dieterPerformanceFrames": {
-          "type": "string",
-          "pattern": "^[0-9a-z]{1,12}$"
-        },
-        "screenLowLatency": {
-          "type": "string",
-          "pattern": "^[0-9a-z]{1,12}$"
-        },
-        "screenSurface": {
-          "type": "string",
-          "pattern": "^[0-9a-z]{1,12}$"
-        },
-        "screenDirectSurface": {
-          "type": "string",
-          "pattern": "^[0-9a-z]{1,12}$"
-        },
-        "forceTURN": {
-          "type": "string",
-          "pattern": "^[0-9a-z]{1,12}$"
-        }
       },
-      "required": []
+      "description": "Mac navigation flow; Android and iOS cases are native journeys"
     },
     "devices": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
       "items": {
-        "enum": [
-          "iphone",
-          "ipad"
-        ]
+        "enum": ["iphone", "ipad"]
       }
     }
   },
-  "required": [
-    "version",
-    "id",
-    "platform",
-    "suites",
-    "components",
-    "fixture",
-    "timeout"
-  ],
+  "required": ["version", "id", "platform", "suites", "components", "fixture", "timeout"],
   "oneOf": [
     {
-      "required": [
-        "native"
-      ],
+      "required": ["native"],
       "not": {
-        "required": [
-          "steps"
-        ]
+        "required": ["steps"]
       }
     },
     {
-      "required": [
-        "steps"
-      ],
+      "required": ["steps"],
       "not": {
-        "required": [
-          "native"
-        ]
+        "required": ["native"]
       }
     }
   ]

@@ -84,18 +84,22 @@ Download [Dieter-Android.apk from the latest release](https://github.com/dbpprt/
 Allow installation from your download source when Android asks, install it, and
 sign in to your gateway. No daemon runs on the phone.
 
-The app checks public releases for updates, verifies the asset's published
-SHA-256 digest, and hands installation to Android. You still confirm each
-installation. A manual check is available in **App Settings → Updates**.
+When it starts, the app checks the latest public release, verifies the
+asset's published SHA-256 digest, and hands installation to Android. You still
+confirm each installation. Installing over an earlier release keeps your
+sign-in. The app connects while it is open; it has no background sync,
+notifications, or home-screen widgets.
 
 For source builds, see the [Android developer guide](https://github.com/dbpprt/dieter/blob/main/apps/android/README.md).
 
 ## iPhone and iPad beta
 
-The SwiftUI client supports iOS 18+ on iPhone and iPad. It provides project and
-board navigation, conversations, attachments and screenshot sharing, remote file
-editing, machine telemetry, and Screens. It connects to remote daemons and does
-not host agents.
+The iPhone and iPad app supports iOS 18+ and shares the Android app's
+interface: Inbox, projects and boards, chats, conversations with attachments,
+files, Git review, schedules, terminals, machine telemetry, and Screens. It
+connects to remote daemons and does not host agents. Sign-in opens your
+gateway in the browser and returns to the app. Its Share extension sends files
+from other apps into a new task or an existing task or chat.
 
 iOS distribution uses the manual TestFlight workflow. Availability depends on
 beta access; there is no App Store download promised here. You can also build

@@ -110,6 +110,11 @@ sealed class MobileRoute {
         override val key = "new/${if (chat) "chat" else "task"}"
     }
 
+    /** Picks the existing task or chat that shared items go to. */
+    data class ShareTarget(val chat: Boolean) : MobileRoute() {
+        override val key = "share/${if (chat) "chat" else "task"}"
+    }
+
     /** A folder or document below a Files root; [cardId] scopes it to a conversation. */
     data class FilePath(val path: String, val file: Boolean, val cardId: String = "") :
         MobileRoute() {

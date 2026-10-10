@@ -14,7 +14,9 @@ that execution host must stay powered on and awake.
 These are real native captures from September 2026, using disposable projects and
 a mock agent. They illustrate the interface, not model quality or performance.
 The Mac set uses the **Electric Blue** design in dark appearance, with the
-conversation workspace side panel disabled. Open any image to inspect it at full size.
+conversation workspace side panel disabled. The phone captures show the earlier
+Android app; Android and iOS now share one redesigned app with the same tasks
+and tools. Open any image to inspect it at full size.
 
 ## One board, work across machines
 
@@ -75,14 +77,14 @@ host telemetry without losing your board.
 
 {{< screenshot src="macos-machines.png" width="1380" height="870" alt="Build Mac information popover over the Orbit board, showing online status, gateway route, CPU, memory, and GPU telemetry" caption="The execution host stays visible. Telemetry is an actual capture-time snapshot from the fixture host, not a benchmark." >}}
 
-## Pick up the thread on Android
+## Pick up the thread on your phone
 
-**Activity** is the Android starting point. It brings task and chat activity
-together so you can find recent work without first choosing a board. The bottom
-navigation keeps **Boards**, **Chats**, and **Tools** nearby. Completed replies
-that you have not viewed appear in **Needs attention**. Opening the latest
-reply clears that state across clients; questions waiting for your answer
-continue to need attention.
+**Inbox** is the starting point on Android, iPhone, and iPad. It brings task and
+chat activity together so you can find recent work without first choosing a
+board. The tab bar keeps **Projects**, **Chats**, and **Tools** nearby.
+Completed replies that you have not viewed appear under **Needs you**. Opening
+the latest reply clears that state across clients; questions waiting for your
+answer continue to need attention.
 
 {{< screenshot src="android-activity.png" kind="phone" width="1080" height="2424" alt="Android Activity feed showing sample onboarding tasks with runtime and machine information" caption="Activity brings recent work into one native feed." >}}
 

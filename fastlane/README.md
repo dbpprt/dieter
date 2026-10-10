@@ -124,13 +124,11 @@ exact UDID and share one available Apple Development private key. No Apple
 account resources are created automatically. The fixture route uses a reachable
 local-network host address and existing certificate/key; USB pairing controls
 the device and does not itself expose host loopback to it. Credentials and
-offline controls cross that route through authenticated TLS. Share tests on
-simulators and physical devices stage an exact PNG in the isolated E2E app's
-Documents container and share it through Files. Only Debug `.e2e` apps expose
-that container as `Dieter E2E`;
-package cleanup removes the owned media. No Share fixture imports media into
-Photos. `ios.share-owned-file` also qualifies the same Files path in isolation.
-Physical hardware remains unqualified until its
+offline controls cross that route through authenticated TLS. `ios.share` stages
+an exact PNG in the isolated E2E app's Documents container on simulators and
+physical devices and shares it through Files. Only Debug `.e2e` apps expose that
+container as `Dieter E2E`; package cleanup removes the owned media. No Share
+fixture imports media into Photos. Physical hardware remains unqualified until its
 configured native plan actually passes; unavailable cells fail.
 
 ## Local checks and app work
@@ -231,7 +229,6 @@ just pipeline android test_unit
 just pipeline android build
 just pipeline android local action:emulator_setup # copy installed runtime/image into .android
 just pipeline android local action:emulator_check # boot/readiness/owned cleanup
-just pipeline ios test_unit
 just pipeline ios_qualify profiles:ios-iphone,ios-ipad suite:smoke
 just pipeline ios build
 just pipeline mac test_unit
@@ -250,10 +247,11 @@ framework cache hashes production inputs, toolchains and published bytes,
 preserves unchanged products/timestamps and retains existing compatible slices.
 The configured `toolchains.swift_jobs` limit applies to SwiftPM and Xcode builds;
 `DIETER_SWIFT_JOBS` may select an explicit limit from 1 to 64.
-Portable iOS tests use `apps/mac/.build/dieter-ios-policy` and the small policy
-graph selected by `DIETER_SWIFT_TEST_SCOPE=ios-policy`. It compiles production
-attachment/scroll policies, real Kotlin rules and protobuf messages without the
-Mac app, WebRTC or gRPC transport. The full Mac package graph is unchanged.
+The Mac links `apps/mac/Frameworks/DieterShared.xcframework` (the core's `:apple`
+façade); the iOS app links `DieterMobile.xcframework` (the shared Compose UI,
+`:mobile`). iOS builds set `DIETER_SWIFT_PACKAGE=ios` so `apps/mac/Package.swift`
+resolves the iOS host graph, which keeps its own scratch directory. There is no
+iOS unit lane; the shared UI's JVM tests run with `core_test`.
 Framework requests select only their needed `macos`, `ios-simulator` or `ios-device`
 slice; existing compatible slices are retained. CI's Bundler cache in
 `vendor/bundle` is not a Go vendor directory; the pipeline supplies module flags
@@ -302,22 +300,16 @@ Never delete locks or use broad process kills to bypass them.
 ```sh
 just pipeline catalog action:lint
 just pipeline catalog action:plan platform:android suite:functional changed:true base:main
-just pipeline android prepare_tests suite:smoke # build APKs without starting a device
-just pipeline android e2e profile:android-emulator suite:smoke
-just pipeline android e2e profile:android-device suite:functional
-just pipeline android e2e cases:machines.telemetry
-just pipeline android e2e suite:sync
-just pipeline android e2e suite:sdk
-just pipeline android e2e suite:performance
-just pipeline android e2e suite:screens
-just pipeline ios e2e profile:ios-iphone suite:functional
-just pipeline ios e2e profile:ios-ipad suite:functional
-just pipeline ios_qualify profiles:ios-iphone,ios-ipad suite:functional
-just pipeline ios e2e profile:ios-device cases:ios.remote-node
-just pipeline ios e2e profile:ios-iphone cases:ios.share-owned-file
+just pipeline android prepare_tests # build APKs without starting a device
+just pipeline android e2e profile:android-emulator
+just pipeline android e2e profile:android-device
+just pipeline ios e2e profile:ios-iphone
+just pipeline ios e2e profile:ios-ipad
+just pipeline ios_qualify profiles:ios-iphone,ios-ipad
+just pipeline ios e2e profile:ios-device
 just pipeline mac e2e suite:functional
 just pipeline mac e2e cases:mac.navigation,mac.sidebar
-just pipeline ios prepare_tests profile:ios-iphone suite:smoke
+just pipeline ios prepare_tests profile:ios-iphone
 just pipeline check component:mac operation:screens_native_test
 just pipeline check component:mac operation:screens_test
 just pipeline check component:mac operation:screens_hevc_test
@@ -331,8 +323,12 @@ loop. Every case gets fresh private client/daemon/gateway state. Exact native
 methods and phase assertions must pass once; missing, skipped, duplicate,
 failed, interrupted, unavailable and failed-cleanup results fail required gates.
 Changed-only selections with no affected cases report `not-required` explicitly.
+The Android and iOS catalogs each hold one native journey through the shared
+mobile UI (`android.journey`, `ios.journey`) and one share case (`android.share`,
+`ios.share` on iPhone).
 
-`ios_qualify` prepares one `DieterIOSE2E` simulator build and verifies source inputs,
+`ios_qualify` prepares one simulator build of the `Dieter` scheme (the
+`com.dbpprt.dieter.ios.e2e` app) and verifies source inputs,
 Xcode identity, configuration and full product hashes before each layout. Both
 layouts execute on the same worker with fresh simulators and per-case state. The
 parent holds the build lease while child runs clean up their own resources. Test
@@ -428,7 +424,7 @@ For fast iteration, keep one warm emulator under Fastlane ownership:
 # Terminal: keep this command running; Ctrl-C closes its owned emulator.
 just pipeline android local action:emulator_run
 # After "ready", run in another terminal:
-just pipeline android e2e suite:smoke
+just pipeline android e2e
 just pipeline android local action:screenshot
 just pipeline android local action:emulator_stop
 ```
@@ -451,17 +447,11 @@ Software-rendered boots can leave a System UI "isn't responding" dialog that
 steals test focus. Between runs on a warm emulator, tap **Wait** (for example
 `adb -s emulator-5554 shell uiautomator dump`, then `input tap` on its bounds)
 and force-stop only the isolated `com.dbpprt.dieter.e2e` package an interrupted
-run left open. `conversation.task-capture` currently fails on the AOSP API 35
-image: after "Preview screenshot.png" the attachment preview never shows "Close
-preview", and the system share chooser lists the test's alternative target under
-the same label and ignores taps while animating. Until it is fixed, the full
-Android gate cannot pass locally; do not relax its assertions.
+run left open. Do not relax assertions to hide emulator failures.
 
-Performance requires the separate non-debuggable fixture APK and clean
-measurements. Software rendering is suitable for functional tests; use an
-explicit `renderer: host` profile when qualifying GPU-dependent performance.
-Android screen cases require a macOS capture host. Required assertions,
-measurements, unavailable hardware and cleanup failures still fail gates.
+Software rendering is suitable for the functional journey; use an explicit
+`renderer: host` profile for GPU-dependent investigation. Required assertions,
+unavailable hardware and cleanup failures still fail gates.
 
 ## Specialized screen measurements
 
@@ -473,34 +463,29 @@ administrator approval and Input Monitoring remain required for physical input
 qualification; see [macOS privacy](../native/macos-capture/privacy-mode-research.md).
 
 `just pipeline screens_qualify manifest:PATH
-profile:android-device output:tmp/screen-qualification-UNIQUE` composes the same
-Mac and Android adapters for an explicit measurement/recovery manifest. Physical
-Android uses the configured exact profile; no arbitrary commands or environment
-hooks come from the scenario file. `baseline:PATH` compares matching hardware,
-scene, clock/output endpoint, 200+ samples and cadence. Required missing cells
-fail, external optical/device/quality evidence stays explicitly unavailable, and
+output:tmp/screen-qualification-UNIQUE` composes the same Mac adapters
+(`native`, `mac-latency`, `mac-recovery`, `mac-journey`) for an explicit
+measurement/recovery manifest. No arbitrary commands or environment hooks come
+from the scenario file. `baseline:PATH` compares matching hardware, scene,
+clock/output endpoint, 200+ samples and cadence. Required missing cells fail,
+`external` optical/device/quality evidence stays explicitly unavailable, and
 source changes during a run fail its report. This never promotes codec defaults.
 
 ## CI and release policy
 
-The separate Compose hosts in `apps/mobile/android` and `apps/mobile/ios` have
-additional affected-change gates alongside the original apps: shared JVM
-journeys, Android app/test compilation, and the iOS journey on both layouts using
-one verified build. After main qualification, a separate read-only delivery job
-retains the exact Debug APK and arm64 simulator app for 14 days. Compose does not
-publish to TestFlight or join the shipping candidate matrix. See
-[Compose CI and preview delivery](../apps/mobile/PIPELINES.md) for commands,
-artifact names, qualification scope and signing limits.
-
 CI calls the same lanes through pinned reusable workflows. `qualification.yml`
 selects affected PR/main components and requires all components on scheduled and
-manual full runs. Routine iOS checks run portable policies and `ios.connecting`
-on both layouts; full runs retain both complete functional catalogs. Mac core/board cases remain required, with
-full Mac functional qualification on scheduled and manual runs. Android
-routine checks compile E2E drivers; full runs also compile the performance variant.
-The Kotlin Apple job runs only its Mac-target assertions. The Mac job owns Swift
-fixture integration; the iOS job owns portable iOS policies, avoiding duplicate
-assertions and unnecessary all-slice assembly across the Apple jobs.
+manual full runs. Its jobs are `changes` (affected selection), `portable` (Go,
+CLI and harness), `core` (Kotlin core and shared mobile UI JVM tests),
+`core-apple`, `mac`, `ios`, `android` and the aggregate `required`. The iOS job
+builds once and runs the `ios.journey`
+case on iPhone and iPad simulators. Mac core/board cases remain required, with
+full Mac functional qualification on scheduled and manual runs. The Android job
+lints, builds and compiles the journey APKs; hosted CI runs no emulator. The
+Kotlin Apple job runs only its Mac-target assertions and the Mac job owns Swift
+fixture integration, avoiding duplicate assertions and unnecessary all-slice
+assembly across the Apple jobs. Dev releases carry the APK and IPA; there are no
+separate preview artifacts.
 Hosted Apple qualification restores compiler/dependency state keyed by runner
 architecture, pinned Xcode/JDK, component and dependency locks. Earlier compatible
 revisions supply incremental state; toolchains rebuild changed inputs and framework

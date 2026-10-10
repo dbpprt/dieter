@@ -30,5 +30,5 @@ include(":testing")
 // The Swift-facing façade; only its API is exported to Objective-C/Swift.
 include(":apple")
 
-// Opt-in experiment: shipping core builds do not resolve Compose or link its UI.
-if (providers.gradleProperty("dieter.composeSpike").orNull == "true") include(":mobile")
+// The Compose Multiplatform UI of the Android and iOS apps.
+include(":mobile")

@@ -8,8 +8,8 @@ slug: "workspace"
 ---
 
 The Mac conversation workspace opens files, web pages, terminals, changes, and
-registered processes beside the chat. Android offers project files and machine
-tools through **Tools**, alongside its native conversations.
+registered processes beside the chat. The Android and iOS app offers files,
+changes, terminals, and machine tools through **Tools** and each task's panes.
 
 > **Enable it first:** On Mac, open **Settings → Experimental → Show the workspace side panel**. The panel is off by default. The Files screenshot below uses the main project workspace and leaves this panel disabled.
 

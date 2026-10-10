@@ -26,7 +26,7 @@ timestamps are deterministic. Rebuilding with the same compiler and inputs must
 produce the same AAR; compiler changes intentionally change provenance. This is
 a Java SDK rebuild, not a claim of rebuilding native WebRTC from source.
 
-Run `just pipeline android test_unit` to build the normal application against this contract.
+Run `just pipeline android build` to build the application against this contract.
 No Linux VM is necessary for this extension because native JNI signatures and
 implementations are unchanged. Source investigation did verify a separate Linux
 builder, but its dependency synchronization is not release-build evidence.
@@ -57,7 +57,7 @@ not hidden vendor codec/SurfaceFlinger buffering. MediaCodec receives timed
 releases with the current `System.nanoTime()`, never a future frame queue.
 The boolean render overload inherits media PTS as the surface timestamp; RTP
 media time must not be mistaken for Android system time. This distinction is
-specified by [MediaCodec's surface contract](https://developer.android.com/reference/android/media/MediaCodec#releaseOutputBuffer(int,%20long)).
+specified by [MediaCodec's surface contract](<https://developer.android.com/reference/android/media/MediaCodec#releaseOutputBuffer(int,%20long)>).
 Render callbacks outside the local release-to-callback interval are rejected
 instead of producing fabricated zero or cross-clock latency.
 
@@ -76,18 +76,16 @@ production presentation default.
 
 ## Evidence and qualification
 
-The isolated physical runner accepts `DIETER_SCREEN_TEST_DIRECT_SURFACE=1`.
-Run `just pipeline android e2e suite:sdk profile:android-device` for the bounded
-codec/ownership checks and launcher-namespace regression in the separate fixture
-application. It acquires the shared device lease, requires all selected tests
-to execute without skips, and emits `decoder-sdk.json` from fresh JUnit results.
-The qualification manifest includes this as the required `android-sdk` case.
-`org.webrtc.DieterSurfaceOutputTest` tests bounded ownership, index reuse, late
-release/callbacks, SurfaceHolder ownership, opaque format handling and failed
-worker reinitialization. `ScreenCodecEndToEndTest` requires real H.264/HEVC
-decoding, native `framesDecoded`, Android render feedback, closed-surface texture
-fallback and real SurfaceHolder replacement. Full input/canvas and recovery
-journeys use the same switch.
+`just pipeline android build` verifies the pinned AAR, the rebuilt classes and
+the unchanged native-library hashes. The instrumented ownership, codec and
+recovery tests that exercised this extension on devices
+(`DieterSurfaceOutputTest`, `ScreenCodecEndToEndTest` and the former `sdk` and
+`screens` suites) were removed with the previous Android app, and the current
+`android.journey` case does not open a screen. Direct output therefore has no
+device test today. It stays off by default
+(`AndroidScreenMedia.directSurfacePresentation`); add instrumentation and
+qualify on an explicit physical profile (`profile:android-device`) before
+enabling it.
 
 [Android frame-render timestamps](https://developer.android.com/reference/android/media/MediaCodec.OnFrameRenderedListener)
 may be delayed or batched, and callbacks can be missing before Android 14. If
@@ -95,7 +93,6 @@ real decoded outputs advance without a presentation callback, the controller
 retires that target after six monitoring intervals (about three seconds) and
 reconnects using ordinary textures. It tries direct output again only after a
 new holder generation. Frame-render timestamps are distinct
-from output dequeue, output release, EGL swap and physical scanout. Correctness
-on one Qualcomm device does not qualify latency, power, thermal behavior, other
-vendor codecs, or a production default. See the repository's implementation
-evidence and qualification manifest for completed runs and remaining gates.
+from output dequeue, output release, EGL swap and physical scanout. Earlier
+correctness on one Qualcomm device did not qualify latency, power, thermal
+behavior, other vendor codecs, or a production default.

@@ -2,6 +2,7 @@ package com.dbpprt.dieter.mobile
 
 import com.dbpprt.dieter.client.v1.*
 import com.dbpprt.dieter.core.client.ClientApi
+import com.dbpprt.dieter.core.composition.Attachments
 import com.dbpprt.dieter.core.testing.*
 import kotlin.coroutines.ContinuationInterceptor
 import kotlin.test.*
@@ -29,7 +30,7 @@ class MobileJourneyTest : EndToEnd() {
             first.board.await { it.lanes.isNotEmpty() }
             first.agentSelection = com.dbpprt.dieter.api.v1.HarnessSelection("mock", "mock", "low")
             val localId =
-                first.create("Shared mobile spike", "Explain this durable conversation", run = true)
+                first.create("Shared mobile task", "Explain this durable conversation", run = true)
             first.openConversation(localId)
             val cardId =
                 first.outbox.await { localId in it.resolutions }.resolutions.getValue(localId)
@@ -49,7 +50,7 @@ class MobileJourneyTest : EndToEnd() {
                     } && it.state?.working == false
                 }
             assertNull(completed.turn_failure)
-            assertEquals("Shared mobile spike", first.conversation.value.card?.title)
+            assertEquals("Shared mobile task", first.conversation.value.card?.title)
             first.send("Continue in the same task")
             first.conversation.await(60.seconds) {
                 it.messages.any { message ->
@@ -307,6 +308,96 @@ class MobileJourneyTest : EndToEnd() {
             store.editFileBuffer("file", "original", "my edits")
             store.syncFileBuffer("file", "external change")
             assertEquals(MobileFileBuffer("original", "my edits"), store.fileBuffers.value["file"])
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
+    fun sharesWaitForTheWorkspaceAndOpenTheirDestinationOnce() = runBlocking {
+        val observers = mutableMapOf<Slice, (Update) -> Unit>()
+        val fake =
+            object : MobileCore {
+                // Like the core, previews return the intent without its attachments, here
+                // before the machine's agent models have loaded.
+                override suspend fun dispatch(command: Command) =
+                    command.creation_preview?.let {
+                        Result(
+                            creation_preview =
+                                CreationPreview(
+                                    problem = "Loading agent models…",
+                                    intent = it.intent?.copy(attachments = emptyList()),
+                                )
+                        )
+                    } ?: Result(done = Done())
+
+                override fun observe(
+                    slice: Slice,
+                    scope: String,
+                    receive: (Update) -> Unit,
+                ): com.dbpprt.dieter.core.client.ClientSubscription {
+                    observers[slice] = receive
+                    return com.dbpprt.dieter.core.client.ClientSubscription {}
+                }
+            }
+        val store = MobileStore(fake, Dispatchers.Unconfined)
+        try {
+            val screenshot =
+                com.dbpprt.dieter.api.v1.MessagePart(
+                    type = "file",
+                    filename = "layout.png",
+                    media_type = "image/png",
+                    data_ = okio.ByteString.of(1, 2, 3),
+                )
+            store.share(
+                SharedItems("Tighten the layout", listOf(screenshot), ShareDestination.NEW_TASK)
+            )
+            assertNull(store.routes.value.modal)
+            observers.getValue(Slice.SLICE_WORKSPACE)(
+                Update(workspace = WorkspaceSlice(loaded = true))
+            )
+            assertEquals(MobileRoute.NewTask(false), store.routes.value.modal)
+            store.creationPreview.await { it.intent?.prompt == "Tighten the layout" }
+            // Once the models load, the core's own preview of the form clears the problem.
+            observers.getValue(Slice.SLICE_CREATION_PREVIEW)(
+                Update(
+                    creation_preview =
+                        CreationPreview(intent = CreationIntent(prompt = "Tighten the layout"))
+                )
+            )
+            assertEquals("", store.creationPreview.value.problem)
+            assertEquals("Tighten the layout", store.creationIntent.value.prompt)
+            assertEquals(listOf(screenshot), store.creationIntent.value.attachments)
+            // Later workspace updates do not reopen a delivered share.
+            store.dismiss()
+            observers.getValue(Slice.SLICE_WORKSPACE)(
+                Update(workspace = WorkspaceSlice(loaded = true))
+            )
+            assertNull(store.routes.value.modal)
+
+            store.share(SharedItems("Look at this", listOf(screenshot), ShareDestination.CHAT))
+            assertEquals(MobileRoute.ShareTarget(chat = true), store.routes.value.modal)
+            store.shareInto("chat")
+            assertNull(store.routes.value.modal)
+            assertEquals("chat", store.selectedCard.value)
+            val delivered = assertNotNull(store.takeComposerShare("chat"))
+            assertEquals("Look at this", delivered.text)
+            assertEquals(listOf(screenshot), delivered.attachments)
+            assertNull(store.takeComposerShare("chat"))
+
+            // Too many files are reported and none are attached.
+            store.share(
+                SharedItems(
+                    "",
+                    List(Attachments.MAX_COUNT + 1) { screenshot },
+                    ShareDestination.TASK,
+                )
+            )
+            assertEquals(Attachments.TOO_MANY, store.error.value)
+            assertEquals(MobileRoute.ShareTarget(chat = false), store.routes.value.modal)
+            store.cancelShare()
+            assertNull(store.routes.value.modal)
+            assertTrue(store.composerShares.value.isEmpty())
         } finally {
             store.close()
         }

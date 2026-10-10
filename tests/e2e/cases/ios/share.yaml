@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../schema.json
+version: 1
+id: ios.share
+platform: ios
+devices: [iphone]
+suites: [smoke, functional]
+components: [ios, share]
+fixture: gateway
+timeout: 15m
+# A file shared from the Files app through the Share extension opens a prefilled
+# new task when Dieter returns to the foreground.
+native:
+  target: DieterUITests
+  class: JourneyUITests
+  methods:
+    - testShareExtensionStartsATask

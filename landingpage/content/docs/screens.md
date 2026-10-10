@@ -29,17 +29,19 @@ to Dieter; closing the Screens tab disconnects it. **Command–Shift–Escape**
 releases held input and pauses pointer forwarding until you focus the viewer again.
 Inactivity disconnect is optional and disabled by default.
 
-On Android, one finger moves the remote cursor relatively; tap to click,
-double-tap to double-click, and hold then move to drag. Two fingers zoom/pan the
-local canvas; three fingers scroll the remote screen. The toolbar provides text
-input, modifiers, special keys, right-click, and Fit screen. Leaving Screens or
-backgrounding the app closes that session.
+On Android, iPhone, and iPad, one finger moves the remote cursor relatively;
+tap to click, double-tap to double-click, and hold then move to drag. Two
+fingers zoom/pan the local canvas; three fingers scroll the remote screen. The
+toolbar provides zoom, Fit screen, the keyboard, and a right click at the
+cursor; the screen menu holds refresh, display, quality, codec, and control.
+Leaving Screens closes that session.
 
 ## Share clipboard
 
-Enable **Share clipboard** in the Mac screen options or Android bottom bar. Only
-the focused controlling viewer can read or write it. Connecting or taking control
-does not immediately overwrite either clipboard. Supported changes then synchronize.
+Enable **Share clipboard** in the Mac screen options or the Android and iOS
+screen menu. Only the focused controlling viewer can read or write it. Connecting
+or taking control does not immediately overwrite either clipboard. Supported
+changes then synchronize.
 
 Text supports up to 1 MiB. Supported images and up to 64 regular files have an
 8 MiB combined limit. Folders, symlinks, duplicate filenames, and rich-text

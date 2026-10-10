@@ -116,23 +116,12 @@ class CIOptionsTest < Minitest::Test
   end
 
   def test_required_gate_refuses_skipped_selected_checks_and_accepts_unselected_components
-    selections =
-      %w[core macos ios android kmp compose_core compose_android compose_ios].to_h do |name|
-        [name, "false"]
-      end
+    selections = %w[core macos ios android kmp].to_h { |name| [name, "false"] }
     selections["ios"] = "true"
     results = { "changes" => { "result" => "success", "outputs" => selections } }
-    %w[
-      portable
-      core
-      core-apple
-      mac
-      ios
-      android
-      compose-core
-      compose-android
-      compose-ios
-    ].each { |name| results[name] = { "result" => "skipped" } }
+    %w[portable core core-apple mac ios android].each do |name|
+      results[name] = { "result" => "skipped" }
+    end
     assert_raises(Dieter::PipelineError) { Dieter::CI.qualify_jobs(results, full: false) }
     results["ios"]["result"] = "success"
     Dieter::CI.qualify_jobs(results, full: false)
@@ -144,25 +133,16 @@ class CIOptionsTest < Minitest::Test
     assert_raises(Dieter::PipelineError) { Dieter::CI.qualify_jobs(results, full: false) }
   end
 
-  def test_selected_compose_gates_cannot_be_missing_skipped_cancelled_or_failed
-    selections =
-      %w[core macos ios android kmp compose_core compose_android compose_ios].to_h do |name|
-        [name, "true"]
-      end
+  def test_selected_mobile_app_gates_cannot_be_missing_skipped_cancelled_or_failed
+    selections = %w[core macos ios android kmp].to_h { |name| [name, "true"] }
     results = { "changes" => { "result" => "success", "outputs" => selections } }
-    %w[
-      portable
-      core
-      core-apple
-      mac
-      ios
-      android
-      compose-core
-      compose-android
-      compose-ios
-    ].each { |name| results[name] = { "result" => "success" } }
+    %w[portable core core-apple mac ios android].each do |name|
+      results[name] = { "result" => "success" }
+    end
+    # Jobs outside the gate cannot affect it.
     Dieter::CI.qualify_jobs(results, full: true)
-    %w[compose-core compose-android compose-ios].each do |name|
+    Dieter::CI.qualify_jobs(results.merge("compose-ios" => { "result" => "failure" }), full: true)
+    %w[ios android].each do |name|
       %w[skipped failure cancelled].each do |status|
         assert_raises(Dieter::PipelineError) do
           Dieter::CI.qualify_jobs(results.merge(name => { "result" => status }), full: false)
@@ -171,6 +151,58 @@ class CIOptionsTest < Minitest::Test
       assert_raises(Dieter::PipelineError) do
         Dieter::CI.qualify_jobs(results.except(name), full: true)
       end
+    end
+  end
+
+  def test_ios_ci_builds_the_compose_app_without_a_separate_unit_lane
+    [false, true].each do |full|
+      context = Struct.new(:root, :environment, :output).new("/isolated", {}, "/evidence")
+      calls = []
+      adapter = Object.new
+      adapter.define_singleton_method(:build) { |options| calls << [:build, options] }
+      Dieter::SourceIdentity.stub(:version, "0.4.413") do
+        Dieter::IOS.stub(:new, ->(*) { adapter }) { Dieter::CI.check(context, "ios", full: full) }
+      end
+      assert_equal [[:build, {}]], calls
+      refute Dieter::IOS.method_defined?(:unit)
+    end
+  end
+
+  def test_android_ci_compiles_only_the_e2e_journey_without_running_an_emulator
+    [false, true].each do |full|
+      context = Struct.new(:root, :environment, :output).new("/isolated", {}, "/evidence")
+      started, waited, calls = [], [], []
+      context.define_singleton_method(:start) do |argv, **options|
+        started << [argv, options.fetch(:log)]
+        argv
+      end
+      context.define_singleton_method(:wait) { |process, **| waited << process }
+      adapter = Object.new
+      %i[unit build].each do |name|
+        adapter.define_singleton_method(name) { |options| calls << [name, options] }
+      end
+      Dieter::SourceIdentity.stub(:version, "0.4.413") do
+        Dieter::Android.stub(:new, ->(*) { adapter }) do
+          Dieter::CI.check(context, "android", full: full)
+        end
+      end
+      assert_equal [[:unit, {}], [:build, {}]], calls
+      assert_equal [
+                     [
+                       %w[
+                         /isolated/apps/android/gradlew
+                         --project-dir
+                         apps/android
+                         --console=plain
+                         -Pdieter.testBuildType=e2e
+                         :app:assembleE2e
+                         :app:assembleE2eAndroidTest
+                       ],
+                       "/evidence/e2e-build.log"
+                     ]
+                   ],
+                   started
+      assert_equal [started.first.first], waited
     end
   end
 

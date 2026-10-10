@@ -4,6 +4,7 @@ require "minitest/autorun"
 require "minitest/mock"
 require "tmpdir"
 require_relative "../lib/dieter/runtime"
+require_relative "../lib/dieter/checks"
 
 class IOSQualificationTest < Minitest::Test
   Config =
@@ -27,7 +28,7 @@ class IOSQualificationTest < Minitest::Test
         data.fetch("profiles").fetch(name).merge("name" => name, "kind" => "simulator")
     end
 
-  def qualify(empty: false, unavailable: false, compose: false)
+  def qualify(empty: false, unavailable: false)
     Dir.mktmpdir do |root|
       events = []
       contract = Object.new
@@ -56,15 +57,8 @@ class IOSQualificationTest < Minitest::Test
         end
       Dieter::Config.stub(:new, Config.new(root)) do
         Dieter::Contract.stub(:new, ->(*) { contract }) do
-          klass = compose ? Class.new : Dieter::IOS
-          klass.define_singleton_method(:new, factory) if compose
           Dieter::IOS.stub(:new, factory) do
-            output =
-              Dieter::Runtime.ios_qualify(
-                { profiles: "ios-iphone,ios-ipad", changed: true },
-                adapter_class: klass,
-                planned_cases: compose ? [{ "id" => "compose.ios", "timeout" => "10s" }] : nil
-              )
+            output = Dieter::Runtime.ios_qualify({ profiles: "ios-iphone,ios-ipad", changed: true })
             selection = JSON.parse(File.read(File.join(output, "selection.json")))
             yield events, selection
           end
@@ -73,15 +67,29 @@ class IOSQualificationTest < Minitest::Test
     end
   end
 
-  def test_compose_uses_the_shared_layout_loop_and_one_build_without_selecting_shipping_cases
-    qualify(compose: true) do |events, selection|
-      assert_equal(
-        { "ios-iphone" => ["compose.ios"], "ios-ipad" => ["compose.ios"] },
-        selection.fetch("profiles")
-      )
-      assert_equal 0, events.count { |event| event.first == :plan }
-      assert_equal 1, events.count { |event| event.first == :build }
-      assert_equal 2, events.count { |event| event.first == :prepare }
+  def test_ios_e2e_check_with_profiles_qualifies_layouts_and_compose_checks_are_gone
+    calls = []
+    qualify = ->(options) { calls << [:qualify, options] }
+    invoke = ->(operation, component, options) { calls << [:invoke, operation, component, options] }
+    Dieter::Runtime.stub(:ios_qualify, qualify) do
+      Dieter::Runtime.stub(:invoke, invoke) do
+        Dieter::Checks.execute(
+          {
+            "component" => "ios",
+            "operation" => "e2e",
+            "options" => {
+              "profiles" => "ios-iphone"
+            }
+          }
+        )
+        Dieter::Checks.execute({ "component" => "ios", "operation" => "e2e", "options" => {} })
+      end
+    end
+    assert_equal [[:qualify, { "profiles" => "ios-iphone" }], [:invoke, "e2e", "ios", {}]], calls
+    %w[compose-core compose-android compose-ios].each do |component|
+      error =
+        assert_raises(Dieter::PipelineError) { Dieter::PipelineRequest.new("build", component, {}) }
+      assert_includes error.message, "Unknown component #{component}"
     end
   end
 

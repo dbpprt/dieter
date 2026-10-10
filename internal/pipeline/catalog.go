@@ -18,19 +18,17 @@ import (
 const protocolVersion = 1
 
 type Case struct {
-	Devices    []string          `yaml:"devices,omitempty" json:"devices,omitempty"`
-	Build      string            `yaml:"build,omitempty" json:"build,omitempty"`
-	Version    int               `yaml:"version" json:"version"`
-	ID         string            `yaml:"id" json:"id"`
-	Platform   string            `yaml:"platform" json:"platform"`
-	Suites     []string          `yaml:"suites" json:"suites"`
-	Components []string          `yaml:"components" json:"components"`
-	Fixture    string            `yaml:"fixture" json:"fixture"`
-	Timeout    string            `yaml:"timeout" json:"timeout"`
-	Native     *Native           `yaml:"native,omitempty" json:"native,omitempty"`
-	Steps      []Step            `yaml:"steps,omitempty" json:"steps,omitempty"`
-	Arguments  map[string]string `yaml:"arguments,omitempty" json:"arguments,omitempty"`
-	Source     string            `yaml:"-" json:"source"`
+	Devices    []string `yaml:"devices,omitempty" json:"devices,omitempty"`
+	Version    int      `yaml:"version" json:"version"`
+	ID         string   `yaml:"id" json:"id"`
+	Platform   string   `yaml:"platform" json:"platform"`
+	Suites     []string `yaml:"suites" json:"suites"`
+	Components []string `yaml:"components" json:"components"`
+	Fixture    string   `yaml:"fixture" json:"fixture"`
+	Timeout    string   `yaml:"timeout" json:"timeout"`
+	Native     *Native  `yaml:"native,omitempty" json:"native,omitempty"`
+	Steps      []Step   `yaml:"steps,omitempty" json:"steps,omitempty"`
+	Source     string   `yaml:"-" json:"source"`
 }
 type Native struct {
 	Target  string   `yaml:"target,omitempty" json:"target,omitempty"`
@@ -51,31 +49,19 @@ type Expect struct {
 	Selected *bool   `yaml:"selected,omitempty" json:"selected,omitempty"`
 	Value    *string `yaml:"value,omitempty" json:"value,omitempty"`
 }
-type Type struct {
-	Target `yaml:",inline"`
-	Value  *string `yaml:"value" json:"value"`
-}
-type Scroll struct {
-	Within Target `yaml:"within" json:"within"`
-	Until  Target `yaml:"until" json:"until"`
-}
+
+// Step is one action of a Mac navigation flow.
 type Step struct {
 	Launch     string  `yaml:"launch,omitempty" json:"launch,omitempty"`
 	Tap        *Target `yaml:"tap,omitempty" json:"tap,omitempty"`
 	Expect     *Expect `yaml:"expect,omitempty" json:"expect,omitempty"`
-	Type       *Type   `yaml:"type,omitempty" json:"type,omitempty"`
-	Press      string  `yaml:"press,omitempty" json:"press,omitempty"`
-	Scroll     *Scroll `yaml:"scroll,omitempty" json:"scroll,omitempty"`
 	Screenshot string  `yaml:"screenshot,omitempty" json:"screenshot,omitempty"`
-	Probe      string  `yaml:"probe,omitempty" json:"probe,omitempty"`
 	Line       int     `yaml:"-" json:"line"`
 }
 
 var identifier = regexp.MustCompile(`^[a-z][a-z0-9.-]{0,100}$`)
-var nativeClass = regexp.MustCompile(`^(com\.dbpprt\.dieter\.|org\.webrtc\.)[A-Za-z0-9_.]+$`)
+var nativeClass = regexp.MustCompile(`^com\.dbpprt\.dieter\.[A-Za-z0-9_.]+$`)
 var nativeMethod = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]+$`)
-var variable = regexp.MustCompile(`\$\{([^}]+)\}`)
-var variables = []string{"fixture.endpointId", "fixture.cardId", "fixture.chatId", "fixture.activityPrefix"}
 
 func decodeCase(data []byte, source string) (Case, error) {
 	var c Case
@@ -99,13 +85,6 @@ func decodeCase(data []byte, source string) (Case, error) {
 	inspect = func(n *yaml.Node) error {
 		if n.Kind == yaml.AliasNode || n.Anchor != "" || n.Tag == "!!merge" {
 			return fmt.Errorf("%s:%d: YAML aliases/anchors/merges are not supported", source, n.Line)
-		}
-		if n.Kind == yaml.ScalarNode {
-			for _, m := range variable.FindAllStringSubmatch(n.Value, -1) {
-				if !slices.Contains(variables, m[1]) {
-					return fmt.Errorf("%s:%d: unknown variable %s", source, n.Line, m[1])
-				}
-			}
 		}
 		for _, child := range n.Content {
 			if err := inspect(child); err != nil {
@@ -162,14 +141,8 @@ func (c Case) validate() error {
 		}
 		seenDevices[device] = true
 	}
-	if c.Platform == "ios" && (c.Native == nil || len(c.Arguments) != 0 || c.Fixture == "activity") {
-		return fmt.Errorf("iOS requires native methods and none/gateway/screen fixture, without instrumentation arguments")
-	}
-	if c.Build != "" && c.Build != "performance" {
-		return fmt.Errorf("unsupported build %q", c.Build)
-	}
-	if c.Build == "performance" && (c.Platform != "android" || c.Native == nil || c.Fixture != "none") {
-		return fmt.Errorf("performance requires native Android without a service fixture")
+	if c.Platform != "mac" && c.Native == nil {
+		return fmt.Errorf("Android and iOS cases are native journeys; navigation flows are Mac-only")
 	}
 	if len(c.Suites) == 0 || len(c.Components) == 0 {
 		return fmt.Errorf("suites and components are required")
@@ -179,7 +152,7 @@ func (c Case) validate() error {
 			return fmt.Errorf("invalid suite/component %q", v)
 		}
 	}
-	if !slices.Contains([]string{"none", "gateway", "activity", "screen"}, c.Fixture) {
+	if !slices.Contains([]string{"none", "gateway"}, c.Fixture) {
 		return fmt.Errorf("unknown fixture %q", c.Fixture)
 	}
 	t, err := time.ParseDuration(c.Timeout)
@@ -199,12 +172,6 @@ func (c Case) validate() error {
 		return fmt.Errorf("at most 100 steps are allowed")
 	}
 	if c.Platform == "mac" {
-		if c.Fixture != "none" && c.Fixture != "gateway" {
-			return fmt.Errorf("Mac fixtures are none or gateway")
-		}
-		if len(c.Arguments) != 0 {
-			return fmt.Errorf("Mac cases do not accept Android instrumentation arguments")
-		}
 		if c.Native != nil {
 			if err := validateMacNative(*c.Native, c.Fixture); err != nil {
 				return err
@@ -215,8 +182,8 @@ func (c Case) validate() error {
 	}
 	if c.Native != nil {
 		if c.Platform == "ios" {
-			if !slices.Contains([]string{"DieterIOSUITests", "DieterIOSNativeTests"}, c.Native.Target) {
-				return fmt.Errorf("iOS native target is required")
+			if c.Native.Target != "DieterUITests" {
+				return fmt.Errorf("iOS native target must be DieterUITests")
 			}
 		} else if c.Native.Target != "" {
 			return fmt.Errorf("native target is iOS-only")
@@ -234,16 +201,8 @@ func (c Case) validate() error {
 			seen[m] = true
 		}
 	}
-	for k, v := range c.Arguments {
-		if !slices.Contains([]string{"idleSampleMillis", "idleSampleWindows", "dieterPerformanceFrames", "screenLowLatency", "screenSurface", "screenDirectSurface", "forceTURN"}, k) || !regexp.MustCompile(`^[0-9a-z]{1,12}$`).MatchString(v) {
-			return fmt.Errorf("unsupported instrumentation argument %q", k)
-		}
-	}
 	for _, s := range c.Steps {
-		if c.Platform == "mac" && (s.Type != nil || s.Scroll != nil || s.Press != "" || s.Probe != "") {
-			return fmt.Errorf("Mac flows support launch, tap, expect and screenshot; use native suites for other actions")
-		}
-		if c.Platform == "mac" && c.Fixture != "gateway" {
+		if c.Fixture != "gateway" {
 			return fmt.Errorf("Mac navigation flows require gateway fixture")
 		}
 		b, _ := json.Marshal(s)
@@ -266,15 +225,6 @@ func (c Case) validate() error {
 				return fmt.Errorf("line %d: expect needs an assertion", s.Line)
 			}
 		}
-		if s.Type != nil {
-			if s.Type.Value == nil {
-				return fmt.Errorf("line %d: type requires an explicit value", s.Line)
-			}
-			targets = append(targets, s.Type.Target)
-		}
-		if s.Scroll != nil {
-			targets = append(targets, s.Scroll.Within, s.Scroll.Until)
-		}
 		for _, t := range targets {
 			if err := t.validate(); err != nil {
 				return fmt.Errorf("line %d: %w", s.Line, err)
@@ -282,13 +232,6 @@ func (c Case) validate() error {
 		}
 		if s.Launch != "" && s.Launch != "connected" {
 			return fmt.Errorf("unknown launch mode")
-		}
-		if s.Press != "" && s.Press != "back" {
-			return fmt.Errorf("unknown key")
-		}
-		if s.Probe != "" && s.Probe != "machine-telemetry" && s.Probe != "activity-replies-unread" &&
-			s.Probe != "activity-card-seen" && s.Probe != "activity-chat-seen" {
-			return fmt.Errorf("unknown probe")
 		}
 		if s.Screenshot != "" && !identifier.MatchString(s.Screenshot) {
 			return fmt.Errorf("invalid screenshot name")

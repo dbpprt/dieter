@@ -4,7 +4,6 @@ require "optparse"
 require "yaml"
 require_relative "runtime"
 require_relative "platforms/linux_capture"
-require_relative "compose_spike"
 
 module Dieter
   module Checks
@@ -54,17 +53,7 @@ module Dieter
               {
                 "paths" => [],
                 "checks" => [],
-                "ci" =>
-                  %w[
-                    core
-                    macos
-                    ios
-                    android
-                    kmp
-                    compose_core
-                    compose_android
-                    compose_ios
-                  ].to_h { |name| [name, true] }
+                "ci" => %w[core macos ios android kmp].to_h { |name| [name, true] }
               }
             else
               Contract.new(context).call(
@@ -122,16 +111,8 @@ module Dieter
     def self.execute(request)
       component, operation = request.values_at("component", "operation")
       options = request.fetch("options", {})
-      if component.start_with?("compose-")
-        action =
-          {
-            %w[compose-core test_unit] => "test",
-            %w[compose-android build] => "android_build",
-            %w[compose-android e2e] => "android_e2e",
-            %w[compose-ios build] => "ios_build",
-            %w[compose-ios e2e] => "ios_qualify"
-          }.fetch([component, operation]) { raise PipelineError, "Unknown Compose check" }
-        return ComposeSpike.invoke(options.merge("action" => action))
+      if component == "ios" && operation == "e2e" && options["profiles"]
+        return Runtime.ios_qualify(options)
       end
       if %w[test_unit build e2e].include?(operation)
         return Runtime.invoke(operation, component, options)

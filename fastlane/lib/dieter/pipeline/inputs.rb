@@ -12,16 +12,6 @@ module Dieter
       fastlane/lib/dieter/platforms
       fastlane/lib/dieter/pipeline/action.rb
     ].freeze
-    COMPOSE_IOS =
-      (
-        IOS +
-          %w[
-            apps/mobile/ios
-            apps/android/app/src/main/java/com/dbpprt/dieter/settings/DieterPalette.kt
-            apps/android/app/src/main/java/com/dbpprt/dieter/ui/BoardCardDrag.kt
-            fastlane/lib/dieter/compose_spike.rb
-          ]
-      ).freeze
 
     def self.digest(context, paths: IOS)
       files =
