@@ -107,7 +107,8 @@ in the same conversation, cross-client synchronization of Review, and reopening
 history. A separate test verifies late updates from a closed conversation do
 not replace the current one. Native Compose/XCTest journeys exercise the real
 controls against a disposable authenticated gateway, enrolled daemon and mock
-harness, and retain screenshots. Native results use the existing exact-method
+harness, and retain screenshots. Like production daemons, the fixture daemon
+offers WebRTC control channels, so the Android journey uses that route. Native results use the existing exact-method
 qualification contract; missing, skipped or failed assertions fail the lane.
 Native cleanup uses the production ownership journals, device/build leases and
 owned processes. Evidence is printed as `tmp/app-pipelines/<UUID>`.
