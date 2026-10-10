@@ -59,8 +59,10 @@ module Dieter
         @context.start(
           argv,
           environment: {
-            "DIETER_HARNESS_RUNTIME_DIR" => File.join(@context.root, "internal/harness/runtime")
-          }
+            "DIETER_HARNESS_RUNTIME_DIR" => File.join(@context.root, "internal/harness/runtime"),
+            # Production daemons offer WebRTC control channels; Compose Android must use them too.
+            "DIETER_TEST_CONTROL_WEBRTC" => @suite == "compose" ? "1" : nil
+          }.compact
         )
       # Seeding runs git and starts two daemons; a CI runner that just tore down a
       # simulator has taken over 60 s for this.

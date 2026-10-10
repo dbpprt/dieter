@@ -107,16 +107,17 @@ in the same conversation, cross-client synchronization of Review, and reopening
 history. A separate test verifies late updates from a closed conversation do
 not replace the current one. Native Compose/XCTest journeys exercise the real
 controls against a disposable authenticated gateway, enrolled daemon and mock
-harness, and retain screenshots. Native results use the existing exact-method
+harness, and retain screenshots. Like production daemons, the fixture daemon
+offers WebRTC control channels, so the Android journey uses that route. Native results use the existing exact-method
 qualification contract; missing, skipped or failed assertions fail the lane.
 Native cleanup uses the production ownership journals, device/build leases and
 owned processes. Evidence is printed as `tmp/app-pipelines/<UUID>`.
 
-For interactive sign-in on a development gateway, allow the exact callbacks
-`dieter-compose://oauth/callback` and `dieter-compose-ios://oauth/callback`
-in that gateway's native redirect configuration. The production gateway's
-existing allowlist is deliberately not changed by the experiment. Debug fixture
-session injection is confined to these separate spike apps.
+Interactive sign-in uses the exact callbacks `dieter-compose://oauth/callback`
+(Android) and `dieter-compose-ios://oauth/callback` (iOS). The signed gateway
+deployment bundle allows both; a development gateway must list them in
+`DIETER_NATIVE_REDIRECT_URIS`. Debug fixture session injection is confined to
+these separate spike apps.
 
 ## Implementation and qualification scope
 
