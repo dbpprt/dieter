@@ -112,11 +112,11 @@ qualification contract; missing, skipped or failed assertions fail the lane.
 Native cleanup uses the production ownership journals, device/build leases and
 owned processes. Evidence is printed as `tmp/app-pipelines/<UUID>`.
 
-For interactive sign-in on a development gateway, allow the exact callbacks
-`dieter-compose://oauth/callback` and `dieter-compose-ios://oauth/callback`
-in that gateway's native redirect configuration. The production gateway's
-existing allowlist is deliberately not changed by the experiment. Debug fixture
-session injection is confined to these separate spike apps.
+Interactive sign-in uses the exact callbacks `dieter-compose://oauth/callback`
+(Android) and `dieter-compose-ios://oauth/callback` (iOS). The signed gateway
+deployment bundle allows both; a development gateway must list them in
+`DIETER_NATIVE_REDIRECT_URIS`. Debug fixture session injection is confined to
+these separate spike apps.
 
 ## Implementation and qualification scope
 

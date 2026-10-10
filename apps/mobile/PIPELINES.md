@@ -55,9 +55,9 @@ xcrun simctl install <owned-simulator-UDID> DieterComposeSpike.app
 xcrun simctl launch <owned-simulator-UDID> com.dbpprt.dieter.compose.spike.ios
 ```
 
-No fixture session is baked into either app. Development gateways must allow
-`dieter-compose://oauth/callback` and `dieter-compose-ios://oauth/callback`
-for normal sign-in, as described in the spike README.
+No fixture session is baked into either app. Normal sign-in uses
+`dieter-compose://oauth/callback` and `dieter-compose-ios://oauth/callback`;
+development gateways must allow both, as described in the spike README.
 
 ## Local equivalents
 

@@ -17,24 +17,50 @@ class RenderTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.settings = read_json(ROOT / "profiles/example.settings.json")
-        self.private = {"githubClientID": "test-id", "githubClientSecret": "x$\"\\=/ café",
-                        "authSecret": "ab" * 32, "turnSharedSecret": "x$\"\\=/ café" * 4}
+        self.private = {
+            "githubClientID": "test-id",
+            "githubClientSecret": 'x$"\\=/ café',
+            "authSecret": "ab" * 32,
+            "turnSharedSecret": 'x$"\\=/ café' * 4,
+        }
         self.secret_file = self.root / "secrets.json"
         self.secret_file.write_text(json.dumps(self.private))
         self.secret_file.chmod(0o600)
 
     def rendered(self):
-        return render(self.settings, secrets(self.secret_file), "ghcr.io/dbpprt/dieter-gateway@sha256:" + "a" * 64, "test", self.root / "out",
-                      {"minimumClientVersion": "0.4.20", "minimumDaemonVersion": "0.4.19"})
+        return render(
+            self.settings,
+            secrets(self.secret_file),
+            "ghcr.io/dbpprt/dieter-gateway@sha256:" + "a" * 64,
+            "test",
+            self.root / "out",
+            {"minimumClientVersion": "0.4.20", "minimumDaemonVersion": "0.4.19"},
+        )
 
     def test_secret_bytes_and_public_separation(self):
         out = self.rendered()
-        env = dict(line.split("=", 1) for line in (out / "private/gateway.env").read_text().splitlines())
+        env = dict(
+            line.split("=", 1) for line in (out / "private/gateway.env").read_text().splitlines()
+        )
         self.assertEqual(env["DIETER_GITHUB_CLIENT_SECRET"], self.private["githubClientSecret"])
-        self.assertEqual(bytes.fromhex(env["DIETER_RTC_TURN_SECRET"]), self.private["turnSharedSecret"].encode())
+        self.assertEqual(
+            bytes.fromhex(env["DIETER_RTC_TURN_SECRET"]), self.private["turnSharedSecret"].encode()
+        )
         self.assertEqual(env["DIETER_MINIMUM_CLIENT_VERSION"], "0.4.20")
         self.assertEqual(env["DIETER_MINIMUM_DAEMON_VERSION"], "0.4.19")
-        self.assertIn("static-auth-secret=" + self.private["turnSharedSecret"], (out / "private/turnserver.conf").read_text())
+        self.assertEqual(
+            env["DIETER_NATIVE_REDIRECT_URIS"].split(","),
+            [
+                "dieter-mac://oauth/callback",
+                "dieter-android://oauth/callback",
+                "dieter-compose://oauth/callback",
+                "dieter-compose-ios://oauth/callback",
+            ],
+        )
+        self.assertIn(
+            "static-auth-secret=" + self.private["turnSharedSecret"],
+            (out / "private/turnserver.conf").read_text(),
+        )
         for path in (out / "public").iterdir():
             for secret in self.private.values():
                 self.assertNotIn(secret, path.read_text())
@@ -42,17 +68,34 @@ class RenderTests(unittest.TestCase):
         self.assertEqual((out / "private/gateway.env").stat().st_mode & 0o777, 0o600)
 
     def test_gateway_move_preserves_identity_and_moves_all_turn_urls(self):
-        self.settings.update(gatewayHost="gateway.new.example", gatewayIdentityHost="gateway.old.example",
-                             gatewayAliases=["gateway.old.example"], turnHost="turn.new.example")
+        self.settings.update(
+            gatewayHost="gateway.new.example",
+            gatewayIdentityHost="gateway.old.example",
+            gatewayAliases=["gateway.old.example"],
+            turnHost="turn.new.example",
+        )
         out = self.rendered()
-        env = dict(line.split("=", 1) for line in (out / "private/gateway.env").read_text().splitlines())
+        env = dict(
+            line.split("=", 1) for line in (out / "private/gateway.env").read_text().splitlines()
+        )
         self.assertEqual(env["DIETER_PUBLIC_URL"], "https://gateway.new.example")
         self.assertEqual(env["DIETER_GATEWAY_ISSUER"], "https://gateway.old.example")
         self.assertEqual(env["DIETER_RTC_STUN_URLS"], "stun:turn.new.example:3478")
-        self.assertEqual(env["DIETER_RTC_TURN_URLS"].split(","), ["turn:turn.new.example:3478?transport=udp", "turn:turn.new.example:3478?transport=tcp", "turns:turn.new.example:443?transport=tcp"])
+        self.assertEqual(
+            env["DIETER_RTC_TURN_URLS"].split(","),
+            [
+                "turn:turn.new.example:3478?transport=udp",
+                "turn:turn.new.example:3478?transport=tcp",
+                "turns:turn.new.example:443?transport=tcp",
+            ],
+        )
         self.assertIn("realm=turn.new.example\n", (out / "private/turnserver.conf").read_text())
-        self.assertIn("gateway.new.example, gateway.old.example {", (out / "public/Caddyfile").read_text())
-        self.assertIn("gateway.new.example gateway.old.example", (out / "public/haproxy.cfg").read_text())
+        self.assertIn(
+            "gateway.new.example, gateway.old.example {", (out / "public/Caddyfile").read_text()
+        )
+        self.assertIn(
+            "gateway.new.example gateway.old.example", (out / "public/haproxy.cfg").read_text()
+        )
 
     def test_environment_policy(self):
         out = self.rendered()
@@ -128,8 +171,12 @@ class RenderTests(unittest.TestCase):
             settings(self.settings)
 
     def test_unsafe_hosts_paths_and_quota_fail(self):
-        for key, value in (("gatewayHost", "x.example.com\nadmin off"), ("configRoot", "/etc/../tmp"),
-                           ("publicIPv4", "127.0.0.1"), ("allowedUserIDs", [])):
+        for key, value in (
+            ("gatewayHost", "x.example.com\nadmin off"),
+            ("configRoot", "/etc/../tmp"),
+            ("publicIPv4", "127.0.0.1"),
+            ("allowedUserIDs", []),
+        ):
             config = copy.deepcopy(self.settings)
             config[key] = value
             with self.assertRaises(ValueError):
