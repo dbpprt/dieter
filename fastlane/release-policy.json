@@ -14,7 +14,7 @@
       "prerelease": true,
       "make_latest": false,
       "testflight": true,
-      "testflight_groups": [],
+      "testflight_groups": ["Dieter Internal"],
       "homebrew": false,
       "deploy_gateway": false
     },
@@ -23,7 +23,7 @@
       "prerelease": false,
       "make_latest": true,
       "testflight": true,
-      "testflight_groups": [],
+      "testflight_groups": ["Dieter Internal"],
       "homebrew": true,
       "deploy_gateway": false
     }
@@ -43,5 +43,9 @@
     "android",
     "mac",
     "ios"
-  ]
+  ],
+  "ios": {
+    "team_id": "FNGU8JFNPL",
+    "bundle_id": "com.getdieter.ios"
+  }
 }

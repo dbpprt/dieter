@@ -32,6 +32,8 @@ module Dieter
     end
 
     def verify_live_delivery!(ipa_hash)
+      manifest, = @coordinator.verify_retained
+      verify_account!(manifest.fetch("policy"))
       signer = AppleSigning.new(@context)
       key = Base64.strict_decode64(signer.secret("IOS_APP_STORE_CONNECT_KEY_BASE64"))
       @context.secrets << key
@@ -74,6 +76,7 @@ module Dieter
       policy = manifest.fetch("policy").fetch("channels").fetch(channel)
       return unless policy.fetch("testflight")
       groups = policy.fetch("testflight_groups")
+      verify_account!(manifest.fetch("policy"))
       signer = AppleSigning.new(@context)
       key = Base64.strict_decode64(signer.secret("IOS_APP_STORE_CONNECT_KEY_BASE64"))
       @context.secrets << key
@@ -235,6 +238,14 @@ module Dieter
     end
 
     private
+
+    def verify_account!(policy)
+      expected = @context.config.policy.fetch("ios")
+      unless policy["ios"] == expected && ENV["IOS_BUNDLE_ID"] == expected.fetch("bundle_id")
+        raise PipelineError,
+              "TestFlight credentials and retained candidate must match the tracked iOS release account"
+      end
+    end
 
     def internally_testable?(build)
       # Fastlane's readiness helper covers admission only. Once a group has the

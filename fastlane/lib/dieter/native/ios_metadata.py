@@ -23,17 +23,21 @@ from fastlane.lib.dieter.native import apple_credentials as signing
 
 
 ROOT = Path(__file__).resolve().parents[4]
-DEFAULT_BUNDLE_ID = "com.dbpprt.dieter.ios"
+DEFAULT_BUNDLE_ID = signing.ios_release_identity()["bundle_id"]
 CAMERA_USAGE_DESCRIPTION = (
     "Dieter includes camera-capable WebRTC components for remote screen viewing. "
     "Dieter does not capture or transmit camera video."
 )
 SECRET_NAMES = (
-    "IOS_DISTRIBUTION_CERTIFICATE_BASE64", "IOS_DISTRIBUTION_CERTIFICATE_PASSWORD",
-    "IOS_PROVISIONING_PROFILE_BASE64", "IOS_SHARE_PROVISIONING_PROFILE_BASE64",
+    "IOS_DISTRIBUTION_CERTIFICATE_BASE64",
+    "IOS_DISTRIBUTION_CERTIFICATE_PASSWORD",
+    "IOS_PROVISIONING_PROFILE_BASE64",
+    "IOS_SHARE_PROVISIONING_PROFILE_BASE64",
     "IOS_APP_STORE_CONNECT_KEY_BASE64",
-    "IOS_APP_STORE_CONNECT_KEY_ID", "IOS_APP_STORE_CONNECT_ISSUER_ID",
-    "IOS_TEAM_ID", "IOS_BUNDLE_ID",
+    "IOS_APP_STORE_CONNECT_KEY_ID",
+    "IOS_APP_STORE_CONNECT_ISSUER_ID",
+    "IOS_TEAM_ID",
+    "IOS_BUNDLE_ID",
 )
 
 
@@ -74,11 +78,13 @@ def xcode_error_summary(stdout, stderr, secrets_to_redact):
             redactions.add(shlex.quote(value))
             # A PEM key may be echoed one base64 line at a time.
             if "-----BEGIN" in value:
-                redactions.update(line for line in value.splitlines() if line and not line.startswith("-----"))
+                redactions.update(
+                    line for line in value.splitlines() if line and not line.startswith("-----")
+                )
     messages = []
     for output in (stdout, stderr):
         # Only examine complete lines in a bounded tail of each output stream.
-        tail = output[-256 * 1024:]
+        tail = output[-256 * 1024 :]
         if len(tail) < len(output):
             tail = tail.partition(b"\n")[2]
         for line in tail.decode("utf-8", errors="replace").splitlines():
@@ -88,7 +94,11 @@ def xcode_error_summary(stdout, stderr, secrets_to_redact):
             if not match:
                 continue
             message = match.group(1)
-            if re.search(r"\b(?:xcodebuild|codesign)\s+-|\bsecurity\s+(?:-|[a-z][a-z-]*\b)", message, re.IGNORECASE):
+            if re.search(
+                r"\b(?:xcodebuild|codesign)\s+-|\bsecurity\s+(?:-|[a-z][a-z-]*\b)",
+                message,
+                re.IGNORECASE,
+            ):
                 continue
             for value in sorted(redactions, key=len, reverse=True):
                 message = message.replace(value, "[redacted]")
@@ -104,17 +114,28 @@ def command(argv, *, label, timeout=3600, include_stderr=False, diagnostic_secre
     env = {name: value for name, value in os.environ.items() if not name.startswith("IOS_")}
     try:
         result = subprocess.run(
-            [str(value) for value in argv], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            check=False, timeout=timeout, cwd=ROOT, env=env)
+            [str(value) for value in argv],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=timeout,
+            cwd=ROOT,
+            env=env,
+        )
     except (OSError, subprocess.TimeoutExpired):
         raise ReleaseError(f"{label} could not run or timed out.") from None
     if result.returncode:
-        if (diagnostic_secrets is not None and Path(str(argv[0])).name == "xcodebuild"
-                and ("archive" in argv or "-exportArchive" in argv)):
+        if (
+            diagnostic_secrets is not None
+            and Path(str(argv[0])).name == "xcodebuild"
+            and ("archive" in argv or "-exportArchive" in argv)
+        ):
             summary = xcode_error_summary(result.stdout, result.stderr, diagnostic_secrets)
             if summary:
                 raise ReleaseError(f"{label} failed. Redacted Xcode errors:\n{summary}")
-        raise ReleaseError(f"{label} failed. Command output was withheld to protect signing credentials.")
+        raise ReleaseError(
+            f"{label} failed. Command output was withheld to protect signing credentials."
+        )
     return result.stdout + result.stderr if include_stderr else result.stdout
 
 
@@ -138,38 +159,73 @@ def load_material(env):
     if missing:
         raise ReleaseError(
             "Complete dedicated iOS signing credentials are required; missing: "
-            + ", ".join(missing) + ".")
+            + ", ".join(missing)
+            + "."
+        )
+    identity = signing.ios_release_identity()
+    if env["IOS_TEAM_ID"] != identity["team_id"] or env["IOS_BUNDLE_ID"] != identity["bundle_id"]:
+        raise ReleaseError(
+            "iOS signing credentials do not match the tracked release team and bundle ID."
+        )
     certificate = decoded_secret(env, "IOS_DISTRIBUTION_CERTIFICATE_BASE64")
     profile = decoded_secret(env, "IOS_PROVISIONING_PROFILE_BASE64")
     share_profile = decoded_secret(env, "IOS_SHARE_PROVISIONING_PROFILE_BASE64")
     key = decoded_secret(env, "IOS_APP_STORE_CONNECT_KEY_BASE64")
     password = env["IOS_DISTRIBUTION_CERTIFICATE_PASSWORD"].encode("utf-8")
-    if (not password or len(password) > signing.MAX_PASSWORD_BYTES
-            or any(value in password for value in (b"\n", b"\r", b"\0"))):
-        raise ReleaseError("The iOS certificate password must be a nonempty single line of at most 1024 bytes.")
+    if (
+        not password
+        or len(password) > signing.MAX_PASSWORD_BYTES
+        or any(value in password for value in (b"\n", b"\r", b"\0"))
+    ):
+        raise ReleaseError(
+            "The iOS certificate password must be a nonempty single line of at most 1024 bytes."
+        )
     app_group = "group." + env["IOS_BUNDLE_ID"]
     metadata = signing.validate_ios_material(
-        certificate, password, profile, key,
-        env["IOS_APP_STORE_CONNECT_KEY_ID"], env["IOS_APP_STORE_CONNECT_ISSUER_ID"],
-        env["IOS_BUNDLE_ID"], team_id=env["IOS_TEAM_ID"],
-        required_app_group=app_group)
+        certificate,
+        password,
+        profile,
+        key,
+        env["IOS_APP_STORE_CONNECT_KEY_ID"],
+        env["IOS_APP_STORE_CONNECT_ISSUER_ID"],
+        env["IOS_BUNDLE_ID"],
+        team_id=env["IOS_TEAM_ID"],
+        required_app_group=app_group,
+    )
     share_metadata = signing.validate_ios_material(
-        certificate, password, share_profile, key,
-        env["IOS_APP_STORE_CONNECT_KEY_ID"], env["IOS_APP_STORE_CONNECT_ISSUER_ID"],
-        env["IOS_BUNDLE_ID"] + ".share", team_id=env["IOS_TEAM_ID"],
-        required_app_group=app_group)
+        certificate,
+        password,
+        share_profile,
+        key,
+        env["IOS_APP_STORE_CONNECT_KEY_ID"],
+        env["IOS_APP_STORE_CONNECT_ISSUER_ID"],
+        env["IOS_BUNDLE_ID"] + ".share",
+        team_id=env["IOS_TEAM_ID"],
+        required_app_group=app_group,
+    )
     return Material(certificate, password, profile, share_profile, key, metadata, share_metadata)
 
 
 def validate_info(info, version, build, bundle_id, *, require_app_declarations=True):
-    if not isinstance(info, dict) or any(info.get(key) != value for key, value in (
-        ("CFBundleIdentifier", bundle_id), ("CFBundleShortVersionString", version),
-        ("CFBundleVersion", build),
-    )):
-        raise ReleaseError("The built app's bundle ID, version, or build number does not match the requested release.")
+    if not isinstance(info, dict) or any(
+        info.get(key) != value
+        for key, value in (
+            ("CFBundleIdentifier", bundle_id),
+            ("CFBundleShortVersionString", version),
+            ("CFBundleVersion", build),
+        )
+    ):
+        raise ReleaseError(
+            "The built app's bundle ID, version, or build number does not match the requested release."
+        )
     if require_app_declarations and info.get("DieterReleaseVersion") != version:
-        raise ReleaseError("The built app's Dieter release version does not match the requested release.")
-    if require_app_declarations and info.get("NSCameraUsageDescription") != CAMERA_USAGE_DESCRIPTION:
+        raise ReleaseError(
+            "The built app's Dieter release version does not match the requested release."
+        )
+    if (
+        require_app_declarations
+        and info.get("NSCameraUsageDescription") != CAMERA_USAGE_DESCRIPTION
+    ):
         raise ReleaseError("The built app is missing its camera usage description.")
     if require_app_declarations and info.get("ITSAppUsesNonExemptEncryption") is not False:
         raise ReleaseError("The built app must declare ITSAppUsesNonExemptEncryption as false.")
@@ -183,12 +239,19 @@ def validate_archive(archive, version, build, bundle_id, *, signed):
     except (OSError, ValueError, plistlib.InvalidFileException):
         raise ReleaseError("The iOS archive is missing valid application metadata.") from None
     validate_info(info, version, build, bundle_id)
-    properties = archive_info.get("ApplicationProperties", {}) if isinstance(archive_info, dict) else {}
+    properties = (
+        archive_info.get("ApplicationProperties", {}) if isinstance(archive_info, dict) else {}
+    )
     validate_info(properties, version, build, bundle_id, require_app_declarations=False)
     if properties.get("ApplicationPath") != "Applications/Dieter.app":
         raise ReleaseError("The archive does not contain the expected Dieter iOS application.")
     executable = info.get("CFBundleExecutable", "")
-    if not isinstance(executable, str) or not executable or Path(executable).name != executable or not (app / executable).is_file():
+    if (
+        not isinstance(executable, str)
+        or not executable
+        or Path(executable).name != executable
+        or not (app / executable).is_file()
+    ):
         raise ReleaseError("The archive is missing the Dieter executable.")
     framework = app / "Frameworks/DieterIOS.framework"
     if not framework.is_dir() or not (framework / "DieterIOS").is_file():
@@ -199,13 +262,20 @@ def validate_archive(archive, version, build, bundle_id, *, signed):
     except (OSError, ValueError, plistlib.InvalidFileException):
         raise ReleaseError("The archive is missing its Share extension metadata.") from None
     share_executable = share_info.get("CFBundleExecutable")
-    if (share_info.get("CFBundleIdentifier") != bundle_id + ".share"
-            or not isinstance(share_executable, str) or not share_executable
-            or Path(share_executable).name != share_executable
-            or not (share / share_executable).is_file()):
+    if (
+        share_info.get("CFBundleIdentifier") != bundle_id + ".share"
+        or not isinstance(share_executable, str)
+        or not share_executable
+        or Path(share_executable).name != share_executable
+        or not (share / share_executable).is_file()
+    ):
         raise ReleaseError("The archive is missing its Share extension executable.")
     if signed:
-        command(["codesign", "--verify", "--deep", "--strict", app], label="Archived iOS signature verification", timeout=120)
+        command(
+            ["codesign", "--verify", "--deep", "--strict", app],
+            label="Archived iOS signature verification",
+            timeout=120,
+        )
 
 
 def export_options(metadata, identity, destination, share_metadata):
@@ -214,10 +284,14 @@ def export_options(metadata, identity, destination, share_metadata):
         share_metadata["bundle_id"]: share_metadata["profile_uuid"],
     }
     return {
-        "method": "app-store-connect", "destination": destination, "signingStyle": "manual",
-        "teamID": metadata["team_id"], "signingCertificate": identity,
+        "method": "app-store-connect",
+        "destination": destination,
+        "signingStyle": "manual",
+        "teamID": metadata["team_id"],
+        "signingCertificate": identity,
         "provisioningProfiles": profiles,
-        "manageAppVersionAndBuildNumber": False, "uploadSymbols": True,
+        "manageAppVersionAndBuildNumber": False,
+        "uploadSymbols": True,
     }
 
 

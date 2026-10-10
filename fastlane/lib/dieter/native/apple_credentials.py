@@ -27,6 +27,16 @@ APPLICATION_PREFIX = "MACOS_DEVELOPER_ID_CERTIFICATE"
 INSTALLER_PREFIX = "MACOS_DEVELOPER_ID_INSTALLER_CERTIFICATE"
 
 
+def ios_release_identity():
+    policy = Path(__file__).resolve().parents[4] / "fastlane/release-policy.json"
+    identity = json.loads(policy.read_text())["ios"]
+    if not re.fullmatch(r"[A-Z0-9]{10}", identity["team_id"]) or not re.fullmatch(
+        r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", identity["bundle_id"]
+    ):
+        raise SetupError("Invalid tracked iOS release identity.")
+    return identity
+
+
 class SetupError(Exception):
     """A safe, credential-free message for the user."""
 
@@ -564,7 +574,9 @@ def main(argv=None):
     parser.add_argument("--ios-key-id", help="iOS App Store Connect API Key ID")
     parser.add_argument("--ios-issuer-id", help="iOS App Store Connect team API Issuer ID")
     parser.add_argument(
-        "--ios-bundle-id", default="com.dbpprt.dieter.ios", help="Explicit registered iOS bundle ID"
+        "--ios-bundle-id",
+        default=ios_release_identity()["bundle_id"],
+        help="Explicit registered iOS bundle ID",
     )
     parser.add_argument(
         "--check",
