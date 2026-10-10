@@ -32,7 +32,9 @@ func TestNativePrivacyOwnerSurvivesReplacementController(t *testing.T) {
 	if helper == "" {
 		t.Skip("native helper supplied by screens_native_test")
 	}
-	root, err := os.MkdirTemp("../../tmp", "privacy-")
+	// Keep the Unix socket independent of checkout depth; macOS limits its path
+	// to 104 bytes, which managed worktree paths can exceed.
+	root, err := os.MkdirTemp("", "privacy-")
 	if err != nil {
 		t.Fatal(err)
 	}
