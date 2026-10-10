@@ -29,7 +29,9 @@ commands are shared.
   and New task is an extended FAB. Navigation is a navigation bar (rail from
   600 dp); system back pops the visible tab stack. Lanes are tabs with counts,
   pickers are dropdown menus or bottom sheets, and confirmations are dialogs.
-  Titles use the Sora display font; the app draws edge to edge.
+  The Inbox uses a compact title bar and individual activity cards with status
+  accents to keep more work visible. Titles use the Sora display font; the app
+  draws edge to edge.
 - **iOS:** UIKit owns navigation. A `UITabBarController` holds one
   `UINavigationController` per tab (a sidebar-adaptable tab bar on iPad), so
   large titles, subtitles, back gestures and bar buttons are the system's own.

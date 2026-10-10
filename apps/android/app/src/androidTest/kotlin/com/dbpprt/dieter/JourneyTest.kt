@@ -74,6 +74,7 @@ class JourneyTest {
     fun sharedTaskJourney() {
         ActivityScenario.launch<MainActivity>(fixtureIntent()).use { scenario ->
             waitForText("Design the mobile workspace")
+            assertInboxLayout()
             capture("android-inbox")
             compose.onNodeWithTag("nav-projects").performClick()
             waitForText("Isolated E2E")
@@ -123,6 +124,12 @@ class JourneyTest {
             compose.onNodeWithTag("lane-2").performClick()
             waitForText("A shared mobile conversation")
             capture("android-review")
+            compose.onNodeWithTag("nav-inbox").performClick()
+            compose.onNodeWithTag("inbox-filter-review").performClick()
+            waitForText("Ready for review")
+            compose.onAllNodesWithText("Mark done").onFirst().assertIsDisplayed()
+            capture("android-inbox-review")
+            compose.onNodeWithTag("inbox-filter-all").performClick()
             compose.onNodeWithTag("nav-chats").performClick()
             waitForText("Mobile release checklist")
             capture("android-chats")
@@ -153,12 +160,35 @@ class JourneyTest {
             waitForTag("appearance-2")
             compose.onNodeWithTag("appearance-2").performClick()
             capture("android-settings-dark")
+            compose.onNodeWithTag("nav-inbox").performClick()
+            waitForText("A shared mobile conversation")
+            compose.onNodeWithText("A shared mobile conversation").assertIsDisplayed()
+            capture("android-inbox-dark")
             compose.onNodeWithTag("nav-projects").performClick()
             waitForText("Main")
             compose.onNodeWithText("Main").performClick()
             waitForTag("lane-1")
             capture("android-board-dark")
         }
+    }
+
+    /** The first controls and several complete entries should fit without scrolling. */
+    private fun assertInboxLayout() {
+        val density =
+            InstrumentationRegistry.getInstrumentation()
+                .targetContext
+                .resources
+                .displayMetrics
+                .density
+        val feed = compose.onNodeWithTag("activity-feed").fetchSemanticsNode().boundsInRoot
+        val search = compose.onNodeWithTag("search-field").fetchSemanticsNode().boundsInRoot
+        check(search.top - feed.top < 120 * density) {
+            "Inbox search is pushed down by excessive header space"
+        }
+        compose.onNodeWithText("Ideas for the next iteration").assertIsDisplayed()
+        compose.onNodeWithText("Mobile release checklist").assertIsDisplayed()
+        compose.onNodeWithText("Design the mobile workspace").assertIsDisplayed()
+        compose.onNodeWithText("Make reconnect feel effortless").assertIsDisplayed()
     }
 
     private fun waitForText(text: String, substring: Boolean = false) =

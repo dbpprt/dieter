@@ -3,6 +3,7 @@
 package com.dbpprt.dieter.mobile
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,7 +18,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -99,7 +103,9 @@ internal fun InboxScreen(store: MobileStore) {
                         },
                     )
                     .joinToString(" · "),
-            large = true,
+            // Keep the native iOS title; the Android inbox needs its controls within reach
+            // without the empty expanded toolbar above them.
+            large = apple,
             actions =
                 listOf(
                     ChromeAction(
@@ -222,6 +228,13 @@ internal fun InboxScreen(store: MobileStore) {
                                 else -> "Recent"
                             },
                             prominent = true,
+                            trailing = {
+                                Text(
+                                    "${sectionRows.size}",
+                                    style = type.footnote,
+                                    color = palette.secondaryLabel,
+                                )
+                            },
                         )
                     }
                     itemsIndexed(sectionRows, key = { _, row -> "row-" + row.card!!.id }) {
@@ -274,6 +287,20 @@ private fun InboxRow(
             else -> palette.tertiaryLabel
         }
     MenuAnchor(menu) {
+        if (!apple) {
+            MaterialInboxRow(
+                row,
+                now,
+                position,
+                selected,
+                machine,
+                tint,
+                onOpen = { store.openConversation(card.id) },
+                onMenu = { menu.show(cardMenuSections(store, card, row.can_finish)) },
+                onFinish = { store.command(Command(finish_card = FinishCard(card.id))) },
+            )
+            return@MenuAnchor
+        }
         GroupItem(
             position,
             Modifier.testTag("activity-row-${card.id}"),
@@ -364,6 +391,135 @@ private fun InboxRow(
                         )
                 }
             }
+        }
+    }
+}
+
+/** Compact, individual activity cards with a status edge and no empty leading gutter. */
+@Composable
+private fun MaterialInboxRow(
+    row: ActivityRow,
+    now: Instant,
+    position: Position,
+    selected: Boolean,
+    machine: String?,
+    tint: Color,
+    onOpen: () -> Unit,
+    onMenu: () -> Unit,
+    onFinish: () -> Unit,
+) {
+    val card = row.card ?: return
+    val shape = RoundedCornerShape(16.dp)
+    val background = if (selected) palette.accentContainer else lerp(palette.cell, tint, .035f)
+    val statusColor = tint.readableOn(background)
+    Box(
+        Modifier.fillMaxWidth()
+            .padding(horizontal = ScreenMargin)
+            .padding(top = if (position.isFirst) 0.dp else 6.dp)
+            .testTag("activity-row-${card.id}")
+            .clip(shape)
+            .background(background)
+            .drawBehind {
+                drawRect(tint.copy(alpha = .7f), size = Size(3.dp.toPx(), size.height))
+            }
+            .border(
+                if (selected) 1.dp else .5.dp,
+                if (selected) palette.accent else palette.separator.copy(alpha = .28f),
+                shape,
+            )
+            .pressable(onClick = onOpen, onLongClick = onMenu, highlight = true)
+    ) {
+        Column(
+            Modifier.fillMaxWidth()
+                .padding(start = 15.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Row(verticalAlignment = Alignment.Top) {
+                Text(
+                    row.title,
+                    Modifier.weight(1f),
+                    style = type.bodyEmphasized.copy(fontWeight = FontWeight.SemiBold),
+                    color = palette.label,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    Activity.age(
+                        row.shown_at_millis.takeIf { it > 0 }?.let(Instant::fromEpochMilliseconds),
+                        now,
+                        suffix = false,
+                    ),
+                    Modifier.padding(start = 8.dp, top = 3.dp),
+                    style = type.footnote,
+                    color = palette.secondaryLabel,
+                )
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Icon(
+                    if (row.chat) Glyph.CHAT else Glyph.FOLDER,
+                    if (row.chat) "Chat" else null,
+                    tint = palette.secondaryLabel,
+                    size = 13.dp,
+                )
+                Text(
+                    listOfNotNull(
+                            row.project_name.ifEmpty { null },
+                            row.board_name.ifEmpty { null },
+                            machine,
+                        )
+                        .joinToString(" · "),
+                    style = type.subheadline,
+                    color = palette.secondaryLabel,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            val detail = row.detail.ifEmpty { row.kind_label }
+            if (detail.isNotEmpty())
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (row.kind == "RUNNING") LiveDot(statusColor, size = 8.dp)
+                    else
+                        Icon(
+                            when {
+                                row.kind == "FAILED" -> Glyph.WARNING
+                                row.needs_you -> Glyph.CHAT
+                                row.kind == "REVIEW" -> Glyph.EYE
+                                else -> Glyph.CHECK
+                            },
+                            null,
+                            tint = statusColor,
+                            size = 14.dp,
+                        )
+                    Text(
+                        detail,
+                        style = type.subheadline,
+                        color =
+                            if (row.needs_you || row.kind == "FAILED") statusColor
+                            else palette.secondaryLabel,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            if (row.stale.isNotEmpty())
+                Text(
+                    row.stale,
+                    style = type.footnote,
+                    color = palette.warning.readableOn(background),
+                )
+            if (row.can_finish)
+                DButton(
+                    "Mark done",
+                    onFinish,
+                    Modifier.padding(top = 6.dp).testTag("finish-${card.id}"),
+                    kind = ButtonKind.TONAL,
+                    glyph = Glyph.CHECK,
+                )
         }
     }
 }
