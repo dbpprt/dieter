@@ -20,7 +20,12 @@ import (
 	"time"
 )
 
-const TeamID = "DS6N5L85E7"
+const TeamID = "FNGU8JFNPL"
+
+// Retain the former signer during the Developer ID rotation so an installed
+// service can activate the new team's pair and recover the previous release.
+// Both executables must belong to the same team; see docs/apple-release-signing.md.
+const previousTeamID = "DS6N5L85E7"
 const activationEnv = "DIETER_SERVICE_ACTIVATION"
 const lockEnv = "DIETER_SERVICE_LOCK_FD"
 
@@ -95,31 +100,68 @@ func (r Runtime) verify(ctx context.Context, dir string) error {
 }
 
 func VerifySignedPair(ctx context.Context, dir string) error {
-	if err := verifySignedExecutables(ctx, dir); err != nil {
-		return err
-	}
-	requirement := fmt.Sprintf(`identifier "com.dbpprt.dieter.privacy" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = %q`, TeamID)
-	checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	if output, err := exec.CommandContext(checkCtx, "/usr/bin/codesign", "--verify", "--deep", "--strict", "-R", "="+requirement, filepath.Join(dir, "DieterPrivacyHelper.app")).CombinedOutput(); err != nil {
-		return fmt.Errorf("verify signed privacy helper bundle: %w: %s", err, strings.TrimSpace(string(output)))
-	}
-	return nil
+	return verifySignedRelease(ctx, dir, verifySignedExecutable)
+}
+
+func verifySignedRelease(ctx context.Context, dir string, check func(context.Context, string, string) error) error {
+	return verifySignedTeams(ctx, func(team string) error {
+		if err := verifySignedPairForTeam(ctx, dir, team, check); err != nil {
+			return err
+		}
+		requirement := fmt.Sprintf(`identifier "com.dbpprt.dieter.privacy" and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = %q`, team)
+		return check(ctx, filepath.Join(dir, "DieterPrivacyHelper.app"), requirement)
+	})
 }
 
 func verifySignedExecutables(ctx context.Context, dir string) error {
+	return verifySignedPair(ctx, dir, verifySignedExecutable)
+}
+
+func verifySignedPair(ctx context.Context, dir string, check func(context.Context, string, string) error) error {
+	return verifySignedTeams(ctx, func(team string) error {
+		return verifySignedPairForTeam(ctx, dir, team, check)
+	})
+}
+
+func verifySignedTeams(ctx context.Context, check func(string) error) error {
+	var failures []error
+	for _, team := range []string{TeamID, previousTeamID} {
+		if err := check(team); err == nil {
+			return nil
+		} else {
+			failures = append(failures, err)
+		}
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	return errors.Join(failures...)
+}
+
+func verifySignedPairForTeam(ctx context.Context, dir, team string, check func(context.Context, string, string) error) error {
 	for _, name := range executables {
 		identifier := "com.dbpprt.dieter.daemon"
 		if name == "dieter-capture" {
 			identifier = "com.dbpprt.dieter.capture"
 		}
-		requirement := fmt.Sprintf(`identifier %q and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = %q`, identifier, TeamID)
-		checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		output, err := exec.CommandContext(checkCtx, "/usr/bin/codesign", "--verify", "--strict", "-R", "="+requirement, filepath.Join(dir, name)).CombinedOutput()
-		cancel()
-		if err != nil {
-			return fmt.Errorf("verify signed %s: %w: %s", name, err, strings.TrimSpace(string(output)))
+		requirement := fmt.Sprintf(`identifier %q and anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = %q`, identifier, team)
+		if err := check(ctx, filepath.Join(dir, name), requirement); err != nil {
+			return fmt.Errorf("verify signed %s for team %s: %w", name, team, err)
 		}
+	}
+	return nil
+}
+
+func verifySignedExecutable(ctx context.Context, path, requirement string) error {
+	checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	args := []string{"--verify", "--strict", "-R", "=" + requirement}
+	if filepath.Base(path) == "DieterPrivacyHelper.app" {
+		args = append(args, "--deep")
+	}
+	output, err := exec.CommandContext(checkCtx, "/usr/bin/codesign", append(args, path)...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
