@@ -5,9 +5,11 @@ import android.graphics.Bitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.core.content.FileProvider
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
 import org.junit.Rule
 import org.junit.Test
@@ -76,6 +78,8 @@ class JourneyTest {
             waitForText("Design the mobile workspace")
             assertInboxLayout()
             capture("android-inbox")
+            pullToRefresh(scenario, "inbox-refresh")
+            assertInboxLayout()
             compose.onNodeWithTag("nav-projects").performClick()
             waitForText("Isolated E2E")
             waitForText("Main")
@@ -132,6 +136,8 @@ class JourneyTest {
             compose.onNodeWithTag("inbox-filter-all").performClick()
             compose.onNodeWithTag("nav-chats").performClick()
             waitForText("Mobile release checklist")
+            pullToRefresh(scenario, "chats-refresh")
+            compose.onNodeWithText("Mobile release checklist").assertIsDisplayed()
             capture("android-chats")
             compose.onNodeWithTag("nav-tools").performClick()
             waitForTag("tool-machines")
@@ -169,6 +175,41 @@ class JourneyTest {
             compose.onNodeWithText("Main").performClick()
             waitForTag("lane-1")
             capture("android-board-dark")
+        }
+    }
+
+    /** The real gesture must replay the core's streams, then finish its indicator. */
+    private fun pullToRefresh(scenario: ActivityScenario<MainActivity>, tag: String) {
+        lateinit var store: com.dbpprt.dieter.mobile.MobileStore
+        scenario.onActivity { store = ViewModelProvider(it)[DieterSession::class.java].store }
+        waitFor("sync before pulling $tag") { store.session.value.synced }
+        val ready = AtomicBoolean(false)
+        val replaying = AtomicBoolean(false)
+        val replayed = AtomicBoolean(false)
+        val subscription =
+            store.core.observe(com.dbpprt.dieter.client.v1.Slice.SLICE_SESSION, "") { update ->
+                update.session?.let {
+                    if (it.synced) {
+                        ready.set(true)
+                        if (replaying.get()) replayed.set(true)
+                    } else if (ready.get()) replaying.set(true)
+                }
+            }
+        try {
+            waitFor("session observer before pulling $tag") { ready.get() }
+            compose.onNodeWithTag(tag).performTouchInput {
+                // The list's bounds include scaffold padding; start below expanded app bars.
+                swipe(
+                    start = androidx.compose.ui.geometry.Offset(width * .5f, height * .45f),
+                    end = androidx.compose.ui.geometry.Offset(width * .5f, height * .93f),
+                    durationMillis = 600,
+                )
+            }
+            waitFor("stream replay after pulling $tag") { replayed.get() }
+            waitFor("refresh indicator after pulling $tag") { !store.refreshing.value }
+            check(store.error.value.isEmpty()) { store.error.value }
+        } finally {
+            subscription.close()
         }
     }
 

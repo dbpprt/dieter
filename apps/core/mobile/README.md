@@ -17,6 +17,11 @@ The apps are organized as **Inbox / Projects / Chats / Tools**, with compact tas
 cards, project folders, agent controls, transcript tools, files, Git review,
 schedules, terminals, screens and machine tools.
 
+Pull down from the top of Inbox or Chats to sync the account again. Cached
+entries, search and filters stay visible while every reachable machine's
+stream catches up. Chats also reloads archived entries while they are shown.
+The lists offer a **Sync again** accessibility action for the same operation.
+
 ## Platform design
 
 Each platform gets its own chrome and controls; the screens' content, state and

@@ -93,7 +93,10 @@ class MobileStore(
     val selectedBoard = MutableStateFlow("")
     val signInUrl = MutableStateFlow("")
     val busy = MutableStateFlow(false)
+    val refreshing = MutableStateFlow(false)
     val error = MutableStateFlow("")
+    private var refreshCompletion: CompletableDeferred<Unit>? = null
+    private var refreshSawReplay = false
     private val subscriptions = mutableListOf<ClientSubscription>()
     private var conversationSubscription: ClientSubscription? = null
     private var conversationScope = ""
@@ -120,7 +123,14 @@ class MobileStore(
         }
         subscriptions +=
             observe(Slice.SLICE_SESSION, "") { update ->
-                update.session?.let { session.value = it }
+                update.session?.let {
+                    session.value = it
+                    if (refreshCompletion != null) {
+                        if (!it.synced) refreshSawReplay = true
+                        if (refreshSawReplay && (it.synced || it.notice?.offline == true))
+                            refreshCompletion?.complete(Unit)
+                    }
+                }
             }
         subscriptions +=
             observe(Slice.SLICE_WORKSPACE, "") { update ->
@@ -1021,6 +1031,40 @@ class MobileStore(
     }
 
     fun retry() = action { core.dispatch(Command(reconnect = Reconnect())) }
+
+    /** Replays the account while keeping the visible lists, filters and drafts. */
+    fun refresh() {
+        if (closed || refreshing.value) return
+        refreshing.value = true
+        scope.launch {
+            try {
+                val completion = CompletableDeferred<Unit>()
+                commands.withLock {
+                    error.value = ""
+                    refreshSawReplay = !session.value.synced
+                    refreshCompletion = completion
+                    core.dispatch(Command(resync = Resync()))
+                }
+                // The command admits a replay; the session confirms when it has caught up.
+                // Bound the gesture's indicator while the core continues its own recovery.
+                if (withTimeoutOrNull(30_000) { completion.await() } == null)
+                    error.value = "Sync is still catching up. Dieter will keep trying."
+                if (session.value.synced)
+                    commands.withLock {
+                        core.dispatch(
+                            Command(chats = ChatsCommand(scope = CHATS_SCOPE, reload = Step()))
+                        )
+                    }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                error.value = failure.message ?: "Could not refresh."
+            } finally {
+                refreshCompletion = null
+                refreshing.value = false
+            }
+        }
+    }
 
     fun loadEarlier() {
         val id = selectedCard.value

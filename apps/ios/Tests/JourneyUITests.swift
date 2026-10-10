@@ -27,6 +27,8 @@ final class JourneyUITests: XCTestCase {
         app.launchEnvironment = ProcessInfo.processInfo.environment.filter { $0.key.hasPrefix("DIETER_IOS_TEST_") }
         app.launch()
         XCTAssertTrue(element(app, containing: "Design the mobile workspace").waitForExistence(timeout: 40))
+        pullToRefresh(app, identifier: "inbox-refresh")
+        XCTAssertTrue(element(app, containing: "Design the mobile workspace").waitForExistence(timeout: 40))
         capture("ios-inbox")
 
         tab(app, "Projects")
@@ -145,6 +147,8 @@ final class JourneyUITests: XCTestCase {
         capture("ios-review")
 
         tab(app, "Chats")
+        XCTAssertTrue(element(app, containing: "Mobile release checklist").waitForExistence(timeout: 20))
+        pullToRefresh(app, identifier: "chats-refresh")
         XCTAssertTrue(element(app, containing: "Mobile release checklist").waitForExistence(timeout: 20))
         capture("ios-chats")
         tab(app, "Tools")
@@ -341,6 +345,14 @@ final class JourneyUITests: XCTestCase {
         XCTAssertNotNil(button, "A back button is visible")
         button?.tap()
         Thread.sleep(forTimeInterval: 0.5)
+    }
+
+    private func pullToRefresh(_ app: XCUIApplication, identifier: String) {
+        let list = element(app, identifier: identifier)
+        XCTAssertTrue(waitFor { self.hasFrame(list) }, "The refreshable list is visible")
+        let start = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
+        let end = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.93))
+        start.press(forDuration: 0.1, thenDragTo: end)
     }
 
     /// `isHittable` records a failure for elements without an activation point; check the frame first.

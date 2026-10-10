@@ -70,6 +70,7 @@ private enum class InboxFilter(val title: String) {
 internal fun InboxScreen(store: MobileStore) {
     val view by store.activity.collectAsState()
     val workspace by store.workspace.collectAsState()
+    val refreshing by store.refreshing.collectAsState()
     val session by store.session.collectAsState()
     val quotas by store.quotas.collectAsState()
     val selected by store.selectedCard.collectAsState()
@@ -153,105 +154,112 @@ internal fun InboxScreen(store: MobileStore) {
             primary = newTaskAction(store),
         )
     Screen(chrome) {
-        LazyColumn(
-            Modifier.fillMaxSize().testTag("activity-feed"),
-            state = listState,
-            contentPadding = padding,
+        RefreshableList(
+            refreshing = refreshing,
+            onRefresh = store::refresh,
+            tag = "inbox-refresh",
+            topInset = padding.calculateTopPadding(),
         ) {
-            titleHeader()
-            item("notice") { ConnectionNotice(store) }
-            item("search") {
-                SearchField(
-                    query,
-                    { query = it },
-                    "Search activity",
-                    Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
-                )
-            }
-            item("filters") {
-                Row(
-                    Modifier.fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = ScreenMargin, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    InboxFilter.entries.forEach { value ->
-                        val total = count(value)
-                        FilterPill(
-                            if (value == InboxFilter.ALL || total == 0) value.title
-                            else "${value.title} $total",
-                            filter == value,
-                            { filter = value },
-                            Modifier.testTag("inbox-filter-${value.name.lowercase()}"),
-                        )
-                    }
-                }
-            }
-            if (quotas.group_rows.any { it.lowest_remaining >= 0 })
-                item("usage") {
-                    UsageStrip(quotas) {
-                        store.showFrom(
-                            MobileRoute.Root(MobileTab.INBOX),
-                            MobileRoute.Tool(ToolPage.USAGE),
-                        )
-                    }
-                }
-            if (timeline && rows.isNotEmpty())
-                item("timeline") { ActivityTimeline(rows, now) { store.openConversation(it) } }
-            if (rows.isEmpty())
-                item("empty") {
-                    EmptyState(
-                        if (query.isNotBlank()) Glyph.SEARCH else Glyph.INBOX,
-                        when {
-                            !workspace.loaded -> "Loading activity…"
-                            query.isNotBlank() -> "No results"
-                            filter != InboxFilter.ALL -> "Nothing here"
-                            else -> "All quiet"
-                        },
-                        when {
-                            query.isNotBlank() -> "No conversations match “$query”."
-                            filter == InboxFilter.NEEDS_YOU ->
-                                "Nothing needs your attention right now."
-                            else -> "Running work, replies and reviews appear here."
-                        },
-                        Modifier.padding(top = 32.dp),
+            LazyColumn(
+                Modifier.fillMaxSize().testTag("activity-feed"),
+                state = listState,
+                contentPadding = padding,
+            ) {
+                titleHeader()
+                item("notice") { ConnectionNotice(store) }
+                item("search") {
+                    SearchField(
+                        query,
+                        { query = it },
+                        "Search activity",
+                        Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
                     )
                 }
-            ActivityRow.Section.entries.forEach { section ->
-                val sectionRows = rows.filter { it.section == section && it.card != null }
-                if (sectionRows.isNotEmpty()) {
-                    item("header-$section") {
-                        SectionHeader(
-                            when (section) {
-                                ActivityRow.Section.SECTION_ATTENTION -> "Needs you"
-                                ActivityRow.Section.SECTION_RUNNING -> "Running"
-                                else -> "Recent"
+                item("filters") {
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = ScreenMargin, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        InboxFilter.entries.forEach { value ->
+                            val total = count(value)
+                            FilterPill(
+                                if (value == InboxFilter.ALL || total == 0) value.title
+                                else "${value.title} $total",
+                                filter == value,
+                                { filter = value },
+                                Modifier.testTag("inbox-filter-${value.name.lowercase()}"),
+                            )
+                        }
+                    }
+                }
+                if (quotas.group_rows.any { it.lowest_remaining >= 0 })
+                    item("usage") {
+                        UsageStrip(quotas) {
+                            store.showFrom(
+                                MobileRoute.Root(MobileTab.INBOX),
+                                MobileRoute.Tool(ToolPage.USAGE),
+                            )
+                        }
+                    }
+                if (timeline && rows.isNotEmpty())
+                    item("timeline") { ActivityTimeline(rows, now) { store.openConversation(it) } }
+                if (rows.isEmpty())
+                    item("empty") {
+                        EmptyState(
+                            if (query.isNotBlank()) Glyph.SEARCH else Glyph.INBOX,
+                            when {
+                                !workspace.loaded -> "Loading activity…"
+                                query.isNotBlank() -> "No results"
+                                filter != InboxFilter.ALL -> "Nothing here"
+                                else -> "All quiet"
                             },
-                            prominent = true,
-                            trailing = {
-                                Text(
-                                    "${sectionRows.size}",
-                                    style = type.footnote,
-                                    color = palette.secondaryLabel,
-                                )
+                            when {
+                                query.isNotBlank() -> "No conversations match “$query”."
+                                filter == InboxFilter.NEEDS_YOU ->
+                                    "Nothing needs your attention right now."
+                                else -> "Running work, replies and reviews appear here."
                             },
+                            Modifier.padding(top = 32.dp),
                         )
                     }
-                    itemsIndexed(sectionRows, key = { _, row -> "row-" + row.card!!.id }) {
-                        index,
-                        row ->
-                        InboxRow(
-                            store,
-                            row,
-                            now,
-                            Position.of(index, sectionRows.size),
-                            selected = row.card!!.id == selected,
-                            machine =
-                                session.machines
-                                    .takeIf { it.size > 1 }
-                                    ?.firstOrNull { it.id == row.card?.owner_daemon_id }
-                                    ?.display_name,
-                        )
+                ActivityRow.Section.entries.forEach { section ->
+                    val sectionRows = rows.filter { it.section == section && it.card != null }
+                    if (sectionRows.isNotEmpty()) {
+                        item("header-$section") {
+                            SectionHeader(
+                                when (section) {
+                                    ActivityRow.Section.SECTION_ATTENTION -> "Needs you"
+                                    ActivityRow.Section.SECTION_RUNNING -> "Running"
+                                    else -> "Recent"
+                                },
+                                prominent = true,
+                                trailing = {
+                                    Text(
+                                        "${sectionRows.size}",
+                                        style = type.footnote,
+                                        color = palette.secondaryLabel,
+                                    )
+                                },
+                            )
+                        }
+                        itemsIndexed(sectionRows, key = { _, row -> "row-" + row.card!!.id }) {
+                            index,
+                            row ->
+                            InboxRow(
+                                store,
+                                row,
+                                now,
+                                Position.of(index, sectionRows.size),
+                                selected = row.card!!.id == selected,
+                                machine =
+                                    session.machines
+                                        .takeIf { it.size > 1 }
+                                        ?.firstOrNull { it.id == row.card?.owner_daemon_id }
+                                        ?.display_name,
+                            )
+                        }
                     }
                 }
             }
@@ -1303,6 +1311,7 @@ internal fun ProjectScreen(store: MobileStore, projectId: String) {
 @Composable
 internal fun ChatsScreen(store: MobileStore) {
     val workspace by store.workspace.collectAsState()
+    val refreshing by store.refreshing.collectAsState()
     val view by store.chats.collectAsState()
     val selected by store.selectedCard.collectAsState()
     var query by rememberSaveable { mutableStateOf("") }
@@ -1356,152 +1365,165 @@ internal fun ChatsScreen(store: MobileStore) {
     fun cardFor(id: String) =
         (if (archived) view.archived else workspace.cards).firstOrNull { it.id == id }
     Screen(chrome) {
-        LazyColumn(
-            Modifier.fillMaxSize().testTag("chats-list"),
-            state = listState,
-            contentPadding = padding,
+        RefreshableList(
+            refreshing = refreshing || view.loading,
+            onRefresh = store::refresh,
+            tag = "chats-refresh",
+            topInset = padding.calculateTopPadding(),
         ) {
-            titleHeader()
-            item("notice") { ConnectionNotice(store) }
-            item("search") {
-                SearchField(
-                    query,
-                    {
-                        query = it
-                        store.command(
-                            Command(
-                                chats =
-                                    ChatsCommand(
-                                        scope = MobileStore.CHATS_SCOPE,
-                                        query = ChatsQuery(it),
-                                    )
-                            )
-                        )
-                    },
-                    "Search chats",
-                    Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
-                )
-            }
-            fun section(
-                key: String,
-                title: String?,
-                ids: List<String>,
-                header: (@Composable () -> Unit)? = null,
+            LazyColumn(
+                Modifier.fillMaxSize().testTag("chats-list"),
+                state = listState,
+                contentPadding = padding,
             ) {
-                val cards = ids.mapNotNull(::cardFor)
-                if (title != null) item("h-$key") { SectionHeader(title, prominent = true) }
-                if (header != null) item("hh-$key") { header() }
-                itemsIndexed(cards, key = { _, card -> "$key-${card.id}" }) { index, card ->
-                    ChatRow(
-                        store,
-                        card,
-                        Position.of(index, cards.size),
-                        now,
-                        archived,
-                        selected == card.id,
+                titleHeader()
+                item("notice") { ConnectionNotice(store) }
+                item("search") {
+                    SearchField(
+                        query,
+                        {
+                            query = it
+                            store.command(
+                                Command(
+                                    chats =
+                                        ChatsCommand(
+                                            scope = MobileStore.CHATS_SCOPE,
+                                            query = ChatsQuery(it),
+                                        )
+                                )
+                            )
+                        },
+                        "Search chats",
+                        Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
                     )
                 }
-            }
-            if (archived) section("archived", null, view.archived.map { it.id })
-            else {
-                if (view.pinned_ids.isNotEmpty()) section("pinned", "Pinned", view.pinned_ids)
-                view.folders.forEach { folder ->
-                    item("folder-${folder.folder_id}") {
-                        CollapsibleHeader(
-                            folder.name,
-                            folder.chat_ids.size,
-                            folder.expanded,
-                            Glyph.FOLDER,
-                        ) {
-                            store.command(
-                                Command(
-                                    navigation =
-                                        NavigationCommand(
-                                            set_folder_expanded =
-                                                SetFolderExpanded(
-                                                    FolderScope.FOLDER_SCOPE_CHATS,
-                                                    folder.folder_id,
-                                                    !folder.expanded,
-                                                )
-                                        )
-                                )
-                            )
-                        }
+                fun section(
+                    key: String,
+                    title: String?,
+                    ids: List<String>,
+                    header: (@Composable () -> Unit)? = null,
+                ) {
+                    val cards = ids.mapNotNull(::cardFor)
+                    if (title != null) item("h-$key") { SectionHeader(title, prominent = true) }
+                    if (header != null) item("hh-$key") { header() }
+                    itemsIndexed(cards, key = { _, card -> "$key-${card.id}" }) { index, card ->
+                        ChatRow(
+                            store,
+                            card,
+                            Position.of(index, cards.size),
+                            now,
+                            archived,
+                            selected == card.id,
+                        )
                     }
-                    if (folder.show_chats)
-                        section("folder-${folder.folder_id}", null, folder.chat_ids)
                 }
-                view.projects.forEach { project ->
-                    val name =
-                        workspace.projects.firstOrNull { it.id == project.project_id }?.name
-                            ?: "Project"
-                    item("project-${project.project_id}") {
-                        CollapsibleHeader(
-                            name,
-                            project.total,
-                            !project.collapsed,
-                            null,
-                            project.project_id,
-                        ) {
-                            store.command(
-                                Command(
-                                    set_chat_section_collapsed =
-                                        SetChatSectionCollapsed(
-                                            project_id = project.project_id,
-                                            collapsed = !project.collapsed,
-                                        )
-                                )
-                            )
-                        }
-                    }
-                    if (project.show_chats)
-                        section("project-${project.project_id}", null, project.chat_ids)
-                    if (project.toggle_label.isNotEmpty())
-                        item("toggle-${project.project_id}") {
-                            DButton(
-                                project.toggle_label,
-                                {
-                                    store.command(
-                                        Command(
-                                            set_chats_show_all =
-                                                SetChatsShowAll(
-                                                    project_id = project.project_id,
-                                                    show_all = !project.show_all,
-                                                )
-                                        )
+                if (archived) section("archived", null, view.archived.map { it.id })
+                else {
+                    if (view.pinned_ids.isNotEmpty()) section("pinned", "Pinned", view.pinned_ids)
+                    view.folders.forEach { folder ->
+                        item("folder-${folder.folder_id}") {
+                            CollapsibleHeader(
+                                folder.name,
+                                folder.chat_ids.size,
+                                folder.expanded,
+                                Glyph.FOLDER,
+                            ) {
+                                store.command(
+                                    Command(
+                                        navigation =
+                                            NavigationCommand(
+                                                set_folder_expanded =
+                                                    SetFolderExpanded(
+                                                        FolderScope.FOLDER_SCOPE_CHATS,
+                                                        folder.folder_id,
+                                                        !folder.expanded,
+                                                    )
+                                            )
                                     )
-                                },
-                                Modifier.padding(horizontal = ScreenMargin + 4.dp, vertical = 4.dp),
-                                kind = ButtonKind.PLAIN,
-                            )
+                                )
+                            }
                         }
-                }
-                if (view.other_ids.isNotEmpty())
-                    section(
-                        "other",
-                        if (view.projects.isNotEmpty() || view.folders.isNotEmpty()) "Other"
-                        else null,
-                        view.other_ids,
-                    )
-            }
-            if ((archived && view.archived.isEmpty()) || (!archived && view.visible_ids.isEmpty()))
-                item("empty") {
-                    EmptyState(
-                        if (archived) Glyph.ARCHIVE else Glyph.CHATS,
-                        if (archived) "No archived chats"
-                        else if (query.isNotBlank()) "No results" else "No chats yet",
-                        if (archived) "Archived chats appear here."
-                        else "Start a conversation about any of your projects.",
-                        Modifier.padding(top = 32.dp),
-                    ) {
-                        if (!archived && query.isBlank())
-                            DButton(
-                                "New chat",
-                                { store.newConversation(chat = true) },
-                                glyph = Glyph.COMPOSE,
-                            )
+                        if (folder.show_chats)
+                            section("folder-${folder.folder_id}", null, folder.chat_ids)
                     }
+                    view.projects.forEach { project ->
+                        val name =
+                            workspace.projects.firstOrNull { it.id == project.project_id }?.name
+                                ?: "Project"
+                        item("project-${project.project_id}") {
+                            CollapsibleHeader(
+                                name,
+                                project.total,
+                                !project.collapsed,
+                                null,
+                                project.project_id,
+                            ) {
+                                store.command(
+                                    Command(
+                                        set_chat_section_collapsed =
+                                            SetChatSectionCollapsed(
+                                                project_id = project.project_id,
+                                                collapsed = !project.collapsed,
+                                            )
+                                    )
+                                )
+                            }
+                        }
+                        if (project.show_chats)
+                            section("project-${project.project_id}", null, project.chat_ids)
+                        if (project.toggle_label.isNotEmpty())
+                            item("toggle-${project.project_id}") {
+                                DButton(
+                                    project.toggle_label,
+                                    {
+                                        store.command(
+                                            Command(
+                                                set_chats_show_all =
+                                                    SetChatsShowAll(
+                                                        project_id = project.project_id,
+                                                        show_all = !project.show_all,
+                                                    )
+                                            )
+                                        )
+                                    },
+                                    Modifier.padding(
+                                        horizontal = ScreenMargin + 4.dp,
+                                        vertical = 4.dp,
+                                    ),
+                                    kind = ButtonKind.PLAIN,
+                                )
+                            }
+                    }
+                    if (view.other_ids.isNotEmpty())
+                        section(
+                            "other",
+                            if (view.projects.isNotEmpty() || view.folders.isNotEmpty()) "Other"
+                            else null,
+                            view.other_ids,
+                        )
                 }
+                if (
+                    (archived && view.archived.isEmpty()) ||
+                        (!archived && view.visible_ids.isEmpty())
+                )
+                    item("empty") {
+                        EmptyState(
+                            if (archived) Glyph.ARCHIVE else Glyph.CHATS,
+                            if (archived) "No archived chats"
+                            else if (query.isNotBlank()) "No results" else "No chats yet",
+                            if (archived) "Archived chats appear here."
+                            else "Start a conversation about any of your projects.",
+                            Modifier.padding(top = 32.dp),
+                        ) {
+                            if (!archived && query.isBlank())
+                                DButton(
+                                    "New chat",
+                                    { store.newConversation(chat = true) },
+                                    glyph = Glyph.COMPOSE,
+                                )
+                        }
+                    }
+            }
         }
     }
 }

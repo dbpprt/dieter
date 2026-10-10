@@ -88,9 +88,113 @@ class MobileJourneyTest : EndToEnd() {
             first.push(MobileRoute.Tool(ToolPage.SCHEDULES))
             first.schedules.await { it.loaded }
             assertTrue(first.schedules.value.error.isEmpty())
+            val selectionBeforeRefresh = first.selectedCard.value
+            first.refresh()
+            assertTrue(first.refreshing.value)
+            first.refreshing.await { !it }
+            assertTrue(first.session.value.synced)
+            assertTrue(first.workspace.value.cards.any { it.id == cardId })
+            assertEquals(selectionBeforeRefresh, first.selectedCard.value)
+            assertTrue(first.error.value.isEmpty(), first.error.value)
         } finally {
             first.close()
             second.close()
+        }
+    }
+
+    @Test
+    fun refreshingKeepsTheListAndWaitsForReplayWithoutDuplicatingRequests() = runBlocking {
+        val sent = mutableListOf<Command>()
+        lateinit var publish: (Update) -> Unit
+        val fake =
+            object : MobileCore {
+                override suspend fun dispatch(command: Command): Result {
+                    sent += command
+                    return Result(done = Done())
+                }
+
+                override fun observe(
+                    slice: Slice,
+                    scope: String,
+                    receive: (Update) -> Unit,
+                ): com.dbpprt.dieter.core.client.ClientSubscription {
+                    if (slice == Slice.SLICE_SESSION) publish = receive
+                    return com.dbpprt.dieter.core.client.ClientSubscription {}
+                }
+            }
+        val store = MobileStore(fake, Dispatchers.Unconfined)
+        try {
+            publish(
+                Update(
+                    session =
+                        SessionSlice(phase = SessionSlice.Phase.PHASE_CONNECTED, synced = true)
+                )
+            )
+            val cached =
+                WorkspaceSlice(
+                    loaded = true,
+                    cards = listOf(com.dbpprt.dieter.api.v1.Card(id = "cached")),
+                )
+            store.workspace.value = cached
+            store.refresh()
+            store.refresh()
+            assertEquals(1, sent.count { it.resync != null })
+            assertTrue(store.refreshing.value, "Admitting the command is not the end of the replay")
+            assertEquals(cached, store.workspace.value)
+            publish(Update(session = SessionSlice(phase = SessionSlice.Phase.PHASE_CONNECTING)))
+            assertTrue(store.refreshing.value)
+            publish(
+                Update(
+                    session =
+                        SessionSlice(phase = SessionSlice.Phase.PHASE_CONNECTED, synced = true)
+                )
+            )
+            assertFalse(store.refreshing.value)
+            assertEquals(MobileStore.CHATS_SCOPE, sent.single { it.chats != null }.chats?.scope)
+            assertNotNull(sent.single { it.chats != null }.chats?.reload)
+            assertEquals(cached, store.workspace.value)
+            // Pulling while a previous connection is catching up still settles when it is live.
+            publish(Update(session = SessionSlice(phase = SessionSlice.Phase.PHASE_CONNECTING)))
+            store.refresh()
+            assertTrue(store.refreshing.value)
+            publish(
+                Update(
+                    session =
+                        SessionSlice(phase = SessionSlice.Phase.PHASE_CONNECTED, synced = true)
+                )
+            )
+            assertFalse(store.refreshing.value)
+            assertEquals(2, sent.count { it.resync != null })
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
+    fun aRejectedRefreshStopsItsIndicatorAndCanBeRetried() = runBlocking {
+        var attempts = 0
+        val fake =
+            object : MobileCore {
+                override suspend fun dispatch(command: Command): Result {
+                    if (command.resync != null) {
+                        attempts++
+                        error("Unable to sync")
+                    }
+                    return Result(done = Done())
+                }
+
+                override fun observe(slice: Slice, scope: String, receive: (Update) -> Unit) =
+                    com.dbpprt.dieter.core.client.ClientSubscription {}
+            }
+        val store = MobileStore(fake, Dispatchers.Unconfined)
+        try {
+            store.refresh()
+            assertFalse(store.refreshing.value)
+            assertEquals("Unable to sync", store.error.value)
+            store.refresh()
+            assertEquals(2, attempts)
+        } finally {
+            store.close()
         }
     }
 
