@@ -104,9 +104,8 @@ internal fun InboxScreen(store: MobileStore) {
                         },
                     )
                     .joinToString(" · "),
-            // Keep the native iOS title; the Android inbox needs its controls within reach
-            // without the empty expanded toolbar above them.
-            large = apple,
+            // Keep the title beside the toolbar controls and the inbox content near the top.
+            large = false,
             actions =
                 listOf(
                     ChromeAction(
@@ -172,7 +171,8 @@ internal fun InboxScreen(store: MobileStore) {
                         query,
                         { query = it },
                         "Search activity",
-                        Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp),
+                        Modifier.padding(horizontal = ScreenMargin, vertical = 6.dp)
+                            .testTag("inbox-search"),
                     )
                 }
                 item("filters") {

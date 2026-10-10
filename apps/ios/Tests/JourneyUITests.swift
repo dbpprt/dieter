@@ -27,8 +27,10 @@ final class JourneyUITests: XCTestCase {
         app.launchEnvironment = ProcessInfo.processInfo.environment.filter { $0.key.hasPrefix("DIETER_IOS_TEST_") }
         app.launch()
         XCTAssertTrue(element(app, containing: "Design the mobile workspace").waitForExistence(timeout: 40))
+        assertInboxLayout(app)
         pullToRefresh(app, identifier: "inbox-refresh")
         XCTAssertTrue(element(app, containing: "Design the mobile workspace").waitForExistence(timeout: 40))
+        assertInboxLayout(app)
         capture("ios-inbox")
 
         tab(app, "Projects")
@@ -345,6 +347,18 @@ final class JourneyUITests: XCTestCase {
         XCTAssertNotNil(button, "A back button is visible")
         button?.tap()
         Thread.sleep(forTimeInterval: 0.5)
+    }
+
+    /// Inbox uses the native compact title and starts its search directly below the bar.
+    private func assertInboxLayout(_ app: XCUIApplication) {
+        let bar = app.navigationBars["Inbox"].firstMatch
+        let title = bar.staticTexts["Inbox"].firstMatch
+        let search = element(app, identifier: "inbox-search")
+        XCTAssertTrue(waitFor { self.hasFrame(title) && self.hasFrame(search) })
+        XCTAssertLessThanOrEqual(
+            search.frame.minY - bar.frame.maxY, 20,
+            "Inbox search stays directly below its compact navigation bar")
+        XCTAssertGreaterThanOrEqual(search.frame.minY, bar.frame.maxY - 1)
     }
 
     private func pullToRefresh(_ app: XCUIApplication, identifier: String) {

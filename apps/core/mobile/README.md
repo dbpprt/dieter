@@ -39,7 +39,8 @@ commands are shared.
   draws edge to edge.
 - **iOS:** UIKit owns navigation. A `UITabBarController` holds one
   `UINavigationController` per tab (a sidebar-adaptable tab bar on iPad), so
-  large titles, subtitles, back gestures and bar buttons are the system's own.
+  titles, subtitles, back gestures and bar buttons are the system's own. Inbox
+  uses a compact title bar to keep its search, filters and entries near the top.
   Screen actions are `UIBarButtonItem`s and `UIMenu`s, in-content "…" buttons
   open native menus, forms are sheets with detents, and confirmations and text
   prompts are alerts. Compose draws each screen's content with iOS system
